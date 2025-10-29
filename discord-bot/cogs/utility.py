@@ -74,14 +74,6 @@ class UtilityCog(commands.Cog):
         view = DeckCheckButton()
         await ctx.send("Click the button to check your deck:", view=view)
 
-    @commands.command()
-    async def match_report(self, ctx, opponent: discord.Member):
-        """Report the result of a match against another user."""
-        await ctx.send(
-            f"Match reported: {ctx.author.mention} vs {opponent.mention}. still under development"
-        )
-        logger.info(f"Match reported by {ctx.author} against {opponent}")
-
     @commands.command(name="help")
     async def show_help(self, ctx):
         """Show all available commands and their descriptions"""

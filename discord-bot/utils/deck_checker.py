@@ -5,7 +5,11 @@ import os
 
 def get_deck_id(url: str) -> str:
     """Extract deck ID from Curiosa URL."""
-    return url.rstrip("/").split("/")[-1]
+    # Split on '?' to remove any query parameters
+    base_url = url.split("?")[0]
+    # Get the last part of the URL path
+    deck_id = base_url.rstrip("/").split("/")[-1]
+    return deck_id
 
 
 def scrape_Curosa(deck_url, name):

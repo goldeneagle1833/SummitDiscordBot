@@ -28,6 +28,20 @@ def create_db():
                     json_deck_data TEXT
                    )""")
 
+    # Create solo_match_reports table
+    cur.execute("""CREATE TABLE IF NOT EXISTS solo_match_reports
+                   (reporter_id INTEGER,
+                    reporter_name TEXT,
+                    opponent_name TEXT,
+                    is_winner BOOLEAN,
+                    first_player TEXT,
+                    match_time INTEGER,
+                    curiosa_link TEXT,
+                    match_comment TEXT,
+                    report_date DATETIME,
+                    json_deck_data TEXT
+                   )""")
+
     conn.commit()
     conn.close()
 
@@ -266,3 +280,58 @@ class DatabaseConnection:
         if self.conn:
             self.conn.commit()
             self.conn.close()
+
+
+def solo_match_report(
+    reporter_id: int,
+    reporter_global: str,
+    opponent_name: str,
+    is_winner: bool,
+    first_player: str,
+    match_time: int,
+    curiosa_link: str,
+    match_comment: str,
+) -> None:
+    """
+    Save a solo match report to the database.
+
+    Args:
+        reporter_id: Discord ID of the reporting player
+        reporter_global: Global name of the reporting player
+        opponent_name: Name of the opponent (manually entered)
+        is_winner: True if reporter won, False if lost
+        first_player: 'y' if reporter went first, 'n' if not
+        match_time: Duration of match in minutes
+        curiosa_link: URL to Curiosa deck
+        match_comment: Additional match notes
+    """
+    logger.info(f"Logging solo match report for user {reporter_global}")
+    create_db()  # Ensure tables exist
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    json_deck_data = "{}"
+    if curiosa_link and curiosa_link != "No URL provided":
+        json_deck_data = scrape_Curosa(curiosa_link, "deck_data_test.json")
+
+    cur.execute(
+        """INSERT INTO solo_match_reports 
+           (reporter_id, reporter_name, opponent_name, is_winner, 
+            first_player, match_time, curiosa_link, match_comment, 
+            report_date, json_deck_data)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)""",
+        (
+            reporter_id,
+            reporter_global,
+            opponent_name,
+            is_winner,
+            first_player,
+            match_time,
+            curiosa_link,
+            match_comment,
+            json_deck_data,
+        ),
+    )
+
+    conn.commit()
+    conn.close()

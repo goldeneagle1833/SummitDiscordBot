@@ -4,7 +4,7 @@ import datetime
 import logging
 from random import randrange
 
-from utils.database import winner_report, losser_report
+from utils.database import winner_report, losser_report, solo_match_report
 from utils.constants import SORCERY_NICKNAMES
 
 logger = logging.getLogger("discord_bot")
@@ -234,6 +234,110 @@ class ChallengeButtons(discord.ui.View):
         await interaction.message.edit(view=None)
 
 
+class ReportButtonsSolo(discord.ui.View):
+    def __init__(self, reporter_id: int, reporter_global: str):
+        super().__init__(timeout=300)  # 5 minute timeout
+        self.reporter_id = reporter_id
+        self.reporter_global = reporter_global
+
+    @discord.ui.button(label="I Won!", style=discord.ButtonStyle.success)
+    async def won_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await interaction.response.send_modal(
+            SoloMatchReportModal(
+                reporter_id=self.reporter_id,
+                reporter_global=self.reporter_global,
+                is_winner=True,
+            )
+        )
+        await interaction.message.edit(view=None)
+
+    @discord.ui.button(label="I Lost", style=discord.ButtonStyle.danger)
+    async def lost_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await interaction.response.send_modal(
+            SoloMatchReportModal(
+                reporter_id=self.reporter_id,
+                reporter_global=self.reporter_global,
+                is_winner=False,
+            )
+        )
+        await interaction.message.edit(view=None)
+
+
+class SoloMatchReportModal(discord.ui.Modal, title="Solo Match Report"):
+    opponent_name = discord.ui.TextInput(
+        label="Opponent's Name",
+        placeholder="Enter your opponent's name",
+        required=False,
+    )
+
+    curiosa_url = discord.ui.TextInput(
+        label="Curiosa Deck URL",
+        placeholder="Enter Your Curiosa Deck URL",
+        required=False,
+    )
+
+    first_player = discord.ui.TextInput(
+        label="Did you go first? (y/n)",
+        placeholder="Enter YES or NO",
+        required=False,
+        max_length=3,
+    )
+
+    match_time = discord.ui.TextInput(
+        label="Match time",
+        placeholder="Estimate match time in minutes (eg. 30)",
+        required=False,
+        max_length=3,
+        min_length=1,
+    )
+
+    match_comment = discord.ui.TextInput(
+        label="Notes",
+        placeholder="Anything else about the match?",
+        style=discord.TextStyle.paragraph,
+        required=False,
+    )
+
+    def __init__(self, reporter_id: int, reporter_global: str, is_winner: bool):
+        super().__init__()
+        self.reporter_id = reporter_id
+        self.reporter_global = reporter_global
+        self.is_winner = is_winner
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
+        curiosa_link = (
+            self.curiosa_url.value if self.curiosa_url.value else "No URL provided"
+        )
+        match_comment = self.match_comment.value if self.match_comment.value else ""
+        first_player = self.first_player.value if self.first_player.value else "n"
+        match_time = (
+            int(self.match_time.value) if self.match_time.value.isdigit() else 0
+        )
+
+        solo_match_report(
+            reporter_id=self.reporter_id,
+            reporter_global=self.reporter_global,
+            opponent_name=self.opponent_name.value,
+            is_winner=self.is_winner,
+            first_player=first_player,
+            match_time=match_time,
+            curiosa_link=curiosa_link,
+            match_comment=match_comment,
+        )
+
+        result = "Won" if self.is_winner else "Lost"
+        await interaction.followup.send(
+            f"✅ Solo match report submitted!\n**Result:** {result}\n**Opponent:** {self.opponent_name.value}",
+            ephemeral=True,
+        )
+
+
 class LFGCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -453,6 +557,21 @@ class LFGCog(commands.Cog):
         embed.set_footer(text="Type !help for a list of all available commands")
 
         await ctx.send(embed=embed)
+
+    @commands.command()
+    async def report(self, ctx):
+        """Submit a match report without being matched through LFG"""
+        # Create view with both buttons
+        view = ReportButtonsSolo(ctx.author.id, ctx.author.global_name)
+
+        try:
+            await ctx.author.send("Please select match outcome:", view=view)
+            await ctx.send("Check your DMs to submit the match report!", ephemeral=True)
+        except discord.Forbidden:
+            await ctx.send(
+                "I couldn't send you a DM. Please enable DMs from server members.",
+                ephemeral=True,
+            )
 
 
 async def setup(bot):

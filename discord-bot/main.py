@@ -84,6 +84,7 @@ async def on_member_join(member):
                 "`!leaderboard` - Show the top 10 Elo rankings\n"
                 "`!replay` - Replay your last match\n"
                 "`!mygames` - List your recent games"
+                "`!report` - Report a match result this will not update your Elo only for record keeping"
             ),
             inline=False,
         )

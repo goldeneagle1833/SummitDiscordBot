@@ -59,114 +59,155 @@ class EloCog(commands.Cog):
     async def mystats(self, ctx):
         """Check your match statistics. Includes win rate, first player win rate,
         avatar performance, and Elo."""
-        conn = sqlite3.connect("match_records.db")
-        cur = conn.cursor()
-        # Update the SELECT query to include match_time
-        cur.execute(
-            "SELECT did_win, first_player, json_deck_data, match_time FROM match_records WHERE reporter_id=?",
-            (ctx.author.id,),
-        )
-        rows = cur.fetchall()
+        try:
+            conn = sqlite3.connect("match_records.db")
+            cur = conn.cursor()
 
-        if not rows:
-            await ctx.send(
-                f"{ctx.author.mention}, you don't have any match records yet. "
-                "Play some matches to get started!"
+            # Query both tables with UNION ALL
+            cur.execute(
+                """
+                SELECT did_win, first_player, json_deck_data, match_time
+                FROM match_records 
+                WHERE reporter_id = ?
+                UNION ALL
+                SELECT 
+                    is_winner as did_win,
+                    first_player,
+                    json_deck_data,
+                    match_time
+                FROM solo_match_reports
+                WHERE reporter_id = ?
+            """,
+                (ctx.author.id, ctx.author.id),
             )
-            conn.close()
-            return
 
-        # General stats
-        total_matches = len(rows)
-        wins = sum(1 for row in rows if row[0])
-        win_rate = (wins / total_matches) * 100 if total_matches > 0 else 0
-        first_player_wins = sum(1 for row in rows if row[0] and "y" in row[1].lower())
-        first_player_matches = sum(1 for row in rows if "y" in row[1].lower())
-        first_player_win_rate = (
-            (first_player_wins / first_player_matches) * 100
-            if first_player_matches > 0
-            else 0
-        )
+            rows = cur.fetchall()
 
-        # Avatar stats
-        avatar_win_loss = {}
-        rows_with_deck_data = [row for row in rows if row[2] is not None]
+            if not rows:
+                await ctx.send(
+                    f"{ctx.author.mention}, you don't have any match records yet. "
+                    "Play some matches to get started!"
+                )
+                conn.close()
+                return
 
-        for row in rows_with_deck_data:
+            # General stats
+            total_matches = len(rows)
+            wins = sum(1 for row in rows if row[0])
+            win_rate = (wins / total_matches) * 100 if total_matches > 0 else 0
+
+            # Calculate average match time
+            match_times = [
+                float(row[3])
+                for row in rows
+                if row[3] and str(row[3]).replace(".", "").isdigit()
+            ]
+            avg_match_time = sum(match_times) / len(match_times) if match_times else 0
+
+            # First player (on the play) stats
+            first_player_wins = sum(
+                1 for row in rows if row[0] and row[1] and "y" in str(row[1]).lower()
+            )
+            first_player_matches = sum(
+                1 for row in rows if row[1] and "y" in str(row[1]).lower()
+            )
+            first_player_win_rate = (
+                (first_player_wins / first_player_matches) * 100
+                if first_player_matches > 0
+                else 0
+            )
+
+            # Second player (on the draw) stats
+            second_player_wins = sum(
+                1 for row in rows if row[0] and row[1] and "n" in str(row[1]).lower()
+            )
+            second_player_matches = sum(
+                1 for row in rows if row[1] and "n" in str(row[1]).lower()
+            )
+            second_player_win_rate = (
+                (second_player_wins / second_player_matches) * 100
+                if second_player_matches > 0
+                else 0
+            )
+
+            # Build response message
+            response = f"{ctx.author.mention}, here is your player report:\n\n"
+            response += f"**Overall Stats:**\n"
+            response += f"Total Matches: {total_matches}\n"
+            response += f"Wins: {wins}\n"
+            response += f"Win Rate: {win_rate:.2f}%\n"
+            response += f"Average Match Time: {avg_match_time:.1f} minutes\n\n"
+            response += f"**Play/Draw Stats:**\n"
+            response += f"On the Play Wins: {first_player_wins}\n"
+            response += f"On the Play Matches: {first_player_matches}\n"
+            response += f"On the Play Win Rate: {first_player_win_rate:.2f}%\n"
+            response += f"On the Draw Wins: {second_player_wins}\n"
+            response += f"On the Draw Matches: {second_player_matches}\n"
+            response += f"On the Draw Win Rate: {second_player_win_rate:.2f}%\n"
+
+            if avatar_win_loss:
+                response += f"\n**Avatar Performance:**\n"
+                for avatar_name, (wins, losses) in avatar_win_loss.items():
+                    total_avatar_matches = wins + losses
+                    avatar_win_rate = (
+                        (wins / total_avatar_matches) * 100
+                        if total_avatar_matches > 0
+                        else 0
+                    )
+                    response += f"{avatar_name}: {wins}-{losses} (W-L) - {avatar_win_rate:.1f}%\n"
+            else:
+                response += f"\nNo avatar data found in your match records."
+
+            # Get the user's elo
             try:
-                json_deck_data = json.loads(row[2])
-                avatar = json_deck_data.get("avatar", [{}])
-                avatar_name = avatar[0].get("name", "Unknown") if avatar else "Unknown"
+                conn_elo = sqlite3.connect("elo.db")
+                cur_elo = conn_elo.cursor()
 
-                if row[0] == 1:  # did_win
-                    avatar_win_loss[avatar_name] = (
-                        avatar_win_loss.get(avatar_name, (0, 0))[0] + 1,
-                        avatar_win_loss.get(avatar_name, (0, 0))[1],
+                # Verify the table exists
+                cur_elo.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='overall_standings'"
+                )
+                if not cur_elo.fetchone():
+                    logger.error("Table 'overall_standings' not found in elo.db")
+                    response += (
+                        f"\nError accessing Elo data. Please contact an administrator."
                     )
                 else:
-                    avatar_win_loss[avatar_name] = (
-                        avatar_win_loss.get(avatar_name, (0, 0))[0],
-                        avatar_win_loss.get(avatar_name, (0, 0))[1] + 1,
+                    cur_elo.execute(
+                        "SELECT elo FROM overall_standings WHERE user_id=?",
+                        (ctx.author.id,),
                     )
-            except (json.JSONDecodeError, KeyError, IndexError):
-                continue
+                    elo_row = cur_elo.fetchone()
+                    if elo_row:
+                        elo = elo_row[0]
+                        cur_elo.execute(
+                            "SELECT COUNT(*) FROM overall_standings WHERE elo > ?",
+                            (elo,),
+                        )
+                        rank = cur_elo.fetchone()[0] + 1
+                        response += f"\n**Your Elo:** {elo} (Rank #{rank})"
+                    else:
+                        response += f"\nYou don't have an Elo rating yet."
 
-        # Add average match time calculation after the first_player_win_rate calculation
-        match_times = [
-            float(row[3])
-            for row in rows
-            if row[3] and str(row[3]).replace(".", "").isdigit()
-        ]
-        avg_match_time = sum(match_times) / len(match_times) if match_times else 0
-
-        # Build response message
-        response = f"{ctx.author.mention}, here is your player report:\n\n"
-        response += f"**Overall Stats:**\n"
-        response += f"Total Matches: {total_matches}\n"
-        response += f"Wins: {wins}\n"
-        response += f"Win Rate: {win_rate:.2f}%\n"
-        response += (
-            f"Average Match Time: {avg_match_time:.1f} minutes\n"  # Add this line
-        )
-        response += f"On the Play Wins: {first_player_wins}\n"
-        response += f"On the Play Matches: {first_player_matches}\n"
-        response += f"On the Play Win Rate: {first_player_win_rate:.2f}%\n"
-
-        if avatar_win_loss:
-            response += f"\n**Avatar Performance:**\n"
-            for avatar_name, (wins, losses) in avatar_win_loss.items():
-                total_avatar_matches = wins + losses
-                avatar_win_rate = (
-                    (wins / total_avatar_matches) * 100
-                    if total_avatar_matches > 0
-                    else 0
-                )
+            except sqlite3.Error as e:
+                logger.error(f"Database error accessing elo.db: {e}")
                 response += (
-                    f"{avatar_name}: {wins}-{losses} (W-L) - {avatar_win_rate:.1f}%\n"
+                    f"\nError accessing Elo data. Please contact an administrator."
                 )
-        else:
-            response += f"\nNo avatar data found in your match records."
 
-        # Get the user's elo
-        conn_elo = sqlite3.connect("elo.db")
-        cur_elo = conn_elo.cursor()
-        cur_elo.execute(
-            "SELECT elo FROM overall_standings WHERE user_id=?", (ctx.author.id,)
-        )
-        elo_row = cur_elo.fetchone()
-        if elo_row:
-            elo = elo_row[0]
-            cur_elo.execute(
-                "SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (elo,)
+            await ctx.send(response)
+
+        except Exception as e:
+            logger.error(f"Error in mystats command: {e}")
+            await ctx.send(
+                "An error occurred while retrieving your stats. Please try again later."
             )
-            rank = cur_elo.fetchone()[0] + 1
-            response += f"\n**Your Elo:** {elo} (Rank #{rank})"
-        else:
-            response += f"\nYou don't have an Elo rating yet."
 
-        await ctx.send(response)
-        conn.close()
-        conn_elo.close()
+        finally:
+            if "conn" in locals():
+                conn.close()
+            if "conn_elo" in locals():
+                conn_elo.close()
 
     @commands.command()
     async def replay(self, ctx):
@@ -210,25 +251,47 @@ class EloCog(commands.Cog):
 
     @commands.command()
     async def mygames(self, ctx):
-        """View your match history with details."""
+        """View your match history with details for games you reported."""
         try:
             conn = sqlite3.connect("match_records.db")
             cur = conn.cursor()
 
             try:
+                # Query both tables with appropriate field mappings
                 cur.execute(
                     """
-                    SELECT
-                        winner_display_name,
-                        losser_display_name,
+                    SELECT 
+                        winner_display_name as winner,
+                        losser_display_name as loser,
                         did_win,
                         first_player,
                         match_time,
-                        curiosa_url,
-                        match_comment
-                    FROM match_records
-                    WHERE winner_id = ? OR losser_id = ?
-                    ORDER BY timestamp DESC
+                        curiosa_url as replay_url,
+                        match_comment,
+                        timestamp as match_date,
+                        'match_records' as source
+                    FROM match_records 
+                    WHERE reporter_id = ?
+                    UNION ALL
+                    SELECT 
+                        CASE 
+                            WHEN is_winner = 1 THEN reporter_name 
+                            ELSE opponent_name 
+                        END as winner,
+                        CASE 
+                            WHEN is_winner = 1 THEN opponent_name 
+                            ELSE reporter_name 
+                        END as loser,
+                        is_winner as did_win,
+                        first_player,
+                        match_time,
+                        curiosa_link as replay_url,
+                        match_comment,
+                        report_date as match_date,
+                        'solo_reports' as source
+                    FROM solo_match_reports
+                    WHERE reporter_id = ?
+                    ORDER BY match_date DESC
                     LIMIT 10
                     """,
                     (ctx.author.id, ctx.author.id),
@@ -238,12 +301,13 @@ class EloCog(commands.Cog):
 
                 if not rows:
                     await ctx.send(
-                        f"{ctx.author.mention}, you haven't played any matches yet!"
+                        f"{ctx.author.mention}, you haven't reported any matches yet!"
                     )
                     return
 
                 embed = discord.Embed(
                     title=f"Match History for {ctx.author.display_name}",
+                    description="Your 10 most recent reported matches",
                     color=discord.Color.blue(),
                 )
 
@@ -255,36 +319,49 @@ class EloCog(commands.Cog):
                             did_win,
                             first_player,
                             match_time,
-                            curiosa_url,
+                            replay_url,
                             match_comment,
+                            match_date,
+                            source,
                         ) = row
 
-                        # Format game information
-                        game_info = f"**Winner:** {winner}\n**Loser:** {loser}\n"
-                        game_info += f"**First Player:** {'Yes' if first_player and first_player.lower() == 'y' else 'No'}\n"
+                        # Format match date based on source
+                        if source == "match_records":
+                            date_obj = datetime.datetime.fromisoformat(match_date)
+                        else:
+                            date_obj = datetime.datetime.strptime(
+                                match_date, "%Y-%m-%d %H:%M:%S"
+                            )
+                        formatted_date = date_obj.strftime("%Y-%m-%d %H:%M")
+
+                        # Build game information
+                        game_info = []
+                        game_info.append(f"**Date:** {formatted_date}")
+                        game_info.append(f"**Winner:** {winner}")
+                        game_info.append(f"**Loser:** {loser}")
+                        game_info.append(
+                            f"**First Player:** {'Yes' if first_player and first_player.lower() == 'y' else 'No'}"
+                        )
 
                         if match_time:
-                            try:
-                                match_duration = float(match_time)
-                                game_info += (
-                                    f"**Duration:** {match_duration:.1f} minutes\n"
-                                )
-                            except (ValueError, TypeError):
-                                pass
+                            game_info.append(
+                                f"**Duration:** {float(match_time):.1f} minutes"
+                            )
 
-                        if curiosa_url:
-                            game_info += (
-                                f"**Replay:** [View on Curiosa]({curiosa_url})\n"
+                        if replay_url and replay_url != "No URL provided":
+                            game_info.append(
+                                f"**Replay:** [View on Curiosa]({replay_url})"
                             )
 
                         if match_comment:
-                            game_info += f"**Notes:** {match_comment}\n"
+                            game_info.append(f"**Notes:** {match_comment}")
 
                         embed.add_field(
                             name=f"Game #{i}",
-                            value=game_info,
+                            value="\n".join(game_info),
                             inline=False,
                         )
+
                     except (ValueError, TypeError) as e:
                         logger.error(f"Error processing game record: {e}")
                         continue

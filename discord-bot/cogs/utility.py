@@ -78,55 +78,86 @@ class UtilityCog(commands.Cog):
     async def show_help(self, ctx):
         """Show all available commands and their descriptions"""
         embed = discord.Embed(
-            title="📖 Summit Bot Commands",
-            description="Here are all available commands:",
+            title="📖 Welcome to Summit Bot!",
+            description="Here are the main systems and how to learn more about them:",
             color=discord.Color.blue(),
         )
 
-        # General Commands
+        # Main Systems Overview
         embed.add_field(
-            name="🎮 General Commands",
+            name="Looking For Game (LFG) System",
+            value=(
+                "Find matches and report results:\n"
+                "`!lfg [minutes]` - Join queue for X minutes (default 30)\n"
+                "`!checklfg` - See who's in queue\n"
+                "`!challenge @user` - Challenge specific player\n"
+                "`!cancel` - Leave the queue\n"
+                "`!record_game` - Record a match result manually"
+            ),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="Tournament System",
+            value=(
+                "Tournament Player Commands:\n"
+                "`!join <name>` - Join tournament during registration\n"
+                "`!my_round` - View your match and report results\n"
+                "`!bracket <name>` - View tournament bracket\n\n"
+                "Tournament Admin Commands:\n"
+                "`!create_tournament` - Create new tournament\n"
+                "`!start_tournament <name>` - Start the tournament\n"
+                "`!complete_tournament <name>` - End tournament\n"
+                "`!remove <name> @user` - Remove player"
+            ),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="Rankings & Stats",
+            value=(
+                "`!rank` - Check your Elo ranking\n"
+                "`!mystats` - Get your match history\n"
+                "`!leaderboard` - View top 10 rankings\n"
+                "`!mygames` - List your recent games\n"
+                "`!replay` - View last match details"
+            ),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="Fun System",
+            value=(
+                "For fart game and item shop commands:\n"
+                "Use `!helpfart` to see all fun commands"
+            ),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="Utility",
             value=(
                 "`!help` - Show this help message\n"
-                "`!commands` - List available commands\n"
-                "`!deckcheck` - Check if a Curiosa deck is legal for Summit play"
+                "`!commands` - View all available commands\n"
+                "`!deckcheck` - Check if a Curiosa deck is legal"
             ),
             inline=False,
         )
 
-        # LFG Commands
+        # Important Notes
         embed.add_field(
-            name="🔍 Looking For Game Commands",
+            name="Important Notes",
             value=(
-                "`!lfg [minutes]` - Add yourself to the queue for X minutes (default 30)\n"
-                "`!checklfg` - Check if anyone is currently in the LFG queue\n"
-                "`!challenge @user` - Challenge a specific player to a match (Must be in LFG channel to tag person)\n"
-                "`!cancel` - Remove yourself from the LFG queue"
+                "• Most commands work in DMs for privacy\n"
+                "• The `!challenge` command must be used in the LFG channel\n"
+                "• Tournament commands require active tournament\n"
+                "• For complete command list use `!commands`"
             ),
-            inline=False,
-        )
-
-        # Rankings & Stats
-        embed.add_field(
-            name="📊 Rankings & Stats",
-            value=(
-                "`!rank` - Check your current Elo ranking\n"
-                "`!mystats` - Get a summary of your match history\n"
-                "`!leaderboard` - Show the top 10 Elo rankings\n"
-                "`!replay` - Replay your last match"
-            ),
-            inline=False,
-        )
-
-        # DM Usage Note
-        embed.add_field(
-            name="📝 Note",
-            value="Most commands can be used in DMs for privacy. The `!challenge` command must be used in lfg so you can challenge other players.",
             inline=False,
         )
 
         embed.set_footer(
-            text="Bot is still under development - expect new features soon!"
+            text="Need more details? Use !commands to see everything available"
         )
 
         await ctx.send(embed=embed)
@@ -148,7 +179,8 @@ class UtilityCog(commands.Cog):
                 "`!lfg [minutes]` - Join queue for X minutes (default 30)\n"
                 "`!checklfg` - Check who's in queue\n"
                 "`!challenge @user` - Challenge specific player\n"
-                "`!cancel` - Leave the queue"
+                "`!cancel` - Leave the queue\n"
+                "`!record_game` - Record a match result manually"
             ),
             inline=False,
         )
@@ -159,9 +191,27 @@ class UtilityCog(commands.Cog):
             value=(
                 "`!rank` - Check your Elo ranking\n"
                 "`!leaderboard` - View top 10 Elo rankings\n"
-                "`!mystats` - View your match statistics\n"
+                "`!mystats` - Get a summary of your match history\n"
                 "`!mygames` - List your recent games\n"
                 "`!replay` - Replay your last match"
+            ),
+            inline=False,
+        )
+
+        # Tournament Commands
+        embed.add_field(
+            name="🏆 Tournament System",
+            value=(
+                "Player Commands:\n"
+                "`!tournament_help` - Show tournament command help\n"
+                "`!join <name>` - Join a tournament during registration\n"
+                "`!my_round` - View your current match and report results\n"
+                "`!bracket <name>` - View the tournament bracket\n\n"
+                "Admin Commands:\n"
+                "`!create_tournament` - Create a new tournament\n"
+                "`!start_tournament <name>` - Start a tournament\n"
+                "`!complete_tournament <name>` - Finalize a tournament\n"
+                "`!remove <name> @user` - Remove player from tournament"
             ),
             inline=False,
         )
@@ -172,32 +222,57 @@ class UtilityCog(commands.Cog):
             value=(
                 "`!help` - Show help message\n"
                 "`!commands` - Show this command list\n"
-                "`!deckcheck` - Check Curiosa deck legality\n"
-                "`!match_report @user` - Report match result"
+                "`!deckcheck` - Check Curiosa deck legality"
             ),
             inline=False,
         )
 
-        # Fun Commands
+        # Fun & Fart System Commands
         embed.add_field(
             name="🎲 Fun System",
             value=(
+                "Daily Actions:\n"
                 "`!fart` - Roll for daily fart points\n"
-                "`!fartrank` - Check your fart ranking\n"
-                "`!fartleaderboard` - View top 5 fart scores\n"
-                "`!attackfart` - Attack fart leader (once per day)\n"
-                "`!fartshop` - Buy fart items with points"
+                "`!attackfart` - Attack leader to reduce their score\n"
+                "`!syphonfart` - Place syphon to steal leader's next points\n"
+                "`!fartprediction` - Predict fart type for 2x points\n"
+                "`!bullfart` - Get bonus points (weekly)\n\n"
+                "Shop & Items:\n"
+                "`!fartshop` - View available items\n"
+                "`!blueshell` - Hit leader with damage\n"
+                "`!redshell` - Hit player in front\n"
+                "`!greenshell` - Hit random front player\n"
+                "`!banana` - Hit random player behind\n"
+                "`!star` - Get 24h protection\n\n"
+                "Scores & Stats:\n"
+                "`!fartrank` - Check your score and ranking\n"
+                "`!fartleaderboard` - View top 5 farters\n"
+                "`!syphonstatus` - Check active syphons\n"
+                "`!helpfart` - View detailed fart commands"
             ),
             inline=False,
         )
 
-        # Command Usage Note
+        # Leader-Only Commands
         embed.add_field(
-            name="📝 Note",
+            name="👑 Leader Commands",
+            value=(
+                "`!fartlord` - Make grand proclamation\n"
+                "`!taxes` - Take 5% from others (once per reign)\n"
+                "`!wealth` - Redistribute from top 5 (once per reign)"
+            ),
+            inline=False,
+        )
+
+        # Command Usage Notes
+        embed.add_field(
+            name="📝 Notes",
             value=(
                 "• Most commands work in DMs for privacy\n"
+                "• Tournament commands require proper tournament context\n"
                 "• `!challenge` must be used in #lfg channel\n"
-                "• Use `!lfghelp` for detailed LFG guidance"
+                "• Fun system commands have daily/weekly limits\n"
+                "• Use specific help commands (`!lfghelp`, `!tournament_help`, `!helpfart`) for details"
             ),
             inline=False,
         )

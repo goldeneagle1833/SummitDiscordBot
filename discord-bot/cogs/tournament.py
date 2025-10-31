@@ -100,6 +100,121 @@ class TournamentSetupModal(discord.ui.Modal, title="Tournament Setup"):
             )
 
 
+class TournamentMatchModal(discord.ui.Modal, title="Tournament Match Report"):
+    curiosa_url = discord.ui.TextInput(
+        label="Curiosa Deck URL",
+        placeholder="Enter Your Curiosa Deck URL",
+        required=False,
+    )
+
+    first_player = discord.ui.TextInput(
+        label="Did you go first? (y/n)",
+        placeholder="Enter YES or NO",
+        required=False,
+        max_length=3,
+    )
+
+    match_time = discord.ui.TextInput(
+        label="Match time",
+        placeholder="Estimate match time in minutes (eg. 30)",
+        required=False,
+        max_length=3,
+        min_length=1,
+    )
+
+    match_comment = discord.ui.TextInput(
+        label="Notes",
+        placeholder="Anything else about the match?",
+        style=discord.TextStyle.paragraph,
+        required=False,
+    )
+
+    def __init__(
+        self, tournament_id: int, match_id: int, is_winner: bool, tournament_name: str
+    ):
+        super().__init__()
+        self.tournament_id = tournament_id
+        self.match_id = match_id
+        self.is_winner = is_winner
+        self.tournament_name = tournament_name
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
+        # Get the tournament and match data
+        tournament = active_tournaments.get(self.tournament_id)
+        match = next(
+            (m for m in tournament["matches"] if m["id"] == self.match_id), None
+        )
+
+        # Record match details
+        curiosa_link = (
+            self.curiosa_url.value if self.curiosa_url.value else "No URL provided"
+        )
+        match_comment = self.match_comment.value if self.match_comment.value else ""
+        first_player = self.first_player.value if self.first_player.value else "n"
+        match_time = (
+            int(self.match_time.value) if self.match_time.value.isdigit() else 0
+        )
+
+        # Update match with winner
+        if self.is_winner:
+            match["winner"] = interaction.user.id
+        else:
+            opponent_id = (
+                match["player2"]
+                if interaction.user.id == match["player1"]
+                else match["player1"]
+            )
+            match["winner"] = opponent_id
+
+        match["status"] = "completed"
+        match["details"] = {
+            "curiosa_url": curiosa_link,
+            "first_player": first_player,
+            "match_time": match_time,
+            "match_comment": match_comment,
+            "reported_by": interaction.user.id,
+        }
+        save_tournaments()
+
+        # Get opponent name for the database record
+        opponent_id = (
+            match["player2"]
+            if interaction.user.id == match["player1"]
+            else match["player1"]
+        )
+        try:
+            opponent = await interaction.client.fetch_user(opponent_id)
+            opponent_name = opponent.global_name or opponent.name
+        except Exception as e:
+            logger.warning(
+                f"Could not fetch opponent name for ID {opponent_id}: {str(e)}"
+            )
+            opponent_name = str(opponent_id)
+
+        # Save to solo_match_reports table
+        from utils.database import solo_match_report
+
+        solo_match_report(
+            reporter_id=interaction.user.id,
+            reporter_global=interaction.user.global_name or interaction.user.name,
+            opponent_name=opponent_name,
+            is_winner=self.is_winner,
+            first_player=first_player,
+            match_time=match_time,
+            curiosa_link=curiosa_link,
+            match_comment=f"[Tournament: {self.tournament_name}] {match_comment}",
+        )
+
+        await interaction.followup.send(
+            f"✅ Tournament match report submitted for {self.tournament_name} Round {match['round']}!\n"
+            f"**Deck URL:** {curiosa_link}\n"
+            f"**Match Time:** {match_time} minutes",
+            ephemeral=True,
+        )
+
+
 class MatchReportButton(discord.ui.View):
     def __init__(self, tournament_id: int, match_id: int, user_id: int):
         super().__init__(timeout=300)  # 5 minute timeout
@@ -136,6 +251,32 @@ class MatchReportButton(discord.ui.View):
                 "This match has already been reported!", ephemeral=True
             )
             return
+
+        tournament = active_tournaments.get(self.tournament_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "Tournament not found!", ephemeral=True
+            )
+            return
+
+        match = next(
+            (m for m in tournament["matches"] if m["id"] == self.match_id), None
+        )
+        if not match or match["status"] == "completed":
+            await interaction.response.send_message(
+                "Match not found or already completed!", ephemeral=True
+            )
+            return
+
+        # Send modal for detailed match report
+        await interaction.response.send_modal(
+            TournamentMatchModal(
+                tournament_id=self.tournament_id,
+                match_id=self.match_id,
+                is_winner=True,
+                tournament_name=tournament["name"],
+            )
+        )
 
         logger.info(
             f"Win button clicked by {interaction.user.name} (ID: {interaction.user.id})"
@@ -254,6 +395,32 @@ class MatchReportButton(discord.ui.View):
                 "This match has already been reported!", ephemeral=True
             )
             return
+
+        tournament = active_tournaments.get(self.tournament_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "Tournament not found!", ephemeral=True
+            )
+            return
+
+        match = next(
+            (m for m in tournament["matches"] if m["id"] == self.match_id), None
+        )
+        if not match or match["status"] == "completed":
+            await interaction.response.send_message(
+                "Match not found or already completed!", ephemeral=True
+            )
+            return
+
+        # Send modal for detailed match report
+        await interaction.response.send_modal(
+            TournamentMatchModal(
+                tournament_id=self.tournament_id,
+                match_id=self.match_id,
+                is_winner=False,
+                tournament_name=tournament["name"],
+            )
+        )
 
         logger.info(
             f"Loss button clicked by {interaction.user.name} (ID: {interaction.user.id})"
@@ -615,7 +782,6 @@ class TournamentCog(commands.Cog):
         """View your current match and report your win"""
         # Find the player's current active match across all tournaments
         player_match = None
-        current_tournament = None
         print("Checking active tournaments for player match...")
 
         for tournament in active_tournaments.values():
@@ -628,7 +794,7 @@ class TournamentCog(commands.Cog):
                     match["player2"],
                 ]:
                     player_match = match
-                    current_tournament = tournament
+                    pass  # Tournament found, continue with the code below
                     break
             if player_match:
                 break
@@ -798,7 +964,7 @@ class TournamentCog(commands.Cog):
                 winner = await self.bot.fetch_user(tournament["winner"])
                 description += f"\n🏆 Champion: {winner.name}"
             except discord.NotFound:
-                description += f"\n🏆 Champion: Unknown"
+                description += "\n🏆 Champion: Unknown"
 
         embed = discord.Embed(
             title=f"🏆 Tournament: {tournament['name']}",
@@ -806,6 +972,45 @@ class TournamentCog(commands.Cog):
             color=discord.Color.gold()
             if tournament["status"] == "completed"
             else discord.Color.blue(),
+        )
+
+        # Add list of registered players
+        registered_players = []
+        for player_id in tournament['players']:
+            try:
+                player = await self.bot.fetch_user(player_id)
+                registered_players.append(player.name)
+            except discord.NotFound:
+                registered_players.append(f"Unknown Player ({player_id})")
+
+        # Sort players alphabetically
+        registered_players.sort()
+        
+        # Split into columns if many players
+        if len(registered_players) > 10:
+            # Create two columns
+            half = (len(registered_players) + 1) // 2
+            col1 = registered_players[:half]
+            col2 = registered_players[half:]
+            
+            # Format columns with padding
+            max_len = max(len(name) for name in registered_players)
+            player_list = ""
+            for i in range(max(len(col1), len(col2))):
+                row = ""
+                if i < len(col1):
+                    row += f"{col1[i]:<{max_len}}"
+                if i < len(col2):
+                    row += "  " + col2[i]
+                player_list += row + "\n"
+        else:
+            # Single column for fewer players
+            player_list = "\n".join(registered_players)
+
+        embed.add_field(
+            name="Registered Players",
+            value=f"```\n{player_list}```",
+            inline=False
         )
 
         if not tournament["matches"]:
@@ -872,6 +1077,33 @@ class TournamentCog(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def remove(self, ctx, tournament_name: str, member: discord.Member):
+        """Remove a player from a tournament (Admin only)"""
+        tournament_id, tournament = find_tournament_by_name(tournament_name)
+        if not tournament:
+            await ctx.send(
+                "Tournament not found! Please check the exact tournament name."
+            )
+            return
+
+        if tournament["status"] != "registration":
+            await ctx.send("Players can only be removed during registration phase!")
+            return
+
+        if member.id not in tournament["players"]:
+            await ctx.send(f"{member.name} is not registered in this tournament!")
+            return
+
+        # Remove the player
+        tournament["players"].remove(member.id)
+        save_tournaments()
+
+        await ctx.send(
+            f"Successfully removed {member.name} from {tournament['name']}! ({len(tournament['players'])}/{tournament['max_players']} players)"
+        )
+
+    @commands.command()
     async def tournament_help(self, ctx):
         """Show help information for all tournament commands"""
         embed = discord.Embed(
@@ -885,6 +1117,7 @@ class TournamentCog(commands.Cog):
             "`!create_tournament` - Create a new tournament (Admin only)\n"
             "`!start_tournament <name>` - Start a tournament with registered players (Admin only)\n"
             "`!complete_tournament <name>` - Complete and finalize a tournament (Admin only)\n"
+            "`!remove <name> @user` - Remove a player from a tournament (Admin only)\n"
         )
         embed.add_field(name="🛡️ Admin Commands", value=admin_commands, inline=False)
 

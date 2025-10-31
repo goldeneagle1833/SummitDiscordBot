@@ -48,58 +48,38 @@ async def on_member_join(member):
     if channel:
         embed = discord.Embed(
             title="👋 Welcome to Summit Discord!",
-            description="I'm the Summit Discord Bot, here to help you find games and connect with others.\nI'm still under development, so expect new features soon!",
+            description=(
+                f"Welcome {member.mention}! Here's your guide to our server:"
+            ),
             color=discord.Color.blue(),
         )
 
-        # General Commands
+        # Key Channels
         embed.add_field(
-            name="🎮 General Commands",
+            name="Important Channels",
             value=(
-                "`!help` - Show this help message\n"
-                "`!commands` - List available commands\n"
-                "`!deckcheck` - Check if a Curiosa deck is legal for Summit play"
+                " <#1336912830867439676> - Use `!lfg` here to find games\n"
+                " <#1379476865089142844> - Check out event decks and decklists\n"
+                " <#1424374255721775175> - Latest Spoilers\n"
+                " <#1402265039951368273> - Silly fun and games"
             ),
             inline=False,
         )
 
-        # LFG Commands
+        # Bot Help
         embed.add_field(
-            name="🔍 Looking For Game Commands",
+            name="Bot Commands",
             value=(
-                "`!lfghelp` - Learn how to use the Looking For Game system\n"
-                "`!lfg [minutes]` - Add yourself to the queue for X minutes (default 30)\n"
-                "`!checklfg` - Check if anyone is currently in the LFG queue\n"
-                "`!challenge @user` - Challenge a specific player to a match\n"
-                "`!cancel` - Remove yourself from the LFG queue"
+                "• `!help` - See all features\n"
+                "• `!commands` - Full command list\n"
+                "• `!lfghelp` - Learn LFG system"
             ),
             inline=False,
         )
 
-        # Rankings & Stats
-        embed.add_field(
-            name="📊 Rankings & Stats",
-            value=(
-                "`!rank` - Check your current Elo ranking\n"
-                "`!mystats` - Get a summary of your match history\n"
-                "`!leaderboard` - Show the top 10 Elo rankings\n"
-                "`!replay` - Replay your last match\n"
-                "`!mygames` - List your recent games"
-                "`!report` - Report a match result this will not update your Elo only for record keeping"
-            ),
-            inline=False,
-        )
-
-        # DM Usage Note
-        embed.add_field(
-            name="📝 Note",
-            value="Most commands can be used in DMs for privacy. The `!challenge` command must be used in lfg so you can tag other players.",
-            inline=False,
-        )
-
-        embed.set_footer(text="Type !help or !lfghelp for more detailed information")
-
-        await channel.send(f"Welcome {member.mention}!", embed=embed)
+        embed.set_footer(text="Ready to play? Head to the LFG channel!")
+        
+        await channel.send(embed=embed)
 
 
 async def setup_cogs():

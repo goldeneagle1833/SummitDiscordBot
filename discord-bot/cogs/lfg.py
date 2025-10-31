@@ -503,7 +503,7 @@ class LFGCog(commands.Cog):
             )
 
     @commands.command()
-    async def lfghelp(self, ctx):
+    async def help_lfg(self, ctx):
         """Get detailed help for the Looking For Game (LFG) system."""
         embed = discord.Embed(
             title="🎮 Looking For Game (LFG) System",
@@ -559,7 +559,7 @@ class LFGCog(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    async def report(self, ctx):
+    async def record_game(self, ctx):
         """Submit a match report without being matched through LFG"""
         # Create view with both buttons
         view = ReportButtonsSolo(ctx.author.id, ctx.author.global_name)

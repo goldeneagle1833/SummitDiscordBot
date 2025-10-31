@@ -9,6 +9,7 @@ from cogs.elo import EloCog
 from cogs.fun import FunCog
 from cogs.utility import UtilityCog
 from cogs.shop import ShopCog
+from cogs.tournament import TournamentCog
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -107,6 +108,7 @@ async def setup_cogs():
     await bot.add_cog(FunCog(bot))
     await bot.add_cog(UtilityCog(bot))
     await bot.add_cog(ShopCog(bot))
+    await bot.add_cog(TournamentCog(bot))
 
 
 async def main():

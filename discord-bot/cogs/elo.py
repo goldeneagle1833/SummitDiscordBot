@@ -95,16 +95,6 @@ class EloCog(commands.Cog):
             total_matches = len(rows)
             wins = sum(1 for row in rows if row[0])
             win_rate = (wins / total_matches) * 100 if total_matches > 0 else 0
-
-            # Calculate average match time
-            match_times = [
-                float(row[3])
-                for row in rows
-                if row[3] and str(row[3]).replace(".", "").isdigit()
-            ]
-            avg_match_time = sum(match_times) / len(match_times) if match_times else 0
-
-            # First player (on the play) stats
             first_player_wins = sum(
                 1 for row in rows if row[0] and row[1] and "y" in str(row[1]).lower()
             )
@@ -117,18 +107,49 @@ class EloCog(commands.Cog):
                 else 0
             )
 
-            # Second player (on the draw) stats
-            second_player_wins = sum(
-                1 for row in rows if row[0] and row[1] and "n" in str(row[1]).lower()
+            # Calculate on the draw stats
+            draw_matches = sum(
+                1 for row in rows if row[1] and "y" not in str(row[1]).lower()
             )
-            second_player_matches = sum(
-                1 for row in rows if row[1] and "n" in str(row[1]).lower()
+            draw_wins = sum(
+                1
+                for row in rows
+                if row[0] and row[1] and "y" not in str(row[1]).lower()
             )
-            second_player_win_rate = (
-                (second_player_wins / second_player_matches) * 100
-                if second_player_matches > 0
-                else 0
-            )
+            draw_win_rate = (draw_wins / draw_matches) * 100 if draw_matches > 0 else 0
+
+            # Avatar stats
+            avatar_win_loss = {}
+            rows_with_deck_data = [row for row in rows if row[2] is not None]
+
+            for row in rows_with_deck_data:
+                try:
+                    json_deck_data = json.loads(row[2])
+                    avatar = json_deck_data.get("avatar", [{}])
+                    avatar_name = (
+                        avatar[0].get("name", "Unknown") if avatar else "Unknown"
+                    )
+
+                    if row[0]:  # did_win/is_winner
+                        avatar_win_loss[avatar_name] = (
+                            avatar_win_loss.get(avatar_name, (0, 0))[0] + 1,
+                            avatar_win_loss.get(avatar_name, (0, 0))[1],
+                        )
+                    else:
+                        avatar_win_loss[avatar_name] = (
+                            avatar_win_loss.get(avatar_name, (0, 0))[0],
+                            avatar_win_loss.get(avatar_name, (0, 0))[1] + 1,
+                        )
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
+
+            # Calculate average match time
+            match_times = [
+                float(row[3])
+                for row in rows
+                if row[3] and str(row[3]).replace(".", "").isdigit()
+            ]
+            avg_match_time = sum(match_times) / len(match_times) if match_times else 0
 
             # Build response message
             response = f"{ctx.author.mention}, here is your player report:\n\n"
@@ -136,14 +157,13 @@ class EloCog(commands.Cog):
             response += f"Total Matches: {total_matches}\n"
             response += f"Wins: {wins}\n"
             response += f"Win Rate: {win_rate:.2f}%\n"
-            response += f"Average Match Time: {avg_match_time:.1f} minutes\n\n"
-            response += f"**Play/Draw Stats:**\n"
+            response += f"Average Match Time: {avg_match_time:.1f} minutes\n"
             response += f"On the Play Wins: {first_player_wins}\n"
             response += f"On the Play Matches: {first_player_matches}\n"
             response += f"On the Play Win Rate: {first_player_win_rate:.2f}%\n"
-            response += f"On the Draw Wins: {second_player_wins}\n"
-            response += f"On the Draw Matches: {second_player_matches}\n"
-            response += f"On the Draw Win Rate: {second_player_win_rate:.2f}%\n"
+            response += f"On the Draw Wins: {draw_wins}\n"
+            response += f"On the Draw Matches: {draw_matches}\n"
+            response += f"On the Draw Win Rate: {draw_win_rate:.2f}%\n"
 
             if avatar_win_loss:
                 response += f"\n**Avatar Performance:**\n"

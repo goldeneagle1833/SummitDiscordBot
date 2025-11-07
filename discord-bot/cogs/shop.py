@@ -3,7 +3,6 @@ from discord.ext import commands
 import datetime
 import sqlite3
 import logging
-from random import randrange
 import random
 from openai import OpenAI
 
@@ -28,10 +27,10 @@ class ShopCog(commands.Cog):
             "red": 10,  # Red Shell
             "green": 10,  # Green Shell
             "banana": 10,  # Banana
-            "star": 200,  # Star
+            "star": 50,  # Star
             "mushroom": 10,  # Mushroom
             "bobomb": 50,  # Bob-omb
-            "bluestar": 250,  # Blue Star - new item
+            "bluestar": 75,  # Blue Star - new item
         }
         logger.info("ShopCog initialized")
 
@@ -320,14 +319,103 @@ class ShopCog(commands.Cog):
 
     @commands.command(name="mushroom")
     async def mushroom(self, ctx):
-        """Placeholder for mushroom item"""
+        """Mushroom Boost - Your next fart gets rolled twice, take the higher result! (Once per week)"""
         if ctx.channel.id != self.fart_channel_id:
             await ctx.send(
                 f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
             )
             return
 
-        await ctx.send("Mushroom feature coming soon!")
+        try:
+            # Check if user has enough points
+            if not await self.check_points(ctx.author.id, "mushroom"):
+                return await ctx.send(
+                    f"You don't have enough points! Mushroom Boost costs {self.item_costs['mushroom']} points!"
+                )
+
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+
+            # Create lucky charms table if it doesn't exist
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS lucky_charms (
+                    user_id INTEGER PRIMARY KEY,
+                    activated_at TEXT
+                )
+            """)
+
+            # Create weekly usage tracking table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS lucky_charm_usage (
+                    user_id INTEGER,
+                    command_name TEXT,
+                    last_used TEXT,
+                    PRIMARY KEY (user_id, command_name)
+                )
+            """)
+
+            # Check weekly cooldown
+            cur.execute(
+                "SELECT last_used FROM lucky_charm_usage WHERE user_id = ? AND command_name = 'mushroom'",
+                (ctx.author.id,),
+            )
+            cooldown_result = cur.fetchone()
+
+            if cooldown_result:
+                last_used_date = datetime.datetime.fromisoformat(cooldown_result[0]).date()
+                if last_used_date + datetime.timedelta(weeks=1) > datetime.datetime.now().date():
+                    days_remaining = (last_used_date + datetime.timedelta(weeks=1) - datetime.datetime.now().date()).days
+                    conn.close()
+                    return await ctx.send(
+                        f"You can only use Mushroom Boost once per week! Try again in {days_remaining} day{'s' if days_remaining != 1 else ''}."
+                    )
+
+            # Check if user already has an active lucky charm
+            cur.execute(
+                "SELECT activated_at FROM lucky_charms WHERE user_id = ?",
+                (ctx.author.id,),
+            )
+            result = cur.fetchone()
+
+            if result:
+                conn.close()
+                return await ctx.send(
+                    f"You already have a Mushroom Boost active! Use `!fart` to consume it first."
+                )
+
+            # Deduct the cost
+            await self.deduct_points(ctx.author.id, "mushroom")
+
+            # Activate the lucky charm
+            now = datetime.datetime.now()
+            cur.execute(
+                "INSERT INTO lucky_charms (user_id, activated_at) VALUES (?, ?)",
+                (ctx.author.id, now.isoformat()),
+            )
+
+            # Update weekly usage cooldown
+            cur.execute(
+                """
+                INSERT INTO lucky_charm_usage (user_id, command_name, last_used)
+                VALUES (?, 'mushroom', ?)
+                ON CONFLICT(user_id, command_name) 
+                DO UPDATE SET last_used = ?
+                """,
+                (ctx.author.id, now.isoformat(), now.isoformat()),
+            )
+
+            conn.commit()
+            conn.close()
+
+            await ctx.send(
+                f" **Mushroom Boost Activated!** \n"
+                f"<@{ctx.author.id}> Your next `!fart` will be rolled twice, and you'll get the higher result!"
+            )
+
+        except Exception as e:
+            logger.error(f"Error in mushroom command: {e}")
+            await ctx.send("An error occurred while processing the command.")
+            raise
 
     @commands.command(name="bobomb")
     async def bobomb(self, ctx):
@@ -405,8 +493,12 @@ class ShopCog(commands.Cog):
                 "Hits a random player behind you with 2d20/2 damage",
                 10,
             ),
-            ("Star (!star)", "Protects you from all items for 24 hours", 200),
-            ("Mushroom (!mushroom)", "Coming soon!", 10),
+            ("Star (!star)", "Protects you from all items for 24 hours", 50),
+            (
+                "Mushroom (!mushroom)",
+                "Mushroom Boost - Next fart rolls twice, take higher! (Once per week)",
+                10,
+            ),
             (
                 "Bob-omb (!bobomb)",
                 "Hits the top 5 players with 3d20/2 damage",
@@ -415,7 +507,7 @@ class ShopCog(commands.Cog):
             (
                 "Blue Star (!bluestar)",
                 "Hits the leader with 4d20/2 damage AND protects you for 12 hours",
-                300,
+                75,
             ),
         ]
 

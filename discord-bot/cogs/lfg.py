@@ -384,17 +384,24 @@ class LFGCog(commands.Cog):
     @commands.command()
     async def lfg(self, ctx, timeframe: int = 30):
         """Usage: !lfg [minutes]"""
+        logger.info(f"LFG command started - User: {ctx.author} (ID: {ctx.author.id}), Channel: {ctx.channel}, Timeframe: {timeframe}")
+        
         self.clean_expired_lfg()
+        logger.info(f"Cleaned expired LFG entries. Current queue size: {len(lfg_queue)}")
+        
         owner_id = 296846802924208130
         channel_id = 1336912830867439676
         owner = await self.bot.fetch_user(owner_id)
         lfg_channel = self.bot.get_channel(channel_id)
 
         if owner:
+            logger.info(f"Sending notification to owner about {ctx.author}'s LFG request")
             await owner.send(f"{ctx.author} used the !lfg command in #{ctx.channel}.")
 
         matched_user_id = self.check_if_someone_is_lfg(ctx)
+        logger.info(f"Checked for existing LFG users. Matched user ID: {matched_user_id}")
         if matched_user_id and matched_user_id != ctx.author.id:
+            logger.info(f"Match found! Pairing {ctx.author.id} with {matched_user_id}")
             matched_user = await self.bot.fetch_user(matched_user_id)
             view_ctx = LFGReportButtons(
                 ctx.author.id,
@@ -403,6 +410,7 @@ class LFGCog(commands.Cog):
                 matched_user_id,
                 matched_user.global_name,
             )
+            logger.info(f"Sending match report to {ctx.author} via DM")
             await ctx.author.send("Match report:", view=view_ctx)
             await ctx.send(
                 f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game!"
@@ -415,32 +423,48 @@ class LFGCog(commands.Cog):
                 ctx.author.id,
                 ctx.author.global_name,
             )
+            logger.info(f"Sending match report to {matched_user} via DM")
             await matched_user.send(
                 f"You've been matched with {ctx.author.mention} for a game!",
                 view=view_matched,
             )
             self.pair_players(ctx)
+            logger.info(f"Announcing match in LFG channel")
             await lfg_channel.send(
                 f"A match was found! {SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]} and "
                 f"{SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]} have been paired for a game."
             )
         elif matched_user_id == ctx.author.id:
+            logger.info(f"User {ctx.author.id} is already in queue")
             await ctx.send(
                 f"{ctx.author.mention}, you are already in the LFG queue. Please wait for someone to match with you."
             )
         else:
+            logger.info(f"No match found. Adding {ctx.author.id} to queue for {timeframe} minutes")
             self.add_to_lfg_queue(ctx, timeframe)
-            await ctx.author.send(
-                f"You have been added to the queue for looking for a game for "
-                f"{timeframe} minutes. You can also use the `!lfg` command here to join the queue privately."
-            )
+            logger.info(f"User added to queue. Queue contents: {lfg_queue}")
+            
+            try:
+                await ctx.author.send(
+                    f"You have been added to the queue for looking for a game for "
+                    f"{timeframe} minutes. You can also use the `!lfg` command here to join the queue privately."
+                )
+                logger.info(f"DM sent successfully to {ctx.author}")
+            except discord.Forbidden:
+                logger.warning(f"Could not send DM to {ctx.author} (ID: {ctx.author.id}) - DMs might be disabled")
+            except Exception as e:
+                logger.error(f"Error sending DM to {ctx.author}: {e}")
+            
             if lfg_channel:
+                logger.info(f"Announcing new LFG entry in channel {channel_id}")
                 await lfg_channel.send(
                     f"A {SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]} is now looking for a game "
                     f"for {timeframe} minutes! Message me with the `!lfg` command to join them."
                 )
+            else:
+                logger.warning(f"LFG channel {channel_id} not found")
 
-        logger.info(f"LFG command invoked by {ctx.author}")
+        logger.info(f"LFG command completed for {ctx.author} (ID: {ctx.author.id})")
 
     @commands.command()
     async def checklfg(self, ctx):

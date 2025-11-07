@@ -60,7 +60,7 @@ async def on_member_join(member):
             value=(
                 " <#1336912830867439676> - Use `!lfg` here to find games\n"
                 " <#1379476865089142844> - Check out event decks and decklists\n"
-                " <#1424374255721775175> - Latest Spoilers\n"
+                " <#1424374255721775175> - Latest Spoilers   \n"
                 " <#1402265039951368273> - Silly fun and games"
             ),
             inline=False,

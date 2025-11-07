@@ -218,13 +218,13 @@ class FunCog(commands.Cog):
 
         # Fart Types Section
         embed.add_field(
-            name="💨 Fart Types (Roll Ranges)",
+            name="💨 Fart Types (Roll Ranges = Points)",
             value=(
-                "💨 Ordinary (66-100) - Common\n"
-                "💨💨 Exceptional (36-65) - Uncommon\n"
-                "💨💨💨 Elite (16-35) - Rare\n"
-                "💨💨💨💨 Unique (6-15) - Very Rare\n"
-                "💩💨💨💨💨 Curio Shart (1-5) - Legendary"
+                "💨 Ordinary (1-35 points) - Common\n"
+                "💨💨 Exceptional (36-65 points) - Uncommon\n"
+                "💨💨💨 Elite (66-85 points) - Rare\n"
+                "💨💨💨💨 Unique (86-95 points) - Very Rare\n"
+                "💩💨💨💨💨 Curio Shart (96-100 points) - Legendary"
             ),
             inline=False,
         )
@@ -403,16 +403,49 @@ class FunCog(commands.Cog):
 
             # Roll and point calculation
             roll = randrange(1, 101)
-            if roll < 5:
+            
+            # Check for Lucky Charm
+            lucky_charm_active = False
+            try:
+                conn = sqlite3.connect("fart_scores.db")
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT activated_at FROM lucky_charms WHERE user_id = ?",
+                    (ctx.author.id,),
+                )
+                charm_result = cur.fetchone()
+                
+                if charm_result:
+                    # Lucky charm is active - roll twice and take higher
+                    lucky_charm_active = True
+                    roll2 = randrange(1, 101)
+                    original_roll = roll
+                    roll = max(roll, roll2)
+                    
+                    # Remove the lucky charm after use
+                    cur.execute(
+                        "DELETE FROM lucky_charms WHERE user_id = ?",
+                        (ctx.author.id,),
+                    )
+                    conn.commit()
+                
+                conn.close()
+            except sqlite3.Error as e:
+                logger.error(f"Error checking lucky charm: {e}")
+                if "conn" in locals():
+                    conn.close()
+            
+            # Determine fart type based on roll (higher is better now)
+            if roll >= 96:
                 fart_message = "Curio Shart! 💩💨💨💨💨"
                 fart_type = "curio_shart"
-            elif roll <= 15:
+            elif roll >= 86:
                 fart_message = "Unique Fart! 💨💨💨💨"
                 fart_type = "unique"
-            elif roll <= 35:
+            elif roll >= 66:
                 fart_message = "Elite Fart! 💨💨💨"
                 fart_type = "elite"
-            elif roll <= 65:
+            elif roll >= 36:
                 fart_message = "Exceptional Fart! 💨💨"
                 fart_type = "exceptional"
             else:
@@ -420,7 +453,7 @@ class FunCog(commands.Cog):
                 fart_type = "ordinary"
 
             now = datetime.datetime.now()
-            points_earned = 100 - roll
+            points_earned = roll  # Points equal to roll value
 
             # Save fart type with error handling
             try:
@@ -499,8 +532,13 @@ class FunCog(commands.Cog):
                         fart_message_add = "... *cough cough*"
 
                     syphoners_text = ", ".join(syphoner_names)
+                    mushroom_boost_msg = (
+                        " **MUSHROOM BOOST ACTIVATED!** \n"
+                        if lucky_charm_active
+                        else ""
+                    )
                     await ctx.send(
-                        f"{fart_message} {fart_message_add}\n\n"
+                        f"{mushroom_boost_msg}{fart_message} {fart_message_add}\n\n"
                         f"💀 **SYPHONED BY {num_syphoners} SORCERER{'S' if num_syphoners > 1 else ''}!** "
                         f"{syphoners_text} stole points! "
                         f"You earned {remaining_points} points."
@@ -518,8 +556,13 @@ class FunCog(commands.Cog):
                     self.save_fart_score(
                         now, ctx.author.id, ctx.author.global_name, points_earned
                     )
+                    mushroom_boost_msg = (
+                        "**MUSHROOM BOOST ACTIVATED!** \n"
+                        if lucky_charm_active
+                        else ""
+                    )
                     await ctx.send(
-                        f"{fart_message} {fart_message_add} You earned {points_earned} points."
+                        f"{mushroom_boost_msg}{fart_message} {fart_message_add} You earned {points_earned} points."
                     )
 
             except Exception as e:
@@ -632,21 +675,23 @@ class FunCog(commands.Cog):
                 return
 
             roll = randrange(1, 101)
-            if roll < 5:
+            if roll >= 96:
                 fart_message = "Curio Shart Attack! 💩💨💨💨💨"
-            elif roll <= 15:
+                fart_type = "curio_shart"
+            elif roll >= 86:
                 fart_message = "Unique Fart Bomb! 💨💨💨💨"
-            elif roll <= 35:
+                fart_type = "unique"
+            elif roll >= 66:
                 fart_message = "Elite Fart Barrage! 💨💨💨"
                 fart_type = "elite"
-            elif roll <= 65:
+            elif roll >= 36:
                 fart_message = "Exceptional Fart Strike! 💨💨"
                 fart_type = "exceptional"
             else:
                 fart_message = "Ordinary Fart Puff! 💨"
                 fart_type = "ordinary"
 
-            roll = 100 - roll
+            damage = roll  # Damage equals roll value
 
             # Get the leaderboard
             cur.execute(
@@ -662,7 +707,7 @@ class FunCog(commands.Cog):
                 return
 
             # Update the leader's score
-            new_leader_score = max(0, leader_score - roll)
+            new_leader_score = max(0, leader_score - damage)
             cur.execute(
                 "UPDATE fart_scores SET score=? WHERE user_id=?",
                 (new_leader_score, leader_id),
@@ -678,7 +723,7 @@ class FunCog(commands.Cog):
             conn.commit()
 
             chatgpt = self.openai_response_to_attack(
-                fart_message, ctx.author.name, roll
+                fart_message, ctx.author.name, damage
             )
 
             await ctx.send(
@@ -1218,7 +1263,7 @@ class FunCog(commands.Cog):
 
 class FartPredictionView(discord.ui.View):
     def __init__(self, cog, user_id):
-        super().__init__()
+        super().__init__(timeout=300)  # 5 minute timeout
         self.cog = cog
         self.user_id = user_id
         self.chosen_prediction = None
@@ -1293,15 +1338,48 @@ class FartPredictionView(discord.ui.View):
             return
 
         roll = randrange(1, 101)
-        if roll < 5:
+        
+        # Check for Mushroom Boost
+        mushroom_boost_active = False
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT activated_at FROM lucky_charms WHERE user_id = ?",
+                (self.user_id,),
+            )
+            charm_result = cur.fetchone()
+            
+            if charm_result:
+                # Mushroom boost is active - roll twice and take higher
+                mushroom_boost_active = True
+                roll2 = randrange(1, 101)
+                original_roll = roll
+                roll = max(roll, roll2)
+                
+                # Remove the mushroom boost after use
+                cur.execute(
+                    "DELETE FROM lucky_charms WHERE user_id = ?",
+                    (self.user_id,),
+                )
+                conn.commit()
+            
+            conn.close()
+        except sqlite3.Error as e:
+            logger.error(f"Error checking mushroom boost in prediction: {e}")
+            if "conn" in locals():
+                conn.close()
+        
+        if roll >= 96:
             fart_message = "Curio Shart! 💩💨💨💨💨"
-        elif roll <= 15:
+            fart_type = "curio_shart"
+        elif roll >= 86:
             fart_message = "Unique Fart! 💨💨💨💨"
             fart_type = "unique"
-        elif roll <= 35:
+        elif roll >= 66:
             fart_message = "Elite Fart! 💨💨💨"
             fart_type = "elite"
-        elif roll <= 65:
+        elif roll >= 36:
             fart_message = "Exceptional Fart! 💨💨"
             fart_type = "exceptional"
         else:
@@ -1309,7 +1387,7 @@ class FartPredictionView(discord.ui.View):
             fart_type = "ordinary"
 
         now = datetime.datetime.now()
-        points_earned = 100 - roll
+        points_earned = roll  # Points equal to roll value
 
         if self.chosen_prediction == fart_message:
             points_earned *= 2
@@ -1321,8 +1399,14 @@ class FartPredictionView(discord.ui.View):
         cog.save_fart_score(now, self.user_id, ctx.user.global_name, points_earned)
         fart_message_add = cog.openai_response(fart_message, ctx.user.name)
 
+        mushroom_boost_msg = (
+            " **MUSHROOM BOOST ACTIVATED!** \n"
+            if mushroom_boost_active
+            else ""
+        )
+
         await ctx.response.send_message(
-            f"{fart_message} {fart_message_add} {result_message} You earned {points_earned} points."
+            f"{mushroom_boost_msg}{fart_message} {fart_message_add} {result_message} You earned {points_earned} points."
         )
 
         await cog.update_fart_leader_role(ctx)

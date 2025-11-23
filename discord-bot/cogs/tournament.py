@@ -780,11 +780,20 @@ class TournamentCog(commands.Cog):
     @commands.command()
     async def my_round(self, ctx):
         """View your current match and report your win"""
+        logger.info(
+            f"my_round command invoked by {ctx.author.name} (ID: {ctx.author.id})"
+        )
+
         # Find the player's current active match across all tournaments
         player_match = None
-        print("Checking active tournaments for player match...")
+        logger.debug(
+            f"Checking {len(active_tournaments)} active tournaments for player match..."
+        )
 
-        for tournament in active_tournaments.values():
+        for tournament_id, tournament in active_tournaments.items():
+            logger.debug(
+                f"Checking tournament {tournament_id} ({tournament['name']}) - Status: {tournament['status']}"
+            )
             if tournament["status"] != "in_progress":
                 continue
 
@@ -794,12 +803,17 @@ class TournamentCog(commands.Cog):
                     match["player2"],
                 ]:
                     player_match = match
-                    pass  # Tournament found, continue with the code below
+                    logger.info(
+                        f"Found active match for {ctx.author.name}: Match ID {match['id']} in tournament {tournament['name']} (Round {match['round']})"
+                    )
                     break
             if player_match:
                 break
 
         if not player_match:
+            logger.info(
+                f"No active matches found for {ctx.author.name} (ID: {ctx.author.id})"
+            )
             await ctx.send("You don't have any active matches at the moment!")
             return
 
@@ -808,9 +822,15 @@ class TournamentCog(commands.Cog):
         for t_id, tournament in active_tournaments.items():
             if any(m["id"] == player_match["id"] for m in tournament["matches"]):
                 tournament_id = t_id
+                logger.debug(
+                    f"Match belongs to tournament {tournament_id} ({tournament['name']})"
+                )
                 break
 
         if player_match["status"] == "completed":
+            logger.warning(
+                f"Match {player_match['id']} is already completed but was found as active for {ctx.author.name}"
+            )
             await ctx.send("This match has already been completed!")
             return
 
@@ -820,7 +840,22 @@ class TournamentCog(commands.Cog):
             if ctx.author.id == player_match["player1"]
             else player_match["player1"]
         )
-        opponent = await self.bot.fetch_user(opponent_id)
+
+        try:
+            opponent = await self.bot.fetch_user(opponent_id)
+            logger.debug(
+                f"Retrieved opponent info: {opponent.name} (ID: {opponent_id})"
+            )
+        except discord.NotFound:
+            logger.error(
+                f"Could not fetch opponent user with ID {opponent_id} for match {player_match['id']}"
+            )
+            await ctx.send("Error: Could not retrieve opponent information!")
+            return
+        except Exception as e:
+            logger.error(f"Error fetching opponent user {opponent_id}: {str(e)}")
+            await ctx.send("Error: Could not retrieve opponent information!")
+            return
 
         # Create an embed to display the match
         embed = discord.Embed(
@@ -831,10 +866,21 @@ class TournamentCog(commands.Cog):
 
         # Send the match information with a report button
         view = MatchReportButton(tournament_id, player_match["id"], ctx.author.id)
-        message = await ctx.send(embed=embed, view=view)
 
-        # Store message reference for timeout handling
-        view.message = message
+        try:
+            message = await ctx.send(embed=embed, view=view)
+            logger.info(
+                f"Sent match report interface for {ctx.author.name} vs {opponent.name} (Match ID: {player_match['id']})"
+            )
+
+            # Store message reference for timeout handling
+            view.message = message
+        except Exception as e:
+            logger.error(
+                f"Error sending match report interface for {ctx.author.name}: {str(e)}"
+            )
+            await ctx.send("Error: Could not display match information!")
+            return
 
         # Return to let the button handle the win reporting
         return
@@ -976,7 +1022,7 @@ class TournamentCog(commands.Cog):
 
         # Add list of registered players
         registered_players = []
-        for player_id in tournament['players']:
+        for player_id in tournament["players"]:
             try:
                 player = await self.bot.fetch_user(player_id)
                 registered_players.append(player.name)
@@ -985,14 +1031,14 @@ class TournamentCog(commands.Cog):
 
         # Sort players alphabetically
         registered_players.sort()
-        
+
         # Split into columns if many players
         if len(registered_players) > 10:
             # Create two columns
             half = (len(registered_players) + 1) // 2
             col1 = registered_players[:half]
             col2 = registered_players[half:]
-            
+
             # Format columns with padding
             max_len = max(len(name) for name in registered_players)
             player_list = ""
@@ -1008,9 +1054,7 @@ class TournamentCog(commands.Cog):
             player_list = "\n".join(registered_players)
 
         embed.add_field(
-            name="Registered Players",
-            value=f"```\n{player_list}```",
-            inline=False
+            name="Registered Players", value=f"```\n{player_list}```", inline=False
         )
 
         if not tournament["matches"]:

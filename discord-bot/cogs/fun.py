@@ -8,6 +8,49 @@ from openai import OpenAI
 
 import config
 
+def safe_parse_datetime(date_string):
+    """
+    Safely parse datetime strings that might have malformed ISO format.
+    Handles cases where day/month are not zero-padded.
+    """
+    if not date_string:
+        return None
+    
+    try:
+        # Try normal fromisoformat first
+        return datetime.datetime.fromisoformat(date_string)
+    except ValueError:
+        try:
+            # If it fails, try to fix common formatting issues
+            # Handle single-digit day/month (e.g., '2025-11-9' -> '2025-11-09')
+            import re
+            
+            # Pattern to match ISO-like datetime with potentially single-digit day/month
+            pattern = r'^(\d{4})-(\d{1,2})-(\d{1,2})T(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d+))?$'
+            match = re.match(pattern, date_string)
+            
+            if match:
+                year, month, day, hour, minute, second, microsecond = match.groups()
+                
+                # Zero-pad single digits
+                month = month.zfill(2)
+                day = day.zfill(2)
+                hour = hour.zfill(2)
+                
+                # Reconstruct the datetime string
+                fixed_string = f"{year}-{month}-{day}T{hour}:{minute}:{second}"
+                if microsecond:
+                    fixed_string += f".{microsecond}"
+                
+                return datetime.datetime.fromisoformat(fixed_string)
+            else:
+                # If regex doesn't match, log the issue and return None
+                logger.error(f"Could not parse datetime string: {date_string}")
+                return None
+        except Exception as e:
+            logger.error(f"Error parsing datetime string '{date_string}': {e}")
+            return None
+
 logger = logging.getLogger("discord_bot")
 
 openai = OpenAI(api_key=config.OPENAI_API_KEY)
@@ -249,9 +292,11 @@ class FunCog(commands.Cog):
         )
         row = cur.fetchone()
         if row:
-            last_fart_date = datetime.datetime.fromisoformat(row[0]).date()
-            if last_fart_date == datetime.datetime.now().date():
-                did_user_fart_today = True
+            parsed_datetime = safe_parse_datetime(row[0])
+            if parsed_datetime:
+                last_fart_date = parsed_datetime.date()
+                if last_fart_date == datetime.datetime.now().date():
+                    did_user_fart_today = True
         conn.close()
 
         if did_user_fart_today:
@@ -384,9 +429,11 @@ class FunCog(commands.Cog):
                 )
                 row = cur.fetchone()
                 if row:
-                    last_fart_date = datetime.datetime.fromisoformat(row[0]).date()
-                    if last_fart_date == datetime.datetime.now().date():
-                        did_user_fart_today = True
+                    parsed_datetime = safe_parse_datetime(row[0])
+                    if parsed_datetime:
+                        last_fart_date = parsed_datetime.date()
+                        if last_fart_date == datetime.datetime.now().date():
+                            did_user_fart_today = True
             except sqlite3.Error as e:
                 logger.error(f"Database error while checking fart status: {e}")
                 await ctx.send(
@@ -666,9 +713,11 @@ class FunCog(commands.Cog):
             )
             row = cur.fetchone()
             if row:
-                last_fart_date = datetime.datetime.fromisoformat(row[0]).date()
-                if last_fart_date == datetime.datetime.now().date():
-                    did_user_fart_today = True
+                parsed_datetime = safe_parse_datetime(row[0])
+                if parsed_datetime:
+                    last_fart_date = parsed_datetime.date()
+                    if last_fart_date == datetime.datetime.now().date():
+                        did_user_fart_today = True
 
             if did_user_fart_today:
                 await ctx.send(f"{ctx.author.mention} {daily_usage_message}")
@@ -755,9 +804,11 @@ class FunCog(commands.Cog):
             )
             row = cur.fetchone()
             if row:
-                last_fart_date = datetime.datetime.fromisoformat(row[0]).date()
-                if last_fart_date == datetime.datetime.now().date():
-                    did_user_fart_today = True
+                parsed_datetime = safe_parse_datetime(row[0])
+                if parsed_datetime:
+                    last_fart_date = parsed_datetime.date()
+                    if last_fart_date == datetime.datetime.now().date():
+                        did_user_fart_today = True
 
             if did_user_fart_today:
                 await ctx.send(f"{ctx.author.mention} {daily_usage_message}")
@@ -927,8 +978,26 @@ class FunCog(commands.Cog):
             )
             return
 
+        embed = discord.Embed(
+            title="🔮 Fart Prediction Challenge",
+            description="Choose your prediction wisely! \n✅ **Correct = 2x points** \n❌ **Wrong = half points**",
+            color=discord.Color.purple()
+        )
+        embed.add_field(
+            name="💨 Fart Types & Odds",
+            value=(
+                "💩💨💨💨💨 **Curio Shart** (4% chance) - 96-100 points\n"
+                "💨💨💨💨 **Unique Fart** (10% chance) - 86-95 points\n"
+                "💨💨💨 **Elite Fart** (20% chance) - 66-85 points\n"
+                "💨💨 **Exceptional Fart** (30% chance) - 36-65 points\n"
+                "💨 **Ordinary Fart** (36% chance) - 1-35 points"
+            ),
+            inline=False
+        )
+        embed.set_footer(text="Use the dropdown menu below to make your prediction!")
+        
         view = FartPredictionView(self, ctx.author.id)
-        await ctx.send("Predict your fart!", view=view)
+        await ctx.send(embed=embed, view=view)
 
     @commands.command()
     async def bullfart(self, ctx):
@@ -965,17 +1034,19 @@ class FunCog(commands.Cog):
         row = cur.fetchone()
 
         if row:
-            last_used_date = datetime.datetime.fromisoformat(row[0]).date()
-            # Check if a week has passed since the last use
-            if (
-                last_used_date + datetime.timedelta(weeks=1)
-                > datetime.datetime.now().date()
-            ):
-                await ctx.send(
-                    f"{ctx.author.mention}, you can only use this command once a week!"
-                )
-                conn.close()
-                return
+            parsed_datetime = safe_parse_datetime(row[0])
+            if parsed_datetime:
+                last_used_date = parsed_datetime.date()
+                # Check if a week has passed since the last use
+                if (
+                    last_used_date + datetime.timedelta(weeks=1)
+                    > datetime.datetime.now().date()
+                ):
+                    await ctx.send(
+                        f"{ctx.author.mention}, you can only use this command once a week!"
+                    )
+                    conn.close()
+                    return
 
         # Get the user's most recent fart from fart_history
         cur.execute(
@@ -1266,75 +1337,114 @@ class FartPredictionView(discord.ui.View):
         super().__init__(timeout=300)  # 5 minute timeout
         self.cog = cog
         self.user_id = user_id
-        self.chosen_prediction = None
-        self.ctx = None
 
     async def interaction_check(self, interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                "This button is not for you!", ephemeral=True
+                "This prediction is not for you!", ephemeral=True
             )
             return False
         return True
 
-    @discord.ui.button(label="Curio Shart", style=discord.ButtonStyle.primary)
-    async def curio_shart(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        await self.handle_prediction(interaction, "Curio Shart! 💩💨💨💨💨")
+    @discord.ui.select(
+        placeholder="🔮 Choose your fart prediction...",
+        min_values=1,
+        max_values=1,
+        options=[
+            discord.SelectOption(
+                label="Curio Shart",
+                value="curio_shart",
+                emoji="💩",
+                description="96-100 points • 4% chance • LEGENDARY"
+            ),
+            discord.SelectOption(
+                label="Unique Fart",
+                value="unique_fart", 
+                emoji="🌟",
+                description="86-95 points • 10% chance • VERY RARE"
+            ),
+            discord.SelectOption(
+                label="Elite Fart",
+                value="elite_fart",
+                emoji="⚡",
+                description="66-85 points • 20% chance • RARE"
+            ),
+            discord.SelectOption(
+                label="Exceptional Fart",
+                value="exceptional_fart",
+                emoji="✨",
+                description="36-65 points • 30% chance • UNCOMMON"
+            ),
+            discord.SelectOption(
+                label="Ordinary Fart",
+                value="ordinary_fart",
+                emoji="💨",
+                description="1-35 points • 36% chance • COMMON"
+            )
+        ]
+    )
+    async def prediction_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+        selected_value = select.values[0]
+        
+        # Map select values to fart messages
+        prediction_mapping = {
+            "curio_shart": "Curio Shart! 💩💨💨💨💨",
+            "unique_fart": "Unique Fart! 💨💨💨💨", 
+            "elite_fart": "Elite Fart! 💨💨💨",
+            "exceptional_fart": "Exceptional Fart! 💨💨",
+            "ordinary_fart": "Ordinary Fart! 💨"
+        }
+        
+        chosen_prediction = prediction_mapping[selected_value]
+        await self.handle_prediction(interaction, chosen_prediction)
 
-    @discord.ui.button(label="Unique Fart", style=discord.ButtonStyle.primary)
-    async def unique_fart(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        await self.handle_prediction(interaction, "Unique Fart! 💨💨💨💨")
 
-    @discord.ui.button(label="Elite Fart", style=discord.ButtonStyle.primary)
-    async def elite_fart(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        await self.handle_prediction(interaction, "Elite Fart! 💨💨💨")
 
-    @discord.ui.button(label="Exceptional Fart", style=discord.ButtonStyle.primary)
-    async def exceptional_fart(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        await self.handle_prediction(interaction, "Exceptional Fart! 💨💨")
 
-    @discord.ui.button(label="Ordinary Fart", style=discord.ButtonStyle.primary)
+
+
+
+    @discord.ui.button(label="�", style=discord.ButtonStyle.secondary)
     async def ordinary_fart(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         await self.handle_prediction(interaction, "Ordinary Fart! 💨")
 
     async def handle_prediction(self, interaction: discord.Interaction, prediction):
-        self.chosen_prediction = prediction
-        self.ctx = interaction
-        self.stop()
+        await interaction.response.defer()
+        await self.process_fart(interaction, prediction)
+        
+        # Disable the select menu and edit the message
+        for item in self.children:
+            item.disabled = True
+        await interaction.edit_original_response(view=self)
 
-        await self.process_fart()
-        await interaction.message.delete()
-
-    async def process_fart(self):
-        ctx = self.ctx
+    async def process_fart(self, interaction: discord.Interaction, chosen_prediction: str):
         cog = self.cog
 
+        # Check if user already used daily action
         did_user_fart_today = False
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
-        cur.execute(
-            "SELECT date_last_updated FROM fart_scores WHERE user_id=?",
-            (self.user_id,),
-        )
-        row = cur.fetchone()
-        if row:
-            last_fart_date = datetime.datetime.fromisoformat(row[0]).date()
-            if last_fart_date == datetime.datetime.now().date():
-                did_user_fart_today = True
-        conn.close()
+        try:
+            cur.execute(
+                "SELECT date_last_updated FROM fart_scores WHERE user_id=?",
+                (self.user_id,),
+            )
+            row = cur.fetchone()
+            if row:
+                parsed_datetime = safe_parse_datetime(row[0])
+                if parsed_datetime:
+                    last_fart_date = parsed_datetime.date()
+                    if last_fart_date == datetime.datetime.now().date():
+                        did_user_fart_today = True
+        except sqlite3.Error as e:
+            logger.error(f"Error checking daily action: {e}")
+        finally:
+            conn.close()
 
         if did_user_fart_today:
-            await ctx.response.send_message(f"<@{self.user_id}>, {daily_usage_message}")
+            await interaction.followup.send(f"<@{self.user_id}>, {daily_usage_message}")
             return
 
         roll = randrange(1, 101)
@@ -1370,6 +1480,7 @@ class FartPredictionView(discord.ui.View):
             if "conn" in locals():
                 conn.close()
         
+        # Determine actual fart result
         if roll >= 96:
             fart_message = "Curio Shart! 💩💨💨💨💨"
             fart_type = "curio_shart"
@@ -1389,27 +1500,44 @@ class FartPredictionView(discord.ui.View):
         now = datetime.datetime.now()
         points_earned = roll  # Points equal to roll value
 
-        if self.chosen_prediction == fart_message:
+        # Check if prediction was correct
+        if chosen_prediction == fart_message:
             points_earned *= 2
             result_message = "\n🎉 You predicted correctly! Your points are doubled!"
         else:
             points_earned //= 2
             result_message = "\n😢 Wrong prediction! Your points are halved."
 
-        cog.save_fart_score(now, self.user_id, ctx.user.global_name, points_earned)
-        fart_message_add = cog.openai_response(fart_message, ctx.user.name)
+        # Save the fart type to history
+        try:
+            cog.save_fart_type(self.user_id, interaction.user.global_name, fart_type, roll, now)
+        except Exception as e:
+            logger.error(f"Error saving fart type: {e}")
+
+        cog.save_fart_score(now, self.user_id, interaction.user.global_name, points_earned)
+        
+        try:
+            fart_message_add = cog.openai_response(fart_message, interaction.user.name)
+        except Exception as e:
+            logger.error(f"OpenAI API error: {e}")
+            fart_message_add = "... *magical silence*"
 
         mushroom_boost_msg = (
-            " **MUSHROOM BOOST ACTIVATED!** \n"
+            "**MUSHROOM BOOST ACTIVATED!** \n"
             if mushroom_boost_active
             else ""
         )
 
-        await ctx.response.send_message(
-            f"{mushroom_boost_msg}{fart_message} {fart_message_add} {result_message} You earned {points_earned} points."
+        await interaction.followup.send(
+            f"🔮 **Your Prediction:** {chosen_prediction}\n"
+            f"💨 **Actual Result:** {mushroom_boost_msg}{fart_message} {fart_message_add}\n"
+            f"{result_message} You earned **{points_earned}** points!"
         )
 
-        await cog.update_fart_leader_role(ctx)
+        try:
+            await cog.update_fart_leader_role(interaction)
+        except Exception as e:
+            logger.error(f"Error updating leader role: {e}")
 
 
 async def setup(bot):

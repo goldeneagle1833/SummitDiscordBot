@@ -147,6 +147,7 @@ class ShopCog(commands.Cog):
         return players[target_index] if 0 <= target_index < len(players) else None
 
     @commands.command(name="blueshell")
+    @commands.cooldown(1, 45, commands.BucketType.user)
     async def blue_shell(self, ctx):
         logger.debug(f"Blue shell command used by {ctx.author.id}")
         if ctx.channel.id != self.fart_channel_id:
@@ -188,6 +189,7 @@ class ShopCog(commands.Cog):
             raise
 
     @commands.command(name="redshell")
+    @commands.cooldown(1, 45, commands.BucketType.user)
     async def red_shell(self, ctx):
         """Hit the player directly in front"""
         if ctx.channel.id != self.fart_channel_id:
@@ -216,6 +218,7 @@ class ShopCog(commands.Cog):
         )
 
     @commands.command(name="greenshell")
+    @commands.cooldown(1, 45, commands.BucketType.user)
     async def green_shell(self, ctx):
         """Hit a random player in front"""
         if ctx.channel.id != self.fart_channel_id:
@@ -244,6 +247,7 @@ class ShopCog(commands.Cog):
         )
 
     @commands.command(name="banana")
+    @commands.cooldown(1, 45, commands.BucketType.user)
     async def banana(self, ctx):
         """Hit a random player behind"""
         if ctx.channel.id != self.fart_channel_id:
@@ -272,6 +276,7 @@ class ShopCog(commands.Cog):
         )
 
     @commands.command(name="star")
+    @commands.cooldown(1, 45, commands.BucketType.user)
     async def star(self, ctx):
         logger.debug(f"Star command used by {ctx.author.id}")
         try:
@@ -318,6 +323,7 @@ class ShopCog(commands.Cog):
             raise
 
     @commands.command(name="mushroom")
+    @commands.cooldown(1, 45, commands.BucketType.user)
     async def mushroom(self, ctx):
         """Mushroom Boost - Your next fart gets rolled twice, take the higher result! (Once per week)"""
         if ctx.channel.id != self.fart_channel_id:
@@ -418,6 +424,7 @@ class ShopCog(commands.Cog):
             raise
 
     @commands.command(name="bobomb")
+    @commands.cooldown(1, 45, commands.BucketType.user)
     async def bobomb(self, ctx):
         """Hit the top 5 players with explosion damage"""
         logger.debug(f"Bob-omb command used by {ctx.author.id}")
@@ -537,6 +544,7 @@ class ShopCog(commands.Cog):
             raise
 
     @commands.command(name="bluestar")
+    @commands.cooldown(1, 45, commands.BucketType.user)
     async def blue_star(self, ctx):
         """Damages the leader and gives protection to the user"""
         logger.debug(f"Blue Star command used by {ctx.author.id}")

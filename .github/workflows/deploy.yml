@@ -1,0 +1,59 @@
+name: Deploy Discord Bot to Linode
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Linode
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LINODE_HOST }}
+          username: ${{ secrets.LINODE_USERNAME }}
+          key: ${{ secrets.LINODE_SSH_KEY }}
+          port: 22
+          script: |
+            echo "Starting deployment..."
+
+            # Navigate to project directory
+            cd ~/Summit/SummitDiscordBot
+
+            # Stop the bot service
+            sudo systemctl stop discordbot || echo "Service not running"
+
+            # Pull latest changes
+            git pull origin main
+
+            # Update Python dependencies
+            cd discord-bot
+            source venv/bin/activate
+            pip install -r requirements.txt
+
+            # Copy any new data files if needed
+            # (You might want to be careful here to not overwrite live data)
+
+            # Start the bot service
+            sudo systemctl start discordbot
+
+            # Wait a moment for service to start
+            sleep 5
+
+            # Check if service is running
+            if sudo systemctl is-active --quiet discordbot; then
+              echo "✅ Bot service is running successfully!"
+              sudo systemctl status discordbot --no-pager
+            else
+              echo "❌ Bot service failed to start!"
+              sudo journalctl -u discordbot --no-pager -n 10
+              exit 1
+            fi
+
+            echo "🚀 Deployment completed successfully!"

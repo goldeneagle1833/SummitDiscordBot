@@ -37,7 +37,7 @@ summit-bot/
 - LFG queue management
 - Match pairing system
 - Match reporting modals and buttons
-- Commands: `!lfg`, `!checklfg`, `!cancel`
+- Commands: `!lfg`, `!check_lfg`, `!cancel`
 
 #### `cogs/elo.py`
 

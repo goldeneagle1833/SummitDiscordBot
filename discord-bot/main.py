@@ -72,7 +72,7 @@ async def on_member_join(member):
             value=(
                 "• `!help` - See all features\n"
                 "• `!commands` - Full command list\n"
-                "• `!lfghelp` - Learn LFG system"
+                "• `!lfg_help` - Learn LFG system"
             ),
             inline=False,
         )

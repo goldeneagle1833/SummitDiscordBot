@@ -143,9 +143,33 @@ class TournamentMatchModal(discord.ui.Modal, title="Tournament Match Report"):
 
         # Get the tournament and match data
         tournament = active_tournaments.get(self.tournament_id)
+        if not tournament:
+            await interaction.followup.send("Tournament not found!", ephemeral=True)
+            return
+
         match = next(
             (m for m in tournament["matches"] if m["id"] == self.match_id), None
         )
+        if not match:
+            await interaction.followup.send("Match not found!", ephemeral=True)
+            return
+
+        # Validate that the user is actually part of this specific match
+        if interaction.user.id not in [match["player1"], match["player2"]]:
+            logger.warning(
+                f"Unauthorized match report attempt by {interaction.user.id} for match {self.match_id}"
+            )
+            await interaction.followup.send(
+                "You are not part of this match!", ephemeral=True
+            )
+            return
+
+        # Check if match is already completed
+        if match["status"] == "completed":
+            await interaction.followup.send(
+                "This match has already been reported!", ephemeral=True
+            )
+            return
 
         # Record match details
         curiosa_link = (
@@ -178,6 +202,10 @@ class TournamentMatchModal(discord.ui.Modal, title="Tournament Match Report"):
         }
         save_tournaments()
 
+        logger.info(
+            f"Match {self.match_id} completed - Winner: {match['winner']}, Round: {match['round']}, Tournament: {self.tournament_name}"
+        )
+
         # Get opponent name for the database record
         opponent_id = (
             match["player2"]
@@ -207,12 +235,53 @@ class TournamentMatchModal(discord.ui.Modal, title="Tournament Match Report"):
             match_comment=f"[Tournament: {self.tournament_name}] {match_comment}",
         )
 
-        await interaction.followup.send(
-            f"✅ Tournament match report submitted for {self.tournament_name} Round {match['round']}!\n"
-            f"**Deck URL:** {curiosa_link}\n"
-            f"**Match Time:** {match_time} minutes",
-            ephemeral=True,
-        )
+        # Create result message
+        result_message = f"✅ Tournament match report submitted for {self.tournament_name} Round {match['round']}!\n"
+        result_message += f"**Winner:** {'You' if self.is_winner else opponent_name}\n"
+        result_message += f"**Deck URL:** {curiosa_link}\n"
+        result_message += f"**Match Time:** {match_time} minutes"
+
+        # Check if the round is complete and create next round matches if needed
+        current_round = match["round"]
+        round_matches = [
+            m for m in tournament["matches"] if m["round"] == current_round
+        ]
+        all_completed = all(m["status"] == "completed" for m in round_matches)
+
+        if all_completed:
+            winners_count = len([m for m in round_matches if m["winner"] is not None])
+            if winners_count >= 2:  # Need at least 2 winners to create a new match
+                try:
+                    cog = interaction.client.get_cog("TournamentCog")
+                    if cog:
+                        new_matches = await cog.create_next_round_match(
+                            tournament, round_matches
+                        )
+                        if new_matches:
+                            result_message += (
+                                f"\n\n🎉 Round {current_round} is complete! "
+                                f"Next round matches have been created. "
+                                f"Use `!my_round` to view your next match!"
+                            )
+                        else:
+                            result_message += "\n\n🏆 Tournament complete! Congratulations to the winner!"
+                    else:
+                        logger.error(
+                            "TournamentCog not found - cannot create next round matches"
+                        )
+                except Exception as e:
+                    logger.error(f"Error creating next round matches: {str(e)}")
+
+        # Disable the buttons for this match to prevent duplicate submissions
+        try:
+            # We need to find and disable the view that created this modal
+            # This is a bit tricky since we don't have a direct reference
+            # The interaction should be from the modal, but we need to handle this differently
+            pass  # Button disabling will be handled by the view timeout or other mechanisms
+        except Exception as e:
+            logger.error(f"Error disabling buttons after match submission: {str(e)}")
+
+        await interaction.followup.send(result_message, ephemeral=True)
 
 
 class MatchReportButton(discord.ui.View):
@@ -222,6 +291,23 @@ class MatchReportButton(discord.ui.View):
         self.match_id = match_id
         self.user_id = user_id
         self.disabled = False
+
+    def validate_match_state(self) -> tuple[bool, str]:
+        """Validate that the match is still in a reportable state"""
+        tournament = active_tournaments.get(self.tournament_id)
+        if not tournament:
+            return False, "Tournament not found!"
+
+        match = next(
+            (m for m in tournament["matches"] if m["id"] == self.match_id), None
+        )
+        if not match:
+            return False, "Match not found!"
+
+        if match["status"] == "completed":
+            return False, "This match has already been reported!"
+
+        return True, ""
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.user_id:
@@ -246,27 +332,42 @@ class MatchReportButton(discord.ui.View):
     async def report_win(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        # Validate match state first
+        is_valid, error_message = self.validate_match_state()
+        if not is_valid:
+            await interaction.response.send_message(error_message, ephemeral=True)
+            return
+
         if self.disabled:
             await interaction.response.send_message(
                 "This match has already been reported!", ephemeral=True
             )
             return
 
+        # Get fresh tournament and match data
         tournament = active_tournaments.get(self.tournament_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "Tournament not found!", ephemeral=True
-            )
-            return
-
         match = next(
             (m for m in tournament["matches"] if m["id"] == self.match_id), None
         )
-        if not match or match["status"] == "completed":
+
+        # Validate that the user is actually part of this specific match
+        if interaction.user.id not in [match["player1"], match["player2"]]:
+            logger.warning(
+                f"Unauthorized win report attempt by {interaction.user.id} for match {self.match_id} in tournament {tournament['name']}"
+            )
             await interaction.response.send_message(
-                "Match not found or already completed!", ephemeral=True
+                "You are not part of this match!", ephemeral=True
             )
             return
+
+        logger.info(
+            f"Win button clicked by {interaction.user.name} (ID: {interaction.user.id}) for Match ID: {self.match_id} in tournament {tournament['name']}"
+        )
+
+        # Disable buttons to prevent double-submission
+        self.disabled = True
+        for child in self.children:
+            child.disabled = True
 
         # Send modal for detailed match report
         await interaction.response.send_modal(
@@ -278,139 +379,52 @@ class MatchReportButton(discord.ui.View):
             )
         )
 
-        logger.info(
-            f"Win button clicked by {interaction.user.name} (ID: {interaction.user.id})"
-        )
-        logger.info(f"Tournament ID: {self.tournament_id}, Match ID: {self.match_id}")
-
-        tournament = active_tournaments.get(self.tournament_id)
-        if not tournament:
-            logger.error(
-                f"Tournament {self.tournament_id} not found in active tournaments"
-            )
-            await interaction.response.send_message(
-                "Tournament not found!", ephemeral=True
-            )
-            return
-
-        match = next(
-            (m for m in tournament["matches"] if m["id"] == self.match_id), None
-        )
-        if not match:
-            logger.error(
-                f"Match {self.match_id} not found in tournament {self.tournament_id}"
-            )
-            await interaction.response.send_message("Match not found!", ephemeral=True)
-            return
-
-        if match["status"] == "completed":
-            await interaction.response.send_message(
-                "This match has already been reported!", ephemeral=True
-            )
-            return
-
-        logger.info(
-            f"Match found - Round: {match['round']}, Players: {match['player1']} vs {match['player2']}"
-        )
-        if interaction.user.id not in [match["player1"], match["player2"]]:
-            logger.warning(
-                f"Unauthorized win report attempt by {interaction.user.id} for match {self.match_id}"
-            )
-            await interaction.response.send_message(
-                "You are not part of this match!", ephemeral=True
-            )
-            return
-
-        # Update match with winner
-        match["winner"] = interaction.user.id
-        match["status"] = "completed"
-        save_tournaments()
-
-        # Get opponent for the announcement
-        opponent_id = (
-            match["player2"]
-            if interaction.user.id == match["player1"]
-            else match["player1"]
-        )
+        # Update the message to show disabled buttons
         try:
-            opponent = await interaction.client.fetch_user(opponent_id)
-            victory_message = f"Victory recorded for {interaction.user.mention} against {opponent.mention} in round {match['round']}!"
-        except discord.NotFound:
-            victory_message = f"Victory recorded for {interaction.user.name}!"
-
-        # Update the bracket display
-        try:
-            cog = interaction.client.get_cog("TournamentCog")
-            if cog:
-                logger.info("Generating updated bracket display")
-                bracket_display = await cog.generate_bracket_display(tournament)
-                if interaction.message:
-                    await interaction.message.edit(content=bracket_display)
-                    logger.info("Successfully updated bracket display")
-                else:
-                    logger.warning(
-                        "Could not update bracket - interaction message not found"
-                    )
-            else:
-                logger.error("TournamentCog not found - cannot update bracket display")
+            await interaction.edit_original_response(view=self)
         except Exception as e:
-            logger.error(f"Error updating bracket display: {str(e)}")
-
-        # Check if the round is complete and create next round matches if needed
-        current_round = match["round"]
-        round_matches = [
-            m for m in tournament["matches"] if m["round"] == current_round
-        ]
-        all_completed = all(m["status"] == "completed" for m in round_matches)
-
-        if all_completed:
-            winners_count = len([m for m in round_matches if m["winner"] is not None])
-            if winners_count >= 2:  # Need at least 2 winners to create a new match
-                cog = interaction.client.get_cog("TournamentCog")
-                if cog:
-                    new_matches = await cog.create_next_round_match(
-                        tournament, round_matches
-                    )
-                    if new_matches:
-                        victory_message += (
-                            "\n\nNext round matches have been created! Use `!bracket"
-                            + f" {tournament['name']}`"
-                            + " to view the updated bracket."
-                        )
-
-        # Disable both buttons after a result is reported
-        self.disabled = True
-        for child in self.children:
-            child.disabled = True
-        await interaction.message.edit(view=self)
-
-        await interaction.response.send_message(victory_message)
+            logger.warning(f"Could not update button state: {str(e)}")
 
     @discord.ui.button(label="I Lost 😢", style=discord.ButtonStyle.red)
     async def report_loss(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        # Validate match state first
+        is_valid, error_message = self.validate_match_state()
+        if not is_valid:
+            await interaction.response.send_message(error_message, ephemeral=True)
+            return
+
         if self.disabled:
             await interaction.response.send_message(
                 "This match has already been reported!", ephemeral=True
             )
             return
 
+        # Get fresh tournament and match data
         tournament = active_tournaments.get(self.tournament_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "Tournament not found!", ephemeral=True
-            )
-            return
-
         match = next(
             (m for m in tournament["matches"] if m["id"] == self.match_id), None
         )
-        if not match or match["status"] == "completed":
+
+        # Validate that the user is actually part of this specific match
+        if interaction.user.id not in [match["player1"], match["player2"]]:
+            logger.warning(
+                f"Unauthorized loss report attempt by {interaction.user.id} for match {self.match_id} in tournament {tournament['name']}"
+            )
             await interaction.response.send_message(
-                "Match not found or already completed!", ephemeral=True
+                "You are not part of this match!", ephemeral=True
             )
             return
+
+        logger.info(
+            f"Loss button clicked by {interaction.user.name} (ID: {interaction.user.id}) for Match ID: {self.match_id} in tournament {tournament['name']}"
+        )
+
+        # Disable buttons to prevent double-submission
+        self.disabled = True
+        for child in self.children:
+            child.disabled = True
 
         # Send modal for detailed match report
         await interaction.response.send_modal(
@@ -422,100 +436,11 @@ class MatchReportButton(discord.ui.View):
             )
         )
 
-        logger.info(
-            f"Loss button clicked by {interaction.user.name} (ID: {interaction.user.id})"
-        )
-        logger.info(f"Tournament ID: {self.tournament_id}, Match ID: {self.match_id}")
-
-        tournament = active_tournaments.get(self.tournament_id)
-        if not tournament:
-            logger.error(
-                f"Tournament {self.tournament_id} not found in active tournaments"
-            )
-            await interaction.response.send_message(
-                "Tournament not found!", ephemeral=True
-            )
-            return
-
-        match = next(
-            (m for m in tournament["matches"] if m["id"] == self.match_id), None
-        )
-        if not match:
-            logger.error(
-                f"Match {self.match_id} not found in tournament {self.tournament_id}"
-            )
-            await interaction.response.send_message("Match not found!", ephemeral=True)
-            return
-
-        if match["status"] == "completed":
-            await interaction.response.send_message(
-                "This match has already been reported!", ephemeral=True
-            )
-            return
-
-        # Get opponent as the winner
-        opponent_id = (
-            match["player2"]
-            if interaction.user.id == match["player1"]
-            else match["player1"]
-        )
-        match["winner"] = opponent_id
-        match["status"] = "completed"
-        save_tournaments()
-
+        # Update the message to show disabled buttons
         try:
-            opponent = await interaction.client.fetch_user(opponent_id)
-            loss_message = f"Match result recorded: {opponent.mention} won against {interaction.user.mention} in round {match['round']}!"
-        except discord.NotFound:
-            loss_message = f"Match result recorded: You lost in round {match['round']}!"
-
-        # Update the bracket display
-        try:
-            cog = interaction.client.get_cog("TournamentCog")
-            if cog:
-                logger.info("Generating updated bracket display")
-                bracket_display = await cog.generate_bracket_display(tournament)
-                if interaction.message:
-                    await interaction.message.edit(content=bracket_display)
-                    logger.info("Successfully updated bracket display")
-                else:
-                    logger.warning(
-                        "Could not update bracket - interaction message not found"
-                    )
-            else:
-                logger.error("TournamentCog not found - cannot update bracket display")
+            await interaction.edit_original_response(view=self)
         except Exception as e:
-            logger.error(f"Error updating bracket display: {str(e)}")
-
-        # Check if the round is complete and create next round matches if needed
-        current_round = match["round"]
-        round_matches = [
-            m for m in tournament["matches"] if m["round"] == current_round
-        ]
-        all_completed = all(m["status"] == "completed" for m in round_matches)
-
-        if all_completed:
-            winners_count = len([m for m in round_matches if m["winner"] is not None])
-            if winners_count >= 2:  # Need at least 2 winners to create a new match
-                cog = interaction.client.get_cog("TournamentCog")
-                if cog:
-                    new_matches = await cog.create_next_round_match(
-                        tournament, round_matches
-                    )
-                    if new_matches:
-                        loss_message += (
-                            "\n\nNext round matches have been created! Use `!bracket"
-                            + f" {tournament['name']}`"
-                            + " to view the updated bracket."
-                        )
-
-        # Disable both buttons after a result is reported
-        self.disabled = True
-        for child in self.children:
-            child.disabled = True
-        await interaction.message.edit(view=self)
-
-        await interaction.response.send_message(loss_message)
+            logger.warning(f"Could not update button state: {str(e)}")
 
 
 class CreateTournamentButton(discord.ui.View):
@@ -777,17 +702,19 @@ class TournamentCog(commands.Cog):
 
         await ctx.send(status_msg)
 
-    @commands.command()
+    @commands.command(aliases=['match', 'tournament_match'])
     async def my_round(self, ctx):
-        """View your current match and report your win"""
+        """View your current tournament match and report results"""
         logger.info(
-            f"my_round command invoked by {ctx.author.name} (ID: {ctx.author.id})"
+            f"my_round/match command invoked by {ctx.author.name} (ID: {ctx.author.id})"
         )
 
         # Find the player's current active match across all tournaments
-        player_match = None
+        player_matches = []
+        active_tournament_info = None
+
         logger.debug(
-            f"Checking {len(active_tournaments)} active tournaments for player match..."
+            f"Checking {len(active_tournaments)} active tournaments for player matches..."
         )
 
         for tournament_id, tournament in active_tournaments.items():
@@ -797,36 +724,54 @@ class TournamentCog(commands.Cog):
             if tournament["status"] != "in_progress":
                 continue
 
+            # Find all pending matches for this player in this tournament
             for match in tournament["matches"]:
                 if match["status"] == "pending" and ctx.author.id in [
                     match["player1"],
                     match["player2"],
                 ]:
-                    player_match = match
+                    player_matches.append((match, tournament_id, tournament))
                     logger.info(
                         f"Found active match for {ctx.author.name}: Match ID {match['id']} in tournament {tournament['name']} (Round {match['round']})"
                     )
-                    break
-            if player_match:
-                break
 
-        if not player_match:
+        if not player_matches:
             logger.info(
                 f"No active matches found for {ctx.author.name} (ID: {ctx.author.id})"
             )
             await ctx.send("You don't have any active matches at the moment!")
             return
 
-        # Find the tournament this match belongs to
-        tournament_id = None
-        for t_id, tournament in active_tournaments.items():
-            if any(m["id"] == player_match["id"] for m in tournament["matches"]):
-                tournament_id = t_id
-                logger.debug(
-                    f"Match belongs to tournament {tournament_id} ({tournament['name']})"
-                )
-                break
+        if len(player_matches) > 1:
+            # Multiple active matches - this shouldn't normally happen, but let's handle it
+            logger.warning(
+                f"Multiple active matches found for {ctx.author.name}: {len(player_matches)} matches"
+            )
+            # Select the match from the current round (highest round number)
+            current_round = max(match[0]["round"] for match in player_matches)
+            current_round_matches = [
+                (match, t_id, tournament)
+                for match, t_id, tournament in player_matches
+                if match["round"] == current_round
+            ]
 
+            if len(current_round_matches) > 1:
+                # Still multiple matches in the same round - shouldn't happen, but take the first one
+                logger.error(
+                    f"Multiple matches in round {current_round} for {ctx.author.name} - this indicates a tournament structure issue"
+                )
+
+            player_match, tournament_id, active_tournament_info = current_round_matches[
+                0
+            ]
+        else:
+            player_match, tournament_id, active_tournament_info = player_matches[0]
+
+        logger.info(
+            f"Selected match for {ctx.author.name}: Match ID {player_match['id']} in tournament {active_tournament_info['name']} (Round {player_match['round']})"
+        )
+
+        # Double-check that the match is still pending (race condition prevention)
         if player_match["status"] == "completed":
             logger.warning(
                 f"Match {player_match['id']} is already completed but was found as active for {ctx.author.name}"
@@ -844,7 +789,7 @@ class TournamentCog(commands.Cog):
         try:
             opponent = await self.bot.fetch_user(opponent_id)
             logger.debug(
-                f"Retrieved opponent info: {opponent.name} (ID: {opponent_id})"
+                f"Retrieved opponent info: {opponent.name} (ID: {opponent_id}) for match {player_match['id']}"
             )
         except discord.NotFound:
             logger.error(
@@ -857,10 +802,10 @@ class TournamentCog(commands.Cog):
             await ctx.send("Error: Could not retrieve opponent information!")
             return
 
-        # Create an embed to display the match
+        # Create an embed to display the match with tournament context
         embed = discord.Embed(
-            title=f"Round {player_match['round']} Match",
-            description=f"{ctx.author.mention} vs {opponent.mention}\n\n⏰ You have 5 minutes to report the match result.",
+            title=f"🏆 {active_tournament_info['name']} - Round {player_match['round']}",
+            description=f"{ctx.author.mention} vs {opponent.mention}\n\n⏰ You have 5 minutes to report the match result using the buttons below.\n\n**Match ID:** {player_match['id']}\n**Tournament ID:** {tournament_id}",
             color=discord.Color.blue(),
         )
 
@@ -870,7 +815,7 @@ class TournamentCog(commands.Cog):
         try:
             message = await ctx.send(embed=embed, view=view)
             logger.info(
-                f"Sent match report interface for {ctx.author.name} vs {opponent.name} (Match ID: {player_match['id']})"
+                f"Sent match report interface for {ctx.author.name} vs {opponent.name} (Match ID: {player_match['id']}, Tournament: {active_tournament_info['name']})"
             )
 
             # Store message reference for timeout handling
@@ -999,26 +944,19 @@ class TournamentCog(commands.Cog):
             )
             return
 
-        # Prepare description with winner if tournament is completed
-        description = f"Status: {tournament['status']}\n"
-        description += (
-            f"Players: {len(tournament['players'])}/{tournament['max_players']}"
-        )
+        # Build the message as plain text
+        message = f"**🏆 Tournament: {tournament['name']}**\n"
+        message += f"Status: {tournament['status']}\n"
+        message += f"Players: {len(tournament['players'])}/{tournament['max_players']}\n"
 
         if tournament["status"] == "completed" and tournament.get("winner"):
             try:
                 winner = await self.bot.fetch_user(tournament["winner"])
-                description += f"\n🏆 Champion: {winner.name}"
+                message += f"🏆 Champion: {winner.name}\n"
             except discord.NotFound:
-                description += "\n🏆 Champion: Unknown"
+                message += "🏆 Champion: Unknown\n"
 
-        embed = discord.Embed(
-            title=f"🏆 Tournament: {tournament['name']}",
-            description=description,
-            color=discord.Color.gold()
-            if tournament["status"] == "completed"
-            else discord.Color.blue(),
-        )
+        message += "\n**Registered Players:**\n"
 
         # Add list of registered players
         registered_players = []
@@ -1031,39 +969,11 @@ class TournamentCog(commands.Cog):
 
         # Sort players alphabetically
         registered_players.sort()
-
-        # Split into columns if many players
-        if len(registered_players) > 10:
-            # Create two columns
-            half = (len(registered_players) + 1) // 2
-            col1 = registered_players[:half]
-            col2 = registered_players[half:]
-
-            # Format columns with padding
-            max_len = max(len(name) for name in registered_players)
-            player_list = ""
-            for i in range(max(len(col1), len(col2))):
-                row = ""
-                if i < len(col1):
-                    row += f"{col1[i]:<{max_len}}"
-                if i < len(col2):
-                    row += "  " + col2[i]
-                player_list += row + "\n"
-        else:
-            # Single column for fewer players
-            player_list = "\n".join(registered_players)
-
-        embed.add_field(
-            name="Registered Players", value=f"```\n{player_list}```", inline=False
-        )
+        message += ", ".join(registered_players) + "\n\n"
 
         if not tournament["matches"]:
-            embed.add_field(
-                name="Bracket",
-                value="No matches have been scheduled yet.",
-                inline=False,
-            )
-            await ctx.send(embed=embed)
+            message += "No matches have been scheduled yet."
+            await ctx.send(message)
             return
 
         # Group matches by round
@@ -1079,7 +989,7 @@ class TournamentCog(commands.Cog):
         # Create visual bracket for each round
         for round_num in range(1, max_round + 1):
             round_matches = matches_by_round.get(round_num, [])
-            bracket_lines = []
+            message += f"**Round {round_num}**\n"
 
             for match in round_matches:
                 try:
@@ -1098,13 +1008,14 @@ class TournamentCog(commands.Cog):
                             p1_name = f"❌ {p1_name}"
                             p2_name = f"✅ {p2_name}"
 
-                    # Create match display
-                    bracket_lines.append("┌─" + "─" * 24 + "┐")
-                    bracket_lines.append(f"│ {p1_name:<22} │")
-                    bracket_lines.append(f"├─{'vs':^24}┤")
-                    bracket_lines.append(f"│ {p2_name:<22} │")
-                    bracket_lines.append("└─" + "─" * 24 + "┘")
-                    bracket_lines.append("")  # Add space between matches
+                    # Create match display with ASCII art
+                    message += "```\n"
+                    message += "┌─" + "─" * 24 + "┐\n"
+                    message += f"│ {p1_name:<22} │\n"
+                    message += f"├─{'vs':^24}┤\n"
+                    message += f"│ {p2_name:<22} │\n"
+                    message += "└─" + "─" * 24 + "┘\n"
+                    message += "```\n"
 
                 except discord.NotFound:
                     continue
@@ -1112,13 +1023,23 @@ class TournamentCog(commands.Cog):
                     logger.error(f"Error displaying match in bracket: {str(e)}")
                     continue
 
-            if bracket_lines:
-                round_display = "```\n" + "\n".join(bracket_lines) + "```"
-                embed.add_field(
-                    name=f"Round {round_num}", value=round_display, inline=False
-                )
-
-        await ctx.send(embed=embed)
+        # Split message if too long (Discord has 2000 char limit)
+        if len(message) > 2000:
+            chunks = []
+            current_chunk = ""
+            for line in message.split("\n"):
+                if len(current_chunk) + len(line) + 1 > 2000:
+                    chunks.append(current_chunk)
+                    current_chunk = line + "\n"
+                else:
+                    current_chunk += line + "\n"
+            if current_chunk:
+                chunks.append(current_chunk)
+            
+            for chunk in chunks:
+                await ctx.send(chunk)
+        else:
+            await ctx.send(message)
 
     @commands.command()
     @commands.has_permissions(administrator=True)
@@ -1148,10 +1069,77 @@ class TournamentCog(commands.Cog):
         )
 
     @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def debug_matches(self, ctx, *, tournament_name: str = None):
+        """Debug command to show all matches for a tournament (Admin only)"""
+        if tournament_name:
+            tournament_id, tournament = find_tournament_by_name(tournament_name)
+            if not tournament:
+                await ctx.send(
+                    "Tournament not found! Please check the exact tournament name."
+                )
+                return
+
+            tournaments_to_check = [(tournament_id, tournament)]
+        else:
+            tournaments_to_check = list(active_tournaments.items())
+
+        debug_info = "**🔍 Tournament Match Debug Information**\n\n"
+
+        for t_id, tournament in tournaments_to_check:
+            debug_info += f"**Tournament {t_id}: {tournament['name']}** (Status: {tournament['status']})\n"
+
+            if not tournament.get("matches"):
+                debug_info += "  No matches found.\n\n"
+                continue
+
+            # Group matches by round
+            rounds = {}
+            for match in tournament["matches"]:
+                round_num = match["round"]
+                if round_num not in rounds:
+                    rounds[round_num] = []
+                rounds[round_num].append(match)
+
+            for round_num in sorted(rounds.keys()):
+                debug_info += f"  **Round {round_num}:**\n"
+                for match in rounds[round_num]:
+                    try:
+                        player1 = await self.bot.fetch_user(match["player1"])
+                        player2 = await self.bot.fetch_user(match["player2"])
+                        p1_name = player1.name
+                        p2_name = player2.name
+                    except Exception as e:
+                        logger.debug(f"Could not fetch player names: {str(e)}")
+                        p1_name = f"ID:{match['player1']}"
+                        p2_name = f"ID:{match['player2']}"
+
+                    winner_info = ""
+                    if match["winner"]:
+                        try:
+                            winner = await self.bot.fetch_user(match["winner"])
+                            winner_info = f" (Winner: {winner.name})"
+                        except Exception as e:
+                            logger.debug(f"Could not fetch winner name: {str(e)}")
+                            winner_info = f" (Winner ID: {match['winner']})"
+
+                    debug_info += f"    Match {match['id']}: {p1_name} vs {p2_name} - {match['status']}{winner_info}\n"
+
+                debug_info += "\n"
+
+        # Send in chunks if too long
+        if len(debug_info) > 2000:
+            chunks = [debug_info[i : i + 2000] for i in range(0, len(debug_info), 2000)]
+            for chunk in chunks:
+                await ctx.send(chunk)
+        else:
+            await ctx.send(debug_info)
+
+    @commands.command()
     async def tournament_help(self, ctx):
         """Show help information for all tournament commands"""
         embed = discord.Embed(
-            title="Tournament Commands Help",
+            title="🏆 Tournament Commands Help",
             description="Here are all the available tournament commands:",
             color=discord.Color.blue(),
         )
@@ -1162,27 +1150,41 @@ class TournamentCog(commands.Cog):
             "`!start_tournament <name>` - Start a tournament with registered players (Admin only)\n"
             "`!complete_tournament <name>` - Complete and finalize a tournament (Admin only)\n"
             "`!remove <name> @user` - Remove a player from a tournament (Admin only)\n"
+            "`!debug_matches [tournament_name]` - Debug match information (Admin only)\n"
         )
         embed.add_field(name="🛡️ Admin Commands", value=admin_commands, inline=False)
 
         # Player Commands
         player_commands = (
             "`!join <tournament_name>` - Join a tournament during registration\n"
-            "`!my_round` - View your current match and report results\n"
+            "`!match` or `!my_round` - View your current match and report results\n"
             "`!bracket <tournament_name>` - View the current tournament bracket\n"
         )
         embed.add_field(name="👥 Player Commands", value=player_commands, inline=False)
 
+        # How Match Reporting Works
+        reporting_info = (
+            "**Match Reporting:**\n"
+            "1. Use `!match` to view your current match\n"
+            "2. Click **'I Won! 🏆'** or **'I Lost 😢'** button\n"
+            "3. Fill in match details (deck URL, time, notes)\n"
+            "4. Match result is automatically recorded\n"
+        )
+        embed.add_field(name="📝 How to Report Matches", value=reporting_info, inline=False)
+
         # Usage Examples
         examples = (
-            "**Example Usage:**\n"
+            "**Example Flow:**\n"
             "1. Admin creates tournament: `!create_tournament`\n"
-            "2. Players join: `!join tournament_name`\n"
-            "3. Admin starts: `!start_tournament tournament_name`\n"
-            "4. Players check matches: `!my_round`\n"
-            "5. View progress: `!bracket tournament_name`\n"
+            "2. Players join: `!join Summit Championship`\n"
+            "3. Admin starts: `!start_tournament Summit Championship`\n"
+            "4. Check your match: `!match`\n"
+            "5. Report result using the buttons shown\n"
+            "6. View bracket: `!bracket Summit Championship`\n"
         )
-        embed.add_field(name="📝 Examples", value=examples, inline=False)
+        embed.add_field(name="� Example Flow", value=examples, inline=False)
+
+        embed.set_footer(text="Use !help_lfg for Looking For Game commands")
 
         await ctx.send(embed=embed)
 

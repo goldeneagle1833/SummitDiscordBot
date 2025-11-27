@@ -89,7 +89,7 @@ class UtilityCog(commands.Cog):
             value=(
                 "Find matches and report results:\n"
                 "`!lfg [minutes]` - Join queue for X minutes (default 30)\n"
-                "`!checklfg` - See who's in queue\n"
+                "`!check_lfg` - See who's in queue\n"
                 "`!challenge @user` - Challenge specific player\n"
                 "`!cancel` - Leave the queue\n"
                 "`!record_game` - Record a match result manually"
@@ -175,9 +175,9 @@ class UtilityCog(commands.Cog):
         embed.add_field(
             name="🎮 Looking For Game (LFG)",
             value=(
-                "`!lfghelp` - Learn how to use the LFG system\n"
+                "`!lfg_help` - Learn how to use the LFG system\n"
                 "`!lfg [minutes]` - Join queue for X minutes (default 30)\n"
-                "`!checklfg` - Check who's in queue\n"
+                "`!check_lfg` - Check who's in queue\n"
                 "`!challenge @user` - Challenge specific player\n"
                 "`!cancel` - Leave the queue\n"
                 "`!record_game` - Record a match result manually"
@@ -238,10 +238,10 @@ class UtilityCog(commands.Cog):
                 "`!fartprediction` - Predict fart type for 2x points\n"
                 "`!bullfart` - Get bonus points (weekly)\n\n"
                 "Shop & Items:\n"
-                "`!fartshop` - View available items\n"
-                "`!blueshell` - Hit leader with damage (14 pts)\n"
-                "`!redshell` - Hit player in front (10 pts)\n"
-                "`!greenshell` - Hit random front player (10 pts)\n"
+                "`!fart_shop` - View available items\n"
+                "`!blue_shell` - Hit leader with damage (14 pts)\n"
+                "`!red_shell` - Hit player in front (10 pts)\n"
+                "`!green_shell` - Hit random front player (10 pts)\n"
                 "`!banana` - Hit random player behind (10 pts)\n"
                 "`!star` - Get 24h protection (50 pts)\n\n"
                 "Scores & Stats:\n"
@@ -272,7 +272,7 @@ class UtilityCog(commands.Cog):
                 "• Tournament commands require proper tournament context\n"
                 "• `!challenge` must be used in #lfg channel\n"
                 "• Fun system commands have daily/weekly limits\n"
-                "• Use specific help commands (`!lfghelp`, `!tournament_help`, `!helpfart`) for details"
+                "• Use specific help commands (`!lfg_help`, `!tournament_help`, `!helpfart`) for details"
             ),
             inline=False,
         )

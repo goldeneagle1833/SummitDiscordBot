@@ -467,7 +467,7 @@ class LFGCog(commands.Cog):
         logger.info(f"LFG command completed for {ctx.author} (ID: {ctx.author.id})")
 
     @commands.command()
-    async def checklfg(self, ctx):
+    async def check_lfg(self, ctx):
         """Check if anyone is currently in the LFG queue."""
         self.clean_expired_lfg()
         if len(lfg_queue) > 0:
@@ -527,7 +527,7 @@ class LFGCog(commands.Cog):
             )
 
     @commands.command()
-    async def help_lfg(self, ctx):
+    async def lfg_help(self, ctx):
         """Get detailed help for the Looking For Game (LFG) system."""
         embed = discord.Embed(
             title="🎮 Looking For Game (LFG) System",
@@ -540,7 +540,7 @@ class LFGCog(commands.Cog):
             name="🔍 Queue Commands",
             value=(
                 "`!lfg [minutes]` - Join queue for X minutes (default 30)\n"
-                "`!checklfg` - See if anyone is in queue\n"
+                "`!check_lfg` - See if anyone is in queue\n"
                 "`!cancel` - Leave the queue"
             ),
             inline=False,
@@ -560,8 +560,8 @@ class LFGCog(commands.Cog):
         embed.add_field(
             name="📝 Match Reporting",
             value=(
-                "After matching or accepting a challenge:\n"
-                "• Both players get match report buttons in DMs\n"
+                "**Matched Games:** Both players get match report buttons in DMs\n"
+                "**Solo Games:** Use `!record_game` to report any match played outside the bot\n"
                 "• Report win/loss using the buttons\n"
                 "• Optional: Add deck URL and match details"
             ),
@@ -574,11 +574,13 @@ class LFGCog(commands.Cog):
             value=(
                 "• Queue time can be 5-120 minutes\n"
                 "• Direct challenges expire after 5 minutes\n"
+                "• Use `!record_game` for matches played outside bot system\n"
+                "• For tournaments, use `!match` instead (see `!tournament_help`)"
             ),
             inline=False,
         )
 
-        embed.set_footer(text="Type !help for a list of all available commands")
+        embed.set_footer(text="Type !tournament_help for tournament commands")
 
         await ctx.send(embed=embed)
 

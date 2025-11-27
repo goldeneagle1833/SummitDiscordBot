@@ -8,6 +8,7 @@ from openai import OpenAI
 
 import config
 
+
 def safe_parse_datetime(date_string):
     """
     Safely parse datetime strings that might have malformed ISO format.
@@ -15,7 +16,7 @@ def safe_parse_datetime(date_string):
     """
     if not date_string:
         return None
-    
+
     try:
         # Try normal fromisoformat first
         return datetime.datetime.fromisoformat(date_string)
@@ -24,24 +25,26 @@ def safe_parse_datetime(date_string):
             # If it fails, try to fix common formatting issues
             # Handle single-digit day/month (e.g., '2025-11-9' -> '2025-11-09')
             import re
-            
+
             # Pattern to match ISO-like datetime with potentially single-digit day/month
-            pattern = r'^(\d{4})-(\d{1,2})-(\d{1,2})T(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d+))?$'
+            pattern = (
+                r"^(\d{4})-(\d{1,2})-(\d{1,2})T(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d+))?$"
+            )
             match = re.match(pattern, date_string)
-            
+
             if match:
                 year, month, day, hour, minute, second, microsecond = match.groups()
-                
+
                 # Zero-pad single digits
                 month = month.zfill(2)
                 day = day.zfill(2)
                 hour = hour.zfill(2)
-                
+
                 # Reconstruct the datetime string
                 fixed_string = f"{year}-{month}-{day}T{hour}:{minute}:{second}"
                 if microsecond:
                     fixed_string += f".{microsecond}"
-                
+
                 return datetime.datetime.fromisoformat(fixed_string)
             else:
                 # If regex doesn't match, log the issue and return None
@@ -50,6 +53,7 @@ def safe_parse_datetime(date_string):
         except Exception as e:
             logger.error(f"Error parsing datetime string '{date_string}': {e}")
             return None
+
 
 logger = logging.getLogger("discord_bot")
 
@@ -235,6 +239,7 @@ class FunCog(commands.Cog):
             name="📊 Score Commands",
             value=(
                 "`!fartrank` - Check your score and ranking\n"
+                "`!fartrank @user` - Check another user's score and ranking\n"
                 "`!fartleaderboard` - View top 5 farters\n"
                 "`!syphonstatus` - Check active syphons"
             ),
@@ -450,7 +455,7 @@ class FunCog(commands.Cog):
 
             # Roll and point calculation
             roll = randrange(1, 101)
-            
+
             # Check for Lucky Charm
             lucky_charm_active = False
             try:
@@ -461,27 +466,27 @@ class FunCog(commands.Cog):
                     (ctx.author.id,),
                 )
                 charm_result = cur.fetchone()
-                
+
                 if charm_result:
                     # Lucky charm is active - roll twice and take higher
                     lucky_charm_active = True
                     roll2 = randrange(1, 101)
                     original_roll = roll
                     roll = max(roll, roll2)
-                    
+
                     # Remove the lucky charm after use
                     cur.execute(
                         "DELETE FROM lucky_charms WHERE user_id = ?",
                         (ctx.author.id,),
                     )
                     conn.commit()
-                
+
                 conn.close()
             except sqlite3.Error as e:
                 logger.error(f"Error checking lucky charm: {e}")
                 if "conn" in locals():
                     conn.close()
-            
+
             # Determine fart type based on roll (higher is better now)
             if roll >= 96:
                 fart_message = "Curio Shart! 💩💨💨💨💨"
@@ -604,9 +609,7 @@ class FunCog(commands.Cog):
                         now, ctx.author.id, ctx.author.global_name, points_earned
                     )
                     mushroom_boost_msg = (
-                        "**MUSHROOM BOOST ACTIVATED!** \n"
-                        if lucky_charm_active
-                        else ""
+                        "**MUSHROOM BOOST ACTIVATED!** \n" if lucky_charm_active else ""
                     )
                     await ctx.send(
                         f"{mushroom_boost_msg}{fart_message} {fart_message_add} You earned {points_earned} points."
@@ -635,18 +638,22 @@ class FunCog(commands.Cog):
             )
 
     @commands.command()
-    async def fartrank(self, ctx):
-        """Check your fart score and rank."""
+    async def fartrank(self, ctx, user: discord.Member = None):
+        """Check your fart score and rank, or check another user's rank by tagging them."""
         if ctx.channel.id != self.fart_channel_id:
             await ctx.send(
                 f"{ctx.author.mention}, please use the fart commands in <#{self.fart_channel_id}>."
             )
             return
 
-        logger.info(f"Checking fart rank for user {ctx.author.id}")
+        # Determine which user to check
+        target_user = user if user else ctx.author
+        is_self = target_user == ctx.author
+
+        logger.info(f"Checking fart rank for user {target_user.id}")
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
-        cur.execute("SELECT score FROM fart_scores WHERE user_id=?", (ctx.author.id,))
+        cur.execute("SELECT score FROM fart_scores WHERE user_id=?", (target_user.id,))
         row = cur.fetchone()
         if row:
             user_score = row[0]
@@ -654,14 +661,26 @@ class FunCog(commands.Cog):
                 "SELECT COUNT(*) FROM fart_scores WHERE score > ?", (user_score,)
             )
             rank = cur.fetchone()[0] + 1
-            await ctx.send(
-                f"{ctx.author.mention}, your fart score is {user_score} and your rank is #{rank}."
-            )
+
+            if is_self:
+                await ctx.send(
+                    f"{ctx.author.mention}, your fart score is {user_score} and your rank is #{rank}."
+                )
+            else:
+                await ctx.send(
+                    f"{target_user.display_name}'s fart score is {user_score} and their rank is #{rank}."
+                )
         else:
-            await ctx.send(
-                f"{ctx.author.mention}, you don't have a fart score yet. "
-                "Use the `!fart` command to start earning points!"
-            )
+            if is_self:
+                await ctx.send(
+                    f"{ctx.author.mention}, you don't have a fart score yet. "
+                    "Use the `!fart` command to start earning points!"
+                )
+            else:
+                await ctx.send(
+                    f"{target_user.display_name} doesn't have a fart score yet. "
+                    "They need to use the `!fart` command to start earning points!"
+                )
         conn.close()
         await self.update_fart_leader_role(ctx)
 
@@ -981,7 +1000,7 @@ class FunCog(commands.Cog):
         embed = discord.Embed(
             title="🔮 Fart Prediction Challenge",
             description="Choose your prediction wisely! \n✅ **Correct = 2x points** \n❌ **Wrong = half points**",
-            color=discord.Color.purple()
+            color=discord.Color.purple(),
         )
         embed.add_field(
             name="💨 Fart Types & Odds",
@@ -992,10 +1011,10 @@ class FunCog(commands.Cog):
                 "💨💨 **Exceptional Fart** (30% chance) - 36-65 points\n"
                 "💨 **Ordinary Fart** (36% chance) - 1-35 points"
             ),
-            inline=False
+            inline=False,
         )
         embed.set_footer(text="Use the dropdown menu below to make your prediction!")
-        
+
         view = FartPredictionView(self, ctx.author.id)
         await ctx.send(embed=embed, view=view)
 
@@ -1355,56 +1374,52 @@ class FartPredictionView(discord.ui.View):
                 label="Curio Shart",
                 value="curio_shart",
                 emoji="💩",
-                description="96-100 points • 4% chance • LEGENDARY"
+                description="96-100 points • 4% chance • LEGENDARY",
             ),
             discord.SelectOption(
                 label="Unique Fart",
-                value="unique_fart", 
+                value="unique_fart",
                 emoji="🌟",
-                description="86-95 points • 10% chance • VERY RARE"
+                description="86-95 points • 10% chance • VERY RARE",
             ),
             discord.SelectOption(
                 label="Elite Fart",
                 value="elite_fart",
                 emoji="⚡",
-                description="66-85 points • 20% chance • RARE"
+                description="66-85 points • 20% chance • RARE",
             ),
             discord.SelectOption(
                 label="Exceptional Fart",
                 value="exceptional_fart",
                 emoji="✨",
-                description="36-65 points • 30% chance • UNCOMMON"
+                description="36-65 points • 30% chance • UNCOMMON",
             ),
             discord.SelectOption(
                 label="Ordinary Fart",
                 value="ordinary_fart",
                 emoji="💨",
-                description="1-35 points • 36% chance • COMMON"
-            )
-        ]
+                description="1-35 points • 36% chance • COMMON",
+            ),
+        ],
     )
-    async def prediction_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+    async def prediction_select(
+        self, interaction: discord.Interaction, select: discord.ui.Select
+    ):
         selected_value = select.values[0]
-        
+
         # Map select values to fart messages
         prediction_mapping = {
             "curio_shart": "Curio Shart! 💩💨💨💨💨",
-            "unique_fart": "Unique Fart! 💨💨💨💨", 
+            "unique_fart": "Unique Fart! 💨💨💨💨",
             "elite_fart": "Elite Fart! 💨💨💨",
             "exceptional_fart": "Exceptional Fart! 💨💨",
-            "ordinary_fart": "Ordinary Fart! 💨"
+            "ordinary_fart": "Ordinary Fart! 💨",
         }
-        
+
         chosen_prediction = prediction_mapping[selected_value]
         await self.handle_prediction(interaction, chosen_prediction)
 
-
-
-
-
-
-
-    @discord.ui.button(label="�", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="💨", style=discord.ButtonStyle.secondary)
     async def ordinary_fart(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
@@ -1413,13 +1428,15 @@ class FartPredictionView(discord.ui.View):
     async def handle_prediction(self, interaction: discord.Interaction, prediction):
         await interaction.response.defer()
         await self.process_fart(interaction, prediction)
-        
+
         # Disable the select menu and edit the message
         for item in self.children:
             item.disabled = True
         await interaction.edit_original_response(view=self)
 
-    async def process_fart(self, interaction: discord.Interaction, chosen_prediction: str):
+    async def process_fart(
+        self, interaction: discord.Interaction, chosen_prediction: str
+    ):
         cog = self.cog
 
         # Check if user already used daily action
@@ -1448,7 +1465,7 @@ class FartPredictionView(discord.ui.View):
             return
 
         roll = randrange(1, 101)
-        
+
         # Check for Mushroom Boost
         mushroom_boost_active = False
         try:
@@ -1459,27 +1476,27 @@ class FartPredictionView(discord.ui.View):
                 (self.user_id,),
             )
             charm_result = cur.fetchone()
-            
+
             if charm_result:
                 # Mushroom boost is active - roll twice and take higher
                 mushroom_boost_active = True
                 roll2 = randrange(1, 101)
                 original_roll = roll
                 roll = max(roll, roll2)
-                
+
                 # Remove the mushroom boost after use
                 cur.execute(
                     "DELETE FROM lucky_charms WHERE user_id = ?",
                     (self.user_id,),
                 )
                 conn.commit()
-            
+
             conn.close()
         except sqlite3.Error as e:
             logger.error(f"Error checking mushroom boost in prediction: {e}")
             if "conn" in locals():
                 conn.close()
-        
+
         # Determine actual fart result
         if roll >= 96:
             fart_message = "Curio Shart! 💩💨💨💨💨"
@@ -1510,12 +1527,16 @@ class FartPredictionView(discord.ui.View):
 
         # Save the fart type to history
         try:
-            cog.save_fart_type(self.user_id, interaction.user.global_name, fart_type, roll, now)
+            cog.save_fart_type(
+                self.user_id, interaction.user.global_name, fart_type, roll, now
+            )
         except Exception as e:
             logger.error(f"Error saving fart type: {e}")
 
-        cog.save_fart_score(now, self.user_id, interaction.user.global_name, points_earned)
-        
+        cog.save_fart_score(
+            now, self.user_id, interaction.user.global_name, points_earned
+        )
+
         try:
             fart_message_add = cog.openai_response(fart_message, interaction.user.name)
         except Exception as e:
@@ -1523,9 +1544,7 @@ class FartPredictionView(discord.ui.View):
             fart_message_add = "... *magical silence*"
 
         mushroom_boost_msg = (
-            "**MUSHROOM BOOST ACTIVATED!** \n"
-            if mushroom_boost_active
-            else ""
+            "**MUSHROOM BOOST ACTIVATED!** \n" if mushroom_boost_active else ""
         )
 
         await interaction.followup.send(

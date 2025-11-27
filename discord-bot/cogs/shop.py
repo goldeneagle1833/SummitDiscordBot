@@ -146,7 +146,7 @@ class ShopCog(commands.Cog):
 
         return players[target_index] if 0 <= target_index < len(players) else None
 
-    @commands.command(name="blueshell")
+    @commands.command(name="blue_shell")
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def blue_shell(self, ctx):
         logger.debug(f"Blue shell command used by {ctx.author.id}")
@@ -188,7 +188,7 @@ class ShopCog(commands.Cog):
             await ctx.send("An error occurred while processing the command.")
             raise
 
-    @commands.command(name="redshell")
+    @commands.command(name="red_shell")
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def red_shell(self, ctx):
         """Hit the player directly in front"""
@@ -217,7 +217,7 @@ class ShopCog(commands.Cog):
             f"<@{ctx.author.id}> hit <@{target[0]}> with a Red Shell for {damage} damage!"
         )
 
-    @commands.command(name="greenshell")
+    @commands.command(name="green_shell")
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def green_shell(self, ctx):
         """Hit a random player in front"""
@@ -474,7 +474,7 @@ class ShopCog(commands.Cog):
 
         await ctx.send(response)
 
-    @commands.command(name="fartshop")
+    @commands.command(name="fart_shop")
     async def fart_shop(self, ctx):
         """Display all available shop items"""
         embed = discord.Embed(
@@ -484,14 +484,14 @@ class ShopCog(commands.Cog):
         )
 
         items = [
-            ("Blue Shell (!blueshell)", "Hits the leader with 3d20/2 damage", 14),
+            ("Blue Shell (!blue_shell)", "Hits the leader with 3d20/2 damage", 14),
             (
-                "Red Shell (!redshell)",
+                "Red Shell (!red_shell)",
                 "Hits the player directly in front of you with 2d20/2 damage",
                 10,
             ),
             (
-                "Green Shell (!greenshell)",
+                "Green Shell (!green_shell)",
                 "Hits a random player in front of you with 2d20/2 damage",
                 10,
             ),
@@ -512,7 +512,7 @@ class ShopCog(commands.Cog):
                 50,
             ),
             (
-                "Blue Star (!bluestar)",
+                "Blue Star (!blue_star)",
                 "Hits the leader with 4d20/2 damage AND protects you for 12 hours",
                 75,
             ),
@@ -543,7 +543,7 @@ class ShopCog(commands.Cog):
             logger.error(f"Error deducting damage: {e}")
             raise
 
-    @commands.command(name="bluestar")
+    @commands.command(name="blue_star")
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def blue_star(self, ctx):
         """Damages the leader and gives protection to the user"""

@@ -10,6 +10,7 @@ from cogs.fun import FunCog
 from cogs.utility import UtilityCog
 from cogs.shop import ShopCog
 from cogs.tournament import TournamentCog
+from cogs.slash_commands import SlashCommandsCog
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -39,6 +40,15 @@ bot.remove_command("help")  # Remove default help command
 async def on_ready():
     print(f"Logged in as {bot.user.name}")
     logger.info(f"Bot started as {bot.user.name}")
+    
+    # Sync slash commands
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f"Synced {len(synced)} slash commands")
+        print(f"Synced {len(synced)} slash commands")
+    except Exception as e:
+        logger.error(f"Failed to sync slash commands: {e}")
+        print(f"Failed to sync slash commands: {e}")
 
 
 @bot.event
@@ -70,9 +80,10 @@ async def on_member_join(member):
         embed.add_field(
             name="Bot Commands",
             value=(
-                "• `!help` - See all features\n"
-                "• `!commands` - Full command list\n"
-                "• `!lfg_help` - Learn LFG system"
+                "• Type `/` to see all slash commands (recommended!)\n"
+                "• `!help` or `/help` - See all features\n"
+                "• `!commands` or `/commands` - Full command list\n"
+                "• `!lfg_help` or `/lfg_help` - Learn LFG system"
             ),
             inline=False,
         )
@@ -89,6 +100,7 @@ async def setup_cogs():
     await bot.add_cog(UtilityCog(bot))
     await bot.add_cog(ShopCog(bot))
     await bot.add_cog(TournamentCog(bot))
+    await bot.add_cog(SlashCommandsCog(bot))
 
 
 async def main():

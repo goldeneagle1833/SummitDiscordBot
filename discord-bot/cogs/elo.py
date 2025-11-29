@@ -55,11 +55,11 @@ class EloCog(commands.Cog):
 
     @commands.command()
     async def leaderboard(self, ctx):
-        """Check the top 10 Elo rankings."""
+        """Check the top 16 Elo rankings."""
         conn = sqlite3.connect("elo.db")
         cur = conn.cursor()
         cur.execute(
-            "SELECT user_display_name, elo FROM overall_standings ORDER BY elo DESC LIMIT 10"
+            "SELECT user_display_name, elo FROM overall_standings ORDER BY elo DESC LIMIT 16"
         )
         rows = cur.fetchall()
         if rows:

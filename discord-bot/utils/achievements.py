@@ -34,6 +34,9 @@ def create_profiles_db():
                     win_25_games BOOLEAN DEFAULT 0,
                     elo_1600 BOOLEAN DEFAULT 0,
                     elo_1700 BOOLEAN DEFAULT 0,
+                    elo_1800 BOOLEAN DEFAULT 0,
+                    alpha_avatar BOOLEAN DEFAULT 0,
+                    beta_avatar BOOLEAN DEFAULT 0,
                     play_100_games BOOLEAN DEFAULT 0,
                     first_player_master BOOLEAN DEFAULT 0,
                     comeback_king BOOLEAN DEFAULT 0,
@@ -212,6 +215,20 @@ async def check_elo_1700(discord_id: str) -> bool:
     return False
 
 
+async def check_elo_1800(discord_id: str) -> bool:
+    """Check if user has reached 1800 Elo rating."""
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+    
+    cur.execute("SELECT elo FROM overall_standings WHERE user_id = ?", (discord_id,))
+    row = cur.fetchone()
+    conn.close()
+    
+    if row:
+        return row[0] >= 1800
+    return False
+
+
 async def check_avatar_usage(discord_id: str, avatar_name: str) -> bool:
     """
     Check if user has played a game with a specific avatar.
@@ -299,11 +316,11 @@ async def check_first_player_master(discord_id: str) -> bool:
     wins = sum(1 for row in rows if row[0])
     win_rate = wins / len(rows)
     
-    return win_rate >= 0.60
+    return win_rate >= 0.65
 
 
 async def check_comeback_king(discord_id: str) -> bool:
-    """Check if user has a 55%+ win rate on the draw (minimum 10 games)."""
+    """Check if user has a 60% + win rate on the draw (minimum 10 games)."""
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
     
@@ -325,7 +342,7 @@ async def check_comeback_king(discord_id: str) -> bool:
     wins = sum(1 for row in rows if row[0])
     win_rate = wins / len(rows)
     
-    return win_rate >= 0.55
+    return win_rate >= 0.60
 
 
 async def check_peasants_fury(discord_id: str) -> bool:
@@ -444,13 +461,13 @@ ACHIEVEMENTS = {
     },
     "first_player_master": {
         "name": "First Strike Master",
-        "description": "Achieve 60%+ win rate as first player (min 10 games)",
+        "description": "Achieve 65%+ win rate as first player (min 10 games)",
         "emoji": "⚡",
         "check_func": check_first_player_master
     },
     "comeback_king": {
         "name": "Comeback King",
-        "description": "Achieve 55%+ win rate on the draw (min 10 games)",
+        "description": "Achieve 60%+ win rate on the draw (min 10 games)",
         "emoji": "🔄",
         "check_func": check_comeback_king
     },

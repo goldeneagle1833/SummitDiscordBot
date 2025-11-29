@@ -15,26 +15,42 @@ class EloCog(commands.Cog):
         self.bot = bot
 
     @commands.command()
-    async def rank(self, ctx):
-        """Check your current Elo ranking."""
+    async def rank(self, ctx, user: discord.Member = None):
+        """Check your current Elo ranking, or check another user's rank by tagging them."""
+        # Determine which user to check
+        target_user = user if user else ctx.author
+        is_self = target_user == ctx.author
+
         conn = sqlite3.connect("elo.db")
         cur = conn.cursor()
         cur.execute(
-            "SELECT elo FROM overall_standings WHERE user_id=?", (ctx.author.id,)
+            "SELECT elo FROM overall_standings WHERE user_id=?", (target_user.id,)
         )
         row = cur.fetchone()
         if row:
             elo = row[0]
             cur.execute("SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (elo,))
             rank = cur.fetchone()[0] + 1
-            await ctx.send(
-                f"{ctx.author.mention}, your current Elo rating is {elo} and your rank is #{rank}."
-            )
+            
+            if is_self:
+                await ctx.send(
+                    f"{ctx.author.mention}, your current Elo rating is {elo} and your rank is #{rank}."
+                )
+            else:
+                await ctx.send(
+                    f"{target_user.display_name}'s current Elo rating is {elo} and their rank is #{rank}."
+                )
         else:
-            await ctx.send(
-                f"{ctx.author.mention}, you don't have an Elo rating yet. "
-                "Play some matches to get started!"
-            )
+            if is_self:
+                await ctx.send(
+                    f"{ctx.author.mention}, you don't have an Elo rating yet. "
+                    "Play some matches to get started!"
+                )
+            else:
+                await ctx.send(
+                    f"{target_user.display_name} doesn't have an Elo rating yet. "
+                    "They need to play some matches to get started!"
+                )
         conn.close()
 
     @commands.command()

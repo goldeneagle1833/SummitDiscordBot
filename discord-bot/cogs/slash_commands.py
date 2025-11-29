@@ -284,6 +284,52 @@ class SlashCommandsCog(commands.Cog):
         else:
             await interaction.followup.send("Commands list is not available.", ephemeral=True)
 
+    # ==================== ACHIEVEMENT COMMANDS ====================
+
+    @app_commands.command(name="achievement_profile", description="🏆 View your achievement progress")
+    @app_commands.describe(user="User to view profile for (optional)")
+    async def achievement_profile_slash(self, interaction: discord.Interaction, user: discord.User = None):
+        """View achievement profile - slash command version"""
+        await interaction.response.defer()
+        ctx = FakeContext(self.bot, interaction)
+        
+        # If no user specified, use the command author
+        target_user = user if user else interaction.user
+        
+        achievements_cog = self.bot.get_cog("AchievementsCog")
+        if achievements_cog:
+            await achievements_cog.profile(ctx, target_user)
+        else:
+            await interaction.followup.send("Achievement system is not available.", ephemeral=True)
+
+    @app_commands.command(name="achievement_list", description="🏆 View all available achievements")
+    async def achievement_list_slash(self, interaction: discord.Interaction):
+        """View all achievements - slash command version"""
+        await interaction.response.defer()
+        ctx = FakeContext(self.bot, interaction)
+        
+        achievements_cog = self.bot.get_cog("AchievementsCog")
+        if achievements_cog:
+            await achievements_cog.achievements_list(ctx)
+        else:
+            await interaction.followup.send("Achievement system is not available.", ephemeral=True)
+
+    @app_commands.command(name="achievement_earned", description="🏆 View earned achievements")
+    @app_commands.describe(user="User to check earned achievements for (optional)")
+    async def achievement_earned_slash(self, interaction: discord.Interaction, user: discord.User = None):
+        """View earned achievements - slash command version"""
+        await interaction.response.defer()
+        ctx = FakeContext(self.bot, interaction)
+        
+        # If no user specified, use the command author
+        target_user = user if user else interaction.user
+        
+        achievements_cog = self.bot.get_cog("AchievementsCog")
+        if achievements_cog:
+            await achievements_cog.achievements_earned(ctx, target_user)
+        else:
+            await interaction.followup.send("Achievement system is not available.", ephemeral=True)
+
 
 async def setup(bot):
     await bot.add_cog(SlashCommandsCog(bot))

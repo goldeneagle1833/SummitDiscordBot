@@ -229,13 +229,13 @@ async def check_elo_1800(discord_id: str) -> bool:
     return False
 
 
-async def check_avatar_usage(discord_id: str, avatar_name: str) -> bool:
+async def check_avatar_set_usage(discord_id: str, set_name: str) -> bool:
     """
-    Check if user has played a game with a specific avatar.
+    Check if user has played a game with an avatar from a specific set.
     
     Args:
         discord_id: Discord user ID
-        avatar_name: Name of the avatar to check for
+        set_name: Name of the set to check for (e.g., "Alpha", "Beta", "Arthurian Legends")
     """
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
@@ -255,23 +255,38 @@ async def check_avatar_usage(discord_id: str, avatar_name: str) -> bool:
     for row in rows:
         try:
             deck_data = json.loads(row[0])
-            avatar = deck_data.get("avatar", [{}])
-            if avatar and avatar[0].get("name", "").lower() == avatar_name.lower():
-                return True
-        except (json.JSONDecodeError, KeyError, IndexError):
+            avatar = deck_data.get("avatar", [])
+            
+            if avatar and len(avatar) > 0:
+                # Check if the avatar card has the set in its data
+                avatar_card = avatar[0]
+                
+                # The avatar card might have the set name directly, or we need to check sets array
+                # Based on All_Cards_Array.json structure, we check for set_name match
+                if "set_name" in avatar_card:
+                    if avatar_card.get("set_name", "").lower() == set_name.lower():
+                        return True
+                
+                # Also check if there's a sets field with the set name
+                if "sets" in avatar_card:
+                    for card_set in avatar_card.get("sets", []):
+                        if isinstance(card_set, dict) and card_set.get("name", "").lower() == set_name.lower():
+                            return True
+                        
+        except (json.JSONDecodeError, KeyError, TypeError, IndexError):
             continue
     
     return False
 
 
 async def check_alpha_avatar(discord_id: str) -> bool:
-    """Check if user has played with an Alpha avatar."""
-    return await check_avatar_usage(discord_id, "Alpha")
+    """Check if user has played with an Alpha set avatar."""
+    return await check_avatar_set_usage(discord_id, "Alpha")
 
 
 async def check_beta_avatar(discord_id: str) -> bool:
-    """Check if user has played with a Beta avatar."""
-    return await check_avatar_usage(discord_id, "Beta")
+    """Check if user has played with a Beta set avatar."""
+    return await check_avatar_set_usage(discord_id, "Beta")
 
 
 async def check_play_100_games(discord_id: str) -> bool:
@@ -442,14 +457,14 @@ ACHIEVEMENTS = {
         "check_func": check_elo_1800
     },
     "alpha_avatar": {
-        "name": "Alpha Initiate",
-        "description": "Play a game using an Alpha avatar",
+        "name": "🅰️ Alpha Initiate",
+        "description": "Play a game using an Alpha set avatar",
         "emoji": "🅰️",
         "check_func": check_alpha_avatar
     },
     "beta_avatar": {
-        "name": "Beta Warrior",
-        "description": "Play a game using a Beta avatar",
+        "name": "🅱️ Beta Warrior",
+        "description": "Play a game using a Beta set avatar",
         "emoji": "🅱️",
         "check_func": check_beta_avatar
     },

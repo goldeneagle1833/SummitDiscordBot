@@ -26,9 +26,6 @@ jobs:
             # Navigate to project directory
             cd ~/Summit/SummitDiscordBot
 
-            # Stop the bot service
-            sudo systemctl stop discordbot || echo "Service not running"
-
             # Pull latest changes
             git pull origin main
 
@@ -37,22 +34,26 @@ jobs:
             source venv/bin/activate
             pip install -r requirements.txt
 
-            # Copy any new data files if needed
-            # (You might want to be careful here to not overwrite live data)
+            # Stop the bot if running in screen
+            if screen -ls | grep -q "discordbot"; then
+              echo "Stopping existing bot screen session..."
+              screen -X -S discordbot quit
+              sleep 2
+            fi
 
-            # Start the bot service
-            sudo systemctl start discordbot
+            # Start the bot in a new screen session
+            echo "Starting bot in screen session..."
+            screen -S discordbot -dm bash -c "cd ~/Summit/SummitDiscordBot/discord-bot && source venv/bin/activate && python main.py"
 
-            # Wait a moment for service to start
-            sleep 5
+            # Wait a moment for bot to start
+            sleep 3
 
-            # Check if service is running
-            if sudo systemctl is-active --quiet discordbot; then
-              echo "✅ Bot service is running successfully!"
-              sudo systemctl status discordbot --no-pager
+            # Check if screen session is running
+            if screen -ls | grep -q "discordbot"; then
+              echo "✅ Bot screen session is running successfully!"
+              screen -ls | grep discordbot
             else
-              echo "❌ Bot service failed to start!"
-              sudo journalctl -u discordbot --no-pager -n 10
+              echo "❌ Bot screen session failed to start!"
               exit 1
             fi
 

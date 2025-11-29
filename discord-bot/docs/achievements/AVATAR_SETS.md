@@ -37,14 +37,30 @@ Avatars from the Alpha set were released on **April 19, 2023**. These include:
 
 Avatars from the Beta set were released on **June 15, 2023** (approximately).
 
-### ⚔️ Arthurian Legends Avatars
+### ⚔️ Arthurian Legend
 
-While not currently tracked as achievements, the system also supports detection of Arthurian Legends avatars, which were released on **October 4, 2024**. These include:
+**Description:** Play a game using an Arthurian Legends set avatar  
+**Database Column:** `arthurian_avatar`  
+**Check Function:** `check_arthurian_avatar()`
+
+#### Arthurian Legends Set Avatars
+
+Avatars from the Arthurian Legends set were released on **October 4, 2024**. These include:
 
 - Druid
 - Templar
 - Witch
 - And others from the Arthurian Legends set
+
+### 🦇 Gothic Guardian
+
+**Description:** Play a game using a Gothic set avatar  
+**Database Column:** `gothic_avatar`  
+**Check Function:** `check_gothic_avatar()`
+
+#### Gothic Set Avatars
+
+Avatars from the Gothic set were released on **December 1, 2024** (approximately).
 
 ## How It Works
 

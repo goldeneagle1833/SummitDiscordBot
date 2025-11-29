@@ -2,7 +2,7 @@
 Test Avatar Set Detection
 ==========================
 
-This script tests the avatar set detection logic for Alpha and Beta achievements.
+This script tests the avatar set detection logic for all avatar set achievements.
 It demonstrates how the system identifies which set an avatar belongs to.
 """
 
@@ -59,6 +59,25 @@ arthurian_avatar_deck = {
                 {
                     "name": "Arthurian Legends",
                     "releasedAt": "2024-10-04T00:00:00.000Z"
+                }
+            ]
+        }
+    ],
+    "spellbook": [],
+    "atlas": [],
+    "sideboard": []
+}
+
+gothic_avatar_deck = {
+    "avatar": [
+        {
+            "name": "Vampire Lord",
+            "rarity": "Elite",
+            "type": "Avatar",
+            "sets": [
+                {
+                    "name": "Gothic",
+                    "releasedAt": "2024-12-01T00:00:00.000Z"
                 }
             ]
         }
@@ -143,6 +162,14 @@ def test_avatar_detection():
     print(f"  Arthurian deck: {check_avatar_set(arthurian_avatar_deck, 'Arthurian Legends')}")
     print(f"  Alpha deck: {check_avatar_set(alpha_avatar_deck, 'Arthurian Legends')}")
     print(f"  Beta deck: {check_avatar_set(beta_avatar_deck, 'Arthurian Legends')}")
+    print(f"  Gothic deck: {check_avatar_set(gothic_avatar_deck, 'Arthurian Legends')}")
+    
+    # Test Gothic avatars
+    print("\n🦇 Testing Gothic Avatar Detection:")
+    print(f"  Gothic deck: {check_avatar_set(gothic_avatar_deck, 'Gothic')}")
+    print(f"  Alpha deck: {check_avatar_set(alpha_avatar_deck, 'Gothic')}")
+    print(f"  Beta deck: {check_avatar_set(beta_avatar_deck, 'Gothic')}")
+    print(f"  Arthurian deck: {check_avatar_set(arthurian_avatar_deck, 'Gothic')}")
     
     print("\n" + "=" * 60)
     print("DECK STRUCTURE EXAMPLES")
@@ -156,6 +183,9 @@ def test_avatar_detection():
     
     print("\n📋 Arthurian Legends Avatar Deck Structure:")
     print(json.dumps(arthurian_avatar_deck, indent=2))
+    
+    print("\n📋 Gothic Avatar Deck Structure:")
+    print(json.dumps(gothic_avatar_deck, indent=2))
     
     print("\n✅ All tests completed!")
 

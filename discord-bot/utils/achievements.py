@@ -32,15 +32,24 @@ def create_profiles_db():
                     win_5_games BOOLEAN DEFAULT 0,
                     win_10_games BOOLEAN DEFAULT 0,
                     win_25_games BOOLEAN DEFAULT 0,
+                    win_streak_5 BOOLEAN DEFAULT 0,
                     elo_1600 BOOLEAN DEFAULT 0,
                     elo_1700 BOOLEAN DEFAULT 0,
                     elo_1800 BOOLEAN DEFAULT 0,
                     alpha_avatar BOOLEAN DEFAULT 0,
                     beta_avatar BOOLEAN DEFAULT 0,
+                    arthurian_avatar BOOLEAN DEFAULT 0,
+                    gothic_avatar BOOLEAN DEFAULT 0,
                     play_100_games BOOLEAN DEFAULT 0,
                     first_player_master BOOLEAN DEFAULT 0,
                     comeback_king BOOLEAN DEFAULT 0,
-                    peasants_fury BOOLEAN DEFAULT 0
+                    peasants_fury BOOLEAN DEFAULT 0,
+                    underdog_victory BOOLEAN DEFAULT 0,
+                    giant_slayer BOOLEAN DEFAULT 0,
+                    avatar_collector BOOLEAN DEFAULT 0,
+                    mono_element BOOLEAN DEFAULT 0,
+                    first_blood BOOLEAN DEFAULT 0,
+                    rivalry BOOLEAN DEFAULT 0
                    )""")
     
     # Migration: Add peasants_fury column if it doesn't exist
@@ -51,6 +60,81 @@ def create_profiles_db():
         logger.info("Adding peasants_fury column to profiles table...")
         cur.execute("ALTER TABLE profiles ADD COLUMN peasants_fury BOOLEAN DEFAULT 0")
         logger.info("Successfully added peasants_fury column")
+    
+    # Migration: Add win_streak_5 column if it doesn't exist
+    try:
+        cur.execute("SELECT win_streak_5 FROM profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        # Column doesn't exist, add it
+        logger.info("Adding win_streak_5 column to profiles table...")
+        cur.execute("ALTER TABLE profiles ADD COLUMN win_streak_5 BOOLEAN DEFAULT 0")
+        logger.info("Successfully added win_streak_5 column")
+    
+    # Migration: Add arthurian_avatar column if it doesn't exist
+    try:
+        cur.execute("SELECT arthurian_avatar FROM profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        # Column doesn't exist, add it
+        logger.info("Adding arthurian_avatar column to profiles table...")
+        cur.execute("ALTER TABLE profiles ADD COLUMN arthurian_avatar BOOLEAN DEFAULT 0")
+        logger.info("Successfully added arthurian_avatar column")
+    
+    # Migration: Add gothic_avatar column if it doesn't exist
+    try:
+        cur.execute("SELECT gothic_avatar FROM profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        # Column doesn't exist, add it
+        logger.info("Adding gothic_avatar column to profiles table...")
+        cur.execute("ALTER TABLE profiles ADD COLUMN gothic_avatar BOOLEAN DEFAULT 0")
+        logger.info("Successfully added gothic_avatar column")
+    
+    # Migration: Add underdog_victory column if it doesn't exist
+    try:
+        cur.execute("SELECT underdog_victory FROM profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        logger.info("Adding underdog_victory column to profiles table...")
+        cur.execute("ALTER TABLE profiles ADD COLUMN underdog_victory BOOLEAN DEFAULT 0")
+        logger.info("Successfully added underdog_victory column")
+    
+    # Migration: Add giant_slayer column if it doesn't exist
+    try:
+        cur.execute("SELECT giant_slayer FROM profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        logger.info("Adding giant_slayer column to profiles table...")
+        cur.execute("ALTER TABLE profiles ADD COLUMN giant_slayer BOOLEAN DEFAULT 0")
+        logger.info("Successfully added giant_slayer column")
+    
+    # Migration: Add avatar_collector column if it doesn't exist
+    try:
+        cur.execute("SELECT avatar_collector FROM profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        logger.info("Adding avatar_collector column to profiles table...")
+        cur.execute("ALTER TABLE profiles ADD COLUMN avatar_collector BOOLEAN DEFAULT 0")
+        logger.info("Successfully added avatar_collector column")
+    
+    # Migration: Add mono_element column if it doesn't exist
+    try:
+        cur.execute("SELECT mono_element FROM profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        logger.info("Adding mono_element column to profiles table...")
+        cur.execute("ALTER TABLE profiles ADD COLUMN mono_element BOOLEAN DEFAULT 0")
+        logger.info("Successfully added mono_element column")
+    
+    # Migration: Add first_blood column if it doesn't exist
+    try:
+        cur.execute("SELECT first_blood FROM profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        logger.info("Adding first_blood column to profiles table...")
+        cur.execute("ALTER TABLE profiles ADD COLUMN first_blood BOOLEAN DEFAULT 0")
+        logger.info("Successfully added first_blood column")
+    
+    # Migration: Add rivalry column if it doesn't exist
+    try:
+        cur.execute("SELECT rivalry FROM profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        logger.info("Adding rivalry column to profiles table...")
+        cur.execute("ALTER TABLE profiles ADD COLUMN rivalry BOOLEAN DEFAULT 0")
+        logger.info("Successfully added rivalry column")
     
     conn.commit()
     conn.close()
@@ -187,6 +271,40 @@ async def check_win_25_games(discord_id: str) -> bool:
     return wins >= 25
 
 
+async def check_win_streak_5(discord_id: str) -> bool:
+    """Check if user has won 5 games in a row."""
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    
+    # Get all games ordered by timestamp (most recent first)
+    cur.execute("""
+        SELECT did_win, timestamp FROM match_records 
+        WHERE reporter_id = ?
+        UNION ALL
+        SELECT is_winner, timestamp FROM solo_match_reports
+        WHERE reporter_id = ?
+        ORDER BY timestamp DESC
+    """, (discord_id, discord_id))
+    
+    rows = cur.fetchall()
+    conn.close()
+    
+    if len(rows) < 5:
+        return False
+    
+    # Check for any streak of 5 consecutive wins
+    current_streak = 0
+    for row in rows:
+        if row[0]:  # If won
+            current_streak += 1
+            if current_streak >= 5:
+                return True
+        else:  # If lost
+            current_streak = 0
+    
+    return False
+
+
 async def check_elo_1600(discord_id: str) -> bool:
     """Check if user has reached 1600 Elo rating."""
     conn = sqlite3.connect("elo.db")
@@ -287,6 +405,16 @@ async def check_alpha_avatar(discord_id: str) -> bool:
 async def check_beta_avatar(discord_id: str) -> bool:
     """Check if user has played with a Beta set avatar."""
     return await check_avatar_set_usage(discord_id, "Beta")
+
+
+async def check_arthurian_avatar(discord_id: str) -> bool:
+    """Check if user has played with an Arthurian Legends set avatar."""
+    return await check_avatar_set_usage(discord_id, "Arthurian Legends")
+
+
+async def check_gothic_avatar(discord_id: str) -> bool:
+    """Check if user has played with a Gothic set avatar."""
+    return await check_avatar_set_usage(discord_id, "Gothic")
 
 
 async def check_play_100_games(discord_id: str) -> bool:
@@ -415,13 +543,243 @@ async def check_peasants_fury(discord_id: str) -> bool:
     return False
 
 
+async def check_underdog_victory(discord_id: str) -> bool:
+    """Check if user has won against someone 200+ Elo higher."""
+    conn_matches = sqlite3.connect("match_records.db")
+    conn_elo = sqlite3.connect("elo.db")
+    cur_matches = conn_matches.cursor()
+    cur_elo = conn_elo.cursor()
+    
+    # Get all winning games with opponent info
+    cur_matches.execute("""
+        SELECT opponent_id FROM match_records 
+        WHERE reporter_id = ? AND did_win = 1 AND opponent_id IS NOT NULL
+        UNION ALL
+        SELECT opponent_id FROM solo_match_reports
+        WHERE reporter_id = ? AND is_winner = 1 AND opponent_id IS NOT NULL
+    """, (discord_id, discord_id))
+    
+    winning_games = cur_matches.fetchall()
+    conn_matches.close()
+    
+    # Get user's current Elo
+    cur_elo.execute("SELECT elo FROM overall_standings WHERE user_id = ?", (discord_id,))
+    user_elo_row = cur_elo.fetchone()
+    user_elo = user_elo_row[0] if user_elo_row else 1500
+    
+    for (opponent_id,) in winning_games:
+        if not opponent_id:
+            continue
+            
+        # Get opponent's Elo
+        cur_elo.execute("SELECT elo FROM overall_standings WHERE user_id = ?", (opponent_id,))
+        opp_elo_row = cur_elo.fetchone()
+        opp_elo = opp_elo_row[0] if opp_elo_row else 1500
+        
+        # Check if opponent was 200+ Elo higher
+        if opp_elo >= user_elo + 200:
+            conn_elo.close()
+            return True
+    
+    conn_elo.close()
+    return False
+
+
+async def check_giant_slayer(discord_id: str) -> bool:
+    """Check if user has won 5+ games against higher Elo opponents."""
+    conn_matches = sqlite3.connect("match_records.db")
+    conn_elo = sqlite3.connect("elo.db")
+    cur_matches = conn_matches.cursor()
+    cur_elo = conn_elo.cursor()
+    
+    # Get all winning games with opponent info
+    cur_matches.execute("""
+        SELECT opponent_id FROM match_records 
+        WHERE reporter_id = ? AND did_win = 1 AND opponent_id IS NOT NULL
+        UNION ALL
+        SELECT opponent_id FROM solo_match_reports
+        WHERE reporter_id = ? AND is_winner = 1 AND opponent_id IS NOT NULL
+    """, (discord_id, discord_id))
+    
+    winning_games = cur_matches.fetchall()
+    conn_matches.close()
+    
+    # Get user's current Elo
+    cur_elo.execute("SELECT elo FROM overall_standings WHERE user_id = ?", (discord_id,))
+    user_elo_row = cur_elo.fetchone()
+    user_elo = user_elo_row[0] if user_elo_row else 1500
+    
+    wins_against_higher = 0
+    for (opponent_id,) in winning_games:
+        if not opponent_id:
+            continue
+            
+        # Get opponent's Elo
+        cur_elo.execute("SELECT elo FROM overall_standings WHERE user_id = ?", (opponent_id,))
+        opp_elo_row = cur_elo.fetchone()
+        opp_elo = opp_elo_row[0] if opp_elo_row else 1500
+        
+        # Check if opponent was higher Elo
+        if opp_elo > user_elo:
+            wins_against_higher += 1
+            if wins_against_higher >= 5:
+                conn_elo.close()
+                return True
+    
+    conn_elo.close()
+    return False
+
+
+async def check_avatar_collector(discord_id: str) -> bool:
+    """Check if user has played with 5 different avatars."""
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    
+    # Get all games with deck data
+    cur.execute("""
+        SELECT json_deck_data FROM match_records 
+        WHERE reporter_id = ? AND json_deck_data IS NOT NULL
+        UNION ALL
+        SELECT json_deck_data FROM solo_match_reports
+        WHERE reporter_id = ? AND json_deck_data IS NOT NULL
+    """, (discord_id, discord_id))
+    
+    rows = cur.fetchall()
+    conn.close()
+    
+    unique_avatars = set()
+    for row in rows:
+        try:
+            deck_data = json.loads(row[0])
+            avatar = deck_data.get("avatar", [])
+            
+            if avatar and len(avatar) > 0:
+                avatar_name = avatar[0].get("name", "")
+                if avatar_name:
+                    unique_avatars.add(avatar_name)
+                    
+                    if len(unique_avatars) >= 5:
+                        return True
+                        
+        except (json.JSONDecodeError, KeyError, TypeError, IndexError):
+            continue
+    
+    return False
+
+
+async def check_mono_element(discord_id: str) -> bool:
+    """Check if user has won with a single-element deck."""
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    
+    # Get all winning games with deck data
+    cur.execute("""
+        SELECT json_deck_data FROM match_records 
+        WHERE reporter_id = ? AND did_win = 1 AND json_deck_data IS NOT NULL
+        UNION ALL
+        SELECT json_deck_data FROM solo_match_reports
+        WHERE reporter_id = ? AND is_winner = 1 AND json_deck_data IS NOT NULL
+    """, (discord_id, discord_id))
+    
+    rows = cur.fetchall()
+    conn.close()
+    
+    for row in rows:
+        try:
+            deck_data = json.loads(row[0])
+            
+            # Collect all cards (spellbook, atlas, sideboard)
+            all_cards = []
+            if "spellbook" in deck_data:
+                all_cards.extend(deck_data["spellbook"])
+            if "atlas" in deck_data:
+                all_cards.extend(deck_data["atlas"])
+            if "sideboard" in deck_data:
+                all_cards.extend(deck_data["sideboard"])
+            
+            if not all_cards:
+                continue
+            
+            # Get unique elements from all cards
+            elements_set = set()
+            for card in all_cards:
+                card_elements = card.get("elements", "")
+                if card_elements and card_elements != "None":
+                    # Parse elements (could be "Fire", "Fire/Water", etc.)
+                    for element in card_elements.split("/"):
+                        element = element.strip()
+                        if element and element != "None":
+                            elements_set.add(element)
+            
+            # Check if deck has exactly one element (or zero if all neutral)
+            if len(elements_set) == 1:
+                return True
+                    
+        except (json.JSONDecodeError, KeyError, TypeError):
+            continue
+    
+    return False
+
+
+async def check_first_blood(discord_id: str) -> bool:
+    """Check if user has won their very first recorded game."""
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    
+    # Get the first game by timestamp
+    cur.execute("""
+        SELECT did_win, timestamp FROM match_records 
+        WHERE reporter_id = ?
+        UNION ALL
+        SELECT is_winner, timestamp FROM solo_match_reports
+        WHERE reporter_id = ?
+        ORDER BY timestamp ASC
+        LIMIT 1
+    """, (discord_id, discord_id))
+    
+    first_game = cur.fetchone()
+    conn.close()
+    
+    if first_game and first_game[0]:  # If first game was a win
+        return True
+    
+    return False
+
+
+async def check_rivalry(discord_id: str) -> bool:
+    """Check if user has played 10+ games against the same opponent."""
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    
+    # Count games per opponent
+    cur.execute("""
+        SELECT opponent_id, COUNT(*) as game_count FROM (
+            SELECT opponent_id FROM match_records 
+            WHERE reporter_id = ? AND opponent_id IS NOT NULL
+            UNION ALL
+            SELECT opponent_id FROM solo_match_reports
+            WHERE reporter_id = ? AND opponent_id IS NOT NULL
+        )
+        GROUP BY opponent_id
+    """, (discord_id, discord_id))
+    
+    opponent_counts = cur.fetchall()
+    conn.close()
+    
+    for opponent_id, count in opponent_counts:
+        if count >= 10:
+            return True
+    
+    return False
+
+
 # ============================================================================
 # ACHIEVEMENT REGISTRY
 # ============================================================================
 
 ACHIEVEMENTS = {
     "win_5_games": {
-        "name": "First Streak",
+        "name": "Early Success",
         "description": "Win 5 recorded games",
         "emoji": "🎯",
         "check_func": check_win_5_games
@@ -433,10 +791,16 @@ ACHIEVEMENTS = {
         "check_func": check_win_10_games
     },
     "win_25_games": {
-        "name": "Tournament Victor",
+        "name": "Proven Victor",
         "description": "Win 25 recorded games",
         "emoji": "👑",
         "check_func": check_win_25_games
+    },
+    "win_streak_5": {
+        "name": "Rolling Boulder",
+        "description": "Win 5 games in a row",
+        "emoji": "🔥",
+        "check_func": check_win_streak_5
     },
     "elo_1600": {
         "name": "Rising Star",
@@ -457,16 +821,28 @@ ACHIEVEMENTS = {
         "check_func": check_elo_1800
     },
     "alpha_avatar": {
-        "name": "🅰️ Alpha Initiate",
+        "name": "Alpha Initiate",
         "description": "Play a game using an Alpha set avatar",
         "emoji": "🅰️",
         "check_func": check_alpha_avatar
     },
     "beta_avatar": {
-        "name": "🅱️ Beta Warrior",
+        "name": "Beta Warrior",
         "description": "Play a game using a Beta set avatar",
         "emoji": "🅱️",
         "check_func": check_beta_avatar
+    },
+    "arthurian_avatar": {
+        "name": "Arthurian Legend",
+        "description": "Play a game using an Arthurian Legends set avatar",
+        "emoji": "⚔️",
+        "check_func": check_arthurian_avatar
+    },
+    "gothic_avatar": {
+        "name": "Gothic Guardian",
+        "description": "Play a game using a Gothic set avatar",
+        "emoji": "🦇",
+        "check_func": check_gothic_avatar
     },
     "play_100_games": {
         "name": "Century Club",
@@ -491,6 +867,42 @@ ACHIEVEMENTS = {
         "description": "Win a game using only Ordinary and Exceptional rarity cards",
         "emoji": "⚔️",
         "check_func": check_peasants_fury
+    },
+    "underdog_victory": {
+        "name": "Underdog Victory",
+        "description": "Win against someone 200+ Elo higher",
+        "emoji": "🎖️",
+        "check_func": check_underdog_victory
+    },
+    "giant_slayer": {
+        "name": "Giant Slayer",
+        "description": "Win 5 games against higher Elo opponents",
+        "emoji": "⚔️",
+        "check_func": check_giant_slayer
+    },
+    "avatar_collector": {
+        "name": "Avatar Collector",
+        "description": "Play with 5 different avatars",
+        "emoji": "🎭",
+        "check_func": check_avatar_collector
+    },
+    "mono_element": {
+        "name": "Mono Element Master",
+        "description": "Win with a single-element deck",
+        "emoji": "💎",
+        "check_func": check_mono_element
+    },
+    "first_blood": {
+        "name": "First Blood",
+        "description": "Win your very first recorded game",
+        "emoji": "🩸",
+        "check_func": check_first_blood
+    },
+    "rivalry": {
+        "name": "Rivalry",
+        "description": "Play 10+ games against the same opponent",
+        "emoji": "🤝",
+        "check_func": check_rivalry
     }
 }
 

@@ -54,9 +54,18 @@ async def on_ready():
     
     # Sync slash commands
     try:
+        # Sync to specific guild (instant)
+        from config import GUILD_ID
+        guild = discord.Object(id=GUILD_ID)
+        bot.tree.copy_global_to(guild=guild)
+        synced_guild = await bot.tree.sync(guild=guild)
+        logger.info(f"Synced {len(synced_guild)} slash commands to guild {GUILD_ID}")
+        print(f"✅ Synced {len(synced_guild)} slash commands to guild (instant)")
+        
+        # Also sync globally (takes up to 1 hour to propagate)
         synced = await bot.tree.sync()
-        logger.info(f"Synced {len(synced)} slash commands")
-        print(f"Synced {len(synced)} slash commands")
+        logger.info(f"Synced {len(synced)} slash commands globally")
+        print(f"✅ Synced {len(synced)} slash commands globally (may take up to 1 hour)")
     except Exception as e:
         logger.error(f"Failed to sync slash commands: {e}")
         print(f"Failed to sync slash commands: {e}")

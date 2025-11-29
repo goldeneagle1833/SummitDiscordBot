@@ -34,9 +34,6 @@ def create_profiles_db():
                     win_25_games BOOLEAN DEFAULT 0,
                     elo_1600 BOOLEAN DEFAULT 0,
                     elo_1700 BOOLEAN DEFAULT 0,
-                    elo_1800 BOOLEAN DEFAULT 0,
-                    alpha_avatar BOOLEAN DEFAULT 0,
-                    beta_avatar BOOLEAN DEFAULT 0,
                     play_100_games BOOLEAN DEFAULT 0,
                     first_player_master BOOLEAN DEFAULT 0,
                     comeback_king BOOLEAN DEFAULT 0,
@@ -215,20 +212,6 @@ async def check_elo_1700(discord_id: str) -> bool:
     return False
 
 
-async def check_elo_1800(discord_id: str) -> bool:
-    """Check if user has reached 1800 Elo rating."""
-    conn = sqlite3.connect("elo.db")
-    cur = conn.cursor()
-    
-    cur.execute("SELECT elo FROM overall_standings WHERE user_id = ?", (discord_id,))
-    row = cur.fetchone()
-    conn.close()
-    
-    if row:
-        return row[0] >= 1800
-    return False
-
-
 async def check_avatar_usage(discord_id: str, avatar_name: str) -> bool:
     """
     Check if user has played a game with a specific avatar.
@@ -310,7 +293,7 @@ async def check_first_player_master(discord_id: str) -> bool:
     rows = cur.fetchall()
     conn.close()
     
-    if len(rows) < 1:
+    if len(rows) < 10:
         return False
     
     wins = sum(1 for row in rows if row[0])

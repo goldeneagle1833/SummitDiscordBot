@@ -11,6 +11,7 @@ from cogs.utility import UtilityCog
 from cogs.shop import ShopCog
 from cogs.tournament import TournamentCog
 from cogs.slash_commands import SlashCommandsCog
+from cogs.achievements import AchievementsCog
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -40,6 +41,16 @@ bot.remove_command("help")  # Remove default help command
 async def on_ready():
     print(f"Logged in as {bot.user.name}")
     logger.info(f"Bot started as {bot.user.name}")
+    
+    # Initialize achievement database
+    try:
+        from utils.achievements import create_profiles_db
+        create_profiles_db()
+        logger.info("Achievement system initialized")
+        print("✅ Achievement system initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize achievement system: {e}")
+        print(f"⚠️ Achievement system initialization failed: {e}")
     
     # Sync slash commands
     try:
@@ -101,6 +112,7 @@ async def setup_cogs():
     await bot.add_cog(ShopCog(bot))
     await bot.add_cog(TournamentCog(bot))
     await bot.add_cog(SlashCommandsCog(bot))
+    await bot.add_cog(AchievementsCog(bot))
 
 
 async def main():

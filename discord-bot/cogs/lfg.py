@@ -42,13 +42,14 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
         required=False,
     )
 
-    def __init__(self, winner_id, winner_global, loser_id, loser_global, is_winner):
+    def __init__(self, winner_id, winner_global, loser_id, loser_global, is_winner, bot):
         super().__init__()
         self.winner_id = winner_id
         self.winner_global = winner_global
         self.loser_id = loser_id
         self.loser_global = loser_global
         self.is_winner = is_winner
+        self.bot = bot
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -65,7 +66,7 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
         )
 
         if self.is_winner:
-            winner_report(
+            await winner_report(
                 interaction_user_id,
                 self.winner_id,
                 self.winner_global,
@@ -78,9 +79,10 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
                 match_comment,
                 interaction_user_id,
                 interaction_global,
+                self.bot,
             )
         else:
-            losser_report(
+            await losser_report(
                 interaction_user_id,
                 self.winner_id,
                 self.winner_global,
@@ -93,6 +95,7 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
                 match_comment,
                 interaction_user_id,
                 interaction_global,
+                self.bot,
             )
 
         await interaction.followup.send(
@@ -109,6 +112,7 @@ class LFGReportButtons(discord.ui.View):
         player1_global: str,
         player2_id: int,
         player2_global: str,
+        bot=None,
     ):
         super().__init__(timeout=None)
         self.match_id = match_id
@@ -116,6 +120,7 @@ class LFGReportButtons(discord.ui.View):
         self.player2_id = player2_id
         self.player1_global = player1_global
         self.player2_global = player2_global
+        self.bot = bot
 
     @discord.ui.button(
         label="I Won!", style=discord.ButtonStyle.success, custom_id="win_button"
@@ -141,6 +146,7 @@ class LFGReportButtons(discord.ui.View):
                 loser_id=opponent_id,
                 loser_global=opponent_global,
                 is_winner=True,
+                bot=self.bot,
             )
         )
         await interaction.message.edit(view=None)
@@ -169,6 +175,7 @@ class LFGReportButtons(discord.ui.View):
                 loser_id=interaction.user.id,
                 loser_global=interaction.user.global_name,
                 is_winner=False,
+                bot=self.bot,
             )
         )
         await interaction.message.edit(view=None)
@@ -206,6 +213,7 @@ class ChallengeButtons(discord.ui.View):
             self.challenger_global,
             interaction.user.id,
             interaction.user.global_name,
+            interaction.client,
         )
 
         opponent_view = LFGReportButtons(
@@ -214,6 +222,7 @@ class ChallengeButtons(discord.ui.View):
             interaction.user.global_name,
             self.challenger_id,
             self.challenger_global,
+            interaction.client,
         )
 
         await challenger.send("Match report:", view=challenger_view)
@@ -235,10 +244,11 @@ class ChallengeButtons(discord.ui.View):
 
 
 class ReportButtonsSolo(discord.ui.View):
-    def __init__(self, reporter_id: int, reporter_global: str):
+    def __init__(self, reporter_id: int, reporter_global: str, bot=None):
         super().__init__(timeout=300)  # 5 minute timeout
         self.reporter_id = reporter_id
         self.reporter_global = reporter_global
+        self.bot = bot
 
     @discord.ui.button(label="I Won!", style=discord.ButtonStyle.success)
     async def won_button(
@@ -249,6 +259,7 @@ class ReportButtonsSolo(discord.ui.View):
                 reporter_id=self.reporter_id,
                 reporter_global=self.reporter_global,
                 is_winner=True,
+                bot=self.bot,
             )
         )
         await interaction.message.edit(view=None)
@@ -262,6 +273,7 @@ class ReportButtonsSolo(discord.ui.View):
                 reporter_id=self.reporter_id,
                 reporter_global=self.reporter_global,
                 is_winner=False,
+                bot=self.bot,
             )
         )
         await interaction.message.edit(view=None)
@@ -302,11 +314,12 @@ class SoloMatchReportModal(discord.ui.Modal, title="Solo Match Report"):
         required=False,
     )
 
-    def __init__(self, reporter_id: int, reporter_global: str, is_winner: bool):
+    def __init__(self, reporter_id: int, reporter_global: str, is_winner: bool, bot=None):
         super().__init__()
         self.reporter_id = reporter_id
         self.reporter_global = reporter_global
         self.is_winner = is_winner
+        self.bot = bot
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -320,7 +333,7 @@ class SoloMatchReportModal(discord.ui.Modal, title="Solo Match Report"):
             int(self.match_time.value) if self.match_time.value.isdigit() else 0
         )
 
-        solo_match_report(
+        await solo_match_report(
             reporter_id=self.reporter_id,
             reporter_global=self.reporter_global,
             opponent_name=self.opponent_name.value,
@@ -329,6 +342,7 @@ class SoloMatchReportModal(discord.ui.Modal, title="Solo Match Report"):
             match_time=match_time,
             curiosa_link=curiosa_link,
             match_comment=match_comment,
+            bot=self.bot,
         )
 
         result = "Won" if self.is_winner else "Lost"
@@ -409,6 +423,7 @@ class LFGCog(commands.Cog):
                 ctx.author.global_name,
                 matched_user_id,
                 matched_user.global_name,
+                self.bot,
             )
             logger.info(f"Sending match report to {ctx.author} via DM")
             await ctx.author.send("Match report:", view=view_ctx)
@@ -422,6 +437,7 @@ class LFGCog(commands.Cog):
                 matched_user.global_name,
                 ctx.author.id,
                 ctx.author.global_name,
+                self.bot,
             )
             logger.info(f"Sending match report to {matched_user} via DM")
             await matched_user.send(
@@ -588,7 +604,7 @@ class LFGCog(commands.Cog):
     async def record_game(self, ctx):
         """Submit a match report without being matched through LFG"""
         # Create view with both buttons
-        view = ReportButtonsSolo(ctx.author.id, ctx.author.global_name)
+        view = ReportButtonsSolo(ctx.author.id, ctx.author.global_name, self.bot)
 
         try:
             await ctx.author.send("Please select match outcome:", view=view)

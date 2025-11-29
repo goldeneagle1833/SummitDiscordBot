@@ -139,7 +139,7 @@ def update_elo_db(user_id, user_display_name, did_win, opponent_id):
     return new_player_elo
 
 
-def winner_report(
+async def winner_report(
     reporter_id,
     user_id,
     user_display_name,
@@ -152,8 +152,17 @@ def winner_report(
     match_comment,
     interaction_user_id,
     interaction_global,
+    bot=None,
 ):
-    """Log a win in the database."""
+    """
+    Log a win in the database and check for achievements.
+    
+    Args:
+        bot: Discord bot instance (optional, for achievement announcements)
+        
+    Returns:
+        Tuple of (winner_id, loser_id) for achievement checking
+    """
     logger.info(f"Logging win for user {interaction_global}")
     create_db()
     conn = sqlite3.connect("match_records.db")
@@ -185,9 +194,35 @@ def winner_report(
 
     conn.commit()
     conn.close()
+    
+    # Trigger achievement check for both players
+    if bot:
+        try:
+            from utils.achievements import evaluate_achievements
+            from utils.config import ACHIEVEMENT_CHANNEL_ID
+            
+            # Check achievements for winner
+            await evaluate_achievements(
+                str(user_id),
+                user_display_name,
+                bot,
+                ACHIEVEMENT_CHANNEL_ID
+            )
+            
+            # Check achievements for loser
+            await evaluate_achievements(
+                str(opponent_id),
+                opponent_display_name,
+                bot,
+                ACHIEVEMENT_CHANNEL_ID
+            )
+        except Exception as e:
+            logger.error(f"Error checking achievements: {e}")
+    
+    return (user_id, opponent_id)
 
 
-def losser_report(
+async def losser_report(
     reporter_id,
     user_id,
     user_display_name,
@@ -200,8 +235,17 @@ def losser_report(
     match_comment,
     interaction_user_id,
     interaction_global,
+    bot=None,
 ):
-    """Log a loss in the database."""
+    """
+    Log a loss in the database and check for achievements.
+    
+    Args:
+        bot: Discord bot instance (optional, for achievement announcements)
+        
+    Returns:
+        Tuple of (winner_id, loser_id) for achievement checking
+    """
     logger.info(f"Logging loss for user {interaction_global}")
     create_db()
     conn = sqlite3.connect("match_records.db")
@@ -233,6 +277,32 @@ def losser_report(
 
     conn.commit()
     conn.close()
+    
+    # Trigger achievement check for both players
+    if bot:
+        try:
+            from utils.achievements import evaluate_achievements
+            from utils.config import ACHIEVEMENT_CHANNEL_ID
+            
+            # Check achievements for winner
+            await evaluate_achievements(
+                str(user_id),
+                user_display_name,
+                bot,
+                ACHIEVEMENT_CHANNEL_ID
+            )
+            
+            # Check achievements for loser
+            await evaluate_achievements(
+                str(opponent_id),
+                opponent_display_name,
+                bot,
+                ACHIEVEMENT_CHANNEL_ID
+            )
+        except Exception as e:
+            logger.error(f"Error checking achievements: {e}")
+    
+    return (user_id, opponent_id)
 
 
 async def save_challenge_match(
@@ -282,7 +352,7 @@ class DatabaseConnection:
             self.conn.close()
 
 
-def solo_match_report(
+async def solo_match_report(
     reporter_id: int,
     reporter_global: str,
     opponent_name: str,
@@ -291,9 +361,10 @@ def solo_match_report(
     match_time: int,
     curiosa_link: str,
     match_comment: str,
+    bot=None,
 ) -> None:
     """
-    Save a solo match report to the database.
+    Save a solo match report to the database and check for achievements.
 
     Args:
         reporter_id: Discord ID of the reporting player
@@ -304,6 +375,7 @@ def solo_match_report(
         match_time: Duration of match in minutes
         curiosa_link: URL to Curiosa deck
         match_comment: Additional match notes
+        bot: Discord bot instance (optional, for achievement announcements)
     """
     logger.info(f"Logging solo match report for user {reporter_global}")
     create_db()  # Ensure tables exist
@@ -335,3 +407,19 @@ def solo_match_report(
 
     conn.commit()
     conn.close()
+    
+    # Trigger achievement check for reporter
+    if bot:
+        try:
+            from utils.achievements import evaluate_achievements
+            from utils.config import ACHIEVEMENT_CHANNEL_ID
+            
+            await evaluate_achievements(
+                str(reporter_id),
+                reporter_global,
+                bot,
+                ACHIEVEMENT_CHANNEL_ID
+            )
+        except Exception as e:
+            logger.error(f"Error checking achievements: {e}")
+

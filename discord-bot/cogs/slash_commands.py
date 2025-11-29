@@ -120,7 +120,21 @@ class SlashCommandsCog(commands.Cog):
         else:
             await interaction.followup.send("Elo system is not available.", ephemeral=True)
 
-    @app_commands.command(name="leaderboard", description="View the top 10 Elo rankings")
+    # ==================== STATS/ELO COMMANDS ====================
+
+    @app_commands.command(name="stats_rank", description="📊 Check your current Elo rating and rank")
+    async def rank_slash(self, interaction: discord.Interaction):
+        """Check rank - slash command version"""
+        await interaction.response.defer()
+        ctx = FakeContext(self.bot, interaction)
+        
+        elo_cog = self.bot.get_cog("EloCog")
+        if elo_cog:
+            await elo_cog.rank(ctx)
+        else:
+            await interaction.followup.send("Elo system is not available.", ephemeral=True)
+
+    @app_commands.command(name="stats_leaderboard", description="📊 View the top 10 Elo rankings")
     async def leaderboard_slash(self, interaction: discord.Interaction):
         """Check leaderboard - slash command version"""
         await interaction.response.defer()
@@ -132,7 +146,7 @@ class SlashCommandsCog(commands.Cog):
         else:
             await interaction.followup.send("Elo system is not available.", ephemeral=True)
 
-    @app_commands.command(name="mystats", description="View your detailed match statistics and performance")
+    @app_commands.command(name="stats_mystats", description="📊 View your detailed match statistics and performance")
     async def mystats_slash(self, interaction: discord.Interaction):
         """Check stats - slash command version"""
         await interaction.response.defer()
@@ -144,7 +158,7 @@ class SlashCommandsCog(commands.Cog):
         else:
             await interaction.followup.send("Elo system is not available.", ephemeral=True)
 
-    @app_commands.command(name="mygames", description="View your recent game history")
+    @app_commands.command(name="stats_mygames", description="📊 View your recent game history")
     async def mygames_slash(self, interaction: discord.Interaction):
         """Check games - slash command version"""
         await interaction.response.defer()
@@ -156,7 +170,7 @@ class SlashCommandsCog(commands.Cog):
         else:
             await interaction.followup.send("Elo system is not available.", ephemeral=True)
 
-    @app_commands.command(name="replay", description="Submit a replay of your game")
+    @app_commands.command(name="stats_replay", description="📊 Submit a replay of your game")
     async def replay_slash(self, interaction: discord.Interaction):
         """Submit replay - slash command version"""
         await interaction.response.defer()
@@ -170,7 +184,7 @@ class SlashCommandsCog(commands.Cog):
 
     # ==================== TOURNAMENT COMMANDS ====================
 
-    @app_commands.command(name="create_tournament", description="Create a new tournament (Admin)")
+    @app_commands.command(name="tournament_create", description="🏆 Create a new tournament (Admin)")
     async def create_tournament_slash(self, interaction: discord.Interaction):
         """Create tournament - slash command version"""
         await interaction.response.defer()
@@ -182,7 +196,7 @@ class SlashCommandsCog(commands.Cog):
         else:
             await interaction.followup.send("Tournament system is not available.", ephemeral=True)
 
-    @app_commands.command(name="join_tournament", description="Join a tournament")
+    @app_commands.command(name="tournament_join", description="🏆 Join a tournament")
     @app_commands.describe(tournament_name="Name of the tournament to join")
     async def join_tournament_slash(self, interaction: discord.Interaction, tournament_name: str):
         """Join tournament - slash command version"""
@@ -195,7 +209,7 @@ class SlashCommandsCog(commands.Cog):
         else:
             await interaction.followup.send("Tournament system is not available.", ephemeral=True)
 
-    @app_commands.command(name="my_match", description="Check your current tournament match")
+    @app_commands.command(name="tournament_match", description="🏆 Check your current tournament match")
     async def my_match_slash(self, interaction: discord.Interaction):
         """Check match - slash command version"""
         await interaction.response.defer()
@@ -207,7 +221,7 @@ class SlashCommandsCog(commands.Cog):
         else:
             await interaction.followup.send("Tournament system is not available.", ephemeral=True)
 
-    @app_commands.command(name="bracket", description="View tournament bracket")
+    @app_commands.command(name="tournament_bracket", description="🏆 View tournament bracket")
     @app_commands.describe(tournament_name="Name of the tournament")
     async def bracket_slash(self, interaction: discord.Interaction, tournament_name: str):
         """View bracket - slash command version"""
@@ -220,9 +234,21 @@ class SlashCommandsCog(commands.Cog):
         else:
             await interaction.followup.send("Tournament system is not available.", ephemeral=True)
 
+    @app_commands.command(name="tournament_help", description="🏆 Learn about tournament features")
+    async def tournament_help_slash(self, interaction: discord.Interaction):
+        """Tournament help - slash command version"""
+        await interaction.response.defer()
+        ctx = FakeContext(self.bot, interaction)
+        
+        tournament_cog = self.bot.get_cog("TournamentCog")
+        if tournament_cog:
+            await tournament_cog.tournament_help(ctx)
+        else:
+            await interaction.followup.send("Tournament help is not available.", ephemeral=True)
+
     # ==================== UTILITY COMMANDS ====================
 
-    @app_commands.command(name="deckcheck", description="Check if your deck is legal for tournaments")
+    @app_commands.command(name="util_deckcheck", description="⚙️ Check if your deck is legal for tournaments")
     async def deckcheck_slash(self, interaction: discord.Interaction):
         """Deck check - slash command version"""
         await interaction.response.defer()
@@ -234,7 +260,7 @@ class SlashCommandsCog(commands.Cog):
         else:
             await interaction.followup.send("Utility commands are not available.", ephemeral=True)
 
-    @app_commands.command(name="help", description="Get help with bot commands and features")
+    @app_commands.command(name="util_help", description="⚙️ Get help with bot commands and features")
     async def help_slash(self, interaction: discord.Interaction):
         """Help - slash command version"""
         await interaction.response.defer()
@@ -246,7 +272,7 @@ class SlashCommandsCog(commands.Cog):
         else:
             await interaction.followup.send("Help is not available.", ephemeral=True)
 
-    @app_commands.command(name="commands", description="View all available bot commands")
+    @app_commands.command(name="util_commands", description="⚙️ View all available bot commands")
     async def commands_slash(self, interaction: discord.Interaction):
         """Commands list - slash command version"""
         await interaction.response.defer()
@@ -257,30 +283,6 @@ class SlashCommandsCog(commands.Cog):
             await utility_cog.commands(ctx)
         else:
             await interaction.followup.send("Commands list is not available.", ephemeral=True)
-
-    @app_commands.command(name="lfg_help", description="Learn how to use the LFG system")
-    async def lfg_help_slash(self, interaction: discord.Interaction):
-        """LFG help - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
-        
-        lfg_cog = self.bot.get_cog("LFGCog")
-        if lfg_cog:
-            await lfg_cog.lfg_help(ctx)
-        else:
-            await interaction.followup.send("LFG help is not available.", ephemeral=True)
-
-    @app_commands.command(name="tournament_help", description="Learn about tournament features")
-    async def tournament_help_slash(self, interaction: discord.Interaction):
-        """Tournament help - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
-        
-        tournament_cog = self.bot.get_cog("TournamentCog")
-        if tournament_cog:
-            await tournament_cog.tournament_help(ctx)
-        else:
-            await interaction.followup.send("Tournament help is not available.", ephemeral=True)
 
 
 async def setup(bot):

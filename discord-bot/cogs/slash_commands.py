@@ -32,79 +32,51 @@ class SlashCommandsCog(commands.Cog):
 
     # ==================== LFG COMMANDS (Priority - shown first) ====================
 
-    @app_commands.command(name="lfg", description="🎮 Find a game! Join the LFG queue to be matched with other players")
-    @app_commands.describe(timeframe="How many minutes you're available to play (default: 30)")
-    async def lfg_slash(self, interaction: discord.Interaction, timeframe: int = 30):
-        """Find a game - slash command version"""
+    @app_commands.command(name="lfg", description="🎮 LFG System - Find games, check queue, and more")
+    @app_commands.describe(
+        action="What do you want to do?",
+        timeframe="Minutes you're available (for 'join' action, default: 30)",
+        opponent="Player to challenge (for 'challenge' action)"
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="🎮 Join queue to find a game", value="join"),
+        app_commands.Choice(name="👀 Check who's in queue", value="check"),
+        app_commands.Choice(name="❌ Cancel your request", value="cancel"),
+        app_commands.Choice(name="⚔️ Challenge specific player", value="challenge"),
+        app_commands.Choice(name="📝 Record a game manually", value="record"),
+        app_commands.Choice(name="❓ Help & instructions", value="help")
+    ])
+    async def lfg_slash(
+        self, 
+        interaction: discord.Interaction, 
+        action: str,
+        timeframe: int = 30,
+        opponent: discord.Member = None
+    ):
+        """Unified LFG system command"""
         await interaction.response.defer()
         ctx = FakeContext(self.bot, interaction)
         
         lfg_cog = self.bot.get_cog("LFGCog")
-        if lfg_cog:
+        if not lfg_cog:
+            await interaction.followup.send("LFG system is not available.", ephemeral=True)
+            return
+        
+        if action == "join":
             await lfg_cog.lfg(ctx, timeframe)
-        else:
-            await interaction.followup.send("LFG system is not available.", ephemeral=True)
-
-    @app_commands.command(name="lfg_check", description="🎮 Check who's currently in the LFG queue")
-    async def check_lfg_slash(self, interaction: discord.Interaction):
-        """Check LFG queue - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
-        
-        lfg_cog = self.bot.get_cog("LFGCog")
-        if lfg_cog:
+        elif action == "check":
             await lfg_cog.check_lfg(ctx)
-        else:
-            await interaction.followup.send("LFG system is not available.", ephemeral=True)
-
-    @app_commands.command(name="lfg_cancel", description="🎮 Cancel your LFG request")
-    async def cancel_slash(self, interaction: discord.Interaction):
-        """Cancel LFG - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
-        
-        lfg_cog = self.bot.get_cog("LFGCog")
-        if lfg_cog:
+        elif action == "cancel":
             await lfg_cog.cancel(ctx)
-        else:
-            await interaction.followup.send("LFG system is not available.", ephemeral=True)
-
-    @app_commands.command(name="lfg_challenge", description="🎮 Challenge a specific player to a match")
-    @app_commands.describe(opponent="The player you want to challenge")
-    async def challenge_slash(self, interaction: discord.Interaction, opponent: discord.Member):
-        """Challenge player - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
-        
-        lfg_cog = self.bot.get_cog("LFGCog")
-        if lfg_cog:
+        elif action == "challenge":
+            if not opponent:
+                await interaction.followup.send("❌ You must specify an opponent to challenge!", ephemeral=True)
+                return
             await lfg_cog.challenge(ctx, opponent)
-        else:
-            await interaction.followup.send("LFG system is not available.", ephemeral=True)
-
-    @app_commands.command(name="lfg_record", description="🎮 Manually record a game that was played")
-    async def record_game_slash(self, interaction: discord.Interaction):
-        """Record game - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
-        
-        lfg_cog = self.bot.get_cog("LFGCog")
-        if lfg_cog:
+        elif action == "record":
             await lfg_cog.record_game(ctx)
-        else:
-            await interaction.followup.send("LFG system is not available.", ephemeral=True)
-
-    @app_commands.command(name="lfg_help", description="🎮 Learn how to use the LFG system")
-    async def lfg_help_slash(self, interaction: discord.Interaction):
-        """LFG help - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
-        
-        lfg_cog = self.bot.get_cog("LFGCog")
-        if lfg_cog:
+        elif action == "help":
             await lfg_cog.lfg_help(ctx)
-        else:
-            await interaction.followup.send("LFG help is not available.", ephemeral=True)
 
     # ==================== STATS/ELO COMMANDS ====================
 

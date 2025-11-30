@@ -99,7 +99,7 @@ async def on_member_join(member):
             value=(
                 "Type `/` to see all commands\n"
                 "`/help` - Full feature list\n"
-                "`/profile` - View your achievements"
+                "`/achievements` - View achievements (use 'profile' action)"
             ),
             inline=False,
         )

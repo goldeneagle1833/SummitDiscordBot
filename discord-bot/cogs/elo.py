@@ -341,9 +341,15 @@ class EloCog(commands.Cog):
                     )
                     return
 
-                # Build text message
-                message = f"**Match History for {ctx.author.display_name}**\n"
-                message += f"Your 10 most recent reported matches:\n\n"
+                # Build text message with ASCII art
+                message = "```\n"
+                message += "╔══════════════════════════════════════════════════════════╗\n"
+                message += "║           📜  M A T C H   H I S T O R Y  📜            ║\n"
+                message += f"║              {ctx.author.display_name.center(40)}              ║\n"
+                message += "╚══════════════════════════════════════════════════════════╝\n"
+                message += "```\n"
+                message += "**Your 10 most recent reported matches:**\n"
+                message += "─" * 60 + "\n"
 
                 for i, row in enumerate(rows, 1):
                     try:
@@ -371,25 +377,31 @@ class EloCog(commands.Cog):
                         # Build compact game line
                         result_emoji = "✅" if did_win else "❌"
                         
-                        game_line = f"{result_emoji} **Game {i}** ({formatted_date}): {winner} beat {loser}"
+                        game_line = f"{result_emoji} **Game {i}** ({formatted_date})\n"
+                        game_line += f"   ⚔️ {winner} beat {loser}"
                         
                         if match_time:
-                            game_line += f" • {float(match_time):.1f}min"
+                            game_line += f" • ⏱️ {float(match_time):.1f}min"
                         
-                        game_line += f" "
+                        game_line += f" • "
                         
                         if replay_url and replay_url != "No URL provided":
-                            game_line += f" • <{replay_url}>"
+                            game_line += f" •  <{replay_url}>"
                         
                         if match_comment:
-                            game_line += f"\n   ↳ {match_comment}"
+                            game_line += f"\n   💬 {match_comment}"
                         
                         message += game_line + "\n"
+                        
+                        # Add separator between games
+                        if i < len(rows):
+                            message += "   " + "·" * 50 + "\n"
 
                     except (ValueError, TypeError) as e:
                         logger.error(f"Error processing game record: {e}")
                         continue
 
+                message += "─" * 60
                 await ctx.send(message)
 
             except sqlite3.Error as e:

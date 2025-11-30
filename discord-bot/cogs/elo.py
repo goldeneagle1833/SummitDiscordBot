@@ -341,11 +341,9 @@ class EloCog(commands.Cog):
                     )
                     return
 
-                embed = discord.Embed(
-                    title=f"Match History for {ctx.author.display_name}",
-                    description="Your 10 most recent reported matches",
-                    color=discord.Color.blue(),
-                )
+                # Build text message
+                message = f"**Match History for {ctx.author.display_name}**\n"
+                message += f"Your 10 most recent reported matches:\n\n"
 
                 for i, row in enumerate(rows, 1):
                     try:
@@ -370,39 +368,30 @@ class EloCog(commands.Cog):
                             )
                         formatted_date = date_obj.strftime("%Y-%m-%d %H:%M")
 
-                        # Build game information
-                        game_info = []
-                        game_info.append(f"**Date:** {formatted_date}")
-                        game_info.append(f"**Winner:** {winner}")
-                        game_info.append(f"**Loser:** {loser}")
-                        game_info.append(
-                            f"**First Player:** {'Yes' if first_player and first_player.lower() == 'y' else 'No'}"
-                        )
-
+                        # Build compact game line
+                        result_emoji = "✅" if did_win else "❌"
+                        first_indicator = "🥇" if first_player and first_player.lower() == 'y' else "🥈"
+                        
+                        game_line = f"{result_emoji} **Game {i}** ({formatted_date}): {winner} beat {loser}"
+                        
                         if match_time:
-                            game_info.append(
-                                f"**Duration:** {float(match_time):.1f} minutes"
-                            )
-
+                            game_line += f" • {float(match_time):.1f}min"
+                        
+                        game_line += f" {first_indicator}"
+                        
                         if replay_url and replay_url != "No URL provided":
-                            game_info.append(
-                                f"**Replay:** [View on Curiosa]({replay_url})"
-                            )
-
+                            game_line += f" • [Replay]({replay_url})"
+                        
                         if match_comment:
-                            game_info.append(f"**Notes:** {match_comment}")
-
-                        embed.add_field(
-                            name=f"Game #{i}",
-                            value="\n".join(game_info),
-                            inline=False,
-                        )
+                            game_line += f"\n   ↳ {match_comment}"
+                        
+                        message += game_line + "\n"
 
                     except (ValueError, TypeError) as e:
                         logger.error(f"Error processing game record: {e}")
                         continue
 
-                await ctx.send(embed=embed)
+                await ctx.send(message)
 
             except sqlite3.Error as e:
                 logger.error(f"Database error in mygames command: {e}")

@@ -44,6 +44,7 @@ class SlashCommandsCog(commands.Cog):
         app_commands.Choice(name="❌ Cancel your request", value="cancel"),
         app_commands.Choice(name="⚔️ Challenge specific player", value="challenge"),
         app_commands.Choice(name="📝 Record a game manually", value="record"),
+        app_commands.Choice(name="🎬 Submit replay", value="replay"),
         app_commands.Choice(name="❓ Help & instructions", value="help")
     ])
     async def lfg_slash(
@@ -75,6 +76,12 @@ class SlashCommandsCog(commands.Cog):
             await lfg_cog.challenge(ctx, opponent)
         elif action == "record":
             await lfg_cog.record_game(ctx)
+        elif action == "replay":
+            elo_cog = self.bot.get_cog("EloCog")
+            if elo_cog:
+                await elo_cog.replay(ctx)
+            else:
+                await interaction.followup.send("Replay system is not available.", ephemeral=True)
         elif action == "help":
             await lfg_cog.lfg_help(ctx)
 
@@ -84,10 +91,9 @@ class SlashCommandsCog(commands.Cog):
     @app_commands.describe(action="What stats do you want to see?")
     @app_commands.choices(action=[
         app_commands.Choice(name="🏅 My Elo rating & rank", value="rank"),
-        app_commands.Choice(name="🏆 Leaderboard (top 10)", value="leaderboard"),
+        app_commands.Choice(name="🏆 Leaderboard (top 16)", value="leaderboard"),
         app_commands.Choice(name="📈 My detailed statistics", value="mystats"),
-        app_commands.Choice(name="🎮 My recent games", value="mygames"),
-        app_commands.Choice(name="🎬 Submit replay", value="replay")
+        app_commands.Choice(name="🎮 My recent games", value="mygames")
     ])
     async def stats_slash(self, interaction: discord.Interaction, action: str):
         """Unified stats command"""
@@ -107,8 +113,6 @@ class SlashCommandsCog(commands.Cog):
             await elo_cog.mystats(ctx)
         elif action == "mygames":
             await elo_cog.mygames(ctx)
-        elif action == "replay":
-            await elo_cog.replay(ctx)
 
     # ==================== TOURNAMENT COMMANDS ====================
 

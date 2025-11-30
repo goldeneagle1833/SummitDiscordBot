@@ -370,17 +370,16 @@ class EloCog(commands.Cog):
 
                         # Build compact game line
                         result_emoji = "✅" if did_win else "❌"
-                        first_indicator = "🥇" if first_player and first_player.lower() == 'y' else "🥈"
                         
                         game_line = f"{result_emoji} **Game {i}** ({formatted_date}): {winner} beat {loser}"
                         
                         if match_time:
                             game_line += f" • {float(match_time):.1f}min"
                         
-                        game_line += f" {first_indicator}"
+                        game_line += f" "
                         
                         if replay_url and replay_url != "No URL provided":
-                            game_line += f" • [Replay]({replay_url})"
+                            game_line += f" • <{replay_url}>"
                         
                         if match_comment:
                             game_line += f"\n   ↳ {match_comment}"

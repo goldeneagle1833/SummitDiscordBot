@@ -80,79 +80,35 @@ class SlashCommandsCog(commands.Cog):
 
     # ==================== STATS/ELO COMMANDS ====================
 
-    @app_commands.command(name="stats_rank", description="📊 Check your current Elo rating and rank")
-    async def rank_slash(self, interaction: discord.Interaction):
-        """Check rank - slash command version"""
+    @app_commands.command(name="stats", description="📊 View stats, rankings, and game information")
+    @app_commands.describe(action="What stats do you want to see?")
+    @app_commands.choices(action=[
+        app_commands.Choice(name="🏅 My Elo rating & rank", value="rank"),
+        app_commands.Choice(name="🏆 Leaderboard (top 10)", value="leaderboard"),
+        app_commands.Choice(name="📈 My detailed statistics", value="mystats"),
+        app_commands.Choice(name="🎮 My recent games", value="mygames"),
+        app_commands.Choice(name="🎬 Submit replay", value="replay")
+    ])
+    async def stats_slash(self, interaction: discord.Interaction, action: str):
+        """Unified stats command"""
         await interaction.response.defer()
         ctx = FakeContext(self.bot, interaction)
         
         elo_cog = self.bot.get_cog("EloCog")
-        if elo_cog:
-            await elo_cog.rank(ctx)
-        else:
+        if not elo_cog:
             await interaction.followup.send("Elo system is not available.", ephemeral=True)
-
-    # ==================== STATS/ELO COMMANDS ====================
-
-    @app_commands.command(name="stats_rank", description="📊 Check your current Elo rating and rank")
-    async def rank_slash(self, interaction: discord.Interaction):
-        """Check rank - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
+            return
         
-        elo_cog = self.bot.get_cog("EloCog")
-        if elo_cog:
+        if action == "rank":
             await elo_cog.rank(ctx)
-        else:
-            await interaction.followup.send("Elo system is not available.", ephemeral=True)
-
-    @app_commands.command(name="stats_leaderboard", description="📊 View the top 10 Elo rankings")
-    async def leaderboard_slash(self, interaction: discord.Interaction):
-        """Check leaderboard - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
-        
-        elo_cog = self.bot.get_cog("EloCog")
-        if elo_cog:
+        elif action == "leaderboard":
             await elo_cog.leaderboard(ctx)
-        else:
-            await interaction.followup.send("Elo system is not available.", ephemeral=True)
-
-    @app_commands.command(name="stats_mystats", description="📊 View your detailed match statistics and performance")
-    async def mystats_slash(self, interaction: discord.Interaction):
-        """Check stats - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
-        
-        elo_cog = self.bot.get_cog("EloCog")
-        if elo_cog:
+        elif action == "mystats":
             await elo_cog.mystats(ctx)
-        else:
-            await interaction.followup.send("Elo system is not available.", ephemeral=True)
-
-    @app_commands.command(name="stats_mygames", description="📊 View your recent game history")
-    async def mygames_slash(self, interaction: discord.Interaction):
-        """Check games - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
-        
-        elo_cog = self.bot.get_cog("EloCog")
-        if elo_cog:
+        elif action == "mygames":
             await elo_cog.mygames(ctx)
-        else:
-            await interaction.followup.send("Elo system is not available.", ephemeral=True)
-
-    @app_commands.command(name="stats_replay", description="📊 Submit a replay of your game")
-    async def replay_slash(self, interaction: discord.Interaction):
-        """Submit replay - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
-        
-        elo_cog = self.bot.get_cog("EloCog")
-        if elo_cog:
+        elif action == "replay":
             await elo_cog.replay(ctx)
-        else:
-            await interaction.followup.send("Elo system is not available.", ephemeral=True)
 
     # ==================== TOURNAMENT COMMANDS ====================
 

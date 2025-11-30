@@ -1056,13 +1056,12 @@ class FunCog(commands.Cog):
             parsed_datetime = safe_parse_datetime(row[0])
             if parsed_datetime:
                 last_used_date = parsed_datetime.date()
+                next_available_date = last_used_date + datetime.timedelta(weeks=1)
                 # Check if a week has passed since the last use
-                if (
-                    last_used_date + datetime.timedelta(weeks=1)
-                    > datetime.datetime.now().date()
-                ):
+                if next_available_date > datetime.datetime.now().date():
+                    days_remaining = (next_available_date - datetime.datetime.now().date()).days
                     await ctx.send(
-                        f"{ctx.author.mention}, you can only use this command once a week!"
+                        f"{ctx.author.mention}, you can only use this command once a week! You can use it again in **{days_remaining} day{'s' if days_remaining != 1 else ''}**."
                     )
                     conn.close()
                     return

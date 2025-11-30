@@ -77,32 +77,29 @@ async def on_member_join(member):
     if channel:
         embed = discord.Embed(
             title="👋 Welcome to Summit Discord!",
-            description=(
-                f"Welcome {member.mention}! Here's your guide to our server:"
-            ),
+            description=f"Welcome {member.mention}!",
             color=discord.Color.blue(),
         )
 
         # Key Channels
         embed.add_field(
-            name="Important Channels",
+            name="Key Channels",
             value=(
-                " <#1336912830867439676> - Use `!lfg` here to find games\n"
-                " <#1379476865089142844> - Check out event decks and decklists\n"
-                " <#1424374255721775175> - Latest Spoilers   \n"
-                " <#1402265039951368273> - Silly fun and games"
+                "<#1336912830867439676> - Find games with `!lfg`\n"
+                "<#1379476865089142844> - Event decks & decklists\n"
+                "<#1444292011372052511> - Your achievements & progress\n"
+                "<#1402265039951368273> - Fun & games"
             ),
             inline=False,
         )
 
-        # Bot Help
+        # Bot Commands
         embed.add_field(
-            name="Bot Commands",
+            name="Getting Started",
             value=(
-                "• Type `/` to see all slash commands (recommended!)\n"
-                "• `!help` or `/help` - See all features\n"
-                "• `!commands` or `/commands` - Full command list\n"
-                "• `!lfg_help` or `/lfg_help` - Learn LFG system"
+                "Type `/` to see all commands\n"
+                "`/help` - Full feature list\n"
+                "`/profile` - View your achievements"
             ),
             inline=False,
         )

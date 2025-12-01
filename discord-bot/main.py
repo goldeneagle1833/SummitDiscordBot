@@ -12,6 +12,7 @@ from cogs.shop import ShopCog
 from cogs.tournament import TournamentCog
 from cogs.slash_commands import SlashCommandsCog
 from cogs.achievements import AchievementsCog
+from cogs.anti_spam import AntiSpamCog
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -110,6 +111,7 @@ async def on_member_join(member):
 
 
 async def setup_cogs():
+    await bot.add_cog(AntiSpamCog(bot))  # Load anti-spam first to monitor all messages
     await bot.add_cog(LFGCog(bot))
     await bot.add_cog(EloCog(bot))
     await bot.add_cog(FunCog(bot))

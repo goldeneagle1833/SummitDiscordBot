@@ -116,67 +116,49 @@ class SlashCommandsCog(commands.Cog):
 
     # ==================== TOURNAMENT COMMANDS ====================
 
-    @app_commands.command(name="tournament_create", description="🏆 Create a new tournament (Admin)")
-    async def create_tournament_slash(self, interaction: discord.Interaction):
-        """Create tournament - slash command version"""
+    @app_commands.command(name="tournament", description="🏆 Tournament system - Join, view brackets, and more")
+    @app_commands.describe(
+        action="What do you want to do?",
+        tournament_name="Tournament name (for 'join', 'bracket', and 'create' actions)"
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="📝 Join a tournament (/tournament join)", value="join"),
+        app_commands.Choice(name="📊 View bracket (/tournament bracket)", value="bracket"),
+        app_commands.Choice(name="⚔️ Report match result (/tournament match_report)", value="match_report"),
+        app_commands.Choice(name="➕ Create tournament (Admin) (/tournament create)", value="create"),
+        app_commands.Choice(name="❓ Help & instructions (/tournament help)", value="help")
+    ])
+    async def tournament_slash(
+        self,
+        interaction: discord.Interaction,
+        action: str,
+        tournament_name: str = None
+    ):
+        """Unified tournament command"""
         await interaction.response.defer()
         ctx = FakeContext(self.bot, interaction)
         
         tournament_cog = self.bot.get_cog("TournamentCog")
-        if tournament_cog:
-            await tournament_cog.create_tournament(ctx)
-        else:
+        if not tournament_cog:
             await interaction.followup.send("Tournament system is not available.", ephemeral=True)
-
-    @app_commands.command(name="tournament_join", description="🏆 Join a tournament")
-    @app_commands.describe(tournament_name="Name of the tournament to join")
-    async def join_tournament_slash(self, interaction: discord.Interaction, tournament_name: str):
-        """Join tournament - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
+            return
         
-        tournament_cog = self.bot.get_cog("TournamentCog")
-        if tournament_cog:
+        if action == "join":
+            if not tournament_name:
+                await interaction.followup.send("❌ You must specify a tournament name to join!", ephemeral=True)
+                return
             await tournament_cog.join(ctx, tournament_name=tournament_name)
-        else:
-            await interaction.followup.send("Tournament system is not available.", ephemeral=True)
-
-    @app_commands.command(name="tournament_match", description="🏆 Check your current tournament match")
-    async def my_match_slash(self, interaction: discord.Interaction):
-        """Check match - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
-        
-        tournament_cog = self.bot.get_cog("TournamentCog")
-        if tournament_cog:
-            await tournament_cog.my_round(ctx)
-        else:
-            await interaction.followup.send("Tournament system is not available.", ephemeral=True)
-
-    @app_commands.command(name="tournament_bracket", description="🏆 View tournament bracket")
-    @app_commands.describe(tournament_name="Name of the tournament")
-    async def bracket_slash(self, interaction: discord.Interaction, tournament_name: str):
-        """View bracket - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
-        
-        tournament_cog = self.bot.get_cog("TournamentCog")
-        if tournament_cog:
+        elif action == "bracket":
+            if not tournament_name:
+                await interaction.followup.send("❌ You must specify a tournament name to view bracket!", ephemeral=True)
+                return
             await tournament_cog.bracket(ctx, tournament_name=tournament_name)
-        else:
-            await interaction.followup.send("Tournament system is not available.", ephemeral=True)
-
-    @app_commands.command(name="tournament_help", description="🏆 Learn about tournament features")
-    async def tournament_help_slash(self, interaction: discord.Interaction):
-        """Tournament help - slash command version"""
-        await interaction.response.defer()
-        ctx = FakeContext(self.bot, interaction)
-        
-        tournament_cog = self.bot.get_cog("TournamentCog")
-        if tournament_cog:
+        elif action == "match_report":
+            await tournament_cog.my_round(ctx)
+        elif action == "create":
+            await tournament_cog.create_tournament(ctx)
+        elif action == "help":
             await tournament_cog.tournament_help(ctx)
-        else:
-            await interaction.followup.send("Tournament help is not available.", ephemeral=True)
 
     # ==================== UTILITY COMMANDS ====================
 

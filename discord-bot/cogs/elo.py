@@ -383,10 +383,10 @@ class EloCog(commands.Cog):
                         if match_time:
                             game_line += f" • ⏱️ {float(match_time):.1f}min"
                         
-                        game_line += f" • "
+                        game_line += f" "
                         
                         if replay_url and replay_url != "No URL provided":
-                            game_line += f" •  <{replay_url}>"
+                            game_line += f" • <{replay_url}>"
                         
                         if match_comment:
                             game_line += f"\n   💬 {match_comment}"
@@ -395,13 +395,19 @@ class EloCog(commands.Cog):
                         
                         # Add separator between games
                         if i < len(rows):
-                            message += "   " + "·" * 50 + "\n"
+                            message += "   " + "·" * 50 + "\n" 
 
                     except (ValueError, TypeError) as e:
                         logger.error(f"Error processing game record: {e}")
                         continue
 
                 message += "─" * 60
+                
+                # Check if message is too long (Discord limit is 2000 characters)
+                if len(message) > 2000:
+                    logger.warning(f"Message too long ({len(message)} chars), truncating...")
+                    message = message[:1950] + "\n... (truncated)"
+                
                 await ctx.send(message)
 
             except sqlite3.Error as e:
@@ -411,7 +417,7 @@ class EloCog(commands.Cog):
                 )
 
         except Exception as e:
-            logger.error(f"Unexpected error in mygames command: {e}")
+            logger.error(f"Unexpected error in mygames command: {e}", exc_info=True)
             await ctx.send("An unexpected error occurred. Please try again later.")
 
         finally:

@@ -205,6 +205,21 @@ class TournamentMatchModal(discord.ui.Modal, title="Tournament Match Report"):
         logger.info(
             f"Match {self.match_id} completed - Winner: {match['winner']}, Round: {match['round']}, Tournament: {self.tournament_name}"
         )
+        
+        # Immediately try to pair winner with another winner for next round
+        winner_id = match["winner"]
+        current_round = match["round"]
+        
+        # Try to create next round match immediately
+        next_match_created = False
+        try:
+            cog = interaction.client.get_cog("TournamentCog")
+            if cog:
+                next_match_created = await cog.try_pair_winner_immediately(
+                    tournament, winner_id, current_round
+                )
+        except Exception as e:
+            logger.error(f"Error trying to pair winner immediately: {str(e)}")
 
         # Get opponent name for the database record
         opponent_id = (
@@ -240,6 +255,14 @@ class TournamentMatchModal(discord.ui.Modal, title="Tournament Match Report"):
         result_message += f"**Winner:** {'You' if self.is_winner else opponent_name}\n"
         result_message += f"**Deck URL:** {curiosa_link}\n"
         result_message += f"**Match Time:** {match_time} minutes"
+        
+        # Add immediate pairing notification if applicable
+        if next_match_created and self.is_winner:
+            result_message += "\n\n🎮 **You've been immediately paired for the next round!**"
+            result_message += f"\nUse `/tournament match_report` to view your next opponent!"
+        elif self.is_winner:
+            result_message += "\n\n⏳ **Waiting for another winner to advance...**"
+            result_message += "\nYou'll be automatically paired once another player wins!"
 
         # Check if the round is complete and create next round matches if needed
         current_round = match["round"]
@@ -606,6 +629,64 @@ class TournamentCog(commands.Cog):
             )
 
     @commands.command()
+    async def try_pair_winner_immediately(self, tournament, winner_id, completed_round):
+        """
+        Try to immediately pair a winner with another available winner from the same round.
+        This allows players to advance without waiting for all round matches to complete.
+        """
+        # Get all matches from the completed round
+        round_matches = [m for m in tournament["matches"] if m["round"] == completed_round]
+        
+        # Find other completed matches from this round that have winners
+        other_winners = []
+        for m in round_matches:
+            if m["status"] == "completed" and m["winner"] is not None and m["winner"] != winner_id:
+                # Check if this winner is not already paired in next round
+                already_paired = any(
+                    next_m["round"] == completed_round + 1 and 
+                    m["winner"] in [next_m["player1"], next_m["player2"]]
+                    for next_m in tournament["matches"]
+                )
+                if not already_paired:
+                    other_winners.append(m["winner"])
+        
+        # Check if current winner is already paired
+        winner_already_paired = any(
+            m["round"] == completed_round + 1 and 
+            winner_id in [m["player1"], m["player2"]]
+            for m in tournament["matches"]
+        )
+        
+        if winner_already_paired:
+            logger.info(f"Winner {winner_id} already paired in next round")
+            return False
+        
+        # If we have another unpaired winner, create the next round match immediately
+        if other_winners:
+            opponent_id = other_winners[0]  # Take first available winner
+            next_round = completed_round + 1
+            match_id = len(tournament["matches"]) + 1
+            
+            new_match = {
+                "id": match_id,
+                "round": next_round,
+                "player1": winner_id,
+                "player2": opponent_id,
+                "winner": None,
+                "status": "pending",
+            }
+            
+            tournament["matches"].append(new_match)
+            save_tournaments()
+            
+            logger.info(
+                f"Immediately created next round match: {winner_id} vs {opponent_id} "
+                f"(Round {next_round})"
+            )
+            return True
+        
+        return False
+
     async def create_next_round_match(self, tournament, prev_round_matches):
         """Create matches for the next round based on winners"""
         next_round = prev_round_matches[0]["round"] + 1
@@ -936,7 +1017,7 @@ class TournamentCog(commands.Cog):
 
     @commands.command()
     async def bracket(self, ctx, *, tournament_name: str):
-        """View the current tournament bracket in a visual format"""
+        """View your side of the tournament bracket in a visual format"""
         tournament_id, tournament = find_tournament_by_name(tournament_name)
         if not tournament:
             await ctx.send(
@@ -944,77 +1025,106 @@ class TournamentCog(commands.Cog):
             )
             return
 
-        # Build the message as plain text
-        message = f"**🏆 Tournament: {tournament['name']}**\n"
-        message += f"Status: {tournament['status']}\n"
-        message += f"Players: {len(tournament['players'])}/{tournament['max_players']}\n"
+        # Check if user is in the tournament
+        user_id = ctx.author.id
+        if user_id not in tournament["players"]:
+            await ctx.send(
+                f"❌ You are not registered for **{tournament['name']}**.\n"
+                f"Use `/tournament join {tournament_name}` to join!"
+            )
+            return
 
+        # Build header
+        message = "```\n"
+        message += "╔═══════════════════════════════════════╗\n"
+        message += "║     T O U R N A M E N T               ║\n"
+        message += f"║     {tournament['name'][:30].center(30)}    ║\n"
+        message += "╚═══════════════════════════════════════╝\n"
+        message += "```\n"
+        
         if tournament["status"] == "completed" and tournament.get("winner"):
             try:
                 winner = await self.bot.fetch_user(tournament["winner"])
-                message += f"🏆 Champion: {winner.name}\n"
+                message += f"🏆 **Champion:** {winner.name}\n\n"
             except discord.NotFound:
-                message += "🏆 Champion: Unknown\n"
-
-        message += "\n**Registered Players:**\n"
-
-        # Add list of registered players
-        registered_players = []
-        for player_id in tournament["players"]:
-            try:
-                player = await self.bot.fetch_user(player_id)
-                registered_players.append(player.name)
-            except discord.NotFound:
-                registered_players.append(f"Unknown Player ({player_id})")
-
-        # Sort players alphabetically
-        registered_players.sort()
-        message += ", ".join(registered_players) + "\n\n"
+                message += "🏆 **Champion:** Unknown\n\n"
 
         if not tournament["matches"]:
-            message += "No matches have been scheduled yet."
+            message += "⏳ No matches have been scheduled yet."
             await ctx.send(message)
             return
 
-        # Group matches by round
+        # Find all matches involving the user
+        user_matches = [m for m in tournament["matches"] if user_id in [m["player1"], m["player2"]]]
+        
+        if not user_matches:
+            message += "⏳ You don't have any scheduled matches yet."
+            await ctx.send(message)
+            return
+
+        # Group user's matches by round
         matches_by_round = {}
-        max_round = 1
-        for match in tournament["matches"]:
+        for match in user_matches:
             round_num = match["round"]
             if round_num not in matches_by_round:
                 matches_by_round[round_num] = []
             matches_by_round[round_num].append(match)
-            max_round = max(max_round, round_num)
 
-        # Create visual bracket for each round
-        for round_num in range(1, max_round + 1):
-            round_matches = matches_by_round.get(round_num, [])
-            message += f"**Round {round_num}**\n"
+        # Display user's path through the bracket
+        message += "**📍 Your Bracket Path:**\n\n"
+
+        for round_num in sorted(matches_by_round.keys()):
+            round_matches = matches_by_round[round_num]
+            
+            # Determine round name
+            remaining_rounds = max([m["round"] for m in tournament["matches"]]) - round_num + 1
+            if remaining_rounds == 1:
+                round_name = "Finals"
+            elif remaining_rounds == 2:
+                round_name = "Semi-Finals"
+            elif remaining_rounds == 3:
+                round_name = "Quarter-Finals"
+            else:
+                round_name = f"Round {round_num}"
 
             for match in round_matches:
                 try:
                     player1 = await self.bot.fetch_user(match["player1"])
                     player2 = await self.bot.fetch_user(match["player2"])
 
-                    # Format player names with status indicators
-                    p1_name = player1.name[:20]  # Truncate long names
-                    p2_name = player2.name[:20]
+                    # Determine which player is the user
+                    if match["player1"] == user_id:
+                        user_name = player1.name[:18]
+                        opp_name = player2.name[:18]
+                    else:
+                        user_name = player2.name[:18]
+                        opp_name = player1.name[:18]
 
-                    if match["winner"] is not None:
-                        if match["winner"] == player1.id:
-                            p1_name = f"✅ {p1_name}"
-                            p2_name = f"❌ {p2_name}"
-                        else:
-                            p1_name = f"❌ {p1_name}"
-                            p2_name = f"✅ {p2_name}"
-
-                    # Create match display with ASCII art
+                    # Create slim bracket display
+                    message += f"**{round_name}**\n"
                     message += "```\n"
-                    message += "┌─" + "─" * 24 + "┐\n"
-                    message += f"│ {p1_name:<22} │\n"
-                    message += f"├─{'vs':^24}┤\n"
-                    message += f"│ {p2_name:<22} │\n"
-                    message += "└─" + "─" * 24 + "┘\n"
+                    
+                    if match["winner"] is None:
+                        # Match not played yet
+                        message += "┌────────────────────┐\n"
+                        message += f"│ {user_name:^18} │ (You)\n"
+                        message += "├────────────────────┤\n"
+                        message += f"│ {opp_name:^18} │\n"
+                        message += "└────────────────────┘\n"
+                    else:
+                        # Match completed
+                        winner = await self.bot.fetch_user(match["winner"])
+                        user_won = match["winner"] == user_id
+                        
+                        user_status = "✓ WIN " if user_won else "✗ LOSS"
+                        opp_status = "✗ LOSS" if user_won else "✓ WIN "
+                        
+                        message += "┌────────────────────┐\n"
+                        message += f"│ {user_status} {user_name[:12]:<12} │\n"
+                        message += "├────────────────────┤\n"
+                        message += f"│ {opp_status} {opp_name[:12]:<12} │\n"
+                        message += "└────────────────────┘\n"
+                    
                     message += "```\n"
 
                 except discord.NotFound:
@@ -1023,12 +1133,24 @@ class TournamentCog(commands.Cog):
                     logger.error(f"Error displaying match in bracket: {str(e)}")
                     continue
 
-        # Split message if too long (Discord has 2000 char limit)
+        # Add footer with status
+        if all(m["winner"] is not None for m in user_matches):
+            # Check if user is still in tournament
+            last_match = max(user_matches, key=lambda m: m["round"])
+            if last_match["winner"] == user_id:
+                if tournament["status"] == "completed":
+                    message += "\n🎉 **You won the tournament!**"
+                else:
+                    message += "\n✅ **Still in the running!**"
+            else:
+                message += "\n💔 **You've been eliminated.**"
+
+        # Split message if too long
         if len(message) > 2000:
             chunks = []
             current_chunk = ""
             for line in message.split("\n"):
-                if len(current_chunk) + len(line) + 1 > 2000:
+                if len(current_chunk) + len(line) + 1 > 1900:
                     chunks.append(current_chunk)
                     current_chunk = line + "\n"
                 else:

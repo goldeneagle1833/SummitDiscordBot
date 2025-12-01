@@ -341,14 +341,14 @@ class EloCog(commands.Cog):
                     )
                     return
 
-                # Build text message with ASCII art
+                # Build text message with ASCII art (without emojis in code block)
                 message = "```\n"
                 message += "╔══════════════════════════════════════════════════════════╗\n"
-                message += "║           📜  M A T C H   H I S T O R Y  📜            ║\n"
-                message += f"║              {ctx.author.display_name.center(40)}              ║\n"
+                message += "║            M A T C H   H I S T O R Y                   ║\n"
+                message += f"║            {ctx.author.display_name.center(44)}            ║\n"
                 message += "╚══════════════════════════════════════════════════════════╝\n"
                 message += "```\n"
-                message += "**Your 10 most recent reported matches:**\n"
+                message += "📜 **Your 10 most recent reported matches:**\n"
                 message += "─" * 60 + "\n"
 
                 for i, row in enumerate(rows, 1):

@@ -39,13 +39,13 @@ class SlashCommandsCog(commands.Cog):
         opponent="Player to challenge (for 'challenge' action)"
     )
     @app_commands.choices(action=[
-        app_commands.Choice(name="🎮 Join queue to find a game", value="join"),
-        app_commands.Choice(name="👀 Check who's in queue", value="check"),
-        app_commands.Choice(name="❌ Cancel your request", value="cancel"),
-        app_commands.Choice(name="⚔️ Challenge specific player", value="challenge"),
-        app_commands.Choice(name="📝 Record a game manually", value="record"),
-        app_commands.Choice(name="🎬 Submit replay", value="replay"),
-        app_commands.Choice(name="❓ Help & instructions", value="help")
+        app_commands.Choice(name="🎮 Join queue to find a game (/lfg join)", value="join"),
+        app_commands.Choice(name="👀 Check who's in queue (/lfg check)", value="check"),
+        app_commands.Choice(name="❌ Cancel your request (/lfg cancel)", value="cancel"),
+        app_commands.Choice(name="⚔️ Challenge specific player (/lfg challenge @user)", value="challenge"),
+        app_commands.Choice(name="📝 Record a game manually (/lfg record)", value="record"),
+        app_commands.Choice(name="🎬 Submit replay (/lfg replay)", value="replay"),
+        app_commands.Choice(name="❓ Help & instructions (/lfg help)", value="help")
     ])
     async def lfg_slash(
         self, 
@@ -90,10 +90,10 @@ class SlashCommandsCog(commands.Cog):
     @app_commands.command(name="stats", description="📊 View stats, rankings, and game information")
     @app_commands.describe(action="What stats do you want to see?")
     @app_commands.choices(action=[
-        app_commands.Choice(name="🏅 My Elo rating & rank", value="rank"),
-        app_commands.Choice(name="🏆 Leaderboard (top 16)", value="leaderboard"),
-        app_commands.Choice(name="📈 My detailed statistics", value="mystats"),
-        app_commands.Choice(name="🎮 My recent games", value="mygames")
+        app_commands.Choice(name="🏅 My Elo rating & rank (/stats rank)", value="rank"),
+        app_commands.Choice(name="🏆 Leaderboard (top 16) (/stats leaderboard)", value="leaderboard"),
+        app_commands.Choice(name="📈 My detailed statistics (/stats mystats)", value="mystats"),
+        app_commands.Choice(name="🎮 My recent games (/stats mygames)", value="mygames")
     ])
     async def stats_slash(self, interaction: discord.Interaction, action: str):
         """Unified stats command"""

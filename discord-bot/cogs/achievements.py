@@ -34,9 +34,9 @@ class AchievementsCog(commands.Cog):
         user="User to view (optional, works with 'profile' and 'earned' actions)"
     )
     @app_commands.choices(action=[
-        app_commands.Choice(name="📋 List all achievements", value="list"),
-        app_commands.Choice(name="🏆 Show earned achievements", value="earned"),
-        app_commands.Choice(name="🌟 View achievement profile", value="profile")
+        app_commands.Choice(name="📋 List all achievements (/achievements list)", value="list"),
+        app_commands.Choice(name="🏆 Show earned achievements (/achievements earned)", value="earned"),
+        app_commands.Choice(name="🌟 View achievement profile (/achievements profile)", value="profile")
     ])
     async def achievements(
         self, 

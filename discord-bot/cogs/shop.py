@@ -23,14 +23,14 @@ class ShopCog(commands.Cog):
         self.guild_id = config.GUILD_ID
         self.leader_role_id = config.LEADER_ROLE_ID
         self.item_costs = {
-            "blue": 14,  # Blue Shell
-            "red": 10,  # Red Shell
-            "green": 10,  # Green Shell
-            "banana": 10,  # Banana
-            "star": 50,  # Star
-            "mushroom": 10,  # Mushroom
-            "bobomb": 50,  # Bob-omb
-            "bluestar": 75,  # Blue Star - new item
+            "blue": 7,  # Blue Shell (was 14)
+            "red": 5,  # Red Shell (was 10)
+            "green": 5,  # Green Shell (was 10)
+            "banana": 5,  # Banana (was 10)
+            "star": 25,  # Star (was 50)
+            "mushroom": 5,  # Mushroom (was 10)
+            "bobomb": 25,  # Bob-omb (was 50)
+            "bluestar": 38,  # Blue Star (was 75) - rounded up from 37.5
         }
         logger.info("ShopCog initialized")
 

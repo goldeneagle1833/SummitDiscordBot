@@ -249,7 +249,10 @@ class FunCog(commands.Cog):
         # Special Commands Section
         embed.add_field(
             name="✨ Special Commands",
-            value=("`!bullfart` - Get bonus points based on last fart (weekly)\n"),
+            value=(
+                "`!bullfart` - Get bonus points based on last fart (weekly)\n"
+                "`!giga_fart_cannon` - Mark random top 5 player for 2x damage (once per day, server-wide)"
+            ),
             inline=False,
         )
 

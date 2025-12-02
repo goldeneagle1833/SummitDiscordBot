@@ -22,6 +22,7 @@ class ShopCog(commands.Cog):
         self.fart_channel_id = config.FART_CHANNEL_ID
         self.guild_id = config.GUILD_ID
         self.leader_role_id = config.LEADER_ROLE_ID
+        self.giga_target_role_id = 1445222741686095994  # Role for double damage target
         self.item_costs = {
             "blue": 7,  # Blue Shell (was 14)
             "red": 5,  # Red Shell (was 10)
@@ -528,8 +529,18 @@ class ShopCog(commands.Cog):
     # Add this method to the ShopCog class
     async def deduct_damage(self, user_id: int, damage: int):
         print("Deducting damage...")
-        """Deduct damage amount from user's points"""
+        """Deduct damage amount from user's points. Double damage if user has giga target role."""
         try:
+            # Check if user has the giga target role
+            guild = self.bot.get_guild(self.guild_id)
+            if guild:
+                member = guild.get_member(user_id)
+                if member:
+                    giga_role = guild.get_role(self.giga_target_role_id)
+                    if giga_role and giga_role in member.roles:
+                        damage = damage * 2
+                        logger.info(f"User {user_id} has giga target role - damage doubled to {damage}")
+            
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
             cur.execute(
@@ -541,6 +552,67 @@ class ShopCog(commands.Cog):
             logger.debug(f"Deducted {damage} damage points from user {user_id}")
         except Exception as e:
             logger.error(f"Error deducting damage: {e}")
+            raise
+
+    @commands.command(name="giga_fart_cannon")
+    @commands.cooldown(1, 86400, commands.BucketType.guild)  # Once per day for the entire server
+    async def giga_fart_cannon(self, ctx):
+        """Fire the Giga Fart Cannon! Assigns double damage debuff to a random top 5 player. (Once per day for entire server)"""
+        logger.debug(f"Giga Fart Cannon command used by {ctx.author.id}")
+
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+            )
+            return
+
+        try:
+            # Get top 5 players
+            players = await self.get_sorted_players()
+            if not players or len(players) < 1:
+                return await ctx.send("Not enough players in the fart ranks!")
+
+            top_5 = players[:5]
+            
+            # Select a random player from top 5
+            target = random.choice(top_5)
+            target_id = target[0]
+            
+            # Get guild and role
+            guild = self.bot.get_guild(self.guild_id)
+            if not guild:
+                logger.error(f"Could not find guild {self.guild_id}")
+                return await ctx.send("An error occurred - guild not found.")
+            
+            giga_role = guild.get_role(self.giga_target_role_id)
+            if not giga_role:
+                logger.error(f"Could not find giga target role {self.giga_target_role_id}")
+                return await ctx.send("An error occurred - role not found.")
+            
+            target_member = guild.get_member(target_id)
+            if not target_member:
+                logger.error(f"Could not find member {target_id}")
+                return await ctx.send("An error occurred - target player not found.")
+            
+            # Remove role from everyone else first
+            for member in guild.members:
+                if giga_role in member.roles and member.id != target_id:
+                    await member.remove_roles(giga_role)
+                    logger.info(f"Removed giga target role from {member.id}")
+            
+            # Add role to target
+            await target_member.add_roles(giga_role)
+            logger.info(f"Added giga target role to {target_id}")
+            
+            await ctx.send(
+                f"💨 **GIGA FART CANNON FIRED!**\n"
+                f"<@{target_id}> has been marked! They will take **DOUBLE DAMAGE** from all shop items!\n"
+                f" This command is now on cooldown for the entire server for 24 hours!"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in giga_fart_cannon command: {e}", exc_info=True)
+            await ctx.send("An error occurred while processing the command.")
             raise
 
     @commands.command(name="blue_star")

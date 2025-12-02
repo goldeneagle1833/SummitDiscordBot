@@ -180,9 +180,9 @@ class ShopCog(commands.Cog):
             logger.debug(f"Blue shell damage rolled: {damage}")
 
             await self.deduct_points(ctx.author.id, "blue")
-            await self.deduct_damage(leader_id, damage)
+            actual_damage = await self.deduct_damage(leader_id, damage)
             await ctx.send(
-                f"<@{ctx.author.id}> launched a Blue Shell at leader <@{leader_id}> for {damage} damage!"
+                f"<@{ctx.author.id}> launched a Blue Shell at leader <@{leader_id}> for {actual_damage} damage!"
             )
         except Exception as e:
             logger.error(f"Error in blue shell command: {e}")
@@ -213,9 +213,9 @@ class ShopCog(commands.Cog):
 
         damage = self.roll_damage(2)
         await self.deduct_points(ctx.author.id, "red")
-        await self.deduct_damage(target[0], damage)
+        actual_damage = await self.deduct_damage(target[0], damage)
         await ctx.send(
-            f"<@{ctx.author.id}> hit <@{target[0]}> with a Red Shell for {damage} damage!"
+            f"<@{ctx.author.id}> hit <@{target[0]}> with a Red Shell for {actual_damage} damage!"
         )
 
     @commands.command(name="green_shell")
@@ -242,9 +242,9 @@ class ShopCog(commands.Cog):
 
         damage = self.roll_damage(2)
         await self.deduct_points(ctx.author.id, "green")
-        await self.deduct_damage(target[0], damage)
+        actual_damage = await self.deduct_damage(target[0], damage)
         await ctx.send(
-            f"<@{ctx.author.id}> hit <@{target[0]}> with a Green Shell for {damage} damage!"
+            f"<@{ctx.author.id}> hit <@{target[0]}> with a Green Shell for {actual_damage} damage!"
         )
 
     @commands.command(name="banana")
@@ -271,9 +271,9 @@ class ShopCog(commands.Cog):
 
         damage = self.roll_damage(2)
         await self.deduct_points(ctx.author.id, "banana")
-        await self.deduct_damage(target[0], damage)
+        actual_damage = await self.deduct_damage(target[0], damage)
         await ctx.send(
-            f"<@{ctx.author.id}> hit <@{target[0]}> with a Banana for {damage} damage!"
+            f"<@{ctx.author.id}> hit <@{target[0]}> with a Banana for {actual_damage} damage!"
         )
 
     @commands.command(name="star")
@@ -449,29 +449,35 @@ class ShopCog(commands.Cog):
         top_5 = players[:5]
         damage = self.roll_damage(3)  # 3d20/2 damage
 
-        # Track who got hit
-        hit_players = []
+        # Track who got hit and their damage
+        hit_info = []  # List of (mention, actual_damage) tuples
         protected_players = []
 
         for player_id, _ in top_5:
             if await self.is_protected(player_id):
                 protected_players.append(f"<@{player_id}>")
             else:
-                hit_players.append(f"<@{player_id}>")
-                await self.deduct_damage(player_id, damage)
+                actual_damage = await self.deduct_damage(player_id, damage)
+                hit_info.append((f"<@{player_id}>", actual_damage))
 
         await self.deduct_points(ctx.author.id, "bobomb")
 
         # Construct response message
-        response = f"<@{ctx.author.id}> threw a Bob-omb dealing {damage} damage to "
+        response = f"<@{ctx.author.id}> threw a Bob-omb!\n"
 
-        if hit_players:
-            response += ", ".join(hit_players)
+        if hit_info:
+            # Group by damage amount for cleaner display
+            damage_groups = {}
+            for mention, dmg in hit_info:
+                if dmg not in damage_groups:
+                    damage_groups[dmg] = []
+                damage_groups[dmg].append(mention)
+            
+            for dmg, mentions in damage_groups.items():
+                response += f"💥 {', '.join(mentions)} took {dmg} damage!\n"
 
         if protected_players:
-            response += (
-                "\n" + ", ".join(protected_players) + " were protected by Stars!"
-            )
+            response += "⭐ " + ", ".join(protected_players) + " were protected by Stars!"
 
         await ctx.send(response)
 
@@ -527,10 +533,11 @@ class ShopCog(commands.Cog):
         await ctx.send(embed=embed)
 
     # Add this method to the ShopCog class
-    async def deduct_damage(self, user_id: int, damage: int):
+    async def deduct_damage(self, user_id: int, damage: int) -> int:
         print("Deducting damage...")
-        """Deduct damage amount from user's points. Double damage if user has giga target role."""
+        """Deduct damage amount from user's points. Double damage if user has giga target role. Returns actual damage dealt."""
         try:
+            actual_damage = damage
             # Check if user has the giga target role
             guild = self.bot.get_guild(self.guild_id)
             if guild:
@@ -538,18 +545,19 @@ class ShopCog(commands.Cog):
                 if member:
                     giga_role = guild.get_role(self.giga_target_role_id)
                     if giga_role and giga_role in member.roles:
-                        damage = damage * 2
-                        logger.info(f"User {user_id} has giga target role - damage doubled to {damage}")
+                        actual_damage = damage * 2
+                        logger.info(f"User {user_id} has giga target role - damage doubled to {actual_damage}")
             
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
             cur.execute(
                 "UPDATE fart_scores SET score = CASE WHEN score - ? < 0 THEN 0 ELSE score - ? END WHERE user_id = ?",
-                (damage, damage, user_id),
+                (actual_damage, actual_damage, user_id),
             )
             conn.commit()
             conn.close()
-            logger.debug(f"Deducted {damage} damage points from user {user_id}")
+            logger.debug(f"Deducted {actual_damage} damage points from user {user_id}")
+            return actual_damage
         except Exception as e:
             logger.error(f"Error deducting damage: {e}")
             raise
@@ -665,11 +673,11 @@ class ShopCog(commands.Cog):
 
             # Apply effects
             await self.deduct_points(ctx.author.id, "bluestar")
-            await self.deduct_damage(leader_id, damage)
+            actual_damage = await self.deduct_damage(leader_id, damage)
 
             await ctx.send(
                 f"<@{ctx.author.id}> used a Blue Star!\n"
-                f"Hit leader <@{leader_id}> for {damage} damage!\n"
+                f"Hit leader <@{leader_id}> for {actual_damage} damage!\n"
                 f"Gained Star protection for 12 hours!"
             )
         finally:

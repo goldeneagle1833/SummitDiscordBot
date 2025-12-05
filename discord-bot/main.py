@@ -101,7 +101,8 @@ async def on_member_join(member):
             value=(
                 "Type `/` to see all commands\n"
                 "`/help` - Full feature list\n"
-                "`/achievements` - View achievements (use 'profile' action)"
+                "`/achievements` - View achievements (use 'profile' action)\n"
+                "📺 [Watch the Bot Tutorial](https://youtu.be/6eErwhPocL8) - Learn how to use the bot!"
             ),
             inline=False,
         )

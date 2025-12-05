@@ -869,9 +869,9 @@ class ShopCog(commands.Cog):
                 return
 
             # Check if user has enough points
-            if not await self.check_points(ctx.author.id, "star_killer"):
+            if not await self.check_points(ctx.author.id, "fart_star"):
                 return await ctx.send(
-                    f"You don't have enough points! Fart Star costs {self.item_costs['star_killer']} points!"
+                    f"You don't have enough points! Fart Star costs {self.item_costs['fart_star']} points!"
                 )
 
             # Get all currently protected users
@@ -904,7 +904,7 @@ class ShopCog(commands.Cog):
                 conn.commit()
                 
                 # Deduct points from the user
-                await self.deduct_points(ctx.author.id, "star_killer")
+                await self.deduct_points(ctx.author.id, "fart_star")
                 
                 # Send success message
                 await ctx.send(

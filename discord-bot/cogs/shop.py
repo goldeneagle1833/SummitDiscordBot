@@ -416,7 +416,6 @@ class ShopCog(commands.Cog):
         )
 
     @commands.command(name="banana")
-    @commands.cooldown(1, 45, commands.BucketType.user)
     async def banana(self, ctx):
         """Hit a random player behind"""
         if ctx.channel.id != self.fart_channel_id:

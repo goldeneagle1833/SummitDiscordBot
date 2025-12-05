@@ -13,6 +13,7 @@ from cogs.tournament import TournamentCog
 from cogs.slash_commands import SlashCommandsCog
 from cogs.achievements import AchievementsCog
 from cogs.anti_spam import AntiSpamCog
+from cogs.purchase_tracking import PurchaseTrackingCog
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -120,6 +121,7 @@ async def setup_cogs():
     await bot.add_cog(TournamentCog(bot))
     await bot.add_cog(SlashCommandsCog(bot))
     await bot.add_cog(AchievementsCog(bot))
+    await bot.add_cog(PurchaseTrackingCog(bot))
 
 
 async def main():

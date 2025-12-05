@@ -922,6 +922,71 @@ class ShopCog(commands.Cog):
             await ctx.send("An error occurred while processing the command.")
             raise
 
+    @commands.command(name="evil_star")
+    @commands.cooldown(1, 60, commands.BucketType.user)
+    async def evil_star(self, ctx):
+        """
+        Double your points... but only if you have exactly 666 points.
+        The dark star only reveals itself to those who walk the cursed path.
+        """
+        logger.debug(f"Evil Star command used by {ctx.author.id}")
+        try:
+            if ctx.channel.id != self.fart_channel_id:
+                logger.debug(f"Wrong channel: {ctx.channel.id}")
+                await ctx.send(
+                    f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+                )
+                return
+
+            # Check user's current points
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            try:
+                cur.execute("SELECT score FROM fart_scores WHERE user_id = ?", (ctx.author.id,))
+                result = cur.fetchone()
+                
+                if not result:
+                    await ctx.send(
+                        f"{ctx.author.mention}, you have no points... the darkness has no use for you."
+                    )
+                    return
+                
+                current_points = result[0]
+                
+                if current_points != 666:
+                    await ctx.send(
+                        f"😈 The Evil Star rejects you, {ctx.author.mention}...\n"
+                        f"You have {current_points} points, but the dark pact requires **exactly 666 points**.\n"
+                        f"Return when you've embraced the number of the beast... 😈"
+                    )
+                    return
+                
+                # User has exactly 666 points - double them!
+                new_points = current_points * 2
+                cur.execute(
+                    "UPDATE fart_scores SET score = ? WHERE user_id = ?",
+                    (new_points, ctx.author.id),
+                )
+                conn.commit()
+                
+                await ctx.send(
+                    f"🔥😈 **THE DARK PACT IS SEALED!** 😈🔥\n"
+                    f"{ctx.author.mention} has walked the cursed path with **666 points**...\n"
+                    f"The Evil Star grants its sinister blessing!\n"
+                    f"**666 ➜ 1332 points!**\n"
+                    f"May the darkness guide your farts... 🔥💀"
+                )
+                
+                logger.info(f"User {ctx.author.id} successfully used Evil Star at exactly 666 points")
+                
+            finally:
+                conn.close()
+                
+        except Exception as e:
+            logger.error(f"Error in evil_star command: {e}")
+            await ctx.send("The dark powers have failed you... an error occurred.")
+            raise
+
 
 async def setup(bot):
     await bot.add_cog(ShopCog(bot))

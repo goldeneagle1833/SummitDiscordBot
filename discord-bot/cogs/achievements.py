@@ -31,11 +31,10 @@ class AchievementsCog(commands.Cog):
     )
     @app_commands.describe(
         action="What do you want to do?",
-        user="User to view (optional, works with 'profile' and 'earned' actions)"
+        user="User to view (optional, works with 'profile' action)"
     )
     @app_commands.choices(action=[
         app_commands.Choice(name="📋 List all achievements (/achievements list)", value="list"),
-        app_commands.Choice(name="🏆 Show earned achievements (/achievements earned)", value="earned"),
         app_commands.Choice(name="🌟 View achievement profile (/achievements profile)", value="profile")
     ])
     async def achievements(
@@ -49,13 +48,11 @@ class AchievementsCog(commands.Cog):
         
         Args:
             interaction: Discord interaction
-            action: 'list' (all achievements), 'earned' (earned achievements), or 'profile' (full profile)
-            user: Optional user to check (defaults to command invoker for 'earned' and 'profile')
+            action: 'list' (all achievements) or 'profile' (full profile)
+            user: Optional user to check (defaults to command invoker for 'profile')
         """
         if action == "list":
             await self._list_achievements(interaction)
-        elif action == "earned":
-            await self._earned_achievements(interaction, user)
         elif action == "profile":
             await self._show_profile(interaction, user)
     

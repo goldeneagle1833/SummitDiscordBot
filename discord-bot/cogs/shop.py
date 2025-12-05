@@ -28,11 +28,11 @@ class ShopCog(commands.Cog):
             "red": 5,  # Red Shell (was 10)
             "green": 5,  # Green Shell (was 10)
             "banana": 5,  # Banana (was 10)
-            "star": 50,  # Star (was 50)
+            "star": 50,  # Star 
             "mushroom": 5,  # Mushroom (was 10)
             "bobomb": 25,  # Bob-omb (was 50)
-            "bluestar": 38,  # Blue Star (was 75) - rounded up from 37.5
-            "star_killer": 200,  # Star Killer - removes star from random protected user
+            "bluestar": 38,  # Blue Star (was 75) 
+            "fart_star": 200,  # Star Killer - removes star from random protected user
         }
         logger.info("ShopCog initialized")
         self.setup_purchase_database()
@@ -203,156 +203,6 @@ class ShopCog(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error in on_entitlement_delete: {e}")
-
-    @commands.command(name="purchase_history")
-    @commands.has_permissions(administrator=True)
-    async def purchase_history(self, ctx, user: discord.User = None, limit: int = 20):
-        """
-        [ADMIN ONLY] View purchase history from Discord's shop
-        Usage: !purchase_history [@user] [limit]
-        Examples:
-          !purchase_history - Shows last 20 purchases from all users
-          !purchase_history @User - Shows last 20 purchases from specific user
-          !purchase_history @User 50 - Shows last 50 purchases from specific user
-          !purchase_history 50 - Shows last 50 purchases from all users
-        """
-        try:
-            conn = sqlite3.connect("discord_purchases.db")
-            cur = conn.cursor()
-
-            # Build query based on whether a user was specified
-            if user:
-                cur.execute("""
-                    SELECT user_id, username, purchase_type, sku_name, purchase_date, 
-                           expires_at, is_active, entitlement_id, subscription_id, notes
-                    FROM purchase_records
-                    WHERE user_id = ?
-                    ORDER BY purchase_date DESC
-                    LIMIT ?
-                """, (user.id, limit))
-                title = f"Purchase History for {user}"
-            else:
-                cur.execute("""
-                    SELECT user_id, username, purchase_type, sku_name, purchase_date, 
-                           expires_at, is_active, entitlement_id, subscription_id, notes
-                    FROM purchase_records
-                    ORDER BY purchase_date DESC
-                    LIMIT ?
-                """, (limit,))
-                title = f"Recent Purchase History (Last {limit})"
-
-            records = cur.fetchall()
-            conn.close()
-
-            if not records:
-                await ctx.send("No purchase records found.")
-                return
-
-            # Create embed with purchase information
-            embed = discord.Embed(
-                title=title,
-                color=discord.Color.green(),
-                timestamp=datetime.datetime.now()
-            )
-
-            for record in records:
-                user_id, username, purchase_type, sku_name, purchase_date, expires_at, is_active, entitlement_id, subscription_id, notes = record
-                
-                # Format the field value
-                status = "✅ Active" if is_active else "❌ Inactive"
-                field_value = f"**Type:** {purchase_type}\n**Product:** {sku_name}\n**Status:** {status}\n**Date:** {purchase_date}"
-                
-                if expires_at:
-                    field_value += f"\n**Expires:** {expires_at}"
-                if subscription_id:
-                    field_value += f"\n**Sub ID:** {subscription_id[:16]}..."
-                if notes:
-                    field_value += f"\n**Notes:** {notes}"
-
-                embed.add_field(
-                    name=f"{username} (<@{user_id}>)",
-                    value=field_value,
-                    inline=False
-                )
-
-            # Add summary
-            conn = sqlite3.connect("discord_purchases.db")
-            cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM purchase_records WHERE is_active = 1")
-            active_count = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(DISTINCT user_id) FROM purchase_records")
-            unique_users = cur.fetchone()[0]
-            conn.close()
-
-            embed.set_footer(text=f"Active Purchases: {active_count} | Total Unique Buyers: {unique_users}")
-
-            await ctx.send(embed=embed)
-
-        except Exception as e:
-            logger.error(f"Error in purchase_history command: {e}")
-            await ctx.send(f"An error occurred: {e}")
-
-    @commands.command(name="purchase_stats")
-    @commands.has_permissions(administrator=True)
-    async def purchase_stats(self, ctx):
-        """
-        [ADMIN ONLY] View statistics about Discord shop purchases
-        """
-        try:
-            conn = sqlite3.connect("discord_purchases.db")
-            cur = conn.cursor()
-
-            # Get various statistics
-            cur.execute("SELECT COUNT(*) FROM purchase_records")
-            total_purchases = cur.fetchone()[0]
-
-            cur.execute("SELECT COUNT(*) FROM purchase_records WHERE is_active = 1")
-            active_purchases = cur.fetchone()[0]
-
-            cur.execute("SELECT COUNT(DISTINCT user_id) FROM purchase_records")
-            unique_buyers = cur.fetchone()[0]
-
-            cur.execute("SELECT purchase_type, COUNT(*) FROM purchase_records GROUP BY purchase_type")
-            type_breakdown = cur.fetchall()
-
-            cur.execute("SELECT sku_name, COUNT(*) FROM purchase_records GROUP BY sku_name ORDER BY COUNT(*) DESC LIMIT 5")
-            top_products = cur.fetchall()
-
-            cur.execute("SELECT username, COUNT(*) as purchase_count FROM purchase_records GROUP BY user_id ORDER BY purchase_count DESC LIMIT 5")
-            top_buyers = cur.fetchall()
-
-            conn.close()
-
-            # Create embed
-            embed = discord.Embed(
-                title="📊 Discord Shop Purchase Statistics",
-                color=discord.Color.blue(),
-                timestamp=datetime.datetime.now()
-            )
-
-            embed.add_field(
-                name="Overall Stats",
-                value=f"**Total Purchases:** {total_purchases}\n**Active:** {active_purchases}\n**Unique Buyers:** {unique_buyers}",
-                inline=False
-            )
-
-            if type_breakdown:
-                type_str = "\n".join([f"**{ptype}:** {count}" for ptype, count in type_breakdown])
-                embed.add_field(name="Purchase Types", value=type_str, inline=True)
-
-            if top_products:
-                products_str = "\n".join([f"**{name}:** {count}" for name, count in top_products])
-                embed.add_field(name="Top Products", value=products_str, inline=True)
-
-            if top_buyers:
-                buyers_str = "\n".join([f"**{name}:** {count}" for name, count in top_buyers])
-                embed.add_field(name="Top Buyers", value=buyers_str, inline=False)
-
-            await ctx.send(embed=embed)
-
-        except Exception as e:
-            logger.error(f"Error in purchase_stats command: {e}")
-            await ctx.send(f"An error occurred: {e}")
 
     async def setup_protection_table(self):
         """Create protection table if it doesn't exist"""
@@ -1071,37 +921,6 @@ class ShopCog(commands.Cog):
             logger.error(f"Error in fart_star command: {e}")
             await ctx.send("An error occurred while processing the command.")
             raise
-
-    @commands.command(name="test_purchase_log")
-    @commands.has_permissions(administrator=True)
-    async def test_purchase_log(self, ctx, user: discord.User = None):
-        """
-        [ADMIN ONLY] Manually log a test purchase to verify the system is working
-        Usage: !test_purchase_log [@user]
-        If no user is specified, logs a purchase for the command user
-        """
-        target_user = user if user else ctx.author
-        
-        try:
-            await self.log_discord_purchase(
-                user_id=target_user.id,
-                username=str(target_user),
-                purchase_type="test_purchase",
-                sku_id="TEST_SKU_001",
-                sku_name="Test Product",
-                entitlement_id=f"TEST_ENT_{target_user.id}_{datetime.datetime.now().timestamp()}",
-                guild_id=ctx.guild.id if ctx.guild else None,
-                notes="Manual test purchase created by admin"
-            )
-            
-            await ctx.send(
-                f"✅ Test purchase logged successfully for {target_user.mention}!\n"
-                f"Use `!purchase_history {target_user.mention}` to view it."
-            )
-            
-        except Exception as e:
-            await ctx.send(f"❌ Error logging test purchase: {e}")
-            logger.error(f"Error in test_purchase_log: {e}")
 
 
 async def setup(bot):

@@ -388,9 +388,8 @@ class ShopCog(commands.Cog):
         )
 
     @commands.command(name="green_shell")
-    @commands.cooldown(1, 45, commands.BucketType.user)
     async def green_shell(self, ctx):
-        """Hit a random player in front"""
+        """Hit a random player in fronaaat"""
         if ctx.channel.id != self.fart_channel_id:
             await ctx.send(
                 f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."

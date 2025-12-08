@@ -455,17 +455,29 @@ class ShopCog(commands.Cog):
                 )
                 return
 
-            if not await self.check_points(ctx.author.id, "star"):
-                return await ctx.send(
-                    f"You don't have enough points! Star protection costs {self.item_costs['star']} points!"
-                )
-
-            protection_end = datetime.datetime.now() + datetime.timedelta(hours=24)
-            logger.debug(f"Setting protection until: {protection_end}")
-
+            # Get user's current points
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
             try:
+                cur.execute("SELECT score FROM fart_scores WHERE user_id = ?", (ctx.author.id,))
+                result = cur.fetchone()
+                
+                if not result:
+                    await ctx.send(f"{ctx.author.mention}, you have no points!")
+                    return
+                
+                current_points = result[0]
+                # Calculate 10% cost (minimum 1 point)
+                star_cost = max(1, int(current_points * 0.10))
+                
+                if current_points < star_cost:
+                    return await ctx.send(
+                        f"You don't have enough points! Star protection costs {star_cost} points (10% of your total)!"
+                    )
+
+                protection_end = datetime.datetime.now() + datetime.timedelta(hours=24)
+                logger.debug(f"Setting protection until: {protection_end}")
+
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS protection_status (
                         user_id INTEGER PRIMARY KEY,
@@ -476,12 +488,17 @@ class ShopCog(commands.Cog):
                     "INSERT OR REPLACE INTO protection_status (user_id, protected_until) VALUES (?, ?)",
                     (ctx.author.id, protection_end),
                 )
+                
+                # Deduct the calculated cost
+                cur.execute(
+                    "UPDATE fart_scores SET score = score - ? WHERE user_id = ?",
+                    (star_cost, ctx.author.id),
+                )
                 conn.commit()
-                logger.debug(f"Protection status updated for user {ctx.author.id}")
+                logger.debug(f"Protection status updated for user {ctx.author.id}, deducted {star_cost} points")
 
-                await self.deduct_points(ctx.author.id, "star")
                 await ctx.send(
-                    f"<@{ctx.author.id}> is now protected by a Star for 24 hours!"
+                    f"<@{ctx.author.id}> is now protected by a Star for 24 hours! (Cost: {star_cost} points)"
                 )
             finally:
                 conn.close()
@@ -652,49 +669,63 @@ class ShopCog(commands.Cog):
     async def fart_shop(self, ctx):
         """Display all available shop items"""
         embed = discord.Embed(
-            title="Fart Shop",
+            title="💨 Fart Shop",
             description="Use the commands below to purchase items:",
             color=discord.Color.gold(),
         )
 
         items = [
-            ("Blue Shell (!blue_shell)", "Hits the leader with 3d20/2 damage", 14),
+            ("Blue Shell (!blue_shell)", "Hits the leader with 3d20/2 damage", self.item_costs['blue']),
             (
                 "Red Shell (!red_shell)",
                 "Hits the player directly in front of you with 2d20/2 damage",
-                10,
+                self.item_costs['red'],
             ),
             (
                 "Green Shell (!green_shell)",
                 "Hits a random player in front of you with 2d20/2 damage",
-                10,
+                self.item_costs['green'],
             ),
             (
                 "Banana (!banana)",
                 "Hits a random player behind you with 2d20/2 damage",
-                10,
+                self.item_costs['banana'],
             ),
-            ("Star (!star)", "Protects you from all items for 24 hours", 50),
+            ("Star (!star)", "Protects you from all items for 24 hours (Costs 10% of your points)", "10%"),
             (
                 "Mushroom (!mushroom)",
                 "Mushroom Boost - Next fart rolls twice, take higher! (Once per week)",
-                10,
+                self.item_costs['mushroom'],
             ),
             (
                 "Bob-omb (!bobomb)",
                 "Hits the top 5 players with 3d20/2 damage",
-                50,
+                self.item_costs['bobomb'],
             ),
             (
                 "Blue Star (!blue_star)",
                 "Hits the leader with 4d20/2 damage AND protects you for 12 hours",
-                75,
+                self.item_costs['bluestar'],
+            ),
+            (
+                "Fart Star (!fart_star)",
+                "Removes star protection from a random protected user",
+                self.item_costs['fart_star'],
+            ),
+            (
+                "Evil Star (!evil_star)",
+                "😈 Doubles your points... but ONLY if you have exactly 666 points! (FREE)",
+                "FREE",
             ),
         ]
 
         for name, description, cost in items:
+            if cost == "FREE" or cost == "10%":
+                cost_display = cost
+            else:
+                cost_display = f"{cost} points"
             embed.add_field(
-                name=f"{name} - {cost} points", value=description, inline=False
+                name=f"{name} - {cost_display}", value=description, inline=False
             )
 
         await ctx.send(embed=embed)

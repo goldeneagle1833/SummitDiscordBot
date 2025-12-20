@@ -3,6 +3,7 @@ from discord.ext import commands
 import requests
 import json
 import logging
+import random
 
 from utils.deck_checker import get_deck_id, find_card
 
@@ -281,6 +282,93 @@ class UtilityCog(commands.Cog):
 
         await ctx.send(embed=embed)
         logger.info(f"Commands list requested by {ctx.author}")
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def giveaway(self, ctx, limit: int = 1000):
+        """
+        Admin-only: Pick a random winner from users who posted curiosa.io links.
+        Usage: !giveaway [limit] - limit is the number of recent messages to check (default 1000)
+        """
+        await ctx.send("🎉 Searching for participants... This may take a moment.")
+
+        # Dictionary to store unique users with their display names
+        participants = {}
+
+        try:
+            # Search through channel history
+            async for message in ctx.channel.history(limit=limit):
+                # Check if message contains "curiosa.io"
+                if "curiosa.io" in message.content.lower():
+                    # Store user_id and display_name
+                    if message.author.id not in participants:
+                        participants[message.author.id] = message.author.display_name
+
+            # Remove bots if any
+            participants = {
+                user_id: name
+                for user_id, name in participants.items()
+                if user_id != self.bot.user.id
+            }
+
+            if not participants:
+                await ctx.send(
+                    "❌ No participants found! No messages with 'curiosa.io' links were detected."
+                )
+                logger.info(f"Giveaway by {ctx.author} found no participants")
+                return
+
+            # Convert to list format as requested
+            participant_list = [
+                {"user_id": user_id, "display_name": display_name}
+                for user_id, display_name in participants.items()
+            ]
+
+            # Get total number of participants
+            total_participants = len(participant_list)
+
+            # Randomly pick a winner
+            winner = random.choice(participant_list)
+            winner_id = winner["user_id"]
+            winner_name = winner["display_name"]
+
+            # Create announcement embed
+            embed = discord.Embed(
+                title="🎉 GIVEAWAY WINNER! 🎉",
+                description=f"Congratulations to our winner!",
+                color=discord.Color.gold(),
+            )
+
+            embed.add_field(name="Winner", value=f"<@{winner_id}>", inline=False)
+
+            embed.add_field(
+                name="Total Participants",
+                value=f"{total_participants} users",
+                inline=False,
+            )
+
+            embed.add_field(
+                name="Next Steps",
+                value=f"<@{winner_id}>, please message <@{ctx.author.id}> to claim your prize!",
+                inline=False,
+            )
+
+            embed.set_footer(text=f"Giveaway conducted by {ctx.author.display_name}")
+
+            await ctx.send(embed=embed)
+            logger.info(
+                f"Giveaway by {ctx.author}: Winner {winner_name} ({winner_id}) "
+                f"from {total_participants} participants"
+            )
+
+        except discord.Forbidden:
+            await ctx.send(
+                "❌ I don't have permission to read message history in this channel."
+            )
+            logger.error(f"Giveaway by {ctx.author} failed: Missing permissions")
+        except Exception as e:
+            await ctx.send(f"❌ An error occurred while running the giveaway: {e}")
+            logger.error(f"Giveaway error: {e}")
 
 
 async def setup(bot):

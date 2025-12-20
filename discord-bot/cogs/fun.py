@@ -310,12 +310,14 @@ class FunCog(commands.Cog):
         if did_user_fart_today:
             # Calculate time until next fart (midnight)
             now = datetime.datetime.now()
-            midnight = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            midnight = (now + datetime.timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
             time_until_next = midnight - now
-            
+
             hours = int(time_until_next.total_seconds() // 3600)
             minutes = int((time_until_next.total_seconds() % 3600) // 60)
-            
+
             time_msg = f"You can use your daily action again in **{hours}h {minutes}m**"
             await ctx.send(f"{ctx.author.mention} {daily_usage_message}\n{time_msg}")
             return
@@ -464,14 +466,18 @@ class FunCog(commands.Cog):
             if did_user_fart_today:
                 # Calculate time until next fart (midnight)
                 now = datetime.datetime.now()
-                midnight = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                midnight = (now + datetime.timedelta(days=1)).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
                 time_until_next = midnight - now
-                
+
                 hours = int(time_until_next.total_seconds() // 3600)
                 minutes = int((time_until_next.total_seconds() % 3600) // 60)
-                
+
                 time_msg = f"You can fart again in **{hours}h {minutes}m**"
-                await ctx.send(f"{ctx.author.mention} {daily_usage_message}\n{time_msg}")
+                await ctx.send(
+                    f"{ctx.author.mention} {daily_usage_message}\n{time_msg}"
+                )
                 return
 
             # Roll and point calculation
@@ -762,14 +768,20 @@ class FunCog(commands.Cog):
             if did_user_fart_today:
                 # Calculate time until next fart (midnight)
                 now = datetime.datetime.now()
-                midnight = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                midnight = (now + datetime.timedelta(days=1)).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
                 time_until_next = midnight - now
-                
+
                 hours = int(time_until_next.total_seconds() // 3600)
                 minutes = int((time_until_next.total_seconds() % 3600) // 60)
-                
-                time_msg = f"You can use your daily action again in **{hours}h {minutes}m**"
-                await ctx.send(f"{ctx.author.mention} {daily_usage_message}\n{time_msg}")
+
+                time_msg = (
+                    f"You can use your daily action again in **{hours}h {minutes}m**"
+                )
+                await ctx.send(
+                    f"{ctx.author.mention} {daily_usage_message}\n{time_msg}"
+                )
                 return
 
             roll = randrange(1, 101)
@@ -862,14 +874,20 @@ class FunCog(commands.Cog):
             if did_user_fart_today:
                 # Calculate time until next fart (midnight)
                 now = datetime.datetime.now()
-                midnight = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                midnight = (now + datetime.timedelta(days=1)).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
                 time_until_next = midnight - now
-                
+
                 hours = int(time_until_next.total_seconds() // 3600)
                 minutes = int((time_until_next.total_seconds() % 3600) // 60)
-                
-                time_msg = f"You can use your daily action again in **{hours}h {minutes}m**"
-                await ctx.send(f"{ctx.author.mention} {daily_usage_message}\n{time_msg}")
+
+                time_msg = (
+                    f"You can use your daily action again in **{hours}h {minutes}m**"
+                )
+                await ctx.send(
+                    f"{ctx.author.mention} {daily_usage_message}\n{time_msg}"
+                )
                 return
 
             # Get the current leader
@@ -1098,7 +1116,9 @@ class FunCog(commands.Cog):
                 next_available_date = last_used_date + datetime.timedelta(weeks=1)
                 # Check if a week has passed since the last use
                 if next_available_date > datetime.datetime.now().date():
-                    days_remaining = (next_available_date - datetime.datetime.now().date()).days
+                    days_remaining = (
+                        next_available_date - datetime.datetime.now().date()
+                    ).days
                     await ctx.send(
                         f"{ctx.author.mention}, you can only use this command once a week! You can use it again in **{days_remaining} day{'s' if days_remaining != 1 else ''}**."
                     )

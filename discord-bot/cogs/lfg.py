@@ -151,17 +151,41 @@ class MatchConfirmationButtons(discord.ui.View):
             )
             return
 
-        # Open the modal for additional details
-        await interaction.response.send_modal(
-            MatchReportModal(
-                winner_id=self.winner_id,
-                winner_global=self.winner_global,
-                loser_id=self.loser_id,
-                loser_global=self.loser_global,
-                is_winner=self.is_winner,
-                bot=self.bot,
+        await interaction.response.defer()
+
+        # Directly submit the match report without modal
+        if self.is_winner:
+            await winner_report(
+                interaction.user.id,
+                self.winner_id,
+                self.winner_global,
+                True,
+                self.loser_id,
+                self.loser_global,
+                "n",  # first_player default
+                0,  # match_time default
+                "No URL provided",  # curiosa_link default
+                "",  # match_comment default
+                interaction.user.id,
+                interaction.user.global_name,
+                self.bot,
             )
-        )
+        else:
+            await losser_report(
+                interaction.user.id,
+                self.winner_id,
+                self.winner_global,
+                False,
+                self.loser_id,
+                self.loser_global,
+                "n",  # first_player default
+                0,  # match_time default
+                "No URL provided",  # curiosa_link default
+                "",  # match_comment default
+                interaction.user.id,
+                interaction.user.global_name,
+                self.bot,
+            )
 
         # Remove the confirmation message
         await interaction.message.edit(
@@ -169,11 +193,17 @@ class MatchConfirmationButtons(discord.ui.View):
             view=None,
         )
 
+        # Send confirmation to confirming user
+        await interaction.followup.send(
+            f"✅ Match report confirmed and submitted!\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}",
+            ephemeral=True,
+        )
+
         # Notify the reporter
         try:
             reporter = await self.bot.fetch_user(self.reporter_id)
             await reporter.send(
-                f"✅ {self.opponent_global} has confirmed your match report!"
+                f"✅ {self.opponent_global} has confirmed your match report! Match has been recorded."
             )
         except Exception:
             pass

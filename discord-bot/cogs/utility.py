@@ -139,7 +139,7 @@ class UtilityCog(commands.Cog):
             name="Utility",
             value=(
                 "`!help` - Show this help message\n"
-                "`!commands` - View all available commands\n"
+                "`!list_commands` - View all available commands\n"
                 "`!deckcheck` - Check if a Curiosa deck is legal"
             ),
             inline=False,
@@ -152,19 +152,19 @@ class UtilityCog(commands.Cog):
                 "• Most commands work in DMs for privacy\n"
                 "• The `!challenge` command must be used in the LFG channel\n"
                 "• Tournament commands require active tournament\n"
-                "• For complete command list use `!commands`"
+                "• For complete command list use `!list_commands`"
             ),
             inline=False,
         )
 
         embed.set_footer(
-            text="Need more details? Use !commands to see everything available"
+            text="Need more details? Use !list_commands to see everything available"
         )
 
         await ctx.send(embed=embed)
 
     @commands.command()
-    async def commands(self, ctx):
+    async def list_commands(self, ctx):
         """List all available bot commands."""
         embed = discord.Embed(
             title="📋 Summit Discord Bot Commands",
@@ -222,7 +222,7 @@ class UtilityCog(commands.Cog):
             name="🛠️ Utility",
             value=(
                 "`!help` - Show help message\n"
-                "`!commands` - Show this command list\n"
+                "`!list_commands` - Show this command list\n"
                 "`!deckcheck` - Check Curiosa deck legality"
             ),
             inline=False,

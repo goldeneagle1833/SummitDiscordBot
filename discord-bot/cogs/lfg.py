@@ -893,6 +893,96 @@ class LFGCog(commands.Cog):
                 ephemeral=True,
             )
 
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def reset_elo(self, ctx):
+        """Admin command to reset all ELO ratings and match history"""
+        # Confirmation embed
+        embed = discord.Embed(
+            title="⚠️ Reset ELO Database",
+            description="This will **permanently delete**:\n• All player ELO ratings\n• All match history\n• All statistics\n\nThis action **cannot be undone**!",
+            color=discord.Color.red(),
+        )
+
+        await ctx.send(embed=embed)
+        await ctx.send(
+            "Type `CONFIRM RESET` within 30 seconds to proceed, or anything else to cancel."
+        )
+
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel
+
+        try:
+            msg = await self.bot.wait_for("message", check=check, timeout=30.0)
+
+            if msg.content == "CONFIRM RESET":
+                # Import database connection
+                import os
+                import psycopg2
+
+                try:
+                    # Connect to database
+                    conn = psycopg2.connect(
+                        host=os.getenv("POSTGRES_HOST"),
+                        database=os.getenv("POSTGRES_DB"),
+                        user=os.getenv("POSTGRES_USER"),
+                        password=os.getenv("POSTGRES_PASSWORD"),
+                        port=os.getenv("POSTGRES_PORT", 5432),
+                    )
+                    cursor = conn.cursor()
+
+                    # Delete all records
+                    cursor.execute("DELETE FROM matches;")
+                    cursor.execute("DELETE FROM players;")
+
+                    # Reset auto-increment sequences
+                    cursor.execute(
+                        "ALTER SEQUENCE IF EXISTS players_id_seq RESTART WITH 1;"
+                    )
+                    cursor.execute(
+                        "ALTER SEQUENCE IF EXISTS matches_id_seq RESTART WITH 1;"
+                    )
+
+                    conn.commit()
+
+                    # Get counts to verify
+                    cursor.execute("SELECT COUNT(*) FROM players;")
+                    player_count = cursor.fetchone()[0]
+                    cursor.execute("SELECT COUNT(*) FROM matches;")
+                    match_count = cursor.fetchone()[0]
+
+                    cursor.close()
+                    conn.close()
+
+                    success_embed = discord.Embed(
+                        title="✅ Database Reset Complete",
+                        description=f"All ELO and match data has been deleted.\n\n**Verification:**\n• Players: {player_count}\n• Matches: {match_count}",
+                        color=discord.Color.green(),
+                    )
+                    await ctx.send(embed=success_embed)
+                    logger.info(
+                        f"Database reset completed by {ctx.author} (ID: {ctx.author.id})"
+                    )
+
+                except Exception as e:
+                    error_embed = discord.Embed(
+                        title="❌ Database Reset Failed",
+                        description=f"An error occurred: {str(e)}",
+                        color=discord.Color.red(),
+                    )
+                    await ctx.send(embed=error_embed)
+                    logger.error(f"Database reset failed: {e}")
+            else:
+                await ctx.send("❌ Reset cancelled.")
+
+        except TimeoutError:
+            await ctx.send("❌ Reset cancelled - timed out.")
+
+    @reset_elo.error
+    async def reset_elo_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("❌ You need administrator permissions to use this command.")
+
 
 async def setup(bot):
     await bot.add_cog(LFGCog(bot))

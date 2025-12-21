@@ -897,43 +897,84 @@ class LFGCog(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def reset_elo(self, ctx):
         """Admin command to reset all ELO ratings and match history"""
-        # Import database connection
-        import os
-        import psycopg2
+        import sqlite3
 
         try:
-            # Connect to database
-            conn = psycopg2.connect(
-                host=os.getenv("POSTGRES_HOST"),
-                database=os.getenv("POSTGRES_DB"),
-                user=os.getenv("POSTGRES_USER"),
-                password=os.getenv("POSTGRES_PASSWORD"),
-                port=os.getenv("POSTGRES_PORT", 5432),
-            )
-            cursor = conn.cursor()
+            # Drop and recreate elo.db
+            conn_elo = sqlite3.connect("elo.db")
+            cur_elo = conn_elo.cursor()
 
-            # Delete all records
-            cursor.execute("DELETE FROM matches;")
-            cursor.execute("DELETE FROM players;")
+            # Drop the table
+            cur_elo.execute("DROP TABLE IF EXISTS overall_standings")
 
-            # Reset auto-increment sequences
-            cursor.execute("ALTER SEQUENCE IF EXISTS players_id_seq RESTART WITH 1;")
-            cursor.execute("ALTER SEQUENCE IF EXISTS matches_id_seq RESTART WITH 1;")
+            # Recreate the table
+            cur_elo.execute("""CREATE TABLE overall_standings
+                               (user_id INTEGER PRIMARY KEY, 
+                                user_display_name TEXT,
+                                elo INTEGER DEFAULT 1500
+                               )""")
 
-            conn.commit()
+            conn_elo.commit()
+            conn_elo.close()
 
-            # Get counts to verify
-            cursor.execute("SELECT COUNT(*) FROM players;")
-            player_count = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM matches;")
-            match_count = cursor.fetchone()[0]
+            # Drop and recreate match_records.db
+            conn_matches = sqlite3.connect("match_records.db")
+            cur_matches = conn_matches.cursor()
 
-            cursor.close()
-            conn.close()
+            # Drop all tables
+            cur_matches.execute("DROP TABLE IF EXISTS match_records")
+            cur_matches.execute("DROP TABLE IF EXISTS solo_match_reports")
+            cur_matches.execute("DROP TABLE IF EXISTS challenge_matches")
+
+            # Recreate match_records table
+            cur_matches.execute("""CREATE TABLE match_records
+                                   (reporter_id INTEGER,
+                                    winner_id INTEGER, 
+                                    winner_display_name TEXT,
+                                    losser_id INTEGER,
+                                    losser_display_name TEXT,
+                                    did_win BOOLEAN,
+                                    timestamp TEXT,
+                                    first_player TEXT,
+                                    match_time INTEGER,
+                                    curiosa_url TEXT,
+                                    match_comment TEXT,
+                                    json_deck_data TEXT
+                                   )""")
+
+            # Recreate solo_match_reports table
+            cur_matches.execute("""CREATE TABLE solo_match_reports
+                                   (reporter_id INTEGER,
+                                    reporter_name TEXT,
+                                    opponent_name TEXT,
+                                    is_winner BOOLEAN,
+                                    first_player TEXT,
+                                    match_time INTEGER,
+                                    curiosa_link TEXT,
+                                    match_comment TEXT,
+                                    report_date DATETIME,
+                                    json_deck_data TEXT
+                                   )""")
+
+            # Recreate challenge_matches table
+            cur_matches.execute("""CREATE TABLE challenge_matches
+                                   (match_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    challenger_id INTEGER NOT NULL,
+                                    challenged_id INTEGER NOT NULL,
+                                    status TEXT NOT NULL,
+                                    match_time DATETIME NOT NULL,
+                                    winner_id INTEGER,
+                                    curiosa_url TEXT,
+                                    match_comment TEXT,
+                                    json_deck_data TEXT
+                                   )""")
+
+            conn_matches.commit()
+            conn_matches.close()
 
             success_embed = discord.Embed(
                 title="✅ Database Reset Complete",
-                description=f"All ELO and match data has been deleted.\n\n**Verification:**\n• Players: {player_count}\n• Matches: {match_count}",
+                description="All databases have been dropped and recreated:\n• ELO database reset\n• Match records cleared\n• Solo match reports cleared\n• Challenge matches cleared\n\nAll tables are ready to use.",
                 color=discord.Color.green(),
             )
             await ctx.send(embed=success_embed)

@@ -283,7 +283,7 @@ class LFGReportButtons(discord.ui.View):
             else self.player1_global
         )
 
-        # Store pending report
+        # Store pending report with opponent's message reference
         pending_match_reports[(interaction.user.id, opponent_id)] = {
             "winner_id": interaction.user.id,
             "winner_global": interaction.user.global_name,
@@ -292,11 +292,38 @@ class LFGReportButtons(discord.ui.View):
             "reporter_id": interaction.user.id,
             "reporter_global": interaction.user.global_name,
             "is_winner": True,
+            "opponent_message": None,  # Will be set after fetching opponent's DM
         }
 
         # Send confirmation to opponent
         try:
             opponent = await self.bot.fetch_user(opponent_id)
+
+            # Find opponent's match report message to remove their buttons
+            opponent_dm_channel = await opponent.create_dm()
+            opponent_report_message = None
+
+            async for message in opponent_dm_channel.history(limit=50):
+                if message.author.id == self.bot.user.id and message.components:
+                    # Check if this is the match report message for these two players
+                    for component in message.components:
+                        for button in component.children:
+                            if hasattr(button, "custom_id") and button.custom_id in [
+                                "win_button",
+                                "lose_button",
+                                "cancel_match",
+                            ]:
+                                opponent_report_message = message
+                                break
+                        if opponent_report_message:
+                            break
+                    if opponent_report_message:
+                        break
+
+            # Remove opponent's buttons
+            if opponent_report_message:
+                await opponent_report_message.edit(view=None)
+
             confirmation_view = MatchConfirmationButtons(
                 reporter_id=interaction.user.id,
                 reporter_global=interaction.user.global_name,
@@ -345,7 +372,7 @@ class LFGReportButtons(discord.ui.View):
             else self.player1_global
         )
 
-        # Store pending report
+        # Store pending report with opponent's message reference
         pending_match_reports[(interaction.user.id, opponent_id)] = {
             "winner_id": opponent_id,
             "winner_global": opponent_global,
@@ -354,11 +381,38 @@ class LFGReportButtons(discord.ui.View):
             "reporter_id": interaction.user.id,
             "reporter_global": interaction.user.global_name,
             "is_winner": False,
+            "opponent_message": None,  # Will be set after fetching opponent's DM
         }
 
         # Send confirmation to opponent
         try:
             opponent = await self.bot.fetch_user(opponent_id)
+
+            # Find opponent's match report message to remove their buttons
+            opponent_dm_channel = await opponent.create_dm()
+            opponent_report_message = None
+
+            async for message in opponent_dm_channel.history(limit=50):
+                if message.author.id == self.bot.user.id and message.components:
+                    # Check if this is the match report message for these two players
+                    for component in message.components:
+                        for button in component.children:
+                            if hasattr(button, "custom_id") and button.custom_id in [
+                                "win_button",
+                                "lose_button",
+                                "cancel_match",
+                            ]:
+                                opponent_report_message = message
+                                break
+                        if opponent_report_message:
+                            break
+                    if opponent_report_message:
+                        break
+
+            # Remove opponent's buttons
+            if opponent_report_message:
+                await opponent_report_message.edit(view=None)
+
             confirmation_view = MatchConfirmationButtons(
                 reporter_id=interaction.user.id,
                 reporter_global=interaction.user.global_name,

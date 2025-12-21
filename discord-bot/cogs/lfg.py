@@ -12,6 +12,10 @@ logger = logging.getLogger("discord_bot")
 # In-memory LFG queue (user_id: {timestamp, timeframe})
 lfg_queue = {}
 
+# Track pending match reports awaiting confirmation
+# Key: (reporter_id, opponent_id), Value: match report data
+pending_match_reports = {}
+
 
 class MatchReportModal(discord.ui.Modal, title="Match Report"):
     curiosa_url = discord.ui.TextInput(
@@ -42,7 +46,9 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
         required=False,
     )
 
-    def __init__(self, winner_id, winner_global, loser_id, loser_global, is_winner, bot):
+    def __init__(
+        self, winner_id, winner_global, loser_id, loser_global, is_winner, bot
+    ):
         super().__init__()
         self.winner_id = winner_id
         self.winner_global = winner_global
@@ -104,6 +110,114 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
         )
 
 
+class MatchConfirmationButtons(discord.ui.View):
+    """Buttons for confirming a match report from opponent"""
+
+    def __init__(
+        self,
+        reporter_id: int,
+        reporter_global: str,
+        opponent_id: int,
+        opponent_global: str,
+        winner_id: int,
+        winner_global: str,
+        loser_id: int,
+        loser_global: str,
+        is_winner: bool,
+        bot=None,
+    ):
+        super().__init__(timeout=600)  # 10 minute timeout
+        self.reporter_id = reporter_id
+        self.reporter_global = reporter_global
+        self.opponent_id = opponent_id
+        self.opponent_global = opponent_global
+        self.winner_id = winner_id
+        self.winner_global = winner_global
+        self.loser_id = loser_id
+        self.loser_global = loser_global
+        self.is_winner = is_winner
+        self.bot = bot
+
+    @discord.ui.button(
+        label="Confirm", style=discord.ButtonStyle.success, custom_id="confirm_report"
+    )
+    async def confirm_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        # Only the opponent can confirm
+        if interaction.user.id != self.opponent_id:
+            await interaction.response.send_message(
+                "Only the opponent can confirm this report.", ephemeral=True
+            )
+            return
+
+        # Open the modal for additional details
+        await interaction.response.send_modal(
+            MatchReportModal(
+                winner_id=self.winner_id,
+                winner_global=self.winner_global,
+                loser_id=self.loser_id,
+                loser_global=self.loser_global,
+                is_winner=self.is_winner,
+                bot=self.bot,
+            )
+        )
+
+        # Remove the confirmation message
+        await interaction.message.edit(
+            content=f"✅ Match confirmed! {self.winner_global} won against {self.loser_global}.",
+            view=None,
+        )
+
+        # Notify the reporter
+        try:
+            reporter = await self.bot.fetch_user(self.reporter_id)
+            await reporter.send(
+                f"✅ {self.opponent_global} has confirmed your match report!"
+            )
+        except Exception:
+            pass
+
+        # Remove from pending
+        pending_match_reports.pop((self.reporter_id, self.opponent_id), None)
+
+    @discord.ui.button(
+        label="Dispute", style=discord.ButtonStyle.danger, custom_id="dispute_report"
+    )
+    async def dispute_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        # Only the opponent can dispute
+        if interaction.user.id != self.opponent_id:
+            await interaction.response.send_message(
+                "Only the opponent can dispute this report.", ephemeral=True
+            )
+            return
+
+        await interaction.response.send_message(
+            f"You have disputed the match report. Please contact the reporter {self.reporter_global} to resolve this.",
+            ephemeral=True,
+        )
+
+        # Remove the confirmation message
+        await interaction.message.edit(
+            content=f"⚠️ Match report disputed. Please resolve with {self.reporter_global}.",
+            view=None,
+        )
+
+        # Notify the reporter
+        try:
+            reporter = await self.bot.fetch_user(self.reporter_id)
+            await reporter.send(
+                f"⚠️ {self.opponent_global} has disputed your match report. Please discuss and resolve."
+            )
+        except Exception:
+            pass
+
+        # Remove from pending
+        pending_match_reports.pop((self.reporter_id, self.opponent_id), None)
+
+
 class LFGReportButtons(discord.ui.View):
     def __init__(
         self,
@@ -139,17 +253,50 @@ class LFGReportButtons(discord.ui.View):
             else self.player1_global
         )
 
-        await interaction.response.send_modal(
-            MatchReportModal(
+        # Store pending report
+        pending_match_reports[(interaction.user.id, opponent_id)] = {
+            "winner_id": interaction.user.id,
+            "winner_global": interaction.user.global_name,
+            "loser_id": opponent_id,
+            "loser_global": opponent_global,
+            "reporter_id": interaction.user.id,
+            "reporter_global": interaction.user.global_name,
+            "is_winner": True,
+        }
+
+        # Send confirmation to opponent
+        try:
+            opponent = await self.bot.fetch_user(opponent_id)
+            confirmation_view = MatchConfirmationButtons(
+                reporter_id=interaction.user.id,
+                reporter_global=interaction.user.global_name,
+                opponent_id=opponent_id,
+                opponent_global=opponent_global,
                 winner_id=interaction.user.id,
                 winner_global=interaction.user.global_name,
                 loser_id=opponent_id,
                 loser_global=opponent_global,
-                is_winner=True,
+                is_winner=False,  # For opponent, they lost
                 bot=self.bot,
             )
-        )
-        await interaction.message.edit(view=None)
+            await opponent.send(
+                f"🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
+                view=confirmation_view,
+            )
+
+            await interaction.response.send_message(
+                f"✅ Match report sent to {opponent_global}. Waiting for confirmation...",
+                ephemeral=True,
+            )
+
+            # Remove buttons from this user's message
+            await interaction.message.edit(view=None)
+
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                f"❌ Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                ephemeral=True,
+            )
 
     @discord.ui.button(
         label="I Lost", style=discord.ButtonStyle.danger, custom_id="lose_button"
@@ -168,17 +315,50 @@ class LFGReportButtons(discord.ui.View):
             else self.player1_global
         )
 
-        await interaction.response.send_modal(
-            MatchReportModal(
+        # Store pending report
+        pending_match_reports[(interaction.user.id, opponent_id)] = {
+            "winner_id": opponent_id,
+            "winner_global": opponent_global,
+            "loser_id": interaction.user.id,
+            "loser_global": interaction.user.global_name,
+            "reporter_id": interaction.user.id,
+            "reporter_global": interaction.user.global_name,
+            "is_winner": False,
+        }
+
+        # Send confirmation to opponent
+        try:
+            opponent = await self.bot.fetch_user(opponent_id)
+            confirmation_view = MatchConfirmationButtons(
+                reporter_id=interaction.user.id,
+                reporter_global=interaction.user.global_name,
+                opponent_id=opponent_id,
+                opponent_global=opponent_global,
                 winner_id=opponent_id,
                 winner_global=opponent_global,
                 loser_id=interaction.user.id,
                 loser_global=interaction.user.global_name,
-                is_winner=False,
+                is_winner=True,  # For opponent, they won
                 bot=self.bot,
             )
-        )
-        await interaction.message.edit(view=None)
+            await opponent.send(
+                f"🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
+                view=confirmation_view,
+            )
+
+            await interaction.response.send_message(
+                f"✅ Match report sent to {opponent_global}. Waiting for confirmation...",
+                ephemeral=True,
+            )
+
+            # Remove buttons from this user's message
+            await interaction.message.edit(view=None)
+
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                f"❌ Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                ephemeral=True,
+            )
 
     @discord.ui.button(
         label="We didn't play/cancel match",
@@ -314,7 +494,9 @@ class SoloMatchReportModal(discord.ui.Modal, title="Solo Match Report"):
         required=False,
     )
 
-    def __init__(self, reporter_id: int, reporter_global: str, is_winner: bool, bot=None):
+    def __init__(
+        self, reporter_id: int, reporter_global: str, is_winner: bool, bot=None
+    ):
         super().__init__()
         self.reporter_id = reporter_id
         self.reporter_global = reporter_global
@@ -398,22 +580,30 @@ class LFGCog(commands.Cog):
     @commands.command()
     async def lfg(self, ctx, timeframe: int = 30):
         """Usage: !lfg [minutes]"""
-        logger.info(f"LFG command started - User: {ctx.author} (ID: {ctx.author.id}), Channel: {ctx.channel}, Timeframe: {timeframe}")
-        
+        logger.info(
+            f"LFG command started - User: {ctx.author} (ID: {ctx.author.id}), Channel: {ctx.channel}, Timeframe: {timeframe}"
+        )
+
         self.clean_expired_lfg()
-        logger.info(f"Cleaned expired LFG entries. Current queue size: {len(lfg_queue)}")
-        
+        logger.info(
+            f"Cleaned expired LFG entries. Current queue size: {len(lfg_queue)}"
+        )
+
         owner_id = 296846802924208130
         channel_id = 1336912830867439676
         owner = await self.bot.fetch_user(owner_id)
         lfg_channel = self.bot.get_channel(channel_id)
 
         if owner:
-            logger.info(f"Sending notification to owner about {ctx.author}'s LFG request")
+            logger.info(
+                f"Sending notification to owner about {ctx.author}'s LFG request"
+            )
             await owner.send(f"{ctx.author} used the !lfg command in #{ctx.channel}.")
 
         matched_user_id = self.check_if_someone_is_lfg(ctx)
-        logger.info(f"Checked for existing LFG users. Matched user ID: {matched_user_id}")
+        logger.info(
+            f"Checked for existing LFG users. Matched user ID: {matched_user_id}"
+        )
         if matched_user_id and matched_user_id != ctx.author.id:
             logger.info(f"Match found! Pairing {ctx.author.id} with {matched_user_id}")
             matched_user = await self.bot.fetch_user(matched_user_id)
@@ -456,10 +646,12 @@ class LFGCog(commands.Cog):
                 f"{ctx.author.mention}, you are already in the LFG queue. Please wait for someone to match with you."
             )
         else:
-            logger.info(f"No match found. Adding {ctx.author.id} to queue for {timeframe} minutes")
+            logger.info(
+                f"No match found. Adding {ctx.author.id} to queue for {timeframe} minutes"
+            )
             self.add_to_lfg_queue(ctx, timeframe)
             logger.info(f"User added to queue. Queue contents: {lfg_queue}")
-            
+
             try:
                 await ctx.author.send(
                     f"You have been added to the queue for looking for a game for "
@@ -467,10 +659,12 @@ class LFGCog(commands.Cog):
                 )
                 logger.info(f"DM sent successfully to {ctx.author}")
             except discord.Forbidden:
-                logger.warning(f"Could not send DM to {ctx.author} (ID: {ctx.author.id}) - DMs might be disabled")
+                logger.warning(
+                    f"Could not send DM to {ctx.author} (ID: {ctx.author.id}) - DMs might be disabled"
+                )
             except Exception as e:
                 logger.error(f"Error sending DM to {ctx.author}: {e}")
-            
+
             if lfg_channel:
                 logger.info(f"Announcing new LFG entry in channel {channel_id}")
                 await lfg_channel.send(

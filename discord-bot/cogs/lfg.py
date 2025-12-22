@@ -787,13 +787,13 @@ class LFGCog(commands.Cog):
             )
 
     @commands.command()
-    async def challenge(self, ctx, opponent: discord.Member):
+    async def challenge(self, ctx, opponent: discord.Member = None):
         """Challenge a specific player to a match"""
-        # Delete the original command message
-        try:
-            await ctx.message.delete()
-        except discord.Forbidden:
-            pass  # If bot doesn't have permission to delete messages
+        if opponent is None:
+            await ctx.send(
+                "Please mention a user to challenge. Example: `!challenge @username`"
+            )
+            return
 
         if opponent.id == ctx.author.id:
             await ctx.send("You cannot challenge yourself!")
@@ -806,17 +806,31 @@ class LFGCog(commands.Cog):
         view = ChallengeButtons(ctx.author.id, ctx.author.global_name)
 
         try:
+            # Send challenge to opponent
             await opponent.send(
                 f"{ctx.author.global_name} has challenged you to a match!",
                 view=view,
             )
-            await ctx.author.send(
-                f"Challenge sent to {opponent.global_name}! They have 5 minutes to accept."
+            # Notify challenger in DM
+            try:
+                await ctx.author.send(
+                    f"Challenge sent to {opponent.global_name}! They have 5 minutes to accept."
+                )
+            except discord.Forbidden:
+                pass
+
+            # Confirm in channel
+            await ctx.send(
+                f"{ctx.author.mention} has challenged {opponent.mention} to a match!"
             )
+
         except discord.Forbidden:
             await ctx.send(
                 f"I couldn't send a DM to {opponent.global_name}. They might have DMs disabled."
             )
+        except Exception as e:
+            await ctx.send(f"An error occurred: {str(e)}")
+            logger.error(f"Challenge command error: {e}")
 
     @commands.command()
     async def lfg_help(self, ctx):

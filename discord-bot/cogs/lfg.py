@@ -796,11 +796,11 @@ class LFGCog(commands.Cog):
             pass  # If bot doesn't have permission to delete messages
 
         if opponent.id == ctx.author.id:
-            await ctx.send("You cannot challenge yourself!", ephemeral=True)
+            await ctx.send("You cannot challenge yourself!")
             return
 
         if opponent.bot:
-            await ctx.send("You cannot challenge a bot!", ephemeral=True)
+            await ctx.send("You cannot challenge a bot!")
             return
 
         view = ChallengeButtons(ctx.author.id, ctx.author.global_name)
@@ -811,13 +811,11 @@ class LFGCog(commands.Cog):
                 view=view,
             )
             await ctx.author.send(
-                f"Challenge sent to {opponent.global_name}! They have 5 minutes to accept.",
-                ephemeral=True,
+                f"Challenge sent to {opponent.global_name}! They have 5 minutes to accept."
             )
         except discord.Forbidden:
             await ctx.send(
-                f"I couldn't send a DM to {opponent.global_name}. They might have DMs disabled.",
-                ephemeral=True,
+                f"I couldn't send a DM to {opponent.global_name}. They might have DMs disabled."
             )
 
     @commands.command()

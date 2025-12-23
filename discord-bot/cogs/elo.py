@@ -31,7 +31,7 @@ class EloCog(commands.Cog):
             elo = row[0]
             cur.execute("SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (elo,))
             rank = cur.fetchone()[0] + 1
-            
+
             if is_self:
                 await ctx.send(
                     f"{ctx.author.mention}, your current Elo rating is {elo} and your rank is #{rank}."
@@ -79,25 +79,53 @@ class EloCog(commands.Cog):
             conn = sqlite3.connect("match_records.db")
             cur = conn.cursor()
 
-            # Query both tables with UNION ALL
+            # Query both tables with UNION ALL - count matches where user is winner OR loser
+            # Use DISTINCT on timestamp and players to avoid counting duplicates (since we record for both players)
+            # Group by the unique match combination to count each match only once
             cur.execute(
                 """
-                SELECT did_win, first_player, json_deck_data, match_time
+                SELECT 
+                    CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                    first_player, 
+                    json_deck_data, 
+                    match_time,
+                    winner_id,
+                    losser_id,
+                    timestamp
                 FROM match_records 
-                WHERE reporter_id = ?
+                WHERE winner_id = ? OR losser_id = ?
                 UNION ALL
                 SELECT 
                     is_winner as did_win,
                     first_player,
                     json_deck_data,
-                    match_time
+                    match_time,
+                    reporter_id as winner_id,
+                    reporter_id as losser_id,
+                    report_date as timestamp
                 FROM solo_match_reports
                 WHERE reporter_id = ?
             """,
-                (ctx.author.id, ctx.author.id),
+                (ctx.author.id, ctx.author.id, ctx.author.id, ctx.author.id),
             )
 
-            rows = cur.fetchall()
+            all_rows = cur.fetchall()
+
+            # Deduplicate matches by grouping on (winner_id, losser_id, timestamp)
+            # Keep only one record per unique match
+            seen_matches = set()
+            rows = []
+            for row in all_rows:
+                # Create a unique key for each match (using sorted IDs to handle both perspectives)
+                winner_id = row[4]
+                losser_id = row[5]
+                timestamp = row[6]
+                match_key = tuple(sorted([winner_id, losser_id])) + (timestamp,)
+
+                if match_key not in seen_matches:
+                    seen_matches.add(match_key)
+                    # Keep only the fields we need: did_win, first_player, json_deck_data, match_time
+                    rows.append(row[:4])
 
             if not rows:
                 await ctx.send(
@@ -343,10 +371,18 @@ class EloCog(commands.Cog):
 
                 # Build text message with ASCII art (without emojis in code block)
                 message = "```\n"
-                message += "╔══════════════════════════════════════════════════════════╗\n"
-                message += "║            M A T C H   H I S T O R Y                   ║\n"
-                message += f"║            {ctx.author.display_name.center(44)}            ║\n"
-                message += "╚══════════════════════════════════════════════════════════╝\n"
+                message += (
+                    "╔══════════════════════════════════════════════════════════╗\n"
+                )
+                message += (
+                    "║            M A T C H   H I S T O R Y                   ║\n"
+                )
+                message += (
+                    f"║            {ctx.author.display_name.center(44)}            ║\n"
+                )
+                message += (
+                    "╚══════════════════════════════════════════════════════════╝\n"
+                )
                 message += "```\n"
                 message += "📜 **Your 10 most recent reported matches:**\n"
                 message += "─" * 60 + "\n"
@@ -376,38 +412,40 @@ class EloCog(commands.Cog):
 
                         # Build compact game line
                         result_emoji = "✅" if did_win else "❌"
-                        
+
                         game_line = f"{result_emoji} **Game {i}** ({formatted_date})\n"
                         game_line += f"   ⚔️ {winner} beat {loser}"
-                        
+
                         if match_time:
                             game_line += f" • ⏱️ {float(match_time):.1f}min"
-                        
+
                         game_line += f" "
-                        
+
                         if replay_url and replay_url != "No URL provided":
                             game_line += f" • <{replay_url}>"
-                        
+
                         if match_comment:
                             game_line += f"\n   💬 {match_comment}"
-                        
+
                         message += game_line + "\n"
-                        
+
                         # Add separator between games
                         if i < len(rows):
-                            message += "   " + "·" * 50 + "\n" 
+                            message += "   " + "·" * 50 + "\n"
 
                     except (ValueError, TypeError) as e:
                         logger.error(f"Error processing game record: {e}")
                         continue
 
                 message += "─" * 60
-                
+
                 # Check if message is too long (Discord limit is 2000 characters)
                 if len(message) > 2000:
-                    logger.warning(f"Message too long ({len(message)} chars), truncating...")
+                    logger.warning(
+                        f"Message too long ({len(message)} chars), truncating..."
+                    )
                     message = message[:1950] + "\n... (truncated)"
-                
+
                 await ctx.send(message)
 
             except sqlite3.Error as e:

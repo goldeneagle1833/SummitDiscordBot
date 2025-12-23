@@ -153,39 +153,40 @@ class MatchConfirmationButtons(discord.ui.View):
 
         await interaction.response.defer()
 
-        # Directly submit the match report without modal
-        if self.is_winner:
-            await winner_report(
-                interaction.user.id,
-                self.winner_id,
-                self.winner_global,
-                True,
-                self.loser_id,
-                self.loser_global,
-                "n",  # first_player default
-                0,  # match_time default
-                "No URL provided",  # curiosa_link default
-                "",  # match_comment default
-                interaction.user.id,
-                interaction.user.global_name,
-                self.bot,
-            )
-        else:
-            await losser_report(
-                interaction.user.id,
-                self.winner_id,
-                self.winner_global,
-                False,
-                self.loser_id,
-                self.loser_global,
-                "n",  # first_player default
-                0,  # match_time default
-                "No URL provided",  # curiosa_link default
-                "",  # match_comment default
-                interaction.user.id,
-                interaction.user.global_name,
-                self.bot,
-            )
+        # Submit match report for BOTH players (winner and loser)
+        # Record for the winner
+        await winner_report(
+            self.reporter_id,  # reporter_id (who originally reported)
+            self.winner_id,
+            self.winner_global,
+            True,
+            self.loser_id,
+            self.loser_global,
+            "n",  # first_player default
+            0,  # match_time default
+            "No URL provided",  # curiosa_link default
+            "",  # match_comment default
+            self.winner_id,  # interaction_user_id
+            self.winner_global,  # interaction_global
+            self.bot,
+        )
+
+        # Record for the loser
+        await losser_report(
+            self.reporter_id,  # reporter_id (who originally reported)
+            self.winner_id,
+            self.winner_global,
+            False,
+            self.loser_id,
+            self.loser_global,
+            "n",  # first_player default
+            0,  # match_time default
+            "No URL provided",  # curiosa_link default
+            "",  # match_comment default
+            self.loser_id,  # interaction_user_id
+            self.loser_global,  # interaction_global
+            self.bot,
+        )
 
         # Remove the confirmation message
         await interaction.message.edit(

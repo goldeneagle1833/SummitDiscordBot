@@ -79,30 +79,29 @@ class EloCog(commands.Cog):
             conn = sqlite3.connect("match_records.db")
             cur = conn.cursor()
 
-            # Query both tables with UNION ALL - count matches where user is winner OR loser
-            # Use DISTINCT on timestamp and players to avoid counting duplicates (since we record for both players)
-            # Group by the unique match combination to count each match only once
+            # Query matches where user is winner OR loser
+            # Since we record each match twice (once for winner, once for loser),
+            # we need to deduplicate by selecting DISTINCT based on the unique match
             cur.execute(
                 """
-                SELECT 
+                SELECT DISTINCT
                     CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
                     first_player, 
                     json_deck_data, 
                     match_time,
-                    winner_id,
-                    losser_id,
-                    timestamp
+                    CASE 
+                        WHEN winner_id < losser_id THEN winner_id || '-' || losser_id || '-' || timestamp
+                        ELSE losser_id || '-' || winner_id || '-' || timestamp
+                    END as match_key
                 FROM match_records 
                 WHERE winner_id = ? OR losser_id = ?
                 UNION ALL
-                SELECT 
+                SELECT DISTINCT
                     is_winner as did_win,
                     first_player,
                     json_deck_data,
                     match_time,
-                    reporter_id as winner_id,
-                    reporter_id as losser_id,
-                    report_date as timestamp
+                    reporter_id || '-solo-' || report_date as match_key
                 FROM solo_match_reports
                 WHERE reporter_id = ?
             """,
@@ -111,21 +110,8 @@ class EloCog(commands.Cog):
 
             all_rows = cur.fetchall()
 
-            # Deduplicate matches by grouping on (winner_id, losser_id, timestamp)
-            # Keep only one record per unique match
-            seen_matches = set()
-            rows = []
-            for row in all_rows:
-                # Create a unique key for each match (using sorted IDs to handle both perspectives)
-                winner_id = row[4]
-                losser_id = row[5]
-                timestamp = row[6]
-                match_key = tuple(sorted([winner_id, losser_id])) + (timestamp,)
-
-                if match_key not in seen_matches:
-                    seen_matches.add(match_key)
-                    # Keep only the fields we need: did_win, first_player, json_deck_data, match_time
-                    rows.append(row[:4])
+            # Remove the match_key column and keep only the stats fields
+            rows = [row[:4] for row in all_rows]
 
             if not rows:
                 await ctx.send(

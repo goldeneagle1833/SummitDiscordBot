@@ -153,8 +153,8 @@ class MatchConfirmationButtons(discord.ui.View):
 
         await interaction.response.defer()
 
-        # Submit match report for BOTH players (winner and loser)
-        # Record for the winner
+        # Submit match report only ONCE (not twice)
+        # This will insert one record and update ELO for the winner
         await winner_report(
             self.reporter_id,  # reporter_id (who originally reported)
             self.winner_id,
@@ -171,22 +171,10 @@ class MatchConfirmationButtons(discord.ui.View):
             self.bot,
         )
 
-        # Record for the loser
-        await losser_report(
-            self.reporter_id,  # reporter_id (who originally reported)
-            self.winner_id,
-            self.winner_global,
-            False,
-            self.loser_id,
-            self.loser_global,
-            "n",  # first_player default
-            0,  # match_time default
-            "No URL provided",  # curiosa_link default
-            "",  # match_comment default
-            self.loser_id,  # interaction_user_id
-            self.loser_global,  # interaction_global
-            self.bot,
-        )
+        # Update ELO for the loser as well
+        from utils.database import update_elo_db
+
+        update_elo_db(self.loser_id, self.loser_global, False, self.winner_id)
 
         # Remove the confirmation message
         await interaction.message.edit(

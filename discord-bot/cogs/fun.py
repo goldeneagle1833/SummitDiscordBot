@@ -1414,6 +1414,7 @@ class FartPredictionView(discord.ui.View):
         super().__init__(timeout=300)  # 5 minute timeout
         self.cog = cog
         self.user_id = user_id
+        self.prediction_made = False  # Track if prediction has already been processed
 
     async def interaction_check(self, interaction):
         if interaction.user.id != self.user_id:
@@ -1484,6 +1485,14 @@ class FartPredictionView(discord.ui.View):
         await self.handle_prediction(interaction, "Ordinary Fart! 💨")
 
     async def handle_prediction(self, interaction: discord.Interaction, prediction):
+        # Prevent duplicate predictions from double-clicks or multiple selections
+        if self.prediction_made:
+            await interaction.response.send_message(
+                "You've already made your prediction!", ephemeral=True
+            )
+            return
+
+        self.prediction_made = True
         await interaction.response.defer()
         await self.process_fart(interaction, prediction)
 

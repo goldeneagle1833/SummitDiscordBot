@@ -28,10 +28,10 @@ class ShopCog(commands.Cog):
             "red": 5,  # Red Shell (was 10)
             "green": 5,  # Green Shell (was 10)
             "banana": 5,  # Banana (was 10)
-            "star": 50,  # Star 
+            "star": 50,  # Star
             "mushroom": 5,  # Mushroom (was 10)
             "bobomb": 25,  # Bob-omb (was 50)
-            "bluestar": 38,  # Blue Star (was 75) 
+            "bluestar": 38,  # Blue Star (was 75)
             "fart_star": 200,  # Star Killer - removes star from random protected user
         }
         logger.info("ShopCog initialized")
@@ -67,9 +67,9 @@ class ShopCog(commands.Cog):
             logger.error(f"Error setting up purchase database: {e}")
 
     async def log_discord_purchase(
-        self, 
-        user_id: int, 
-        username: str, 
+        self,
+        user_id: int,
+        username: str,
         purchase_type: str,
         sku_id: str = None,
         sku_name: str = None,
@@ -77,33 +77,38 @@ class ShopCog(commands.Cog):
         subscription_id: str = None,
         guild_id: int = None,
         expires_at: datetime.datetime = None,
-        notes: str = None
+        notes: str = None,
     ):
         """Log a Discord monetization purchase to the database"""
         try:
             conn = sqlite3.connect("discord_purchases.db")
             cur = conn.cursor()
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO purchase_records 
                 (user_id, username, user_discriminator, purchase_type, sku_id, sku_name, 
                  entitlement_id, subscription_id, guild_id, expires_at, notes)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                user_id, 
-                username, 
-                "",  # discriminator (legacy, but keeping for compatibility)
-                purchase_type,
-                sku_id,
-                sku_name,
-                entitlement_id,
-                subscription_id,
-                guild_id,
-                expires_at,
-                notes
-            ))
+            """,
+                (
+                    user_id,
+                    username,
+                    "",  # discriminator (legacy, but keeping for compatibility)
+                    purchase_type,
+                    sku_id,
+                    sku_name,
+                    entitlement_id,
+                    subscription_id,
+                    guild_id,
+                    expires_at,
+                    notes,
+                ),
+            )
             conn.commit()
             conn.close()
-            logger.info(f"Logged Discord purchase: {username} ({user_id}) - {purchase_type} - {sku_name}")
+            logger.info(
+                f"Logged Discord purchase: {username} ({user_id}) - {purchase_type} - {sku_name}"
+            )
         except Exception as e:
             logger.error(f"Error logging Discord purchase: {e}")
 
@@ -113,7 +118,9 @@ class ShopCog(commands.Cog):
         try:
             user = entitlement.user
             if not user:
-                logger.warning(f"Entitlement created but no user found: {entitlement.id}")
+                logger.warning(
+                    f"Entitlement created but no user found: {entitlement.id}"
+                )
                 return
 
             # Determine purchase type
@@ -124,7 +131,7 @@ class ShopCog(commands.Cog):
 
             # Get SKU information
             sku_id = str(entitlement.sku_id) if entitlement.sku_id else None
-            
+
             # Try to get SKU name (you'll need to map SKU IDs to names)
             sku_name = f"SKU_{sku_id}" if sku_id else "Unknown Product"
 
@@ -135,10 +142,12 @@ class ShopCog(commands.Cog):
                 sku_id=sku_id,
                 sku_name=sku_name,
                 entitlement_id=str(entitlement.id),
-                subscription_id=str(entitlement.subscription_id) if entitlement.subscription_id else None,
+                subscription_id=str(entitlement.subscription_id)
+                if entitlement.subscription_id
+                else None,
                 guild_id=entitlement.guild_id,
                 expires_at=entitlement.ends_at,
-                notes=f"Entitlement created"
+                notes=f"Entitlement created",
             )
 
             logger.info(f"Purchase recorded: {user} bought {sku_name}")
@@ -157,11 +166,14 @@ class ShopCog(commands.Cog):
             # Mark previous entitlement as inactive and log the update
             conn = sqlite3.connect("discord_purchases.db")
             cur = conn.cursor()
-            cur.execute("""
+            cur.execute(
+                """
                 UPDATE purchase_records 
                 SET is_active = 0 
                 WHERE entitlement_id = ?
-            """, (str(entitlement.id),))
+            """,
+                (str(entitlement.id),),
+            )
             conn.commit()
             conn.close()
 
@@ -171,12 +183,16 @@ class ShopCog(commands.Cog):
                 username=str(user),
                 purchase_type="renewal" if entitlement.subscription_id else "update",
                 sku_id=str(entitlement.sku_id) if entitlement.sku_id else None,
-                sku_name=f"SKU_{entitlement.sku_id}" if entitlement.sku_id else "Unknown Product",
+                sku_name=f"SKU_{entitlement.sku_id}"
+                if entitlement.sku_id
+                else "Unknown Product",
                 entitlement_id=str(entitlement.id),
-                subscription_id=str(entitlement.subscription_id) if entitlement.subscription_id else None,
+                subscription_id=str(entitlement.subscription_id)
+                if entitlement.subscription_id
+                else None,
                 guild_id=entitlement.guild_id,
                 expires_at=entitlement.ends_at,
-                notes="Entitlement updated/renewed"
+                notes="Entitlement updated/renewed",
             )
 
             logger.info(f"Purchase updated: {user} - {entitlement.id}")
@@ -191,11 +207,14 @@ class ShopCog(commands.Cog):
             # Mark the entitlement as inactive in the database
             conn = sqlite3.connect("discord_purchases.db")
             cur = conn.cursor()
-            cur.execute("""
+            cur.execute(
+                """
                 UPDATE purchase_records 
                 SET is_active = 0, notes = notes || ' | Entitlement deleted'
                 WHERE entitlement_id = ?
-            """, (str(entitlement.id),))
+            """,
+                (str(entitlement.id),),
+            )
             conn.commit()
             conn.close()
 
@@ -459,17 +478,19 @@ class ShopCog(commands.Cog):
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
             try:
-                cur.execute("SELECT score FROM fart_scores WHERE user_id = ?", (ctx.author.id,))
+                cur.execute(
+                    "SELECT score FROM fart_scores WHERE user_id = ?", (ctx.author.id,)
+                )
                 result = cur.fetchone()
-                
+
                 if not result:
                     await ctx.send(f"{ctx.author.mention}, you have no points!")
                     return
-                
+
                 current_points = result[0]
                 # Calculate 10% cost (minimum 1 point)
                 star_cost = max(1, int(current_points * 0.10))
-                
+
                 if current_points < star_cost:
                     return await ctx.send(
                         f"You don't have enough points! Star protection costs {star_cost} points (10% of your total)!"
@@ -488,14 +509,16 @@ class ShopCog(commands.Cog):
                     "INSERT OR REPLACE INTO protection_status (user_id, protected_until) VALUES (?, ?)",
                     (ctx.author.id, protection_end),
                 )
-                
+
                 # Deduct the calculated cost
                 cur.execute(
                     "UPDATE fart_scores SET score = score - ? WHERE user_id = ?",
                     (star_cost, ctx.author.id),
                 )
                 conn.commit()
-                logger.debug(f"Protection status updated for user {ctx.author.id}, deducted {star_cost} points")
+                logger.debug(
+                    f"Protection status updated for user {ctx.author.id}, deducted {star_cost} points"
+                )
 
                 await ctx.send(
                     f"<@{ctx.author.id}> is now protected by a Star for 24 hours! (Cost: {star_cost} points)"
@@ -553,9 +576,18 @@ class ShopCog(commands.Cog):
             cooldown_result = cur.fetchone()
 
             if cooldown_result:
-                last_used_date = datetime.datetime.fromisoformat(cooldown_result[0]).date()
-                if last_used_date + datetime.timedelta(weeks=1) > datetime.datetime.now().date():
-                    days_remaining = (last_used_date + datetime.timedelta(weeks=1) - datetime.datetime.now().date()).days
+                last_used_date = datetime.datetime.fromisoformat(
+                    cooldown_result[0]
+                ).date()
+                if (
+                    last_used_date + datetime.timedelta(weeks=1)
+                    > datetime.datetime.now().date()
+                ):
+                    days_remaining = (
+                        last_used_date
+                        + datetime.timedelta(weeks=1)
+                        - datetime.datetime.now().date()
+                    ).days
                     conn.close()
                     return await ctx.send(
                         f"You can only use Mushroom Boost once per week! Try again in {days_remaining} day{'s' if days_remaining != 1 else ''}."
@@ -656,12 +688,14 @@ class ShopCog(commands.Cog):
                 if dmg not in damage_groups:
                     damage_groups[dmg] = []
                 damage_groups[dmg].append(mention)
-            
+
             for dmg, mentions in damage_groups.items():
                 response += f"💥 {', '.join(mentions)} took {dmg} damage!\n"
 
         if protected_players:
-            response += "⭐ " + ", ".join(protected_players) + " were protected by Stars!"
+            response += (
+                "⭐ " + ", ".join(protected_players) + " were protected by Stars!"
+            )
 
         await ctx.send(response)
 
@@ -675,42 +709,50 @@ class ShopCog(commands.Cog):
         )
 
         items = [
-            ("Blue Shell (!blue_shell)", "Hits the leader with 3d20/2 damage", self.item_costs['blue']),
+            (
+                "Blue Shell (!blue_shell)",
+                "Hits the leader with 3d20/2 damage",
+                self.item_costs["blue"],
+            ),
             (
                 "Red Shell (!red_shell)",
                 "Hits the player directly in front of you with 2d20/2 damage",
-                self.item_costs['red'],
+                self.item_costs["red"],
             ),
             (
                 "Green Shell (!green_shell)",
                 "Hits a random player in front of you with 2d20/2 damage",
-                self.item_costs['green'],
+                self.item_costs["green"],
             ),
             (
                 "Banana (!banana)",
                 "Hits a random player behind you with 2d20/2 damage",
-                self.item_costs['banana'],
+                self.item_costs["banana"],
             ),
-            ("Star (!star)", "Protects you from all items for 24 hours (Costs 10% of your points)", "10%"),
+            (
+                "Star (!star)",
+                "Protects you from all items for 24 hours (Costs 10% of your points)",
+                "10%",
+            ),
             (
                 "Mushroom (!mushroom)",
                 "Mushroom Boost - Next fart rolls twice, take higher! (Once per week)",
-                self.item_costs['mushroom'],
+                self.item_costs["mushroom"],
             ),
             (
                 "Bob-omb (!bobomb)",
                 "Hits the top 5 players with 3d20/2 damage",
-                self.item_costs['bobomb'],
+                self.item_costs["bobomb"],
             ),
             (
                 "Blue Star (!blue_star)",
                 "Hits the leader with 4d20/2 damage AND protects you for 12 hours",
-                self.item_costs['bluestar'],
+                self.item_costs["bluestar"],
             ),
             (
                 "Fart Star (!fart_star)",
                 "Removes star protection from a random protected user",
-                self.item_costs['fart_star'],
+                self.item_costs["fart_star"],
             ),
             (
                 "Evil Star (!evil_star)",
@@ -744,8 +786,10 @@ class ShopCog(commands.Cog):
                     giga_role = guild.get_role(self.giga_target_role_id)
                     if giga_role and giga_role in member.roles:
                         actual_damage = damage * 2
-                        logger.info(f"User {user_id} has giga target role - damage doubled to {actual_damage}")
-            
+                        logger.info(
+                            f"User {user_id} has giga target role - damage doubled to {actual_damage}"
+                        )
+
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
             cur.execute(
@@ -761,7 +805,9 @@ class ShopCog(commands.Cog):
             raise
 
     @commands.command(name="giga_fart_cannon")
-    @commands.cooldown(1, 86400, commands.BucketType.guild)  # Once per day for the entire server
+    @commands.cooldown(
+        1, 86400, commands.BucketType.guild
+    )  # Once per day for the entire server
     async def giga_fart_cannon(self, ctx):
         """Fire the Giga Fart Cannon! Assigns double damage debuff to a random top 5 player. (Once per day for entire server)"""
         logger.debug(f"Giga Fart Cannon command used by {ctx.author.id}")
@@ -779,43 +825,45 @@ class ShopCog(commands.Cog):
                 return await ctx.send("Not enough players in the fart ranks!")
 
             top_5 = players[:5]
-            
+
             # Select a random player from top 5
             target = random.choice(top_5)
             target_id = target[0]
-            
+
             # Get guild and role
             guild = self.bot.get_guild(self.guild_id)
             if not guild:
                 logger.error(f"Could not find guild {self.guild_id}")
                 return await ctx.send("An error occurred - guild not found.")
-            
+
             giga_role = guild.get_role(self.giga_target_role_id)
             if not giga_role:
-                logger.error(f"Could not find giga target role {self.giga_target_role_id}")
+                logger.error(
+                    f"Could not find giga target role {self.giga_target_role_id}"
+                )
                 return await ctx.send("An error occurred - role not found.")
-            
+
             target_member = guild.get_member(target_id)
             if not target_member:
                 logger.error(f"Could not find member {target_id}")
                 return await ctx.send("An error occurred - target player not found.")
-            
+
             # Remove role from everyone else first
             for member in guild.members:
                 if giga_role in member.roles and member.id != target_id:
                     await member.remove_roles(giga_role)
                     logger.info(f"Removed giga target role from {member.id}")
-            
+
             # Add role to target
             await target_member.add_roles(giga_role)
             logger.info(f"Added giga target role to {target_id}")
-            
+
             await ctx.send(
                 f"💨 **GIGA FART CANNON FIRED!**\n"
                 f"<@{target_id}> has been marked! They will take **DOUBLE DAMAGE** from all shop items!\n"
                 f" This command is now on cooldown for the entire server for 24 hours!"
             )
-            
+
         except Exception as e:
             logger.error(f"Error in giga_fart_cannon command: {e}", exc_info=True)
             await ctx.send("An error occurred while processing the command.")
@@ -897,55 +945,76 @@ class ShopCog(commands.Cog):
                 )
                 return
 
-            # Check if user has enough points
-            if not await self.check_points(ctx.author.id, "fart_star"):
-                return await ctx.send(
-                    f"You don't have enough points! Fart Star costs {self.item_costs['fart_star']} points!"
-                )
-
-            # Get all currently protected users
+            # Check if user has used evil_star
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
             try:
+                cur.execute(
+                    "SELECT used_at FROM evil_star_usage WHERE user_id = ?",
+                    (ctx.author.id,),
+                )
+                has_used_evil_star = cur.fetchone()
+
+                if has_used_evil_star:
+                    await ctx.send(
+                        f"😈 {ctx.author.mention}, those who have walked the cursed path cannot return to mortal stars...\n"
+                        f"The Evil Star has corrupted your soul. This power is now forbidden to you. 💀"
+                    )
+                    return
+
+                # Check if user has enough points
+                if not await self.check_points(ctx.author.id, "fart_star"):
+                    return await ctx.send(
+                        f"You don't have enough points! Fart Star costs {self.item_costs['fart_star']} points!"
+                    )
+
                 # Get protected users whose protection hasn't expired
-                cur.execute("""
+                cur.execute(
+                    """
                     SELECT user_id, protected_until
                     FROM protection_status
                     WHERE protected_until > ?
-                """, (datetime.datetime.now(),))
-                
+                """,
+                    (datetime.datetime.now(),),
+                )
+
                 protected_users = cur.fetchall()
-                
+
                 if not protected_users:
                     await ctx.send(
                         f"{ctx.author.mention}, there are no users with active star protection right now!"
                     )
                     return
-                
+
                 # Select a random protected user
                 target_user_id, protected_until = random.choice(protected_users)
-                
+
                 # Remove their protection
-                cur.execute("""
+                cur.execute(
+                    """
                     DELETE FROM protection_status
                     WHERE user_id = ?
-                """, (target_user_id,))
+                """,
+                    (target_user_id,),
+                )
                 conn.commit()
-                
+
                 # Deduct points from the user
                 await self.deduct_points(ctx.author.id, "fart_star")
-                
+
                 # Send success message
                 await ctx.send(
                     f"💥 {ctx.author.mention} used Fart Star! "
                     f"<@{target_user_id}>'s star protection has been destroyed! 💥"
                 )
-                
-                logger.info(f"User {ctx.author.id} removed star protection from user {target_user_id}")
-                
+
+                logger.info(
+                    f"User {ctx.author.id} removed star protection from user {target_user_id}"
+                )
+
             finally:
                 conn.close()
-                
+
         except Exception as e:
             logger.error(f"Error in fart_star command: {e}")
             await ctx.send("An error occurred while processing the command.")
@@ -957,6 +1026,7 @@ class ShopCog(commands.Cog):
         """
         Double your points... but only if you have exactly 666 points.
         The dark star only reveals itself to those who walk the cursed path.
+        Can only be used ONCE per user, ever.
         """
         logger.debug(f"Evil Star command used by {ctx.author.id}")
         try:
@@ -971,17 +1041,42 @@ class ShopCog(commands.Cog):
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
             try:
-                cur.execute("SELECT score FROM fart_scores WHERE user_id = ?", (ctx.author.id,))
+                # Create table to track evil_star usage if it doesn't exist
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS evil_star_usage (
+                        user_id INTEGER PRIMARY KEY,
+                        used_at TEXT NOT NULL
+                    )
+                """)
+
+                # Check if user has already used evil_star
+                cur.execute(
+                    "SELECT used_at FROM evil_star_usage WHERE user_id = ?",
+                    (ctx.author.id,),
+                )
+                already_used = cur.fetchone()
+
+                if already_used:
+                    await ctx.send(
+                        f"😈 The Evil Star has already granted you its power, {ctx.author.mention}...\n"
+                        f"The dark pact can only be sealed **once**.\n"
+                        f"The beast does not offer second chances... 💀"
+                    )
+                    return
+
+                cur.execute(
+                    "SELECT score FROM fart_scores WHERE user_id = ?", (ctx.author.id,)
+                )
                 result = cur.fetchone()
-                
+
                 if not result:
                     await ctx.send(
                         f"{ctx.author.mention}, you have no points... the darkness has no use for you."
                     )
                     return
-                
+
                 current_points = result[0]
-                
+
                 if current_points != 666:
                     await ctx.send(
                         f"😈 The Evil Star rejects you, {ctx.author.mention}...\n"
@@ -989,28 +1084,40 @@ class ShopCog(commands.Cog):
                         f"Return when you've embraced the number of the beast... 😈"
                     )
                     return
-                
+
                 # User has exactly 666 points - double them!
                 new_points = current_points * 2
                 cur.execute(
                     "UPDATE fart_scores SET score = ? WHERE user_id = ?",
                     (new_points, ctx.author.id),
                 )
+
+                # Mark that user has used evil_star
+                import datetime
+
+                cur.execute(
+                    "INSERT INTO evil_star_usage (user_id, used_at) VALUES (?, ?)",
+                    (ctx.author.id, datetime.datetime.now().isoformat()),
+                )
+
                 conn.commit()
-                
+
                 await ctx.send(
                     f"🔥😈 **THE DARK PACT IS SEALED!** 😈🔥\n"
                     f"{ctx.author.mention} has walked the cursed path with **666 points**...\n"
                     f"The Evil Star grants its sinister blessing!\n"
                     f"**666 ➜ 1332 points!**\n"
-                    f"May the darkness guide your farts... 🔥💀"
+                    f"May the darkness guide your farts... 🔥💀\n\n"
+                    f"*This power can never be invoked again...*"
                 )
-                
-                logger.info(f"User {ctx.author.id} successfully used Evil Star at exactly 666 points")
-                
+
+                logger.info(
+                    f"User {ctx.author.id} successfully used Evil Star at exactly 666 points"
+                )
+
             finally:
                 conn.close()
-                
+
         except Exception as e:
             logger.error(f"Error in evil_star command: {e}")
             await ctx.send("The dark powers have failed you... an error occurred.")

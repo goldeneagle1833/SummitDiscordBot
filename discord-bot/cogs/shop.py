@@ -848,13 +848,13 @@ class ShopCog(commands.Cog):
                 logger.error(f"Could not find member {target_id}")
                 return await ctx.send("An error occurred - target player not found.")
 
-            # Remove role from everyone else first
+            # Remove role from everyone first
             for member in guild.members:
-                if giga_role in member.roles and member.id != target_id:
+                if giga_role in member.roles:
                     await member.remove_roles(giga_role)
                     logger.info(f"Removed giga target role from {member.id}")
 
-            # Add role to target
+            # Add role to new target
             await target_member.add_roles(giga_role)
             logger.info(f"Added giga target role to {target_id}")
 

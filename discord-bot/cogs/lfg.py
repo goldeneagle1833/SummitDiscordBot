@@ -688,8 +688,23 @@ class LFGCog(commands.Cog):
                 matched_user.global_name,
                 self.bot,
             )
-            logger.info(f"Sending match report to {ctx.author} via DM")
-            await ctx.author.send("Match report:", view=view_ctx)
+            logger.info(
+                f"Sending match report to {ctx.author} (ID: {ctx.author.id}) via DM"
+            )
+            try:
+                await ctx.author.send("Match report:", view=view_ctx)
+            except discord.Forbidden:
+                logger.error(
+                    f"Cannot DM {ctx.author} (ID: {ctx.author.id}) - DMs disabled or bot blocked"
+                )
+                await ctx.send(
+                    f"{ctx.author.mention}, I couldn't send you a DM! Please enable DMs from server members in your privacy settings."
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error sending DM to {ctx.author} (ID: {ctx.author.id}): {e}"
+                )
+
             await ctx.send(
                 f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game!"
             )
@@ -702,12 +717,39 @@ class LFGCog(commands.Cog):
                 ctx.author.global_name,
                 self.bot,
             )
-            logger.info(f"Sending match report to {matched_user} via DM")
-            await matched_user.send(
-                f"You've been matched with {ctx.author.mention} for a game!",
-                view=view_matched,
+            logger.info(
+                f"Sending match report to {matched_user} (ID: {matched_user_id}) via DM"
             )
+            try:
+                await matched_user.send(
+                    f"You've been matched with {ctx.author.mention} for a game!",
+                    view=view_matched,
+                )
+            except discord.Forbidden:
+                logger.error(
+                    f"Cannot DM {matched_user} (ID: {matched_user_id}) - DMs disabled or bot blocked"
+                )
+                await ctx.send(
+                    f"{matched_user.mention}, I couldn't send you a DM! Please enable DMs from server members in your privacy settings."
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error sending DM to {matched_user} (ID: {matched_user_id}): {e}"
+                )
             self.pair_players(ctx)
+
+            # Notify owner about the match
+            if owner:
+                logger.info(f"Sending match notification to owner")
+                try:
+                    await owner.send(
+                        f"🎮 **Match Found!**\n"
+                        f"{ctx.author} (ID: {ctx.author.id}) matched with "
+                        f"{matched_user} (ID: {matched_user_id})"
+                    )
+                except Exception as e:
+                    logger.error(f"Error sending match notification to owner: {e}")
+
             logger.info(f"Announcing match in LFG channel")
             await lfg_channel.send(
                 f"A match was found! {SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]} and "

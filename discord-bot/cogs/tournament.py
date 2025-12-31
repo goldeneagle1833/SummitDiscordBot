@@ -205,11 +205,11 @@ class TournamentMatchModal(discord.ui.Modal, title="Tournament Match Report"):
         logger.info(
             f"Match {self.match_id} completed - Winner: {match['winner']}, Round: {match['round']}, Tournament: {self.tournament_name}"
         )
-        
+
         # Immediately try to pair winner with another winner for next round
         winner_id = match["winner"]
         current_round = match["round"]
-        
+
         # Try to create next round match immediately
         next_match_created = False
         try:
@@ -255,14 +255,20 @@ class TournamentMatchModal(discord.ui.Modal, title="Tournament Match Report"):
         result_message += f"**Winner:** {'You' if self.is_winner else opponent_name}\n"
         result_message += f"**Deck URL:** {curiosa_link}\n"
         result_message += f"**Match Time:** {match_time} minutes"
-        
+
         # Add immediate pairing notification if applicable
         if next_match_created and self.is_winner:
-            result_message += "\n\n🎮 **You've been immediately paired for the next round!**"
-            result_message += f"\nUse `/tournament match_report` to view your next opponent!"
+            result_message += (
+                "\n\n🎮 **You've been immediately paired for the next round!**"
+            )
+            result_message += (
+                f"\nUse `/tournament match_report` to view your next opponent!"
+            )
         elif self.is_winner:
             result_message += "\n\n⏳ **Waiting for another winner to advance...**"
-            result_message += "\nYou'll be automatically paired once another player wins!"
+            result_message += (
+                "\nYou'll be automatically paired once another player wins!"
+            )
 
         # Check if the round is complete and create next round matches if needed
         current_round = match["round"]
@@ -635,38 +641,44 @@ class TournamentCog(commands.Cog):
         This allows players to advance without waiting for all round matches to complete.
         """
         # Get all matches from the completed round
-        round_matches = [m for m in tournament["matches"] if m["round"] == completed_round]
-        
+        round_matches = [
+            m for m in tournament["matches"] if m["round"] == completed_round
+        ]
+
         # Find other completed matches from this round that have winners
         other_winners = []
         for m in round_matches:
-            if m["status"] == "completed" and m["winner"] is not None and m["winner"] != winner_id:
+            if (
+                m["status"] == "completed"
+                and m["winner"] is not None
+                and m["winner"] != winner_id
+            ):
                 # Check if this winner is not already paired in next round
                 already_paired = any(
-                    next_m["round"] == completed_round + 1 and 
-                    m["winner"] in [next_m["player1"], next_m["player2"]]
+                    next_m["round"] == completed_round + 1
+                    and m["winner"] in [next_m["player1"], next_m["player2"]]
                     for next_m in tournament["matches"]
                 )
                 if not already_paired:
                     other_winners.append(m["winner"])
-        
+
         # Check if current winner is already paired
         winner_already_paired = any(
-            m["round"] == completed_round + 1 and 
-            winner_id in [m["player1"], m["player2"]]
+            m["round"] == completed_round + 1
+            and winner_id in [m["player1"], m["player2"]]
             for m in tournament["matches"]
         )
-        
+
         if winner_already_paired:
             logger.info(f"Winner {winner_id} already paired in next round")
             return False
-        
+
         # If we have another unpaired winner, create the next round match immediately
         if other_winners:
             opponent_id = other_winners[0]  # Take first available winner
             next_round = completed_round + 1
             match_id = len(tournament["matches"]) + 1
-            
+
             new_match = {
                 "id": match_id,
                 "round": next_round,
@@ -675,16 +687,16 @@ class TournamentCog(commands.Cog):
                 "winner": None,
                 "status": "pending",
             }
-            
+
             tournament["matches"].append(new_match)
             save_tournaments()
-            
+
             logger.info(
                 f"Immediately created next round match: {winner_id} vs {opponent_id} "
                 f"(Round {next_round})"
             )
             return True
-        
+
         return False
 
     async def create_next_round_match(self, tournament, prev_round_matches):
@@ -783,7 +795,7 @@ class TournamentCog(commands.Cog):
 
         await ctx.send(status_msg)
 
-    @commands.command(aliases=['match', 'tournament_match'])
+    @commands.command(aliases=["match", "tournament_match"])
     async def my_round(self, ctx):
         """View your current tournament match and report results"""
         logger.info(
@@ -1041,7 +1053,7 @@ class TournamentCog(commands.Cog):
         message += f"║     {tournament['name'][:30].center(30)}    ║\n"
         message += "╚═══════════════════════════════════════╝\n"
         message += "```\n"
-        
+
         if tournament["status"] == "completed" and tournament.get("winner"):
             try:
                 winner = await self.bot.fetch_user(tournament["winner"])
@@ -1055,8 +1067,10 @@ class TournamentCog(commands.Cog):
             return
 
         # Find all matches involving the user
-        user_matches = [m for m in tournament["matches"] if user_id in [m["player1"], m["player2"]]]
-        
+        user_matches = [
+            m for m in tournament["matches"] if user_id in [m["player1"], m["player2"]]
+        ]
+
         if not user_matches:
             message += "⏳ You don't have any scheduled matches yet."
             await ctx.send(message)
@@ -1075,9 +1089,11 @@ class TournamentCog(commands.Cog):
 
         for round_num in sorted(matches_by_round.keys()):
             round_matches = matches_by_round[round_num]
-            
+
             # Determine round name
-            remaining_rounds = max([m["round"] for m in tournament["matches"]]) - round_num + 1
+            remaining_rounds = (
+                max([m["round"] for m in tournament["matches"]]) - round_num + 1
+            )
             if remaining_rounds == 1:
                 round_name = "Finals"
             elif remaining_rounds == 2:
@@ -1103,7 +1119,7 @@ class TournamentCog(commands.Cog):
                     # Create slim bracket display
                     message += f"**{round_name}**\n"
                     message += "```\n"
-                    
+
                     if match["winner"] is None:
                         # Match not played yet
                         message += "┌────────────────────┐\n"
@@ -1115,16 +1131,16 @@ class TournamentCog(commands.Cog):
                         # Match completed
                         winner = await self.bot.fetch_user(match["winner"])
                         user_won = match["winner"] == user_id
-                        
+
                         user_status = "✓ WIN " if user_won else "✗ LOSS"
                         opp_status = "✗ LOSS" if user_won else "✓ WIN "
-                        
+
                         message += "┌────────────────────┐\n"
                         message += f"│ {user_status} {user_name[:12]:<12} │\n"
                         message += "├────────────────────┤\n"
                         message += f"│ {opp_status} {opp_name[:12]:<12} │\n"
                         message += "└────────────────────┘\n"
-                    
+
                     message += "```\n"
 
                 except discord.NotFound:
@@ -1157,7 +1173,7 @@ class TournamentCog(commands.Cog):
                     current_chunk += line + "\n"
             if current_chunk:
                 chunks.append(current_chunk)
-            
+
             for chunk in chunks:
                 await ctx.send(chunk)
         else:
@@ -1258,6 +1274,39 @@ class TournamentCog(commands.Cog):
             await ctx.send(debug_info)
 
     @commands.command()
+    async def players(self, ctx):
+        """Get display names for the tournament player IDs"""
+        user_ids = [
+            296846802924208130,
+            676067801848479745,
+            1101250654871232642,
+            703005385677865031,
+            106682190745645056,
+            97065365695123456,
+            668506285020545047,
+            169970918569934849,
+        ]
+
+        embed = discord.Embed(
+            title="🎮 Player Display Names",
+            color=discord.Color.blue(),
+        )
+
+        player_list = []
+        for user_id in user_ids:
+            try:
+                user = await self.bot.fetch_user(user_id)
+                display_name = user.global_name if user.global_name else user.name
+                player_list.append(f"• {display_name} (ID: {user_id})")
+            except Exception as e:
+                player_list.append(f"• Unknown User (ID: {user_id})")
+
+        embed.description = "\n".join(player_list)
+        embed.set_footer(text=f"Total: {len(user_ids)} players")
+
+        await ctx.send(embed=embed)
+
+    @commands.command()
     async def tournament_help(self, ctx):
         """Show help information for all tournament commands"""
         embed = discord.Embed(
@@ -1292,7 +1341,9 @@ class TournamentCog(commands.Cog):
             "3. Fill in match details (deck URL, time, notes)\n"
             "4. Match result is automatically recorded\n"
         )
-        embed.add_field(name="📝 How to Report Matches", value=reporting_info, inline=False)
+        embed.add_field(
+            name="📝 How to Report Matches", value=reporting_info, inline=False
+        )
 
         # Usage Examples
         examples = (

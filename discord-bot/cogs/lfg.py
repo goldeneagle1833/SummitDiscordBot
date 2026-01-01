@@ -891,6 +891,26 @@ class LFGCog(commands.Cog):
         self.bot = bot
         self.lfg_channel_id = 1336912830867439676
 
+    def levenshtein_distance(self, s1, s2):
+        """Calculate the Levenshtein distance between two strings"""
+        if len(s1) < len(s2):
+            return self.levenshtein_distance(s2, s1)
+
+        if len(s2) == 0:
+            return len(s1)
+
+        previous_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = previous_row[j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+                current_row.append(min(insertions, deletions, substitutions))
+            previous_row = current_row
+
+        return previous_row[-1]
+
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
         """Monitor for invalid commands in LFG channel and suggest corrections"""
@@ -1010,6 +1030,39 @@ class LFGCog(commands.Cog):
                     f"{ctx.author.mention}, did you mean `{suggestion}`? Type `!lfg_help` to see all available commands."
                 )
                 return
+
+        # Check for spelling mistakes using Levenshtein distance
+        # Get all actual command names
+        actual_commands = {
+            "lfg": "!lfg",
+            "cancel": "!cancel",
+            "check_lfg": "!check_lfg",
+            "checklfg": "!check_lfg",
+            "challenge": "!challenge",
+            "record_game": "!record_game",
+            "recordgame": "!record_game",
+            "lfg_help": "!lfg_help",
+            "lfghelp": "!lfg_help",
+        }
+
+        # Find closest match based on edit distance
+        best_match = None
+        min_distance = float("inf")
+
+        for command_name in actual_commands.keys():
+            distance = self.levenshtein_distance(failed_command, command_name)
+            # Consider it a typo if distance is 3 or less and length is similar
+            if distance <= 3 and distance < min_distance:
+                # Also check if the length difference isn't too large
+                if abs(len(failed_command) - len(command_name)) <= 3:
+                    min_distance = distance
+                    best_match = actual_commands[command_name]
+
+        if best_match and min_distance <= 3:
+            await ctx.send(
+                f"{ctx.author.mention}, did you mean `{best_match}`? Type `!lfg_help` to see all available commands."
+            )
+            return
 
         # Generic suggestion if no match found
         await ctx.send(

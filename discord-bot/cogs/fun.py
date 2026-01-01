@@ -71,6 +71,231 @@ class FunCog(commands.Cog):
         self.fart_channel_id = config.FART_CHANNEL_ID
         self.guild_id = config.GUILD_ID
         self.leader_role_id = config.LEADER_ROLE_ID
+        self.fun_channel_id = 1402265039951368273
+
+    def levenshtein_distance(self, s1, s2):
+        """Calculate the Levenshtein distance between two strings"""
+        if len(s1) < len(s2):
+            return self.levenshtein_distance(s2, s1)
+
+        if len(s2) == 0:
+            return len(s1)
+
+        previous_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = previous_row[j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+                current_row.append(min(insertions, deletions, substitutions))
+            previous_row = current_row
+
+        return previous_row[-1]
+
+    @commands.Cog.listener()
+    async def on_command_error(self, ctx, error):
+        """Monitor for invalid commands in fun channel and suggest corrections"""
+        # Only handle CommandNotFound errors
+        if not isinstance(error, commands.CommandNotFound):
+            return
+
+        # Only respond in the fun channel
+        if ctx.channel.id != self.fun_channel_id:
+            return
+
+        # Extract the failed command from the message
+        message_content = ctx.message.content.lower()
+        if not message_content.startswith("!"):
+            return
+
+        failed_command = message_content.split()[0][1:]  # Remove the !
+
+        # Common fart-related commands and suggestions
+        command_suggestions = {
+            # Fart command variations
+            "fart": "!fart",
+            "poot": "!fart",
+            "toot": "!fart",
+            "gas": "!fart",
+            "flatulence": "!fart",
+            "wind": "!fart",
+            "pass": "!fart",
+            "passgas": "!fart",
+            "letone": "!fart",
+            "rip": "!fart",
+            "ripone": "!fart",
+            "break": "!fart",
+            "breakwind": "!fart",
+            "cut": "!fart",
+            "cutone": "!fart",
+            "cut1": "!fart",
+            # Help variations
+            "help": "!helpfart",
+            "helpfart": "!helpfart",
+            "farthelp": "!helpfart",
+            "commands": "!helpfart",
+            "info": "!helpfart",
+            "?": "!helpfart",
+            "howto": "!helpfart",
+            "guide": "!helpfart",
+            # Rank variations
+            "rank": "!fartrank",
+            "fartrank": "!fartrank",
+            "score": "!fartrank",
+            "fartscore": "!fartrank",
+            "myscore": "!fartrank",
+            "myrank": "!fartrank",
+            "check": "!fartrank",
+            "checkrank": "!fartrank",
+            "checkscore": "!fartrank",
+            "stats": "!fartrank",
+            "fartstats": "!fartrank",
+            "status": "!fartrank",
+            # Leaderboard variations
+            "leaderboard": "!fartleaderboard",
+            "fartleaderboard": "!fartleaderboard",
+            "lb": "!fartleaderboard",
+            "leaders": "!fartleaderboard",
+            "top": "!fartleaderboard",
+            "topfarts": "!fartleaderboard",
+            "rankings": "!fartleaderboard",
+            "fartrankings": "!fartleaderboard",
+            "scoreboard": "!fartleaderboard",
+            "board": "!fartleaderboard",
+            # Attack variations
+            "attack": "!attackfart",
+            "attackfart": "!attackfart",
+            "fartattack": "!attackfart",
+            "attackwithfart": "!attackfart",
+            "fart_attack": "!attackfart",
+            "fight": "!attackfart",
+            "battle": "!attackfart",
+            "assaultfart": "!attackfart",
+            "strikefarrt": "!attackfart",
+            # Syphon variations
+            "syphon": "!syphonfart",
+            "syphonfart": "!syphonfart",
+            "siphon": "!syphonfart",
+            "siphonfart": "!syphonfart",
+            "syfon": "!syphonfart",
+            "syfonfart": "!syphonfart",
+            "steal": "!syphonfart",
+            "stealfarts": "!syphonfart",
+            "drain": "!syphonfart",
+            "drainfarts": "!syphonfart",
+            "absorb": "!syphonfart",
+            "absorbfarts": "!syphonfart",
+            # Syphon status variations
+            "syphonstatus": "!syphonstatus",
+            "siphonstatus": "!syphonstatus",
+            "syfonstatus": "!syphonstatus",
+            "checksyphon": "!syphonstatus",
+            "checksiphon": "!syphonstatus",
+            "syphoncheck": "!syphonstatus",
+            # Prediction variations
+            "prediction": "!fartprediction",
+            "fartprediction": "!fartprediction",
+            "predict": "!fartprediction",
+            "predictfart": "!fartprediction",
+            "fortune": "!fartprediction",
+            "fartfortune": "!fartprediction",
+            "forecast": "!fartprediction",
+            "fartforecast": "!fartprediction",
+            # Bull fart variations
+            "bull": "!bullfart",
+            "bullfart": "!bullfart",
+            "bullshit": "!bullfart",
+            "challenge": "!bullfart",
+            "challengefart": "!bullfart",
+            "callfart": "!bullfart",
+            "callout": "!bullfart",
+            # Fart lord variations
+            "lord": "!fartlord",
+            "fartlord": "!fartlord",
+            "king": "!fartlord",
+            "fartking": "!fartlord",
+            "leader": "!fartlord",
+            "fartleader": "!fartlord",
+            "champion": "!fartlord",
+            "fartchampion": "!fartlord",
+            # Taxes variations
+            "tax": "!taxes",
+            "taxes": "!taxes",
+            "farttax": "!taxes",
+            "farttaxes": "!taxes",
+            "tribute": "!taxes",
+            "farttribute": "!taxes",
+            "pay": "!taxes",
+            "paytax": "!taxes",
+            # Wealth variations
+            "wealth": "!wealth",
+            "balance": "!wealth",
+            "money": "!wealth",
+            "gold": "!wealth",
+            "cash": "!wealth",
+            "bank": "!wealth",
+            "bankroll": "!wealth",
+            "funds": "!wealth",
+            "riches": "!wealth",
+        }
+
+        # Check for exact matches
+        if failed_command in command_suggestions:
+            suggestion = command_suggestions[failed_command]
+            await ctx.send(
+                f"{ctx.author.mention}, did you mean `{suggestion}`? Type `!helpfart` to see all available commands."
+            )
+            return
+
+        # Check for partial matches (fuzzy matching)
+        for key, suggestion in command_suggestions.items():
+            if key in failed_command or failed_command in key:
+                await ctx.send(
+                    f"{ctx.author.mention}, did you mean `{suggestion}`? Type `!helpfart` to see all available commands."
+                )
+                return
+
+        # Check for spelling mistakes using Levenshtein distance
+        # Get all actual command names (the values from command_suggestions)
+        actual_commands = {
+            "fart": "!fart",
+            "helpfart": "!helpfart",
+            "fartrank": "!fartrank",
+            "fartleaderboard": "!fartleaderboard",
+            "attackfart": "!attackfart",
+            "syphonfart": "!syphonfart",
+            "syphonstatus": "!syphonstatus",
+            "fartprediction": "!fartprediction",
+            "bullfart": "!bullfart",
+            "fartlord": "!fartlord",
+            "taxes": "!taxes",
+            "wealth": "!wealth",
+        }
+
+        # Find closest match based on edit distance
+        best_match = None
+        min_distance = float("inf")
+
+        for command_name in actual_commands.keys():
+            distance = self.levenshtein_distance(failed_command, command_name)
+            # Consider it a typo if distance is 3 or less and length is similar
+            if distance <= 3 and distance < min_distance:
+                # Also check if the length difference isn't too large
+                if abs(len(failed_command) - len(command_name)) <= 3:
+                    min_distance = distance
+                    best_match = actual_commands[command_name]
+
+        if best_match and min_distance <= 3:
+            await ctx.send(
+                f"{ctx.author.mention}, did you mean `{best_match}`? Type `!helpfart` to see all available commands."
+            )
+            return
+
+        # Generic suggestion if no match found
+        await ctx.send(
+            f"{ctx.author.mention}, that command doesn't exist. Type `!helpfart` to see all available fart commands."
+        )
 
     def openai_response(self, prompt, name_of_user):
         response = openai.responses.create(
@@ -251,7 +476,7 @@ class FunCog(commands.Cog):
             name="✨ Special Commands",
             value=(
                 "`!bullfart` - Get bonus points based on last fart (weekly)\n"
-                "`!giga_fart_cannon` - Mark random top 5 player for 2x damage (once per day, server-wide)"
+                "`https://curiosa.io/decks/cmitdq0u904cu05eb1wjgcwjz` - Mark random top 5 player for 2x damage (once per day, server-wide)"
             ),
             inline=False,
         )

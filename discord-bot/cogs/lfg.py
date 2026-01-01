@@ -109,7 +109,7 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
             )
 
         await interaction.followup.send(
-            f"✅ Match report submitted!\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}",
+            f"Match report submitted!\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}",
             ephemeral=True,
         )
 
@@ -184,13 +184,13 @@ class MatchConfirmationButtons(discord.ui.View):
 
         # Remove the confirmation message
         await interaction.message.edit(
-            content=f"✅ Match confirmed! {self.winner_global} won against {self.loser_global}.",
+            content=f"Match confirmed! {self.winner_global} won against {self.loser_global}.",
             view=None,
         )
 
         # Send confirmation to confirming user
         await interaction.followup.send(
-            f"✅ Match report confirmed and submitted!\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}",
+            f"Match report confirmed and submitted!\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}",
             ephemeral=True,
         )
 
@@ -198,14 +198,14 @@ class MatchConfirmationButtons(discord.ui.View):
         try:
             reporter = await self.bot.fetch_user(self.reporter_id)
             await reporter.send(
-                f"✅ {self.opponent_global} has confirmed your match report! Match has been recorded."
+                f"{self.opponent_global} has confirmed your match report! Match has been recorded."
             )
         except discord.Forbidden:
             # If DM fails, send to match-report channel
             match_report_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
             if match_report_channel:
                 await match_report_channel.send(
-                    f"{reporter.mention} ✅ {self.opponent_global} has confirmed your match report! Match has been recorded."
+                    f"{reporter.mention} {self.opponent_global} has confirmed your match report! Match has been recorded."
                 )
         except Exception:
             pass
@@ -233,7 +233,7 @@ class MatchConfirmationButtons(discord.ui.View):
 
         # Remove the confirmation message
         await interaction.message.edit(
-            content=f"⚠️ Match report disputed. Please resolve with {self.reporter_global}.",
+            content=f"Match report disputed. Please resolve with {self.reporter_global}.",
             view=None,
         )
 
@@ -241,14 +241,14 @@ class MatchConfirmationButtons(discord.ui.View):
         try:
             reporter = await self.bot.fetch_user(self.reporter_id)
             await reporter.send(
-                f"⚠️ {self.opponent_global} has disputed your match report. Please discuss and resolve."
+                f"{self.opponent_global} has disputed your match report. Please discuss and resolve."
             )
         except discord.Forbidden:
             # If DM fails, send to match-report channel
             match_report_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
             if match_report_channel:
                 await match_report_channel.send(
-                    f"{reporter.mention} ⚠️ {self.opponent_global} has disputed your match report. Please discuss and resolve."
+                    f"{reporter.mention} {self.opponent_global} has disputed your match report. Please discuss and resolve."
                 )
         except Exception:
             pass
@@ -373,11 +373,11 @@ class LFGReportButtons(discord.ui.View):
                 dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
                 if dm_channel:
                     await dm_channel.send(
-                        f"{opponent.mention} 🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
+                        f"{opponent.mention} **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
                         view=confirmation_view,
                     )
                     await interaction.response.send_message(
-                        f"✅ Match report sent to {opponent_global}. Waiting for confirmation...",
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
                         ephemeral=True,
                     )
                     logger.info(
@@ -385,18 +385,18 @@ class LFGReportButtons(discord.ui.View):
                     )
                 else:
                     await interaction.response.send_message(
-                        f"❌ Could not send confirmation to {opponent_global}.",
+                        f"Could not send confirmation to {opponent_global}.",
                         ephemeral=True,
                     )
             else:
                 try:
                     await opponent.send(
-                        f"🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
+                        f"**Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
                         view=confirmation_view,
                     )
 
                     await interaction.response.send_message(
-                        f"✅ Match report sent to {opponent_global}. Waiting for confirmation...",
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
                         ephemeral=True,
                     )
                 except discord.Forbidden:
@@ -454,24 +454,24 @@ class LFGReportButtons(discord.ui.View):
         except discord.Forbidden:
             if not interaction.response.is_done():
                 await interaction.response.send_message(
-                    f"❌ Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
                     ephemeral=True,
                 )
             else:
                 await interaction.followup.send(
-                    f"❌ Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
                     ephemeral=True,
                 )
         except Exception as e:
             logger.error(f"Error in won_button: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(
-                    "❌ An error occurred while processing your match report.",
+                    "An error occurred while processing your match report.",
                     ephemeral=True,
                 )
             else:
                 await interaction.followup.send(
-                    "❌ An error occurred while processing your match report.",
+                    "An error occurred while processing your match report.",
                     ephemeral=True,
                 )
 
@@ -571,11 +571,11 @@ class LFGReportButtons(discord.ui.View):
                 dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
                 if dm_channel:
                     await dm_channel.send(
-                        f"{opponent.mention} 🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
+                        f"{opponent.mention} **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
                         view=confirmation_view,
                     )
                     await interaction.response.send_message(
-                        f"✅ Match report sent to {opponent_global}. Waiting for confirmation...",
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
                         ephemeral=True,
                     )
                     logger.info(
@@ -583,18 +583,18 @@ class LFGReportButtons(discord.ui.View):
                     )
                 else:
                     await interaction.response.send_message(
-                        f"❌ Could not send confirmation to {opponent_global}.",
+                        f"Could not send confirmation to {opponent_global}.",
                         ephemeral=True,
                     )
             else:
                 try:
                     await opponent.send(
-                        f"🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
+                        f"**Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
                         view=confirmation_view,
                     )
 
                     await interaction.response.send_message(
-                        f"✅ Match report sent to {opponent_global}. Waiting for confirmation...",
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
                         ephemeral=True,
                     )
                 except discord.Forbidden:
@@ -652,24 +652,24 @@ class LFGReportButtons(discord.ui.View):
         except discord.Forbidden:
             if not interaction.response.is_done():
                 await interaction.response.send_message(
-                    f"❌ Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
                     ephemeral=True,
                 )
             else:
                 await interaction.followup.send(
-                    f"❌ Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
                     ephemeral=True,
                 )
         except Exception as e:
             logger.error(f"Error in lost_button: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(
-                    "❌ An error occurred while processing your match report.",
+                    "An error occurred while processing your match report.",
                     ephemeral=True,
                 )
             else:
                 await interaction.followup.send(
-                    "❌ An error occurred while processing your match report.",
+                    "An error occurred while processing your match report.",
                     ephemeral=True,
                 )
 
@@ -739,7 +739,7 @@ class ChallengeButtons(discord.ui.View):
                 dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
                 if dm_channel:
                     await dm_channel.send(
-                        f"{challenger.mention} 🎮 **Match Report**\n\nYour challenge was accepted! Report the match result below:",
+                        f"{challenger.mention} **Match Report**\n\nYour challenge was accepted! Report the match result below:",
                         view=challenger_view,
                     )
                     logger.info(
@@ -881,7 +881,7 @@ class SoloMatchReportModal(discord.ui.Modal, title="Solo Match Report"):
 
         result = "Won" if self.is_winner else "Lost"
         await interaction.followup.send(
-            f"✅ Solo match report submitted!\n**Result:** {result}\n**Opponent:** {self.opponent_name.value}",
+            f"Solo match report submitted!\n**Result:** {result}\n**Opponent:** {self.opponent_name.value}",
             ephemeral=True,
         )
 
@@ -992,7 +992,7 @@ class LFGCog(commands.Cog):
                     dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{ctx.author.mention} 🎮 **Match Report**\n\nYou've been matched with {matched_user.mention}! Report the match result below:",
+                            f"{ctx.author.mention} **Match Report**\n\nYou've been matched with {matched_user.mention}! Report the match result below:",
                             view=view_ctx,
                         )
                         logger.info(
@@ -1019,12 +1019,7 @@ class LFGCog(commands.Cog):
             # Always announce match in LFG channel
             if lfg_channel:
                 await lfg_channel.send(
-                    f"🎮 **Match Found!** {ctx.author.mention} matched with {matched_user.mention}!"
-                )
-            else:
-                # Fallback to current channel if LFG channel not found
-                await ctx.send(
-                    f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game!"
+                    f"**Match Found!** {ctx.author.mention} matched with {matched_user.mention}!"
                 )
 
             view_matched = LFGReportButtons(
@@ -1063,7 +1058,7 @@ class LFGCog(commands.Cog):
                     dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{matched_user.mention} 🎮 **Match Report**\n\nYou've been matched with {ctx.author.mention}! Report the match result below:",
+                            f"{matched_user.mention} **Match Report**\n\nYou've been matched with {ctx.author.mention}! Report the match result below:",
                             view=view_matched,
                         )
                         logger.info(
@@ -1086,7 +1081,7 @@ class LFGCog(commands.Cog):
                 logger.info("Sending match notification to owner")
                 try:
                     await owner.send(
-                        f"🎮 **Match Found!**\n"
+                        f"**Match Found!**\n"
                         f"{ctx.author} (ID: {ctx.author.id}) matched with "
                         f"{matched_user} (ID: {matched_user_id})"
                     )
@@ -1230,7 +1225,7 @@ class LFGCog(commands.Cog):
     async def lfg_help(self, ctx):
         """Get detailed help for the Looking For Game (LFG) system."""
         embed = discord.Embed(
-            title="🎮 Looking For Game (LFG) System",
+            title="Looking For Game (LFG) System",
             description="Find matches and challenge other players with these commands:",
             color=discord.Color.blue(),
         )
@@ -1379,7 +1374,7 @@ class LFGCog(commands.Cog):
             conn_matches.close()
 
             success_embed = discord.Embed(
-                title="✅ Database Reset Complete",
+                title="Database Reset Complete",
                 description="All databases have been dropped and recreated:\n• ELO database reset\n• Match records cleared\n• Solo match reports cleared\n• Challenge matches cleared\n\nAll tables are ready to use.",
                 color=discord.Color.green(),
             )
@@ -1390,7 +1385,7 @@ class LFGCog(commands.Cog):
 
         except Exception as e:
             error_embed = discord.Embed(
-                title="❌ Database Reset Failed",
+                title="Database Reset Failed",
                 description=f"An error occurred: {str(e)}",
                 color=discord.Color.red(),
             )
@@ -1400,7 +1395,7 @@ class LFGCog(commands.Cog):
     @reset_elo.error
     async def reset_elo_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.send("❌ You need administrator permissions to use this command.")
+            await ctx.send("You need administrator permissions to use this command.")
 
 
 async def setup(bot):

@@ -889,6 +889,132 @@ class SoloMatchReportModal(discord.ui.Modal, title="Solo Match Report"):
 class LFGCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.lfg_channel_id = 1336912830867439676
+
+    @commands.Cog.listener()
+    async def on_command_error(self, ctx, error):
+        """Monitor for invalid commands in LFG channel and suggest corrections"""
+        # Only handle CommandNotFound errors
+        if not isinstance(error, commands.CommandNotFound):
+            return
+
+        # Only respond in the LFG channel
+        if ctx.channel.id != self.lfg_channel_id:
+            return
+
+        # Extract the failed command from the message
+        message_content = ctx.message.content.lower()
+        if not message_content.startswith("!"):
+            return
+
+        failed_command = message_content.split()[0][1:]  # Remove the !
+
+        # Common LFG-related commands and suggestions
+        command_suggestions = {
+            # LFG variations
+            "looking": "!lfg",
+            "lookingforgame": "!lfg",
+            "findgame": "!lfg",
+            "game": "!lfg",
+            "play": "!lfg",
+            "match": "!lfg",
+            "lf": "!lfg",
+            "lfgame": "!lfg",
+            "queue": "!lfg",
+            "search": "!lfg",
+            "searching": "!lfg",
+            "find": "!lfg",
+            "looking4game": "!lfg",
+            "lookingfor": "!lfg",
+            "findmatch": "!lfg",
+            "getgame": "!lfg",
+            "wantgame": "!lfg",
+            "needgame": "!lfg",
+            "joingame": "!lfg",
+            "joinqueue": "!lfg",
+            "queueup": "!lfg",
+            "playermatch": "!lfg",
+            "seek": "!lfg",
+            "seeking": "!lfg",
+            "want": "!lfg",
+            "need": "!lfg",
+            # Cancel variations
+            "leave": "!cancel",
+            "exit": "!cancel",
+            "quit": "!cancel",
+            "cancel": "!cancel",
+            "stop": "!cancel",
+            "leavequeue": "!cancel",
+            "remove": "!cancel",
+            "removeme": "!cancel",
+            "leavelfg": "!cancel",
+            "quitqueue": "!cancel",
+            "exitqueue": "!cancel",
+            "out": "!cancel",
+            "stoplfg": "!cancel",
+            "unqueue": "!cancel",
+            "dequeue": "!cancel",
+            # Check LFG variations
+            "check": "!check_lfg",
+            "status": "!check_lfg",
+            "who": "!check_lfg",
+            "whoislfg": "!check_lfg",
+            "whosinqueue": "!check_lfg",
+            "queuestatus": "!check_lfg",
+            "checkqueue": "!check_lfg",
+            "anyone": "!check_lfg",
+            "whosthere": "!check_lfg",
+            # Challenge variations
+            "challenge": "!challenge",
+            "duel": "!challenge",
+            "fight": "!challenge",
+            "battle": "!challenge",
+            "vs": "!challenge",
+            "versus": "!challenge",
+            "1v1": "!challenge",
+            # Record game variations
+            "record": "!record_game",
+            "report": "!record_game",
+            "reportgame": "!record_game",
+            "recordmatch": "!record_game",
+            "recordgame": "!record_game",
+            "reportmatch": "!record_game",
+            "submitmatch": "!record_game",
+            "submitgame": "!record_game",
+            "log": "!record_game",
+            "loggame": "!record_game",
+            "logmatch": "!record_game",
+            # Help variations
+            "help": "!lfg_help",
+            "commands": "!lfg_help",
+            "info": "!lfg_help",
+            "?": "!lfg_help",
+            "lfghelp": "!lfg_help",
+            "howto": "!lfg_help",
+            "guide": "!lfg_help",
+            "instructions": "!lfg_help",
+        }
+
+        # Check for exact matches
+        if failed_command in command_suggestions:
+            suggestion = command_suggestions[failed_command]
+            await ctx.send(
+                f"{ctx.author.mention}, did you mean `{suggestion}`? Type `!lfg_help` to see all available commands."
+            )
+            return
+
+        # Check for partial matches (fuzzy matching)
+        for key, suggestion in command_suggestions.items():
+            if key in failed_command or failed_command in key:
+                await ctx.send(
+                    f"{ctx.author.mention}, did you mean `{suggestion}`? Type `!lfg_help` to see all available commands."
+                )
+                return
+
+        # Generic suggestion if no match found
+        await ctx.send(
+            f"{ctx.author.mention}, that command doesn't exist. Use `!lfg` to find a game or `!lfg_help` to see all available commands."
+        )
 
     def check_if_someone_is_lfg(self, ctx):
         now = datetime.datetime.now()

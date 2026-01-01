@@ -201,9 +201,10 @@ class MatchConfirmationButtons(discord.ui.View):
                 f"✅ {self.opponent_global} has confirmed your match report! Match has been recorded."
             )
         except discord.Forbidden:
-            # If DM fails, try to notify in channel
-            if self.channel:
-                await self.channel.send(
+            # If DM fails, send to match-report channel
+            match_report_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+            if match_report_channel:
+                await match_report_channel.send(
                     f"{reporter.mention} ✅ {self.opponent_global} has confirmed your match report! Match has been recorded."
                 )
         except Exception:
@@ -243,9 +244,10 @@ class MatchConfirmationButtons(discord.ui.View):
                 f"⚠️ {self.opponent_global} has disputed your match report. Please discuss and resolve."
             )
         except discord.Forbidden:
-            # If DM fails, try to notify in channel
-            if self.channel:
-                await self.channel.send(
+            # If DM fails, send to match-report channel
+            match_report_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+            if match_report_channel:
+                await match_report_channel.send(
                     f"{reporter.mention} ⚠️ {self.opponent_global} has disputed your match report. Please discuss and resolve."
                 )
         except Exception:
@@ -1014,9 +1016,16 @@ class LFGCog(commands.Cog):
                 )
                 return
 
-            await ctx.send(
-                f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game!"
-            )
+            # Always announce match in LFG channel
+            if lfg_channel:
+                await lfg_channel.send(
+                    f"🎮 **Match Found!** {ctx.author.mention} matched with {matched_user.mention}!"
+                )
+            else:
+                # Fallback to current channel if LFG channel not found
+                await ctx.send(
+                    f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game!"
+                )
 
             view_matched = LFGReportButtons(
                 matched_user_id,

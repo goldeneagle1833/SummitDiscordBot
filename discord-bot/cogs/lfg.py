@@ -883,12 +883,10 @@ class LFGCog(commands.Cog):
                 # Create a public thread for the user
                 if lfg_channel:
                     try:
-                        temp_msg = await lfg_channel.send(
-                            f"{ctx.author.mention} Match found!"
-                        )
-                        thread = await temp_msg.create_thread(
+                        thread = await lfg_channel.create_thread(
                             name=f"Match Report - {ctx.author.display_name}",
                             auto_archive_duration=160,
+                            type=discord.ChannelType.public_thread,
                         )
                         await thread.send(
                             f"{ctx.author.mention} 🎮 **Match Report**\n\nYou've been matched with {matched_user.mention}! Report the match result below:",
@@ -902,24 +900,28 @@ class LFGCog(commands.Cog):
                             f"Permission error creating thread for {ctx.author}: {perm_error}"
                         )
                         await ctx.send(
-                            f"{ctx.author.mention}, I couldn't send you the match report (no thread permissions). Please enable DMs."
+                            f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game! (I couldn't send you the match report - no thread permissions. Please enable DMs.)"
                         )
                     except Exception as thread_error:
                         logger.error(
                             f"Failed to create thread for {ctx.author}: {thread_error}"
                         )
                         await ctx.send(
-                            f"{ctx.author.mention}, I couldn't send you the match report. Please enable DMs or check your permissions."
+                            f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game! (I couldn't send you the match report. Please enable DMs or check your permissions.)"
                         )
                 else:
                     logger.error("LFG channel not found")
                     await ctx.send(
-                        f"{ctx.author.mention}, I couldn't send you the match report. Please enable DMs."
+                        f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game! (I couldn't send you the match report. Please enable DMs.)"
                     )
             except Exception as e:
                 logger.error(
                     f"Error sending DM to {ctx.author} (ID: {ctx.author.id}): {e}"
                 )
+                await ctx.send(
+                    f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game!"
+                )
+                return
 
             await ctx.send(
                 f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game!"
@@ -949,12 +951,10 @@ class LFGCog(commands.Cog):
                 # Create a public thread for the user
                 if lfg_channel:
                     try:
-                        temp_msg = await lfg_channel.send(
-                            f"{matched_user.mention} Match found!"
-                        )
-                        thread = await temp_msg.create_thread(
+                        thread = await lfg_channel.create_thread(
                             name=f"Match Report - {matched_user.display_name}",
                             auto_archive_duration=60,
+                            type=discord.ChannelType.public_thread,
                         )
                         await thread.send(
                             f"{matched_user.mention} 🎮 **Match Report**\n\nYou've been matched with {ctx.author.mention}! Report the match result below:",
@@ -999,12 +999,6 @@ class LFGCog(commands.Cog):
                     )
                 except Exception as e:
                     logger.error(f"Error sending match notification to owner: {e}")
-
-            logger.info("Announcing match in LFG channel")
-            await lfg_channel.send(
-                f"A match was found! {SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]} and "
-                f"{SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]} have been paired for a game."
-            )
         elif matched_user_id == ctx.author.id:
             logger.info(f"User {ctx.author.id} is already in queue")
             await ctx.send(

@@ -878,24 +878,39 @@ class LFGCog(commands.Cog):
                     f"Cannot DM {ctx.author} (ID: {ctx.author.id}) - DMs disabled or bot blocked"
                 )
                 # Create a private thread for the user
-                try:
-                    thread = await lfg_channel.create_thread(
-                        name=f"Match Report - {ctx.author.display_name}",
-                        type=discord.ChannelType.private_thread,
-                        invitable=False,
-                    )
-                    await thread.add_user(ctx.author)
-                    await thread.send(
-                        f"{ctx.author.mention} 🎮 **Match Report**\n\nYou've been matched with {matched_user.mention}! Report the match result below:",
-                        view=view_ctx,
-                    )
-                    logger.info(f"Created private thread for {ctx.author}")
-                except Exception as thread_error:
-                    logger.error(
-                        f"Failed to create thread for {ctx.author}: {thread_error}"
-                    )
+                if lfg_channel:
+                    try:
+                        thread = await lfg_channel.create_thread(
+                            name=f"Match Report - {ctx.author.display_name}",
+                            type=discord.ChannelType.private_thread,
+                            invitable=False,
+                        )
+                        await thread.add_user(ctx.author)
+                        await thread.send(
+                            f"{ctx.author.mention} 🎮 **Match Report**\n\nYou've been matched with {matched_user.mention}! Report the match result below:",
+                            view=view_ctx,
+                        )
+                        logger.info(
+                            f"Created private thread {thread.id} for {ctx.author}"
+                        )
+                    except discord.Forbidden as perm_error:
+                        logger.error(
+                            f"Permission error creating thread for {ctx.author}: {perm_error}"
+                        )
+                        await ctx.send(
+                            f"{ctx.author.mention}, I couldn't send you the match report (no thread permissions). Please enable DMs."
+                        )
+                    except Exception as thread_error:
+                        logger.error(
+                            f"Failed to create thread for {ctx.author}: {thread_error}"
+                        )
+                        await ctx.send(
+                            f"{ctx.author.mention}, I couldn't send you the match report. Please enable DMs or check your permissions."
+                        )
+                else:
+                    logger.error("LFG channel not found")
                     await ctx.send(
-                        f"{ctx.author.mention}, I couldn't send you the match report. Please enable DMs or check your permissions."
+                        f"{ctx.author.mention}, I couldn't send you the match report. Please enable DMs."
                     )
             except Exception as e:
                 logger.error(
@@ -928,24 +943,39 @@ class LFGCog(commands.Cog):
                     f"Cannot DM {matched_user} (ID: {matched_user_id}) - DMs disabled or bot blocked"
                 )
                 # Create a private thread for the user
-                try:
-                    thread = await lfg_channel.create_thread(
-                        name=f"Match Report - {matched_user.display_name}",
-                        type=discord.ChannelType.private_thread,
-                        invitable=False,
-                    )
-                    await thread.add_user(matched_user)
-                    await thread.send(
-                        f"{matched_user.mention} 🎮 **Match Report**\n\nYou've been matched with {ctx.author.mention}! Report the match result below:",
-                        view=view_matched,
-                    )
-                    logger.info(f"Created private thread for {matched_user}")
-                except Exception as thread_error:
-                    logger.error(
-                        f"Failed to create thread for {matched_user}: {thread_error}"
-                    )
+                if lfg_channel:
+                    try:
+                        thread = await lfg_channel.create_thread(
+                            name=f"Match Report - {matched_user.display_name}",
+                            type=discord.ChannelType.private_thread,
+                            invitable=False,
+                        )
+                        await thread.add_user(matched_user)
+                        await thread.send(
+                            f"{matched_user.mention} 🎮 **Match Report**\n\nYou've been matched with {ctx.author.mention}! Report the match result below:",
+                            view=view_matched,
+                        )
+                        logger.info(
+                            f"Created private thread {thread.id} for {matched_user}"
+                        )
+                    except discord.Forbidden as perm_error:
+                        logger.error(
+                            f"Permission error creating thread for {matched_user}: {perm_error}"
+                        )
+                        await ctx.send(
+                            f"{matched_user.mention}, I couldn't send you the match report (no thread permissions). Please enable DMs."
+                        )
+                    except Exception as thread_error:
+                        logger.error(
+                            f"Failed to create thread for {matched_user}: {thread_error}"
+                        )
+                        await ctx.send(
+                            f"{matched_user.mention}, I couldn't send you the match report. Please enable DMs or check your permissions."
+                        )
+                else:
+                    logger.error("LFG channel not found")
                     await ctx.send(
-                        f"{matched_user.mention}, I couldn't send you the match report. Please enable DMs or check your permissions."
+                        f"{matched_user.mention}, I couldn't send you the match report. Please enable DMs."
                     )
             except Exception as e:
                 logger.error(

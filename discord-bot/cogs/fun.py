@@ -292,7 +292,11 @@ class FunCog(commands.Cog):
             )
             return
 
-        # Don't respond if no match found - let other cogs handle it or show nothing
+    def openai_response(self, prompt, name_of_user):
+        response = openai.responses.create(
+            model="gpt-4.1-nano",
+            instructions=f"in less than 10 words. Respond to the following prompt as if you were "
+            f"around {name_of_user} farting with a little bit of sarcasm and humor.",
             input=prompt,
         )
         print(response)

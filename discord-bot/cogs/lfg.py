@@ -929,12 +929,18 @@ class LFGCog(commands.Cog):
         for user_id in expired:
             lfg_queue.pop(user_id)
 
-    @commands.command()
+    @commands.command(aliases=["LFG"])
     async def lfg(self, ctx, timeframe: int = 30):
         """Usage: !lfg [minutes]"""
         logger.info(
             f"LFG command started - User: {ctx.author} (ID: {ctx.author.id}), Channel: {ctx.channel}, Timeframe: {timeframe}"
         )
+
+        # Delete the user's command message
+        try:
+            await ctx.message.delete()
+        except Exception as e:
+            logger.warning(f"Could not delete command message: {e}")
 
         self.clean_expired_lfg()
         logger.info(

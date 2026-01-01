@@ -9,6 +9,10 @@ from utils.constants import SORCERY_NICKNAMES
 
 logger = logging.getLogger("discord_bot")
 
+# Constants for DM failure handling
+DM_DISABLED_ROLE_ID = 1445222741686095994
+DM_DISABLED_CHANNEL_ID = 1456299008023728302
+
 # In-memory LFG queue (user_id: {timestamp, timeframe})
 lfg_queue = {}
 
@@ -352,49 +356,91 @@ class LFGReportButtons(discord.ui.View):
                 channel=self.channel,
             )
 
-            # Try to send via DM first
-            try:
-                await opponent.send(
-                    f"🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
-                    view=confirmation_view,
-                )
+            # Check if opponent has DM-disabled role
+            opponent_has_dm_issue = False
+            guild = interaction.guild
+            if guild:
+                role = guild.get_role(DM_DISABLED_ROLE_ID)
+                member = guild.get_member(opponent_id)
+                if role and member and role in member.roles:
+                    opponent_has_dm_issue = True
 
-                await interaction.response.send_message(
-                    f"✅ Match report sent to {opponent_global}. Waiting for confirmation...",
-                    ephemeral=True,
-                )
-            except discord.Forbidden:
-                # If DM fails, create a public thread
-                if self.channel:
+            # Try to send via DM first (unless they have the DM-disabled role)
+            if opponent_has_dm_issue:
+                # Send to designated channel instead
+                dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
+                if dm_channel:
+                    await dm_channel.send(
+                        f"{opponent.mention} 🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
+                        view=confirmation_view,
+                    )
                     await interaction.response.send_message(
-                        "✅ Match report sent. Waiting for confirmation...",
+                        f"✅ Match report sent to {opponent_global}. Waiting for confirmation...",
                         ephemeral=True,
                     )
-                    try:
-                        temp_msg = await self.channel.send(
-                            f"{opponent.mention} Match confirmation needed!"
-                        )
-                        thread = await temp_msg.create_thread(
-                            name=f"Match Confirmation - {opponent.display_name}",
-                            auto_archive_duration=60,
-                        )
-                        await thread.send(
-                            f"{opponent.mention} 🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
-                            view=confirmation_view,
-                        )
-                    except Exception as thread_error:
-                        logger.error(
-                            f"Failed to create confirmation thread: {thread_error}"
-                        )
-                        await interaction.followup.send(
-                            f"❌ Could not send confirmation to {opponent_global}.",
-                            ephemeral=True,
-                        )
+                    logger.info(
+                        f"Posted confirmation in DM-disabled channel for {opponent_global}"
+                    )
                 else:
                     await interaction.response.send_message(
-                        f"❌ Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                        f"❌ Could not send confirmation to {opponent_global}.",
                         ephemeral=True,
                     )
+            else:
+                try:
+                    await opponent.send(
+                        f"🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
+                        view=confirmation_view,
+                    )
+
+                    await interaction.response.send_message(
+                        f"✅ Match report sent to {opponent_global}. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                except discord.Forbidden:
+                    # DM failed - add role and post in designated channel
+                    try:
+                        if guild:
+                            role = guild.get_role(DM_DISABLED_ROLE_ID)
+                            member = guild.get_member(opponent_id)
+                            if role and member:
+                                await member.add_roles(role)
+                                logger.info(
+                                    f"Added DM-disabled role to {opponent_global}"
+                                )
+
+                        dm_channel = interaction.client.get_channel(
+                            DM_DISABLED_CHANNEL_ID
+                        )
+                        if dm_channel:
+                            await dm_channel.send(
+                                f"{opponent.mention} 🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
+                                view=confirmation_view,
+                            )
+                            await interaction.response.send_message(
+                                "✅ Match report sent. Waiting for confirmation...",
+                                ephemeral=True,
+                            )
+                            logger.info(
+                                f"Posted confirmation in DM-disabled channel for {opponent_global}"
+                            )
+                        else:
+                            await interaction.response.send_message(
+                                f"❌ Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+                    except Exception as e:
+                        logger.error(f"Failed to handle DM failure for opponent: {e}")
+                        if not interaction.response.is_done():
+                            await interaction.response.send_message(
+                                f"❌ Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+                        else:
+                            await interaction.followup.send(
+                                f"❌ Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
 
             # Remove buttons from this user's message
             if interaction.message:
@@ -508,49 +554,91 @@ class LFGReportButtons(discord.ui.View):
                 channel=self.channel,
             )
 
-            # Try to send via DM first
-            try:
-                await opponent.send(
-                    f"🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
-                    view=confirmation_view,
-                )
+            # Check if opponent has DM-disabled role
+            opponent_has_dm_issue = False
+            guild = interaction.guild
+            if guild:
+                role = guild.get_role(DM_DISABLED_ROLE_ID)
+                member = guild.get_member(opponent_id)
+                if role and member and role in member.roles:
+                    opponent_has_dm_issue = True
 
-                await interaction.response.send_message(
-                    f"✅ Match report sent to {opponent_global}. Waiting for confirmation...",
-                    ephemeral=True,
-                )
-            except discord.Forbidden:
-                # If DM fails, create a public thread
-                if self.channel:
+            # Try to send via DM first (unless they have the DM-disabled role)
+            if opponent_has_dm_issue:
+                # Send to designated channel instead
+                dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
+                if dm_channel:
+                    await dm_channel.send(
+                        f"{opponent.mention} 🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
+                        view=confirmation_view,
+                    )
                     await interaction.response.send_message(
-                        "✅ Match report sent. Waiting for confirmation...",
+                        f"✅ Match report sent to {opponent_global}. Waiting for confirmation...",
                         ephemeral=True,
                     )
-                    try:
-                        temp_msg = await self.channel.send(
-                            f"{opponent.mention} Match confirmation needed!"
-                        )
-                        thread = await temp_msg.create_thread(
-                            name=f"Match Confirmation - {opponent.display_name}",
-                            auto_archive_duration=60,
-                        )
-                        await thread.send(
-                            f"{opponent.mention} 🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
-                            view=confirmation_view,
-                        )
-                    except Exception as thread_error:
-                        logger.error(
-                            f"Failed to create confirmation thread: {thread_error}"
-                        )
-                        await interaction.followup.send(
-                            f"❌ Could not send confirmation to {opponent_global}.",
-                            ephemeral=True,
-                        )
+                    logger.info(
+                        f"Posted confirmation in DM-disabled channel for {opponent_global}"
+                    )
                 else:
                     await interaction.response.send_message(
-                        f"❌ Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                        f"❌ Could not send confirmation to {opponent_global}.",
                         ephemeral=True,
                     )
+            else:
+                try:
+                    await opponent.send(
+                        f"🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
+                        view=confirmation_view,
+                    )
+
+                    await interaction.response.send_message(
+                        f"✅ Match report sent to {opponent_global}. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                except discord.Forbidden:
+                    # DM failed - add role and post in designated channel
+                    try:
+                        if guild:
+                            role = guild.get_role(DM_DISABLED_ROLE_ID)
+                            member = guild.get_member(opponent_id)
+                            if role and member:
+                                await member.add_roles(role)
+                                logger.info(
+                                    f"Added DM-disabled role to {opponent_global}"
+                                )
+
+                        dm_channel = interaction.client.get_channel(
+                            DM_DISABLED_CHANNEL_ID
+                        )
+                        if dm_channel:
+                            await dm_channel.send(
+                                f"{opponent.mention} 🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
+                                view=confirmation_view,
+                            )
+                            await interaction.response.send_message(
+                                "✅ Match report sent. Waiting for confirmation...",
+                                ephemeral=True,
+                            )
+                            logger.info(
+                                f"Posted confirmation in DM-disabled channel for {opponent_global}"
+                            )
+                        else:
+                            await interaction.response.send_message(
+                                f"❌ Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+                    except Exception as e:
+                        logger.error(f"Failed to handle DM failure for opponent: {e}")
+                        if not interaction.response.is_done():
+                            await interaction.response.send_message(
+                                f"❌ Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+                        else:
+                            await interaction.followup.send(
+                                f"❌ Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
 
             # Remove buttons from this user's message
             if interaction.message:
@@ -634,22 +722,29 @@ class ChallengeButtons(discord.ui.View):
         try:
             await challenger.send("Match report:", view=challenger_view)
         except discord.Forbidden:
-            if self.channel:
-                # Create a public thread for the challenger
-                try:
-                    temp_msg = await self.channel.send(
-                        f"{challenger.mention} Challenge accepted!"
-                    )
-                    thread = await temp_msg.create_thread(
-                        name=f"Match Report - {challenger.display_name}",
-                        auto_archive_duration=60,
-                    )
-                    await thread.send(
+            # DM failed - add role and post in designated channel
+            try:
+                guild = interaction.guild
+                if guild:
+                    role = guild.get_role(DM_DISABLED_ROLE_ID)
+                    member = guild.get_member(self.challenger_id)
+                    if role and member:
+                        await member.add_roles(role)
+                        logger.info(
+                            f"Added DM-disabled role to {challenger.display_name}"
+                        )
+
+                dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
+                if dm_channel:
+                    await dm_channel.send(
                         f"{challenger.mention} 🎮 **Match Report**\n\nYour challenge was accepted! Report the match result below:",
                         view=challenger_view,
                     )
-                except Exception as e:
-                    logger.error(f"Failed to create thread for challenger: {e}")
+                    logger.info(
+                        f"Posted match report in DM-disabled channel for {challenger.display_name}"
+                    )
+            except Exception as e:
+                logger.error(f"Failed to handle DM failure for challenger: {e}")
 
         # Send match report to the opponent (who accepted the challenge)
         try:
@@ -880,37 +975,33 @@ class LFGCog(commands.Cog):
                 logger.error(
                     f"Cannot DM {ctx.author} (ID: {ctx.author.id}) - DMs disabled or bot blocked"
                 )
-                # Create a public thread for the user
-                if lfg_channel:
-                    try:
-                        thread = await lfg_channel.create_thread(
-                            name=f"Match Report - {ctx.author.display_name}",
-                            auto_archive_duration=160,
-                            type=discord.ChannelType.public_thread,
-                        )
-                        await thread.send(
+                # DM failed - add role and post in designated channel
+                try:
+                    guild = ctx.guild
+                    if guild:
+                        role = guild.get_role(DM_DISABLED_ROLE_ID)
+                        member = guild.get_member(ctx.author.id)
+                        if role and member:
+                            await member.add_roles(role)
+                            logger.info(
+                                f"Added DM-disabled role to {ctx.author.display_name}"
+                            )
+
+                    dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                    if dm_channel:
+                        await dm_channel.send(
                             f"{ctx.author.mention} 🎮 **Match Report**\n\nYou've been matched with {matched_user.mention}! Report the match result below:",
                             view=view_ctx,
                         )
                         logger.info(
-                            f"Created public thread {thread.id} for {ctx.author}"
+                            f"Posted match report in DM-disabled channel for {ctx.author.display_name}"
                         )
-                    except discord.Forbidden as perm_error:
-                        logger.error(
-                            f"Permission error creating thread for {ctx.author}: {perm_error}"
-                        )
+                    else:
                         await ctx.send(
-                            f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game! (I couldn't send you the match report - no thread permissions. Please enable DMs.)"
+                            f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game! (I couldn't send you the match report. Please enable DMs.)"
                         )
-                    except Exception as thread_error:
-                        logger.error(
-                            f"Failed to create thread for {ctx.author}: {thread_error}"
-                        )
-                        await ctx.send(
-                            f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game! (I couldn't send you the match report. Please enable DMs or check your permissions.)"
-                        )
-                else:
-                    logger.error("LFG channel not found")
+                except Exception as e:
+                    logger.error(f"Failed to handle DM failure for {ctx.author}: {e}")
                     await ctx.send(
                         f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game! (I couldn't send you the match report. Please enable DMs.)"
                     )
@@ -948,40 +1039,33 @@ class LFGCog(commands.Cog):
                 logger.error(
                     f"Cannot DM {matched_user} (ID: {matched_user_id}) - DMs disabled or bot blocked"
                 )
-                # Create a public thread for the user
-                if lfg_channel:
-                    try:
-                        thread = await lfg_channel.create_thread(
-                            name=f"Match Report - {matched_user.display_name}",
-                            auto_archive_duration=60,
-                            type=discord.ChannelType.public_thread,
-                        )
-                        await thread.send(
+                # DM failed - add role and post in designated channel
+                try:
+                    guild = ctx.guild
+                    if guild:
+                        role = guild.get_role(DM_DISABLED_ROLE_ID)
+                        member = guild.get_member(matched_user_id)
+                        if role and member:
+                            await member.add_roles(role)
+                            logger.info(
+                                f"Added DM-disabled role to {matched_user.display_name}"
+                            )
+
+                    dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                    if dm_channel:
+                        await dm_channel.send(
                             f"{matched_user.mention} 🎮 **Match Report**\n\nYou've been matched with {ctx.author.mention}! Report the match result below:",
                             view=view_matched,
                         )
                         logger.info(
-                            f"Created public thread {thread.id} for {matched_user}"
+                            f"Posted match report in DM-disabled channel for {matched_user.display_name}"
                         )
-                    except discord.Forbidden as perm_error:
-                        logger.error(
-                            f"Permission error creating thread for {matched_user}: {perm_error}"
-                        )
+                    else:
                         await ctx.send(
-                            f"{matched_user.mention}, I couldn't send you the match report (no thread permissions). Please enable DMs."
+                            f"{matched_user.mention}, I couldn't send you the match report. Please enable DMs."
                         )
-                    except Exception as thread_error:
-                        logger.error(
-                            f"Failed to create thread for {matched_user}: {thread_error}"
-                        )
-                        await ctx.send(
-                            f"{matched_user.mention}, I couldn't send you the match report. Please enable DMs or check your permissions."
-                        )
-                else:
-                    logger.error("LFG channel not found")
-                    await ctx.send(
-                        f"{matched_user.mention}, I couldn't send you the match report. Please enable DMs."
-                    )
+                except Exception as e:
+                    logger.error(f"Failed to handle DM failure for {matched_user}: {e}")
             except Exception as e:
                 logger.error(
                     f"Error sending DM to {matched_user} (ID: {matched_user_id}): {e}"

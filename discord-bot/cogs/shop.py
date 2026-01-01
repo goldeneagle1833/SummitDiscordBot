@@ -37,6 +37,195 @@ class ShopCog(commands.Cog):
         logger.info("ShopCog initialized")
         self.setup_purchase_database()
 
+    def levenshtein_distance(self, s1, s2):
+        """Calculate the Levenshtein distance between two strings"""
+        if len(s1) < len(s2):
+            return self.levenshtein_distance(s2, s1)
+
+        if len(s2) == 0:
+            return len(s1)
+
+        previous_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = previous_row[j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+                current_row.append(min(insertions, deletions, substitutions))
+            previous_row = current_row
+
+        return previous_row[-1]
+
+    @commands.Cog.listener()
+    async def on_command_error(self, ctx, error):
+        """Monitor for invalid commands in fart shop channel and suggest corrections"""
+        # Only handle CommandNotFound errors
+        if not isinstance(error, commands.CommandNotFound):
+            return
+
+        # Only respond in the fart channel
+        if ctx.channel.id != self.fart_channel_id:
+            return
+
+        # Extract the failed command from the message
+        message_content = ctx.message.content.lower()
+        if not message_content.startswith("!"):
+            return
+
+        failed_command = message_content.split()[0][1:]  # Remove the !
+
+        # Common shop-related commands and suggestions
+        command_suggestions = {
+            # Blue Shell variations
+            "blue": "!blue_shell",
+            "blueshell": "!blue_shell",
+            "blue_shell": "!blue_shell",
+            "blushell": "!blue_shell",
+            "blueshel": "!blue_shell",
+            "bloo": "!blue_shell",
+            # Red Shell variations
+            "red": "!red_shell",
+            "redshell": "!red_shell",
+            "red_shell": "!red_shell",
+            "redshel": "!red_shell",
+            # Green Shell variations
+            "green": "!green_shell",
+            "greenshell": "!green_shell",
+            "green_shell": "!green_shell",
+            "greenshel": "!green_shell",
+            "gren": "!green_shell",
+            # Banana variations
+            "banana": "!banana",
+            "bananna": "!banana",
+            "banan": "!banana",
+            "nana": "!banana",
+            # Star variations
+            "star": "!star",
+            "str": "!star",
+            "protect": "!star",
+            "protection": "!star",
+            "shield": "!star",
+            # Mushroom variations
+            "mushroom": "!mushroom",
+            "mushrrom": "!mushroom",
+            "mushrom": "!mushroom",
+            "shroom": "!mushroom",
+            "mush": "!mushroom",
+            "boost": "!mushroom",
+            # Bob-omb variations
+            "bobomb": "!bobomb",
+            "bob-omb": "!bobomb",
+            "bomb": "!bobomb",
+            "bom": "!bobomb",
+            "boomb": "!bobomb",
+            "bobom": "!bobomb",
+            # Shop variations
+            "shop": "!fart_shop",
+            "fartshop": "!fart_shop",
+            "fart_shop": "!fart_shop",
+            "store": "!fart_shop",
+            "buy": "!fart_shop",
+            "items": "!fart_shop",
+            "purchase": "!fart_shop",
+            # Giga Fart Cannon variations
+            "giga": "!giga_fart_cannon",
+            "gigafart": "!giga_fart_cannon",
+            "giga_fart": "!giga_fart_cannon",
+            "gigafartcannon": "!giga_fart_cannon",
+            "giga_fart_cannon": "!giga_fart_cannon",
+            "cannon": "!giga_fart_cannon",
+            "gigacannon": "!giga_fart_cannon",
+            # Blue Star variations
+            "bluestar": "!blue_star",
+            "blue_star": "!blue_star",
+            "bluestr": "!blue_star",
+            "blstar": "!blue_star",
+            # Fart Star variations
+            "fartstar": "!fart_star",
+            "fart_star": "!fart_star",
+            "fartstr": "!fart_star",
+            "starkiller": "!fart_star",
+            "killer": "!fart_star",
+            "remove_star": "!fart_star",
+            "removestar": "!fart_star",
+            # Evil Star variations
+            "evilstar": "!evil_star",
+            "evil_star": "!evil_star",
+            "evil": "!evil_star",
+            "evilstr": "!evil_star",
+            "devil": "!evil_star",
+            "devilstar": "!evil_star",
+            "666": "!evil_star",
+            "satan": "!evil_star",
+            "dark": "!evil_star",
+            "darkstar": "!evil_star",
+        }
+
+        # Check for exact matches
+        if failed_command in command_suggestions:
+            suggestion = command_suggestions[failed_command]
+            await ctx.send(
+                f"{ctx.author.mention}, did you mean `{suggestion}`? Type `!fart_shop` to see all available items."
+            )
+            return
+
+        # Check for partial matches (fuzzy matching)
+        for key, suggestion in command_suggestions.items():
+            if key in failed_command or failed_command in key:
+                await ctx.send(
+                    f"{ctx.author.mention}, did you mean `{suggestion}`? Type `!fart_shop` to see all available items."
+                )
+                return
+
+        # Check for spelling mistakes using Levenshtein distance
+        # Get all actual command names
+        actual_commands = {
+            "blue_shell": "!blue_shell",
+            "blueshell": "!blue_shell",
+            "red_shell": "!red_shell",
+            "redshell": "!red_shell",
+            "green_shell": "!green_shell",
+            "greenshell": "!green_shell",
+            "banana": "!banana",
+            "star": "!star",
+            "mushroom": "!mushroom",
+            "bobomb": "!bobomb",
+            "fart_shop": "!fart_shop",
+            "fartshop": "!fart_shop",
+            "giga_fart_cannon": "!giga_fart_cannon",
+            "blue_star": "!blue_star",
+            "bluestar": "!blue_star",
+            "fart_star": "!fart_star",
+            "fartstar": "!fart_star",
+            "evil_star": "!evil_star",
+            "evilstar": "!evil_star",
+        }
+
+        # Find closest match based on edit distance
+        best_match = None
+        min_distance = float("inf")
+
+        for command_name in actual_commands.keys():
+            distance = self.levenshtein_distance(failed_command, command_name)
+            # Consider it a typo if distance is 3 or less and length is similar
+            if distance <= 3 and distance < min_distance:
+                # Also check if the length difference isn't too large
+                if abs(len(failed_command) - len(command_name)) <= 3:
+                    min_distance = distance
+                    best_match = actual_commands[command_name]
+
+        if best_match and min_distance <= 3:
+            await ctx.send(
+                f"{ctx.author.mention}, did you mean `{best_match}`? Type `!fart_shop` to see all available items."
+            )
+            return
+
+        # Generic suggestion if no match found
+        await ctx.send(
+            f"{ctx.author.mention}, that command doesn't exist. Type `!fart_shop` to see all available shop items."
+        )
+
     def setup_purchase_database(self):
         """Create table to track Discord monetization purchases"""
         try:

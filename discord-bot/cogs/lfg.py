@@ -364,19 +364,20 @@ class LFGReportButtons(discord.ui.View):
                     ephemeral=True,
                 )
             except discord.Forbidden:
-                # If DM fails, create a private thread
+                # If DM fails, create a public thread
                 if self.channel:
                     await interaction.response.send_message(
                         "✅ Match report sent. Waiting for confirmation...",
                         ephemeral=True,
                     )
                     try:
-                        thread = await self.channel.create_thread(
-                            name=f"Match Confirmation - {opponent.display_name}",
-                            type=discord.ChannelType.private_thread,
-                            invitable=False,
+                        temp_msg = await self.channel.send(
+                            f"{opponent.mention} Match confirmation needed!"
                         )
-                        await thread.add_user(opponent)
+                        thread = await temp_msg.create_thread(
+                            name=f"Match Confirmation - {opponent.display_name}",
+                            auto_archive_duration=60,
+                        )
                         await thread.send(
                             f"{opponent.mention} 🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
                             view=confirmation_view,
@@ -519,19 +520,20 @@ class LFGReportButtons(discord.ui.View):
                     ephemeral=True,
                 )
             except discord.Forbidden:
-                # If DM fails, create a private thread
+                # If DM fails, create a public thread
                 if self.channel:
                     await interaction.response.send_message(
                         "✅ Match report sent. Waiting for confirmation...",
                         ephemeral=True,
                     )
                     try:
-                        thread = await self.channel.create_thread(
-                            name=f"Match Confirmation - {opponent.display_name}",
-                            type=discord.ChannelType.private_thread,
-                            invitable=False,
+                        temp_msg = await self.channel.send(
+                            f"{opponent.mention} Match confirmation needed!"
                         )
-                        await thread.add_user(opponent)
+                        thread = await temp_msg.create_thread(
+                            name=f"Match Confirmation - {opponent.display_name}",
+                            auto_archive_duration=60,
+                        )
                         await thread.send(
                             f"{opponent.mention} 🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
                             view=confirmation_view,
@@ -633,14 +635,15 @@ class ChallengeButtons(discord.ui.View):
             await challenger.send("Match report:", view=challenger_view)
         except discord.Forbidden:
             if self.channel:
-                # Create a private thread for the challenger
+                # Create a public thread for the challenger
                 try:
-                    thread = await self.channel.create_thread(
-                        name=f"Match Report - {challenger.display_name}",
-                        type=discord.ChannelType.private_thread,
-                        invitable=False,
+                    temp_msg = await self.channel.send(
+                        f"{challenger.mention} Challenge accepted!"
                     )
-                    await thread.add_user(challenger)
+                    thread = await temp_msg.create_thread(
+                        name=f"Match Report - {challenger.display_name}",
+                        auto_archive_duration=60,
+                    )
                     await thread.send(
                         f"{challenger.mention} 🎮 **Match Report**\n\nYour challenge was accepted! Report the match result below:",
                         view=challenger_view,
@@ -877,21 +880,22 @@ class LFGCog(commands.Cog):
                 logger.error(
                     f"Cannot DM {ctx.author} (ID: {ctx.author.id}) - DMs disabled or bot blocked"
                 )
-                # Create a private thread for the user
+                # Create a public thread for the user
                 if lfg_channel:
                     try:
-                        thread = await lfg_channel.create_thread(
-                            name=f"Match Report - {ctx.author.display_name}",
-                            type=discord.ChannelType.private_thread,
-                            invitable=False,
+                        temp_msg = await lfg_channel.send(
+                            f"{ctx.author.mention} Match found!"
                         )
-                        await thread.add_user(ctx.author)
+                        thread = await temp_msg.create_thread(
+                            name=f"Match Report - {ctx.author.display_name}",
+                            auto_archive_duration=160,
+                        )
                         await thread.send(
                             f"{ctx.author.mention} 🎮 **Match Report**\n\nYou've been matched with {matched_user.mention}! Report the match result below:",
                             view=view_ctx,
                         )
                         logger.info(
-                            f"Created private thread {thread.id} for {ctx.author}"
+                            f"Created public thread {thread.id} for {ctx.author}"
                         )
                     except discord.Forbidden as perm_error:
                         logger.error(
@@ -942,21 +946,22 @@ class LFGCog(commands.Cog):
                 logger.error(
                     f"Cannot DM {matched_user} (ID: {matched_user_id}) - DMs disabled or bot blocked"
                 )
-                # Create a private thread for the user
+                # Create a public thread for the user
                 if lfg_channel:
                     try:
-                        thread = await lfg_channel.create_thread(
-                            name=f"Match Report - {matched_user.display_name}",
-                            type=discord.ChannelType.private_thread,
-                            invitable=False,
+                        temp_msg = await lfg_channel.send(
+                            f"{matched_user.mention} Match found!"
                         )
-                        await thread.add_user(matched_user)
+                        thread = await temp_msg.create_thread(
+                            name=f"Match Report - {matched_user.display_name}",
+                            auto_archive_duration=60,
+                        )
                         await thread.send(
                             f"{matched_user.mention} 🎮 **Match Report**\n\nYou've been matched with {ctx.author.mention}! Report the match result below:",
                             view=view_matched,
                         )
                         logger.info(
-                            f"Created private thread {thread.id} for {matched_user}"
+                            f"Created public thread {thread.id} for {matched_user}"
                         )
                     except discord.Forbidden as perm_error:
                         logger.error(
@@ -1104,21 +1109,22 @@ class LFGCog(commands.Cog):
             )
 
         except discord.Forbidden:
-            # If DM fails, create a private thread
+            # If DM fails, create a public thread
             if lfg_channel:
                 try:
-                    thread = await lfg_channel.create_thread(
-                        name=f"Challenge from {ctx.author.display_name}",
-                        type=discord.ChannelType.private_thread,
-                        invitable=False,
+                    temp_msg = await lfg_channel.send(
+                        f"{opponent.mention} You have been challenged!"
                     )
-                    await thread.add_user(opponent)
+                    thread = await temp_msg.create_thread(
+                        name=f"Challenge from {ctx.author.display_name}",
+                        auto_archive_duration=60,
+                    )
                     await thread.send(
                         f"{opponent.mention} {ctx.author.global_name} has challenged you to a match!",
                         view=view,
                     )
                     await ctx.send(
-                        f"Challenge sent to {opponent.mention} in a private thread (they have DMs disabled)."
+                        f"Challenge sent to {opponent.mention} in a thread (they have DMs disabled)."
                     )
                 except Exception as thread_error:
                     logger.error(f"Failed to create challenge thread: {thread_error}")

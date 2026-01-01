@@ -292,16 +292,7 @@ class FunCog(commands.Cog):
             )
             return
 
-        # Generic suggestion if no match found
-        await ctx.send(
-            f"{ctx.author.mention}, that command doesn't exist. Type `!helpfart` to see all available fart commands."
-        )
-
-    def openai_response(self, prompt, name_of_user):
-        response = openai.responses.create(
-            model="gpt-4.1-nano",
-            instructions=f"in less than 10 words. Respond to the following prompt as if you were "
-            f"around {name_of_user} farting with a little bit of sarcasm and humor.",
+        # Don't respond if no match found - let other cogs handle it or show nothing
             input=prompt,
         )
         print(response)

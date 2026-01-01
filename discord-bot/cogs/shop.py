@@ -221,16 +221,7 @@ class ShopCog(commands.Cog):
             )
             return
 
-        # Generic suggestion if no match found
-        await ctx.send(
-            f"{ctx.author.mention}, that command doesn't exist. Type `!fart_shop` to see all available shop items."
-        )
-
-    def setup_purchase_database(self):
-        """Create table to track Discord monetization purchases"""
-        try:
-            conn = sqlite3.connect("discord_purchases.db")
-            cur = conn.cursor()
+        # Don't respond if no match found - let other cogs handle it or show nothing
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS purchase_records (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

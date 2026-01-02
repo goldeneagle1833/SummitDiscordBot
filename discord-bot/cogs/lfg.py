@@ -20,6 +20,9 @@ lfg_queue = {}
 # Key: (reporter_id, opponent_id), Value: match report data
 pending_match_reports = {}
 
+# Store the persistent status message ID
+lfg_status_message_id = None
+
 
 class MatchReportModal(discord.ui.Modal, title="Match Report"):
     curiosa_url = discord.ui.TextInput(
@@ -891,6 +894,85 @@ class LFGCog(commands.Cog):
         self.bot = bot
         self.lfg_channel_id = 1336912830867439676
 
+    async def update_lfg_status(self):
+        """Update the persistent LFG status message"""
+        global lfg_status_message_id
+
+        lfg_channel = self.bot.get_channel(self.lfg_channel_id)
+        if not lfg_channel:
+            return
+
+        # Clean expired entries first
+        self.clean_expired_lfg()
+
+        # Create embed based on queue status
+        if len(lfg_queue) == 0:
+            # RED - Empty queue
+            embed = discord.Embed(
+                title="🔴 LFG Queue Status",
+                description="**Queue is empty**\n\nUse `!lfg` to join the queue and find a match!",
+                color=discord.Color.red(),
+            )
+            embed.set_footer(text="Status updates automatically")
+        else:
+            # GREEN - Active queue
+            embed = discord.Embed(
+                title="🟢 LFG Queue Status",
+                description=f"**{len(lfg_queue)} player(s) looking for a game!**\n\nUse `!lfg` to join and get matched instantly!",
+                color=discord.Color.green(),
+            )
+
+            # Add details for each player in queue
+            now = datetime.datetime.now()
+            queue_details = []
+            for user_id, info in lfg_queue.items():
+                time_elapsed = (now - info["timestamp"]).total_seconds() / 60
+                time_remaining = info["timeframe"] - time_elapsed
+
+                try:
+                    user = await self.bot.fetch_user(user_id)
+                    queue_details.append(
+                        f"• **{user.display_name}** - {int(time_remaining)} min remaining"
+                    )
+                except:
+                    queue_details.append(
+                        f"• Player - {int(time_remaining)} min remaining"
+                    )
+
+            if queue_details:
+                embed.add_field(
+                    name="Players in Queue:",
+                    value="\n".join(queue_details),
+                    inline=False,
+                )
+
+            embed.set_footer(text="Status updates automatically")
+
+        # Update or create the status message
+        try:
+            if lfg_status_message_id:
+                try:
+                    message = await lfg_channel.fetch_message(lfg_status_message_id)
+                    await message.edit(embed=embed)
+                except discord.NotFound:
+                    # Message was deleted, create a new one
+                    new_message = await lfg_channel.send(embed=embed)
+                    lfg_status_message_id = new_message.id
+                    try:
+                        await new_message.pin()
+                    except:
+                        pass
+            else:
+                # Create initial status message
+                new_message = await lfg_channel.send(embed=embed)
+                lfg_status_message_id = new_message.id
+                try:
+                    await new_message.pin()
+                except:
+                    pass
+        except Exception as e:
+            logger.error(f"Error updating LFG status message: {e}")
+
     def levenshtein_distance(self, s1, s2):
         """Calculate the Levenshtein distance between two strings"""
         if len(s1) < len(s2):
@@ -1261,6 +1343,9 @@ class LFGCog(commands.Cog):
                 )
             self.pair_players(ctx)
 
+            # Update status message after match
+            await self.update_lfg_status()
+
             # Notify owner about the match
             if owner:
                 logger.info("Sending match notification to owner")
@@ -1306,6 +1391,9 @@ class LFGCog(commands.Cog):
             else:
                 logger.warning(f"LFG channel {channel_id} not found")
 
+            # Update status message after joining queue
+            await self.update_lfg_status()
+
         logger.info(f"LFG command completed for {ctx.author} (ID: {ctx.author.id})")
 
     @commands.command()
@@ -1327,8 +1415,8 @@ class LFGCog(commands.Cog):
             await ctx.send(
                 f"{ctx.author.mention}, you have been removed from the LFG queue."
             )
-            if len(lfg_queue) == 0 and lfg_channel:
-                await lfg_channel.send("No one is currently looking for a game.")
+            # Update status message after leaving queue
+            await self.update_lfg_status()
         else:
             await ctx.send(
                 f"{ctx.author.mention}, you are not currently in the LFG queue."

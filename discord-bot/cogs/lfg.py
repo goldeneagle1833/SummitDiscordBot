@@ -897,15 +897,13 @@ class JoinQueueButton(discord.ui.View):
         self.bot = bot
 
     @discord.ui.button(
-        label="Join Queue",
-        style=discord.ButtonStyle.green,
-        custom_id="join_lfg_queue",
-        emoji="🎮"
+        label="Join Queue", style=discord.ButtonStyle.green, custom_id="join_lfg_queue"
     )
     async def join_queue_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         """Handle join queue button click"""
+
         # Create a fake context to use with existing lfg command
         class FakeContext:
             def __init__(self, bot, interaction):

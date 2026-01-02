@@ -929,15 +929,11 @@ class LFGCog(commands.Cog):
                 time_elapsed = (now - info["timestamp"]).total_seconds() / 60
                 time_remaining = info["timeframe"] - time_elapsed
 
-                try:
-                    user = await self.bot.fetch_user(user_id)
-                    queue_details.append(
-                        f"• **{user.display_name}** - {int(time_remaining)} min remaining"
-                    )
-                except:
-                    queue_details.append(
-                        f"• Player - {int(time_remaining)} min remaining"
-                    )
+                # Use a random funny placeholder instead of actual name
+                placeholder = SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]
+                queue_details.append(
+                    f"• **{placeholder}** - {int(time_remaining)} min remaining"
+                )
 
             if queue_details:
                 embed.add_field(
@@ -948,28 +944,22 @@ class LFGCog(commands.Cog):
 
             embed.set_footer(text="Status updates automatically")
 
-        # Update or create the status message
+        # Delete old message and send new one
         try:
             if lfg_status_message_id:
                 try:
-                    message = await lfg_channel.fetch_message(lfg_status_message_id)
-                    await message.edit(embed=embed)
+                    old_message = await lfg_channel.fetch_message(lfg_status_message_id)
+                    await old_message.delete()
                 except discord.NotFound:
-                    # Message was deleted, create a new one
-                    new_message = await lfg_channel.send(embed=embed)
-                    lfg_status_message_id = new_message.id
-                    try:
-                        await new_message.pin()
-                    except:
-                        pass
-            else:
-                # Create initial status message
-                new_message = await lfg_channel.send(embed=embed)
-                lfg_status_message_id = new_message.id
-                try:
-                    await new_message.pin()
-                except:
+                    # Message was already deleted, no problem
                     pass
+                except Exception as e:
+                    logger.warning(f"Could not delete old status message: {e}")
+
+            # Send new status message
+            new_message = await lfg_channel.send(embed=embed)
+            lfg_status_message_id = new_message.id
+
         except Exception as e:
             logger.error(f"Error updating LFG status message: {e}")
 

@@ -1372,15 +1372,6 @@ class LFGCog(commands.Cog):
             except Exception as e:
                 logger.error(f"Error sending DM to {ctx.author}: {e}")
 
-            if lfg_channel:
-                logger.info(f"Announcing new LFG entry in channel {channel_id}")
-                await lfg_channel.send(
-                    f"A {SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]} is now looking for a game "
-                    f"for {timeframe} minutes! Message me with the `!lfg` command to join them."
-                )
-            else:
-                logger.warning(f"LFG channel {channel_id} not found")
-
             # Update status message after joining queue
             await self.update_lfg_status()
 

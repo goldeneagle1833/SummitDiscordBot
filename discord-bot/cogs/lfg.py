@@ -889,6 +889,161 @@ class SoloMatchReportModal(discord.ui.Modal, title="Solo Match Report"):
         )
 
 
+class JoinQueueButton(discord.ui.View):
+    """Button for joining the LFG queue from the status message"""
+
+    def __init__(self, bot):
+        super().__init__(timeout=None)
+        self.bot = bot
+
+    @discord.ui.button(
+        label="Join Queue",
+        style=discord.ButtonStyle.green,
+        custom_id="join_lfg_queue",
+        emoji="🎮"
+    )
+    async def join_queue_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        """Handle join queue button click"""
+        # Create a fake context to use with existing lfg command
+        class FakeContext:
+            def __init__(self, bot, interaction):
+                self.bot = bot
+                self.author = interaction.user
+                self.guild = interaction.guild
+                self.channel = interaction.channel
+                self.message = None
+
+            async def send(self, *args, **kwargs):
+                # Don't send to channel, will use interaction response
+                pass
+
+        ctx = FakeContext(self.bot, interaction)
+        lfg_cog = self.bot.get_cog("LFGCog")
+
+        if not lfg_cog:
+            await interaction.response.send_message(
+                "LFG system is not available.", ephemeral=True
+            )
+            return
+
+        # Check if user is already in queue
+        if interaction.user.id in lfg_queue:
+            await interaction.response.send_message(
+                "You're already in the queue!", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        # Use the existing lfg logic
+        lfg_cog.clean_expired_lfg()
+        matched_user_id = lfg_cog.check_if_someone_is_lfg(ctx)
+
+        if matched_user_id and matched_user_id != interaction.user.id:
+            # Match found!
+            matched_user = await self.bot.fetch_user(matched_user_id)
+            lfg_channel = self.bot.get_channel(lfg_cog.lfg_channel_id)
+
+            view_ctx = LFGReportButtons(
+                interaction.user.id,
+                interaction.user.id,
+                interaction.user.global_name,
+                matched_user_id,
+                matched_user.global_name,
+                self.bot,
+                lfg_channel,
+            )
+
+            try:
+                await interaction.user.send("Match report:", view=view_ctx)
+            except discord.Forbidden:
+                # Handle DM failure
+                try:
+                    guild = interaction.guild
+                    if guild:
+                        role = guild.get_role(DM_DISABLED_ROLE_ID)
+                        member = guild.get_member(interaction.user.id)
+                        if role and member:
+                            await member.add_roles(role)
+
+                    dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                    if dm_channel:
+                        await dm_channel.send(
+                            f"{interaction.user.mention} **Match Report**\n\nYou've been matched with {matched_user.mention}! Report the match result below:",
+                            view=view_ctx,
+                        )
+                except Exception:
+                    pass
+
+            # Announce match in LFG channel
+            if lfg_channel:
+                await lfg_channel.send(
+                    f"**Match Found!** {interaction.user.mention} matched with {matched_user.mention}!"
+                )
+
+            view_matched = LFGReportButtons(
+                matched_user_id,
+                matched_user_id,
+                matched_user.global_name,
+                interaction.user.id,
+                interaction.user.global_name,
+                self.bot,
+                lfg_channel,
+            )
+
+            try:
+                await matched_user.send(
+                    f"You've been matched with {interaction.user.mention} for a game!",
+                    view=view_matched,
+                )
+            except discord.Forbidden:
+                # Handle DM failure
+                try:
+                    guild = interaction.guild
+                    if guild:
+                        role = guild.get_role(DM_DISABLED_ROLE_ID)
+                        member = guild.get_member(matched_user_id)
+                        if role and member:
+                            await member.add_roles(role)
+
+                    dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                    if dm_channel:
+                        await dm_channel.send(
+                            f"{matched_user.mention} **Match Report**\n\nYou've been matched with {interaction.user.mention}! Report the match result below:",
+                            view=view_matched,
+                        )
+                except Exception:
+                    pass
+
+            lfg_cog.pair_players(ctx)
+            await lfg_cog.update_lfg_status()
+
+            await interaction.followup.send(
+                f"Match found! You've been paired with {matched_user.global_name}. Check your DMs for the match report.",
+                ephemeral=True,
+            )
+        else:
+            # Add to queue
+            default_timeframe = 30
+            lfg_cog.add_to_lfg_queue(ctx, default_timeframe)
+
+            try:
+                await interaction.user.send(
+                    f"You have been added to the queue for looking for a game for {default_timeframe} minutes."
+                )
+            except discord.Forbidden:
+                pass
+
+            await lfg_cog.update_lfg_status()
+
+            await interaction.followup.send(
+                f"You've joined the queue for {default_timeframe} minutes! You'll be notified when a match is found.",
+                ephemeral=True,
+            )
+
+
 class LFGCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -944,6 +1099,9 @@ class LFGCog(commands.Cog):
 
             embed.set_footer(text="Status updates automatically")
 
+        # Create the Join Queue button view
+        view = JoinQueueButton(self.bot)
+
         # Delete old message and send new one
         try:
             if lfg_status_message_id:
@@ -956,8 +1114,8 @@ class LFGCog(commands.Cog):
                 except Exception as e:
                     logger.warning(f"Could not delete old status message: {e}")
 
-            # Send new status message
-            new_message = await lfg_channel.send(embed=embed)
+            # Send new status message with button
+            new_message = await lfg_channel.send(embed=embed, view=view)
             lfg_status_message_id = new_message.id
 
         except Exception as e:

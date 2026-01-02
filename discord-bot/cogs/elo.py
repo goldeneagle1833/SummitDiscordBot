@@ -14,6 +14,155 @@ class EloCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    def levenshtein_distance(self, s1, s2):
+        """Calculate the Levenshtein distance between two strings"""
+        if len(s1) < len(s2):
+            return self.levenshtein_distance(s2, s1)
+
+        if len(s2) == 0:
+            return len(s1)
+
+        previous_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = previous_row[j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+                current_row.append(min(insertions, deletions, substitutions))
+            previous_row = current_row
+
+        return previous_row[-1]
+
+    @commands.Cog.listener()
+    async def on_command_error(self, ctx, error):
+        """Monitor for invalid commands and suggest elo-related corrections"""
+        # Only handle CommandNotFound errors
+        if not isinstance(error, commands.CommandNotFound):
+            return
+
+        # Extract the failed command from the message
+        message_content = ctx.message.content.lower()
+        if not message_content.startswith("!"):
+            return
+
+        failed_command = message_content.split()[0][1:]  # Remove the !
+
+        # Common elo-related commands and suggestions
+        command_suggestions = {
+            # Rank variations
+            "rating": "!rank",
+            "elo": "!rank",
+            "myrank": "!rank",
+            "myrating": "!rank",
+            "myelo": "!rank",
+            "checkrank": "!rank",
+            "checkrating": "!rank",
+            "checkelo": "!rank",
+            "gerank": "!rank",
+            "getrating": "!rank",
+            "getelo": "!rank",
+            "ranking": "!rank",
+            "elorank": "!rank",
+            "elorating": "!rank",
+            "score": "!rank",
+            "myscore": "!rank",
+            "points": "!rank",
+            "mypoints": "!rank",
+            # Leaderboard variations
+            "leaderboards": "!leaderboard",
+            "leaders": "!leaderboard",
+            "ladder": "!leaderboard",
+            "rankings": "!leaderboard",
+            "top": "!leaderboard",
+            "top16": "!leaderboard",
+            "topplayers": "!leaderboard",
+            "topranks": "!leaderboard",
+            "topelo": "!leaderboard",
+            "board": "!leaderboard",
+            "lb": "!leaderboard",
+            "leaderbord": "!leaderboard",
+            "leaderborad": "!leaderboard",
+            "eloleaderboard": "!leaderboard",
+            "showleaderboard": "!leaderboard",
+            "checkleaderboard": "!leaderboard",
+            "viewleaderboard": "!leaderboard",
+            # Masters bracket variations
+            "masters": "!masters_bracket",
+            "mastersbracket": "!masters_bracket",
+            "master": "!masters_bracket",
+            "masterbracket": "!masters_bracket",
+            "mastersboard": "!masters_bracket",
+            "mastersleaderboard": "!masters_bracket",
+            "masterstop": "!masters_bracket",
+            "mastersladder": "!masters_bracket",
+            "masterranks": "!masters_bracket",
+            "masterrankings": "!masters_bracket",
+            "mastersrank": "!masters_bracket",
+            "mastersranking": "!masters_bracket",
+            "premium": "!masters_bracket",
+            "premiumleaderboard": "!masters_bracket",
+            # Mystats variations
+            "stats": "!mystats",
+            "statistics": "!mystats",
+            "mystatistics": "!mystats",
+            "matchstats": "!mystats",
+            "mymatchstats": "!mystats",
+            "playerstats": "!mystats",
+            "myplayerstats": "!mystats",
+            "profile": "!mystats",
+            "myprofile": "!mystats",
+            "record": "!mystats",
+            "myrecord": "!mystats",
+            "history": "!mystats",
+            "myhistory": "!mystats",
+            "winrate": "!mystats",
+            "mywinrate": "!mystats",
+            "performance": "!mystats",
+            "myperformance": "!mystats",
+            "stat": "!mystats",
+            "mystat": "!mystats",
+        }
+
+        # Check for exact matches
+        if failed_command in command_suggestions:
+            suggestion = command_suggestions[failed_command]
+            await ctx.send(f"{ctx.author.mention}, did you mean `{suggestion}`?")
+            return
+
+        # Check for partial matches (fuzzy matching)
+        for key, suggestion in command_suggestions.items():
+            if key in failed_command or failed_command in key:
+                await ctx.send(f"{ctx.author.mention}, did you mean `{suggestion}`?")
+                return
+
+        # Check for spelling mistakes using Levenshtein distance
+        # Get all actual command names
+        actual_commands = {
+            "rank": "!rank",
+            "leaderboard": "!leaderboard",
+            "masters_bracket": "!masters_bracket",
+            "mastersbracket": "!masters_bracket",
+            "mystats": "!mystats",
+        }
+
+        # Find closest match based on edit distance
+        best_match = None
+        min_distance = float("inf")
+
+        for command_name in actual_commands.keys():
+            distance = self.levenshtein_distance(failed_command, command_name)
+            # Consider it a typo if distance is 3 or less and length is similar
+            if distance <= 3 and distance < min_distance:
+                # Also check if the length difference isn't too large
+                if abs(len(failed_command) - len(command_name)) <= 3:
+                    min_distance = distance
+                    best_match = actual_commands[command_name]
+
+        if best_match and min_distance <= 3:
+            await ctx.send(f"{ctx.author.mention}, did you mean `{best_match}`?")
+            return
+
     @commands.command()
     async def rank(self, ctx, user: discord.Member = None):
         """Check your current Elo ranking, or check another user's rank by tagging them."""

@@ -64,7 +64,7 @@ class SlashCommandsCog(commands.Cog):
         self, interaction: discord.Interaction, action: str, timeframe: int = 30
     ):
         """Unified LFG system command"""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         ctx = FakeContext(self.bot, interaction)
 
         lfg_cog = self.bot.get_cog("LFGCog")
@@ -117,7 +117,7 @@ class SlashCommandsCog(commands.Cog):
     )
     async def stats_slash(self, interaction: discord.Interaction, action: str):
         """Unified stats command"""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         ctx = FakeContext(self.bot, interaction)
 
         elo_cog = self.bot.get_cog("EloCog")
@@ -142,7 +142,7 @@ class SlashCommandsCog(commands.Cog):
     )
     async def masters_bracket_slash(self, interaction: discord.Interaction):
         """Masters bracket leaderboard"""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         ctx = FakeContext(self.bot, interaction)
 
         elo_cog = self.bot.get_cog("EloCog")
@@ -188,7 +188,7 @@ class SlashCommandsCog(commands.Cog):
         self, interaction: discord.Interaction, action: str, tournament_name: str = None
     ):
         """Unified tournament command"""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         ctx = FakeContext(self.bot, interaction)
 
         tournament_cog = self.bot.get_cog("TournamentCog")
@@ -228,7 +228,7 @@ class SlashCommandsCog(commands.Cog):
     )
     async def deckcheck_slash(self, interaction: discord.Interaction):
         """Deck check - slash command version"""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         ctx = FakeContext(self.bot, interaction)
 
         utility_cog = self.bot.get_cog("UtilityCog")
@@ -244,7 +244,7 @@ class SlashCommandsCog(commands.Cog):
     )
     async def help_slash(self, interaction: discord.Interaction):
         """Help - slash command version"""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         ctx = FakeContext(self.bot, interaction)
 
         utility_cog = self.bot.get_cog("UtilityCog")
@@ -258,7 +258,7 @@ class SlashCommandsCog(commands.Cog):
     )
     async def commands_slash(self, interaction: discord.Interaction):
         """Commands list - slash command version"""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         ctx = FakeContext(self.bot, interaction)
 
         utility_cog = self.bot.get_cog("UtilityCog")

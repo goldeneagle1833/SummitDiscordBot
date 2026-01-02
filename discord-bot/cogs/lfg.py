@@ -1389,19 +1389,47 @@ class LFGCog(commands.Cog):
     @commands.command()
     async def cancel(self, ctx):
         """Cancel your LFG queue status."""
-        channel_id = 1336912830867439676
-        lfg_channel = self.bot.get_channel(channel_id)
+        # Delete the user's command message
+        try:
+            await ctx.message.delete()
+        except Exception as e:
+            logger.warning(f"Could not delete cancel command message: {e}")
+
         if ctx.author.id in lfg_queue:
             lfg_queue.pop(ctx.author.id)
-            await ctx.send(
-                f"{ctx.author.mention}, you have been removed from the LFG queue."
-            )
+
+            # Send DM to user
+            try:
+                await ctx.author.send("You have been removed from the LFG queue.")
+            except discord.Forbidden:
+                logger.warning(
+                    f"Could not send DM to {ctx.author} (ID: {ctx.author.id}) - DMs might be disabled"
+                )
+                # If DM fails, send ephemeral message in channel
+                await ctx.send(
+                    f"{ctx.author.mention}, you have been removed from the LFG queue.",
+                    delete_after=5,
+                )
+            except Exception as e:
+                logger.error(f"Error sending DM to {ctx.author}: {e}")
+
             # Update status message after leaving queue
             await self.update_lfg_status()
         else:
-            await ctx.send(
-                f"{ctx.author.mention}, you are not currently in the LFG queue."
-            )
+            # Send DM to user
+            try:
+                await ctx.author.send("You are not currently in the LFG queue.")
+            except discord.Forbidden:
+                logger.warning(
+                    f"Could not send DM to {ctx.author} (ID: {ctx.author.id}) - DMs might be disabled"
+                )
+                # If DM fails, send ephemeral message in channel
+                await ctx.send(
+                    f"{ctx.author.mention}, you are not currently in the LFG queue.",
+                    delete_after=5,
+                )
+            except Exception as e:
+                logger.error(f"Error sending DM to {ctx.author}: {e}")
 
     @commands.command()
     async def challenge(self, ctx, opponent: discord.Member = None):

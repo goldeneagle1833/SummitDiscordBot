@@ -72,6 +72,45 @@ class EloCog(commands.Cog):
         conn.close()
 
     @commands.command()
+    async def masters_bracket(self, ctx):
+        """Check the top 16 Elo rankings for masters bracket members only."""
+        # Role IDs to filter by
+        masters_role_ids = [1455669646370799667, 1445433610609102990]
+
+        conn = sqlite3.connect("elo.db")
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT user_id, user_display_name, elo FROM overall_standings ORDER BY elo DESC"
+        )
+        all_players = cur.fetchall()
+        conn.close()
+
+        # Filter players who have one of the masters roles
+        guild = ctx.guild
+        if not guild:
+            await ctx.send("This command can only be used in a server.")
+            return
+
+        filtered_players = []
+        for user_id, display_name, elo in all_players:
+            member = guild.get_member(user_id)
+            if member:
+                # Check if member has any of the masters roles
+                has_masters = any(role.id in masters_role_ids for role in member.roles)
+                if has_masters:
+                    filtered_players.append((display_name, elo))
+
+        if filtered_players:
+            leaderboard = "🏆 **Masters Bracket Leaderboard** 🏆\n"
+            for i, (user_display_name, elo) in enumerate(
+                filtered_players[:16], start=1
+            ):
+                leaderboard += f"#{i}: {user_display_name} - {elo} Elo\n"
+            await ctx.send(leaderboard)
+        else:
+            await ctx.send("No masters bracket members found with Elo ratings!")
+
+    @commands.command()
     async def mystats(self, ctx):
         """Check your match statistics. Includes win rate, first player win rate,
         avatar performance, and Elo."""

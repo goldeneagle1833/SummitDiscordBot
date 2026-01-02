@@ -136,6 +136,24 @@ class SlashCommandsCog(commands.Cog):
         elif action == "mygames":
             await elo_cog.mygames(ctx)
 
+    @app_commands.command(
+        name="masters_bracket",
+        description="🏆 View the Elo leaderboard for masters bracket members only",
+    )
+    async def masters_bracket_slash(self, interaction: discord.Interaction):
+        """Masters bracket leaderboard"""
+        await interaction.response.defer()
+        ctx = FakeContext(self.bot, interaction)
+
+        elo_cog = self.bot.get_cog("EloCog")
+        if not elo_cog:
+            await interaction.followup.send(
+                "Elo system is not available.", ephemeral=True
+            )
+            return
+
+        await elo_cog.masters_bracket(ctx)
+
     # ==================== TOURNAMENT COMMANDS ====================
 
     @app_commands.command(

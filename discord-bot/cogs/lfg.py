@@ -1958,6 +1958,85 @@ class LFGCog(commands.Cog):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
 
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def admin_report(
+        self, ctx, winner: discord.Member = None, loser: discord.Member = None
+    ):
+        """Admin command to manually report a match result. Usage: !admin_report @winner @loser"""
+
+        # Validate arguments
+        if winner is None or loser is None:
+            await ctx.send(
+                "Please mention both players. Usage: `!admin_report @winner @loser`"
+            )
+            return
+
+        if winner.id == loser.id:
+            await ctx.send("Winner and loser cannot be the same player!")
+            return
+
+        if winner.bot or loser.bot:
+            await ctx.send("Cannot report matches for bots!")
+            return
+
+        try:
+            # Get display names with fallback
+            winner_name = winner.global_name or winner.display_name
+            loser_name = loser.global_name or loser.display_name
+
+            # Report the match using the existing database functions
+            from utils.database import update_elo_db
+
+            await winner_report(
+                ctx.author.id,  # reporter_id (admin who is reporting)
+                winner.id,
+                winner_name,
+                True,
+                loser.id,
+                loser_name,
+                "n",  # first_player default
+                0,  # match_time default
+                "Admin reported match",  # curiosa_link
+                "Match reported by admin",  # match_comment
+                winner.id,  # interaction_user_id
+                winner_name,  # interaction_global
+                self.bot,
+            )
+
+            # Update ELO for the loser as well
+            update_elo_db(loser.id, loser_name, False, winner.id)
+
+            # Update leaderboard
+            await self.update_leaderboard()
+
+            # Send confirmation
+            success_embed = discord.Embed(
+                title="Match Reported",
+                description=f"**Winner:** {winner.mention} ({winner_name})\n**Loser:** {loser.mention} ({loser_name})",
+                color=discord.Color.green(),
+            )
+            success_embed.set_footer(text=f"Reported by {ctx.author.display_name}")
+            await ctx.send(embed=success_embed)
+
+            logger.info(
+                f"Admin {ctx.author} (ID: {ctx.author.id}) reported match: {winner_name} beat {loser_name}"
+            )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Match Report Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Admin match report failed: {e}")
+
+    @admin_report.error
+    async def admin_report_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+
 
 async def setup(bot):
     await bot.add_cog(LFGCog(bot))

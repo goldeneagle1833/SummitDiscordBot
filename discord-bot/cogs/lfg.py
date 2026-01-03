@@ -70,7 +70,9 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
         interaction_user_id = interaction.user.id
-        interaction_global = interaction.user.global_name
+        interaction_global = (
+            interaction.user.global_name or interaction.user.display_name
+        )
 
         curiosa_link = (
             self.curiosa_url.value if self.curiosa_url.value else "No URL provided"
@@ -312,11 +314,13 @@ class LFGReportButtons(discord.ui.View):
         # Store pending report with opponent's message reference
         pending_match_reports[(interaction.user.id, opponent_id)] = {
             "winner_id": interaction.user.id,
-            "winner_global": interaction.user.global_name,
+            "winner_global": interaction.user.global_name
+            or interaction.user.display_name,
             "loser_id": opponent_id,
             "loser_global": opponent_global,
             "reporter_id": interaction.user.id,
-            "reporter_global": interaction.user.global_name,
+            "reporter_global": interaction.user.global_name
+            or interaction.user.display_name,
             "is_winner": True,
             "opponent_message": None,  # Will be set after fetching opponent's DM
         }
@@ -361,11 +365,13 @@ class LFGReportButtons(discord.ui.View):
 
             confirmation_view = MatchConfirmationButtons(
                 reporter_id=interaction.user.id,
-                reporter_global=interaction.user.global_name,
+                reporter_global=interaction.user.global_name
+                or interaction.user.display_name,
                 opponent_id=opponent_id,
                 opponent_global=opponent_global,
                 winner_id=interaction.user.id,
-                winner_global=interaction.user.global_name,
+                winner_global=interaction.user.global_name
+                or interaction.user.display_name,
                 loser_id=opponent_id,
                 loser_global=opponent_global,
                 is_winner=False,  # For opponent, they lost
@@ -512,9 +518,11 @@ class LFGReportButtons(discord.ui.View):
             "winner_id": opponent_id,
             "winner_global": opponent_global,
             "loser_id": interaction.user.id,
-            "loser_global": interaction.user.global_name,
+            "loser_global": interaction.user.global_name
+            or interaction.user.display_name,
             "reporter_id": interaction.user.id,
-            "reporter_global": interaction.user.global_name,
+            "reporter_global": interaction.user.global_name
+            or interaction.user.display_name,
             "is_winner": False,
             "opponent_message": None,  # Will be set after fetching opponent's DM
         }
@@ -559,13 +567,15 @@ class LFGReportButtons(discord.ui.View):
 
             confirmation_view = MatchConfirmationButtons(
                 reporter_id=interaction.user.id,
-                reporter_global=interaction.user.global_name,
+                reporter_global=interaction.user.global_name
+                or interaction.user.display_name,
                 opponent_id=opponent_id,
                 opponent_global=opponent_global,
                 winner_id=opponent_id,
                 winner_global=opponent_global,
                 loser_id=interaction.user.id,
-                loser_global=interaction.user.global_name,
+                loser_global=interaction.user.global_name
+                or interaction.user.display_name,
                 is_winner=True,  # For opponent, they won
                 bot=self.bot,
                 channel=self.channel,
@@ -721,7 +731,7 @@ class ChallengeButtons(discord.ui.View):
             self.challenger_id,
             self.challenger_global,
             interaction.user.id,
-            interaction.user.global_name,
+            interaction.user.global_name or interaction.user.display_name,
             interaction.client,
             self.channel,
         )
@@ -729,7 +739,7 @@ class ChallengeButtons(discord.ui.View):
         opponent_view = LFGReportButtons(
             0,  # match_id not needed for direct challenges
             interaction.user.id,
-            interaction.user.global_name,
+            interaction.user.global_name or interaction.user.display_name,
             self.challenger_id,
             self.challenger_global,
             interaction.client,
@@ -959,9 +969,9 @@ class JoinQueueButton(discord.ui.View):
             view_ctx = LFGReportButtons(
                 interaction.user.id,
                 interaction.user.id,
-                interaction.user.global_name,
+                interaction.user.global_name or interaction.user.display_name,
                 matched_user_id,
-                matched_user.global_name,
+                matched_user.global_name or matched_user.display_name,
                 self.bot,
                 lfg_channel,
             )
@@ -996,9 +1006,9 @@ class JoinQueueButton(discord.ui.View):
             view_matched = LFGReportButtons(
                 matched_user_id,
                 matched_user_id,
-                matched_user.global_name,
+                matched_user.global_name or matched_user.display_name,
                 interaction.user.id,
-                interaction.user.global_name,
+                interaction.user.global_name or interaction.user.display_name,
                 self.bot,
                 lfg_channel,
             )
@@ -1484,9 +1494,9 @@ class LFGCog(commands.Cog):
             view_ctx = LFGReportButtons(
                 ctx.author.id,
                 ctx.author.id,
-                ctx.author.global_name,
+                ctx.author.global_name or ctx.author.display_name,
                 matched_user_id,
-                matched_user.global_name,
+                matched_user.global_name or matched_user.display_name,
                 self.bot,
                 lfg_channel,
             )
@@ -1547,9 +1557,9 @@ class LFGCog(commands.Cog):
             view_matched = LFGReportButtons(
                 matched_user_id,
                 matched_user_id,
-                matched_user.global_name,
+                matched_user.global_name or matched_user.display_name,
                 ctx.author.id,
-                ctx.author.global_name,
+                ctx.author.global_name or ctx.author.display_name,
                 self.bot,
                 lfg_channel,
             )
@@ -1716,12 +1726,16 @@ class LFGCog(commands.Cog):
         channel_id = 1336912830867439676
         lfg_channel = self.bot.get_channel(channel_id)
 
-        view = ChallengeButtons(ctx.author.id, ctx.author.global_name, lfg_channel)
+        view = ChallengeButtons(
+            ctx.author.id,
+            ctx.author.global_name or ctx.author.display_name,
+            lfg_channel,
+        )
 
         try:
             # Send challenge to opponent
             await opponent.send(
-                f"{ctx.author.global_name} has challenged you to a match!",
+                f"{ctx.author.global_name or ctx.author.display_name} has challenged you to a match!",
                 view=view,
             )
             # Notify challenger in DM

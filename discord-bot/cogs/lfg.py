@@ -1110,6 +1110,25 @@ class LFGCog(commands.Cog):
             if top_players:
                 leaderboard_text = []
                 for idx, (user_id, display_name, elo) in enumerate(top_players, 1):
+                    # Fetch current username from Discord if stored name is None or empty
+                    if not display_name or display_name == "None":
+                        try:
+                            user = await self.bot.fetch_user(user_id)
+                            display_name = user.global_name or user.display_name
+
+                            # Update database with correct name
+                            conn = sqlite3.connect("elo.db")
+                            cursor = conn.cursor()
+                            cursor.execute(
+                                "UPDATE overall_standings SET user_display_name = ? WHERE user_id = ?",
+                                (display_name, user_id),
+                            )
+                            conn.commit()
+                            conn.close()
+                        except Exception as e:
+                            logger.warning(f"Could not fetch user {user_id}: {e}")
+                            display_name = f"User#{user_id}"
+
                     leaderboard_text.append(
                         f"**{idx}.** {display_name} - **{elo}** ELO"
                     )

@@ -23,6 +23,9 @@ pending_match_reports = {}
 # Store the persistent status message ID
 lfg_status_message_id = None
 
+# Store the leaderboard message ID
+leaderboard_message_id = None
+
 
 class MatchReportModal(discord.ui.Modal, title="Match Report"):
     curiosa_url = discord.ui.TextInput(
@@ -134,7 +137,7 @@ class MatchConfirmationButtons(discord.ui.View):
         bot=None,
         channel=None,
     ):
-        super().__init__(timeout=600)  # 10 minute timeout
+        super().__init__(timeout=86400)  # 24 hour timeout - plenty of time to confirm
         self.reporter_id = reporter_id
         self.reporter_global = reporter_global
         self.opponent_id = opponent_id
@@ -148,7 +151,9 @@ class MatchConfirmationButtons(discord.ui.View):
         self.channel = channel
 
     @discord.ui.button(
-        label="Confirm", style=discord.ButtonStyle.success, custom_id="confirm_report"
+        label="Confirm",
+        style=discord.ButtonStyle.success,
+        custom_id="confirm_match_report",
     )
     async def confirm_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
@@ -216,8 +221,15 @@ class MatchConfirmationButtons(discord.ui.View):
         # Remove from pending
         pending_match_reports.pop((self.reporter_id, self.opponent_id), None)
 
+        # Update leaderboard in designated channel
+        lfg_cog = self.bot.get_cog("LFGCog")
+        if lfg_cog:
+            await lfg_cog.update_leaderboard()
+
     @discord.ui.button(
-        label="Dispute", style=discord.ButtonStyle.danger, custom_id="dispute_report"
+        label="Dispute",
+        style=discord.ButtonStyle.danger,
+        custom_id="dispute_match_report",
     )
     async def dispute_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
@@ -1051,6 +1063,76 @@ class LFGCog(commands.Cog):
     def cog_unload(self):
         """Clean up when cog is unloaded"""
         self.check_expired_queue.cancel()
+
+    async def update_leaderboard(self):
+        """Update the leaderboard in the designated channel"""
+        import sqlite3
+
+        global leaderboard_message_id
+
+        leaderboard_channel_id = 1457113321118629889
+        leaderboard_channel = self.bot.get_channel(leaderboard_channel_id)
+
+        if not leaderboard_channel:
+            logger.warning(f"Leaderboard channel {leaderboard_channel_id} not found")
+            return
+
+        try:
+            # Fetch top 16 players from database
+            conn = sqlite3.connect("elo.db")
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT user_id, user_display_name, elo 
+                FROM overall_standings 
+                ORDER BY elo DESC 
+                LIMIT 16
+            """)
+            top_players = cursor.fetchall()
+            conn.close()
+
+            # Create leaderboard embed
+            embed = discord.Embed(
+                title="Top 16 Leaderboard",
+                description="Current ELO Rankings",
+                color=discord.Color.gold(),
+            )
+
+            if top_players:
+                leaderboard_text = []
+                for idx, (user_id, display_name, elo) in enumerate(top_players, 1):
+                    leaderboard_text.append(
+                        f"**{idx}.** {display_name} - **{elo}** ELO"
+                    )
+
+                embed.add_field(
+                    name="Rankings", value="\n".join(leaderboard_text), inline=False
+                )
+            else:
+                embed.add_field(
+                    name="Rankings", value="No players ranked yet.", inline=False
+                )
+
+            embed.set_footer(text="Updates automatically after each match")
+
+            # Delete old leaderboard message
+            if leaderboard_message_id:
+                try:
+                    old_message = await leaderboard_channel.fetch_message(
+                        leaderboard_message_id
+                    )
+                    await old_message.delete()
+                except discord.NotFound:
+                    pass
+                except Exception as e:
+                    logger.warning(f"Could not delete old leaderboard message: {e}")
+
+            # Send new leaderboard message
+            new_message = await leaderboard_channel.send(embed=embed)
+            leaderboard_message_id = new_message.id
+            logger.info("Leaderboard updated successfully")
+
+        except Exception as e:
+            logger.error(f"Error updating leaderboard: {e}")
 
     @tasks.loop(minutes=1)
     async def check_expired_queue(self):

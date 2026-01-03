@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import datetime
 import logging
 from random import randrange
@@ -1046,6 +1046,33 @@ class LFGCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.lfg_channel_id = 1336912830867439676
+        self.check_expired_queue.start()  # Start the background task
+
+    def cog_unload(self):
+        """Clean up when cog is unloaded"""
+        self.check_expired_queue.cancel()
+
+    @tasks.loop(minutes=1)
+    async def check_expired_queue(self):
+        """Background task to check for expired queue entries every minute"""
+        try:
+            initial_count = len(lfg_queue)
+            self.clean_expired_lfg()
+            final_count = len(lfg_queue)
+
+            # If someone was removed, update the status message
+            if initial_count != final_count:
+                logger.info(
+                    f"Auto-removed {initial_count - final_count} expired queue entries"
+                )
+                await self.update_lfg_status()
+        except Exception as e:
+            logger.error(f"Error in check_expired_queue task: {e}")
+
+    @check_expired_queue.before_loop
+    async def before_check_expired_queue(self):
+        """Wait for bot to be ready before starting the loop"""
+        await self.bot.wait_until_ready()
 
     async def update_lfg_status(self):
         """Update the persistent LFG status message"""

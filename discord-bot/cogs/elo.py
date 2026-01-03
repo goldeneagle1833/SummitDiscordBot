@@ -496,12 +496,16 @@ class EloCog(commands.Cog):
 
             try:
                 # Query both tables with appropriate field mappings
+                # Get matches where user was either winner or loser (not just reporter)
                 cur.execute(
                     """
                     SELECT 
                         winner_display_name as winner,
                         losser_display_name as loser,
-                        did_win,
+                        CASE 
+                            WHEN winner_id = ? THEN 1
+                            ELSE 0
+                        END as did_win,
                         first_player,
                         match_time,
                         curiosa_url as replay_url,
@@ -509,7 +513,7 @@ class EloCog(commands.Cog):
                         timestamp as match_date,
                         'match_records' as source
                     FROM match_records 
-                    WHERE reporter_id = ?
+                    WHERE winner_id = ? OR losser_id = ?
                     UNION ALL
                     SELECT 
                         CASE 
@@ -532,7 +536,7 @@ class EloCog(commands.Cog):
                     ORDER BY match_date DESC
                     LIMIT 10
                     """,
-                    (ctx.author.id, ctx.author.id),
+                    (ctx.author.id, ctx.author.id, ctx.author.id, ctx.author.id),
                 )
 
                 rows = cur.fetchall()

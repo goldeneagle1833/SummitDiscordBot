@@ -1088,17 +1088,21 @@ class LFGCog(commands.Cog):
             return
 
         try:
-            # Fetch top 16 players from database
-            conn = sqlite3.connect("elo.db")
-            cursor = conn.cursor()
-            cursor.execute("""
+            # Fetch top 16 players from database with game counts
+            conn_elo = sqlite3.connect("elo.db")
+            cursor_elo = conn_elo.cursor()
+            cursor_elo.execute("""
                 SELECT user_id, user_display_name, elo 
                 FROM overall_standings 
                 ORDER BY elo DESC 
                 LIMIT 16
             """)
-            top_players = cursor.fetchall()
-            conn.close()
+            top_players = cursor_elo.fetchall()
+            conn_elo.close()
+
+            # Connect to match records to get game counts
+            conn_matches = sqlite3.connect("match_records.db")
+            cursor_matches = conn_matches.cursor()
 
             # Create leaderboard embed
             embed = discord.Embed(
@@ -1129,9 +1133,33 @@ class LFGCog(commands.Cog):
                             logger.warning(f"Could not fetch user {user_id}: {e}")
                             display_name = f"User#{user_id}"
 
-                    leaderboard_text.append(
-                        f"**{idx}.** {display_name} - **{elo}** ELO"
+                    # Count games played by this user (as winner or loser)
+                    cursor_matches.execute(
+                        """
+                        SELECT COUNT(*) FROM match_records 
+                        WHERE winner_id = ? OR losser_id = ?
+                    """,
+                        (user_id, user_id),
                     )
+                    match_count = cursor_matches.fetchone()[0]
+
+                    # Also count solo matches
+                    cursor_matches.execute(
+                        """
+                        SELECT COUNT(*) FROM solo_match_reports 
+                        WHERE reporter_id = ?
+                    """,
+                        (user_id,),
+                    )
+                    solo_count = cursor_matches.fetchone()[0]
+
+                    total_games = match_count + solo_count
+
+                    leaderboard_text.append(
+                        f"**{idx}.** {display_name} - **{elo}** ELO ({total_games} games)"
+                    )
+
+                conn_matches.close()
 
                 embed.add_field(
                     name="Rankings", value="\n".join(leaderboard_text), inline=False

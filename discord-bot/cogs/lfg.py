@@ -2084,6 +2084,101 @@ class LFGCog(commands.Cog):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
 
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def spot_elo_reset(self, ctx, user: discord.Member = None, elo: int = None):
+        """Admin command to set a specific user's ELO. Usage: !spot_elo_reset @user 1500"""
+        import sqlite3
+
+        # Validate arguments
+        if user is None:
+            await ctx.send("Please mention a user. Usage: `!spot_elo_reset @user 1500`")
+            return
+
+        if elo is None:
+            await ctx.send(
+                "Please specify an ELO value. Usage: `!spot_elo_reset @user 1500`"
+            )
+            return
+
+        if elo < 0 or elo > 5000:
+            await ctx.send("ELO must be between 0 and 5000.")
+            return
+
+        if user.bot:
+            await ctx.send("Cannot set ELO for bots!")
+            return
+
+        try:
+            # Get display name with fallback
+            user_name = user.global_name or user.display_name
+
+            # Connect to database
+            conn = sqlite3.connect("elo.db")
+            cursor = conn.cursor()
+
+            # Check if user exists in database
+            cursor.execute(
+                "SELECT elo FROM overall_standings WHERE user_id = ?", (user.id,)
+            )
+            result = cursor.fetchone()
+
+            old_elo = result[0] if result else None
+
+            if result:
+                # Update existing user
+                cursor.execute(
+                    "UPDATE overall_standings SET elo = ?, user_display_name = ? WHERE user_id = ?",
+                    (elo, user_name, user.id),
+                )
+            else:
+                # Insert new user
+                cursor.execute(
+                    "INSERT INTO overall_standings (user_id, user_display_name, elo) VALUES (?, ?, ?)",
+                    (user.id, user_name, elo),
+                )
+
+            conn.commit()
+            conn.close()
+
+            # Update leaderboard
+            await self.update_leaderboard()
+
+            # Send confirmation
+            if old_elo is not None:
+                success_embed = discord.Embed(
+                    title="ELO Updated",
+                    description=f"**User:** {user.mention} ({user_name})\n**Old ELO:** {old_elo}\n**New ELO:** {elo}",
+                    color=discord.Color.blue(),
+                )
+            else:
+                success_embed = discord.Embed(
+                    title="ELO Set",
+                    description=f"**User:** {user.mention} ({user_name})\n**ELO:** {elo}\n\n*User was not in database, created new entry.*",
+                    color=discord.Color.green(),
+                )
+
+            success_embed.set_footer(text=f"Updated by {ctx.author.display_name}")
+            await ctx.send(embed=success_embed)
+
+            logger.info(
+                f"Admin {ctx.author} (ID: {ctx.author.id}) set ELO for {user_name} (ID: {user.id}) to {elo} (was: {old_elo})"
+            )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="ELO Update Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Spot ELO reset failed: {e}")
+
+    @spot_elo_reset.error
+    async def spot_elo_reset_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+
 
 async def setup(bot):
     await bot.add_cog(LFGCog(bot))

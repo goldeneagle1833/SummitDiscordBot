@@ -97,7 +97,6 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
                 match_comment,
                 interaction_user_id,
                 interaction_global,
-                self.bot,
             )
         else:
             await losser_report(
@@ -113,7 +112,6 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
                 match_comment,
                 interaction_user_id,
                 interaction_global,
-                self.bot,
             )
 
         await interaction.followup.send(
@@ -184,7 +182,6 @@ class MatchConfirmationButtons(discord.ui.View):
             "",  # match_comment default
             self.winner_id,  # interaction_user_id
             self.winner_global,  # interaction_global
-            self.bot,
         )
 
         # Update ELO for the loser as well
@@ -901,7 +898,6 @@ class SoloMatchReportModal(discord.ui.Modal, title="Solo Match Report"):
             match_time=match_time,
             curiosa_link=curiosa_link,
             match_comment=match_comment,
-            bot=self.bot,
         )
 
         result = "Won" if self.is_winner else "Lost"
@@ -2061,7 +2057,6 @@ class LFGCog(commands.Cog):
                 "Match reported by admin",  # match_comment
                 winner.id,  # interaction_user_id
                 winner_name,  # interaction_global
-                self.bot,
             )
 
             # Update ELO for the loser as well

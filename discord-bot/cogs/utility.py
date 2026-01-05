@@ -79,87 +79,77 @@ class UtilityCog(commands.Cog):
     async def show_help(self, ctx):
         """Show all available commands and their descriptions"""
         embed = discord.Embed(
-            title="📖 Welcome to Summit Bot!",
-            description="Here are the main systems and how to learn more about them:",
+            title="📖 Summit Bot Commands",
+            description="Quick reference for all available commands:",
             color=discord.Color.blue(),
         )
 
-        # Main Systems Overview
+        # LFG System
         embed.add_field(
-            name="Looking For Game (LFG) System",
+            name="🎮 Looking For Game",
             value=(
-                "Find matches and report results:\n"
-                "`!lfg [minutes]` - Join queue for X minutes (default 30)\n"
-                "`!check_lfg` - See who's in queue\n"
-                "`!challenge @user` - Challenge specific player\n"
-                "`!cancel` - Leave the queue\n"
-                "`!record_game` - Record a match result manually"
+                "`!lfg` `!cancel` `!check_lfg` `!challenge`\n"
+                "`!record_game` `!game_activity`\n"
+                "➡️ Use `!lfg_help` for details"
             ),
             inline=False,
         )
 
+        # Rankings & Stats
         embed.add_field(
-            name="Tournament System",
-            value=(
-                "Tournament Player Commands:\n"
-                "`!join <name>` - Join tournament during registration\n"
-                "`!my_round` - View your match and report results\n"
-                "`!bracket <name>` - View tournament bracket\n\n"
-                "Tournament Admin Commands:\n"
-                "`!create_tournament` - Create new tournament\n"
-                "`!start_tournament <name>` - Start the tournament\n"
-                "`!complete_tournament <name>` - End tournament\n"
-                "`!remove <name> @user` - Remove player"
-            ),
-            inline=False,
-        )
-
-        embed.add_field(
-            name="Rankings & Stats",
+            name="📊 Rankings & Stats",
             value=(
                 "`!rank` - Check your Elo ranking\n"
-                "`!mystats` - Get your match history\n"
                 "`!leaderboard` - View top 10 rankings\n"
-                "`!mygames` - List your recent games\n"
+                "`!mystats` - Your match history summary\n"
+                "`!mygames` - List recent games\n"
                 "`!replay` - View last match details"
             ),
             inline=False,
         )
 
+        # Tournament System
         embed.add_field(
-            name="Fun System",
+            name="🏆 Tournaments",
             value=(
-                "For fart game and item shop commands:\n"
-                "Use `!helpfart` to see all fun commands"
+                "`!join` `!my_round` `!bracket`\n➡️ Use `!tournament_help` for details"
             ),
             inline=False,
         )
 
+        # Fun System
         embed.add_field(
-            name="Utility",
+            name="💨 Fart Game",
             value=(
-                "`!help` - Show this help message\n"
-                "`!list_commands` - View all available commands\n"
-                "`!deckcheck` - Check if a Curiosa deck is legal"
+                "`!fart` `!fartrank` `!fartleaderboard`\n"
+                "`!attackfart` `!syphonfart` `!fartprediction`\n"
+                "➡️ Use `!helpfart` for details"
             ),
             inline=False,
         )
 
-        # Important Notes
+        # Shop
         embed.add_field(
-            name="Important Notes",
+            name="🛒 Item Shop",
             value=(
-                "• Most commands work in DMs for privacy\n"
-                "• The `!challenge` command must be used in the LFG channel\n"
-                "• Tournament commands require active tournament\n"
-                "• For complete command list use `!list_commands`"
+                "`!fart_shop` `!blue_shell` `!red_shell`\n"
+                "`!green_shell` `!banana` `!star`"
             ),
             inline=False,
         )
 
-        embed.set_footer(
-            text="Need more details? Use !list_commands to see everything available"
+        # Utility
+        embed.add_field(
+            name="🛠️ Utility",
+            value=(
+                "`!help` - This message\n"
+                "`!list_commands` - Full command list\n"
+                "`!deckcheck` - Check Curiosa deck legality"
+            ),
+            inline=False,
         )
+
+        embed.set_footer(text="Use !list_commands for the complete detailed list")
 
         await ctx.send(embed=embed)
 

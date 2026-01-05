@@ -437,7 +437,7 @@ class FunCog(commands.Cog):
             return
 
         embed = discord.Embed(
-            title="🌟 Summit Fart Command Guide",
+            title="💨 Fart Command Guide",
             description="Master the art of magical flatulence!",
             color=discord.Color.green(),
         )
@@ -447,31 +447,28 @@ class FunCog(commands.Cog):
             name="📅 Daily Actions (Choose One)",
             value=(
                 "`!fart` - Roll for random fart points\n"
+                "`!fartprediction` - Predict fart type for 2x (or half!)\n"
                 "`!attackfart` - Attack leader to reduce their score\n"
-                "`!syphonfart` - Place syphon to steal leader's next points\n"
-                "`!fartprediction` - Predict fart type for 2x points"
+                "`!syphonfart` - Steal half of leader's next fart"
             ),
+            inline=False,
+        )
+
+        # Weekly Actions
+        embed.add_field(
+            name="📆 Weekly Actions",
+            value="`!bullfart` - Bonus points based on last fart (once/week)",
             inline=False,
         )
 
         # Score Commands Section
         embed.add_field(
-            name="📊 Score Commands",
+            name="📊 Stats & Leaderboard",
             value=(
-                "`!fartrank` - Check your score and ranking\n"
-                "`!fartrank @user` - Check another user's score and ranking\n"
+                "`!fartrank` - Check your score and rank\n"
+                "`!fartrank @user` - Check another user's rank\n"
                 "`!fartleaderboard` - View top 5 farters\n"
-                "`!syphonstatus` - Check active syphons"
-            ),
-            inline=False,
-        )
-
-        # Special Commands Section
-        embed.add_field(
-            name="✨ Special Commands",
-            value=(
-                "`!bullfart` - Get bonus points based on last fart (weekly)\n"
-                "`https://curiosa.io/decks/cmitdq0u904cu05eb1wjgcwjz` - Mark random top 5 player for 2x damage (once per day, server-wide)"
+                "`!syphonstatus` - Check active syphons on leader"
             ),
             inline=False,
         )
@@ -480,27 +477,27 @@ class FunCog(commands.Cog):
         embed.add_field(
             name="👑 Leader-Only Commands",
             value=(
-                "`!fartlord` - Make grand proclamation\n"
-                "`!taxes` - Take 5% from working class (once per reign)\n"
-                "`!wealth` - Redistribute from top 5 (once per reign)"
+                "`!fartlord` - Make a grand proclamation\n"
+                "`!taxes` - Take 5% from everyone (once/reign)\n"
+                "`!wealth` - Robin Hood: redistribute from top 5 (once/reign)"
             ),
             inline=False,
         )
 
         # Fart Types Section
         embed.add_field(
-            name="💨 Fart Types (Roll Ranges = Points)",
+            name="💨 Fart Types & Points",
             value=(
-                "💨 Ordinary (1-35 points) - Common\n"
-                "💨💨 Exceptional (36-65 points) - Uncommon\n"
-                "💨💨💨 Elite (66-85 points) - Rare\n"
-                "💨💨💨💨 Unique (86-95 points) - Very Rare\n"
-                "💩💨💨💨💨 Curio Shart (96-100 points) - Legendary"
+                "💨 **Ordinary** (1-35 pts) - 36% chance\n"
+                "💨💨 **Exceptional** (36-65 pts) - 30% chance\n"
+                "💨💨💨 **Elite** (66-85 pts) - 20% chance\n"
+                "💨💨💨💨 **Unique** (86-95 pts) - 10% chance\n"
+                "💩 **Curio Shart** (96-100 pts) - 4% chance"
             ),
             inline=False,
         )
 
-        embed.set_footer(text="Remember: You can only use one daily action per day!")
+        embed.set_footer(text="One daily action per day! | Alias: !farthelp")
 
         await ctx.send(embed=embed)
 

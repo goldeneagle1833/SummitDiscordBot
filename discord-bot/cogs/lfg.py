@@ -1834,7 +1834,7 @@ class LFGCog(commands.Cog):
         """Get detailed help for the Looking For Game (LFG) system."""
         embed = discord.Embed(
             title="Looking For Game (LFG) System",
-            description="Find matches and challenge other players with these commands:",
+            description="Find matches, challenge players, and track your games!",
             color=discord.Color.blue(),
         )
 
@@ -1842,7 +1842,7 @@ class LFGCog(commands.Cog):
         embed.add_field(
             name="🔍 Queue Commands",
             value=(
-                "`!lfg [minutes]` - Join queue for X minutes (default 30)\n"
+                "`!lfg [minutes]` - Join queue (default 30 min)\n"
                 "`!check_lfg` - See if anyone is in queue\n"
                 "`!cancel` - Leave the queue"
             ),
@@ -1852,10 +1852,7 @@ class LFGCog(commands.Cog):
         # Challenge System
         embed.add_field(
             name="⚔️ Challenge System",
-            value=(
-                "`!challenge @user` - Challenge specific player\n"
-                "Note: Must be used in the LFG channel to tag opponent"
-            ),
+            value="`!challenge @user` - Challenge a specific player",
             inline=False,
         )
 
@@ -1863,22 +1860,38 @@ class LFGCog(commands.Cog):
         embed.add_field(
             name="📝 Match Reporting",
             value=(
-                "**Matched Games:** Both players get match report buttons in DMs\n"
-                "**Solo Games:** Use `!record_game` to report any match played outside the bot\n"
-                "• Report win/loss using the buttons\n"
-                "• Optional: Add deck URL and match details"
+                "`!record_game` - Report a match played outside the bot\n"
+                "• Matched games: Use buttons sent to your DMs\n"
+                "• Add deck URL and match details (optional)"
             ),
             inline=False,
         )
 
-        # Tips & Info
+        # Statistics
+        embed.add_field(
+            name="📊 Statistics",
+            value="`!game_activity [hours]` - View games reported in last X hours (default 24)",
+            inline=False,
+        )
+
+        # Admin Commands
+        embed.add_field(
+            name="🔧 Admin Commands",
+            value=(
+                "`!admin_report @winner @loser` - Manually report a match\n"
+                "`!spot_elo_reset @user [elo]` - Set a user's ELO\n"
+                "`!reset_elo` - Reset all ELO ratings ⚠️"
+            ),
+            inline=False,
+        )
+
+        # Tips
         embed.add_field(
             name="💡 Tips",
             value=(
-                "• Queue time can be 5-120 minutes\n"
-                "• Direct challenges expire after 5 minutes\n"
-                "• Use `!record_game` for matches played outside bot system\n"
-                "• For tournaments, use `!match` instead (see `!tournament_help`)"
+                "• Queue time: 5-120 minutes\n"
+                "• Challenges expire after 5 minutes\n"
+                "• Enable DMs to receive match reports"
             ),
             inline=False,
         )

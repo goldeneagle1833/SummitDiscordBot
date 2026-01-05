@@ -2179,6 +2179,130 @@ class LFGCog(commands.Cog):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
 
+    @commands.command()
+    async def game_activity(self, ctx, hours: int = 24):
+        """Check how many games were reported in the last X hours. Usage: !game_activity [hours]"""
+        import sqlite3
+        from datetime import datetime, timedelta
+
+        # Validate hours parameter
+        if hours < 1:
+            await ctx.send("Hours must be at least 1.")
+            return
+
+        if hours > 8760:  # 1 year
+            await ctx.send("Hours cannot exceed 8760 (1 year).")
+            return
+
+        try:
+            # Calculate cutoff time
+            cutoff_time = datetime.now() - timedelta(hours=hours)
+
+            # Connect to match records database
+            conn = sqlite3.connect("match_records.db")
+            cursor = conn.cursor()
+
+            # Count matches from match_records table
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM match_records 
+                WHERE timestamp >= ?
+            """,
+                (cutoff_time.isoformat(),),
+            )
+            match_records_count = cursor.fetchone()[0]
+
+            # Count solo match reports
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM solo_match_reports 
+                WHERE report_date >= ?
+            """,
+                (cutoff_time.strftime("%Y-%m-%d %H:%M:%S"),),
+            )
+            solo_reports_count = cursor.fetchone()[0]
+
+            total_games = match_records_count + solo_reports_count
+
+            # Get unique players who participated
+            cursor.execute(
+                """
+                SELECT COUNT(DISTINCT user_id) FROM (
+                    SELECT winner_id as user_id FROM match_records WHERE timestamp >= ?
+                    UNION ALL
+                    SELECT losser_id as user_id FROM match_records WHERE timestamp >= ?
+                    UNION ALL
+                    SELECT reporter_id as user_id FROM solo_match_reports WHERE report_date >= ?
+                )
+            """,
+                (
+                    cutoff_time.isoformat(),
+                    cutoff_time.isoformat(),
+                    cutoff_time.strftime("%Y-%m-%d %H:%M:%S"),
+                ),
+            )
+            unique_players = cursor.fetchone()[0]
+
+            conn.close()
+
+            # Create response embed
+            embed = discord.Embed(
+                title=f"📊 Game Activity Report",
+                description=f"Statistics for the last **{hours}** hours",
+                color=discord.Color.blue(),
+            )
+
+            embed.add_field(
+                name="Total Games Reported",
+                value=f"**{total_games}** games",
+                inline=True,
+            )
+
+            embed.add_field(
+                name="Unique Players",
+                value=f"**{unique_players}** players",
+                inline=True,
+            )
+
+            embed.add_field(name="\u200b", value="\u200b", inline=True)  # Spacer
+
+            embed.add_field(
+                name="Matched Games",
+                value=f"{match_records_count} games",
+                inline=True,
+            )
+
+            embed.add_field(
+                name="Solo Reports", value=f"{solo_reports_count} games", inline=True
+            )
+
+            if total_games > 0:
+                avg_per_hour = total_games / hours
+                embed.add_field(
+                    name="Average",
+                    value=f"{avg_per_hour:.1f} games/hour",
+                    inline=True,
+                )
+
+            embed.set_footer(
+                text=f"Since {cutoff_time.strftime('%Y-%m-%d %H:%M')} | Requested by {ctx.author.display_name}"
+            )
+
+            await ctx.send(embed=embed)
+
+            logger.info(
+                f"Game activity command used by {ctx.author} for last {hours} hours: {total_games} games"
+            )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Activity Check Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Game activity command failed: {e}")
+
 
 async def setup(bot):
     await bot.add_cog(LFGCog(bot))

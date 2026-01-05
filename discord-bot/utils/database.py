@@ -152,16 +152,12 @@ async def winner_report(
     match_comment,
     interaction_user_id,
     interaction_global,
-    bot=None,
 ):
     """
-    Log a win in the database and check for achievements.
-    
-    Args:
-        bot: Discord bot instance (optional, for achievement announcements)
-        
+    Log a win in the database.
+
     Returns:
-        Tuple of (winner_id, loser_id) for achievement checking
+        Tuple of (winner_id, loser_id)
     """
     logger.info(f"Logging win for user {interaction_global}")
     create_db()
@@ -194,31 +190,7 @@ async def winner_report(
 
     conn.commit()
     conn.close()
-    
-    # Trigger achievement check for both players
-    if bot:
-        try:
-            from utils.achievements import evaluate_achievements
-            from utils.config import ACHIEVEMENT_CHANNEL_ID
-            
-            # Check achievements for winner
-            await evaluate_achievements(
-                str(user_id),
-                user_display_name,
-                bot,
-                ACHIEVEMENT_CHANNEL_ID
-            )
-            
-            # Check achievements for loser
-            await evaluate_achievements(
-                str(opponent_id),
-                opponent_display_name,
-                bot,
-                ACHIEVEMENT_CHANNEL_ID
-            )
-        except Exception as e:
-            logger.error(f"Error checking achievements: {e}")
-    
+
     return (user_id, opponent_id)
 
 
@@ -235,16 +207,12 @@ async def losser_report(
     match_comment,
     interaction_user_id,
     interaction_global,
-    bot=None,
 ):
     """
-    Log a loss in the database and check for achievements.
-    
-    Args:
-        bot: Discord bot instance (optional, for achievement announcements)
-        
+    Log a loss in the database.
+
     Returns:
-        Tuple of (winner_id, loser_id) for achievement checking
+        Tuple of (winner_id, loser_id)
     """
     logger.info(f"Logging loss for user {interaction_global}")
     create_db()
@@ -277,31 +245,7 @@ async def losser_report(
 
     conn.commit()
     conn.close()
-    
-    # Trigger achievement check for both players
-    if bot:
-        try:
-            from utils.achievements import evaluate_achievements
-            from utils.config import ACHIEVEMENT_CHANNEL_ID
-            
-            # Check achievements for winner
-            await evaluate_achievements(
-                str(user_id),
-                user_display_name,
-                bot,
-                ACHIEVEMENT_CHANNEL_ID
-            )
-            
-            # Check achievements for loser
-            await evaluate_achievements(
-                str(opponent_id),
-                opponent_display_name,
-                bot,
-                ACHIEVEMENT_CHANNEL_ID
-            )
-        except Exception as e:
-            logger.error(f"Error checking achievements: {e}")
-    
+
     return (user_id, opponent_id)
 
 
@@ -361,10 +305,9 @@ async def solo_match_report(
     match_time: int,
     curiosa_link: str,
     match_comment: str,
-    bot=None,
 ) -> None:
     """
-    Save a solo match report to the database and check for achievements.
+    Save a solo match report to the database.
 
     Args:
         reporter_id: Discord ID of the reporting player
@@ -375,7 +318,6 @@ async def solo_match_report(
         match_time: Duration of match in minutes
         curiosa_link: URL to Curiosa deck
         match_comment: Additional match notes
-        bot: Discord bot instance (optional, for achievement announcements)
     """
     logger.info(f"Logging solo match report for user {reporter_global}")
     create_db()  # Ensure tables exist
@@ -407,19 +349,3 @@ async def solo_match_report(
 
     conn.commit()
     conn.close()
-    
-    # Trigger achievement check for reporter
-    if bot:
-        try:
-            from utils.achievements import evaluate_achievements
-            from utils.config import ACHIEVEMENT_CHANNEL_ID
-            
-            await evaluate_achievements(
-                str(reporter_id),
-                reporter_global,
-                bot,
-                ACHIEVEMENT_CHANNEL_ID
-            )
-        except Exception as e:
-            logger.error(f"Error checking achievements: {e}")
-

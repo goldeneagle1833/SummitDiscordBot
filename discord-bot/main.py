@@ -11,7 +11,6 @@ from cogs.utility import UtilityCog
 from cogs.shop import ShopCog
 from cogs.tournament import TournamentCog
 from cogs.slash_commands import SlashCommandsCog
-from cogs.achievements import AchievementsCog
 from cogs.anti_spam import AntiSpamCog
 from cogs.purchase_tracking import PurchaseTrackingCog
 
@@ -43,30 +42,23 @@ bot.remove_command("help")  # Remove default help command
 async def on_ready():
     print(f"Logged in as {bot.user.name}")
     logger.info(f"Bot started as {bot.user.name}")
-    
-    # Initialize achievement database
-    try:
-        from utils.achievements import create_profiles_db
-        create_profiles_db()
-        logger.info("Achievement system initialized")
-        print("✅ Achievement system initialized")
-    except Exception as e:
-        logger.error(f"Failed to initialize achievement system: {e}")
-        print(f"⚠️ Achievement system initialization failed: {e}")
-    
+
     # Sync slash commands
     try:
         # Sync to specific guild (instant) - this makes commands appear immediately in your server
         from config import GUILD_ID
+
         guild = discord.Object(id=GUILD_ID)
         synced_guild = await bot.tree.sync(guild=guild)
         logger.info(f"Synced {len(synced_guild)} slash commands to guild {GUILD_ID}")
         print(f"✅ Synced {len(synced_guild)} slash commands to guild (instant)")
-        
+
         # Also sync globally (takes up to 1 hour to propagate) for DMs and other servers
         synced_global = await bot.tree.sync()
         logger.info(f"Synced {len(synced_global)} slash commands globally")
-        print(f"✅ Synced {len(synced_global)} slash commands globally (may take up to 1 hour)")
+        print(
+            f"✅ Synced {len(synced_global)} slash commands globally (may take up to 1 hour)"
+        )
     except Exception as e:
         logger.error(f"Failed to sync slash commands: {e}")
         print(f"Failed to sync slash commands: {e}")
@@ -89,7 +81,6 @@ async def on_member_join(member):
             value=(
                 "<#1336912830867439676> - Find games with `!lfg`\n"
                 "<#1379476865089142844> - Event decks & decklists\n"
-                "<#1444292011372052511> - Your achievements & progress\n"
                 "<#1402265039951368273> - Fun & games"
             ),
             inline=False,
@@ -101,14 +92,13 @@ async def on_member_join(member):
             value=(
                 "Type `/` to see all commands\n"
                 "`/help` - Full feature list\n"
-                "`/achievements` - View achievements (use 'profile' action)\n"
                 "📺 [Watch the Bot Tutorial](https://youtu.be/6eErwhPocL8) - Learn how to use the bot!"
             ),
             inline=False,
         )
 
         embed.set_footer(text="Ready to play? Head to the LFG channel!")
-        
+
         await channel.send(embed=embed)
 
 
@@ -121,7 +111,6 @@ async def setup_cogs():
     await bot.add_cog(ShopCog(bot))
     await bot.add_cog(TournamentCog(bot))
     await bot.add_cog(SlashCommandsCog(bot))
-    await bot.add_cog(AchievementsCog(bot))
     await bot.add_cog(PurchaseTrackingCog(bot))
 
 

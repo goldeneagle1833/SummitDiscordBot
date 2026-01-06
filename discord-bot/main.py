@@ -9,7 +9,6 @@ from cogs.elo import EloCog
 from cogs.fun import FunCog
 from cogs.utility import UtilityCog
 from cogs.shop import ShopCog
-from cogs.tournament import TournamentCog
 from cogs.slash_commands import SlashCommandsCog
 from cogs.anti_spam import AntiSpamCog
 from cogs.purchase_tracking import PurchaseTrackingCog
@@ -109,7 +108,6 @@ async def setup_cogs():
     await bot.add_cog(FunCog(bot))
     await bot.add_cog(UtilityCog(bot))
     await bot.add_cog(ShopCog(bot))
-    await bot.add_cog(TournamentCog(bot))
     await bot.add_cog(SlashCommandsCog(bot))
     await bot.add_cog(PurchaseTrackingCog(bot))
 

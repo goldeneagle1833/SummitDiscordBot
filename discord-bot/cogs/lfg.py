@@ -1892,7 +1892,7 @@ class LFGCog(commands.Cog):
             inline=False,
         )
 
-        embed.set_footer(text="Type !tournament_help for tournament commands")
+        embed.set_footer(text="Use !help for more commands")
 
         await ctx.send(embed=embed)
 

@@ -108,15 +108,6 @@ class UtilityCog(commands.Cog):
             inline=False,
         )
 
-        # Tournament System
-        embed.add_field(
-            name="🏆 Tournaments",
-            value=(
-                "`!join` `!my_round` `!bracket`\n➡️ Use `!tournament_help` for details"
-            ),
-            inline=False,
-        )
-
         # Fun System
         embed.add_field(
             name="💨 Fart Game",
@@ -189,24 +180,6 @@ class UtilityCog(commands.Cog):
             inline=False,
         )
 
-        # Tournament Commands
-        embed.add_field(
-            name="🏆 Tournament System",
-            value=(
-                "Player Commands:\n"
-                "`!tournament_help` - Show tournament command help\n"
-                "`!join <name>` - Join a tournament during registration\n"
-                "`!my_round` - View your current match and report results\n"
-                "`!bracket <name>` - View the tournament bracket\n\n"
-                "Admin Commands:\n"
-                "`!create_tournament` - Create a new tournament\n"
-                "`!start_tournament <name>` - Start a tournament\n"
-                "`!complete_tournament <name>` - Finalize a tournament\n"
-                "`!remove <name> @user` - Remove player from tournament"
-            ),
-            inline=False,
-        )
-
         # Utility Commands
         embed.add_field(
             name="🛠️ Utility",
@@ -260,10 +233,9 @@ class UtilityCog(commands.Cog):
             name="📝 Notes",
             value=(
                 "• Most commands work in DMs for privacy\n"
-                "• Tournament commands require proper tournament context\n"
                 "• `!challenge` must be used in #lfg channel\n"
                 "• Fun system commands have daily/weekly limits\n"
-                "• Use specific help commands (`!lfg_help`, `!tournament_help`, `!helpfart`) for details"
+                "• Use specific help commands (`!lfg_help`, `!helpfart`) for details"
             ),
             inline=False,
         )

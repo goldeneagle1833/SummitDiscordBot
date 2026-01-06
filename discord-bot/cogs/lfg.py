@@ -136,6 +136,7 @@ class MatchConfirmationButtons(discord.ui.View):
         is_winner: bool,
         bot=None,
         channel=None,
+        match_start_time=None,
     ):
         super().__init__(timeout=86400)  # 24 hour timeout - plenty of time to confirm
         self.reporter_id = reporter_id
@@ -149,6 +150,7 @@ class MatchConfirmationButtons(discord.ui.View):
         self.is_winner = is_winner
         self.bot = bot
         self.channel = channel
+        self.match_start_time = match_start_time
 
     @discord.ui.button(
         label="Confirm",
@@ -167,6 +169,12 @@ class MatchConfirmationButtons(discord.ui.View):
 
         await interaction.response.defer()
 
+        # Calculate match time from start to confirmation
+        match_time = 0
+        if self.match_start_time:
+            time_diff = datetime.datetime.now() - self.match_start_time
+            match_time = int(time_diff.total_seconds() / 60)  # Convert to minutes
+
         # Submit match report only ONCE (not twice)
         # This will insert one record and update ELO for the winner
         await winner_report(
@@ -177,7 +185,7 @@ class MatchConfirmationButtons(discord.ui.View):
             self.loser_id,
             self.loser_global,
             "n",  # first_player default
-            0,  # match_time default
+            match_time,  # match_time calculated from start to confirmation
             "No URL provided",  # curiosa_link default
             "",  # match_comment default
             self.winner_id,  # interaction_user_id
@@ -281,6 +289,7 @@ class LFGReportButtons(discord.ui.View):
         player2_global: str,
         bot=None,
         channel=None,
+        match_start_time=None,
     ):
         super().__init__(timeout=None)
         self.match_id = match_id
@@ -290,6 +299,8 @@ class LFGReportButtons(discord.ui.View):
         self.player2_global = player2_global
         self.bot = bot
         self.channel = channel
+        # Track when the match started for automatic match time calculation
+        self.match_start_time = match_start_time or datetime.datetime.now()
 
     @discord.ui.button(
         label="I Won!", style=discord.ButtonStyle.success, custom_id="win_button"
@@ -320,6 +331,7 @@ class LFGReportButtons(discord.ui.View):
             or interaction.user.display_name,
             "is_winner": True,
             "opponent_message": None,  # Will be set after fetching opponent's DM
+            "match_start_time": self.match_start_time,  # Track when match started
         }
 
         # Send confirmation to opponent
@@ -374,6 +386,7 @@ class LFGReportButtons(discord.ui.View):
                 is_winner=False,  # For opponent, they lost
                 bot=self.bot,
                 channel=self.channel,
+                match_start_time=self.match_start_time,
             )
 
             # Check if opponent has DM-disabled role
@@ -576,6 +589,7 @@ class LFGReportButtons(discord.ui.View):
                 is_winner=True,  # For opponent, they won
                 bot=self.bot,
                 channel=self.channel,
+                match_start_time=self.match_start_time,
             )
 
             # Check if opponent has DM-disabled role
@@ -722,6 +736,9 @@ class ChallengeButtons(discord.ui.View):
     ):
         challenger = await interaction.client.fetch_user(self.challenger_id)
 
+        # Record match start time when challenge is accepted
+        match_start_time = datetime.datetime.now()
+
         # Send match report buttons to both players
         challenger_view = LFGReportButtons(
             0,  # match_id not needed for direct challenges
@@ -731,6 +748,7 @@ class ChallengeButtons(discord.ui.View):
             interaction.user.global_name or interaction.user.display_name,
             interaction.client,
             self.channel,
+            match_start_time=match_start_time,
         )
 
         opponent_view = LFGReportButtons(
@@ -741,6 +759,7 @@ class ChallengeButtons(discord.ui.View):
             self.challenger_global,
             interaction.client,
             self.channel,
+            match_start_time=match_start_time,
         )
 
         try:
@@ -962,6 +981,9 @@ class JoinQueueButton(discord.ui.View):
             matched_user = await self.bot.fetch_user(matched_user_id)
             lfg_channel = self.bot.get_channel(lfg_cog.lfg_channel_id)
 
+            # Record match start time when players are matched
+            match_start_time = datetime.datetime.now()
+
             view_ctx = LFGReportButtons(
                 interaction.user.id,
                 interaction.user.id,
@@ -970,6 +992,7 @@ class JoinQueueButton(discord.ui.View):
                 matched_user.global_name or matched_user.display_name,
                 self.bot,
                 lfg_channel,
+                match_start_time=match_start_time,
             )
 
             try:
@@ -1007,6 +1030,7 @@ class JoinQueueButton(discord.ui.View):
                 interaction.user.global_name or interaction.user.display_name,
                 self.bot,
                 lfg_channel,
+                match_start_time=match_start_time,
             )
 
             try:
@@ -1534,6 +1558,10 @@ class LFGCog(commands.Cog):
         if matched_user_id and matched_user_id != ctx.author.id:
             logger.info(f"Match found! Pairing {ctx.author.id} with {matched_user_id}")
             matched_user = await self.bot.fetch_user(matched_user_id)
+
+            # Record match start time when players are matched
+            match_start_time = datetime.datetime.now()
+
             view_ctx = LFGReportButtons(
                 ctx.author.id,
                 ctx.author.id,
@@ -1542,6 +1570,7 @@ class LFGCog(commands.Cog):
                 matched_user.global_name or matched_user.display_name,
                 self.bot,
                 lfg_channel,
+                match_start_time=match_start_time,
             )
             logger.info(
                 f"Sending match report to {ctx.author} (ID: {ctx.author.id}) via DM"
@@ -1605,6 +1634,7 @@ class LFGCog(commands.Cog):
                 ctx.author.global_name or ctx.author.display_name,
                 self.bot,
                 lfg_channel,
+                match_start_time=match_start_time,
             )
             logger.info(
                 f"Sending match report to {matched_user} (ID: {matched_user_id}) via DM"

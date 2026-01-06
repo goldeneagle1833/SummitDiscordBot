@@ -25,8 +25,20 @@ def create_db():
                     match_time INTEGER,
                     curiosa_url TEXT,
                     match_comment TEXT,
-                    json_deck_data TEXT
+                    json_deck_data TEXT,
+                    winner_elo_change INTEGER,
+                    loser_elo_change INTEGER
                    )""")
+
+    # Add elo_change columns if they don't exist (migration for existing databases)
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN winner_elo_change INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN loser_elo_change INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     # Create solo_match_reports table
     cur.execute("""CREATE TABLE IF NOT EXISTS solo_match_reports
@@ -124,7 +136,10 @@ def update_elo_db(user_id, user_display_name, did_win, opponent_id):
 
     # Calculate new ELO
     new_player_elo = update_elo(player_elo, opponent_elo, did_win)
-    print(f"New ELO calculated: {player_elo} -> {new_player_elo}")
+    elo_change = new_player_elo - player_elo
+    print(
+        f"New ELO calculated: {player_elo} -> {new_player_elo} (change: {elo_change:+d})"
+    )
 
     # Update player's ELO
     cur.execute(
@@ -136,7 +151,7 @@ def update_elo_db(user_id, user_display_name, did_win, opponent_id):
     conn.close()
 
     print(f"Player {user_id} ELO updated to {new_player_elo}")
-    return new_player_elo
+    return new_player_elo, elo_change
 
 
 async def winner_report(
@@ -167,10 +182,18 @@ async def winner_report(
     json_deck_data = "{}"
     json_deck_data = scrape_Curosa(curiosa_link, "deck_data_test.json")
 
+    # Update ELO and get the change values
+    new_elo, elo_change = update_elo_db(
+        interaction_user_id, interaction_global, did_win, opponent_id
+    )
+    # For winner_report, did_win is True so this is the winner's elo change
+    winner_elo_change = elo_change
+    loser_elo_change = -elo_change  # Approximate: loser loses roughly what winner gains
+
     cur.execute(
         "INSERT INTO match_records (reporter_id, winner_id, winner_display_name, "
         "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
-        "curiosa_url, match_comment, json_deck_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "curiosa_url, match_comment, json_deck_data, winner_elo_change, loser_elo_change) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             reporter_id,
             user_id,
@@ -184,9 +207,10 @@ async def winner_report(
             curiosa_link,
             match_comment,
             json_deck_data,
+            winner_elo_change,
+            loser_elo_change,
         ),
     )
-    update_elo_db(interaction_user_id, interaction_global, did_win, opponent_id)
 
     conn.commit()
     conn.close()
@@ -222,10 +246,20 @@ async def losser_report(
     json_deck_data = "{}"
     json_deck_data = scrape_Curosa(curiosa_link, "deck_data_test.json")
 
+    # Update ELO and get the change values
+    new_elo, elo_change = update_elo_db(
+        interaction_user_id, interaction_global, did_win, opponent_id
+    )
+    # For losser_report, did_win is False so this is the loser's elo change
+    loser_elo_change = elo_change
+    winner_elo_change = (
+        -elo_change
+    )  # Approximate: winner gains roughly what loser loses
+
     cur.execute(
         "INSERT INTO match_records (reporter_id, winner_id, winner_display_name, "
         "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
-        "curiosa_url, match_comment, json_deck_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "curiosa_url, match_comment, json_deck_data, winner_elo_change, loser_elo_change) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             reporter_id,
             user_id,
@@ -239,9 +273,10 @@ async def losser_report(
             curiosa_link,
             match_comment,
             json_deck_data,
+            winner_elo_change,
+            loser_elo_change,
         ),
     )
-    update_elo_db(interaction_user_id, interaction_global, did_win, opponent_id)
 
     conn.commit()
     conn.close()

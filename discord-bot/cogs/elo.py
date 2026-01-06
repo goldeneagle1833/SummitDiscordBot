@@ -511,7 +511,11 @@ class EloCog(commands.Cog):
                         curiosa_url as replay_url,
                         match_comment,
                         timestamp as match_date,
-                        'match_records' as source
+                        'match_records' as source,
+                        CASE 
+                            WHEN winner_id = ? THEN COALESCE(winner_elo_change, 0)
+                            ELSE COALESCE(loser_elo_change, 0)
+                        END as elo_change
                     FROM match_records 
                     WHERE winner_id = ? OR losser_id = ?
                     UNION ALL
@@ -530,13 +534,20 @@ class EloCog(commands.Cog):
                         curiosa_link as replay_url,
                         match_comment,
                         report_date as match_date,
-                        'solo_reports' as source
+                        'solo_reports' as source,
+                        0 as elo_change
                     FROM solo_match_reports
                     WHERE reporter_id = ?
                     ORDER BY match_date DESC
                     LIMIT 10
                     """,
-                    (ctx.author.id, ctx.author.id, ctx.author.id, ctx.author.id),
+                    (
+                        ctx.author.id,
+                        ctx.author.id,
+                        ctx.author.id,
+                        ctx.author.id,
+                        ctx.author.id,
+                    ),
                 )
 
                 rows = cur.fetchall()
@@ -577,6 +588,7 @@ class EloCog(commands.Cog):
                             match_comment,
                             match_date,
                             source,
+                            elo_change,
                         ) = row
 
                         # Format match date based on source
@@ -591,7 +603,19 @@ class EloCog(commands.Cog):
                         # Build compact game line
                         result_emoji = "✅" if did_win else "❌"
 
-                        game_line = f"{result_emoji} **Game {i}** ({formatted_date})\n"
+                        # Format ELO change display
+                        if elo_change and elo_change != 0:
+                            if elo_change > 0:
+                                elo_display = f"📈 +{elo_change}"
+                            else:
+                                elo_display = f"📉 {elo_change}"
+                        else:
+                            elo_display = ""
+
+                        game_line = f"{result_emoji} **Game {i}** ({formatted_date})"
+                        if elo_display:
+                            game_line += f" {elo_display}"
+                        game_line += "\n"
                         game_line += f"   ⚔️ {winner} beat {loser}"
 
                         if match_time:

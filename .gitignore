@@ -28,3 +28,4 @@ bot.log
 # Ignore environment variable files
 .env
 .env.
+.github/workflows/deploy.yml

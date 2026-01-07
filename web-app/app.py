@@ -30,7 +30,7 @@ def api_status():
 @app.route("/api/leaderboard")
 def leaderboard():
     # Get ELO standings
-    conn = sqlite3.connect("../elo.db")
+    conn = sqlite3.connect("../discord-bot/elo.db")
     cur = conn.cursor()
     cur.execute("""
         SELECT user_id, user_display_name, elo
@@ -41,7 +41,7 @@ def leaderboard():
     conn.close()
 
     # Get win/loss records from match_records
-    conn = sqlite3.connect("../match_records.db")
+    conn = sqlite3.connect("../discord-bot/match_records.db")
     cur = conn.cursor()
 
     leaderboard_data = []
@@ -82,7 +82,7 @@ def player_profile(player_id):
 @app.route("/api/player/<int:player_id>")
 def player_api(player_id):
     # Get player info from ELO db
-    conn = sqlite3.connect("../elo.db")
+    conn = sqlite3.connect("../discord-bot/elo.db")
     cur = conn.cursor()
     cur.execute(
         """
@@ -99,7 +99,7 @@ def player_api(player_id):
         return jsonify({"error": "Player not found"}), 404
 
     # Get match history from match_records db
-    conn = sqlite3.connect("../match_records.db")
+    conn = sqlite3.connect("../discord-bot/match_records.db")
     cur = conn.cursor()
     cur.execute(
         """

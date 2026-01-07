@@ -60,7 +60,7 @@ def leaderboard():
 
         leaderboard_data.append(
             {
-                "id": row[0],
+                "id": str(row[0]),
                 "name": row[1],
                 "elo": row[2],
                 "wins": wins,

@@ -97,7 +97,6 @@
                 <th>Play/Draw</th>
                 <th>Time</th>
                 <th>Date</th>
-                <th>Replay</th>
               </tr>
             </thead>
             <tbody id="match-history-tbody">
@@ -182,7 +181,7 @@
 
           if (data.matches.length === 0) {
             tbody.innerHTML =
-              '<tr><td colspan="7" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>';
+              '<tr><td colspan="6" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>';
             return;
           }
 
@@ -195,9 +194,6 @@
             const matchTime = match.match_time
               ? `${match.match_time} min`
               : "-";
-            const replayLink = match.replay_url
-              ? `<a href="${match.replay_url}" target="_blank" class="replay-link">View</a>`
-              : "-";
 
             row.innerHTML = `
               <td class="${resultClass}">${match.result}</td>
@@ -206,7 +202,6 @@
               <td>${match.first_player || "-"}</td>
               <td>${matchTime}</td>
               <td>${date}</td>
-              <td>${replayLink}</td>
             `;
             tbody.appendChild(row);
           });

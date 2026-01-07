@@ -1,12 +1,44 @@
 import discord
 from discord.ext import commands
 import datetime
+from zoneinfo import ZoneInfo
 import sqlite3
 import logging
 from random import randrange
 from openai import OpenAI
 
 import config
+
+# EST timezone for daily action resets
+EST = ZoneInfo("America/New_York")
+
+
+def get_est_now():
+    """Get the current datetime in EST timezone."""
+    return datetime.datetime.now(EST)
+
+
+def get_est_date():
+    """Get the current date in EST timezone."""
+    return get_est_now().date()
+
+
+def get_est_midnight():
+    """Get the next midnight in EST timezone."""
+    now = get_est_now()
+    tomorrow = now + datetime.timedelta(days=1)
+    return tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def parse_to_est_date(date_string):
+    """Parse a datetime string and return its date in EST."""
+    parsed = safe_parse_datetime(date_string)
+    if parsed:
+        # If the datetime is naive, assume it was stored in EST
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=EST)
+        return parsed.astimezone(EST).date()
+    return None
 
 
 def safe_parse_datetime(date_string):
@@ -543,8 +575,8 @@ class FunCog(commands.Cog):
                 if row:
                     parsed_datetime = safe_parse_datetime(row[0])
                     if parsed_datetime:
-                        last_fart_date = parsed_datetime.date()
-                        if last_fart_date == datetime.datetime.now().date():
+                        last_fart_date = parse_to_est_date(row[0])
+                        if last_fart_date == get_est_date():
                             did_user_fart_today = True
             except sqlite3.Error as e:
                 logger.error(f"Database error while checking fart status: {e}")
@@ -557,17 +589,15 @@ class FunCog(commands.Cog):
                     conn.close()
 
             if did_user_fart_today:
-                # Calculate time until next fart (midnight)
-                now = datetime.datetime.now()
-                midnight = (now + datetime.timedelta(days=1)).replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
+                # Calculate time until next fart (midnight EST)
+                now = get_est_now()
+                midnight = get_est_midnight()
                 time_until_next = midnight - now
 
                 hours = int(time_until_next.total_seconds() // 3600)
                 minutes = int((time_until_next.total_seconds() % 3600) // 60)
 
-                time_msg = f"You can fart again in **{hours}h {minutes}m**"
+                time_msg = f"You can fart again in **{hours}h {minutes}m** (resets at midnight EST)"
                 await ctx.send(
                     f"{ctx.author.mention} {daily_usage_message}\n{time_msg}"
                 )
@@ -854,24 +884,20 @@ class FunCog(commands.Cog):
             if row:
                 parsed_datetime = safe_parse_datetime(row[0])
                 if parsed_datetime:
-                    last_fart_date = parsed_datetime.date()
-                    if last_fart_date == datetime.datetime.now().date():
+                    last_fart_date = parse_to_est_date(row[0])
+                    if last_fart_date == get_est_date():
                         did_user_fart_today = True
 
             if did_user_fart_today:
-                # Calculate time until next fart (midnight)
-                now = datetime.datetime.now()
-                midnight = (now + datetime.timedelta(days=1)).replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
+                # Calculate time until next fart (midnight EST)
+                now = get_est_now()
+                midnight = get_est_midnight()
                 time_until_next = midnight - now
 
                 hours = int(time_until_next.total_seconds() // 3600)
                 minutes = int((time_until_next.total_seconds() % 3600) // 60)
 
-                time_msg = (
-                    f"You can use your daily action again in **{hours}h {minutes}m**"
-                )
+                time_msg = f"You can use your daily action again in **{hours}h {minutes}m** (resets at midnight EST)"
                 await ctx.send(
                     f"{ctx.author.mention} {daily_usage_message}\n{time_msg}"
                 )
@@ -960,24 +986,20 @@ class FunCog(commands.Cog):
             if row:
                 parsed_datetime = safe_parse_datetime(row[0])
                 if parsed_datetime:
-                    last_fart_date = parsed_datetime.date()
-                    if last_fart_date == datetime.datetime.now().date():
+                    last_fart_date = parse_to_est_date(row[0])
+                    if last_fart_date == get_est_date():
                         did_user_fart_today = True
 
             if did_user_fart_today:
-                # Calculate time until next fart (midnight)
-                now = datetime.datetime.now()
-                midnight = (now + datetime.timedelta(days=1)).replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
+                # Calculate time until next fart (midnight EST)
+                now = get_est_now()
+                midnight = get_est_midnight()
                 time_until_next = midnight - now
 
                 hours = int(time_until_next.total_seconds() // 3600)
                 minutes = int((time_until_next.total_seconds() % 3600) // 60)
 
-                time_msg = (
-                    f"You can use your daily action again in **{hours}h {minutes}m**"
-                )
+                time_msg = f"You can use your daily action again in **{hours}h {minutes}m** (resets at midnight EST)"
                 await ctx.send(
                     f"{ctx.author.mention} {daily_usage_message}\n{time_msg}"
                 )
@@ -1208,10 +1230,8 @@ class FunCog(commands.Cog):
                 last_used_date = parsed_datetime.date()
                 next_available_date = last_used_date + datetime.timedelta(weeks=1)
                 # Check if a week has passed since the last use
-                if next_available_date > datetime.datetime.now().date():
-                    days_remaining = (
-                        next_available_date - datetime.datetime.now().date()
-                    ).days
+                if next_available_date > get_est_date():
+                    days_remaining = (next_available_date - get_est_date()).days
                     await ctx.send(
                         f"{ctx.author.mention}, you can only use this command once a week! You can use it again in **{days_remaining} day{'s' if days_remaining != 1 else ''}**."
                     )
@@ -1612,8 +1632,8 @@ class FartPredictionView(discord.ui.View):
             if row:
                 parsed_datetime = safe_parse_datetime(row[0])
                 if parsed_datetime:
-                    last_fart_date = parsed_datetime.date()
-                    if last_fart_date == datetime.datetime.now().date():
+                    last_fart_date = parse_to_est_date(row[0])
+                    if last_fart_date == get_est_date():
                         did_user_fart_today = True
         except sqlite3.Error as e:
             logger.error(f"Error checking daily action: {e}")

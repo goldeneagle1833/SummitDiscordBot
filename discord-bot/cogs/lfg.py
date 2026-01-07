@@ -20,6 +20,10 @@ lfg_queue = {}
 # Key: (reporter_id, opponent_id), Value: match report data
 pending_match_reports = {}
 
+# Track processed matches to prevent double reporting
+# Key: frozenset({player1_id, player2_id}), Value: timestamp
+processed_matches = {}
+
 # Store the persistent status message ID
 lfg_status_message_id = None
 
@@ -167,6 +171,35 @@ class MatchConfirmationButtons(discord.ui.View):
             )
             return
 
+        # Disable button immediately to prevent double-clicks
+        button.disabled = True
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
+        # Check for duplicate match (already processed between these two players recently)
+        match_key = frozenset({self.winner_id, self.loser_id})
+        now = datetime.datetime.now()
+        if match_key in processed_matches:
+            last_report_time = processed_matches[match_key]
+            # If a match between these players was reported in the last 5 minutes, reject
+            if (now - last_report_time).total_seconds() < 300:
+                await interaction.response.send_message(
+                    "This match has already been recorded. Duplicate report prevented.",
+                    ephemeral=True,
+                )
+                await interaction.message.edit(
+                    content="Match already recorded (duplicate prevented).",
+                    view=None,
+                )
+                return
+
+        # Mark this match as processed
+        processed_matches[match_key] = now
+
         await interaction.response.defer()
 
         # Calculate match time from start to confirmation
@@ -308,6 +341,14 @@ class LFGReportButtons(discord.ui.View):
     async def won_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        # Disable buttons immediately to prevent double-clicks
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
         opponent_id = (
             self.player2_id
             if interaction.user.id == self.player1_id
@@ -318,6 +359,17 @@ class LFGReportButtons(discord.ui.View):
             if interaction.user.id == self.player1_id
             else self.player1_global
         )
+
+        # Check if a report is already pending for this match
+        if (interaction.user.id, opponent_id) in pending_match_reports or (
+            opponent_id,
+            interaction.user.id,
+        ) in pending_match_reports:
+            await interaction.response.send_message(
+                "A report for this match is already pending confirmation.",
+                ephemeral=True,
+            )
+            return
 
         # Store pending report with opponent's message reference
         pending_match_reports[(interaction.user.id, opponent_id)] = {
@@ -512,6 +564,14 @@ class LFGReportButtons(discord.ui.View):
     async def lost_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        # Disable buttons immediately to prevent double-clicks
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
         opponent_id = (
             self.player2_id
             if interaction.user.id == self.player1_id
@@ -522,6 +582,17 @@ class LFGReportButtons(discord.ui.View):
             if interaction.user.id == self.player1_id
             else self.player1_global
         )
+
+        # Check if a report is already pending for this match
+        if (interaction.user.id, opponent_id) in pending_match_reports or (
+            opponent_id,
+            interaction.user.id,
+        ) in pending_match_reports:
+            await interaction.response.send_message(
+                "A report for this match is already pending confirmation.",
+                ephemeral=True,
+            )
+            return
 
         # Store pending report with opponent's message reference
         pending_match_reports[(interaction.user.id, opponent_id)] = {
@@ -1225,6 +1296,9 @@ class LFGCog(commands.Cog):
                     f"Auto-removed {initial_count - final_count} expired queue entries"
                 )
                 await self.update_lfg_status()
+
+            # Clean up old processed matches (older than 1 hour)
+            self.clean_expired_processed_matches()
         except Exception as e:
             logger.error(f"Error in check_expired_queue task: {e}")
 
@@ -1521,6 +1595,19 @@ class LFGCog(commands.Cog):
         ]
         for user_id in expired:
             lfg_queue.pop(user_id)
+
+    def clean_expired_processed_matches(self):
+        """Remove processed match entries older than 1 hour to prevent memory growth"""
+        now = datetime.datetime.now()
+        expired = [
+            match_key
+            for match_key, timestamp in processed_matches.items()
+            if (now - timestamp).total_seconds() > 3600  # 1 hour
+        ]
+        for match_key in expired:
+            processed_matches.pop(match_key, None)
+        if expired:
+            logger.info(f"Cleaned up {len(expired)} old processed match entries")
 
     @commands.command(aliases=["LFG"])
     async def lfg(self, ctx, timeframe: int = 30):

@@ -41,7 +41,7 @@
       </section>
 
       <section class="leaderboard">
-        <h2>🏆 Top 16 Leaderboard</h2>
+        <h2>🏆 Leaderboard</h2>
         <div id="leaderboard-container">
           <table id="leaderboard-table">
             <thead>
@@ -51,29 +51,28 @@
                 <th>ELO</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody id="leaderboard-tbody">
               <!-- Leaderboard rows will be inserted here by JS -->
             </tbody>
           </table>
         </div>
       </section>
+    </main>
 
-      <script>
-        async function fetchLeaderboard() {
-          const res = await fetch("/api/leaderboard");
-          const data = await res.json();
-          const tbody = document.querySelector("#leaderboard-table tbody");
-          tbody.innerHTML = "";
-          data.forEach((player, i) => {
-            const row = document.createElement("tr");
-            row.innerHTML = `<td>${i + 1}</td><td>${player.name}</td><td>${
-              player.elo
-            }</td>`;
-            tbody.appendChild(row);
-          });
-        }
-        fetchLeaderboard();
-      </script>
+    <script>
+      async function fetchLeaderboard() {
+        const res = await fetch("/api/leaderboard");
+        const data = await res.json();
+        const tbody = document.getElementById("leaderboard-tbody");
+        tbody.innerHTML = "";
+        data.forEach((player, i) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `<td>${i + 1}</td><td>${player.name}</td><td>${player.elo}</td>`;
+          tbody.appendChild(row);
+        });
+      }
+      fetchLeaderboard();
+    </script>
     </main>
 
     <footer>

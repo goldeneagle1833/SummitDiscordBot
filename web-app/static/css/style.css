@@ -431,6 +431,85 @@ main {
   text-decoration: underline;
 }
 
+/* Avatar Stats Page */
+.avatar-stats-section {
+  margin: 2rem 0;
+}
+
+.avatar-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1.5rem;
+}
+
+.avatar-stats-card {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  padding: 1.5rem;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: transform 0.2s, border-color 0.2s;
+  position: relative;
+}
+
+.avatar-stats-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(79, 195, 247, 0.5);
+}
+
+.avatar-stats-rank {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+}
+
+.avatar-stats-name {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.avatar-stats-winrate {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.avatar-stats-winrate.rate-high {
+  color: #81c784;
+}
+
+.avatar-stats-winrate.rate-neutral {
+  color: #ffd54f;
+}
+
+.avatar-stats-winrate.rate-low {
+  color: #e57373;
+}
+
+.avatar-stats-record {
+  font-size: 1.1rem;
+  margin-bottom: 0.25rem;
+}
+
+.avatar-stats-total {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.no-data {
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  padding: 3rem;
+  font-size: 1.1rem;
+}
+
 /* Footer */
 footer {
   text-align: center;

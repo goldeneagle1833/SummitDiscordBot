@@ -20,6 +20,12 @@ def about():
     return render_template("about.html")
 
 
+@app.route("/avatars")
+def avatars():
+    """Avatar stats page"""
+    return render_template("avatars.html")
+
+
 @app.route("/api/status")
 def api_status():
     """Simple API endpoint to check if the server is running"""
@@ -243,6 +249,80 @@ def player_api(player_id):
             "matches": match_history,
         }
     )
+
+
+@app.route("/api/avatars")
+def avatars_api():
+    """API endpoint for global avatar stats from all matches with deck data"""
+    import json
+
+    try:
+        conn = sqlite3.connect("../discord-bot/match_records.db")
+        cur = conn.cursor()
+
+        # Get all matches with deck data
+        cur.execute(
+            """
+            SELECT 
+                CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
+                json_deck_data
+            FROM match_records 
+            WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+        """
+        )
+        rows = cur.fetchall()
+        conn.close()
+    except sqlite3.OperationalError:
+        # Table doesn't exist or database not found
+        return jsonify([])
+
+    # Calculate avatar stats across all matches
+    avatar_stats = {}
+    for row in rows:
+        reporter_won = row[0]
+        deck_data_str = row[1]
+
+        if not deck_data_str:
+            continue
+
+        try:
+            deck_data = json.loads(deck_data_str)
+            avatar = deck_data.get("avatar", [{}])
+            avatar_name = avatar[0].get("name", "Unknown") if avatar else "Unknown"
+
+            if avatar_name == "Unknown" or not avatar_name:
+                continue
+
+            if avatar_name not in avatar_stats:
+                avatar_stats[avatar_name] = {"wins": 0, "losses": 0}
+
+            if reporter_won:
+                avatar_stats[avatar_name]["wins"] += 1
+            else:
+                avatar_stats[avatar_name]["losses"] += 1
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            continue
+
+    # Format for response and sort by total games played
+    avatar_list = []
+    for name, stats in avatar_stats.items():
+        total = stats["wins"] + stats["losses"]
+        if total > 0:
+            win_rate = stats["wins"] / total * 100
+            avatar_list.append(
+                {
+                    "name": name,
+                    "wins": stats["wins"],
+                    "losses": stats["losses"],
+                    "total": total,
+                    "win_rate": round(win_rate, 1),
+                }
+            )
+
+    # Sort by total games played (most popular first)
+    avatar_list.sort(key=lambda x: x["total"], reverse=True)
+
+    return jsonify(avatar_list)
 
 
 if __name__ == "__main__":

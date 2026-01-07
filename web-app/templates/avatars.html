@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Avatar Stats - Sorcerers Summit</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}" />
+  </head>
+  <body>
+    <nav>
+      <div class="nav-container">
+        <a href="/" class="logo">Sorcerers Summit</a>
+        <ul class="nav-links">
+          <li><a href="/">Home</a></li>
+          <li><a href="/avatars">Avatars</a></li>
+          <li><a href="/about">About</a></li>
+          <li>
+            <a href="https://discord.gg/ZDqHSK9VGx" target="_blank">Discord</a>
+          </li>
+          <li>
+            <a
+              href="https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink"
+              target="_blank"
+              >Patreon</a
+            >
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <main>
+      <section class="hero">
+        <h1>Avatar Win Rates</h1>
+        <p>Global statistics from all matches reported with decklists</p>
+      </section>
+
+      <section class="avatar-stats-section">
+        <div class="avatar-stats-grid" id="avatar-stats-grid">
+          <!-- Avatar cards will be inserted here by JS -->
+        </div>
+      </section>
+    </main>
+
+    <script>
+      async function fetchAvatarStats() {
+        try {
+          const res = await fetch("/api/avatars");
+          const data = await res.json();
+          const grid = document.getElementById("avatar-stats-grid");
+          grid.innerHTML = "";
+
+          if (data.length === 0) {
+            grid.innerHTML =
+              '<p class="no-data">No avatar data available yet. Report matches with decklists to see stats!</p>';
+            return;
+          }
+
+          data.forEach((avatar, index) => {
+            const card = document.createElement("div");
+            card.className = "avatar-stats-card";
+
+            // Determine win rate color class
+            let rateClass = "rate-neutral";
+            if (avatar.win_rate >= 55) rateClass = "rate-high";
+            else if (avatar.win_rate <= 45) rateClass = "rate-low";
+
+            card.innerHTML = `
+              <div class="avatar-stats-rank">#${index + 1}</div>
+              <div class="avatar-stats-name">${avatar.name}</div>
+              <div class="avatar-stats-winrate ${rateClass}">${
+              avatar.win_rate
+            }%</div>
+              <div class="avatar-stats-record">
+                <span class="match-win">${
+                  avatar.wins
+                }W</span> - <span class="match-loss">${avatar.losses}L</span>
+              </div>
+              <div class="avatar-stats-total">${avatar.total} games</div>
+            `;
+            grid.appendChild(card);
+          });
+        } catch (error) {
+          console.error("Error fetching avatar stats:", error);
+          document.getElementById("avatar-stats-grid").innerHTML =
+            '<p class="no-data">Error loading avatar stats</p>';
+        }
+      }
+
+      fetchAvatarStats();
+    </script>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+  </body>
+</html>

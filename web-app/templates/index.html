@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Summit</title>
+    <title>Sorcerers Summit</title>
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/style.css') }}" />
@@ -39,6 +39,41 @@
           <p>Join a friendly community of players.</p>
         </div>
       </section>
+
+      <section class="leaderboard">
+        <h2>🏆 Top 16 Leaderboard</h2>
+        <div id="leaderboard-container">
+          <table id="leaderboard-table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Player</th>
+                <th>ELO</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Leaderboard rows will be inserted here by JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <script>
+        async function fetchLeaderboard() {
+          const res = await fetch("/api/leaderboard");
+          const data = await res.json();
+          const tbody = document.querySelector("#leaderboard-table tbody");
+          tbody.innerHTML = "";
+          data.forEach((player, i) => {
+            const row = document.createElement("tr");
+            row.innerHTML = `<td>${i + 1}</td><td>${player.name}</td><td>${
+              player.elo
+            }</td>`;
+            tbody.appendChild(row);
+          });
+        }
+        fetchLeaderboard();
+      </script>
     </main>
 
     <footer>

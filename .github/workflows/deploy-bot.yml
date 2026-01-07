@@ -1,0 +1,27 @@
+name: Deploy Discord Bot
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "discord-bot/**"
+      - "data/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Linode
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LINODE_HOST }}
+          username: ${{ secrets.LINODE_USER }}
+          key: ${{ secrets.LINODE_SSH_KEY }}
+          script: |
+            cd /root/Summit/SummitDiscordBot
+            git pull origin main
+            cd discord-bot
+            source venv/bin/activate
+            pip install -r requirements.txt
+            systemctl restart summit-bot

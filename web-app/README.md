@@ -5,17 +5,20 @@ A lightweight Flask web application for the Summit community.
 ## Setup
 
 1. **Create a virtual environment** (recommended):
+
    ```bash
    python -m venv venv
    venv\Scripts\activate  # Windows
    ```
 
 2. **Install dependencies**:
+
    ```bash
    pip install -r requirements.txt
    ```
 
 3. **Run the app**:
+
    ```bash
    python app.py
    ```

@@ -73,14 +73,16 @@ def leaderboard():
 
 
 # Player profile page
-@app.route("/player/<int:player_id>")
+@app.route("/player/<player_id>")
 def player_profile(player_id):
     return render_template("player.html", player_id=player_id)
 
 
 # Player API endpoint
-@app.route("/api/player/<int:player_id>")
+@app.route("/api/player/<player_id>")
 def player_api(player_id):
+    import json
+
     # Get player info from ELO db
     conn = sqlite3.connect("../discord-bot/elo.db")
     cur = conn.cursor()
@@ -93,43 +95,131 @@ def player_api(player_id):
         (player_id,),
     )
     player_row = cur.fetchone()
-    conn.close()
 
     if not player_row:
+        conn.close()
         return jsonify({"error": "Player not found"}), 404
 
-    # Get match history from match_records db
-    conn = sqlite3.connect("../discord-bot/match_records.db")
-    cur = conn.cursor()
+    # Get player rank
     cur.execute(
-        """
-        SELECT winner_id, winner_display_name, losser_id, losser_display_name,
-               timestamp, winner_elo_change, loser_elo_change
-        FROM match_records
-        WHERE winner_id = ? OR losser_id = ?
-        ORDER BY timestamp DESC
-        LIMIT 50
-    """,
-        (player_id, player_id),
+        "SELECT COUNT(*) FROM overall_standings WHERE elo > ?",
+        (player_row[2],),
     )
-    matches = cur.fetchall()
+    rank = cur.fetchone()[0] + 1
     conn.close()
 
-    # Calculate stats
-    wins = sum(1 for m in matches if m[0] == player_id)
-    losses = sum(1 for m in matches if m[2] == player_id)
+    # Get detailed match data from match_records db
+    conn = sqlite3.connect("../discord-bot/match_records.db")
+    cur = conn.cursor()
 
+    # Get all matches for detailed stats
+    cur.execute(
+        """
+        SELECT 
+            CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+            first_player,
+            json_deck_data,
+            match_time,
+            winner_display_name,
+            losser_display_name,
+            timestamp,
+            winner_elo_change,
+            loser_elo_change,
+            curiosa_url
+        FROM match_records 
+        WHERE winner_id = ? OR losser_id = ?
+        ORDER BY timestamp DESC
+    """,
+        (player_id, player_id, player_id),
+    )
+    rows = cur.fetchall()
+    conn.close()
+
+    # Calculate detailed stats
+    total_matches = len(rows)
+    wins = sum(1 for row in rows if row[0])
+    losses = total_matches - wins
+    win_rate = (wins / total_matches * 100) if total_matches > 0 else 0
+
+    # First player (on the play) stats
+    first_player_matches = sum(
+        1 for row in rows if row[1] and "y" in str(row[1]).lower()
+    )
+    first_player_wins = sum(
+        1 for row in rows if row[0] and row[1] and "y" in str(row[1]).lower()
+    )
+    first_player_win_rate = (
+        (first_player_wins / first_player_matches * 100)
+        if first_player_matches > 0
+        else 0
+    )
+
+    # On the draw stats
+    draw_matches = sum(1 for row in rows if row[1] and "y" not in str(row[1]).lower())
+    draw_wins = sum(
+        1 for row in rows if row[0] and row[1] and "y" not in str(row[1]).lower()
+    )
+    draw_win_rate = (draw_wins / draw_matches * 100) if draw_matches > 0 else 0
+
+    # Average match time
+    match_times = [
+        float(row[3])
+        for row in rows
+        if row[3] and str(row[3]).replace(".", "").isdigit()
+    ]
+    avg_match_time = sum(match_times) / len(match_times) if match_times else 0
+
+    # Avatar stats
+    avatar_stats = {}
+    for row in rows:
+        if row[2]:
+            try:
+                deck_data = json.loads(row[2])
+                avatar = deck_data.get("avatar", [{}])
+                avatar_name = avatar[0].get("name", "Unknown") if avatar else "Unknown"
+
+                if avatar_name not in avatar_stats:
+                    avatar_stats[avatar_name] = {"wins": 0, "losses": 0}
+
+                if row[0]:  # did_win
+                    avatar_stats[avatar_name]["wins"] += 1
+                else:
+                    avatar_stats[avatar_name]["losses"] += 1
+            except (json.JSONDecodeError, KeyError, IndexError):
+                continue
+
+    # Format avatar stats for response
+    avatar_performance = []
+    for name, stats in avatar_stats.items():
+        total = stats["wins"] + stats["losses"]
+        rate = (stats["wins"] / total * 100) if total > 0 else 0
+        avatar_performance.append(
+            {
+                "name": name,
+                "wins": stats["wins"],
+                "losses": stats["losses"],
+                "win_rate": round(rate, 1),
+            }
+        )
+    avatar_performance.sort(key=lambda x: x["wins"] + x["losses"], reverse=True)
+
+    # Build match history (last 50 matches)
     match_history = []
-    for m in matches:
-        is_winner = m[0] == player_id
-        opponent_name = m[3] if is_winner else m[1]
-        elo_change = m[5] if is_winner else m[6]
+    for row in rows[:50]:
+        did_win = row[0]
+        opponent_name = row[5] if did_win else row[4]
+        elo_change = row[7] if did_win else row[8]
         match_history.append(
             {
                 "opponent": opponent_name,
-                "result": "Win" if is_winner else "Loss",
+                "result": "Win" if did_win else "Loss",
                 "elo_change": elo_change if elo_change else 0,
-                "date": m[4],
+                "date": row[6],
+                "first_player": "Yes"
+                if row[1] and "y" in str(row[1]).lower()
+                else "No",
+                "match_time": row[3] if row[3] else None,
+                "replay_url": row[9] if row[9] else None,
             }
         )
 
@@ -138,8 +228,18 @@ def player_api(player_id):
             "id": player_row[0],
             "name": player_row[1],
             "elo": player_row[2],
+            "rank": rank,
             "wins": wins,
             "losses": losses,
+            "win_rate": round(win_rate, 1),
+            "on_play_wins": first_player_wins,
+            "on_play_matches": first_player_matches,
+            "on_play_win_rate": round(first_player_win_rate, 1),
+            "on_draw_wins": draw_wins,
+            "on_draw_matches": draw_matches,
+            "on_draw_win_rate": round(draw_win_rate, 1),
+            "avg_match_time": round(avg_match_time, 1),
+            "avatar_performance": avatar_performance,
             "matches": match_history,
         }
     )

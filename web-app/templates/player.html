@@ -27,9 +27,12 @@
           <div>
             <h1 class="player-name" id="player-name">Loading...</h1>
             <div class="player-elo" id="player-elo"></div>
+            <div class="player-rank" id="player-rank"></div>
           </div>
         </div>
 
+        <!-- Overall Stats -->
+        <h3>📊 Overall Stats</h3>
         <div class="player-stats" id="player-stats">
           <div class="stat-card">
             <div class="stat-value" id="stat-wins">-</div>
@@ -47,8 +50,42 @@
             <div class="stat-value" id="stat-matches">-</div>
             <div class="stat-label">Total Matches</div>
           </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-avg-time">-</div>
+            <div class="stat-label">Avg Match Time</div>
+          </div>
         </div>
 
+        <!-- Play/Draw Stats -->
+        <h3>🎯 Play vs Draw Stats</h3>
+        <div class="player-stats">
+          <div class="stat-card">
+            <div class="stat-value" id="stat-on-play">-</div>
+            <div class="stat-label">On the Play</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-on-play-rate">-</div>
+            <div class="stat-label">Play Win Rate</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-on-draw">-</div>
+            <div class="stat-label">On the Draw</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-on-draw-rate">-</div>
+            <div class="stat-label">Draw Win Rate</div>
+          </div>
+        </div>
+
+        <!-- Avatar Performance -->
+        <div class="avatar-section" id="avatar-section" style="display: none">
+          <h3>🎭 Avatar Performance</h3>
+          <div class="avatar-grid" id="avatar-grid">
+            <!-- Avatar cards will be inserted here by JS -->
+          </div>
+        </div>
+
+        <!-- Match History -->
         <div class="match-history">
           <h3>📜 Match History</h3>
           <table class="match-history-table">
@@ -56,8 +93,11 @@
               <tr>
                 <th>Result</th>
                 <th>Opponent</th>
-                <th>ELO Change</th>
+                <th>ELO</th>
+                <th>Play/Draw</th>
+                <th>Time</th>
                 <th>Date</th>
+                <th>Replay</th>
               </tr>
             </thead>
             <tbody id="match-history-tbody">
@@ -69,54 +109,110 @@
     </main>
 
     <script>
-      const playerId = {{ player_id }};
+      const playerId = "{{ player_id }}";
 
       async function fetchPlayerData() {
         try {
           const res = await fetch(`/api/player/${playerId}`);
           if (!res.ok) {
-            document.getElementById("player-name").textContent = "Player not found";
+            document.getElementById("player-name").textContent =
+              "Player not found";
             return;
           }
           const data = await res.json();
 
           // Update player info
           document.getElementById("player-name").textContent = data.name;
-          document.getElementById("player-elo").textContent = `ELO: ${data.elo}`;
+          document.getElementById(
+            "player-elo"
+          ).textContent = `ELO: ${data.elo}`;
+          document.getElementById(
+            "player-rank"
+          ).textContent = `Rank #${data.rank}`;
           document.title = `${data.name} - Sorcerers Summit`;
 
-          // Update stats
+          // Update overall stats
           document.getElementById("stat-wins").textContent = data.wins;
           document.getElementById("stat-losses").textContent = data.losses;
-          const totalMatches = data.wins + data.losses;
-          document.getElementById("stat-matches").textContent = totalMatches;
-          const winRate = totalMatches > 0 ? Math.round((data.wins / totalMatches) * 100) : 0;
-          document.getElementById("stat-winrate").textContent = `${winRate}%`;
+          document.getElementById(
+            "stat-winrate"
+          ).textContent = `${data.win_rate}%`;
+          document.getElementById("stat-matches").textContent =
+            data.wins + data.losses;
+          document.getElementById("stat-avg-time").textContent =
+            data.avg_match_time > 0 ? `${data.avg_match_time} min` : "-";
+
+          // Update play/draw stats
+          document.getElementById(
+            "stat-on-play"
+          ).textContent = `${data.on_play_wins}/${data.on_play_matches}`;
+          document.getElementById(
+            "stat-on-play-rate"
+          ).textContent = `${data.on_play_win_rate}%`;
+          document.getElementById(
+            "stat-on-draw"
+          ).textContent = `${data.on_draw_wins}/${data.on_draw_matches}`;
+          document.getElementById(
+            "stat-on-draw-rate"
+          ).textContent = `${data.on_draw_win_rate}%`;
+
+          // Update avatar performance
+          if (data.avatar_performance && data.avatar_performance.length > 0) {
+            document.getElementById("avatar-section").style.display = "block";
+            const avatarGrid = document.getElementById("avatar-grid");
+            avatarGrid.innerHTML = "";
+
+            data.avatar_performance.forEach((avatar) => {
+              const card = document.createElement("div");
+              card.className = "avatar-card";
+              card.innerHTML = `
+                <div class="avatar-name">${avatar.name}</div>
+                <div class="avatar-record">
+                  <span class="match-win">${avatar.wins}</span> - <span class="match-loss">${avatar.losses}</span>
+                </div>
+                <div class="avatar-winrate">${avatar.win_rate}%</div>
+              `;
+              avatarGrid.appendChild(card);
+            });
+          }
 
           // Update match history
           const tbody = document.getElementById("match-history-tbody");
           tbody.innerHTML = "";
 
           if (data.matches.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>';
+            tbody.innerHTML =
+              '<tr><td colspan="7" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>';
             return;
           }
 
-          data.matches.forEach(match => {
+          data.matches.forEach((match) => {
             const row = document.createElement("tr");
-            const resultClass = match.result === "Win" ? "match-win" : "match-loss";
+            const resultClass =
+              match.result === "Win" ? "match-win" : "match-loss";
             const eloSign = match.elo_change >= 0 ? "+" : "";
             const date = new Date(match.date).toLocaleDateString();
+            const matchTime = match.match_time
+              ? `${match.match_time} min`
+              : "-";
+            const replayLink = match.replay_url
+              ? `<a href="${match.replay_url}" target="_blank" class="replay-link">View</a>`
+              : "-";
+
             row.innerHTML = `
               <td class="${resultClass}">${match.result}</td>
               <td>${match.opponent}</td>
               <td class="${resultClass}">${eloSign}${match.elo_change}</td>
+              <td>${match.first_player || "-"}</td>
+              <td>${matchTime}</td>
               <td>${date}</td>
+              <td>${replayLink}</td>
             `;
             tbody.appendChild(row);
           });
         } catch (error) {
-          document.getElementById("player-name").textContent = "Error loading player";
+          document.getElementById("player-name").textContent =
+            "Error loading player";
           console.error(error);
         }
       }

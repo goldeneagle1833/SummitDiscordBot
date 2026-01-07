@@ -360,6 +360,77 @@ main {
   color: #81c784;
 }
 
+.player-rank {
+  font-size: 1.2rem;
+  color: #ffd700;
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+
+.player-profile h3 {
+  color: #fff;
+  margin: 2rem 0 1rem;
+  font-size: 1.3rem;
+}
+
+.player-profile h3:first-of-type {
+  margin-top: 0;
+}
+
+/* Avatar Performance Section */
+.avatar-section {
+  margin: 2rem 0;
+}
+
+.avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 1rem;
+}
+
+.avatar-card {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  padding: 1rem;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.avatar-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(79, 195, 247, 0.5);
+}
+
+.avatar-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 0.5rem;
+}
+
+.avatar-record {
+  font-size: 1.1rem;
+  margin-bottom: 0.25rem;
+}
+
+.avatar-winrate {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Replay link */
+.replay-link {
+  color: #4fc3f7;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.replay-link:hover {
+  color: #81c784;
+  text-decoration: underline;
+}
+
 /* Footer */
 footer {
   text-align: center;

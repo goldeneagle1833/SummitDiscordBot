@@ -1,6 +1,7 @@
 import requests
 import json
 import os
+import time
 
 
 def get_deck_id(url: str) -> str:
@@ -13,36 +14,82 @@ def get_deck_id(url: str) -> str:
 
 
 def scrape_Curosa(deck_url, name):
-    """Scrape deck data from Curiosa and save to file."""
+    """Scrape deck data from Curiosa and save to file.
+
+    Retries once after 30 seconds if the API doesn't return valid data.
+    """
     deck_id = get_deck_id(deck_url)
-    response = requests.get("https://curiosa.io/api/decks?ids=" + deck_id)
 
-    if response.status_code != 200:
-        print(f"Failed to retrieve the website. Status code: {response.status_code}")
-        return None
+    for attempt in range(2):  # Try up to 2 times
+        try:
+            response = requests.get(
+                "https://curiosa.io/api/decks?ids=" + deck_id, timeout=30
+            )
 
-    json_data = json.loads(response.text)
+            if response.status_code != 200:
+                print(
+                    f"Failed to retrieve the website. Status code: {response.status_code}"
+                )
+                if attempt == 0:
+                    print("Retrying in 30 seconds...")
+                    time.sleep(30)
+                    continue
+                return "{}"
 
-    # Load existing data from file if it exists
-    if os.path.exists(name):
-        with open(name, "r") as f:
-            try:
-                existing_data = json.load(f)
-            except json.JSONDecodeError:
+            json_data = json.loads(response.text)
+
+            # Check if we got a valid list with data
+            if not isinstance(json_data, list) or len(json_data) == 0:
+                print(f"API did not return a valid list. Got: {type(json_data)}")
+                if attempt == 0:
+                    print("Retrying in 30 seconds...")
+                    time.sleep(30)
+                    continue
+                return "{}"
+
+            # Load existing data from file if it exists
+            if os.path.exists(name):
+                with open(name, "r") as f:
+                    try:
+                        existing_data = json.load(f)
+                    except json.JSONDecodeError:
+                        existing_data = []
+            else:
                 existing_data = []
-    else:
-        existing_data = []
 
-    # Append the new data to existing data
-    existing_data.append(json_data[0])
+            # Append the new data to existing data
+            existing_data.append(json_data[0])
 
-    # Write the updated data back to the file
-    with open(name, "w") as f:
-        json.dump(existing_data, f, indent=2)
+            # Write the updated data back to the file
+            with open(name, "w") as f:
+                json.dump(existing_data, f, indent=2)
 
-    # Return json data as a string to save in the db
-    json_data = json.dumps(json_data[0])
-    return json_data
+            # Return json data as a string to save in the db
+            return json.dumps(json_data[0])
+
+        except requests.exceptions.Timeout:
+            print(f"Request timed out (attempt {attempt + 1})")
+            if attempt == 0:
+                print("Retrying in 30 seconds...")
+                time.sleep(30)
+                continue
+            return "{}"
+        except requests.exceptions.RequestException as e:
+            print(f"Request failed: {e}")
+            if attempt == 0:
+                print("Retrying in 30 seconds...")
+                time.sleep(30)
+                continue
+            return "{}"
+        except (json.JSONDecodeError, IndexError, KeyError) as e:
+            print(f"Failed to parse response: {e}")
+            if attempt == 0:
+                print("Retrying in 30 seconds...")
+                time.sleep(30)
+                continue
+            return "{}"
+
+    return "{}"
 
 
 def search_deck(

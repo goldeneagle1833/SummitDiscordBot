@@ -124,15 +124,166 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
         )
 
 
+class DecklistReportModal(discord.ui.Modal, title="Report with Decklist"):
+    """Modal for reporting a match with a decklist URL"""
+
+    result = discord.ui.TextInput(
+        label="Did you win or lose? (win/loss)",
+        placeholder="Enter 'win' or 'loss'",
+        required=True,
+        max_length=4,
+    )
+
+    curiosa_url = discord.ui.TextInput(
+        label="Curiosa Deck URL",
+        placeholder="Enter Your Curiosa Deck URL",
+        required=True,
+    )
+
+    def __init__(
+        self,
+        player1_id: int,
+        player1_global: str,
+        player2_id: int,
+        player2_global: str,
+        bot,
+        channel,
+        match_start_time=None,
+    ):
+        super().__init__()
+        self.player1_id = player1_id
+        self.player1_global = player1_global
+        self.player2_id = player2_id
+        self.player2_global = player2_global
+        self.bot = bot
+        self.channel = channel
+        self.match_start_time = match_start_time
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
+        result_value = self.result.value.lower().strip()
+        is_winner = result_value in ["win", "w", "won", "yes", "y"]
+
+        # Determine winner/loser based on result
+        if is_winner:
+            winner_id = interaction.user.id
+            winner_global = (
+                interaction.user.global_name or interaction.user.display_name
+            )
+            loser_id = (
+                self.player2_id
+                if interaction.user.id == self.player1_id
+                else self.player1_id
+            )
+            loser_global = (
+                self.player2_global
+                if interaction.user.id == self.player1_id
+                else self.player1_global
+            )
+        else:
+            loser_id = interaction.user.id
+            loser_global = interaction.user.global_name or interaction.user.display_name
+            winner_id = (
+                self.player2_id
+                if interaction.user.id == self.player1_id
+                else self.player1_id
+            )
+            winner_global = (
+                self.player2_global
+                if interaction.user.id == self.player1_id
+                else self.player1_global
+            )
+
+        curiosa_link = (
+            self.curiosa_url.value if self.curiosa_url.value else "No URL provided"
+        )
+
+        # Calculate match time from start time if available
+        match_time = 0
+        if self.match_start_time:
+            elapsed = datetime.datetime.now() - self.match_start_time
+            match_time = int(elapsed.total_seconds() / 60)
+
+        interaction_global = (
+            interaction.user.global_name or interaction.user.display_name
+        )
+
+        # Store pending report for opponent confirmation
+        opponent_id = loser_id if is_winner else winner_id
+        opponent_global = loser_global if is_winner else winner_global
+
+        pending_match_reports[(interaction.user.id, opponent_id)] = {
+            "winner_id": winner_id,
+            "winner_global": winner_global,
+            "loser_id": loser_id,
+            "loser_global": loser_global,
+            "reporter_id": interaction.user.id,
+            "reporter_global": interaction_global,
+            "is_winner": is_winner,
+            "opponent_message": None,
+            "match_start_time": self.match_start_time,
+            "curiosa_link": curiosa_link,
+            "first_player": "n",
+            "match_time": match_time,
+            "match_comment": "",
+        }
+
+        # Send confirmation to opponent
+        try:
+            opponent = await self.bot.fetch_user(opponent_id)
+            result_text = "won" if is_winner else "lost"
+
+            confirm_view = MatchConfirmationButtons(
+                reporter_id=interaction.user.id,
+                opponent_id=opponent_id,
+                winner_id=winner_id,
+                winner_global=winner_global,
+                loser_id=loser_id,
+                loser_global=loser_global,
+                is_winner=is_winner,
+                bot=self.bot,
+                match_start_time=self.match_start_time,
+                curiosa_link=curiosa_link,
+                first_player="n",
+                match_time=match_time,
+                match_comment="",
+            )
+
+            await opponent.send(
+                f"**Match Report Confirmation**\n\n"
+                f"{interaction_global} reported that they **{result_text}** against you.\n\n"
+                f"Please confirm or dispute this result:",
+                view=confirm_view,
+            )
+
+            await interaction.followup.send(
+                f"✅ Match report sent to {opponent_global} for confirmation.\n"
+                f"**Result:** {'Win' if is_winner else 'Loss'}\n"
+                f"**Decklist:** {curiosa_link}",
+                ephemeral=True,
+            )
+
+        except discord.Forbidden:
+            await interaction.followup.send(
+                f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                ephemeral=True,
+            )
+        except Exception as e:
+            logger.error(f"Error in DecklistReportModal: {e}")
+            await interaction.followup.send(
+                "An error occurred while processing your match report.",
+                ephemeral=True,
+            )
+
+
 class MatchConfirmationButtons(discord.ui.View):
     """Buttons for confirming a match report from opponent"""
 
     def __init__(
         self,
         reporter_id: int,
-        reporter_global: str,
         opponent_id: int,
-        opponent_global: str,
         winner_id: int,
         winner_global: str,
         loser_id: int,
@@ -141,6 +292,12 @@ class MatchConfirmationButtons(discord.ui.View):
         bot=None,
         channel=None,
         match_start_time=None,
+        curiosa_link: str = "No URL provided",
+        first_player: str = "n",
+        match_time: int = 0,
+        match_comment: str = "",
+        reporter_global: str = None,
+        opponent_global: str = None,
     ):
         super().__init__(timeout=86400)  # 24 hour timeout - plenty of time to confirm
         self.reporter_id = reporter_id
@@ -155,6 +312,10 @@ class MatchConfirmationButtons(discord.ui.View):
         self.bot = bot
         self.channel = channel
         self.match_start_time = match_start_time
+        self.curiosa_link = curiosa_link
+        self.first_player = first_player
+        self.match_time = match_time
+        self.match_comment = match_comment
 
     @discord.ui.button(
         label="Confirm",
@@ -202,9 +363,9 @@ class MatchConfirmationButtons(discord.ui.View):
 
         await interaction.response.defer()
 
-        # Calculate match time from start to confirmation
-        match_time = 0
-        if self.match_start_time:
+        # Use provided match_time, or calculate from start to confirmation if not provided
+        match_time = self.match_time
+        if match_time == 0 and self.match_start_time:
             time_diff = datetime.datetime.now() - self.match_start_time
             match_time = int(time_diff.total_seconds() / 60)  # Convert to minutes
 
@@ -217,10 +378,10 @@ class MatchConfirmationButtons(discord.ui.View):
             True,
             self.loser_id,
             self.loser_global,
-            "n",  # first_player default
-            match_time,  # match_time calculated from start to confirmation
-            "No URL provided",  # curiosa_link default
-            "",  # match_comment default
+            self.first_player,
+            match_time,
+            self.curiosa_link,
+            self.match_comment,
             self.winner_id,  # interaction_user_id
             self.winner_global,  # interaction_global
         )
@@ -310,6 +471,193 @@ class MatchConfirmationButtons(discord.ui.View):
 
         # Remove from pending
         pending_match_reports.pop((self.reporter_id, self.opponent_id), None)
+
+    @discord.ui.button(
+        label="Confirm w/ Decklist",
+        style=discord.ButtonStyle.secondary,
+        custom_id="confirm_with_decklist",
+    )
+    async def confirm_decklist_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        # Only the opponent can confirm
+        if interaction.user.id != self.opponent_id:
+            await interaction.response.send_message(
+                "Only the opponent can confirm this report.", ephemeral=True
+            )
+            return
+
+        # Open modal for confirmation with decklist
+        modal = ConfirmWithDecklistModal(
+            reporter_id=self.reporter_id,
+            reporter_global=self.reporter_global,
+            opponent_id=self.opponent_id,
+            opponent_global=self.opponent_global,
+            winner_id=self.winner_id,
+            winner_global=self.winner_global,
+            loser_id=self.loser_id,
+            loser_global=self.loser_global,
+            is_winner=self.is_winner,
+            bot=self.bot,
+            match_start_time=self.match_start_time,
+            reporter_curiosa_link=self.curiosa_link,
+            first_player=self.first_player,
+            match_time=self.match_time,
+            match_comment=self.match_comment,
+        )
+        await interaction.response.send_modal(modal)
+
+
+class ConfirmWithDecklistModal(discord.ui.Modal, title="Confirm with Decklist"):
+    """Modal for opponent to confirm match and provide their decklist"""
+
+    confirm = discord.ui.TextInput(
+        label="Do you confirm? (yes/no)",
+        placeholder="Enter 'yes' or 'no'",
+        required=True,
+        max_length=3,
+    )
+
+    curiosa_url = discord.ui.TextInput(
+        label="Your Curiosa Deck URL",
+        placeholder="Enter Your Curiosa Deck URL",
+        required=True,
+    )
+
+    def __init__(
+        self,
+        reporter_id: int,
+        reporter_global: str,
+        opponent_id: int,
+        opponent_global: str,
+        winner_id: int,
+        winner_global: str,
+        loser_id: int,
+        loser_global: str,
+        is_winner: bool,
+        bot,
+        match_start_time=None,
+        reporter_curiosa_link: str = "No URL provided",
+        first_player: str = "n",
+        match_time: int = 0,
+        match_comment: str = "",
+    ):
+        super().__init__()
+        self.reporter_id = reporter_id
+        self.reporter_global = reporter_global
+        self.opponent_id = opponent_id
+        self.opponent_global = opponent_global
+        self.winner_id = winner_id
+        self.winner_global = winner_global
+        self.loser_id = loser_id
+        self.loser_global = loser_global
+        self.is_winner = is_winner
+        self.bot = bot
+        self.match_start_time = match_start_time
+        self.reporter_curiosa_link = reporter_curiosa_link
+        self.first_player = first_player
+        self.match_time = match_time
+        self.match_comment = match_comment
+
+    async def on_submit(self, interaction: discord.Interaction):
+        confirm_value = self.confirm.value.lower().strip()
+        is_confirmed = confirm_value in ["yes", "y"]
+
+        if not is_confirmed:
+            # User said no - treat as dispute
+            await interaction.response.send_message(
+                f"You have disputed the match report. Please contact the reporter {self.reporter_global} to resolve this.",
+                ephemeral=True,
+            )
+
+            # Notify the reporter
+            try:
+                reporter = await self.bot.fetch_user(self.reporter_id)
+                await reporter.send(
+                    f"{self.opponent_global} has disputed your match report. Please discuss and resolve."
+                )
+            except Exception:
+                pass
+
+            # Remove from pending
+            pending_match_reports.pop((self.reporter_id, self.opponent_id), None)
+            return
+
+        # Check for duplicate match
+        match_key = frozenset({self.winner_id, self.loser_id})
+        now = datetime.datetime.now()
+        if match_key in processed_matches:
+            last_report_time = processed_matches[match_key]
+            if (now - last_report_time).total_seconds() < 300:
+                await interaction.response.send_message(
+                    "This match has already been recorded. Duplicate report prevented.",
+                    ephemeral=True,
+                )
+                return
+
+        # Mark this match as processed
+        processed_matches[match_key] = now
+
+        await interaction.response.defer()
+
+        opponent_curiosa_link = (
+            self.curiosa_url.value if self.curiosa_url.value else "No URL provided"
+        )
+
+        # Use provided match_time, or calculate from start to confirmation if not provided
+        match_time = self.match_time
+        if match_time == 0 and self.match_start_time:
+            time_diff = datetime.datetime.now() - self.match_start_time
+            match_time = int(time_diff.total_seconds() / 60)
+
+        # Combine both decklists in the comment
+        combined_comment = f"Reporter decklist: {self.reporter_curiosa_link} | Opponent decklist: {opponent_curiosa_link}"
+        if self.match_comment:
+            combined_comment = f"{self.match_comment} | {combined_comment}"
+
+        # Submit match report
+        await winner_report(
+            self.reporter_id,
+            self.winner_id,
+            self.winner_global,
+            True,
+            self.loser_id,
+            self.loser_global,
+            self.first_player,
+            match_time,
+            self.reporter_curiosa_link,  # Use reporter's decklist as primary
+            combined_comment,
+            self.winner_id,
+            self.winner_global,
+        )
+
+        # Update ELO for the loser
+        from utils.database import update_elo_db
+
+        update_elo_db(self.loser_id, self.loser_global, False, self.winner_id)
+
+        # Send confirmation
+        await interaction.followup.send(
+            f"Match report confirmed and submitted!\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}\n**Your Decklist:** {opponent_curiosa_link}",
+            ephemeral=True,
+        )
+
+        # Notify the reporter
+        try:
+            reporter = await self.bot.fetch_user(self.reporter_id)
+            await reporter.send(
+                f"{self.opponent_global} has confirmed your match report with their decklist! Match has been recorded.\n**Their Decklist:** {opponent_curiosa_link}"
+            )
+        except Exception:
+            pass
+
+        # Remove from pending
+        pending_match_reports.pop((self.reporter_id, self.opponent_id), None)
+
+        # Update leaderboard
+        lfg_cog = self.bot.get_cog("LFGCog")
+        if lfg_cog:
+            await lfg_cog.update_leaderboard()
 
 
 class LFGReportButtons(discord.ui.View):
@@ -791,6 +1139,27 @@ class LFGReportButtons(discord.ui.View):
         await interaction.response.send_message(
             f"{interaction.user.mention} clicked **cancel match**", ephemeral=True
         )
+        await interaction.message.edit(view=None)
+
+    @discord.ui.button(
+        label="Report w/ Decklist",
+        style=discord.ButtonStyle.secondary,
+        custom_id="report_decklist",
+    )
+    async def report_decklist_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        """Open modal for reporting with a decklist"""
+        modal = DecklistReportModal(
+            player1_id=self.player1_id,
+            player1_global=self.player1_global,
+            player2_id=self.player2_id,
+            player2_global=self.player2_global,
+            bot=self.bot,
+            channel=self.channel,
+            match_start_time=self.match_start_time,
+        )
+        await interaction.response.send_modal(modal)
         await interaction.message.edit(view=None)
 
 

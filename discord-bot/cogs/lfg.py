@@ -248,6 +248,8 @@ class DecklistReportModal(discord.ui.Modal, title="Report with Decklist"):
                 first_player="n",
                 match_time=match_time,
                 match_comment="",
+                reporter_global=interaction_global,
+                opponent_global=opponent_global,
             )
 
             await opponent.send(
@@ -645,8 +647,11 @@ class ConfirmWithDecklistModal(discord.ui.Modal, title="Confirm with Decklist"):
         # Notify the reporter
         try:
             reporter = await self.bot.fetch_user(self.reporter_id)
+            confirmer_name = (
+                interaction.user.global_name or interaction.user.display_name
+            )
             await reporter.send(
-                f"{self.opponent_global} has confirmed your match report with their decklist! Match has been recorded.\n**Their Decklist:** {opponent_curiosa_link}"
+                f"{confirmer_name} has confirmed your match report! Match has been recorded."
             )
         except Exception:
             pass

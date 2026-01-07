@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Player Profile - Sorcerers Summit</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}" />
+  </head>
+  <body>
+    <nav>
+      <div class="nav-container">
+        <a href="/" class="logo">Summit</a>
+        <ul class="nav-links">
+          <li><a href="/">Home</a></li>
+          <li><a href="/about">About</a></li>
+        </ul>
+      </div>
+    </nav>
+
+    <main>
+      <a href="/" class="back-link">← Back to Leaderboard</a>
+
+      <div class="player-profile" id="player-profile">
+        <div class="player-header">
+          <div>
+            <h1 class="player-name" id="player-name">Loading...</h1>
+            <div class="player-elo" id="player-elo"></div>
+          </div>
+        </div>
+
+        <div class="player-stats" id="player-stats">
+          <div class="stat-card">
+            <div class="stat-value" id="stat-wins">-</div>
+            <div class="stat-label">Wins</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-losses">-</div>
+            <div class="stat-label">Losses</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-winrate">-</div>
+            <div class="stat-label">Win Rate</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-matches">-</div>
+            <div class="stat-label">Total Matches</div>
+          </div>
+        </div>
+
+        <div class="match-history">
+          <h3>📜 Match History</h3>
+          <table class="match-history-table">
+            <thead>
+              <tr>
+                <th>Result</th>
+                <th>Opponent</th>
+                <th>ELO Change</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody id="match-history-tbody">
+              <!-- Match history rows will be inserted here by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const playerId = {{ player_id }};
+
+      async function fetchPlayerData() {
+        try {
+          const res = await fetch(`/api/player/${playerId}`);
+          if (!res.ok) {
+            document.getElementById("player-name").textContent = "Player not found";
+            return;
+          }
+          const data = await res.json();
+
+          // Update player info
+          document.getElementById("player-name").textContent = data.name;
+          document.getElementById("player-elo").textContent = `ELO: ${data.elo}`;
+          document.title = `${data.name} - Sorcerers Summit`;
+
+          // Update stats
+          document.getElementById("stat-wins").textContent = data.wins;
+          document.getElementById("stat-losses").textContent = data.losses;
+          const totalMatches = data.wins + data.losses;
+          document.getElementById("stat-matches").textContent = totalMatches;
+          const winRate = totalMatches > 0 ? Math.round((data.wins / totalMatches) * 100) : 0;
+          document.getElementById("stat-winrate").textContent = `${winRate}%`;
+
+          // Update match history
+          const tbody = document.getElementById("match-history-tbody");
+          tbody.innerHTML = "";
+
+          if (data.matches.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>';
+            return;
+          }
+
+          data.matches.forEach(match => {
+            const row = document.createElement("tr");
+            const resultClass = match.result === "Win" ? "match-win" : "match-loss";
+            const eloSign = match.elo_change >= 0 ? "+" : "";
+            const date = new Date(match.date).toLocaleDateString();
+            row.innerHTML = `
+              <td class="${resultClass}">${match.result}</td>
+              <td>${match.opponent}</td>
+              <td class="${resultClass}">${eloSign}${match.elo_change}</td>
+              <td>${date}</td>
+            `;
+            tbody.appendChild(row);
+          });
+        } catch (error) {
+          document.getElementById("player-name").textContent = "Error loading player";
+          console.error(error);
+        }
+      }
+
+      fetchPlayerData();
+    </script>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+  </body>
+</html>

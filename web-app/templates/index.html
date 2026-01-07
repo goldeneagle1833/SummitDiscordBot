@@ -11,43 +11,32 @@
   <body>
     <nav>
       <div class="nav-container">
-        <a href="/" class="logo">Summit</a>
+        <a href="/" class="logo">Sorcerers Summit</a>
         <ul class="nav-links">
           <li><a href="/">Home</a></li>
-          <li><a href="/about">Abouts</a></li>
+          <li><a href="/about">About</a></li>
         </ul>
       </div>
     </nav>
 
     <main>
       <section class="hero">
-        <h1>Welcome to Summit</h1>
+        <h1>Welcome to Sorcerers Summit</h1>
         <p>Your community hub for gaming and more.</p>
       </section>
 
-      <section class="features">
-        <div class="feature-card">
-          <h3>🎮 Gaming</h3>
-          <p>Connect with fellow players and find your next match.</p>
-        </div>
-        <div class="feature-card">
-          <h3>📊 Stats</h3>
-          <p>Track your progress and see how you rank.</p>
-        </div>
-        <div class="feature-card">
-          <h3>🤝 Community</h3>
-          <p>Join a friendly community of players.</p>
-        </div>
-      </section>
-
       <section class="leaderboard">
-        <h2>🏆 Leaderboard</h2>
-        <div id="leaderboard-container">
+        <div class="leaderboard-header">
+          <h2>ELO Leaderboard</h2>
+          <!-- Future: Add filters, search, pagination here -->
+        </div>
+        <div class="leaderboard-content">
           <table id="leaderboard-table">
             <thead>
               <tr>
                 <th>Rank</th>
                 <th>Player</th>
+                <th>W/L</th>
                 <th>ELO</th>
               </tr>
             </thead>
@@ -60,20 +49,32 @@
     </main>
 
     <script>
+      // Fetch and render leaderboard from ELO DB
       async function fetchLeaderboard() {
         const res = await fetch("/api/leaderboard");
         const data = await res.json();
         const tbody = document.getElementById("leaderboard-tbody");
         tbody.innerHTML = "";
         data.forEach((player, i) => {
+          const rank = i + 1;
+          let rankDisplay = rank;
+          if (rank <= 3) {
+            rankDisplay = `<span class="rank-badge rank-${rank}">${rank}</span>`;
+          }
           const row = document.createElement("tr");
-          row.innerHTML = `<td>${i + 1}</td><td>${player.name}</td><td>${player.elo}</td>`;
+          row.innerHTML = `
+            <td>${rankDisplay}</td>
+            <td><a href="/player/${player.id}" class="player-link">${player.name}</a></td>
+            <td><span class="match-win">${player.wins}</span> / <span class="match-loss">${player.losses}</span></td>
+            <td>${player.elo}</td>
+          `;
           tbody.appendChild(row);
         });
       }
       fetchLeaderboard();
+      // Auto-refresh every 30 seconds
+      setInterval(fetchLeaderboard, 30000);
     </script>
-    </main>
 
     <footer>
       <p>&copy; 2026 Summit. All rights reserved.</p>

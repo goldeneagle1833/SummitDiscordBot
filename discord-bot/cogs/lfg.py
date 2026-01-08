@@ -1134,8 +1134,13 @@ class LFGReportButtons(discord.ui.View):
                 )
 
     @discord.ui.button(
-        label="We didn't play/cancel match",
+        label="Report w/ Decklist",
         style=discord.ButtonStyle.blurple,
+        custom_id="report_decklist",
+    )
+    @discord.ui.button(
+        label="Cancel match",
+        style=discord.ButtonStyle.secondary,
         custom_id="cancel_match",
     )
     async def cancel_button(
@@ -1146,11 +1151,6 @@ class LFGReportButtons(discord.ui.View):
         )
         await interaction.message.edit(view=None)
 
-    @discord.ui.button(
-        label="Report w/ Decklist",
-        style=discord.ButtonStyle.secondary,
-        custom_id="report_decklist",
-    )
     async def report_decklist_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
@@ -2367,6 +2367,7 @@ class LFGCog(commands.Cog):
             value=(
                 "`!admin_report @winner @loser` - Manually report a match\n"
                 "`!spot_elo_reset @user [elo]` - Set a user's ELO\n"
+                "`!remove_player @user` - Remove player & revert their ELO impact\n"
                 "`!reset_elo` - Reset all ELO ratings ⚠️"
             ),
             inline=False,
@@ -2675,6 +2676,175 @@ class LFGCog(commands.Cog):
 
     @spot_elo_reset.error
     async def spot_elo_reset_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def remove_player(self, ctx, user: discord.Member = None):
+        """Admin command to remove a player and revert all ELO changes from their matches. Usage: !remove_player @user"""
+        import sqlite3
+
+        # Validate arguments
+        if user is None:
+            await ctx.send("Please mention a user. Usage: `!remove_player @user`")
+            return
+
+        if user.bot:
+            await ctx.send("Cannot remove bots!")
+            return
+
+        try:
+            user_name = user.global_name or user.display_name
+
+            # Connect to databases
+            elo_conn = sqlite3.connect("elo.db")
+            elo_cursor = elo_conn.cursor()
+
+            match_conn = sqlite3.connect("match_records.db")
+            match_cursor = match_conn.cursor()
+
+            # Get all matches involving this player
+            match_cursor.execute(
+                """
+                SELECT winner_id, losser_id, winner_elo_change, loser_elo_change, winner_display_name, losser_display_name
+                FROM match_records 
+                WHERE winner_id = ? OR losser_id = ?
+                """,
+                (user.id, user.id),
+            )
+            matches = match_cursor.fetchall()
+
+            if not matches:
+                await ctx.send(
+                    f"No matches found for {user.mention}. Nothing to remove."
+                )
+                elo_conn.close()
+                match_conn.close()
+                return
+
+            # Track ELO adjustments for opponents
+            elo_adjustments = {}  # {user_id: (adjustment, display_name)}
+
+            for (
+                winner_id,
+                loser_id,
+                winner_elo_change,
+                loser_elo_change,
+                winner_name,
+                loser_name,
+            ) in matches:
+                if winner_id == user.id:
+                    # User won this match - revert ELO gain for opponent (loser)
+                    if loser_id and loser_elo_change:
+                        if loser_id not in elo_adjustments:
+                            elo_adjustments[loser_id] = (0, loser_name)
+                        current_adj, name = elo_adjustments[loser_id]
+                        elo_adjustments[loser_id] = (
+                            current_adj - loser_elo_change,
+                            name,
+                        )
+                else:
+                    # User lost this match - revert ELO gain for opponent (winner)
+                    if winner_id and winner_elo_change:
+                        if winner_id not in elo_adjustments:
+                            elo_adjustments[winner_id] = (0, winner_name)
+                        current_adj, name = elo_adjustments[winner_id]
+                        elo_adjustments[winner_id] = (
+                            current_adj - winner_elo_change,
+                            name,
+                        )
+
+            # Apply ELO adjustments to opponents
+            adjustments_made = []
+            for opponent_id, (adjustment, opponent_name) in elo_adjustments.items():
+                if adjustment != 0:
+                    elo_cursor.execute(
+                        "UPDATE overall_standings SET elo = elo + ? WHERE user_id = ?",
+                        (adjustment, opponent_id),
+                    )
+                    adjustments_made.append(f"{opponent_name}: {adjustment:+d}")
+
+            # Delete all matches involving this player from match_records
+            match_cursor.execute(
+                "DELETE FROM match_records WHERE winner_id = ? OR losser_id = ?",
+                (user.id, user.id),
+            )
+            matches_deleted = match_cursor.rowcount
+
+            # Delete solo match reports by this player
+            match_cursor.execute(
+                "DELETE FROM solo_match_reports WHERE reporter_id = ?", (user.id,)
+            )
+            solo_deleted = match_cursor.rowcount
+
+            # Remove player from ELO standings
+            elo_cursor.execute(
+                "DELETE FROM overall_standings WHERE user_id = ?", (user.id,)
+            )
+            player_removed = elo_cursor.rowcount > 0
+
+            # Commit changes
+            elo_conn.commit()
+            match_conn.commit()
+            elo_conn.close()
+            match_conn.close()
+
+            # Update leaderboard
+            await self.update_leaderboard()
+
+            # Send confirmation
+            embed = discord.Embed(
+                title="🗑️ Player Removed",
+                description=f"**Player:** {user.mention} ({user_name})",
+                color=discord.Color.orange(),
+            )
+            embed.add_field(
+                name="Matches Deleted",
+                value=f"{matches_deleted} ranked match(es)\n{solo_deleted} solo report(s)",
+                inline=False,
+            )
+
+            if adjustments_made:
+                adjustments_text = "\n".join(adjustments_made[:10])
+                if len(adjustments_made) > 10:
+                    adjustments_text += f"\n... and {len(adjustments_made) - 10} more"
+                embed.add_field(
+                    name="ELO Adjustments", value=adjustments_text, inline=False
+                )
+            else:
+                embed.add_field(
+                    name="ELO Adjustments",
+                    value="No ELO data to revert (matches may have been missing ELO change data)",
+                    inline=False,
+                )
+
+            embed.add_field(
+                name="Player ELO Removed",
+                value="Yes" if player_removed else "Player was not in ELO standings",
+                inline=False,
+            )
+
+            embed.set_footer(text=f"Removed by {ctx.author.display_name}")
+            await ctx.send(embed=embed)
+
+            logger.info(
+                f"Admin {ctx.author} (ID: {ctx.author.id}) removed player {user_name} (ID: {user.id}). "
+                f"Deleted {matches_deleted} matches, {solo_deleted} solo reports. "
+                f"ELO adjustments: {elo_adjustments}"
+            )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Player Removal Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Remove player failed: {e}")
+
+    @remove_player.error
+    async def remove_player_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
 

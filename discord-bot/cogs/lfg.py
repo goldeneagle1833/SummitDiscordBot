@@ -1589,10 +1589,50 @@ class LFGCog(commands.Cog):
         self.bot = bot
         self.lfg_channel_id = 1336912830867439676
         self.check_expired_queue.start()  # Start the background task
+        self.cleanup_old_status_messages.start()  # Clean up old messages on startup
 
     def cog_unload(self):
         """Clean up when cog is unloaded"""
         self.check_expired_queue.cancel()
+        self.cleanup_old_status_messages.cancel()
+
+    @tasks.loop(count=1)
+    async def cleanup_old_status_messages(self):
+        """One-time cleanup of old status messages on bot startup"""
+        try:
+            lfg_channel = self.bot.get_channel(self.lfg_channel_id)
+            if not lfg_channel:
+                logger.warning(f"LFG channel {self.lfg_channel_id} not found")
+                return
+
+            # Fetch recent messages (limit to last 50 messages to avoid rate limits)
+            async for message in lfg_channel.history(limit=50):
+                # Check if message is from the bot and has an embed with "LFG Queue" or "Queue Status"
+                if (
+                    message.author.id == self.bot.user.id
+                    and message.embeds
+                    and any(
+                        "Queue" in str(embed.title) or "LFG" in str(embed.title)
+                        for embed in message.embeds
+                    )
+                ):
+                    try:
+                        await message.delete()
+                        logger.info(f"Deleted old LFG status message: {message.id}")
+                    except Exception as e:
+                        logger.warning(f"Could not delete old status message: {e}")
+
+            # After cleanup, create a new status message
+            await self.update_lfg_status()
+            logger.info("Old LFG status messages cleaned up and new one created")
+
+        except Exception as e:
+            logger.error(f"Error cleaning up old status messages: {e}")
+
+    @cleanup_old_status_messages.before_loop
+    async def before_cleanup_old_status_messages(self):
+        """Wait for bot to be ready before cleanup"""
+        await self.bot.wait_until_ready()
 
     async def update_leaderboard(self):
         """Update the leaderboard in the designated channel"""

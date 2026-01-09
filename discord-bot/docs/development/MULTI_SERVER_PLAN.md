@@ -4,15 +4,12 @@ This document outlines the changes required to make the Summit Discord Bot avail
 
 ## Overview
 
-Currently, the bot is designed for a single server with hardcoded channel IDs and role IDs. To support multiple servers and data sources, we need to:
+Currently, the bot is designed for a single server with hardcoded channel IDs and role IDs. To support multiple servers, we need to:
 
-1. **Database Changes** - Add guild/server identifiers and source tracking to all records
-2. **Multi-Platform Support** - Enable data input from Discord, web forms, mobile apps, APIs, and other sources
-3. **Configuration System** - Per-server configuration storage
-4. **Command Updates** - Server-aware commands and leaderboards
-5. **Admin Tools** - Server setup and configuration commands
-
-**Important:** LFG matchmaking is **server-isolated**. Players can only be matched with others in the same Discord server. There is no cross-server matchmaking functionality.
+1. **Database Changes** - Add guild/server identifiers to all records
+2. **Configuration System** - Per-server configuration storage
+3. **Command Updates** - Server-aware commands and leaderboards
+4. **Admin Tools** - Server setup and configuration commands
 
 ---
 
@@ -20,27 +17,16 @@ Currently, the bot is designed for a single server with hardcoded channel IDs an
 
 ### 1.1 match_records Table
 
-Add `guild_id` to track which server/community the match was reported from, and `source` to track the input platform.
-
-**Supported Sources:**
-
-- `discord` - Discord bot commands
-- `web` - Web application form submissions
-- `mobile` - Mobile app submissions
-- `api` - Direct API calls
-- `manual` - Manual admin entries
-- `import` - Bulk data imports
+Add `guild_id` column to track which server the match was reported from.
 
 ```sql
 -- Migration
 ALTER TABLE match_records ADD COLUMN guild_id INTEGER;
-ALTER TABLE match_records ADD COLUMN source TEXT DEFAULT 'discord';
 
 -- New schema
 CREATE TABLE IF NOT EXISTS match_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id INTEGER,                    -- Discord server ID (or community ID for other platforms)
-    source TEXT DEFAULT 'discord',       -- NEW: Data source ('discord', 'web', 'mobile', 'api', 'manual')
+    guild_id INTEGER,                    -- NEW: Discord server ID
     reporter_id INTEGER,
     winner_id INTEGER,
     winner_display_name TEXT,
@@ -59,7 +45,6 @@ CREATE TABLE IF NOT EXISTS match_records (
 
 -- Index for faster server-specific queries
 CREATE INDEX idx_match_records_guild ON match_records(guild_id);
-CREATE INDEX idx_match_records_source ON match_records(source);
 ```
 
 ### 1.2 solo_match_reports Table
@@ -67,13 +52,11 @@ CREATE INDEX idx_match_records_source ON match_records(source);
 ```sql
 -- Migration
 ALTER TABLE solo_match_reports ADD COLUMN guild_id INTEGER;
-ALTER TABLE solo_match_reports ADD COLUMN source TEXT DEFAULT 'discord';
 
--- New schema includes guild_id and source
+-- New schema includes guild_id
 CREATE TABLE IF NOT EXISTS solo_match_reports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id INTEGER,                    -- Discord server ID (or community ID for other platforms)
-    source TEXT DEFAULT 'discord',       -- NEW: Data source ('discord', 'web', 'mobile', 'api', 'manual')
+    guild_id INTEGER,                    -- NEW: Discord server ID
     reporter_id INTEGER,
     reporter_name TEXT,
     opponent_name TEXT,
@@ -89,31 +72,25 @@ CREATE TABLE IF NOT EXISTS solo_match_reports (
 
 ### 1.3 overall_standings Table (elo.db)
 
-**Single Table with Guild ID** - One unified table supporting both global and per-server ELO modes:
+Option A: **Global ELO** (single rating across all servers)
+
+- Keep current schema, no changes needed
+- Players have one ELO regardless of which server they play on
+
+Option B: **Per-Server ELO** (separate ratings per server)
 
 ```sql
 -- New schema with composite primary key
 CREATE TABLE IF NOT EXISTS overall_standings (
     user_id INTEGER,
-    guild_id INTEGER NOT NULL,           -- Discord server ID (always required)
+    guild_id INTEGER,                    -- NEW: Discord server ID
     user_display_name TEXT,
     elo INTEGER DEFAULT 1500,
     PRIMARY KEY (user_id, guild_id)
 );
-
--- Index for faster server-specific queries
-CREATE INDEX idx_standings_guild ON overall_standings(guild_id);
-CREATE INDEX idx_standings_user ON overall_standings(user_id);
 ```
 
-**How it works:**
-
-- **All records store `guild_id`** - Every ELO record is associated with the server where it was earned
-- **Leaderboards are server-scoped** - Only show players who have played matches in the current server
-- **Per-Server ELO mode:** Each player has a separate ELO rating per server (stored with `guild_id`)
-- **Global ELO mode:** (Future/Optional) Aggregate ELO across all of a player's servers for display purposes
-- The `guild_config.elo_mode` setting determines which calculation method is used
-- **Important:** Regardless of ELO mode, leaderboards ONLY display players from the current server
+**Recommendation:** Start with Option A (Global ELO) for simplicity, add Option B later as a server configuration option.
 
 ### 1.4 New Table: guild_config
 
@@ -127,12 +104,26 @@ CREATE TABLE IF NOT EXISTS guild_config (
     leaderboard_channel_id INTEGER,      -- Channel for leaderboard updates
     leaderboard_message_id INTEGER,      -- Message ID of pinned leaderboard
     match_report_channel_id INTEGER,     -- Channel for match result announcements
-    admin_role_id INTEGER,               -- Role that can use admin commands (optional)
-    elo_mode TEXT DEFAULT 'server',      -- 'server' (separate per server) or 'global' (future: shared across servers)
+    admin_role_id INTEGER,               -- Role that can use admin commands
+    elo_mode TEXT DEFAULT 'global',      -- 'global' or 'server'
     queue_min_time INTEGER DEFAULT 5,    -- Minimum queue time in minutes
     queue_max_time INTEGER DEFAULT 120,  -- Maximum queue time in minutes
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 1.5 New Table: guild_roles
+
+Store special role IDs per server (e.g., Masters bracket roles).
+
+```sql
+CREATE TABLE IF NOT EXISTS guild_roles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id INTEGER,
+    role_type TEXT,                      -- 'masters', 'verified', 'lfg_ping', etc.
+    role_id INTEGER,
+    UNIQUE(guild_id, role_type, role_id)
 );
 ```
 
@@ -148,6 +139,7 @@ Current hardcoded values in `lfg.py` and `config.py` that need to be moved to da
 | ---------------- | ------------------------ | ------------------------------------- |
 | `lfg.py`         | `LFG_CHANNEL_ID`         | `guild_config.lfg_channel_id`         |
 | `lfg.py`         | `LEADERBOARD_CHANNEL_ID` | `guild_config.leaderboard_channel_id` |
+| `lfg.py`         | `masters_role_ids`       | `guild_roles` table                   |
 | `config.py`      | Various channel IDs      | `guild_config` table                  |
 
 ### 2.2 New Config Helper Functions
@@ -208,45 +200,43 @@ New admin command for initial server setup:
 This command will:
 
 1. Check if the server is already configured
-2. Open an interactive modal with configuration fields
-3. Create a new entry in `guild_config` with provided settings
+2. Create a new entry in `guild_config`
+3. Prompt admin to configure channels and roles
 4. Set up the leaderboard message
-
-**Setup Modal Fields:**
-
-- **LFG Channel** - Channel for LFG queue messages
-- **Leaderboard Channel** - Channel for leaderboard updates
-- **Match Report Channel** - Channel for match result announcements
-- **Admin Role** (optional) - Role that can use admin commands
-- **ELO Mode** - Dropdown: Global or Server-specific
-- **Min Queue Time** - Minimum minutes (default: 5)
-- **Max Queue Time** - Maximum minutes (default: 120)
 
 ### 3.2 Server Configuration Commands
 
 ```
-!lfg_config        - Opens modal to edit all configuration settings
-!lfg_config show   - Display current server configuration
+!lfg_config lfg_channel #channel        - Set LFG channel
+!lfg_config leaderboard_channel #channel - Set leaderboard channel
+!lfg_config report_channel #channel      - Set match report channel
+!lfg_config admin_role @role             - Set admin role
+!lfg_config elo_mode [global|server]     - Set ELO mode
+!lfg_config add_masters_role @role       - Add a masters bracket role
+!lfg_config remove_masters_role @role    - Remove a masters bracket role
+!lfg_config show                         - Show current configuration
 ```
-
-The `!lfg_config` modal allows admins to update any configuration value without needing separate commands for each setting. All fields are pre-filled with current values for easy editing.
 
 ### 3.3 Update Existing Commands
 
 Commands that need guild_id awareness:
 
-| Command          | Change Required                                                    |
-| ---------------- | ------------------------------------------------------------------ |
-| `!lfg`           | Get LFG channel from guild_config, match only in server            |
-| `!leaderboard`   | Show only players who have played in current server                |
-| `!rank`          | Show rank among players in current server only                     |
-| `!mystats`       | Show stats for matches played in current server                    |
-| `!game_activity` | Show activity for current server only                              |
-| `!reset_elo`     | Only reset ELO for players in current server (admin only)          |
-| `!remove_player` | Only affect matches/data from current server (admin only)          |
-| `!admin_report`  | Can only report matches for players in current server (admin only) |
+| Command            | Change Required                                  |
+| ------------------ | ------------------------------------------------ |
+| `!lfg`             | Get LFG channel from guild_config                |
+| `!leaderboard`     | Filter by guild or show global based on elo_mode |
+| `!masters_bracket` | Get masters roles from guild_roles table         |
+| `!rank`            | Show server or global rank based on elo_mode     |
+| `!mystats`         | Filter matches by guild or show all              |
+| `!game_activity`   | Add option to filter by server                   |
+| `!reset_elo`       | Only reset for current server                    |
+| `!remove_player`   | Only affect current server's matches             |
 
-**Admin Command Scoping:** All admin commands (`!reset_elo`, `!remove_player`, `!admin_report`, `!spot_elo_reset`) automatically filter to only affect data from the server where the command is executed. Admins cannot modify data from other servers.
+### 3.4 Cross-Server Features (Future)
+
+- Global leaderboard showing all servers
+- Cross-server matchmaking (opt-in)
+- Player profiles showing stats across servers
 
 ---
 
@@ -287,18 +277,14 @@ def update_elo_db(guild_id, user_id, user_display_name, did_win, opponent_id, el
 ### 5.1 Backward Compatibility
 
 1. Add `guild_id` columns with NULL default
-2. Existing records without guild_id are assigned to Sorcerers Summit server (guild_id: `1319120227643949211`)
+2. Existing records without guild_id are treated as "legacy" or assigned to primary server
 3. New records always include guild_id
 
 ### 5.2 Migration Script
 
 ```python
-def migrate_to_multi_server(primary_guild_id: int = 1319120227643949211):
-    """Migrate existing data to multi-server format.
-
-    Args:
-        primary_guild_id: Sorcerers Summit server ID (default: 1319120227643949211)
-    """
+def migrate_to_multi_server(primary_guild_id: int):
+    """Migrate existing data to multi-server format."""
 
     # 1. Add guild_id columns
     conn = sqlite3.connect("match_records.db")
@@ -309,7 +295,7 @@ def migrate_to_multi_server(primary_guild_id: int = 1319120227643949211):
     except sqlite3.OperationalError:
         pass  # Column exists
 
-    # 2. Set existing records to Sorcerers Summit server
+    # 2. Set existing records to primary guild
     cur.execute(
         "UPDATE match_records SET guild_id = ? WHERE guild_id IS NULL",
         (primary_guild_id,)
@@ -318,7 +304,7 @@ def migrate_to_multi_server(primary_guild_id: int = 1319120227643949211):
     conn.commit()
     conn.close()
 
-    # 3. Create guild_config table and add Sorcerers Summit as primary server
+    # 3. Create guild_config table and add primary server
     # ...
 ```
 
@@ -360,25 +346,24 @@ Update web API endpoints to support server filtering:
 ### Phase 2
 
 7. Per-server ELO option
-8. Web app server filtering
-9. Cross-server statistics dashboard
+8. Masters roles per server
+9. Web app server filtering
+10. Cross-server statistics
 
 ### Phase 3
 
-10. Bot dashboard for configuration
-11. Server invite flow with auto-setup
-12. Advanced analytics and reporting
+11. Bot dashboard for configuration
+12. Server invite flow with auto-setup
+13. Cross-server matchmaking
 
 ---
 
 ## Security Considerations
 
-1. **Admin Permissions** - Only server admins can configure the bot and use admin commands
-2. **Server-Scoped Admin Commands** - Admin commands only affect data from their own server (matches, ELO, player data)
-3. **Data Isolation** - Servers cannot access or modify each other's data (includes LFG queues, match reports, ELO)
-4. **Server-Isolated Matching** - LFG queues are per-server only, no cross-server matching
-5. **Rate Limiting** - Prevent abuse of setup commands
-6. **Validation** - Verify channel/role IDs belong to the guild and users exist in the server
+1. **Admin Permissions** - Only server admins can configure the bot
+2. **Data Isolation** - Servers cannot access each other's data
+3. **Rate Limiting** - Prevent abuse of setup commands
+4. **Validation** - Verify channel/role IDs belong to the guild
 
 ---
 
@@ -396,7 +381,7 @@ Update web API endpoints to support server filtering:
 
 ## Notes
 
-- Sorcerers Summit server (guild_id: `1319120227643949211`) is the primary server for existing data
+- Keep the current Summit server as the "primary" server during development
 - Test with a secondary test server before public release
 - Consider a "verified server" system to prevent abuse
 - Document setup process for new server admins

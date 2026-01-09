@@ -89,32 +89,7 @@ def player_profile(player_id):
 def player_api(player_id):
     import json
 
-    # Get player info from ELO db
-    conn = sqlite3.connect("../discord-bot/elo.db")
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT user_id, user_display_name, elo
-        FROM overall_standings
-        WHERE user_id = ?
-    """,
-        (player_id,),
-    )
-    player_row = cur.fetchone()
-
-    if not player_row:
-        conn.close()
-        return jsonify({"error": "Player not found"}), 404
-
-    # Get player rank
-    cur.execute(
-        "SELECT COUNT(*) FROM overall_standings WHERE elo > ?",
-        (player_row[2],),
-    )
-    rank = cur.fetchone()[0] + 1
-    conn.close()
-
-    # Get detailed match data from match_records db
+    # Get detailed match data from match_records db first
     conn = sqlite3.connect("../discord-bot/match_records.db")
     cur = conn.cursor()
 
@@ -132,7 +107,7 @@ def player_api(player_id):
             winner_elo_change,
             loser_elo_change,
             curiosa_url,
-            match_id
+            rowid as match_id
         FROM match_records 
         WHERE winner_id = ? OR losser_id = ?
         ORDER BY timestamp DESC
@@ -141,6 +116,39 @@ def player_api(player_id):
     )
     rows = cur.fetchall()
     conn.close()
+
+    if not rows:
+        return jsonify({"error": "Player not found"}), 404
+
+    # Get player name from their most recent match
+    first_match = rows[0]
+    if first_match[0]:  # did_win is True, so player was winner
+        player_name = first_match[4]  # winner_display_name
+    else:
+        player_name = first_match[5]  # losser_display_name
+
+    # Try to get player ELO from elo.db if available
+    player_elo = 1500  # Default ELO
+    rank = 0
+    try:
+        elo_conn = sqlite3.connect("../discord-bot/elo.db")
+        elo_cur = elo_conn.cursor()
+        elo_cur.execute(
+            "SELECT elo FROM overall_standings WHERE user_id = ?",
+            (player_id,),
+        )
+        elo_row = elo_cur.fetchone()
+        if elo_row:
+            player_elo = elo_row[0]
+            # Get player rank
+            elo_cur.execute(
+                "SELECT COUNT(*) FROM overall_standings WHERE elo > ?",
+                (player_elo,),
+            )
+            rank = elo_cur.fetchone()[0] + 1
+        elo_conn.close()
+    except sqlite3.OperationalError:
+        pass  # Table doesn't exist yet
 
     # Calculate detailed stats
     total_matches = len(rows)
@@ -240,9 +248,9 @@ def player_api(player_id):
 
     return jsonify(
         {
-            "id": player_row[0],
-            "name": player_row[1],
-            "elo": player_row[2],
+            "id": player_id,
+            "name": player_name,
+            "elo": player_elo,
             "rank": rank,
             "wins": wins,
             "losses": losses,

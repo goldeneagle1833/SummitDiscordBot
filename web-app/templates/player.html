@@ -102,6 +102,7 @@
           <table class="match-history-table">
             <thead>
               <tr>
+                <th>ID</th>
                 <th>Result</th>
                 <th>Opponent</th>
                 <th>ELO</th>
@@ -192,7 +193,7 @@
 
           if (data.matches.length === 0) {
             tbody.innerHTML =
-              '<tr><td colspan="6" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>';
+              '<tr><td colspan="7" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>';
             return;
           }
 
@@ -205,8 +206,10 @@
             const matchTime = match.match_time
               ? `${match.match_time} min`
               : "-";
+            const matchId = match.match_id ? `#${match.match_id}` : "-";
 
             row.innerHTML = `
+              <td class="match-id">${matchId}</td>
               <td class="${resultClass}">${match.result}</td>
               <td>${match.opponent}</td>
               <td class="${resultClass}">${eloSign}${match.elo_change}</td>

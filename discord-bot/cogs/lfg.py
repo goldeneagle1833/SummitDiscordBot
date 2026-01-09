@@ -89,7 +89,7 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
         )
 
         if self.is_winner:
-            await winner_report(
+            match_id, _, _ = await winner_report(
                 interaction_user_id,
                 self.winner_id,
                 self.winner_global,
@@ -104,7 +104,7 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
                 interaction_global,
             )
         else:
-            await losser_report(
+            match_id, _, _ = await losser_report(
                 interaction_user_id,
                 self.winner_id,
                 self.winner_global,
@@ -120,7 +120,7 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
             )
 
         await interaction.followup.send(
-            f"Match report submitted!\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}",
+            f"Match report submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}",
             ephemeral=True,
         )
 
@@ -374,7 +374,7 @@ class MatchConfirmationButtons(discord.ui.View):
 
         # Submit match report only ONCE (not twice)
         # This will insert one record and update ELO for the winner
-        await winner_report(
+        match_id, _, _ = await winner_report(
             self.reporter_id,  # reporter_id (who originally reported)
             self.winner_id,
             self.winner_global,
@@ -396,13 +396,13 @@ class MatchConfirmationButtons(discord.ui.View):
 
         # Remove the confirmation message
         await interaction.message.edit(
-            content=f"Match confirmed! {self.winner_global} won against {self.loser_global}.",
+            content=f"Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.",
             view=None,
         )
 
         # Send confirmation to confirming user
         await interaction.followup.send(
-            f"Match report confirmed and submitted!\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}",
+            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}",
             ephemeral=True,
         )
 
@@ -619,7 +619,7 @@ class ConfirmWithDecklistModal(discord.ui.Modal, title="Confirm with Decklist"):
             combined_comment = f"{self.match_comment} | {combined_comment}"
 
         # Submit match report
-        await winner_report(
+        match_id, _, _ = await winner_report(
             self.reporter_id,
             self.winner_id,
             self.winner_global,
@@ -641,7 +641,7 @@ class ConfirmWithDecklistModal(discord.ui.Modal, title="Confirm with Decklist"):
 
         # Send confirmation
         await interaction.followup.send(
-            f"Match report confirmed and submitted!\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}\n**Your Decklist:** {opponent_curiosa_link}",
+            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}\n**Your Decklist:** {opponent_curiosa_link}",
             ephemeral=True,
         )
 
@@ -1286,6 +1286,15 @@ class ReportButtonsSolo(discord.ui.View):
         )
         await interaction.message.edit(view=None)
 
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await interaction.response.send_message(
+            "Match report cancelled.", ephemeral=True
+        )
+        await interaction.message.edit(view=None)
+
 
 class SoloMatchReportModal(discord.ui.Modal, title="Solo Match Report"):
     opponent_name = discord.ui.TextInput(
@@ -1343,7 +1352,7 @@ class SoloMatchReportModal(discord.ui.Modal, title="Solo Match Report"):
             int(self.match_time.value) if self.match_time.value.isdigit() else 0
         )
 
-        await solo_match_report(
+        report_id = await solo_match_report(
             reporter_id=self.reporter_id,
             reporter_global=self.reporter_global,
             opponent_name=self.opponent_name.value,
@@ -1356,7 +1365,7 @@ class SoloMatchReportModal(discord.ui.Modal, title="Solo Match Report"):
 
         result = "Won" if self.is_winner else "Lost"
         await interaction.followup.send(
-            f"Solo match report submitted!\n**Result:** {result}\n**Opponent:** {self.opponent_name.value}",
+            f"Solo match report submitted! **Report ID: #S{report_id}**\n**Result:** {result}\n**Opponent:** {self.opponent_name.value}",
             ephemeral=True,
         )
 
@@ -2571,7 +2580,7 @@ class LFGCog(commands.Cog):
             # Report the match using the existing database functions
             from utils.database import update_elo_db
 
-            await winner_report(
+            match_id, _, _ = await winner_report(
                 ctx.author.id,  # reporter_id (admin who is reporting)
                 winner.id,
                 winner_name,
@@ -2595,7 +2604,7 @@ class LFGCog(commands.Cog):
             # Send confirmation
             success_embed = discord.Embed(
                 title="Match Reported",
-                description=f"**Winner:** {winner.mention} ({winner_name})\n**Loser:** {loser.mention} ({loser_name})",
+                description=f"**Match ID:** #{match_id}\n**Winner:** {winner.mention} ({winner_name})\n**Loser:** {loser.mention} ({loser_name})",
                 color=discord.Color.green(),
             )
             success_embed.set_footer(text=f"Reported by {ctx.author.display_name}")
@@ -2713,6 +2722,120 @@ class LFGCog(commands.Cog):
     async def spot_elo_reset_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def remove_match(self, ctx, match_id: int = None):
+        """Admin command to remove a match report and revert ELO changes. Usage: !remove_match <match_id>"""
+        import sqlite3
+
+        # Validate arguments
+        if match_id is None:
+            await ctx.send(
+                "Please provide a match ID. Usage: `!remove_match <match_id>`"
+            )
+            return
+
+        try:
+            # Connect to databases
+            elo_conn = sqlite3.connect("elo.db")
+            elo_cursor = elo_conn.cursor()
+
+            match_conn = sqlite3.connect("match_records.db")
+            match_cursor = match_conn.cursor()
+
+            # Get the match record
+            match_cursor.execute(
+                """
+                SELECT match_id, winner_id, losser_id, winner_display_name, losser_display_name, 
+                       winner_elo_change, loser_elo_change, timestamp
+                FROM match_records 
+                WHERE match_id = ?
+                """,
+                (match_id,),
+            )
+            match = match_cursor.fetchone()
+
+            if not match:
+                await ctx.send(f"Match ID #{match_id} not found.")
+                elo_conn.close()
+                match_conn.close()
+                return
+
+            (
+                match_id_db,
+                winner_id,
+                loser_id,
+                winner_name,
+                loser_name,
+                winner_elo_change,
+                loser_elo_change,
+                timestamp,
+            ) = match
+
+            # Revert ELO changes
+            reverted_info = []
+
+            if winner_elo_change:
+                # Winner gained ELO, so subtract it
+                elo_cursor.execute(
+                    "UPDATE overall_standings SET elo = elo - ? WHERE user_id = ?",
+                    (winner_elo_change, winner_id),
+                )
+                reverted_info.append(f"**{winner_name}**: -{winner_elo_change} ELO")
+
+            if loser_elo_change:
+                # Loser lost ELO (negative value), so add it back (subtract the negative)
+                elo_cursor.execute(
+                    "UPDATE overall_standings SET elo = elo - ? WHERE user_id = ?",
+                    (loser_elo_change, loser_id),
+                )
+                reverted_info.append(
+                    f"**{loser_name}**: {-loser_elo_change if loser_elo_change else 0} ELO"
+                )
+
+            # Delete the match record
+            match_cursor.execute(
+                "DELETE FROM match_records WHERE match_id = ?", (match_id,)
+            )
+
+            elo_conn.commit()
+            match_conn.commit()
+            elo_conn.close()
+            match_conn.close()
+
+            # Update leaderboard
+            await self.update_leaderboard()
+
+            # Send confirmation
+            success_embed = discord.Embed(
+                title="Match Removed",
+                description=f"**Match ID:** #{match_id}\n**Winner:** {winner_name}\n**Loser:** {loser_name}\n**Date:** {timestamp}\n\n**ELO Reverted:**\n"
+                + "\n".join(reverted_info),
+                color=discord.Color.orange(),
+            )
+            success_embed.set_footer(text=f"Removed by {ctx.author.display_name}")
+            await ctx.send(embed=success_embed)
+
+            logger.info(
+                f"Admin {ctx.author} (ID: {ctx.author.id}) removed match #{match_id}: {winner_name} vs {loser_name}"
+            )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Match Removal Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Match removal failed: {e}")
+
+    @remove_match.error
+    async def remove_match_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send("Invalid match ID. Please provide a valid number.")
 
     @commands.command()
     @commands.has_permissions(administrator=True)

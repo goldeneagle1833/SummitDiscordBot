@@ -131,7 +131,8 @@ def player_api(player_id):
             timestamp,
             winner_elo_change,
             loser_elo_change,
-            curiosa_url
+            curiosa_url,
+            match_id
         FROM match_records 
         WHERE winner_id = ? OR losser_id = ?
         ORDER BY timestamp DESC
@@ -224,6 +225,7 @@ def player_api(player_id):
         elo_change = row[7] if did_win else row[8]
         match_history.append(
             {
+                "match_id": row[10] if len(row) > 10 and row[10] else None,
                 "opponent": opponent_name,
                 "result": "Win" if did_win else "Loss",
                 "elo_change": elo_change if elo_change else 0,

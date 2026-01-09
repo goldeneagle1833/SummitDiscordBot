@@ -12,9 +12,10 @@ def create_db():
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
 
-    # Create match_records table
+    # Create match_records table with auto-increment match_id
     cur.execute("""CREATE TABLE IF NOT EXISTS match_records
-                   (reporter_id INTEGER,
+                   (match_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    reporter_id INTEGER,
                     winner_id INTEGER, 
                     winner_display_name TEXT,
                     losser_id INTEGER,
@@ -30,6 +31,14 @@ def create_db():
                     loser_elo_change INTEGER
                    )""")
 
+    # Add match_id column if it doesn't exist (migration for existing databases)
+    try:
+        cur.execute(
+            "ALTER TABLE match_records ADD COLUMN match_id INTEGER PRIMARY KEY AUTOINCREMENT"
+        )
+    except sqlite3.OperationalError:
+        pass  # Column already exists or table was created with it
+
     # Add elo_change columns if they don't exist (migration for existing databases)
     try:
         cur.execute("ALTER TABLE match_records ADD COLUMN winner_elo_change INTEGER")
@@ -40,9 +49,10 @@ def create_db():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
-    # Create solo_match_reports table
+    # Create solo_match_reports table with auto-increment report_id
     cur.execute("""CREATE TABLE IF NOT EXISTS solo_match_reports
-                   (reporter_id INTEGER,
+                   (report_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    reporter_id INTEGER,
                     reporter_name TEXT,
                     opponent_name TEXT,
                     is_winner BOOLEAN,
@@ -172,7 +182,7 @@ async def winner_report(
     Log a win in the database.
 
     Returns:
-        Tuple of (winner_id, loser_id)
+        Tuple of (match_id, winner_id, loser_id)
     """
     logger.info(f"Logging win for user {interaction_global}")
     create_db()
@@ -212,10 +222,11 @@ async def winner_report(
         ),
     )
 
+    match_id = cur.lastrowid
     conn.commit()
     conn.close()
 
-    return (user_id, opponent_id)
+    return (match_id, user_id, opponent_id)
 
 
 async def losser_report(
@@ -236,7 +247,7 @@ async def losser_report(
     Log a loss in the database.
 
     Returns:
-        Tuple of (winner_id, loser_id)
+        Tuple of (match_id, winner_id, loser_id)
     """
     logger.info(f"Logging loss for user {interaction_global}")
     create_db()
@@ -278,10 +289,11 @@ async def losser_report(
         ),
     )
 
+    match_id = cur.lastrowid
     conn.commit()
     conn.close()
 
-    return (user_id, opponent_id)
+    return (match_id, user_id, opponent_id)
 
 
 async def save_challenge_match(
@@ -340,7 +352,7 @@ async def solo_match_report(
     match_time: int,
     curiosa_link: str,
     match_comment: str,
-) -> None:
+) -> int:
     """
     Save a solo match report to the database.
 
@@ -353,6 +365,9 @@ async def solo_match_report(
         match_time: Duration of match in minutes
         curiosa_link: URL to Curiosa deck
         match_comment: Additional match notes
+
+    Returns:
+        The report_id of the newly created report
     """
     logger.info(f"Logging solo match report for user {reporter_global}")
     create_db()  # Ensure tables exist
@@ -382,5 +397,8 @@ async def solo_match_report(
         ),
     )
 
+    report_id = cur.lastrowid
     conn.commit()
     conn.close()
+
+    return report_id

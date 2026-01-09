@@ -348,6 +348,12 @@ main {
   color: #e57373;
 }
 
+.match-id {
+  color: #a0a0a0;
+  font-size: 0.85rem;
+  font-family: monospace;
+}
+
 .back-link {
   display: inline-block;
   color: #4fc3f7;

@@ -16,24 +16,30 @@ def get_deck_id(url: str) -> str:
 def scrape_Curosa(deck_url, name):
     """Scrape deck data from Curiosa and save to file.
 
-    Retries once after 30 seconds if the API doesn't return valid data.
+    Retries once after 30 seconds only if the API returns a 400 error.
     """
     deck_id = get_deck_id(deck_url)
 
-    for attempt in range(2):  # Try up to 2 times
+    for attempt in range(2):  # Try up to 2 times (only retry on 400)
         try:
             response = requests.get(
                 "https://curiosa.io/api/decks?ids=" + deck_id, timeout=30
             )
 
-            if response.status_code != 200:
-                print(
-                    f"Failed to retrieve the website. Status code: {response.status_code}"
-                )
+            if response.status_code == 400:
+                # Only retry with 30 second delay on 400 errors
+                print(f"API returned 400 error (attempt {attempt + 1})")
                 if attempt == 0:
                     print("Retrying in 30 seconds...")
                     time.sleep(30)
                     continue
+                return "{}"
+
+            if response.status_code != 200:
+                # Other non-200 errors - don't retry
+                print(
+                    f"Failed to retrieve the website. Status code: {response.status_code}"
+                )
                 return "{}"
 
             json_data = json.loads(response.text)
@@ -41,10 +47,6 @@ def scrape_Curosa(deck_url, name):
             # Check if we got a valid list with data
             if not isinstance(json_data, list) or len(json_data) == 0:
                 print(f"API did not return a valid list. Got: {type(json_data)}")
-                if attempt == 0:
-                    print("Retrying in 30 seconds...")
-                    time.sleep(30)
-                    continue
                 return "{}"
 
             # Load existing data from file if it exists
@@ -69,24 +71,12 @@ def scrape_Curosa(deck_url, name):
 
         except requests.exceptions.Timeout:
             print(f"Request timed out (attempt {attempt + 1})")
-            if attempt == 0:
-                print("Retrying in 30 seconds...")
-                time.sleep(30)
-                continue
             return "{}"
         except requests.exceptions.RequestException as e:
             print(f"Request failed: {e}")
-            if attempt == 0:
-                print("Retrying in 30 seconds...")
-                time.sleep(30)
-                continue
             return "{}"
         except (json.JSONDecodeError, IndexError, KeyError) as e:
             print(f"Failed to parse response: {e}")
-            if attempt == 0:
-                print("Retrying in 30 seconds...")
-                time.sleep(30)
-                continue
             return "{}"
 
     return "{}"

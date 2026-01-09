@@ -178,11 +178,18 @@ def player_api(player_id):
     # Avatar stats
     avatar_stats = {}
     for row in rows:
-        if row[2]:
+        if row[2] and row[2] != "{}":  # Skip empty JSON objects
             try:
                 deck_data = json.loads(row[2])
-                avatar = deck_data.get("avatar", [{}])
-                avatar_name = avatar[0].get("name", "Unknown") if avatar else "Unknown"
+                # Skip if deck_data is empty or has no avatar
+                if not deck_data or not deck_data.get("avatar"):
+                    continue
+
+                avatar = deck_data.get("avatar", [])
+                if not avatar or not avatar[0] or not avatar[0].get("name"):
+                    continue
+
+                avatar_name = avatar[0].get("name")
 
                 if avatar_name not in avatar_stats:
                     avatar_stats[avatar_name] = {"wins": 0, "losses": 0}
@@ -191,7 +198,7 @@ def player_api(player_id):
                     avatar_stats[avatar_name]["wins"] += 1
                 else:
                     avatar_stats[avatar_name]["losses"] += 1
-            except (json.JSONDecodeError, KeyError, IndexError):
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                 continue
 
     # Format avatar stats for response

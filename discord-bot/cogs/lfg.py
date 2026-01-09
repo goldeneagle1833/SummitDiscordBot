@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 import datetime
 import logging
+import random
 from random import randrange
 
 from utils.database import winner_report, losser_report, solo_match_report
@@ -1134,8 +1135,13 @@ class LFGReportButtons(discord.ui.View):
                 )
 
     @discord.ui.button(
-        label="We didn't play/cancel match",
+        label="Report w/ Decklist",
         style=discord.ButtonStyle.blurple,
+        custom_id="report_decklist",
+    )
+    @discord.ui.button(
+        label="Cancel match",
+        style=discord.ButtonStyle.secondary,
         custom_id="cancel_match",
     )
     async def cancel_button(
@@ -1146,11 +1152,6 @@ class LFGReportButtons(discord.ui.View):
         )
         await interaction.message.edit(view=None)
 
-    @discord.ui.button(
-        label="Report w/ Decklist",
-        style=discord.ButtonStyle.secondary,
-        custom_id="report_decklist",
-    )
     async def report_decklist_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
@@ -1180,67 +1181,124 @@ class ChallengeButtons(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         challenger = await interaction.client.fetch_user(self.challenger_id)
+        accepter_global = interaction.user.global_name or interaction.user.display_name
 
         # Record match start time when challenge is accepted
         match_start_time = datetime.datetime.now()
 
-        # Send match report buttons to both players
-        challenger_view = LFGReportButtons(
+        # Randomly select which player gets the report buttons
+        players = [
+            (
+                self.challenger_id,
+                self.challenger_global,
+                challenger,
+                False,
+            ),  # False = not the accepter
+            (
+                interaction.user.id,
+                accepter_global,
+                interaction.user,
+                True,
+            ),  # True = the accepter
+        ]
+        reporter_player, other_player = random.sample(players, 2)
+        reporter_id, reporter_global, reporter_user, reporter_is_accepter = (
+            reporter_player
+        )
+        other_id, other_global, other_user, other_is_accepter = other_player
+
+        # Create report buttons for the randomly selected reporter
+        reporter_view = LFGReportButtons(
             0,  # match_id not needed for direct challenges
-            self.challenger_id,
-            self.challenger_global,
-            interaction.user.id,
-            interaction.user.global_name or interaction.user.display_name,
+            reporter_id,
+            reporter_global,
+            other_id,
+            other_global,
             interaction.client,
             self.channel,
             match_start_time=match_start_time,
         )
 
-        opponent_view = LFGReportButtons(
-            0,  # match_id not needed for direct challenges
-            interaction.user.id,
-            interaction.user.global_name or interaction.user.display_name,
-            self.challenger_id,
-            self.challenger_global,
-            interaction.client,
-            self.channel,
-            match_start_time=match_start_time,
-        )
-
-        try:
-            await challenger.send("Match report:", view=challenger_view)
-        except discord.Forbidden:
-            # DM failed - add role and post in designated channel
+        # Send report buttons to the selected reporter
+        if reporter_is_accepter:
+            # Reporter is the one who accepted - use interaction response
             try:
-                guild = interaction.guild
-                if guild:
-                    role = guild.get_role(DM_DISABLED_ROLE_ID)
-                    member = guild.get_member(self.challenger_id)
-                    if role and member:
-                        await member.add_roles(role)
-                        logger.info(
-                            f"Added DM-disabled role to {challenger.display_name}"
-                        )
+                await interaction.response.send_message(
+                    f"**Challenge Accepted!** You're playing against **{other_global}**!\n\nReport the match result below:",
+                    view=reporter_view,
+                    ephemeral=True,
+                )
+            except Exception as e:
+                logger.error(f"Failed to send report buttons to accepter: {e}")
+        else:
+            # Reporter is the challenger - send via DM
+            try:
+                await challenger.send(
+                    f"**Challenge Accepted!** **{accepter_global}** accepted your challenge!\n\nReport the match result below:",
+                    view=reporter_view,
+                )
+            except discord.Forbidden:
+                try:
+                    guild = interaction.guild
+                    if guild:
+                        role = guild.get_role(DM_DISABLED_ROLE_ID)
+                        member = guild.get_member(self.challenger_id)
+                        if role and member:
+                            await member.add_roles(role)
+                            logger.info(
+                                f"Added DM-disabled role to {challenger.display_name}"
+                            )
 
-                dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
-                if dm_channel:
-                    await dm_channel.send(
-                        f"{challenger.mention} **Match Report**\n\nYour challenge was accepted! Report the match result below:",
-                        view=challenger_view,
+                    dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
+                    if dm_channel:
+                        await dm_channel.send(
+                            f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!\n\nReport the match result below:",
+                            view=reporter_view,
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to handle DM failure for challenger: {e}")
+
+        # Send informational message to the other player (no buttons)
+        if other_is_accepter:
+            # Other player is the one who accepted - use interaction response
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        f"**Challenge Accepted!** You're playing against **{reporter_global}**!\n\n"
+                        f"**{reporter_global}** has the match report buttons. They will report the result after your game.",
+                        ephemeral=True,
                     )
-                    logger.info(
-                        f"Posted match report in DM-disabled channel for {challenger.display_name}"
+                else:
+                    await interaction.followup.send(
+                        f"**Challenge Accepted!** You're playing against **{reporter_global}**!\n\n"
+                        f"**{reporter_global}** has the match report buttons. They will report the result after your game.",
+                        ephemeral=True,
                     )
             except Exception as e:
-                logger.error(f"Failed to handle DM failure for challenger: {e}")
+                logger.error(f"Failed to send info message to accepter: {e}")
+        else:
+            # Other player is the challenger - send via DM
+            try:
+                await challenger.send(
+                    f"**Challenge Accepted!** **{accepter_global}** accepted your challenge!\n\n"
+                    f"**{accepter_global}** has the match report buttons. They will report the result after your game."
+                )
+            except discord.Forbidden:
+                try:
+                    dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
+                    if dm_channel:
+                        await dm_channel.send(
+                            f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!\n\n"
+                            f"**{accepter_global}** has the match report buttons. They will report the result after your game."
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to handle DM failure for challenger info: {e}"
+                    )
 
-        # Send match report to the opponent (who accepted the challenge)
-        try:
-            await interaction.response.send_message(
-                "Match report:", view=opponent_view, ephemeral=True
-            )
-        except Exception:
-            pass
+        # Make sure we respond if we haven't yet
+        if not interaction.response.is_done():
+            await interaction.response.defer()
 
         try:
             await interaction.message.edit(view=None)
@@ -1425,41 +1483,132 @@ class JoinQueueButton(discord.ui.View):
             # Match found!
             matched_user = await self.bot.fetch_user(matched_user_id)
             lfg_channel = self.bot.get_channel(lfg_cog.lfg_channel_id)
+            joiner_global = (
+                interaction.user.global_name or interaction.user.display_name
+            )
+            matched_global = matched_user.global_name or matched_user.display_name
 
             # Record match start time when players are matched
             match_start_time = datetime.datetime.now()
 
-            view_ctx = LFGReportButtons(
-                interaction.user.id,
-                interaction.user.id,
-                interaction.user.global_name or interaction.user.display_name,
-                matched_user_id,
-                matched_user.global_name or matched_user.display_name,
+            # Randomly select which player gets the report buttons
+            players = [
+                (
+                    interaction.user.id,
+                    joiner_global,
+                    interaction.user,
+                    True,
+                ),  # True = the joiner
+                (
+                    matched_user_id,
+                    matched_global,
+                    matched_user,
+                    False,
+                ),  # False = the matched user
+            ]
+            reporter_player, other_player = random.sample(players, 2)
+            reporter_id, reporter_global, reporter_user, reporter_is_joiner = (
+                reporter_player
+            )
+            other_id, other_global, other_user, other_is_joiner = other_player
+
+            # Create report buttons for the randomly selected reporter
+            view_reporter = LFGReportButtons(
+                reporter_id,
+                reporter_id,
+                reporter_global,
+                other_id,
+                other_global,
                 self.bot,
                 lfg_channel,
                 match_start_time=match_start_time,
             )
 
-            try:
-                await interaction.user.send("Match report:", view=view_ctx)
-            except discord.Forbidden:
-                # Handle DM failure
+            # Send report buttons to the selected reporter
+            if reporter_is_joiner:
+                # Reporter is the one who clicked Join Queue - send via DM
                 try:
-                    guild = interaction.guild
-                    if guild:
-                        role = guild.get_role(DM_DISABLED_ROLE_ID)
-                        member = guild.get_member(interaction.user.id)
-                        if role and member:
-                            await member.add_roles(role)
+                    await interaction.user.send(
+                        f"**Match Found!** You've been matched with **{other_global}**!\n\nReport the match result below:",
+                        view=view_reporter,
+                    )
+                except discord.Forbidden:
+                    try:
+                        guild = interaction.guild
+                        if guild:
+                            role = guild.get_role(DM_DISABLED_ROLE_ID)
+                            member = guild.get_member(interaction.user.id)
+                            if role and member:
+                                await member.add_roles(role)
 
-                    dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
-                    if dm_channel:
-                        await dm_channel.send(
-                            f"{interaction.user.mention} **Match Report**\n\nYou've been matched with {matched_user.mention}! Report the match result below:",
-                            view=view_ctx,
-                        )
-                except Exception:
-                    pass
+                        dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                        if dm_channel:
+                            await dm_channel.send(
+                                f"{interaction.user.mention} **Match Found!**\n\nYou've been matched with **{other_global}**! Report the match result below:",
+                                view=view_reporter,
+                            )
+                    except Exception:
+                        pass
+            else:
+                # Reporter is the matched user from queue - send via DM
+                try:
+                    await matched_user.send(
+                        f"**Match Found!** You've been matched with **{other_global}**!\n\nReport the match result below:",
+                        view=view_reporter,
+                    )
+                except discord.Forbidden:
+                    try:
+                        guild = interaction.guild
+                        if guild:
+                            role = guild.get_role(DM_DISABLED_ROLE_ID)
+                            member = guild.get_member(matched_user_id)
+                            if role and member:
+                                await member.add_roles(role)
+
+                        dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                        if dm_channel:
+                            await dm_channel.send(
+                                f"{matched_user.mention} **Match Found!**\n\nYou've been matched with **{other_global}**! Report the match result below:",
+                                view=view_reporter,
+                            )
+                    except Exception:
+                        pass
+
+            # Send informational message to the other player (no buttons)
+            if other_is_joiner:
+                # Other player is the one who clicked Join Queue - send via DM
+                try:
+                    await interaction.user.send(
+                        f"**Match Found!** You've been matched with **{reporter_global}**!\n\n"
+                        f"**{reporter_global}** has the match report buttons. They will report the result after your game."
+                    )
+                except discord.Forbidden:
+                    try:
+                        dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                        if dm_channel:
+                            await dm_channel.send(
+                                f"{interaction.user.mention} **Match Found!**\n\nYou've been matched with **{reporter_global}**!\n\n"
+                                f"**{reporter_global}** has the match report buttons. They will report the result after your game."
+                            )
+                    except Exception:
+                        pass
+            else:
+                # Other player is the matched user from queue - send via DM
+                try:
+                    await matched_user.send(
+                        f"**Match Found!** You've been matched with **{reporter_global}**!\n\n"
+                        f"**{reporter_global}** has the match report buttons. They will report the result after your game."
+                    )
+                except discord.Forbidden:
+                    try:
+                        dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                        if dm_channel:
+                            await dm_channel.send(
+                                f"{matched_user.mention} **Match Found!**\n\nYou've been matched with **{reporter_global}**!\n\n"
+                                f"**{reporter_global}** has the match report buttons. They will report the result after your game."
+                            )
+                    except Exception:
+                        pass
 
             # Announce match in LFG channel
             if lfg_channel:
@@ -1467,46 +1616,11 @@ class JoinQueueButton(discord.ui.View):
                     f"**Match Found!** {interaction.user.mention} matched with {matched_user.mention}!"
                 )
 
-            view_matched = LFGReportButtons(
-                matched_user_id,
-                matched_user_id,
-                matched_user.global_name or matched_user.display_name,
-                interaction.user.id,
-                interaction.user.global_name or interaction.user.display_name,
-                self.bot,
-                lfg_channel,
-                match_start_time=match_start_time,
-            )
-
-            try:
-                await matched_user.send(
-                    f"You've been matched with {interaction.user.mention} for a game!",
-                    view=view_matched,
-                )
-            except discord.Forbidden:
-                # Handle DM failure
-                try:
-                    guild = interaction.guild
-                    if guild:
-                        role = guild.get_role(DM_DISABLED_ROLE_ID)
-                        member = guild.get_member(matched_user_id)
-                        if role and member:
-                            await member.add_roles(role)
-
-                    dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
-                    if dm_channel:
-                        await dm_channel.send(
-                            f"{matched_user.mention} **Match Report**\n\nYou've been matched with {interaction.user.mention}! Report the match result below:",
-                            view=view_matched,
-                        )
-                except Exception:
-                    pass
-
             lfg_cog.pair_players(ctx)
             await lfg_cog.update_lfg_status()
 
             await interaction.followup.send(
-                f"Match found! You've been paired with {matched_user.global_name}. Check your DMs for the match report.",
+                f"Match found! You've been paired with {matched_global}. Check your DMs!",
                 ephemeral=True,
             )
         else:
@@ -2023,122 +2137,117 @@ class LFGCog(commands.Cog):
             # Record match start time when players are matched
             match_start_time = datetime.datetime.now()
 
-            view_ctx = LFGReportButtons(
-                ctx.author.id,
-                ctx.author.id,
-                ctx.author.global_name or ctx.author.display_name,
-                matched_user_id,
-                matched_user.global_name or matched_user.display_name,
+            # Randomly select which player gets the report buttons
+            players = [
+                (
+                    ctx.author.id,
+                    ctx.author.global_name or ctx.author.display_name,
+                    ctx.author,
+                ),
+                (
+                    matched_user_id,
+                    matched_user.global_name or matched_user.display_name,
+                    matched_user,
+                ),
+            ]
+            reporter_player, other_player = random.sample(players, 2)
+            reporter_id, reporter_global, reporter_user = reporter_player
+            other_id, other_global, other_user = other_player
+
+            # Create report buttons for the randomly selected reporter
+            view_reporter = LFGReportButtons(
+                reporter_id,
+                reporter_id,
+                reporter_global,
+                other_id,
+                other_global,
                 self.bot,
                 lfg_channel,
                 match_start_time=match_start_time,
             )
+
+            # Send report buttons to the selected reporter
             logger.info(
-                f"Sending match report to {ctx.author} (ID: {ctx.author.id}) via DM"
+                f"Sending match report buttons to {reporter_global} (ID: {reporter_id}) via DM"
             )
             try:
-                await ctx.author.send("Match report:", view=view_ctx)
+                await reporter_user.send(
+                    f"**Match Found!** You've been matched with **{other_global}**!\n\nReport the match result below:",
+                    view=view_reporter,
+                )
             except discord.Forbidden:
                 logger.error(
-                    f"Cannot DM {ctx.author} (ID: {ctx.author.id}) - DMs disabled or bot blocked"
+                    f"Cannot DM {reporter_global} (ID: {reporter_id}) - DMs disabled or bot blocked"
                 )
-                # DM failed - add role and post in designated channel
                 try:
                     guild = ctx.guild
                     if guild:
                         role = guild.get_role(DM_DISABLED_ROLE_ID)
-                        member = guild.get_member(ctx.author.id)
+                        member = guild.get_member(reporter_id)
                         if role and member:
                             await member.add_roles(role)
-                            logger.info(
-                                f"Added DM-disabled role to {ctx.author.display_name}"
-                            )
+                            logger.info(f"Added DM-disabled role to {reporter_global}")
 
                     dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{ctx.author.mention} **Match Report**\n\nYou've been matched with {matched_user.mention}! Report the match result below:",
-                            view=view_ctx,
+                            f"{reporter_user.mention} **Match Report**\n\nYou've been matched with **{other_global}**! Report the match result below:",
+                            view=view_reporter,
                         )
                         logger.info(
-                            f"Posted match report in DM-disabled channel for {ctx.author.display_name}"
-                        )
-                    else:
-                        await ctx.send(
-                            f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game! (I couldn't send you the match report. Please enable DMs.)"
+                            f"Posted match report in DM-disabled channel for {reporter_global}"
                         )
                 except Exception as e:
-                    logger.error(f"Failed to handle DM failure for {ctx.author}: {e}")
-                    await ctx.send(
-                        f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game! (I couldn't send you the match report. Please enable DMs.)"
+                    logger.error(
+                        f"Failed to handle DM failure for {reporter_global}: {e}"
                     )
             except Exception as e:
                 logger.error(
-                    f"Error sending DM to {ctx.author} (ID: {ctx.author.id}): {e}"
+                    f"Error sending DM to {reporter_global} (ID: {reporter_id}): {e}"
                 )
-                await ctx.send(
-                    f"{ctx.author.mention}, matched with {matched_user.mention} who is also looking for a game!"
+
+            # Send informational message to the other player (no buttons)
+            logger.info(
+                f"Sending match info (no buttons) to {other_global} (ID: {other_id}) via DM"
+            )
+            try:
+                await other_user.send(
+                    f"**Match Found!** You've been matched with **{reporter_global}**!\n\n"
+                    f"**{reporter_global}** has the match report buttons. They will report the result after your game."
                 )
-                return
+            except discord.Forbidden:
+                logger.error(
+                    f"Cannot DM {other_global} (ID: {other_id}) - DMs disabled or bot blocked"
+                )
+                try:
+                    guild = ctx.guild
+                    if guild:
+                        role = guild.get_role(DM_DISABLED_ROLE_ID)
+                        member = guild.get_member(other_id)
+                        if role and member:
+                            await member.add_roles(role)
+                            logger.info(f"Added DM-disabled role to {other_global}")
+
+                    dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                    if dm_channel:
+                        await dm_channel.send(
+                            f"{other_user.mention} **Match Found!**\n\nYou've been matched with **{reporter_global}**!\n\n"
+                            f"**{reporter_global}** has the match report buttons. They will report the result after your game."
+                        )
+                        logger.info(
+                            f"Posted match info in DM-disabled channel for {other_global}"
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to handle DM failure for {other_global}: {e}")
+            except Exception as e:
+                logger.error(
+                    f"Error sending DM to {other_global} (ID: {other_id}): {e}"
+                )
 
             # Always announce match in LFG channel
             if lfg_channel:
                 await lfg_channel.send(
                     f"**Match Found!** {ctx.author.mention} matched with {matched_user.mention}!"
-                )
-
-            view_matched = LFGReportButtons(
-                matched_user_id,
-                matched_user_id,
-                matched_user.global_name or matched_user.display_name,
-                ctx.author.id,
-                ctx.author.global_name or ctx.author.display_name,
-                self.bot,
-                lfg_channel,
-                match_start_time=match_start_time,
-            )
-            logger.info(
-                f"Sending match report to {matched_user} (ID: {matched_user_id}) via DM"
-            )
-            try:
-                await matched_user.send(
-                    f"You've been matched with {ctx.author.mention} for a game!",
-                    view=view_matched,
-                )
-            except discord.Forbidden:
-                logger.error(
-                    f"Cannot DM {matched_user} (ID: {matched_user_id}) - DMs disabled or bot blocked"
-                )
-                # DM failed - add role and post in designated channel
-                try:
-                    guild = ctx.guild
-                    if guild:
-                        role = guild.get_role(DM_DISABLED_ROLE_ID)
-                        member = guild.get_member(matched_user_id)
-                        if role and member:
-                            await member.add_roles(role)
-                            logger.info(
-                                f"Added DM-disabled role to {matched_user.display_name}"
-                            )
-
-                    dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
-                    if dm_channel:
-                        await dm_channel.send(
-                            f"{matched_user.mention} **Match Report**\n\nYou've been matched with {ctx.author.mention}! Report the match result below:",
-                            view=view_matched,
-                        )
-                        logger.info(
-                            f"Posted match report in DM-disabled channel for {matched_user.display_name}"
-                        )
-                    else:
-                        await ctx.send(
-                            f"{matched_user.mention}, I couldn't send you the match report. Please enable DMs."
-                        )
-                except Exception as e:
-                    logger.error(f"Failed to handle DM failure for {matched_user}: {e}")
-            except Exception as e:
-                logger.error(
-                    f"Error sending DM to {matched_user} (ID: {matched_user_id}): {e}"
                 )
             self.pair_players(ctx)
 
@@ -2367,6 +2476,7 @@ class LFGCog(commands.Cog):
             value=(
                 "`!admin_report @winner @loser` - Manually report a match\n"
                 "`!spot_elo_reset @user [elo]` - Set a user's ELO\n"
+                "`!remove_player @user` - Remove player & revert their ELO impact\n"
                 "`!reset_elo` - Reset all ELO ratings ⚠️"
             ),
             inline=False,
@@ -2675,6 +2785,175 @@ class LFGCog(commands.Cog):
 
     @spot_elo_reset.error
     async def spot_elo_reset_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def remove_player(self, ctx, user: discord.Member = None):
+        """Admin command to remove a player and revert all ELO changes from their matches. Usage: !remove_player @user"""
+        import sqlite3
+
+        # Validate arguments
+        if user is None:
+            await ctx.send("Please mention a user. Usage: `!remove_player @user`")
+            return
+
+        if user.bot:
+            await ctx.send("Cannot remove bots!")
+            return
+
+        try:
+            user_name = user.global_name or user.display_name
+
+            # Connect to databases
+            elo_conn = sqlite3.connect("elo.db")
+            elo_cursor = elo_conn.cursor()
+
+            match_conn = sqlite3.connect("match_records.db")
+            match_cursor = match_conn.cursor()
+
+            # Get all matches involving this player
+            match_cursor.execute(
+                """
+                SELECT winner_id, losser_id, winner_elo_change, loser_elo_change, winner_display_name, losser_display_name
+                FROM match_records 
+                WHERE winner_id = ? OR losser_id = ?
+                """,
+                (user.id, user.id),
+            )
+            matches = match_cursor.fetchall()
+
+            if not matches:
+                await ctx.send(
+                    f"No matches found for {user.mention}. Nothing to remove."
+                )
+                elo_conn.close()
+                match_conn.close()
+                return
+
+            # Track ELO adjustments for opponents
+            elo_adjustments = {}  # {user_id: (adjustment, display_name)}
+
+            for (
+                winner_id,
+                loser_id,
+                winner_elo_change,
+                loser_elo_change,
+                winner_name,
+                loser_name,
+            ) in matches:
+                if winner_id == user.id:
+                    # User won this match - revert ELO gain for opponent (loser)
+                    if loser_id and loser_elo_change:
+                        if loser_id not in elo_adjustments:
+                            elo_adjustments[loser_id] = (0, loser_name)
+                        current_adj, name = elo_adjustments[loser_id]
+                        elo_adjustments[loser_id] = (
+                            current_adj - loser_elo_change,
+                            name,
+                        )
+                else:
+                    # User lost this match - revert ELO gain for opponent (winner)
+                    if winner_id and winner_elo_change:
+                        if winner_id not in elo_adjustments:
+                            elo_adjustments[winner_id] = (0, winner_name)
+                        current_adj, name = elo_adjustments[winner_id]
+                        elo_adjustments[winner_id] = (
+                            current_adj - winner_elo_change,
+                            name,
+                        )
+
+            # Apply ELO adjustments to opponents
+            adjustments_made = []
+            for opponent_id, (adjustment, opponent_name) in elo_adjustments.items():
+                if adjustment != 0:
+                    elo_cursor.execute(
+                        "UPDATE overall_standings SET elo = elo + ? WHERE user_id = ?",
+                        (adjustment, opponent_id),
+                    )
+                    adjustments_made.append(f"{opponent_name}: {adjustment:+d}")
+
+            # Delete all matches involving this player from match_records
+            match_cursor.execute(
+                "DELETE FROM match_records WHERE winner_id = ? OR losser_id = ?",
+                (user.id, user.id),
+            )
+            matches_deleted = match_cursor.rowcount
+
+            # Delete solo match reports by this player
+            match_cursor.execute(
+                "DELETE FROM solo_match_reports WHERE reporter_id = ?", (user.id,)
+            )
+            solo_deleted = match_cursor.rowcount
+
+            # Remove player from ELO standings
+            elo_cursor.execute(
+                "DELETE FROM overall_standings WHERE user_id = ?", (user.id,)
+            )
+            player_removed = elo_cursor.rowcount > 0
+
+            # Commit changes
+            elo_conn.commit()
+            match_conn.commit()
+            elo_conn.close()
+            match_conn.close()
+
+            # Update leaderboard
+            await self.update_leaderboard()
+
+            # Send confirmation
+            embed = discord.Embed(
+                title="🗑️ Player Removed",
+                description=f"**Player:** {user.mention} ({user_name})",
+                color=discord.Color.orange(),
+            )
+            embed.add_field(
+                name="Matches Deleted",
+                value=f"{matches_deleted} ranked match(es)\n{solo_deleted} solo report(s)",
+                inline=False,
+            )
+
+            if adjustments_made:
+                adjustments_text = "\n".join(adjustments_made[:10])
+                if len(adjustments_made) > 10:
+                    adjustments_text += f"\n... and {len(adjustments_made) - 10} more"
+                embed.add_field(
+                    name="ELO Adjustments", value=adjustments_text, inline=False
+                )
+            else:
+                embed.add_field(
+                    name="ELO Adjustments",
+                    value="No ELO data to revert (matches may have been missing ELO change data)",
+                    inline=False,
+                )
+
+            embed.add_field(
+                name="Player ELO Removed",
+                value="Yes" if player_removed else "Player was not in ELO standings",
+                inline=False,
+            )
+
+            embed.set_footer(text=f"Removed by {ctx.author.display_name}")
+            await ctx.send(embed=embed)
+
+            logger.info(
+                f"Admin {ctx.author} (ID: {ctx.author.id}) removed player {user_name} (ID: {user.id}). "
+                f"Deleted {matches_deleted} matches, {solo_deleted} solo reports. "
+                f"ELO adjustments: {elo_adjustments}"
+            )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Player Removal Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Remove player failed: {e}")
+
+    @remove_player.error
+    async def remove_player_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
 

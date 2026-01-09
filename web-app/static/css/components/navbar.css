@@ -47,7 +47,7 @@
 }
 
 .brand-link:hover {
-  color: #ffed4a;
+  color: var(--color-text);
 }
 
 .navbar-center {

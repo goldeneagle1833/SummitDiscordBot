@@ -192,7 +192,9 @@
 
             row.innerHTML = `
               <td class="${resultClass}">${match.result}</td>
-              <td>${match.opponent}</td>
+              <td><a href="/player/${
+                match.opponent_id
+              }" class="opponent-link">${match.opponent}</a></td>
               <td class="${resultClass}">${eloSign}${match.elo_change}</td>
               <td>${match.first_player || "-"}</td>
               <td>${matchTime}</td>

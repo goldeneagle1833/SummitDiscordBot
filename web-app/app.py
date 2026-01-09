@@ -167,7 +167,9 @@ def player_api(player_id):
             timestamp,
             winner_elo_change,
             loser_elo_change,
-            curiosa_url
+            curiosa_url,
+            winner_id,
+            losser_id
         FROM match_records 
         WHERE winner_id = ? OR losser_id = ?
         ORDER BY timestamp DESC
@@ -257,10 +259,14 @@ def player_api(player_id):
     for row in rows[:50]:
         did_win = row[0]
         opponent_name = row[5] if did_win else row[4]
+        # When player won, opponent is the loser (losser_id at index 11)
+        # When player lost, opponent is the winner (winner_id at index 10)
+        opponent_id = str(row[11]) if did_win else str(row[10])
         elo_change = row[7] if did_win else row[8]
         match_history.append(
             {
                 "opponent": opponent_name,
+                "opponent_id": opponent_id,
                 "result": "Win" if did_win else "Loss",
                 "elo_change": elo_change if elo_change else 0,
                 "date": row[6],
@@ -274,7 +280,7 @@ def player_api(player_id):
 
     return jsonify(
         {
-            "id": player_row[0],
+            "id": str(player_row[0]),
             "name": player_row[1],
             "elo": player_row[2],
             "rank": rank,

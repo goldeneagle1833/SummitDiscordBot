@@ -2052,12 +2052,6 @@ class LFGCog(commands.Cog):
         owner = await self.bot.fetch_user(owner_id)
         lfg_channel = self.bot.get_channel(channel_id)
 
-        if owner:
-            logger.info(
-                f"Sending notification to owner about {ctx.author}'s LFG request"
-            )
-            await owner.send(f"{ctx.author} used the !lfg command in #{ctx.channel}.")
-
         matched_user_id = self.check_if_someone_is_lfg(ctx)
         logger.info(
             f"Checked for existing LFG users. Matched user ID: {matched_user_id}"

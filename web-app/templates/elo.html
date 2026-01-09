@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ELO Leaderboards - Sorcerers Summit</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <section class="hero">
+        <h1>ELO Leaderboards</h1>
+        <p>Choose a server to view rankings</p>
+      </section>
+
+      <section class="content">
+        <h2>Available Leaderboards</h2>
+        <div class="features">
+          <div class="feature-card">
+            <h3>Global Leaderboard</h3>
+            <p>Combined rankings across all servers</p>
+            <a href="/elo/global" class="btn">View Global Rankings</a>
+          </div>
+          <div class="feature-card">
+            <h3>Server-Specific</h3>
+            <p>Coming soon: Individual server leaderboards</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+  </body>
+</html>

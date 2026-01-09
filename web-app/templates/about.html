@@ -3,52 +3,51 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>About - Summit</title>
+    <title>About - Sorcerers Summit</title>
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/style.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
   </head>
   <body>
-    <nav>
-      <div class="nav-container">
-        <a href="/" class="logo">Summit</a>
-        <ul class="nav-links">
-          <li><a href="/">Home</a></li>
-          <li><a href="/avatars">Avatars</a></li>
-          <li><a href="/about">About</a></li>
-          <li>
-            <a href="https://discord.gg/ZDqHSK9VGx" target="_blank">Discord</a>
-          </li>
-          <li>
-            <a
-              href="https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink"
-              target="_blank"
-              >Patreon</a
-            >
-          </li>
-        </ul>
-      </div>
-    </nav>
+    {% include 'components/navbar.html' %}
 
     <main>
       <section class="content">
-        <h1>About Summit</h1>
+        <h1>About Sorcerers Summit</h1>
         <p>
-          Summit is a community platform designed to bring players together.
+          The Summit is run by CJ (<strong>OFN-CJ</strong>) and Bruce
+          (<strong>Goldeneagle</strong>) on Discord. You can check out our
+          channels here:
+          <a
+            href="https://www.youtube.com/@goldeneagle1833"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Goldeneagle</a
+          >
+          or
+          <a
+            href="https://www.youtube.com/@Oldfashionednerds"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Old Fashioned Nerds</a
+          >.
         </p>
 
         <h2>Our Mission</h2>
         <p>
-          We aim to create a welcoming space for gamers to connect, compete, and
-          have fun.
+          Our mission is to run competitive events and to provide a community
+          ELO leaderboard.
         </p>
 
         <h2>Features</h2>
         <ul>
           <li>ELO ranking system</li>
-          <li>Looking for Group (LFG) matchmaking</li>
-          <li>Community events and tournaments</li>
+          <li>LFG (Looking for Group) matchmaking</li>
           <li>Discord integration</li>
+          <li>Coming soon: Paper reports</li>
         </ul>
       </section>
     </main>
@@ -56,5 +55,6 @@
     <footer>
       <p>&copy; 2026 Summit. All rights reserved.</p>
     </footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
   </body>
 </html>

@@ -26,6 +26,42 @@ def avatars():
     return render_template("avatars.html")
 
 
+@app.route("/elo")
+def elo():
+    """ELO leaderboards page"""
+    return render_template("elo.html")
+
+
+@app.route("/elo/global")
+def elo_global():
+    """Global ELO leaderboard"""
+    return render_template("elo_global.html")
+
+
+@app.route("/deck-help")
+def deck_help():
+    """Deck help and resources page"""
+    return render_template("deck_help.html")
+
+
+@app.route("/top-8")
+def top_8():
+    """Top 8 decks by event page"""
+    return render_template("top_8.html")
+
+
+@app.route("/stats")
+def stats():
+    """Statistics page"""
+    return render_template("stats.html")
+
+
+@app.route("/help")
+def help_page():
+    """Help and documentation page"""
+    return render_template("help.html")
+
+
 @app.route("/api/status")
 def api_status():
     """Simple API endpoint to check if the server is running"""

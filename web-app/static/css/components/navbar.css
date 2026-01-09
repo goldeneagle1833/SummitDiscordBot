@@ -67,7 +67,9 @@
 }
 
 .navbar-right {
-  min-width: 100px;
+  display: flex;
+  gap: var(--spacing-xl);
+  align-items: center;
 }
 
 /* Sidebar */

@@ -1071,19 +1071,6 @@ class LFGReportButtons(discord.ui.View):
         style=discord.ButtonStyle.blurple,
         custom_id="report_decklist",
     )
-    @discord.ui.button(
-        label="Cancel match",
-        style=discord.ButtonStyle.secondary,
-        custom_id="cancel_match",
-    )
-    async def cancel_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        await interaction.response.send_message(
-            f"{interaction.user.mention} clicked **cancel match**", ephemeral=True
-        )
-        await interaction.message.edit(view=None)
-
     async def report_decklist_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
@@ -1098,6 +1085,19 @@ class LFGReportButtons(discord.ui.View):
             match_start_time=self.match_start_time,
         )
         await interaction.response.send_modal(modal)
+        await interaction.message.edit(view=None)
+
+    @discord.ui.button(
+        label="Cancel match",
+        style=discord.ButtonStyle.secondary,
+        custom_id="cancel_match",
+    )
+    async def cancel_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await interaction.response.send_message(
+            f"{interaction.user.mention} clicked **cancel match**", ephemeral=True
+        )
         await interaction.message.edit(view=None)
 
 

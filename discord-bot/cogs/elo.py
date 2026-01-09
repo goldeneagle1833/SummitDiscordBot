@@ -501,7 +501,7 @@ class EloCog(commands.Cog):
             # Send buttons to the selected reporter
             try:
                 await reporter_user.send(
-                    f"**Rematch!** You're playing against **{other_global}**!\n\nReport the match result below:",
+                    f"**Rematch!** You're playing against {other_user.mention} (**{other_global}**)!\n\nReport the match result below:",
                     view=view_reporter,
                 )
             except discord.Forbidden:
@@ -510,7 +510,7 @@ class EloCog(commands.Cog):
             # Send info message to the other player (no buttons)
             try:
                 await other_user.send(
-                    f"**Rematch!** You're playing against **{reporter_global}**!\n\n"
+                    f"**Rematch!** You're playing against {reporter_user.mention} (**{reporter_global}**)!\n\n"
                     f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                 )
             except discord.Forbidden:

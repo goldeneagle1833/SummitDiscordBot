@@ -1156,7 +1156,7 @@ class ChallengeButtons(discord.ui.View):
             # Reporter is the one who accepted - use interaction response
             try:
                 await interaction.response.send_message(
-                    f"**Challenge Accepted!** You're playing against **{other_global}**!\n\nReport the match result below:",
+                    f"**Challenge Accepted!** You're playing against {other_user.mention} (**{other_global}**)!\n\nReport the match result below:",
                     view=reporter_view,
                     ephemeral=True,
                 )
@@ -1196,13 +1196,13 @@ class ChallengeButtons(discord.ui.View):
             try:
                 if not interaction.response.is_done():
                     await interaction.response.send_message(
-                        f"**Challenge Accepted!** You're playing against **{reporter_global}**!\n\n"
+                        f"**Challenge Accepted!** You're playing against {reporter_user.mention} (**{reporter_global}**)!\n\n"
                         f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome.",
                         ephemeral=True,
                     )
                 else:
                     await interaction.followup.send(
-                        f"**Challenge Accepted!** You're playing against **{reporter_global}**!\n\n"
+                        f"**Challenge Accepted!** You're playing against {reporter_user.mention} (**{reporter_global}**)!\n\n"
                         f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome.",
                         ephemeral=True,
                     )
@@ -1461,7 +1461,7 @@ class JoinQueueButton(discord.ui.View):
                 # Reporter is the one who clicked Join Queue - send via DM
                 try:
                     await interaction.user.send(
-                        f"**Match Found!** You've been matched with **{other_global}**!\n\nReport the match result below:",
+                        f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!\n\nReport the match result below:",
                         view=view_reporter,
                     )
                 except discord.Forbidden:
@@ -1476,7 +1476,7 @@ class JoinQueueButton(discord.ui.View):
                         dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                         if dm_channel:
                             await dm_channel.send(
-                                f"{interaction.user.mention} **Match Found!**\n\nYou've been matched with **{other_global}**! Report the match result below:",
+                                f"{interaction.user.mention} **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)! Report the match result below:",
                                 view=view_reporter,
                             )
                     except Exception:
@@ -1485,7 +1485,7 @@ class JoinQueueButton(discord.ui.View):
                 # Reporter is the matched user from queue - send via DM
                 try:
                     await matched_user.send(
-                        f"**Match Found!** You've been matched with **{other_global}**!\n\nReport the match result below:",
+                        f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!\n\nReport the match result below:",
                         view=view_reporter,
                     )
                 except discord.Forbidden:
@@ -1500,7 +1500,7 @@ class JoinQueueButton(discord.ui.View):
                         dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                         if dm_channel:
                             await dm_channel.send(
-                                f"{matched_user.mention} **Match Found!**\n\nYou've been matched with **{other_global}**! Report the match result below:",
+                                f"{matched_user.mention} **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)! Report the match result below:",
                                 view=view_reporter,
                             )
                     except Exception:
@@ -1511,7 +1511,7 @@ class JoinQueueButton(discord.ui.View):
                 # Other player is the one who clicked Join Queue - send via DM
                 try:
                     await interaction.user.send(
-                        f"**Match Found!** You've been matched with **{reporter_global}**!\n\n"
+                        f"**Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
                         f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                     )
                 except discord.Forbidden:
@@ -1519,7 +1519,7 @@ class JoinQueueButton(discord.ui.View):
                         dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                         if dm_channel:
                             await dm_channel.send(
-                                f"{interaction.user.mention} **Match Found!**\n\nYou've been matched with **{reporter_global}**!\n\n"
+                                f"{interaction.user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
                                 f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                             )
                     except Exception:
@@ -1528,7 +1528,7 @@ class JoinQueueButton(discord.ui.View):
                 # Other player is the matched user from queue - send via DM
                 try:
                     await matched_user.send(
-                        f"**Match Found!** You've been matched with **{reporter_global}**!\n\n"
+                        f"**Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
                         f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                     )
                 except discord.Forbidden:
@@ -1536,7 +1536,7 @@ class JoinQueueButton(discord.ui.View):
                         dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                         if dm_channel:
                             await dm_channel.send(
-                                f"{matched_user.mention} **Match Found!**\n\nYou've been matched with **{reporter_global}**!\n\n"
+                                f"{matched_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
                                 f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                             )
                     except Exception:
@@ -2104,7 +2104,7 @@ class LFGCog(commands.Cog):
             )
             try:
                 await reporter_user.send(
-                    f"**Match Found!** You've been matched with **{other_global}**!\n\nReport the match result below:",
+                    f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!\n\nReport the match result below:",
                     view=view_reporter,
                 )
             except discord.Forbidden:
@@ -2123,7 +2123,7 @@ class LFGCog(commands.Cog):
                     dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{reporter_user.mention} **Match Report**\n\nYou've been matched with **{other_global}**! Report the match result below:",
+                            f"{reporter_user.mention} **Match Report**\n\nYou've been matched with {other_user.mention} (**{other_global}**)! Report the match result below:",
                             view=view_reporter,
                         )
                         logger.info(
@@ -2144,7 +2144,7 @@ class LFGCog(commands.Cog):
             )
             try:
                 await other_user.send(
-                    f"**Match Found!** You've been matched with **{reporter_global}**!\n\n"
+                    f"**Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
                     f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                 )
             except discord.Forbidden:
@@ -2163,7 +2163,7 @@ class LFGCog(commands.Cog):
                     dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{other_user.mention} **Match Found!**\n\nYou've been matched with **{reporter_global}**!\n\n"
+                            f"{other_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
                             f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                         )
                         logger.info(

@@ -29,3 +29,6 @@ bot.log
 .env
 .env.
 .github/workflows/deploy.yml
+web-app/curiosa-io-tools/curosa.py
+.gitignore
+web-app/curiosa-io-tools/cardPercentages.py

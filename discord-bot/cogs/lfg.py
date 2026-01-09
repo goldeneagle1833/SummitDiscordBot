@@ -744,40 +744,6 @@ class LFGReportButtons(discord.ui.View):
         try:
             opponent = await self.bot.fetch_user(opponent_id)
 
-            # Find opponent's match report message to remove their buttons
-            try:
-                opponent_dm_channel = await opponent.create_dm()
-                opponent_report_message = None
-
-                async for message in opponent_dm_channel.history(limit=50):
-                    if message.author.id == self.bot.user.id and message.components:
-                        # Check if this is the match report message for these two players
-                        for component in message.components:
-                            for button in component.children:
-                                if hasattr(
-                                    button, "custom_id"
-                                ) and button.custom_id in [
-                                    "win_button",
-                                    "lose_button",
-                                    "cancel_match",
-                                ]:
-                                    opponent_report_message = message
-                                    break
-                            if opponent_report_message:
-                                break
-                        if opponent_report_message:
-                            break
-
-                # Remove opponent's buttons
-                if opponent_report_message:
-                    await opponent_report_message.edit(view=None)
-            except discord.Forbidden:
-                logger.warning(
-                    f"Cannot access DM channel for user {opponent_id} - DMs disabled or bot blocked"
-                )
-            except Exception as e:
-                logger.error(f"Error accessing opponent DM history: {e}")
-
             confirmation_view = MatchConfirmationButtons(
                 reporter_id=interaction.user.id,
                 reporter_global=interaction.user.global_name
@@ -965,40 +931,6 @@ class LFGReportButtons(discord.ui.View):
         # Send confirmation to opponent
         try:
             opponent = await self.bot.fetch_user(opponent_id)
-
-            # Find opponent's match report message to remove their buttons
-            try:
-                opponent_dm_channel = await opponent.create_dm()
-                opponent_report_message = None
-
-                async for message in opponent_dm_channel.history(limit=50):
-                    if message.author.id == self.bot.user.id and message.components:
-                        # Check if this is the match report message for these two players
-                        for component in message.components:
-                            for button in component.children:
-                                if hasattr(
-                                    button, "custom_id"
-                                ) and button.custom_id in [
-                                    "win_button",
-                                    "lose_button",
-                                    "cancel_match",
-                                ]:
-                                    opponent_report_message = message
-                                    break
-                            if opponent_report_message:
-                                break
-                        if opponent_report_message:
-                            break
-
-                # Remove opponent's buttons
-                if opponent_report_message:
-                    await opponent_report_message.edit(view=None)
-            except discord.Forbidden:
-                logger.warning(
-                    f"Cannot access DM channel for user {opponent_id} - DMs disabled or bot blocked"
-                )
-            except Exception as e:
-                logger.error(f"Error accessing opponent DM history: {e}")
 
             confirmation_view = MatchConfirmationButtons(
                 reporter_id=interaction.user.id,
@@ -1265,13 +1197,13 @@ class ChallengeButtons(discord.ui.View):
                 if not interaction.response.is_done():
                     await interaction.response.send_message(
                         f"**Challenge Accepted!** You're playing against **{reporter_global}**!\n\n"
-                        f"**{reporter_global}** has the match report buttons. They will report the result after your game.",
+                        f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome.",
                         ephemeral=True,
                     )
                 else:
                     await interaction.followup.send(
                         f"**Challenge Accepted!** You're playing against **{reporter_global}**!\n\n"
-                        f"**{reporter_global}** has the match report buttons. They will report the result after your game.",
+                        f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome.",
                         ephemeral=True,
                     )
             except Exception as e:
@@ -1281,7 +1213,7 @@ class ChallengeButtons(discord.ui.View):
             try:
                 await challenger.send(
                     f"**Challenge Accepted!** **{accepter_global}** accepted your challenge!\n\n"
-                    f"**{accepter_global}** has the match report buttons. They will report the result after your game."
+                    f"**{accepter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                 )
             except discord.Forbidden:
                 try:
@@ -1289,7 +1221,7 @@ class ChallengeButtons(discord.ui.View):
                     if dm_channel:
                         await dm_channel.send(
                             f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!\n\n"
-                            f"**{accepter_global}** has the match report buttons. They will report the result after your game."
+                            f"**{accepter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                         )
                 except Exception as e:
                     logger.error(
@@ -1580,7 +1512,7 @@ class JoinQueueButton(discord.ui.View):
                 try:
                     await interaction.user.send(
                         f"**Match Found!** You've been matched with **{reporter_global}**!\n\n"
-                        f"**{reporter_global}** has the match report buttons. They will report the result after your game."
+                        f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                     )
                 except discord.Forbidden:
                     try:
@@ -1588,7 +1520,7 @@ class JoinQueueButton(discord.ui.View):
                         if dm_channel:
                             await dm_channel.send(
                                 f"{interaction.user.mention} **Match Found!**\n\nYou've been matched with **{reporter_global}**!\n\n"
-                                f"**{reporter_global}** has the match report buttons. They will report the result after your game."
+                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                             )
                     except Exception:
                         pass
@@ -1597,7 +1529,7 @@ class JoinQueueButton(discord.ui.View):
                 try:
                     await matched_user.send(
                         f"**Match Found!** You've been matched with **{reporter_global}**!\n\n"
-                        f"**{reporter_global}** has the match report buttons. They will report the result after your game."
+                        f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                     )
                 except discord.Forbidden:
                     try:
@@ -1605,7 +1537,7 @@ class JoinQueueButton(discord.ui.View):
                         if dm_channel:
                             await dm_channel.send(
                                 f"{matched_user.mention} **Match Found!**\n\nYou've been matched with **{reporter_global}**!\n\n"
-                                f"**{reporter_global}** has the match report buttons. They will report the result after your game."
+                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                             )
                     except Exception:
                         pass
@@ -2213,7 +2145,7 @@ class LFGCog(commands.Cog):
             try:
                 await other_user.send(
                     f"**Match Found!** You've been matched with **{reporter_global}**!\n\n"
-                    f"**{reporter_global}** has the match report buttons. They will report the result after your game."
+                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                 )
             except discord.Forbidden:
                 logger.error(
@@ -2232,7 +2164,7 @@ class LFGCog(commands.Cog):
                     if dm_channel:
                         await dm_channel.send(
                             f"{other_user.mention} **Match Found!**\n\nYou've been matched with **{reporter_global}**!\n\n"
-                            f"**{reporter_global}** has the match report buttons. They will report the result after your game."
+                            f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                         )
                         logger.info(
                             f"Posted match info in DM-disabled channel for {other_global}"

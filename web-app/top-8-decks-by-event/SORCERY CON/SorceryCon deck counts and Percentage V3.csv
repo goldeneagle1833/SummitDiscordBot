@@ -1,0 +1,410 @@
+Name,Type,Rarity,Total_count_of_card,Decks_with_card,Percentage of decks with at least one copy
+Apprentice Wizard,Minion,Ordinary,63,19,29
+Blood Ravens,Minion,Ordinary,4,1,2
+Candlemas Monks,Minion,Elite,0,0,0
+Cloud Spirit,Minion,Ordinary,8,3,5
+Daperyll Vampire,Minion,Exceptional,22,11,17
+Dead of Night Demon,Minion,Ordinary,2,1,2
+East-West Dragon,Minion,Elite,0,0,0
+Grandmaster Wizard,Minion,Elite,39,22,33
+Grim Reaper,Minion,Unique,15,15,23
+Gyre Hippogriffs,Minion,Exceptional,28,12,18
+Haast Eagle,Minion,Exceptional,2,1,2
+Headless Haunt,Minion,Exceptional,15,7,11
+Highland Clansmen,Minion,Ordinary,4,3,5
+Highland Falconer,Minion,Elite,17,9,14
+Highland Princess,Minion,Unique,20,20,30
+Hounds of Ondaros,Minion,Elite,12,8,12
+Kite Archer,Minion,Exceptional,1,1,2
+Lord of the Void,Minion,Unique,3,3,5
+Men of Leng,Minion,Ordinary,5,2,3
+Midnight Rogue,Minion,Ordinary,2,1,2
+Moon Clan Werewolf,Minion,Exceptional,2,1,2
+Nightmare,Minion,Elite,4,3,5
+Nimbus Jinn,Minion,Elite,17,12,18
+Palliburrie Bats,Minion,Ordinary,22,9,14
+Peregrine Apparition,Minion,Exceptional,1,1,2
+Phantasmal Shade,Minion,Exceptional,5,3,5
+Phantom Steed,Minion,Exceptional,0,0,0
+Phase Assassin,Minion,Exceptional,21,8,12
+Plumed Pegasus,Minion,Ordinary,4,2,3
+Puppet Master,Minion,Elite,0,0,0
+Recurring Specter,Minion,Elite,0,0,0
+Riddle Sphinx,Minion,Elite,1,1,2
+Roaming Monster,Minion,Ordinary,2,1,2
+Skirmishers of Mu,Minion,Exceptional,19,8,12
+Sky Baron,Minion,Elite,0,0,0
+Sling Pixies,Minion,Exceptional,5,3,5
+Snow Leopard,Minion,Ordinary,1,1,2
+Spectral Stalker,Minion,Ordinary,15,5,8
+Spire Lich,Minion,Exceptional,4,2,3
+Ultimate Horror,Minion,Unique,1,1,2
+Vril Revenant,Minion,Elite,2,2,3
+Wind Sylph,Minion,Exceptional,1,1,2
+Witherwing Hero,Minion,Unique,4,4,6
+Zephyranne Airship,Minion,Elite,2,2,3
+Blink,Magic,Ordinary,93,37,56
+Browse,Magic,Unique,11,11,17
+Chain Lightning,Magic,Exceptional,9,6,9
+Chaos Twister,Magic,Elite,11,8,12
+Disenchant,Magic,Ordinary,31,22,33
+Dream-Quest,Magic,Unique,2,2,3
+Fade,Magic,Ordinary,11,5,8
+Flanking Maneuver,Magic,Exceptional,2,1,2
+Grapple Shot,Magic,Ordinary,98,30,45
+Lightning Bolt,Magic,Ordinary,82,38,58
+Mortality,Magic,Ordinary,0,0,0
+Occult Ritual,Magic,Unique,0,0,0
+Psionic Blast,Magic,Exceptional,0,0,0
+Rain of Arrows,Magic,Ordinary,0,0,0
+Raise Dead,Magic,Exceptional,5,2,3
+Recall,Magic,Exceptional,0,0,0
+Telekinesis,Magic,Exceptional,3,2,3
+Teleport,Magic,Ordinary,14,7,11
+Unlikely Alliance,Magic,Elite,2,1,2
+Waypoint Portal,Magic,Exceptional,2,1,2
+Whirling Blades,Magic,Exceptional,13,8,12
+Windblast,Magic,Exceptional,1,1,2
+Evil Presence,Aura,Exceptional,2,1,2
+Summoning Sphere,Aura,Exceptional,25,12,18
+Thunderstorm,Aura,Exceptional,23,10,15
+Wall of Air,Aura,Ordinary,0,0,0
+Albespine Pikemen,Minion,Exceptional,3,1,2
+Alvalinne Dryads,Minion,Ordinary,3,2,3
+Amazon Warriors,Minion,Ordinary,11,7,11
+Atlas Wanderers,Minion,Elite,16,9,14
+Autumn Unicorn,Minion,Exceptional,37,14,21
+Belmotte Longbowmen,Minion,Ordinary,2,1,2
+Bone Rabble,Minion,Ordinary,0,0,0
+Bosk Troll,Minion,Ordinary,28,10,15
+Cave Trolls,Minion,Ordinary,3,2,3
+Conqueror Worm,Minion,Elite,10,6,9
+Crown Prince,Minion,Unique,3,3,5
+Dalcean Phalanx,Minion,Exceptional,25,9,14
+Dwarven Digging Team,Minion,Exceptional,8,4,6
+Frontier Settlers,Minion,Exceptional,15,7,11
+Gneissgnath Gnomes,Minion,Exceptional,0,0,0
+Grey Wolves,Minion,Ordinary,49,2,3
+House Arn Bannerman,Minion,Exceptional,11,4,6
+King of the Realm,Minion,Unique,4,4,6
+Land Surveyor,Minion,Ordinary,38,12,18
+Mage Slayer,Minion,Ordinary,0,0,0
+Master Tracker,Minion,Elite,2,1,2
+Midland Army,Minion,Unique,2,2,3
+Miracle Workers,Minion,Ordinary,7,5,8
+Monastery Gargoyle,Minion,Exceptional,0,0,0
+Monster Hunter,Minion,Exceptional,0,0,0
+Mordric Druids,Minion,Elite,0,0,0
+Mountain Giant,Minion,Elite,2,2,3
+Pudge Butcher,Minion,Exceptional,35,14,21
+Queen of Midland,Minion,Unique,2,2,3
+Root Spider,Minion,Exceptional,54,23,35
+Royal Bodyguard,Minion,Elite,21,11,17
+Scent Hounds,Minion,Ordinary,5,5,8
+Scourge Zombies,Minion,Ordinary,0,0,0
+Shield Maidens,Minion,Exceptional,12,6,9
+Silver Valkyries,Minion,Elite,1,1,2
+Sirian Templar,Minion,Exceptional,0,0,0
+Sisters of Silence,Minion,Elite,0,0,0
+Slumbering Giantess,Minion,Exceptional,15,5,8
+Squirming Mass,Minion,Elite,2,1,2
+Stone-gaze Gorgons,Minion,Elite,3,3,5
+Tragedy Worrywart,Minion,Exceptional,5,3,5
+Vanguard Knights,Minion,Exceptional,0,0,0
+Wicked Witch,Minion,Elite,1,1,2
+Wild Boars,Minion,Ordinary,2,1,2
+Wraetannis Titan,Minion,Elite,18,12,18
+Yourke Crossbowmen,Minion,Exceptional,3,1,2
+Assorted Animals,Magic,Elite,2,1,2
+Border Militia,Magic,Ordinary,9,4,6
+Bury,Magic,Ordinary,60,32,48
+Call to War,Magic,Exceptional,1,1,2
+Cave-In,Magic,Exceptional,10,5,8
+Common Sense,Magic,Ordinary,79,31,47
+Craterize,Magic,Elite,17,10,15
+Dispel,Magic,Ordinary,30,25,38
+Divine Healing,Magic,Exceptional,25,13,20
+Earthquake,Magic,Elite,45,29,44
+Exorcism,Magic,Ordinary,0,0,0
+Gigantism,Magic,Unique,12,12,18
+Minecart Madness,Magic,Exceptional,0,0,0
+Overpower,Magic,Ordinary,11,5,8
+Shield Wall,Magic,Exceptional,0,0,0
+Star-Seeds of Uhr,Magic,Unique,0,0,0
+Unravel,Magic,Ordinary,0,0,0
+Crusade,Aura,Unique,8,8,12
+Entangle Terrain,Aura,Ordinary,2,1,2
+Rest in Peace,Aura,Elite,0,0,0
+Ancient Dragon,Minion,Elite,3,2,3
+Aramos Mercenaries,Minion,Ordinary,0,0,0
+Askelon Phoenix,Minion,Elite,4,3,5
+Awakened Mummies,Minion,Exceptional,0,0,0
+Azuridge Caravan,Minion,Ordinary,0,0,0
+Bane Widow,Minion,Exceptional,10,5,8
+Beast of Burden,Minion,Ordinary,0,0,0
+Bull Demons of Adum,Minion,Elite,1,1,2
+Cauldron Crones,Minion,Ordinary,7,3,5
+Cerberus in Chains,Minion,Unique,5,5,8
+Clamor of Harpies,Minion,Exceptional,7,4,6
+Colicky Dragonettes,Minion,Exceptional,19,8,12
+Courtesan Thais,Minion,Unique,6,6,9
+Death Dealer,Minion,Unique,16,16,24
+Doomsday Prophet,Minion,Unique,1,1,2
+Escyllion Cyclops,Minion,Exceptional,1,1,2
+Far East Assassin,Minion,Elite,0,0,0
+Grosse Poltergeist,Minion,Elite,0,0,0
+Hillock Basilisk,Minion,Exceptional,3,2,3
+Infernal Legion,Minion,Elite,6,4,6
+Karkemish Chimera,Minion,Elite,0,0,0
+Lava Salamander,Minion,Exceptional,3,2,3
+Maze Minotaur,Minion,Elite,0,0,0
+Ogre Goons,Minion,Ordinary,3,1,2
+Outback Strider,Minion,Exceptional,3,1,2
+Panorama Manticore,Minion,Elite,16,9,14
+Petrosian Cavalry,Minion,Ordinary,20,9,14
+Pit Vipers,Minion,Ordinary,12,5,8
+Quarrelsome Kobolds,Minion,Exceptional,27,11,17
+Raal Dromedary,Minion,Ordinary,2,1,2
+Rimland Nomads,Minion,Ordinary,2,1,2
+Sacred Scarabs,Minion,Ordinary,44,14,21
+Sand Worm,Minion,Ordinary,2,1,2
+Scavenging Fiend,Minion,Exceptional,0,0,0
+Seasoned Sellsword,Minion,Elite,0,0,0
+Sirocco Scorpions,Minion,Ordinary,2,1,2
+Swiven Scout,Minion,Exceptional,0,0,0
+Tvinnax Berserker,Minion,Exceptional,0,0,0
+Vile Imp,Minion,Ordinary,71,19,29
+Wayfaring Pilgrim,Minion,Exceptional,5,2,3
+Wills-o-the-Wisp,Minion,Exceptional,0,0,0
+Backstab,Magic,Exceptional,0,0,0
+Blaze,Magic,Exceptional,12,7,11
+Boil,Magic,Ordinary,5,2,3
+Cone of Flame,Magic,Exceptional,4,3,5
+Critical Strike,Magic,Ordinary,7,3,5
+Disintegrate,Magic,Elite,5,4,6
+Fireball,Magic,Exceptional,9,4,6
+Firebolts,Magic,Ordinary,62,23,35
+Flame Wave,Magic,Elite,7,4,6
+Heat Ray,Magic,Ordinary,18,12,18
+Immolation,Magic,Unique,3,3,5
+Incinerate,Magic,Ordinary,1,1,2
+Infiltrate,Magic,Elite,24,15,23
+Leap Attack,Magic,Exceptional,5,2,3
+Mad Dash,Magic,Ordinary,7,4,6
+Major Explosion,Magic,Elite,12,9,14
+Meteor Shower,Magic,Elite,0,0,0
+Minor Explosion,Magic,Ordinary,28,13,20
+Pact with the Devil,Magic,Unique,8,8,12
+Poison Nova,Magic,Exceptional,18,12,18
+Scorched Earth,Magic,Elite,6,3,5
+Spin Attack,Magic,Ordinary,1,1,2
+Warp Spasm,Magic,Unique,1,1,2
+Drought,Aura,Exceptional,4,3,5
+Jihad,Aura,Unique,6,6,9
+Sandstorm,Aura,Ordinary,3,1,2
+Wall of Fire,Aura,Ordinary,4,1,2
+Wildfire,Aura,Exceptional,13,5,8
+Accursed Albatross,Minion,Exceptional,0,0,0
+Adept Illusionist,Minion,Elite,4,2,3
+Anui Undine,Minion,Exceptional,10,4,6
+Bridge Troll,Minion,Exceptional,0,0,0
+Brobdingnag Bullfrog,Minion,Exceptional,0,0,0
+Captain Baldassare,Minion,Unique,2,2,3
+Coral-Reef Kelpie,Minion,Ordinary,0,0,0
+Court Jester,Minion,Elite,0,0,0
+Deep-Sea Mermaids,Minion,Ordinary,8,2,3
+Diluvian Kraken,Minion,Elite,4,3,5
+Felbog Frog Men,Minion,Exceptional,0,0,0
+Fenvale Muse,Minion,Ordinary,0,0,0
+Fey Changeling,Minion,Exceptional,11,5,8
+Ghost Ship,Minion,Elite,2,1,2
+Giant Shark,Minion,Exceptional,14,5,8
+Great Old One,Minion,Unique,5,5,8
+Guile Sirens,Minion,Exceptional,3,1,2
+Lord of Unland,Minion,Unique,3,3,5
+Megamoeba,Minion,Elite,2,1,2
+Mother Nature,Minion,Unique,0,0,0
+Muck Lampreys,Minion,Ordinary,0,0,0
+Old Salt Anchorman,Minion,Ordinary,0,0,0
+Ormund Harpooneers,Minion,Exceptional,0,0,0
+Pirate Ship,Minion,Ordinary,4,1,2
+Polar Bears,Minion,Ordinary,0,0,0
+Polar Explorers,Minion,Elite,2,1,2
+Porcupine Pufferfish,Minion,Ordinary,0,0,0
+Ruler of Thul,Minion,Unique,10,10,15
+Sea Raider,Minion,Exceptional,0,0,0
+Sea Serpent,Minion,Ordinary,0,0,0
+Sedge Crabs,Minion,Ordinary,0,0,0
+Seirawan Hydra,Minion,Elite,0,0,0
+Selfsame Simulacrum,Minion,Elite,9,6,9
+Sneak Thief,Minion,Elite,2,1,2
+Swamp Buffalo,Minion,Ordinary,0,0,0
+Swan Maidens,Minion,Ordinary,0,0,0
+Tide Naiads,Minion,Exceptional,0,0,0
+Tringh Constrictor,Minion,Exceptional,0,0,0
+Tufted Turtles,Minion,Ordinary,21,6,9
+Unland Angler,Minion,Elite,0,0,0
+Unland Eel,Minion,Exceptional,3,1,2
+Yokai Kappas,Minion,Elite,2,1,2
+Dodge Roll,Magic,Exceptional,3,1,2
+Drown,Magic,Ordinary,15,7,11
+Extinguish,Magic,Ordinary,0,0,0
+Fire Harpoons!,Magic,Ordinary,0,0,0
+Font of Life,Magic,Exceptional,2,2,3
+Frost Nova,Magic,Exceptional,0,0,0
+Geyser,Magic,Exceptional,5,2,3
+Ice Lance,Magic,Ordinary,2,1,2
+Marine Voyage,Magic,Exceptional,0,0,0
+Plague of Frogs,Magic,Unique,5,5,8
+Pollimorph,Magic,Elite,6,3,5
+Replication,Magic,Elite,0,0,0
+Riptide,Magic,Ordinary,21,6,9
+Shrink,Magic,Exceptional,2,1,2
+Sleep,Magic,Ordinary,8,4,6
+Stormy Seas,Magic,Exceptional,8,4,6
+Twist of Fate,Magic,Unique,3,3,5
+Upwelling,Magic,Exceptional,1,1,2
+Wrath of the Sea,Magic,Elite,4,3,5
+Abundance,Aura,Elite,7,4,6
+Atlantean Fate,Aura,Unique,13,13,20
+Blizzard,Aura,Ordinary,0,0,0
+Flood,Aura,Exceptional,15,6,9
+Mariners Curse,Aura,Exceptional,0,0,0
+Silence,Aura,Elite,5,4,6
+Wall of Ice,Aura,Ordinary,6,2,3
+All-terrain Vestments,Artifact,Elite,2,1,2
+Amethyst Core,Artifact,Unique,35,35,53
+Angels Egg,Artifact,Elite,0,0,0
+Aquamarine Core,Artifact,Unique,15,15,23
+Battering Ram,Artifact,Exceptional,0,0,0
+Belfry,Artifact,Elite,2,1,2
+Black Obelisk,Artifact,Elite,0,0,0
+Blasted Oak,Artifact,Unique,0,0,0
+Buried Treasure,Artifact,Exceptional,1,1,2
+Chains of Prometheus,Artifact,Elite,6,4,6
+Crave Golem,Artifact,Exceptional,0,0,0
+Crown of the Victor,Artifact,Unique,9,9,14
+Devils Egg,Artifact,Elite,0,0,0
+Doomsday Device,Artifact,Unique,0,0,0
+Drums of Doom,Artifact,Elite,5,4,6
+Erik's Curiosa,Artifact,Unique,0,0,0
+Flaming Sword,Artifact,Exceptional,18,11,17
+Gilded Aegis,Artifact,Unique,3,3,5
+Iron Shackles,Artifact,Exceptional,1,1,2
+Kythera Mechanism,Artifact,Unique,3,3,5
+Land Deed,Artifact,Elite,5,3,5
+Lucky Charm,Artifact,Exceptional,3,2,3
+Maddening Bells,Artifact,Elite,0,0,0
+Magellan Globe,Artifact,Elite,5,4,6
+Magnetic Muzzle,Artifact,Elite,0,0,0
+Mask of Mayhem,Artifact,Elite,0,0,0
+Mix Aer,Artifact,Elite,14,8,12
+Mix Aqua,Artifact,Elite,8,5,8
+Mix Ignis,Artifact,Elite,6,3,5
+Mix Terra,Artifact,Elite,13,8,12
+Onyx Core,Artifact,Unique,30,30,45
+Orb of Baal Berith,Artifact,Unique,0,0,0
+Payload Trebuchet,Artifact,Elite,0,0,0
+Pendulum of Peril,Artifact,Unique,1,1,2
+Philosophers Stone,Artifact,Unique,39,39,59
+Pnakotic Manuscripts,Artifact,Unique,0,0,0
+Poisonous Dagger,Artifact,Exceptional,9,6,9
+Purge Juggernaut,Artifact,Elite,0,0,0
+Rolling Boulder,Artifact,Exceptional,11,8,12
+Ruby Core,Artifact,Unique,25,25,38
+Scarecrow,Artifact,Ordinary,1,1,2
+Screaming Skull,Artifact,Elite,14,9,14
+Seven-League Boots,Artifact,Unique,14,14,21
+Siege Ballista,Artifact,Exceptional,0,0,0
+Spear of Destiny,Artifact,Unique,1,1,2
+Sunken Treasure,Artifact,Exceptional,0,0,0
+The Immortal Throne,Artifact,Unique,0,0,0
+Torshammar Trinket,Artifact,Exceptional,11,7,11
+Truesight Crossbow,Artifact,Exceptional,13,11,17
+Undertaker Engine,Artifact,Elite,0,0,0
+Wicker Manikin,Artifact,Ordinary,0,0,0
+Wings of Invention,Artifact,Exceptional,2,2,3
+Cloud City,Site,Unique,15,15,23
+Dark Tower,Site,Ordinary,64,47,71
+Gothic Tower,Site,Ordinary,60,46,70
+Lone Tower,Site,Ordinary,65,48,73
+Mountain Pass,Site,Exceptional,24,14,21
+Observatory,Site,Elite,47,31,47
+Updraft Ridge,Site,Exceptional,16,9,14
+Watchtower,Site,Exceptional,22,14,21
+Bedrock,Site,Exceptional,24,14,21
+Gnome Hollows,Site,Exceptional,35,18,27
+Holy Ground,Site,Exceptional,20,14,21
+Humble Village,Site,Ordinary,39,21,32
+Kingdom of Agartha,Site,Unique,2,2,3
+Pillar of Zeiros,Site,Unique,37,37,56
+Quagmire,Site,Exceptional,10,8,12
+Rift Valley,Site,Elite,29,18,27
+Rustic Village,Site,Ordinary,46,21,32
+Secret Tunnel,Site,Exceptional,10,8,12
+Simple Village,Site,Ordinary,39,20,30
+Vantage Hills,Site,Exceptional,6,5,8
+Arid Desert,Site,Ordinary,28,14,21
+Dwarven Forge,Site,Elite,5,4,6
+Mirage,Site,Elite,10,8,12
+Red Desert,Site,Ordinary,30,16,24
+Remote Desert,Site,Ordinary,31,17,26
+River of Flame,Site,Unique,23,23,35
+Shifting Sands,Site,Exceptional,13,8,12
+Smokestacks of Gnaak,Site,Unique,12,12,18
+Vesuvius,Site,Unique,17,17,26
+Autumn River,Site,Ordinary,14,6,9
+Floodplain,Site,Exceptional,33,14,21
+Iceburg,Site,Exceptional,0,0,0
+Island Leviathan,Site,Elite,6,4,6
+Maelstrom,Site,Unique,6,6,9
+Spring River,Site,Ordinary,17,6,9
+Summer River,Site,Ordinary,8,5,8
+Tadpole Pool,Site,Unique,6,6,9
+Undertow,Site,Exceptional,18,7,11
+Aqueduct,Site,Exceptional,11,4,6
+Lighthouse,Site,Exceptional,31,14,21
+Oasis,Site,Exceptional,32,15,23
+Pristine Paradise,Site,Unique,4,4,6
+Ruins,Site,Exceptional,61,26,39
+Steppe,Site,Exceptional,52,23,35
+The Colour Out of Space,Site,Unique,16,16,24
+Windmill,Site,Exceptional,62,28,42
+Astral Alcazar,Site,Elite,1,1,2
+Battlefield,Site,Elite,3,3,5
+Boneyard,Site,Unique,8,8,12
+Bottomless Pit,Site,Elite,13,7,11
+Cornerstone,Site,Exceptional,3,2,3
+Crossroads,Site,Elite,22,16,24
+Dome of Osiros,Site,Unique,1,1,2
+Donnybrook Inn,Site,Unique,1,1,2
+Edge of the World,Site,Elite,2,1,2
+Free City,Site,Exceptional,38,19,29
+Great Wall,Site,Unique,3,3,5
+Imperial Road,Site,Elite,12,7,11
+Mirror Realm,Site,Unique,20,20,30
+Mudflow,Site,Exceptional,4,4,6
+Planar Gate,Site,Elite,1,1,2
+Primodial Spring,Site,Elite,0,0,0
+Roots of Yggdrasil,Site,Unique,4,4,6
+Sinkhole,Site,Elite,19,12,18
+Standing Stones,Site,Elite,2,1,2
+The Geistwood,Site,Unique,8,8,12
+Vaults of Zul,Site,Unique,0,0,0
+Avatar of Air,Avatar,Ordinary,3,3,5
+Avatar of Earth,Avatar,Ordinary,5,5,8
+Avatar of Fire,Avatar,Ordinary,0,0,0
+Avatar of Water,Avatar,Ordinary,0,0,0
+Battlemage,Avatar,Elite,8,8,12
+Deathspeaker,Avatar,Elite,12,12,18
+Elementalist,Avatar,Elite,2,2,3
+Enchantress,Avatar,Elite,5,5,8
+Pathfinder,Avatar,Unique,8,8,12
+Seer,Avatar,Elite,1,1,2
+Sorcerer,Avatar,Ordinary,13,13,20
+Waveshaper,Avatar,Ordinary,1,1,2
+Flamecaller,Avatar,Ordinary,3,3,5
+Sparkmage,Avatar,Ordinary,4,4,6
+Geomancer,Avatar,Ordinary,2,2,3
+
+

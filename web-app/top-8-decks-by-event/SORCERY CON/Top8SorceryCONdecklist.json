@@ -1,0 +1,1722 @@
+[
+{
+    "id": "clspsq15m00381191gh4h4bmn",
+    "name": "Let Sleeping Giants Lie",
+    "username": "deadman752",
+    "legality": {
+      "isLegal": true,
+      "context": ""
+    },
+    "avatar": [
+      {
+        "identifier": "sorcerer",
+        "name": "Sorcerer",
+        "quantity": 1
+      }
+    ],
+    "spellbook": [
+      {
+        "identifier": "bosk_troll",
+        "name": "Bosk Troll",
+        "quantity": 4
+      },
+      {
+        "identifier": "vile_imp",
+        "name": "Vile Imp",
+        "quantity": 4
+      },
+      {
+        "identifier": "root_spider",
+        "name": "Root Spider",
+        "quantity": 3
+      },
+      {
+        "identifier": "colicky_dragonettes",
+        "name": "Colicky Dragonettes",
+        "quantity": 3
+      },
+      {
+        "identifier": "slumbering_giantess",
+        "name": "Slumbering Giantess",
+        "quantity": 3
+      },
+      {
+        "identifier": "quarrelsome_kobolds",
+        "name": "Quarrelsome Kobolds",
+        "quantity": 3
+      },
+      {
+        "identifier": "petrosian_cavalry",
+        "name": "Petrosian Cavalry",
+        "quantity": 2
+      },
+      {
+        "identifier": "autumn_unicorn",
+        "name": "Autumn Unicorn",
+        "quantity": 1
+      },
+      {
+        "identifier": "blaze",
+        "name": "Blaze",
+        "quantity": 3
+      },
+      {
+        "identifier": "common_sense",
+        "name": "Common Sense",
+        "quantity": 2
+      },
+      {
+        "identifier": "firebolts",
+        "name": "Firebolts",
+        "quantity": 3
+      },
+      {
+        "identifier": "flame_wave",
+        "name": "Flame Wave",
+        "quantity": 1
+      },
+      {
+        "identifier": "earthquake",
+        "name": "Earthquake",
+        "quantity": 1
+      },
+      {
+        "identifier": "gigantism",
+        "name": "Gigantism",
+        "quantity": 1
+      },
+      {
+        "identifier": "dispel",
+        "name": "Dispel",
+        "quantity": 1
+      },
+      {
+        "identifier": "ruby_core",
+        "name": "Ruby Core",
+        "quantity": 1
+      },
+      {
+        "identifier": "onyx_core",
+        "name": "Onyx Core",
+        "quantity": 1
+      },
+      {
+        "identifier": "philosophers_stone",
+        "name": "Philosophers Stone",
+        "quantity": 1
+      },
+      {
+        "identifier": "bury",
+        "name": "Bury",
+        "quantity": 2
+      }
+    ],
+    "atlas": [
+      {
+        "identifier": "bedrock",
+        "name": "Bedrock",
+        "quantity": 2
+      },
+      {
+        "identifier": "rift_valley",
+        "name": "Rift Valley",
+        "quantity": 2
+      },
+      {
+        "identifier": "steppe",
+        "name": "Steppe",
+        "quantity": 3
+      },
+      {
+        "identifier": "pillar_of_zeiros",
+        "name": "Pillar of Zeiros",
+        "quantity": 1
+      },
+      {
+        "identifier": "river_of_flame",
+        "name": "River of Flame",
+        "quantity": 1
+      },
+      {
+        "identifier": "mirror_realm",
+        "name": "Mirror Realm",
+        "quantity": 1
+      },
+      {
+        "identifier": "imperial_road",
+        "name": "Imperial Road",
+        "quantity": 2
+      },
+      {
+        "identifier": "smokestacks_of_gnaak",
+        "name": "Smokestacks of Gnaak",
+        "quantity": 1
+      },
+      {
+        "identifier": "quagmire",
+        "name": "Quagmire",
+        "quantity": 1
+      },
+      {
+        "identifier": "red_desert",
+        "name": "Red Desert",
+        "quantity": 2
+      },
+      {
+        "identifier": "remote_desert",
+        "name": "Remote Desert",
+        "quantity": 2
+      },
+      {
+        "identifier": "arid_desert",
+        "name": "Arid Desert",
+        "quantity": 2
+      }
+    ],
+    "sideboard": [
+      {
+        "identifier": "bedrock",
+        "name": "Bedrock",
+        "quantity": 1,
+        "category": "atlas"
+      },
+      {
+        "identifier": "firebolts",
+        "name": "Firebolts",
+        "quantity": 1,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "dispel",
+        "name": "Dispel",
+        "quantity": 2,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "heat_ray",
+        "name": "Heat Ray",
+        "quantity": 1,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "bury",
+        "name": "Bury",
+        "quantity": 1,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "drought",
+        "name": "Drought",
+        "quantity": 1,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "infiltrate",
+        "name": "Infiltrate",
+        "quantity": 2,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "earthquake",
+        "name": "Earthquake",
+        "quantity": 1,
+        "category": "spellbook"
+      }
+    ]
+  },
+  {
+    "id": "clso8doel009z9h24umilcnj6",
+    "name": "Air",
+    "username": "5thClick",
+    "legality": {
+      "isLegal": true,
+      "context": ""
+    },
+    "avatar": [
+      {
+        "identifier": "avatar_of_air",
+        "name": "Avatar of Air",
+        "quantity": 1
+      }
+    ],
+    "spellbook": [
+      {
+        "identifier": "skirmishers_of_mu",
+        "name": "Skirmishers of Mu",
+        "quantity": 3
+      },
+      {
+        "identifier": "fade",
+        "name": "Fade",
+        "quantity": 4
+      },
+      {
+        "identifier": "phase_assassin",
+        "name": "Phase Assassin",
+        "quantity": 3
+      },
+      {
+        "identifier": "gyre_hippogriffs",
+        "name": "Gyre Hippogriffs",
+        "quantity": 3
+      },
+      {
+        "identifier": "blink",
+        "name": "Blink",
+        "quantity": 4
+      },
+      {
+        "identifier": "browse",
+        "name": "Browse",
+        "quantity": 1
+      },
+      {
+        "identifier": "grim_reaper",
+        "name": "Grim Reaper",
+        "quantity": 1
+      },
+      {
+        "identifier": "rolling_boulder",
+        "name": "Rolling Boulder",
+        "quantity": 2
+      },
+      {
+        "identifier": "witherwing_hero",
+        "name": "Witherwing Hero",
+        "quantity": 1
+      },
+      {
+        "identifier": "hounds_of_ondaros",
+        "name": "Hounds of Ondaros",
+        "quantity": 2
+      },
+      {
+        "identifier": "phantasmal_shade",
+        "name": "Phantasmal Shade",
+        "quantity": 3
+      },
+      {
+        "identifier": "sling_pixies",
+        "name": "Sling Pixies",
+        "quantity": 2
+      },
+      {
+        "identifier": "unlikely_alliance",
+        "name": "Unlikely Alliance",
+        "quantity": 2
+      },
+      {
+        "identifier": "chaos_twister",
+        "name": "Chaos Twister",
+        "quantity": 2
+      },
+      {
+        "identifier": "highland_falconer",
+        "name": "Highland Falconer",
+        "quantity": 2
+      },
+      {
+        "identifier": "palliburrie_bats",
+        "name": "Palliburrie Bats",
+        "quantity": 3
+      },
+      {
+        "identifier": "whirling_blades",
+        "name": "Whirling Blades",
+        "quantity": 2
+      }
+    ],
+    "atlas": [
+      {
+        "identifier": "free_city",
+        "name": "Free City",
+        "quantity": 2
+      },
+      {
+        "identifier": "mountain_pass",
+        "name": "Mountain Pass",
+        "quantity": 3
+      },
+      {
+        "identifier": "watchtower",
+        "name": "Watchtower",
+        "quantity": 2
+      },
+      {
+        "identifier": "observatory",
+        "name": "Observatory",
+        "quantity": 2
+      },
+      {
+        "identifier": "cloud_city",
+        "name": "Cloud City",
+        "quantity": 1
+      },
+      {
+        "identifier": "dark_tower",
+        "name": "Dark Tower",
+        "quantity": 2
+      },
+      {
+        "identifier": "gothic_tower",
+        "name": "Gothic Tower",
+        "quantity": 2
+      },
+      {
+        "identifier": "lone_tower",
+        "name": "Lone Tower",
+        "quantity": 2
+      },
+      {
+        "identifier": "bottomless_pit",
+        "name": "Bottomless Pit",
+        "quantity": 2
+      },
+      {
+        "identifier": "updraft_ridge",
+        "name": "Updraft Ridge",
+        "quantity": 2
+      }
+    ],
+    "sideboard": [
+      
+    ]
+  },
+  {
+    "id": "clspt89mj001sfs2if10tmeu6",
+    "name": "Death",
+    "username": "brandonone",
+    "legality": {
+      "isLegal": true,
+      "context": ""
+    },
+    "avatar": [
+      {
+        "identifier": "deathspeaker",
+        "name": "Deathspeaker",
+        "quantity": 1
+      }
+    ],
+    "spellbook": [
+      {
+        "identifier": "philosophers_stone",
+        "name": "Philosophers Stone",
+        "quantity": 1
+      },
+      {
+        "identifier": "amethyst_core",
+        "name": "Amethyst Core",
+        "quantity": 1
+      },
+      {
+        "identifier": "ruby_core",
+        "name": "Ruby Core",
+        "quantity": 1
+      },
+      {
+        "identifier": "highland_princess",
+        "name": "Highland Princess",
+        "quantity": 1
+      },
+      {
+        "identifier": "vile_imp",
+        "name": "Vile Imp",
+        "quantity": 4
+      },
+      {
+        "identifier": "highland_falconer",
+        "name": "Highland Falconer",
+        "quantity": 2
+      },
+      {
+        "identifier": "quarrelsome_kobolds",
+        "name": "Quarrelsome Kobolds",
+        "quantity": 2
+      },
+      {
+        "identifier": "sacred_scarabs",
+        "name": "Sacred Scarabs",
+        "quantity": 4
+      },
+      {
+        "identifier": "apprentice_wizard",
+        "name": "Apprentice Wizard",
+        "quantity": 4
+      },
+      {
+        "identifier": "grandmaster_wizard",
+        "name": "Grandmaster Wizard",
+        "quantity": 2
+      },
+      {
+        "identifier": "nimbus_jinn",
+        "name": "Nimbus Jinn",
+        "quantity": 1
+      },
+      {
+        "identifier": "death_dealer",
+        "name": "Death Dealer",
+        "quantity": 1
+      },
+      {
+        "identifier": "thunderstorm",
+        "name": "Thunderstorm",
+        "quantity": 2
+      },
+      {
+        "identifier": "firebolts",
+        "name": "Firebolts",
+        "quantity": 3
+      },
+      {
+        "identifier": "pact_with_the_devil",
+        "name": "Pact with the Devil",
+        "quantity": 1
+      },
+      {
+        "identifier": "browse",
+        "name": "Browse",
+        "quantity": 1
+      },
+      {
+        "identifier": "chaos_twister",
+        "name": "Chaos Twister",
+        "quantity": 2
+      },
+      {
+        "identifier": "major_explosion",
+        "name": "Major Explosion",
+        "quantity": 2
+      },
+      {
+        "identifier": "summoning_sphere",
+        "name": "Summoning Sphere",
+        "quantity": 2
+      },
+      {
+        "identifier": "jihad",
+        "name": "Jihad",
+        "quantity": 1
+      },
+      {
+        "identifier": "disenchant",
+        "name": "Disenchant",
+        "quantity": 1
+      },
+      {
+        "identifier": "drums_of_doom",
+        "name": "Drums of Doom",
+        "quantity": 1
+      },
+      {
+        "identifier": "lightning_bolt",
+        "name": "Lightning Bolt",
+        "quantity": 1
+      },
+      {
+        "identifier": "infiltrate",
+        "name": "Infiltrate",
+        "quantity": 1
+      }
+    ],
+    "atlas": [
+      {
+        "identifier": "river_of_flame",
+        "name": "River of Flame",
+        "quantity": 1
+      },
+      {
+        "identifier": "lighthouse",
+        "name": "Lighthouse",
+        "quantity": 2
+      },
+      {
+        "identifier": "oasis",
+        "name": "Oasis",
+        "quantity": 1
+      },
+      {
+        "identifier": "the_geistwood",
+        "name": "The Geistwood",
+        "quantity": 1
+      },
+      {
+        "identifier": "steppe",
+        "name": "Steppe",
+        "quantity": 3
+      },
+      {
+        "identifier": "ruins",
+        "name": "Ruins",
+        "quantity": 3
+      },
+      {
+        "identifier": "windmill",
+        "name": "Windmill",
+        "quantity": 3
+      },
+      {
+        "identifier": "boneyard",
+        "name": "Boneyard",
+        "quantity": 1
+      },
+      {
+        "identifier": "lone_tower",
+        "name": "Lone Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "gothic_tower",
+        "name": "Gothic Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "red_desert",
+        "name": "Red Desert",
+        "quantity": 1
+      },
+      {
+        "identifier": "dark_tower",
+        "name": "Dark Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "vesuvius",
+        "name": "Vesuvius",
+        "quantity": 1
+      }
+    ],
+    "sideboard": [
+      {
+        "identifier": "kingdom_of_agartha",
+        "name": "Kingdom of Agartha",
+        "quantity": 1,
+        "category": "atlas"
+      },
+      {
+        "identifier": "disenchant",
+        "name": "Disenchant",
+        "quantity": 1,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "root_spider",
+        "name": "Root Spider",
+        "quantity": 1,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "bury",
+        "name": "Bury",
+        "quantity": 2,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "royal_bodyguard",
+        "name": "Royal Bodyguard",
+        "quantity": 2,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "courtesan_thais",
+        "name": "Courtesan Thais",
+        "quantity": 1,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "wraetannis_titan",
+        "name": "Wraetannis Titan",
+        "quantity": 1,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "great_wall",
+        "name": "Great Wall",
+        "quantity": 1,
+        "category": "atlas"
+      }
+    ]
+  },
+  {
+    "id": "clspxnm1u003jhvxiw7reqfp8",
+    "name": "Seattle Sorcery Con",
+    "username": "Smorehead1993",
+    "legality": {
+      "isLegal": true,
+      "context": ""
+    },
+    "avatar": [
+      {
+        "identifier": "deathspeaker",
+        "name": "Deathspeaker",
+        "quantity": 1
+      }
+    ],
+    "spellbook": [
+      {
+        "identifier": "apprentice_wizard",
+        "name": "Apprentice Wizard",
+        "quantity": 4
+      },
+      {
+        "identifier": "grandmaster_wizard",
+        "name": "Grandmaster Wizard",
+        "quantity": 2
+      },
+      {
+        "identifier": "philosophers_stone",
+        "name": "Philosophers Stone",
+        "quantity": 1
+      },
+      {
+        "identifier": "amethyst_core",
+        "name": "Amethyst Core",
+        "quantity": 1
+      },
+      {
+        "identifier": "ruby_core",
+        "name": "Ruby Core",
+        "quantity": 1
+      },
+      {
+        "identifier": "land_surveyor",
+        "name": "Land Surveyor",
+        "quantity": 4
+      },
+      {
+        "identifier": "earthquake",
+        "name": "Earthquake",
+        "quantity": 2
+      },
+      {
+        "identifier": "common_sense",
+        "name": "Common Sense",
+        "quantity": 4
+      },
+      {
+        "identifier": "bury",
+        "name": "Bury",
+        "quantity": 3
+      },
+      {
+        "identifier": "highland_princess",
+        "name": "Highland Princess",
+        "quantity": 1
+      },
+      {
+        "identifier": "summoning_sphere",
+        "name": "Summoning Sphere",
+        "quantity": 2
+      },
+      {
+        "identifier": "nimbus_jinn",
+        "name": "Nimbus Jinn",
+        "quantity": 2
+      },
+      {
+        "identifier": "scorched_earth",
+        "name": "Scorched Earth",
+        "quantity": 2
+      },
+      {
+        "identifier": "angels_egg",
+        "name": "Angels Egg",
+        "quantity": 2
+      },
+      {
+        "identifier": "divine_healing",
+        "name": "Divine Healing",
+        "quantity": 2
+      },
+      {
+        "identifier": "pendulum_of_peril",
+        "name": "Pendulum of Peril",
+        "quantity": 1
+      },
+      {
+        "identifier": "craterize",
+        "name": "Craterize",
+        "quantity": 2
+      },
+      {
+        "identifier": "onyx_core",
+        "name": "Onyx Core",
+        "quantity": 1
+      },
+      {
+        "identifier": "root_spider",
+        "name": "Root Spider",
+        "quantity": 3
+      },
+      {
+        "identifier": "dispel",
+        "name": "Dispel",
+        "quantity": 1
+      },
+      {
+        "identifier": "aquamarine_core",
+        "name": "Aquamarine Core",
+        "quantity": 1
+      }
+    ],
+    "atlas": [
+      {
+        "identifier": "windmill",
+        "name": "Windmill",
+        "quantity": 3
+      },
+      {
+        "identifier": "roots_of_yggdrasil",
+        "name": "Roots of Yggdrasil",
+        "quantity": 1
+      },
+      {
+        "identifier": "bedrock",
+        "name": "Bedrock",
+        "quantity": 3
+      },
+      {
+        "identifier": "sinkhole",
+        "name": "Sinkhole",
+        "quantity": 2
+      },
+      {
+        "identifier": "crossroads",
+        "name": "Crossroads",
+        "quantity": 2
+      },
+      {
+        "identifier": "gnome_hollows",
+        "name": "Gnome Hollows",
+        "quantity": 3
+      },
+      {
+        "identifier": "lone_tower",
+        "name": "Lone Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "gothic_tower",
+        "name": "Gothic Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "dark_tower",
+        "name": "Dark Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "ruins",
+        "name": "Ruins",
+        "quantity": 3
+      }
+    ],
+    "sideboard": [
+      
+    ]
+  },
+  {
+    "id": "cls5ic0d80052hbffax1yr98j",
+    "name": "Ruins Deathspeaker",
+    "username": "Alex West",
+    "legality": {
+      "isLegal": true,
+      "context": ""
+    },
+    "avatar": [
+      {
+        "identifier": "deathspeaker",
+        "name": "Deathspeaker",
+        "quantity": 1
+      }
+    ],
+    "spellbook": [
+      {
+        "identifier": "angels_egg",
+        "name": "Angels Egg",
+        "quantity": 2
+      },
+      {
+        "identifier": "apprentice_wizard",
+        "name": "Apprentice Wizard",
+        "quantity": 4
+      },
+      {
+        "identifier": "grandmaster_wizard",
+        "name": "Grandmaster Wizard",
+        "quantity": 2
+      },
+      {
+        "identifier": "summoning_sphere",
+        "name": "Summoning Sphere",
+        "quantity": 3
+      },
+      {
+        "identifier": "highland_princess",
+        "name": "Highland Princess",
+        "quantity": 1
+      },
+      {
+        "identifier": "philosophers_stone",
+        "name": "Philosophers Stone",
+        "quantity": 1
+      },
+      {
+        "identifier": "amethyst_core",
+        "name": "Amethyst Core",
+        "quantity": 1
+      },
+      {
+        "identifier": "nimbus_jinn",
+        "name": "Nimbus Jinn",
+        "quantity": 2
+      },
+      {
+        "identifier": "vile_imp",
+        "name": "Vile Imp",
+        "quantity": 4
+      },
+      {
+        "identifier": "ruby_core",
+        "name": "Ruby Core",
+        "quantity": 1
+      },
+      {
+        "identifier": "clamor_of_harpies",
+        "name": "Clamor of Harpies",
+        "quantity": 3
+      },
+      {
+        "identifier": "bane_widow",
+        "name": "Bane Widow",
+        "quantity": 3
+      },
+      {
+        "identifier": "jihad",
+        "name": "Jihad",
+        "quantity": 1
+      },
+      {
+        "identifier": "death_dealer",
+        "name": "Death Dealer",
+        "quantity": 1
+      },
+      {
+        "identifier": "highland_falconer",
+        "name": "Highland Falconer",
+        "quantity": 2
+      },
+      {
+        "identifier": "sacred_scarabs",
+        "name": "Sacred Scarabs",
+        "quantity": 4
+      },
+      {
+        "identifier": "pact_with_the_devil",
+        "name": "Pact with the Devil",
+        "quantity": 1
+      },
+      {
+        "identifier": "wayfaring_pilgrim",
+        "name": "Wayfaring Pilgrim",
+        "quantity": 3
+      },
+      {
+        "identifier": "browse",
+        "name": "Browse",
+        "quantity": 1
+      }
+    ],
+    "atlas": [
+      {
+        "identifier": "the_geistwood",
+        "name": "The Geistwood",
+        "quantity": 1
+      },
+      {
+        "identifier": "crossroads",
+        "name": "Crossroads",
+        "quantity": 2
+      },
+      {
+        "identifier": "dark_tower",
+        "name": "Dark Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "gothic_tower",
+        "name": "Gothic Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "lone_tower",
+        "name": "Lone Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "ruins",
+        "name": "Ruins",
+        "quantity": 3
+      },
+      {
+        "identifier": "observatory",
+        "name": "Observatory",
+        "quantity": 2
+      },
+      {
+        "identifier": "mirage",
+        "name": "Mirage",
+        "quantity": 2
+      },
+      {
+        "identifier": "mirror_realm",
+        "name": "Mirror Realm",
+        "quantity": 1
+      },
+      {
+        "identifier": "imperial_road",
+        "name": "Imperial Road",
+        "quantity": 2
+      },
+      {
+        "identifier": "red_desert",
+        "name": "Red Desert",
+        "quantity": 4
+      }
+    ],
+    "sideboard": [
+      
+    ]
+  },
+  {
+    "id": "clsphm2cn005n120e5cawkgzt",
+    "name": "in Marcus I Trust",
+    "username": "Truk",
+    "legality": {
+      "isLegal": true,
+      "context": ""
+    },
+    "avatar": [
+      {
+        "identifier": "pathfinder",
+        "name": "Pathfinder",
+        "quantity": 1
+      }
+    ],
+    "spellbook": [
+      {
+        "identifier": "blink",
+        "name": "Blink",
+        "quantity": 3
+      },
+      {
+        "identifier": "cerberus_in_chains",
+        "name": "Cerberus in Chains",
+        "quantity": 1
+      },
+      {
+        "identifier": "infiltrate",
+        "name": "Infiltrate",
+        "quantity": 2
+      },
+      {
+        "identifier": "grapple_shot",
+        "name": "Grapple Shot",
+        "quantity": 3
+      },
+      {
+        "identifier": "magellan_globe",
+        "name": "Magellan Globe",
+        "quantity": 1
+      },
+      {
+        "identifier": "daperyll_vampire",
+        "name": "Daperyll Vampire",
+        "quantity": 2
+      },
+      {
+        "identifier": "panorama_manticore",
+        "name": "Panorama Manticore",
+        "quantity": 2
+      },
+      {
+        "identifier": "death_dealer",
+        "name": "Death Dealer",
+        "quantity": 1
+      },
+      {
+        "identifier": "major_explosion",
+        "name": "Major Explosion",
+        "quantity": 2
+      },
+      {
+        "identifier": "philosophers_stone",
+        "name": "Philosophers Stone",
+        "quantity": 1
+      },
+      {
+        "identifier": "petrosian_cavalry",
+        "name": "Petrosian Cavalry",
+        "quantity": 3
+      },
+      {
+        "identifier": "mix_ignis",
+        "name": "Mix Ignis",
+        "quantity": 2
+      },
+      {
+        "identifier": "scorched_earth",
+        "name": "Scorched Earth",
+        "quantity": 2
+      },
+      {
+        "identifier": "grim_reaper",
+        "name": "Grim Reaper",
+        "quantity": 1
+      },
+      {
+        "identifier": "gilded_aegis",
+        "name": "Gilded Aegis",
+        "quantity": 1
+      },
+      {
+        "identifier": "pit_vipers",
+        "name": "Pit Vipers",
+        "quantity": 3
+      },
+      {
+        "identifier": "firebolts",
+        "name": "Firebolts",
+        "quantity": 3
+      },
+      {
+        "identifier": "disenchant",
+        "name": "Disenchant",
+        "quantity": 2
+      },
+      {
+        "identifier": "infernal_legion",
+        "name": "Infernal Legion",
+        "quantity": 2
+      },
+      {
+        "identifier": "whirling_blades",
+        "name": "Whirling Blades",
+        "quantity": 2
+      },
+      {
+        "identifier": "grandmaster_wizard",
+        "name": "Grandmaster Wizard",
+        "quantity": 1
+      },
+      {
+        "identifier": "quarrelsome_kobolds",
+        "name": "Quarrelsome Kobolds",
+        "quantity": 2
+      }
+    ],
+    "atlas": [
+      {
+        "identifier": "arid_desert",
+        "name": "Arid Desert",
+        "quantity": 1
+      },
+      {
+        "identifier": "dark_tower",
+        "name": "Dark Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "gothic_tower",
+        "name": "Gothic Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "lone_tower",
+        "name": "Lone Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "observatory",
+        "name": "Observatory",
+        "quantity": 1
+      },
+      {
+        "identifier": "oasis",
+        "name": "Oasis",
+        "quantity": 1
+      },
+      {
+        "identifier": "red_desert",
+        "name": "Red Desert",
+        "quantity": 1
+      },
+      {
+        "identifier": "river_of_flame",
+        "name": "River of Flame",
+        "quantity": 1
+      },
+      {
+        "identifier": "ruins",
+        "name": "Ruins",
+        "quantity": 1
+      },
+      {
+        "identifier": "steppe",
+        "name": "Steppe",
+        "quantity": 1
+      },
+      {
+        "identifier": "vesuvius",
+        "name": "Vesuvius",
+        "quantity": 1
+      },
+      {
+        "identifier": "lighthouse",
+        "name": "Lighthouse",
+        "quantity": 1
+      },
+      {
+        "identifier": "pillar_of_zeiros",
+        "name": "Pillar of Zeiros",
+        "quantity": 1
+      },
+      {
+        "identifier": "remote_desert",
+        "name": "Remote Desert",
+        "quantity": 1
+      },
+      {
+        "identifier": "roots_of_yggdrasil",
+        "name": "Roots of Yggdrasil",
+        "quantity": 1
+      },
+      {
+        "identifier": "floodplain",
+        "name": "Floodplain",
+        "quantity": 1
+      },
+      {
+        "identifier": "watchtower",
+        "name": "Watchtower",
+        "quantity": 1
+      },
+      {
+        "identifier": "shifting_sands",
+        "name": "Shifting Sands",
+        "quantity": 1
+      },
+      {
+        "identifier": "mirage",
+        "name": "Mirage",
+        "quantity": 1
+      },
+      {
+        "identifier": "crossroads",
+        "name": "Crossroads",
+        "quantity": 1
+      },
+      {
+        "identifier": "mountain_pass",
+        "name": "Mountain Pass",
+        "quantity": 1
+      }
+    ],
+    "sideboard": [
+      
+    ]
+  },
+  {
+    "id": "clq8pceow00g66o860hvur3oy",
+    "name": "Wave 2 Deathspeaker Tournament ",
+    "username": "Mr. Wiggles",
+    "legality": {
+      "isLegal": true,
+      "context": ""
+    },
+    "avatar": [
+      {
+        "identifier": "deathspeaker",
+        "name": "Deathspeaker",
+        "quantity": 1
+      }
+    ],
+    "spellbook": [
+      {
+        "identifier": "highland_falconer",
+        "name": "Highland Falconer",
+        "quantity": 2
+      },
+      {
+        "identifier": "vile_imp",
+        "name": "Vile Imp",
+        "quantity": 3
+      },
+      {
+        "identifier": "apprentice_wizard",
+        "name": "Apprentice Wizard",
+        "quantity": 4
+      },
+      {
+        "identifier": "onyx_core",
+        "name": "Onyx Core",
+        "quantity": 1
+      },
+      {
+        "identifier": "sacred_scarabs",
+        "name": "Sacred Scarabs",
+        "quantity": 2
+      },
+      {
+        "identifier": "grandmaster_wizard",
+        "name": "Grandmaster Wizard",
+        "quantity": 2
+      },
+      {
+        "identifier": "firebolts",
+        "name": "Firebolts",
+        "quantity": 2
+      },
+      {
+        "identifier": "summoning_sphere",
+        "name": "Summoning Sphere",
+        "quantity": 3
+      },
+      {
+        "identifier": "common_sense",
+        "name": "Common Sense",
+        "quantity": 2
+      },
+      {
+        "identifier": "earthquake",
+        "name": "Earthquake",
+        "quantity": 1
+      },
+      {
+        "identifier": "death_dealer",
+        "name": "Death Dealer",
+        "quantity": 1
+      },
+      {
+        "identifier": "drums_of_doom",
+        "name": "Drums of Doom",
+        "quantity": 2
+      },
+      {
+        "identifier": "infiltrate",
+        "name": "Infiltrate",
+        "quantity": 1
+      },
+      {
+        "identifier": "amethyst_core",
+        "name": "Amethyst Core",
+        "quantity": 1
+      },
+      {
+        "identifier": "hillock_basilisk",
+        "name": "Hillock Basilisk",
+        "quantity": 2
+      },
+      {
+        "identifier": "wraetannis_titan",
+        "name": "Wraetannis Titan",
+        "quantity": 1
+      },
+      {
+        "identifier": "philosophers_stone",
+        "name": "Philosophers Stone",
+        "quantity": 1
+      },
+      {
+        "identifier": "poison_nova",
+        "name": "Poison Nova",
+        "quantity": 2
+      },
+      {
+        "identifier": "fey_changeling",
+        "name": "Fey Changeling",
+        "quantity": 3
+      },
+      {
+        "identifier": "bury",
+        "name": "Bury",
+        "quantity": 3
+      },
+      {
+        "identifier": "ruler_of_thul",
+        "name": "Ruler of Thul",
+        "quantity": 1
+      },
+      {
+        "identifier": "palliburrie_bats",
+        "name": "Palliburrie Bats",
+        "quantity": 2
+      }
+    ],
+    "atlas": [
+      {
+        "identifier": "the_colour_out_of_space",
+        "name": "The Colour Out of Space",
+        "quantity": 1
+      },
+      {
+        "identifier": "river_of_flame",
+        "name": "River of Flame",
+        "quantity": 1
+      },
+      {
+        "identifier": "vesuvius",
+        "name": "Vesuvius",
+        "quantity": 1
+      },
+      {
+        "identifier": "dark_tower",
+        "name": "Dark Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "lone_tower",
+        "name": "Lone Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "gothic_tower",
+        "name": "Gothic Tower",
+        "quantity": 1
+      },
+      {
+        "identifier": "ruins",
+        "name": "Ruins",
+        "quantity": 2
+      },
+      {
+        "identifier": "steppe",
+        "name": "Steppe",
+        "quantity": 2
+      },
+      {
+        "identifier": "the_geistwood",
+        "name": "The Geistwood",
+        "quantity": 1
+      },
+      {
+        "identifier": "windmill",
+        "name": "Windmill",
+        "quantity": 2
+      },
+      {
+        "identifier": "remote_desert",
+        "name": "Remote Desert",
+        "quantity": 1
+      },
+      {
+        "identifier": "boneyard",
+        "name": "Boneyard",
+        "quantity": 1
+      },
+      {
+        "identifier": "observatory",
+        "name": "Observatory",
+        "quantity": 2
+      },
+      {
+        "identifier": "floodplain",
+        "name": "Floodplain",
+        "quantity": 3
+      },
+      {
+        "identifier": "red_desert",
+        "name": "Red Desert",
+        "quantity": 1
+      },
+      {
+        "identifier": "autumn_river",
+        "name": "Autumn River",
+        "quantity": 1
+      }
+    ],
+    "sideboard": [
+      {
+        "identifier": "disenchant",
+        "name": "Disenchant",
+        "quantity": 1,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "pillar_of_zeiros",
+        "name": "Pillar of Zeiros",
+        "quantity": 1,
+        "category": "atlas"
+      },
+      {
+        "identifier": "common_sense",
+        "name": "Common Sense",
+        "quantity": 2,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "blink",
+        "name": "Blink",
+        "quantity": 1,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "grapple_shot",
+        "name": "Grapple Shot",
+        "quantity": 2,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "drums_of_doom",
+        "name": "Drums of Doom",
+        "quantity": 1,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "royal_bodyguard",
+        "name": "Royal Bodyguard",
+        "quantity": 1,
+        "category": "spellbook"
+      },
+      {
+        "identifier": "nimbus_jinn",
+        "name": "Nimbus Jinn",
+        "quantity": 1,
+        "category": "spellbook"
+      }
+    ]
+  },
+  {
+    "id": "clpstjsio000yjn0frv18yf3i",
+    "name": "Surprise Its Damage!",
+    "username": "idonteven",
+    "legality": {
+      "isLegal": true,
+      "context": ""
+    },
+    "avatar": [
+      {
+        "identifier": "pathfinder",
+        "name": "Pathfinder",
+        "quantity": 1
+      }
+    ],
+    "spellbook": [
+      {
+        "identifier": "warp_spasm",
+        "name": "Warp Spasm",
+        "quantity": 1
+      },
+      {
+        "identifier": "gigantism",
+        "name": "Gigantism",
+        "quantity": 1
+      },
+      {
+        "identifier": "mad_dash",
+        "name": "Mad Dash",
+        "quantity": 2
+      },
+      {
+        "identifier": "panorama_manticore",
+        "name": "Panorama Manticore",
+        "quantity": 2
+      },
+      {
+        "identifier": "petrosian_cavalry",
+        "name": "Petrosian Cavalry",
+        "quantity": 1
+      },
+      {
+        "identifier": "common_sense",
+        "name": "Common Sense",
+        "quantity": 2
+      },
+      {
+        "identifier": "sirocco_scorpions",
+        "name": "Sirocco Scorpions",
+        "quantity": 2
+      },
+      {
+        "identifier": "vile_imp",
+        "name": "Vile Imp",
+        "quantity": 2
+      },
+      {
+        "identifier": "quarrelsome_kobolds",
+        "name": "Quarrelsome Kobolds",
+        "quantity": 3
+      },
+      {
+        "identifier": "colicky_dragonettes",
+        "name": "Colicky Dragonettes",
+        "quantity": 2
+      },
+      {
+        "identifier": "autumn_unicorn",
+        "name": "Autumn Unicorn",
+        "quantity": 2
+      },
+      {
+        "identifier": "slumbering_giantess",
+        "name": "Slumbering Giantess",
+        "quantity": 3
+      },
+      {
+        "identifier": "root_spider",
+        "name": "Root Spider",
+        "quantity": 2
+      },
+      {
+        "identifier": "firebolts",
+        "name": "Firebolts",
+        "quantity": 2
+      },
+      {
+        "identifier": "bury",
+        "name": "Bury",
+        "quantity": 1
+      },
+      {
+        "identifier": "craterize",
+        "name": "Craterize",
+        "quantity": 2
+      },
+      {
+        "identifier": "earthquake",
+        "name": "Earthquake",
+        "quantity": 1
+      },
+      {
+        "identifier": "infiltrate",
+        "name": "Infiltrate",
+        "quantity": 2
+      },
+      {
+        "identifier": "pudge_butcher",
+        "name": "Pudge Butcher",
+        "quantity": 3
+      },
+      {
+        "identifier": "jihad",
+        "name": "Jihad",
+        "quantity": 1
+      },
+      {
+        "identifier": "blaze",
+        "name": "Blaze",
+        "quantity": 1
+      },
+      {
+        "identifier": "atlas_wanderers",
+        "name": "Atlas Wanderers",
+        "quantity": 2
+      }
+    ],
+    "atlas": [
+      {
+        "identifier": "holy_ground",
+        "name": "Holy Ground",
+        "quantity": 1
+      },
+      {
+        "identifier": "gnome_hollows",
+        "name": "Gnome Hollows",
+        "quantity": 1
+      },
+      {
+        "identifier": "pillar_of_zeiros",
+        "name": "Pillar of Zeiros",
+        "quantity": 1
+      },
+      {
+        "identifier": "rustic_village",
+        "name": "Rustic Village",
+        "quantity": 1
+      },
+      {
+        "identifier": "humble_village",
+        "name": "Humble Village",
+        "quantity": 1
+      },
+      {
+        "identifier": "simple_village",
+        "name": "Simple Village",
+        "quantity": 1
+      },
+      {
+        "identifier": "red_desert",
+        "name": "Red Desert",
+        "quantity": 1
+      },
+      {
+        "identifier": "remote_desert",
+        "name": "Remote Desert",
+        "quantity": 1
+      },
+      {
+        "identifier": "river_of_flame",
+        "name": "River of Flame",
+        "quantity": 1
+      },
+      {
+        "identifier": "shifting_sands",
+        "name": "Shifting Sands",
+        "quantity": 1
+      },
+      {
+        "identifier": "arid_desert",
+        "name": "Arid Desert",
+        "quantity": 1
+      },
+      {
+        "identifier": "vesuvius",
+        "name": "Vesuvius",
+        "quantity": 1
+      },
+      {
+        "identifier": "steppe",
+        "name": "Steppe",
+        "quantity": 1
+      },
+      {
+        "identifier": "ruins",
+        "name": "Ruins",
+        "quantity": 1
+      },
+      {
+        "identifier": "oasis",
+        "name": "Oasis",
+        "quantity": 1
+      },
+      {
+        "identifier": "secret_tunnel",
+        "name": "Secret Tunnel",
+        "quantity": 1
+      },
+      {
+        "identifier": "vantage_hills",
+        "name": "Vantage Hills",
+        "quantity": 1
+      },
+      {
+        "identifier": "free_city",
+        "name": "Free City",
+        "quantity": 1
+      },
+      {
+        "identifier": "crossroads",
+        "name": "Crossroads",
+        "quantity": 1
+      },
+      {
+        "identifier": "rift_valley",
+        "name": "Rift Valley",
+        "quantity": 1
+      }
+    ],
+    "sideboard": [
+      
+    ]
+  }
+]

@@ -1,0 +1,60 @@
+<!-- Navbar Component -->
+<nav class="navbar">
+  <div class="navbar-left">
+    <button
+      class="hamburger-btn"
+      id="hamburger-toggle"
+      aria-label="Toggle menu">
+      <span class="hamburger-icon">≡</span>
+    </button>
+    <a href="/" class="brand-link">Sorcerers Summit</a>
+  </div>
+
+  <div class="navbar-center">
+    <a href="/" class="nav-link">Home</a>
+    <a
+      href="https://discord.gg/sorcerers-summit"
+      class="nav-link"
+      target="_blank"
+      rel="noopener noreferrer"
+      >Discord</a
+    >
+    <a
+      href="https://patreon.com/sorcerers-summit"
+      class="nav-link"
+      target="_blank"
+      rel="noopener noreferrer"
+      >Patreon</a
+    >
+    <a href="/about" class="nav-link">About</a>
+  </div>
+
+  <div class="navbar-right">
+    <!-- Future: User profile/login -->
+  </div>
+</nav>
+
+<!-- Hamburger Menu Sidebar -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <span>Menu</span>
+    <button class="close-btn" id="sidebar-close" aria-label="Close menu">
+      ✕
+    </button>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="/avatars" class="sidebar-link">Avatar Winrates</a>
+    <div class="sidebar-group">
+      <span class="sidebar-group-title">ELO Leaderboards</span>
+      <a href="/elo" class="sidebar-link sidebar-sublink">All Servers</a>
+      <a href="/elo/global" class="sidebar-link sidebar-sublink">Global</a>
+    </div>
+    <a href="/deck-help" class="sidebar-link">Deck Help</a>
+    <a href="/top-8" class="sidebar-link">Top 8 Decks</a>
+    <a href="/stats" class="sidebar-link">Statistics</a>
+    <a href="/help" class="sidebar-link">Help</a>
+  </nav>
+</aside>
+
+<!-- Overlay for mobile -->
+<div class="sidebar-overlay" id="sidebar-overlay"></div>

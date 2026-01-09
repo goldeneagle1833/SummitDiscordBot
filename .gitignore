@@ -6,7 +6,6 @@ config.yml
 config.py
 bot.log
 *.log
-*.json
 *.db
 *.sqlite
 *.cache
@@ -20,7 +19,6 @@ bot.log
 *.pdb
 
 # JSON and related files
-*.json
 *.jsonl
 *.ndjson
 *.geojson
@@ -29,3 +27,5 @@ bot.log
 .env
 .env.
 .github/workflows/deploy.yml
+web-app/curiosa-io-tools/curosa.py
+web-app/curiosa-io-tools/cardPercentages.py

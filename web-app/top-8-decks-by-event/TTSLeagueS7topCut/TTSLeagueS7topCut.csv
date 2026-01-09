@@ -1,0 +1,637 @@
+Name,Type,Element,Count,Rarity,Set,Average_Played,Percent_of_Decks_with_at_least_one_copy
+Apprentice Wizard,Minion,Air,3,Ordinary,Alpha,3,3
+Blood Ravens,Minion,Air,0,Ordinary,Alpha,0,0
+Candlemas Monks,Minion,Air,0,Elite,Alpha,0,0
+Cloud Spirit,Minion,Air,10,Ordinary,Alpha,3,10
+Daperyll Vampire,Minion,Air,16,Exceptional,Alpha,3,19
+Dead of Night Demon,Minion,Air,0,Ordinary,Alpha,0,0
+East-West Dragon,Minion,Air,0,Elite,Alpha,0,0
+Grandmaster Wizard,Minion,Air,20,Elite,Alpha,2,32
+Grim Reaper,Minion,Air,1,Unique,Alpha,1,3
+Gyre Hippogriffs,Minion,Air,17,Exceptional,Alpha,2,23
+Haast Eagle,Minion,Air,2,Exceptional,Alpha,2,3
+Headless Haunt,Minion,Air,18,Exceptional,Alpha,3,19
+Highland Clansmen,Minion,Air,0,Ordinary,Alpha,0,0
+Highland Falconer,Minion,Air,4,Elite,Alpha,2,6
+Highland Princess,Minion,Air,13,Unique,Alpha,1,42
+Hounds of Ondaros,Minion,Air,1,Elite,Alpha,1,3
+Kite Archer,Minion,Air,0,Exceptional,Alpha,0,0
+Lord of the Void,Minion,Air,2,Unique,Alpha,1,6
+Men of Leng,Minion,Air,0,Ordinary,Alpha,0,0
+Midnight Rogue,Minion,Air,0,Ordinary,Alpha,0,0
+Moon Clan Werewolf,Minion,Air,0,Exceptional,Alpha,0,0
+Nightmare,Minion,Air,0,Elite,Alpha,0,0
+Nimbus Jinn,Minion,Air,4,Elite,Alpha,1,13
+Palliburrie Bats,Minion,Air,6,Ordinary,Alpha,3,6
+Peregrine Apparition,Minion,Air,0,Exceptional,Alpha,0,0
+Phantasmal Shade,Minion,Air,2,Exceptional,Alpha,2,3
+Phantom Steed,Minion,Air,0,Exceptional,Alpha,0,0
+Phase Assassin,Minion,Air,9,Exceptional,Alpha,3,10
+Plumed Pegasus,Minion,Air,11,Ordinary,Alpha,4,10
+Puppet Master,Minion,Air,0,Elite,Alpha,0,0
+Recurring Specter,Minion,Air,0,Elite,Alpha,0,0
+Riddle Sphinx,Minion,Air,0,Elite,Alpha,0,0
+Roaming Monster,Minion,Air,0,Ordinary,Alpha,0,0
+Skirmishers of Mu,Minion,Air,0,Exceptional,Alpha,0,0
+Sky Baron,Minion,Air,0,Elite,Alpha,0,0
+Sling Pixies,Minion,Air,0,Exceptional,Alpha,0,0
+Snow Leopard,Minion,Air,0,Ordinary,Alpha,0,0
+Spectral Stalker,Minion,Air,0,Ordinary,Alpha,0,0
+Spire Lich,Minion,Air,0,Exceptional,Alpha,0,0
+Ultimate Horror,Minion,Air,0,Unique,Alpha,0,0
+Vril Revenant,Minion,Air,0,Elite,Alpha,0,0
+Wind Sylph,Minion,Air,0,Exceptional,Alpha,0,0
+Witherwing Hero,Minion,Air,2,Unique,Alpha,1,6
+Zephyranne Airship,Minion,Air,0,Elite,Alpha,0,0
+Blink,Magic,Air,47,Ordinary,Alpha,3,55
+Browse,Magic,Air,11,Unique,Alpha,1,35
+Chain Lightning,Magic,Air,3,Exceptional,Alpha,3,3
+Chaos Twister,Magic,Air,1,Elite,Alpha,1,3
+Disenchant,Magic,Air,12,Ordinary,Alpha,1,32
+Dream-Quest,Magic,Air,1,Unique,Alpha,1,3
+Fade,Magic,Air,0,Ordinary,Alpha,0,0
+Flanking Maneuver,Magic,Air,13,Exceptional,Alpha,2,26
+Grapple Shot,Magic,Air,24,Ordinary,Alpha,3,29
+Lightning Bolt,Magic,Air,23,Ordinary,Alpha,2,35
+Mortality,Magic,Air,0,Ordinary,Alpha,0,0
+Occult Ritual,Magic,Air,0,Unique,Alpha,0,0
+Psionic Blast,Magic,Air,0,Exceptional,Alpha,0,0
+Rain of Arrows,Magic,Air,0,Ordinary,Alpha,0,0
+Raise Dead,Magic,Air,0,Exceptional,Alpha,0,0
+Recall,Magic,Air,0,Exceptional,Alpha,0,0
+Telekinesis,Magic,Air,0,Exceptional,Alpha,0,0
+Teleport,Magic,Air,4,Ordinary,Alpha,4,3
+Unlikely Alliance,Magic,Air,0,Elite,Alpha,0,0
+Waypoint Portal,Magic,Air,0,Exceptional,Alpha,0,0
+Whirling Blades,Magic,Air,2,Exceptional,Alpha,1,6
+Windblast,Magic,Air,0,Exceptional,Alpha,0,0
+Evil Presence,Aura,Air,3,Exceptional,Alpha,3,3
+Summoning Sphere,Aura,Air,2,Exceptional,Alpha,2,3
+Thunderstorm,Aura,Air,3,Exceptional,Alpha,3,3
+Wall of Air,Aura,Air,0,Ordinary,Alpha,0,0
+Albespine Pikemen,Minion,Earth,0,Exceptional,Alpha,0,0
+Alvalinne Dryads,Minion,Earth,0,Ordinary,Alpha,0,0
+Amazon Warriors,Minion,Earth,0,Ordinary,Alpha,0,0
+Atlas Wanderers,Minion,Earth,0,Elite,Alpha,0,0
+Autumn Unicorn,Minion,Earth,12,Exceptional,Alpha,3,13
+Belmotte Longbowmen,Minion,Earth,0,Ordinary,Alpha,0,0
+Bone Rabble,Minion,Earth,0,Ordinary,Alpha,0,0
+Bosk Troll,Minion,Earth,18,Ordinary,Alpha,4,16
+Cave Trolls,Minion,Earth,1,Ordinary,Alpha,1,3
+Conqueror Worm,Minion,Earth,0,Elite,Alpha,0,0
+Crown Prince,Minion,Earth,0,Unique,Alpha,0,0
+Dalcean Phalanx,Minion,Earth,9,Exceptional,Alpha,3,10
+Dwarven Digging Team,Minion,Earth,0,Exceptional,Alpha,0,0
+Frontier Settlers,Minion,Earth,0,Exceptional,Alpha,0,0
+Gneissgnath Gnomes,Minion,Earth,0,Exceptional,Alpha,0,0
+Grey Wolves,Minion,Earth,0,Ordinary,Alpha,0,0
+House Arn Bannerman,Minion,Earth,0,Exceptional,Alpha,0,0
+King of the Realm,Minion,Earth,0,Unique,Alpha,0,0
+Land Surveyor,Minion,Earth,7,Ordinary,Alpha,4,6
+Mage Slayer,Minion,Earth,0,Ordinary,Alpha,0,0
+Master Tracker,Minion,Earth,0,Elite,Alpha,0,0
+Midland Army,Minion,Earth,0,Unique,Alpha,0,0
+Miracle Workers,Minion,Earth,0,Ordinary,Alpha,0,0
+Monastery Gargoyle,Minion,Earth,0,Exceptional,Alpha,0,0
+Monster Hunter,Minion,Earth,0,Exceptional,Alpha,0,0
+Mordric Druids,Minion,Earth,0,Elite,Alpha,0,0
+Mountain Giant,Minion,Earth,0,Elite,Alpha,0,0
+Pudge Butcher,Minion,Earth,11,Exceptional,Alpha,3,13
+Queen of Midland,Minion,Earth,0,Unique,Alpha,0,0
+Root Spider,Minion,Earth,29,Exceptional,Alpha,3,35
+Royal Bodyguard,Minion,Earth,4,Elite,Alpha,2,6
+Scent Hounds,Minion,Earth,0,Ordinary,Alpha,0,0
+Scourge Zombies,Minion,Earth,0,Ordinary,Alpha,0,0
+Shield Maidens,Minion,Earth,8,Exceptional,Alpha,3,10
+Silver Valkyries,Minion,Earth,0,Elite,Alpha,0,0
+Sirian Templar,Minion,Earth,0,Exceptional,Alpha,0,0
+Sisters of Silence,Minion,Earth,0,Elite,Alpha,0,0
+Slumbering Giantess,Minion,Earth,6,Exceptional,Alpha,3,6
+Squirming Mass,Minion,Earth,2,Elite,Alpha,2,3
+Stone-gaze Gorgons,Minion,Earth,0,Elite,Alpha,0,0
+Tragedy Worrywart,Minion,Earth,3,Exceptional,Alpha,3,3
+Vanguard Knights,Minion,Earth,0,Exceptional,Alpha,0,0
+Wicked Witch,Minion,Earth,0,Elite,Alpha,0,0
+Wild Boars,Minion,Earth,0,Ordinary,Alpha,0,0
+Wraetannis Titan,Minion,Earth,1,Elite,Alpha,1,3
+Yourke Crossbowmen,Minion,Earth,0,Exceptional,Alpha,0,0
+Assorted Animals,Magic,Earth,7,Elite,Alpha,1,16
+Border Militia,Magic,Earth,1,Ordinary,Alpha,1,3
+Bury,Magic,Earth,13,Ordinary,Alpha,1,35
+Call to War,Magic,Earth,1,Exceptional,Alpha,1,3
+Cave-In,Magic,Earth,4,Exceptional,Alpha,2,6
+Common Sense,Magic,Earth,43,Ordinary,Alpha,3,42
+Craterize,Magic,Earth,11,Elite,Alpha,2,19
+Dispel,Magic,Earth,10,Ordinary,Alpha,1,32
+Divine Healing,Magic,Earth,13,Exceptional,Alpha,3,16
+Earthquake,Magic,Earth,18,Elite,Alpha,2,32
+Exorcism,Magic,Earth,0,Ordinary,Alpha,0,0
+Gigantism,Magic,Earth,9,Unique,Alpha,1,29
+Minecart Madness,Magic,Earth,0,Exceptional,Alpha,0,0
+Overpower,Magic,Earth,0,Ordinary,Alpha,0,0
+Shield Wall,Magic,Earth,0,Exceptional,Alpha,0,0
+Star-seeds of Uhr,Magic,Earth,0,Unique,Alpha,0,0
+Unravel,Magic,Earth,0,Ordinary,Alpha,0,0
+Crusade,Aura,Earth,2,Unique,Alpha,1,6
+Entangle Terrain,Aura,Earth,0,Ordinary,Alpha,0,0
+Rest in Peace,Aura,Earth,0,Elite,Alpha,0,0
+Ancient Dragon,Minion,Fire,0,Elite,Alpha,0,0
+Aramos Mercenaries,Minion,Fire,6,Ordinary,Alpha,3,6
+Askelon Phoenix,Minion,Fire,14,Elite,Alpha,2,23
+Awakened Mummies,Minion,Fire,0,Exceptional,Alpha,0,0
+Azuridge Caravan,Minion,"Air, Earth, Fire, None, Water",0,Ordinary,Alpha,0,0
+Bane Widow,Minion,Fire,0,Exceptional,Alpha,0,0
+Beast of Burden,Minion,Fire,0,Ordinary,Alpha,0,0
+Bull Demons of Adum,Minion,Fire,0,Elite,Alpha,0,0
+Cauldron Crones,Minion,Fire,0,Ordinary,Alpha,0,0
+Cerberus in Chains,Minion,Fire,3,Unique,Alpha,1,10
+Clamor of Harpies,Minion,Fire,0,Exceptional,Alpha,0,0
+Colicky Dragonettes,Minion,Fire,26,Exceptional,Alpha,3,29
+Courtesan Thais,Minion,Fire,9,Unique,Alpha,1,29
+Death Dealer,Minion,Fire,4,Unique,Alpha,1,13
+Doomsday Prophet,Minion,Fire,0,Unique,Alpha,0,0
+Escyllion Cyclops,Minion,Fire,0,Exceptional,Alpha,0,0
+Far East Assassin,Minion,Fire,0,Elite,Alpha,0,0
+Grosse Poltergeist,Minion,Fire,0,Elite,Alpha,0,0
+Hillock Basilisk,Minion,Fire,3,Exceptional,Alpha,3,3
+Infernal Legion,Minion,Fire,15,Elite,Alpha,2,26
+Karkemish Chimera,Minion,Fire,0,Elite,Alpha,0,0
+Lava Salamander,Minion,Fire,0,Exceptional,Alpha,0,0
+Maze Minotaur,Minion,Fire,0,Elite,Alpha,0,0
+Ogre Goons,Minion,Fire,0,Ordinary,Alpha,0,0
+Outback Strider,Minion,Fire,3,Exceptional,Alpha,3,3
+Panorama Manticore,Minion,Fire,6,Elite,Alpha,2,13
+Petrosian Cavalry,Minion,Fire,4,Ordinary,Alpha,4,3
+Pit Vipers,Minion,Fire,1,Ordinary,Alpha,1,3
+Quarrelsome Kobolds,Minion,Fire,20,Exceptional,Alpha,3,23
+Raal Dromedary,Minion,Fire,0,Ordinary,Alpha,0,0
+Rimland Nomads,Minion,Fire,0,Ordinary,Alpha,0,0
+Sacred Scarabs,Minion,Fire,1,Ordinary,Alpha,1,3
+Sand Worm,Minion,Fire,6,Ordinary,Alpha,1,16
+Scavenging Fiend,Minion,Fire,0,Exceptional,Alpha,0,0
+Seasoned Sellsword,Minion,Fire,0,Elite,Alpha,0,0
+Sirocco Scorpions,Minion,Fire,0,Ordinary,Alpha,0,0
+Swiven Scout,Minion,Fire,6,Exceptional,Alpha,2,10
+Tvinnax Berserker,Minion,Fire,0,Exceptional,Alpha,0,0
+Vile Imp,Minion,Fire,43,Ordinary,Alpha,3,45
+Wayfaring Pilgrim,Minion,Fire,6,Exceptional,Alpha,3,6
+Wills-o'-the-Wisp,Minion,Fire,0,Exceptional,Alpha,0,0
+Backstab,Magic,Fire,0,Exceptional,Alpha,0,0
+Blaze,Magic,Fire,8,Exceptional,Alpha,1,19
+Boil,Magic,Fire,0,Ordinary,Alpha,0,0
+Cone of Flame,Magic,Fire,0,Exceptional,Alpha,0,0
+Critical Strike,Magic,Fire,2,Ordinary,Alpha,2,3
+Disintegrate,Magic,Fire,10,Elite,Alpha,1,23
+Fireball,Magic,Fire,2,Exceptional,Alpha,2,3
+Firebolts,Magic,Fire,8,Ordinary,Alpha,2,16
+Flame Wave,Magic,Fire,0,Elite,Alpha,0,0
+Heat Ray,Magic,Fire,2,Ordinary,Alpha,1,6
+Immolation,Magic,Fire,1,Unique,Alpha,1,3
+Incinerate,Magic,Fire,0,Ordinary,Alpha,0,0
+Infiltrate,Magic,Fire,7,Elite,Alpha,2,13
+Leap Attack,Magic,Fire,0,Exceptional,Alpha,0,0
+Mad Dash,Magic,Fire,3,Ordinary,Alpha,2,6
+Major Explosion,Magic,Fire,10,Elite,Alpha,2,19
+Meteor Shower,Magic,Fire,0,Elite,Alpha,0,0
+Minor Explosion,Magic,Fire,2,Ordinary,Alpha,1,6
+Pact with the Devil,Magic,Fire,4,Unique,Alpha,1,13
+Poison Nova,Magic,Fire,15,Exceptional,Alpha,2,32
+Scorched Earth,Magic,Fire,0,Elite,Alpha,0,0
+Spin Attack,Magic,Fire,1,Ordinary,Alpha,1,3
+Warp Spasm,Magic,Fire,4,Unique,Alpha,1,13
+Drought,Aura,Fire,2,Exceptional,Alpha,2,3
+Jihad,Aura,Fire,12,Unique,Alpha,1,39
+Sandstorm,Aura,Fire,0,Ordinary,Alpha,0,0
+Wall of Fire,Aura,Fire,3,Ordinary,Alpha,3,3
+Wildfire,Aura,Fire,3,Exceptional,Alpha,3,3
+Accursed Albatross,Minion,Water,0,Exceptional,Alpha,0,0
+Adept Illusionist,Minion,Water,4,Elite,Alpha,2,6
+Anui Undine,Minion,Water,4,Exceptional,Alpha,2,6
+Bridge Troll,Minion,Water,0,Exceptional,Alpha,0,0
+Brobdingnag Bullfrog,Minion,Water,4,Exceptional,Alpha,2,6
+Captain Baldassare,Minion,Water,1,Unique,Alpha,1,3
+Coral-Reef Kelpie,Minion,Water,0,Ordinary,Alpha,0,0
+Court Jester,Minion,Water,0,Elite,Alpha,0,0
+Deep-Sea Mermaids,Minion,Water,0,Ordinary,Alpha,0,0
+Diluvian Kraken,Minion,Water,2,Elite,Alpha,2,3
+Felbog Frog Men,Minion,Water,0,Exceptional,Alpha,0,0
+Fenvale Muse,Minion,Water,1,Ordinary,Alpha,1,3
+Fey Changeling,Minion,Water,3,Exceptional,Alpha,2,6
+Ghost Ship,Minion,Water,0,Elite,Alpha,0,0
+Giant Shark,Minion,Water,0,Exceptional,Alpha,0,0
+Great Old One,Minion,Water,1,Unique,Alpha,1,3
+Guile Sirens,Minion,Water,0,Exceptional,Alpha,0,0
+Lord of Unland,Minion,Water,2,Unique,Alpha,1,6
+Megamoeba,Minion,Water,0,Elite,Alpha,0,0
+Mother Nature,Minion,Water,1,Unique,Alpha,1,3
+Muck Lampreys,Minion,Water,0,Ordinary,Alpha,0,0
+Old Salt Anchorman,Minion,Water,2,Ordinary,Alpha,2,3
+Ormund Harpooneers,Minion,Water,0,Exceptional,Alpha,0,0
+Pirate Ship,Minion,Water,4,Ordinary,Alpha,4,3
+Polar Bears,Minion,Water,0,Ordinary,Alpha,0,0
+Polar Explorers,Minion,Water,0,Elite,Alpha,0,0
+Porcupine Pufferfish,Minion,Water,1,Ordinary,Alpha,1,3
+Ruler of Thul,Minion,Water,11,Unique,Alpha,1,35
+Sea Raider,Minion,Water,3,Exceptional,Alpha,3,3
+Sea Serpent,Minion,Water,0,Ordinary,Alpha,0,0
+Sedge Crabs,Minion,Water,0,Ordinary,Alpha,0,0
+Seirawan Hydra,Minion,Water,2,Elite,Alpha,2,3
+Selfsame Simulacrum,Minion,Water,6,Elite,Alpha,2,10
+Sneak Thief,Minion,Water,1,Elite,Alpha,1,3
+Swamp Buffalo,Minion,Water,0,Ordinary,Alpha,0,0
+Swan Maidens,Minion,Water,0,Ordinary,Alpha,0,0
+Tide Naiads,Minion,Water,1,Exceptional,Alpha,1,3
+Tringh Constrictor,Minion,Water,0,Exceptional,Alpha,0,0
+Tufted Turtles,Minion,Water,8,Ordinary,Alpha,3,10
+Unland Angler,Minion,Water,0,Elite,Alpha,0,0
+Unland Eel,Minion,Water,0,Exceptional,Alpha,0,0
+Yokai Kappas,Minion,Water,1,Elite,Alpha,1,3
+Dodge Roll,Magic,Water,0,Exceptional,Alpha,0,0
+Drown,Magic,Water,5,Ordinary,Alpha,1,13
+Extinguish,Magic,Water,0,Ordinary,Alpha,0,0
+Fire Harpoons!,Magic,Water,0,Ordinary,Alpha,0,0
+Font of Life,Magic,Water,0,Exceptional,Alpha,0,0
+Frost Nova,Magic,Water,0,Exceptional,Alpha,0,0
+Geyser,Magic,Water,9,Exceptional,Alpha,2,16
+Ice Lance,Magic,Water,4,Ordinary,Alpha,1,13
+Marine Voyage,Magic,Water,0,Exceptional,Alpha,0,0
+Plague of Frogs,Magic,Water,5,Unique,Alpha,1,16
+Pollimorph,Magic,Water,4,Elite,Alpha,2,6
+Replication,Magic,Water,0,Elite,Alpha,0,0
+Riptide,Magic,Water,21,Ordinary,Alpha,3,23
+Shrink,Magic,Water,0,Exceptional,Alpha,0,0
+Sleep,Magic,Water,0,Ordinary,Alpha,0,0
+Stormy Seas,Magic,Water,2,Exceptional,Alpha,1,6
+Twist of Fate,Magic,Water,0,Unique,Alpha,0,0
+Upwelling,Magic,Water,0,Exceptional,Alpha,0,0
+Wrath of the Sea,Magic,Water,0,Elite,Alpha,0,0
+Abundance,Aura,Water,3,Elite,Alpha,2,6
+Atlantean Fate,Aura,Water,11,Unique,Alpha,1,35
+Blizzard,Aura,Water,0,Ordinary,Alpha,0,0
+Flood,Aura,Water,3,Exceptional,Alpha,2,6
+Mariner's Curse,Aura,Water,4,Exceptional,Alpha,2,6
+Silence,Aura,Water,3,Elite,Alpha,2,6
+Wall of Ice,Aura,Water,0,Ordinary,Alpha,0,0
+All-terrain Vestments,Artifact,None,0,Elite,Alpha,0,0
+Amethyst Core,Artifact,None,1,Unique,Alpha,1,3
+Angel's Egg,Artifact,None,17,Elite,Alpha,2,29
+Aquamarine Core,Artifact,None,6,Unique,Alpha,1,19
+Battering Ram,Artifact,None,0,Exceptional,Alpha,0,0
+Belfry,Artifact,None,0,Elite,Alpha,0,0
+Black Obelisk,Artifact,None,0,Elite,Alpha,0,0
+Blasted Oak,Artifact,None,0,Unique,Alpha,0,0
+Buried Treasure,Artifact,None,0,Exceptional,Alpha,0,0
+Chains of Prometheus,Artifact,None,0,Elite,Alpha,0,0
+Crave Golem,Artifact,None,0,Exceptional,Alpha,0,0
+Crown of the Victor,Artifact,None,0,Unique,Alpha,0,0
+Devil's Egg,Artifact,None,4,Elite,Alpha,2,6
+Doomsday Device,Artifact,None,0,Unique,Alpha,0,0
+Drums of Doom,Artifact,None,2,Elite,Alpha,2,3
+Erik's Curiosa,Artifact,None,0,Unique,Alpha,0,0
+Flaming Sword,Artifact,None,0,Exceptional,Alpha,0,0
+Gilded Aegis,Artifact,None,0,Unique,Alpha,0,0
+Iron Shackles,Artifact,None,0,Exceptional,Alpha,0,0
+Kythera Mechanism,Artifact,None,1,Unique,Alpha,1,3
+Land Deed,Artifact,None,1,Elite,Alpha,1,3
+Lucky Charm,Artifact,None,0,Exceptional,Alpha,0,0
+Maddening Bells,Artifact,None,4,Elite,Alpha,2,6
+Magellan Globe,Artifact,None,3,Elite,Alpha,2,6
+Magnetic Muzzle,Artifact,None,0,Elite,Alpha,0,0
+Mask of Mayhem,Artifact,None,0,Elite,Alpha,0,0
+Mix Aer,Artifact,None,2,Elite,Alpha,1,6
+Mix Aqua,Artifact,None,2,Elite,Alpha,2,3
+Mix Ignis,Artifact,None,0,Elite,Alpha,0,0
+Mix Terra,Artifact,None,0,Elite,Alpha,0,0
+Onyx Core,Artifact,None,7,Unique,Alpha,1,23
+Orb of Ba'al Berith,Artifact,None,3,Unique,Alpha,1,10
+Payload Trebuchet,Artifact,None,0,Elite,Alpha,0,0
+Pendulum of Peril,Artifact,None,0,Unique,Alpha,0,0
+Philosopher's Stone,Artifact,None,15,Unique,Alpha,1,48
+Pnakotic Manuscript,Artifact,None,4,Unique,Alpha,1,13
+Poisonous Dagger,Artifact,None,2,Exceptional,Alpha,2,3
+Purge Juggernaut,Artifact,None,0,Elite,Alpha,0,0
+Rolling Boulder,Artifact,None,9,Exceptional,Alpha,2,13
+Ruby Core,Artifact,None,7,Unique,Alpha,1,23
+Scarecrow,Artifact,None,0,Ordinary,Alpha,0,0
+Screaming Skull,Artifact,None,0,Elite,Alpha,0,0
+Seven-League Boots,Artifact,None,0,Unique,Alpha,0,0
+Siege Ballista,Artifact,None,0,Exceptional,Alpha,0,0
+Spear of Destiny,Artifact,None,0,Unique,Alpha,0,0
+Sunken Treasure,Artifact,None,0,Exceptional,Alpha,0,0
+The Immortal Throne,Artifact,None,0,Unique,Alpha,0,0
+Torshammar Trinket,Artifact,None,37,Exceptional,Alpha,2,61
+Truesight Crossbow,Artifact,None,1,Exceptional,Alpha,1,3
+Undertaker Engine,Artifact,None,0,Elite,Alpha,0,0
+Wicker Manikin,Artifact,None,0,Ordinary,Alpha,0,0
+Wings of Invention,Artifact,None,0,Exceptional,Alpha,0,0
+Cloud City,Site,Air,5,Unique,Alpha,1,16
+Dark Tower,Site,Air,25,Ordinary,Alpha,2,52
+Gothic Tower,Site,Air,25,Ordinary,Alpha,2,52
+Lone Tower,Site,Air,24,Ordinary,Alpha,1,55
+Mountain Pass,Site,Air,1,Exceptional,Alpha,1,3
+Observatory,Site,Air,15,Elite,Alpha,2,29
+Updraft Ridge,Site,Air,1,Exceptional,Alpha,1,3
+Watchtower,Site,Air,5,Exceptional,Alpha,2,10
+Bedrock,Site,Earth,7,Exceptional,Alpha,2,10
+Gnome Hollows,Site,Earth,14,Exceptional,Alpha,2,23
+Holy Ground,Site,Earth,7,Exceptional,Alpha,2,13
+Humble Village,Site,Earth,2,Ordinary,Alpha,1,6
+Kingdom of Agartha,Site,Earth,2,Unique,Alpha,1,6
+Pillar of Zeiros,Site,Earth,13,Unique,Alpha,1,42
+Quagmire,Site,Earth,16,Exceptional,Alpha,2,23
+Rift Valley,Site,Earth,17,Elite,Alpha,2,29
+Rustic Village,Site,Earth,2,Ordinary,Alpha,1,6
+Secret Tunnel,Site,Earth,2,Exceptional,Alpha,1,6
+Simple Village,Site,Earth,2,Ordinary,Alpha,1,6
+Vantage Hills,Site,Earth,0,Exceptional,Alpha,0,0
+Arid Desert,Site,Fire,19,Ordinary,Alpha,2,29
+Dwarven Forge,Site,Fire,3,Elite,Alpha,1,10
+Mirage,Site,Fire,7,Elite,Alpha,1,19
+Red Desert,Site,Fire,28,Ordinary,Alpha,2,39
+Remote Desert,Site,Fire,30,Ordinary,Alpha,2,39
+River of Flame,Site,Fire,12,Unique,Alpha,1,39
+Shifting Sands,Site,Fire,4,Exceptional,Alpha,1,13
+Smokestacks of Gnaak,Site,Fire,12,Unique,Alpha,1,39
+Vesuvius,Site,Fire,8,Unique,Alpha,1,26
+Autumn River,Site,Water,8,Ordinary,Alpha,3,10
+Floodplain,Site,Water,29,Exceptional,Alpha,3,32
+Iceberg,Site,Water,0,Exceptional,Alpha,0,0
+Island Leviathan,Site,Water,2,Elite,Alpha,2,3
+Maelstrom,Site,Water,3,Unique,Alpha,1,10
+Spring River,Site,Water,4,Ordinary,Alpha,4,3
+Summer River,Site,Water,6,Ordinary,Alpha,3,6
+Tadpole Pool,Site,Water,6,Unique,Alpha,1,19
+Undertow,Site,Water,9,Exceptional,Alpha,3,10
+Aqueduct,Site,"Earth, Water",9,Exceptional,Alpha,3,10
+Lighthouse,Site,"Air, Water",15,Exceptional,Alpha,2,19
+Oasis,Site,"Fire, Water",20,Exceptional,Alpha,2,26
+Pristine Paradise,Site,"Air, Earth, Fire, Water",0,Unique,Alpha,0,0
+Ruins,Site,"Air, Fire",24,Exceptional,Alpha,2,32
+Steppe,Site,"Earth, Fire",21,Exceptional,Alpha,2,29
+The Colour Out of Space,Site,"Air, Earth, Fire, Water",16,Unique,Alpha,1,52
+Windmill,Site,"Air, Earth",25,Exceptional,Alpha,3,29
+Astral Alcazar,Site,None,0,Elite,Alpha,0,0
+Battlefield,Site,None,0,Elite,Alpha,0,0
+Boneyard,Site,None,0,Unique,Alpha,0,0
+Bottomless Pit,Site,None,4,Elite,Alpha,2,6
+Cornerstone,Site,None,0,Exceptional,Alpha,0,0
+Crossroads,Site,None,2,Elite,Alpha,1,6
+Dome of Osiros,Site,None,0,Unique,Alpha,0,0
+Donnybrook Inn,Site,None,0,Unique,Alpha,0,0
+Edge of the World,Site,None,0,Elite,Alpha,0,0
+Free City,Site,None,18,Exceptional,Alpha,3,19
+Great Wall,Site,None,0,Unique,Alpha,0,0
+Imperial Road,Site,None,2,Elite,Alpha,2,3
+Mirror Realm,Site,None,25,Unique,Alpha,1,81
+Mudflow,Site,None,0,Exceptional,Alpha,0,0
+Planar Gate,Site,None,0,Elite,Alpha,0,0
+Primordial Spring,Site,None,0,Elite,Alpha,0,0
+Roots of Yggdrasil,Site,None,1,Unique,Alpha,1,3
+Sinkhole,Site,None,15,Elite,Alpha,2,32
+Standing Stones,Site,None,0,Elite,Alpha,0,0
+The Geistwood,Site,None,0,Unique,Alpha,0,0
+Vaults of Zul,Site,None,0,Unique,Alpha,0,0
+Avatar of Air,Avatar,None,3,Elite,Alpha,1,10
+Avatar of Earth,Avatar,None,0,Elite,Alpha,0,0
+Avatar of Fire,Avatar,None,0,Elite,Alpha,0,0
+Avatar of Water,Avatar,None,0,Elite,Alpha,0,0
+Battlemage,Avatar,None,0,Elite,Alpha,0,0
+Deathspeaker,Avatar,None,1,Elite,Alpha,1,3
+Elementalist,Avatar,None,1,Elite,Alpha,1,3
+Enchantress,Avatar,None,2,Elite,Alpha,1,6
+Pathfinder,Avatar,None,4,Unique,Alpha,1,13
+Seer,Avatar,None,0,Elite,Alpha,0,0
+Sorcerer,Avatar,None,6,Ordinary,Alpha,1,19
+Relentless Crowd,Minion,Earth,0,Ordinary,Alpha,0,0
+Winter River,Site,Water,4,Ordinary,Alpha,4,3
+Sparkmage,Avatar,None,1,Ordinary,Beta,1,3
+Geomancer,Avatar,None,0,Ordinary,Beta,0,0
+Flamecaller,Avatar,None,2,Ordinary,Beta,1,6
+Waveshaper,Avatar,None,1,Ordinary,Beta,1,3
+Spellslinger,Avatar,None,0,Ordinary,Beta,0,0
+Spire,Site,Air,1,Ordinary,Beta,1,3
+Stream,Site,Water,0,Ordinary,Beta,0,0
+Valley,Site,Earth,0,Ordinary,Beta,0,0
+Wasteland,Site,Fire,4,Ordinary,Beta,1,13
+13 Treasures of Britain,Artifact,None,0,Unique,Arthurian Legends,0,0
+A Midsummer Night's Dream,Aura,Air,0,Unique,Arthurian Legends,0,0
+Amulet of Niniane,Artifact,None,0,Unique,Arthurian Legends,0,0
+Annual Fair,Site,None,7,Exceptional,Arthurian Legends,1,16
+Arcane Barrage,Magic,Air,12,Elite,Arthurian Legends,2,23
+Archimago,Avatar,None,4,Elite,Arthurian Legends,1,13
+Arc Lightning,Magic,Air,5,Ordinary,Arthurian Legends,2,6
+Attack by Night,Magic,Air,3,Exceptional,Arthurian Legends,2,6
+Avalon,Site,"Air, Earth, Fire, Water",0,Unique,Arthurian Legends,0,0
+Babbling Brook,Site,Water,12,Exceptional,Arthurian Legends,3,13
+Bailey,Artifact,None,0,Exceptional,Arthurian Legends,0,0
+Ball Lightning,Magic,Air,2,Elite,Arthurian Legends,1,6
+Band of Thieves,Minion,Air,1,Ordinary,Arthurian Legends,1,3
+Beacon,Site,Air,9,Exceptional,Arthurian Legends,2,19
+Black Knight,Minion,"Fire, Water",1,Exceptional,Arthurian Legends,1,3
+Blacksmith Family,Minion,Fire,0,Ordinary,Arthurian Legends,0,0
+Bluecap Knockers,Minion,Earth,0,Exceptional,Arthurian Legends,0,0
+Blue Knight,Minion,"Air, Water",0,Exceptional,Arthurian Legends,0,0
+Blunderbore,Minion,Fire,0,Unique,Arthurian Legends,0,0
+Bog,Site,Water,9,Ordinary,Arthurian Legends,3,10
+Bonfire,Site,Fire,4,Ordinary,Arthurian Legends,1,13
+Boudicca,Minion,Fire,11,Unique,Arthurian Legends,1,35
+Bower of Bliss,Site,None,3,Unique,Arthurian Legends,1,10
+Briar Patch,Site,Earth,3,Exceptional,Arthurian Legends,3,3
+Broceliande,Site,None,0,Unique,Arthurian Legends,0,0
+Brother Knight,Minion,Fire,8,Elite,Arthurian Legends,2,13
+Brown Bears,Minion,Earth,0,Ordinary,Arthurian Legends,0,0
+Burning Hands,Magic,Fire,0,Ordinary,Arthurian Legends,0,0
+Caerleon-Upon-Usk,Site,"Earth, Fire, Water",7,Unique,Arthurian Legends,1,23
+Camelot,Site,None,0,Unique,Arthurian Legends,0,0
+Cast into Exile,Magic,Air,3,Exceptional,Arthurian Legends,2,6
+Castle Haunt,Minion,Air,3,Exceptional,Arthurian Legends,3,3
+Castle's Ablaze!,Aura,Fire,4,Elite,Arthurian Legends,2,6
+Castle Servants,Minion,Air,0,Ordinary,Arthurian Legends,0,0
+Charge,Magic,Fire,3,Ordinary,Arthurian Legends,3,3
+Cold Iron Rod,Artifact,None,0,Exceptional,Arthurian Legends,0,0
+Common Cottagers,Minion,Earth,0,Ordinary,Arthurian Legends,0,0
+Common Village,Site,Earth,2,Ordinary,Arthurian Legends,1,6
+Coy Nixie,Minion,Water,6,Exceptional,Arthurian Legends,2,10
+Cursed Land,Site,Fire,1,Elite,Arthurian Legends,1,3
+Dame Britomart,Minion,"Air, Earth, Water",0,Unique,Arthurian Legends,0,0
+Degradation,Magic,Water,0,Exceptional,Arthurian Legends,0,0
+Dirium Fomorians,Minion,Earth,0,Exceptional,Arthurian Legends,0,0
+Dozmary Pool,Site,Water,0,Unique,Arthurian Legends,0,0
+Druid,Avatar,None,6,Elite,Arthurian Legends,1,19
+Duel,Magic,Earth,2,Ordinary,Arthurian Legends,1,6
+Excalibur,Artifact,None,0,Unique,Arthurian Legends,0,0
+Fae City,Site,Air,0,Exceptional,Arthurian Legends,0,0
+Fail-not Bow,Artifact,None,0,Unique,Arthurian Legends,0,0
+Feast for Crows,Magic,Air,11,Unique,Arthurian Legends,1,35
+Field Laborers,Minion,Earth,0,Ordinary,Arthurian Legends,0,0
+Fields of Camlann,Site,Fire,8,Unique,Arthurian Legends,1,26
+Fine Courser,Minion,Air,1,Exceptional,Arthurian Legends,1,3
+Finwife,Minion,Water,0,Ordinary,Arthurian Legends,0,0
+Firebreathing,Magic,Fire,3,Exceptional,Arthurian Legends,3,3
+Fisherman's Family,Minion,Water,0,Ordinary,Arthurian Legends,0,0
+Forge,Site,Fire,7,Ordinary,Arthurian Legends,1,16
+Fourberie Knot,Artifact,None,0,Exceptional,Arthurian Legends,0,0
+Four Waters of Paradise,Artifact,None,2,Unique,Arthurian Legends,1,6
+Frisky Red Squirrel,Minion,Earth,1,Exceptional,Arthurian Legends,1,3
+Funeral Pyre,Site,Fire,46,Exceptional,Arthurian Legends,2,61
+Giant Killer,Minion,Water,0,Exceptional,Arthurian Legends,0,0
+Glastonbury Tor,Site,"Air, Earth, Fire",6,Unique,Arthurian Legends,1,19
+Golden Harp,Artifact,None,0,Elite,Arthurian Legends,0,0
+Goswhit Helmet,Artifact,None,0,Elite,Arthurian Legends,0,0
+Grain Sparrow,Minion,Earth,2,Ordinary,Arthurian Legends,1,6
+Grand Old Boar,Minion,Earth,0,Elite,Arthurian Legends,0,0
+Grievous Insult,Magic,Water,1,Ordinary,Arthurian Legends,1,3
+Grim Guisarme,Artifact,None,0,Elite,Arthurian Legends,0,0
+Guards!,Magic,Earth,0,Elite,Arthurian Legends,0,0
+Hamlet,Site,None,0,Ordinary,Arthurian Legends,0,0
+Hamlet's Ablaze!,Aura,Fire,12,Ordinary,Arthurian Legends,4,10
+Harassing Ruffians,Minion,Fire,0,Ordinary,Arthurian Legends,0,0
+Helpful Hob,Minion,Water,1,Ordinary,Arthurian Legends,1,3
+Horn of Caerleon,Artifact,None,0,Elite,Arthurian Legends,0,0
+Hunter's Lodge,Site,Earth,0,Ordinary,Arthurian Legends,0,0
+Hunting Party,Minion,Earth,0,Exceptional,Arthurian Legends,0,0
+Hyter Sprites,Minion,Air,1,Ordinary,Arthurian Legends,1,3
+Impenetrable Copse,Site,Earth,7,Exceptional,Arthurian Legends,2,13
+Invasion,Aura,Fire,0,Elite,Arthurian Legends,0,0
+Iron Man Talus,Artifact,None,0,Exceptional,Arthurian Legends,0,0
+Joust!,Magic,Fire,0,Ordinary,Arthurian Legends,0,0
+Joyous Garde,Site,"Air, Fire, Water",8,Unique,Arthurian Legends,1,26
+Just a Rock,Artifact,None,0,Ordinary,Arthurian Legends,0,0
+Keening Banshee,Minion,Air,0,Ordinary,Arthurian Legends,0,0
+Kelp Cavern,Site,Water,6,Elite,Arthurian Legends,2,10
+Kettletop Leprechaun,Minion,Earth,9,Ordinary,Arthurian Legends,3,10
+King Arthur,Minion,"Air, Earth, Fire, Water",0,Unique,Arthurian Legends,0,0
+King's Council,Magic,Air,0,Elite,Arthurian Legends,0,0
+Kingswood Poachers,Minion,Water,0,Exceptional,Arthurian Legends,0,0
+Knighthood,Magic,Earth,0,Exceptional,Arthurian Legends,0,0
+Lady Iseult,Minion,Earth,0,Unique,Arthurian Legends,0,0
+Lake Afanc,Minion,Water,0,Ordinary,Arthurian Legends,0,0
+Lava Flow,Magic,Fire,0,Exceptional,Arthurian Legends,0,0
+Led Astray,Magic,Water,3,Ordinary,Arthurian Legends,3,3
+Leyline Henge,Site,None,0,Ordinary,Arthurian Legends,0,0
+Lookout,Site,Air,22,Ordinary,Arthurian Legends,3,26
+Love Potion,Artifact,None,0,Elite,Arthurian Legends,0,0
+Lugbog Cat,Minion,Water,26,Exceptional,Arthurian Legends,3,29
+Lumbering Giant,Minion,Fire,0,Ordinary,Arthurian Legends,0,0
+Magic Missiles,Magic,Air,15,Ordinary,Arthurian Legends,2,19
+Major City,Site,None,0,Elite,Arthurian Legends,0,0
+Merlin,Minion,Air,2,Unique,Arthurian Legends,1,6
+Merlin's Staff,Artifact,None,0,Unique,Arthurian Legends,0,0
+Merlin's Tower,Site,Air,10,Unique,Arthurian Legends,1,32
+Mesmerism,Magic,Water,6,Unique,Arthurian Legends,1,19
+Mester Stoor Worm,Minion,Water,5,Elite,Arthurian Legends,2,10
+Monstrous Lion,Minion,Fire,15,Elite,Arthurian Legends,2,26
+Morgana le Fay,Minion,Fire,15,Unique,Arthurian Legends,1,48
+Muirid Fomorians,Minion,Water,0,Exceptional,Arthurian Legends,0,0
+Nelly Longarms,Minion,Water,2,Unique,Arthurian Legends,1,6
+Ominous Owl,Minion,Air,0,Ordinary,Arthurian Legends,0,0
+Overbearing Bailiff,Minion,Earth,0,Elite,Arthurian Legends,0,0
+Peasant Revolt,Magic,Fire,2,Unique,Arthurian Legends,1,6
+Pebbled Paths,Site,Earth,23,Exceptional,Arthurian Legends,3,26
+Pendragon Banner,Artifact,None,0,Elite,Arthurian Legends,0,0
+Pendragon Legacy,Magic,Earth,4,Unique,Arthurian Legends,1,13
+Perilous Bridge,Site,Air,18,Elite,Arthurian Legends,2,29
+Pigs of the Sounder,Minion,Earth,0,Exceptional,Arthurian Legends,0,0
+Poisoned Well,Site,Fire,13,Exceptional,Arthurian Legends,2,23
+Pond,Site,Water,17,Ordinary,Arthurian Legends,3,16
+Pookas,Minion,Fire,0,Exceptional,Arthurian Legends,0,0
+Postern Gate,Site,None,0,Elite,Arthurian Legends,0,0
+Power of Flight,Magic,Air,7,Ordinary,Arthurian Legends,4,6
+Purple Knight,Minion,"Air, Fire",3,Exceptional,Arthurian Legends,3,3
+Queen Guinevere,Minion,"Air, Earth, Fire, Water",0,Unique,Arthurian Legends,0,0
+Questing Beast,Minion,Water,7,Unique,Arthurian Legends,1,23
+Rebecks,Minion,Fire,5,Unique,Arthurian Legends,1,16
+Reckless Squire,Minion,Fire,0,Ordinary,Arthurian Legends,0,0
+Redbreast Robin,Minion,Fire,0,Ordinary,Arthurian Legends,0,0
+Redcap Powries,Minion,Fire,32,Exceptional,Arthurian Legends,3,35
+Rescue,Magic,Earth,1,Ordinary,Arthurian Legends,1,3
+Rhitta Gawr of Snowdonia,Minion,Earth,2,Unique,Arthurian Legends,1,6
+Rhongomyniad,Artifact,None,0,Unique,Arthurian Legends,0,0
+Ribble Boggart,Minion,Water,2,Elite,Arthurian Legends,2,3
+Ring of Morrigan,Artifact,None,30,Unique,Arthurian Legends,1,97
+Salmon of Knowledge,Minion,Water,2,Elite,Arthurian Legends,2,3
+Saracen Raiders,Minion,Fire,19,Exceptional,Arthurian Legends,2,26
+Saracen Scout,Minion,Fire,0,Ordinary,Arthurian Legends,0,0
+Seelie Court,Minion,Water,0,Elite,Arthurian Legends,0,0
+Shameless Squire,Minion,Water,0,Ordinary,Arthurian Legends,0,0
+Shapeshift,Magic,Water,4,Elite,Arthurian Legends,2,6
+Shatter Strike,Magic,Fire,29,Exceptional,Arthurian Legends,2,42
+Shellycoat,Minion,Water,0,Ordinary,Arthurian Legends,0,0
+Sherwood Huntress,Minion,Air,0,Ordinary,Arthurian Legends,0,0
+Siege Giant,Minion,Fire,25,Exceptional,Arthurian Legends,3,29
+Sir Agravaine,Minion,"Fire, Water",4,Unique,Arthurian Legends,1,13
+Sir Balin,Minion,"Air, Fire",5,Unique,Arthurian Legends,1,16
+Sir Bedivere,Minion,"Earth, Water",0,Unique,Arthurian Legends,0,0
+Sir Bors the Younger,Minion,"Air, Earth",0,Unique,Arthurian Legends,0,0
+Sir Gaheris,Minion,"Fire, Water",2,Unique,Arthurian Legends,1,6
+Sir Galahad,Minion,"Air, Earth",1,Unique,Arthurian Legends,1,3
+Sir Gareth,Minion,"Air, Water",0,Unique,Arthurian Legends,0,0
+Sir Gawain,Minion,"Earth, Fire, Water",0,Unique,Arthurian Legends,0,0
+Sir Ironside,Minion,"Earth, Water",2,Unique,Arthurian Legends,1,6
+Sir Kay,Minion,"Air, Earth, Fire",0,Unique,Arthurian Legends,0,0
+Sir Lamorak,Minion,"Air, Fire",3,Unique,Arthurian Legends,1,10
+Sir Lancelot,Minion,"Earth, Fire",0,Unique,Arthurian Legends,0,0
+Sir Mordred,Minion,"Fire, Water",2,Unique,Arthurian Legends,1,6
+Sir Morien,Minion,"Earth, Fire",2,Unique,Arthurian Legends,1,6
+Sir Pelleas,Minion,"Air, Water",1,Unique,Arthurian Legends,1,3
+Sir Pellinore,Minion,"Air, Fire",2,Unique,Arthurian Legends,1,6
+Sir Perceval,Minion,"Air, Earth",2,Unique,Arthurian Legends,1,6
+Sir Priamus,Minion,"Earth, Fire",0,Unique,Arthurian Legends,0,0
+Sir Tom Thumb,Minion,"Air, Water",0,Unique,Arthurian Legends,0,0
+Sir Tristan,Minion,"Air, Fire, Water",0,Unique,Arthurian Legends,0,0
+Sir Yvain,Minion,"Earth, Water",0,Unique,Arthurian Legends,0,0
+Sisters of Avalon,Minion,Air,0,Exceptional,Arthurian Legends,0,0
+Sly Fox,Minion,Water,0,Ordinary,Arthurian Legends,0,0
+Snowball,Magic,Water,3,Exceptional,Arthurian Legends,1,10
+Spearmarshal,Minion,Earth,0,Elite,Arthurian Legends,0,0
+Squeakers,Minion,Earth,0,Ordinary,Arthurian Legends,0,0
+Stone Rain,Magic,Earth,0,Exceptional,Arthurian Legends,0,0
+Sugarplum Pixies,Minion,Water,0,Exceptional,Arthurian Legends,0,0
+Swindler Troupe,Minion,Water,0,Ordinary,Arthurian Legends,0,0
+Sword and Shield,Artifact,None,2,Exceptional,Arthurian Legends,2,3
+Sylvan Splendor,Aura,Water,2,Elite,Arthurian Legends,2,3
+Tactical Move,Magic,Air,0,Ordinary,Arthurian Legends,0,0
+Tax Collector,Minion,Earth,0,Ordinary,Arthurian Legends,0,0
+Templar,Avatar,None,0,Elite,Arthurian Legends,0,0
+Thankless Squire,Minion,Earth,0,Ordinary,Arthurian Legends,0,0
+The Black Plague,Aura,Air,6,Unique,Arthurian Legends,1,19
+The Faerie Queene,Minion,Air,0,Unique,Arthurian Legends,0,0
+The Great Drowning of Men,Aura,Water,0,Unique,Arthurian Legends,0,0
+The Great Famine,Aura,Fire,11,Unique,Arthurian Legends,1,35
+The Green Knight,Minion,Water,2,Unique,Arthurian Legends,1,6
+The Lady of the Lake,Minion,Water,1,Unique,Arthurian Legends,1,3
+The Ninth Legion,Minion,Air,0,Unique,Arthurian Legends,0,0
+The Round Table,Artifact,None,0,Unique,Arthurian Legends,0,0
+The Wild Hunt,Minion,Air,1,Elite,Arthurian Legends,1,3
+Thieving Magpie,Minion,Water,0,Ordinary,Arthurian Legends,0,0
+Thundering Giant,Minion,Air,0,Elite,Arthurian Legends,0,0
+Tintagel,Site,"Air, Earth, Water",3,Unique,Arthurian Legends,1,10
+Tithe,Magic,Earth,3,Unique,Arthurian Legends,1,10
+Tooth Faeries,Minion,Air,5,Exceptional,Arthurian Legends,2,6
+Tournament Grounds,Site,None,0,Exceptional,Arthurian Legends,0,0
+Town,Site,None,9,Exceptional,Arthurian Legends,3,10
+Treetop Hideout,Site,Air,6,Ordinary,Arthurian Legends,2,13
+Troll Bridge,Site,Water,23,Exceptional,Arthurian Legends,3,26
+Unseelie Court,Minion,Air,0,Elite,Arthurian Legends,0,0
+Valley of Delight,Site,None,35,Elite,Arthurian Legends,2,65
+Valor,Magic,Earth,2,Elite,Arthurian Legends,2,3
+Vanishment,Magic,Air,0,Exceptional,Arthurian Legends,0,0
+Varmint Warrens,Site,Earth,0,Elite,Arthurian Legends,0,0
+Vengeful Heir,Minion,Fire,0,Elite,Arthurian Legends,0,0
+Verdant Knight,Minion,"Earth, Water",3,Exceptional,Arthurian Legends,3,3
+Vikings,Minion,Fire,0,Ordinary,Arthurian Legends,0,0
+Vivien the Enchantress,Minion,Earth,0,Unique,Arthurian Legends,0,0
+Wall of Brambles,Aura,Earth,0,Ordinary,Arthurian Legends,0,0
+War Horse,Minion,Fire,41,Exceptional,Arthurian Legends,3,45
+Wedding Hall,Site,"Air, Earth, Fire, Water",0,Elite,Arthurian Legends,0,0
+Weightless Squire,Minion,Air,0,Ordinary,Arthurian Legends,0,0
+Whirlwind,Magic,Air,0,Exceptional,Arthurian Legends,0,0
+White Hart,Minion,Earth,0,Unique,Arthurian Legends,0,0
+White Knight,Minion,"Air, Earth",0,Exceptional,Arthurian Legends,0,0
+Witch,Avatar,None,0,Unique,Arthurian Legends,0,0
+Wizard's Den,Site,None,22,Elite,Arthurian Legends,2,35
+Wolpertinger,Minion,Earth,0,Elite,Arthurian Legends,0,0
+Wormelow Tump,Site,Earth,3,Unique,Arthurian Legends,1,10
+Wyvern,Minion,Earth,0,Exceptional,Arthurian Legends,0,0
+Year of the Blaze,Aura,Fire,0,Unique,Arthurian Legends,0,0
+Yellow Knight,Minion,"Earth, Fire",3,Exceptional,Arthurian Legends,3,3

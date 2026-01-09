@@ -4,6 +4,7 @@ from discord.ext import commands
 import sqlite3
 import json
 import logging
+import random
 
 from cogs.lfg import LFGReportButtons
 
@@ -468,17 +469,55 @@ class EloCog(commands.Cog):
                 opponent_display_name = winner_display_name
 
             opponent = await self.bot.fetch_user(opponent_id)
-            view_ctx = LFGReportButtons(
-                ctx.author.id,
-                ctx.author.id,
-                ctx.author.global_name,
-                opponent_id,
-                opponent.global_name,
+
+            # Record match start time for the rematch
+            match_start_time = datetime.datetime.now()
+
+            # Randomly select which player gets the report buttons
+            requester_global = ctx.author.global_name or ctx.author.display_name
+            opponent_global = opponent.global_name or opponent.display_name
+
+            players = [
+                (ctx.author.id, requester_global, ctx.author, True),  # True = requester
+                (opponent_id, opponent_global, opponent, False),  # False = opponent
+            ]
+            reporter_player, other_player = random.sample(players, 2)
+            reporter_id, reporter_global, reporter_user, reporter_is_requester = (
+                reporter_player
             )
-            await ctx.author.send(f"Rematch with {opponent.mention}?", view=view_ctx)
-            await opponent.send(f"{ctx.author.mention} wants a rematch!", view=view_ctx)
+            other_id, other_global, other_user, other_is_requester = other_player
+
+            view_reporter = LFGReportButtons(
+                reporter_id,
+                reporter_id,
+                reporter_global,
+                other_id,
+                other_global,
+                self.bot,
+                None,  # channel
+                match_start_time=match_start_time,
+            )
+
+            # Send buttons to the selected reporter
+            try:
+                await reporter_user.send(
+                    f"**Rematch!** You're playing against **{other_global}**!\n\nReport the match result below:",
+                    view=view_reporter,
+                )
+            except discord.Forbidden:
+                logger.warning(f"Cannot DM {reporter_global} for rematch")
+
+            # Send info message to the other player (no buttons)
+            try:
+                await other_user.send(
+                    f"**Rematch!** You're playing against **{reporter_global}**!\n\n"
+                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
+                )
+            except discord.Forbidden:
+                logger.warning(f"Cannot DM {other_global} for rematch")
+
             await ctx.send(
-                f"{ctx.author.mention}, you have been sent a rematch request to {opponent.mention}!"
+                f"{ctx.author.mention}, rematch request sent to {opponent.mention}!"
             )
         else:
             await ctx.send(

@@ -1751,7 +1751,7 @@ class LFGCog(commands.Cog):
             # GREEN - Active queue
             embed = discord.Embed(
                 title="🟢 LFG Queue Status",
-                description=f"**{len(lfg_queue)} player(s) looking for a game!**\n\nUse `!lfg` to join and get matched instantly!\nUse `!cancel` to leave the queue.",
+                description=f"**{len(lfg_queue)} player(s) looking for a game!!**\n\nUse `!lfg` to join and get matched instantly!\nUse `!cancel` to leave the queue.",
                 color=discord.Color.green(),
             )
 

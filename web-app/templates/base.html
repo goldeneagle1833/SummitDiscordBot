@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}Sorcerers Summit{% endblock %}</title>
+
+    <!-- Global CSS (always loaded) -->
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/global.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/utilities.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+
+    <!-- Page-specific CSS -->
+    {% block styles %}{% endblock %}
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main class="main-content">{% block content %}{% endblock %}</main>
+
+    {% include 'components/footer.html' %}
+
+    <!-- Global JS -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+
+    <!-- Page-specific JS -->
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

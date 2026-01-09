@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ event_name }} - Top 8 Decks</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+    <style>
+      .event-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      .back-link {
+        display: inline-block;
+        color: #4db8ff;
+        text-decoration: none;
+        margin-bottom: 1rem;
+        font-size: 0.95rem;
+      }
+
+      .back-link:hover {
+        text-decoration: underline;
+      }
+
+      .event-header {
+        margin-bottom: 2rem;
+      }
+
+      .event-header h1 {
+        color: #fff;
+        margin: 0.5rem 0;
+      }
+
+      .section-title {
+        color: #fff;
+        font-size: 1.5rem;
+        margin: 2rem 0 1rem 0;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .deck-table {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .deck-table thead {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .deck-table th {
+        padding: 1rem;
+        text-align: left;
+        color: rgba(255, 255, 255, 0.9);
+        font-weight: 600;
+      }
+
+      .deck-table td {
+        padding: 1rem;
+        color: rgba(255, 255, 255, 0.8);
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .deck-table tbody tr:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      .place-badge {
+        display: inline-block;
+        padding: 0.3rem 0.8rem;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 0.9rem;
+      }
+
+      .place-1 {
+        background: linear-gradient(135deg, #ffd700, #ffed4e);
+        color: #000;
+      }
+
+      .place-2 {
+        background: linear-gradient(135deg, #c0c0c0, #e8e8e8);
+        color: #000;
+      }
+
+      .place-3 {
+        background: linear-gradient(135deg, #cd7f32, #e5a76a);
+        color: #fff;
+      }
+
+      .place-4,
+      .place-5,
+      .place-6,
+      .place-7,
+      .place-8 {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+      }
+
+      .deck-link {
+        color: #4db8ff;
+        text-decoration: none;
+        padding: 0.3rem 0.8rem;
+        border: 1px solid #4db8ff;
+        border-radius: 4px;
+        display: inline-block;
+        font-size: 0.9rem;
+        transition: all 0.2s ease;
+      }
+
+      .deck-link:hover {
+        background: #4db8ff;
+        color: #000;
+      }
+
+      .deck-link.private {
+        color: rgba(255, 255, 255, 0.4);
+        border-color: rgba(255, 255, 255, 0.2);
+        cursor: not-allowed;
+      }
+
+      .deck-link.private:hover {
+        background: transparent;
+        color: rgba(255, 255, 255, 0.4);
+      }
+
+      .no-data {
+        padding: 2rem;
+        text-align: center;
+        color: rgba(255, 255, 255, 0.6);
+      }
+
+      @media (max-width: 768px) {
+        .deck-table {
+          font-size: 0.9rem;
+        }
+
+        .deck-table th,
+        .deck-table td {
+          padding: 0.7rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <div class="event-container">
+        <a href="/top-8" class="back-link">← Back to Events</a>
+
+        <div class="event-header">
+          <h1>{{ event_name }}</h1>
+        </div>
+
+        <!-- Top 8 Section -->
+        {% if top8_decks %}
+        <h2 class="section-title">Top 8</h2>
+        <table class="deck-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Avatar</th>
+              <th>Deck</th>
+              <th style="width: 150px">View</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for deck in top8_decks %}
+            <tr>
+              <td>{{ deck.player }}</td>
+              <td>{{ deck.avatar }}</td>
+              <td>{{ deck.deck_name }}</td>
+              <td>
+                {% if deck.deck_id %}
+                <a
+                  href="https://curiosa.io/decks/{{ deck.deck_id }}"
+                  target="_blank"
+                  class="deck-link"
+                  >View on Curiosa</a
+                >
+                {% else %}
+                <span class="deck-link private">No Link</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="no-data">
+          <p>No Top 8 data available for this event.</p>
+        </div>
+        {% endif %}
+
+        <!-- All Participants Section -->
+        {% if all_decks %}
+        <h2 class="section-title">All Participants</h2>
+        <table class="deck-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Avatar</th>
+              <th>Deck</th>
+              <th style="width: 150px">View</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for deck in all_decks %}
+            <tr>
+              <td>{{ deck.player }}</td>
+              <td>{{ deck.avatar }}</td>
+              <td>{{ deck.deck_name }}</td>
+              <td>
+                {% if deck.deck_id %}
+                <a
+                  href="https://curiosa.io/decks/{{ deck.deck_id }}"
+                  target="_blank"
+                  class="deck-link"
+                  >View on Curiosa</a
+                >
+                {% else %}
+                <span class="deck-link private">No Link</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+      </div>
+    </main>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+  </body>
+</html>

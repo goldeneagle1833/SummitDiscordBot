@@ -1,0 +1,142 @@
+<!-- Footer Component -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer__content">
+      <div class="footer__section">
+        <h3 class="footer__title">Sorcerers Summit</h3>
+        <p class="footer__text">
+          Your hub for Sorcery: Contested Realm competitive play tracking and
+          statistics.
+        </p>
+      </div>
+
+      <div class="footer__section">
+        <h4 class="footer__subtitle">Quick Links</h4>
+        <ul class="footer__links">
+          <li><a href="/" class="footer__link">Home</a></li>
+          <li><a href="/avatars" class="footer__link">Avatar Stats</a></li>
+          <li><a href="/elo" class="footer__link">ELO Leaderboards</a></li>
+          <li><a href="/top-8" class="footer__link">Top 8 Decks</a></li>
+          <li><a href="/about" class="footer__link">About</a></li>
+        </ul>
+      </div>
+
+      <div class="footer__section">
+        <h4 class="footer__subtitle">Community</h4>
+        <ul class="footer__links">
+          <li>
+            <a
+              href="https://discord.gg/..."
+              target="_blank"
+              rel="noopener"
+              class="footer__link">
+              Discord Server
+            </a>
+          </li>
+          <li>
+            <a
+              href="https://patreon.com/..."
+              target="_blank"
+              rel="noopener"
+              class="footer__link">
+              Support on Patreon
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="footer__section">
+        <h4 class="footer__subtitle">Resources</h4>
+        <ul class="footer__links">
+          <li><a href="/deck-help" class="footer__link">Deck Building</a></li>
+          <li><a href="/stats" class="footer__link">Statistics</a></li>
+          <li><a href="/help" class="footer__link">Help</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer__bottom">
+      <p>&copy; 2026 Sorcerers Summit. All rights reserved.</p>
+      <p class="footer__disclaimer">
+        Sorcery: Contested Realm is a trademark of Erik's Curiosa. This site is
+        not affiliated with or endorsed by Erik's Curiosa.
+      </p>
+    </div>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    background: var(--color-secondary);
+    color: var(--color-text-muted);
+    padding: var(--spacing-2xl) 0 var(--spacing-xl);
+    margin-top: var(--spacing-2xl);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .footer__content {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--spacing-xl);
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .footer__section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+
+  .footer__title {
+    color: var(--color-primary);
+    font-size: var(--font-size-lg);
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .footer__subtitle {
+    color: var(--color-text);
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .footer__text {
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+
+  .footer__links {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    list-style: none;
+  }
+
+  .footer__link {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    transition: color var(--transition-fast);
+  }
+
+  .footer__link:hover {
+    color: var(--color-primary);
+  }
+
+  .footer__bottom {
+    text-align: center;
+    padding-top: var(--spacing-lg);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: var(--font-size-sm);
+  }
+
+  .footer__disclaimer {
+    margin-top: var(--spacing-sm);
+    opacity: 0.7;
+  }
+
+  @media (max-width: 768px) {
+    .footer__content {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

@@ -496,6 +496,12 @@ a.feature-card {
   text-decoration: underline;
 }
 
+.match-id {
+  color: #a0a0a0;
+  font-size: 0.85rem;
+  font-family: monospace;
+}
+
 .back-link {
   display: inline-flex;
   align-items: center;

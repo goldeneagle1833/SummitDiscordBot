@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>500 - Server Error</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/global.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+    <style>
+      .error-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 60vh;
+        text-align: center;
+        padding: var(--spacing-2xl);
+      }
+
+      .error-code {
+        font-size: 8rem;
+        font-weight: 700;
+        color: var(--color-error);
+        line-height: 1;
+        margin-bottom: var(--spacing-lg);
+      }
+
+      .error-title {
+        font-size: var(--font-size-2xl);
+        margin-bottom: var(--spacing-md);
+      }
+
+      .error-message {
+        color: var(--color-text-muted);
+        font-size: var(--font-size-lg);
+        margin-bottom: var(--spacing-xl);
+        max-width: 500px;
+      }
+
+      .error-actions {
+        display: flex;
+        gap: var(--spacing-md);
+      }
+    </style>
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <div class="error-container">
+        <div class="error-code">500</div>
+        <h1 class="error-title">Server Error</h1>
+        <p class="error-message">
+          Something went wrong on our end. We're working to fix it!
+        </p>
+        <div class="error-actions">
+          <a href="/" class="btn btn--primary">Go Home</a>
+          <a href="javascript:location.reload()" class="btn btn--outline"
+            >Try Again</a
+          >
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+  </body>
+</html>

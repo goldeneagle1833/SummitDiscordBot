@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Event Statistics - Sorcerers Summit</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+    <style>
+      .events-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      .events-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin-top: 2rem;
+      }
+
+      .event-card {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 1.5rem;
+        transition: all 0.3s ease;
+        cursor: pointer;
+      }
+
+      .event-card:hover {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.2);
+        transform: translateY(-2px);
+      }
+
+      .event-card h3 {
+        color: #fff;
+        margin: 0 0 0.5rem 0;
+        font-size: 1.2rem;
+      }
+
+      .event-meta {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-top: 0.5rem;
+      }
+
+      .event-badge {
+        background: rgba(0, 150, 255, 0.2);
+        color: #4db8ff;
+        padding: 0.2rem 0.6rem;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        display: inline-block;
+      }
+
+      .event-badge--elements {
+        background: rgba(255, 165, 0, 0.2);
+        color: #ffb84d;
+      }
+
+      .no-events {
+        text-align: center;
+        padding: 3rem;
+        color: rgba(255, 255, 255, 0.6);
+      }
+    </style>
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <section class="hero">
+        <h1>Event Statistics</h1>
+        <p>Card usage data from competitive events</p>
+      </section>
+
+      <section class="events-container">
+        {% if events %}
+        <div class="events-grid">
+          {% for event in events %}
+          <div
+            class="event-card"
+            onclick="window.location.href='/stats/{{ event.folder }}'">
+            <h3>{{ event.name }}</h3>
+            <div class="event-meta">
+              {% if event.has_cards %}
+              <span class="event-badge">Card Stats Available</span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="no-events">
+          <p>No statistics available. Check back soon!</p>
+        </div>
+        {% endif %}
+      </section>
+    </main>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+  </body>
+</html>

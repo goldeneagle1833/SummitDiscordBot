@@ -1162,10 +1162,19 @@ endblock %} {% block styles %}
 
 ### Phase 2 - ELO Pages
 
-6. [ ] Create `/elo` server selection page
-7. [ ] Create `/elo/server/<id>` template
-8. [ ] Add routes to app.py
-9. [ ] Connect to database for server list
+6. [x] Create `/elo` server selection page
+7. [x] Create `/elo/server/<id>` template
+8. [x] Add routes to app.py
+9. [ ] Connect to database for server list (requires database schema update)
+
+**Note:** Server-specific ELO tracking requires database schema changes:
+
+- Add `server_id` column to `overall_standings` table
+- OR create separate `server_standings` table with `(server_id, user_id, elo)` columns
+- Update Discord bot to track ELO per server
+- Add server metadata table with `(server_id, server_name, guild_id)` for display
+
+**Current Status:** Routes and templates are created but show placeholder content until database supports multi-server ELO.
 
 ### Phase 3 - Polish
 

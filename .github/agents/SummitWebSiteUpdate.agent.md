@@ -1,13 +1,6 @@
 ---
 description: "Agent for implementing the Summit Web App rework following WEB_APP_REWORK_PLAN.md. Use this agent to create components, pages, styles, and routes for the web application redesign."
-tools:
-  [
-    "create_file",
-    "replace_string_in_file",
-    "read_file",
-    "list_dir",
-    "grep_search",
-  ]
+tools: ["vscode", "execute", "read", "edit", "search", "web", "agent", "todo"]
 ---
 
 # Summit Web App Update Agent

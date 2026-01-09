@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ELO Leaderboards - Sorcerers Summit</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <section class="hero">
+        <h1>ELO Leaderboards</h1>
+        <p>Choose a server to view rankings</p>
+      </section>
+
+      <section class="content">
+        <h2>Server-Specific Leaderboards</h2>
+        <div class="features">
+          <a
+            href="/elo/server/sorcerers-summit"
+            class="feature-card"
+            style="text-decoration: none; color: inherit">
+            <h3>🏰 Sorcerers Summit</h3>
+            <p>Rankings for the Sorcerers Summit server</p>
+          </a>
+          <a
+            href="/elo/server/tts-league"
+            class="feature-card"
+            style="text-decoration: none; color: inherit">
+            <h3>🎮 TTS League</h3>
+            <p>Rankings for the TTS League server</p>
+          </a>
+          <a
+            href="/elo/server/competitive"
+            class="feature-card"
+            style="text-decoration: none; color: inherit">
+            <h3>⚔️ Competitive Server</h3>
+            <p>Rankings for the Competitive server</p>
+          </a>
+        </div>
+        <div
+          style="
+            margin-top: var(--spacing-lg);
+            padding: var(--spacing-md);
+            background: var(--color-bg-elevated);
+            border-radius: var(--radius-soft);
+            border: 1px solid var(--color-border);
+          ">
+          <p
+            style="
+              margin: 0;
+              color: var(--color-text-muted);
+              font-size: 0.9rem;
+            ">
+            <strong>Note:</strong> Server-specific leaderboards currently
+            display global data. Individual server tracking will be implemented
+            soon.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+  </body>
+</html>

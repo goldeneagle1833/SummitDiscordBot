@@ -1,0 +1,136 @@
+/* Avatar Grid Component Styles */
+
+.avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg) 0;
+}
+
+.avatar-card {
+  background: var(--color-surface);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  transition: all var(--transition-normal);
+  cursor: pointer;
+}
+
+.avatar-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--color-primary);
+}
+
+.avatar-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.avatar-card__image {
+  width: 60px;
+  height: 60px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 215, 0, 0.2),
+    rgba(255, 215, 0, 0.05)
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+}
+
+.avatar-card__info {
+  flex: 1;
+}
+
+.avatar-card__name {
+  font-size: var(--font-size-lg);
+  color: var(--color-text);
+  margin-bottom: var(--spacing-xs);
+}
+
+.avatar-card__element {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.avatar-card__stats {
+  display: flex;
+  justify-content: space-between;
+  padding-top: var(--spacing-md);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.avatar-card__stat {
+  text-align: center;
+}
+
+.avatar-card__stat-value {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-primary);
+  display: block;
+}
+
+.avatar-card__stat-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.avatar-card__winrate {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+}
+
+.avatar-card__winrate--high {
+  color: var(--color-success);
+}
+
+.avatar-card__winrate--medium {
+  color: var(--color-warning);
+}
+
+.avatar-card__winrate--low {
+  color: var(--color-error);
+}
+
+/* Filter and sort controls */
+.avatar-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-lg);
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.avatar-controls__search {
+  flex: 1;
+  min-width: 250px;
+}
+
+.avatar-controls__filters {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .avatar-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .avatar-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .avatar-controls__search {
+    width: 100%;
+  }
+}

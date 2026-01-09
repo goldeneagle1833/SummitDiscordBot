@@ -1,0 +1,408 @@
+Name,Count,Type,Rarity,Percent_of_Decks_with_at_least_one_copy
+Apprentice Wizard,33,Air,Ordinary,36
+Blood Ravens,0,Air,Ordinary,0
+Candlemas Monks,0,Air,Elite,0
+Cloud Spirit,0,Air,Ordinary,0
+Daperyll Vampire,19,Air,Exceptional,32
+Dead of Night Demon,0,Air,Ordinary,0
+East-West Dragon,0,Air,Elite,0
+Grandmaster Wizard,25,Air,Elite,46
+Grim Reaper,4,Air,Unique,14
+Gyre Hippogriffs,10,Air,Exceptional,21
+Haast Eagle,0,Air,Exceptional,0
+Headless Haunt,0,Air,Exceptional,0
+Highland Clansmen,9,Air,Ordinary,11
+Highland Falconer,5,Air,Elite,11
+Highland Princess,4,Air,Unique,14
+Hounds of Ondaros,5,Air,Elite,11
+Kite Archer,0,Air,Exceptional,0
+Lord of the Void,0,Air,Unique,0
+Men of Leng,6,Air,Ordinary,7
+Midnight Rogue,4,Air,Ordinary,4
+Moon Clan Werewolf,0,Air,Exceptional,0
+Nightmare,0,Air,Elite,0
+Nimbus Jinn,9,Air,Elite,18
+Palliburrie Bats,1,Air,Ordinary,4
+Peregrine Apparition,0,Air,Exceptional,0
+Phantasmal Shade,0,Air,Exceptional,0
+Phantom Steed,0,Air,Exceptional,0
+Phase Assassin,5,Air,Exceptional,11
+Plumed Pegasus,0,Air,Ordinary,0
+Puppet Master,0,Air,Elite,0
+Recurring Specter,0,Air,Elite,0
+Riddle Sphinx,2,Air,Elite,4
+Roaming Monster,0,Air,Ordinary,0
+Skirmishers of Mu,6,Air,Exceptional,11
+Sky Baron,2,Air,Elite,4
+Sling Pixies,0,Air,Exceptional,0
+Snow Leopard,0,Air,Ordinary,0
+Spectral Stalker,0,Air,Ordinary,0
+Spire Lich,2,Air,Exceptional,7
+Ultimate Horror,0,Air,Unique,0
+Vril Revenant,1,Air,Elite,4
+Wind Sylph,0,Air,Exceptional,0
+Witherwing Hero,0,Air,Unique,0
+Zephyranne Airship,0,Air,Elite,0
+Blink,33,Air,Ordinary,46
+Browse,5,Air,Unique,18
+Chain Lightning,1,Air,Exceptional,4
+Chaos Twister,3,Air,Elite,7
+Disenchant,12,Air,Ordinary,32
+Dream-Quest,1,Air,Unique,4
+Fade,0,Air,Ordinary,0
+Flanking Maneuver,1,Air,Exceptional,4
+Grapple Shot,36,Air,Ordinary,43
+Lightning Bolt,24,Air,Ordinary,46
+Mortality,0,Air,Ordinary,0
+Occult Ritual,0,Air,Unique,0
+Psionic Blast,0,Air,Exceptional,0
+Rain of Arrows,0,Air,Ordinary,0
+Raise Dead,0,Air,Exceptional,0
+Recall,1,Air,Exceptional,4
+Telekinesis,0,Air,Exceptional,0
+Teleport,1,Air,Ordinary,4
+Unlikely Alliance,0,Air,Elite,0
+Waypoint Portal,3,Air,Exceptional,7
+Whirling Blades,9,Air,Exceptional,18
+Windblast,1,Air,Exceptional,4
+Evil Presence,0,Air,Exceptional,0
+Summoning Sphere,15,Air,Exceptional,32
+Thunderstorm,13,Air,Exceptional,18
+Wall of Air,0,Air,Ordinary,0
+Albespine Pikemen,0,Earth,Exceptional,0
+Alvalinne Dryads,0,Earth,Ordinary,0
+Amazon Warriors,4,Earth,Ordinary,11
+Atlas Wanderers,3,Earth,Elite,7
+Autumn Unicorn,9,Earth,Exceptional,18
+Belmotte Longbowmen,6,Earth,Ordinary,7
+Bone Rabble,3,Earth,Ordinary,4
+Bosk Troll,0,Earth,Ordinary,0
+Cave Trolls,6,Earth,Ordinary,7
+Conqueror Worm,2,Earth,Elite,4
+Crown Prince,0,Earth,Unique,0
+Dalcean Phalanx,5,Earth,Exceptional,7
+Dwarven Digging Team,0,Earth,Exceptional,0
+Frontier Settlers,6,Earth,Exceptional,11
+Gneissgnath Gnomes,1,Earth,Exceptional,4
+Grey Wolves,0,Earth,Ordinary,0
+House Arn Bannerman,2,Earth,Exceptional,4
+King of the Realm,1,Earth,Unique,4
+Land Surveyor,24,Earth,Ordinary,29
+Mage Slayer,0,Earth,Ordinary,0
+Master Tracker,0,Earth,Elite,0
+Midland Army,1,Earth,Unique,4
+Miracle Workers,0,Earth,Ordinary,0
+Monastery Gargoyle,0,Earth,Exceptional,0
+Monster Hunter,0,Earth,Exceptional,0
+Mordric Druids,0,Earth,Elite,0
+Mountain Giant,1,Earth,Elite,4
+Pudge Butcher,17,Earth,Exceptional,32
+Queen of Midland,3,Earth,Unique,11
+Root Spider,18,Earth,Exceptional,29
+Royal Bodyguard,3,Earth,Elite,7
+Scent Hounds,3,Earth,Ordinary,7
+Scourge Zombies,0,Earth,Ordinary,0
+Shield Maidens,0,Earth,Exceptional,0
+Silver Valkyries,0,Earth,Elite,0
+Sirian Templar,2,Earth,Exceptional,4
+Sisters of Silence,0,Earth,Elite,0
+Slumbering Giantess,3,Earth,Exceptional,4
+Squirming Mass,0,Earth,Elite,0
+Stone-gaze Gorgons,2,Earth,Elite,7
+Tragedy Worrywart,6,Earth,Exceptional,14
+Vanguard Knights,0,Earth,Exceptional,0
+Wicked Witch,0,Earth,Elite,0
+Wild Boars,2,Earth,Ordinary,4
+Wraetannis Titan,13,Earth,Elite,29
+Yourke Crossbowmen,0,Earth,Exceptional,0
+Assorted Animals,3,Earth,Elite,7
+Border Militia,3,Earth,Ordinary,7
+Bury,28,Earth,Ordinary,43
+Call to War,0,Earth,Exceptional,0
+Cave-In,2,Earth,Exceptional,7
+Common Sense,29,Earth,Ordinary,36
+Craterize,11,Earth,Elite,32
+Dispel,6,Earth,Ordinary,14
+Divine Healing,11,Earth,Exceptional,21
+Earthquake,25,Earth,Elite,50
+Exorcism,0,Earth,Ordinary,0
+Gigantism,2,Earth,Unique,7
+Minecart Madness,0,Earth,Exceptional,0
+Overpower,3,Earth,Ordinary,7
+Shield Wall,0,Earth,Exceptional,0
+Star-Seeds of Uhr,0,Earth,Unique,0
+Unravel,0,Earth,Ordinary,0
+Crusade,1,Earth,Unique,4
+Entangle Terrain,1,Earth,Ordinary,4
+Rest in Peace,0,Earth,Elite,0
+Ancient Dragon,3,Fire,Elite,7
+Aramos Mercenaries,0,Fire,Ordinary,0
+Askelon Phoenix,2,Fire,Elite,4
+Awakened Mummies,1,Fire,Exceptional,4
+Azuridge Caravan,0,Fire,Ordinary,0
+Bane Widow,0,Fire,Exceptional,0
+Beast of Burden,0,Fire,Ordinary,0
+Bull Demons of Adum,4,Fire,Elite,11
+Cauldron Crones,3,Fire,Ordinary,4
+Cerberus in Chains,3,Fire,Unique,11
+Clamor of Harpies,9,Fire,Exceptional,18
+Colicky Dragonettes,5,Fire,Exceptional,7
+Courtesan Thais,0,Fire,Unique,0
+Death Dealer,9,Fire,Unique,32
+Doomsday Prophet,0,Fire,Unique,0
+Escyllion Cyclops,0,Fire,Exceptional,0
+Far East Assassin,0,Fire,Elite,0
+Grosse Poltergeist,0,Fire,Elite,0
+Hillock Basilisk,0,Fire,Exceptional,0
+Infernal Legion,3,Fire,Elite,11
+Karkemish Chimera,0,Fire,Elite,0
+Lava Salamander,0,Fire,Exceptional,0
+Maze Minotaur,0,Fire,Elite,0
+Ogre Goons,0,Fire,Ordinary,0
+Outback Strider,0,Fire,Exceptional,0
+Panorama Manticore,2,Fire,Elite,4
+Petrosian Cavalry,5,Fire,Ordinary,11
+Pit Vipers,10,Fire,Ordinary,14
+Quarrelsome Kobolds,0,Fire,Exceptional,0
+Raal Dromedary,2,Fire,Ordinary,7
+Rimland Nomads,0,Fire,Ordinary,0
+Sacred Scarabs,27,Fire,Ordinary,36
+Sand Worm,0,Fire,Ordinary,0
+Scavenging Fiend,0,Fire,Exceptional,0
+Seasoned Sellsword,0,Fire,Elite,0
+Sirocco Scorpions,7,Fire,Ordinary,7
+Swiven Scout,0,Fire,Exceptional,0
+Tvinnax Berserker,1,Fire,Exceptional,4
+Vile Imp,44,Fire,Ordinary,50
+Wayfaring Pilgrim,6,Fire,Exceptional,7
+Wills-o-the-Wisp,0,Fire,Exceptional,0
+Backstab,0,Fire,Exceptional,0
+Blaze,4,Fire,Exceptional,7
+Boil,2,Fire,Ordinary,4
+Cone of Flame,1,Fire,Exceptional,4
+Critical Strike,3,Fire,Ordinary,7
+Disintegrate,2,Fire,Elite,7
+Fireball,10,Fire,Exceptional,21
+Firebolts,26,Fire,Ordinary,39
+Flame Wave,2,Fire,Elite,7
+Heat Ray,11,Fire,Ordinary,25
+Immolation,0,Fire,Unique,0
+Incinerate,4,Fire,Ordinary,7
+Infiltrate,19,Fire,Elite,39
+Leap Attack,2,Fire,Exceptional,4
+Mad Dash,2,Fire,Ordinary,4
+Major Explosion,7,Fire,Elite,18
+Meteor Shower,0,Fire,Elite,0
+Minor Explosion,9,Fire,Ordinary,18
+Pact with the Devil,6,Fire,Unique,21
+Poison Nova,17,Fire,Exceptional,39
+Scorched Earth,0,Fire,Elite,0
+Spin Attack,3,Fire,Ordinary,7
+Warp Spasm,0,Fire,Unique,0
+Drought,0,Fire,Exceptional,0
+Jihad,1,Fire,Unique,4
+Sandstorm,0,Fire,Ordinary,0
+Wall of Fire,0,Fire,Ordinary,0
+Wildfire,3,Fire,Exceptional,4
+Accursed Albatross,0,Water,Exceptional,0
+Adept Illusionist,0,Water,Elite,0
+Anui Undine,4,Water,Exceptional,7
+Bridge Troll,0,Water,Exceptional,0
+Brobdingnag Bullfrog,1,Water,Exceptional,4
+Captain Baldassare,3,Water,Unique,11
+Coral-Reef Kelpie,0,Water,Ordinary,0
+Court Jester,0,Water,Elite,0
+Deep-Sea Mermaids,4,Water,Ordinary,4
+Diluvian Kraken,2,Water,Elite,7
+Felbog Frog Men,0,Water,Exceptional,0
+Fenvale Muse,0,Water,Ordinary,0
+Fey Changeling,12,Water,Exceptional,14
+Ghost Ship,0,Water,Elite,0
+Giant Shark,3,Water,Exceptional,4
+Great Old One,3,Water,Unique,11
+Guile Sirens,1,Water,Exceptional,4
+Lord of Unland,1,Water,Unique,4
+Megamoeba,1,Water,Elite,4
+Mother Nature,2,Water,Unique,7
+Muck Lampreys,0,Water,Ordinary,0
+Old Salt Anchorman,0,Water,Ordinary,0
+Ormund Harpooneers,0,Water,Exceptional,0
+Pirate Ship,0,Water,Ordinary,0
+Polar Bears,3,Water,Ordinary,4
+Polar Explorers,4,Water,Elite,7
+Porcupine Pufferfish,6,Water,Ordinary,7
+Ruler of Thul,3,Water,Unique,11
+Sea Raider,0,Water,Exceptional,0
+Sea Serpent,0,Water,Ordinary,0
+Sedge Crabs,3,Water,Ordinary,4
+Seirawan Hydra,4,Water,Elite,11
+Selfsame Simulacrum,5,Water,Elite,11
+Sneak Thief,0,Water,Elite,0
+Swamp Buffalo,0,Water,Ordinary,0
+Swan Maidens,0,Water,Ordinary,0
+Tide Naiads,2,Water,Exceptional,4
+Tringh Constrictor,0,Water,Exceptional,0
+Tufted Turtles,11,Water,Ordinary,14
+Unland Angler,1,Water,Elite,4
+Unland Eel,3,Water,Exceptional,4
+Yokai Kappas,0,Water,Elite,0
+Dodge Roll,1,Water,Exceptional,4
+Drown,8,Water,Ordinary,11
+Extinguish,0,Water,Ordinary,0
+Fire Harpoons!,0,Water,Ordinary,0
+Font of Life,6,Water,Exceptional,14
+Frost Nova,0,Water,Exceptional,0
+Geyser,3,Water,Exceptional,4
+Ice Lance,1,Water,Ordinary,4
+Marine Voyage,1,Water,Exceptional,4
+Plague of Frogs,2,Water,Unique,7
+Pollimorph,6,Water,Elite,11
+Replication,0,Water,Elite,0
+Riptide,9,Water,Ordinary,11
+Shrink,0,Water,Exceptional,0
+Sleep,3,Water,Ordinary,4
+Stormy Seas,4,Water,Exceptional,7
+Twist of Fate,1,Water,Unique,4
+Upwelling,0,Water,Exceptional,0
+Wrath of the Sea,4,Water,Elite,11
+Abundance,3,Water,Elite,7
+Atlantean Fate,4,Water,Unique,14
+Blizzard,3,Water,Ordinary,4
+Flood,7,Water,Exceptional,11
+Mariners Curse,0,Water,Exceptional,0
+Silence,2,Water,Elite,4
+Wall of Ice,3,Water,Ordinary,4
+All-terrain Vestments,0,Artifact,Elite,0
+Amethyst Core,9,Artifact,Unique,32
+Angels Egg,6,Artifact,Elite,14
+Aquamarine Core,3,Artifact,Unique,11
+Battering Ram,0,Artifact,Exceptional,0
+Belfry,0,Artifact,Elite,0
+Black Obelisk,0,Artifact,Elite,0
+Blasted Oak,0,Artifact,Unique,0
+Buried Treasure,0,Artifact,Exceptional,0
+Chains of Prometheus,2,Artifact,Elite,4
+Crave Golem,0,Artifact,Exceptional,0
+Crown of the Victor,3,Artifact,Unique,11
+Devils Egg,2,Artifact,Elite,4
+Doomsday Device,1,Artifact,Unique,4
+Drums of Doom,3,Artifact,Elite,7
+Erik's Curiosa,1,Artifact,Unique,4
+Flaming Sword,3,Artifact,Exceptional,11
+Gilded Aegis,0,Artifact,Unique,0
+Iron Shackles,3,Artifact,Exceptional,4
+Kythera Mechanism,0,Artifact,Unique,0
+Land Deed,0,Artifact,Elite,0
+Lucky Charm,0,Artifact,Exceptional,0
+Maddening Bells,1,Artifact,Elite,4
+Magellan Globe,8,Artifact,Elite,14
+Magnetic Muzzle,2,Artifact,Elite,4
+Mask of Mayhem,0,Artifact,Elite,0
+Mix Aer,6,Artifact,Elite,18
+Mix Aqua,6,Artifact,Elite,14
+Mix Ignis,3,Artifact,Elite,11
+Mix Terra,7,Artifact,Elite,21
+Onyx Core,7,Artifact,Unique,25
+Orb of Baal Berith,0,Artifact,Unique,0
+Payload Trebuchet,0,Artifact,Elite,0
+Pendulum of Peril,1,Artifact,Unique,4
+Philosophers Stone,0,Artifact,Unique,0
+Pnakotic Manuscripts,0,Artifact,Unique,0
+Poisonous Dagger,3,Artifact,Exceptional,7
+Purge Juggernaut,0,Artifact,Elite,0
+Rolling Boulder,1,Artifact,Exceptional,4
+Ruby Core,4,Artifact,Unique,14
+Scarecrow,0,Artifact,Ordinary,0
+Screaming Skull,2,Artifact,Elite,7
+Seven-League Boots,1,Artifact,Unique,4
+Siege Ballista,1,Artifact,Exceptional,4
+Spear of Destiny,2,Artifact,Unique,7
+Sunken Treasure,0,Artifact,Exceptional,0
+The Immortal Throne,0,Artifact,Unique,0
+Torshammar Trinket,3,Artifact,Exceptional,7
+Truesight Crossbow,3,Artifact,Exceptional,7
+Undertaker Engine,0,Artifact,Elite,0
+Wicker Manikin,0,Artifact,Ordinary,0
+Wings of Invention,1,Artifact,Exceptional,4
+Cloud City,4,Site,Unique,14
+Dark Tower,28,Site,Ordinary,68
+Gothic Tower,27,Site,Ordinary,68
+Lone Tower,28,Site,Ordinary,68
+Mountain Pass,3,Site,Exceptional,11
+Observatory,14,Site,Elite,32
+Updraft Ridge,3,Site,Exceptional,11
+Watchtower,5,Site,Exceptional,14
+Bedrock,6,Site,Exceptional,14
+Gnome Hollows,16,Site,Exceptional,29
+Holy Ground,10,Site,Exceptional,21
+Humble Village,12,Site,Ordinary,25
+Kingdom of Agartha,1,Site,Unique,4
+Pillar of Zeiros,9,Site,Unique,32
+Quagmire,10,Site,Exceptional,21
+Rift Valley,11,Site,Elite,25
+Rustic Village,11,Site,Ordinary,21
+Secret Tunnel,1,Site,Exceptional,4
+Simple Village,14,Site,Ordinary,25
+Vantage Hills,7,Site,Exceptional,11
+Arid Desert,18,Site,Ordinary,32
+Dwarven Forge,0,Site,Elite,0
+Mirage,4,Site,Elite,14
+Red Desert,22,Site,Ordinary,36
+Remote Desert,17,Site,Ordinary,29
+River of Flame,14,Site,Unique,50
+Shifting Sands,5,Site,Exceptional,11
+Smokestacks of Gnaak,2,Site,Unique,7
+Vesuvius,6,Site,Unique,21
+Autumn River,13,Site,Ordinary,25
+Floodplain,9,Site,Exceptional,11
+Iceburg,0,Site,Exceptional,0
+Island Leviathan,6,Site,Elite,11
+Maelstrom,0,Site,Unique,0
+Spring River,16,Site,Ordinary,25
+Summer River,12,Site,Ordinary,21
+Tadpole Pool,3,Site,Unique,11
+Undertow,8,Site,Exceptional,11
+Aqueduct,8,Site,Exceptional,14
+Lighthouse,7,Site,Exceptional,18
+Oasis,9,Site,Exceptional,14
+Pristine Paradise,5,Site,Unique,18
+Ruins,36,Site,Exceptional,46
+Steppe,23,Site,Exceptional,32
+The Colour Out of Space,6,Site,Unique,21
+Windmill,23,Site,Exceptional,36
+Astral Alcazar,0,Site,Elite,0
+Battlefield,0,Site,Elite,0
+Boneyard,2,Site,Unique,7
+Bottomless Pit,4,Site,Elite,11
+Cornerstone,0,Site,Exceptional,0
+Crossroads,5,Site,Elite,14
+Dome of Osiros,4,Site,Unique,14
+Donnybrook Inn,0,Site,Unique,0
+Edge of the World,3,Site,Elite,7
+Free City,10,Site,Exceptional,18
+Great Wall,2,Site,Unique,7
+Imperial Road,3,Site,Elite,7
+Mirror Realm,12,Site,Unique,43
+Mudflow,0,Site,Exceptional,0
+Planar Gate,0,Site,Elite,0
+Primodial Spring,0,Site,Elite,0
+Roots of Yggdrasil,1,Site,Unique,4
+Sinkhole,7,Site,Elite,18
+Standing Stones,3,Site,Elite,7
+The Geistwood,4,Site,Unique,14
+Vaults of Zul,0,Site,Unique,0
+Avatar of Air,0,Avatar,Ordinary,0
+Avatar of Earth,3,Avatar,Ordinary,11
+Avatar of Fire,3,Avatar,Ordinary,11
+Avatar of Water,0,Avatar,Ordinary,0
+Battlemage,1,Avatar,Elite,4
+Deathspeaker,7,Avatar,Elite,25
+Elementalist,2,Avatar,Elite,7
+Enchantress,2,Avatar,Elite,7
+Pathfinder,3,Avatar,Unique,11
+Seer,3,Avatar,Elite,11
+Sorcerer,4,Avatar,Ordinary,14
+Waveshaper,0,Avatar,Ordinary,0
+Sparkmage,0,Avatar,Ordinary,0
+Geomancer,0,Avatar,Ordinary,0
+Flamecaller,0,Avatar,Ordinary,0

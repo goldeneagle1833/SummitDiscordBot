@@ -7,28 +7,12 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/style.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
   </head>
   <body>
-    <nav>
-      <div class="nav-container">
-        <a href="/" class="logo">Summit</a>
-        <ul class="nav-links">
-          <li><a href="/">Home</a></li>
-          <li><a href="/avatars">Avatars</a></li>
-          <li><a href="/about">About</a></li>
-          <li>
-            <a href="https://discord.gg/ZDqHSK9VGx" target="_blank">Discord</a>
-          </li>
-          <li>
-            <a
-              href="https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink"
-              target="_blank"
-              >Patreon</a
-            >
-          </li>
-        </ul>
-      </div>
-    </nav>
+    {% include 'components/navbar.html' %}
 
     <main>
       <a href="/" class="back-link">← Back to Leaderboard</a>
@@ -211,7 +195,9 @@
             row.innerHTML = `
               <td class="match-id">${matchId}</td>
               <td class="${resultClass}">${match.result}</td>
-              <td>${match.opponent}</td>
+              <td><a href="/player/${
+                match.opponent_id
+              }" class="opponent-link">${match.opponent}</a></td>
               <td class="${resultClass}">${eloSign}${match.elo_change}</td>
               <td>${match.first_player || "-"}</td>
               <td>${matchTime}</td>
@@ -232,5 +218,6 @@
     <footer>
       <p>&copy; 2026 Summit. All rights reserved.</p>
     </footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
   </body>
 </html>

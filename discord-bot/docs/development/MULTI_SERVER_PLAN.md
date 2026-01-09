@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS match_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     guild_id INTEGER,                    -- NEW: Discord server ID
     reporter_id INTEGER,
-    winner_id INTEGER, 
+    winner_id INTEGER,
     winner_display_name TEXT,
     losser_id INTEGER,
     losser_display_name TEXT,
@@ -73,10 +73,12 @@ CREATE TABLE IF NOT EXISTS solo_match_reports (
 ### 1.3 overall_standings Table (elo.db)
 
 Option A: **Global ELO** (single rating across all servers)
+
 - Keep current schema, no changes needed
 - Players have one ELO regardless of which server they play on
 
 Option B: **Per-Server ELO** (separate ratings per server)
+
 ```sql
 -- New schema with composite primary key
 CREATE TABLE IF NOT EXISTS overall_standings (
@@ -133,12 +135,12 @@ CREATE TABLE IF NOT EXISTS guild_roles (
 
 Current hardcoded values in `lfg.py` and `config.py` that need to be moved to database:
 
-| Current Location | Value | New Location |
-|-----------------|-------|--------------|
-| `lfg.py` | `LFG_CHANNEL_ID` | `guild_config.lfg_channel_id` |
-| `lfg.py` | `LEADERBOARD_CHANNEL_ID` | `guild_config.leaderboard_channel_id` |
-| `lfg.py` | `masters_role_ids` | `guild_roles` table |
-| `config.py` | Various channel IDs | `guild_config` table |
+| Current Location | Value                    | New Location                          |
+| ---------------- | ------------------------ | ------------------------------------- |
+| `lfg.py`         | `LFG_CHANNEL_ID`         | `guild_config.lfg_channel_id`         |
+| `lfg.py`         | `LEADERBOARD_CHANNEL_ID` | `guild_config.leaderboard_channel_id` |
+| `lfg.py`         | `masters_role_ids`       | `guild_roles` table                   |
+| `config.py`      | Various channel IDs      | `guild_config` table                  |
 
 ### 2.2 New Config Helper Functions
 
@@ -155,10 +157,10 @@ def get_guild_config(guild_id: int) -> Optional[Dict[str, Any]]:
     cur.execute("SELECT * FROM guild_config WHERE guild_id = ?", (guild_id,))
     row = cur.fetchone()
     conn.close()
-    
+
     if not row:
         return None
-    
+
     return {
         "guild_id": row[0],
         "guild_name": row[1],
@@ -196,6 +198,7 @@ New admin command for initial server setup:
 ```
 
 This command will:
+
 1. Check if the server is already configured
 2. Create a new entry in `guild_config`
 3. Prompt admin to configure channels and roles
@@ -218,16 +221,16 @@ This command will:
 
 Commands that need guild_id awareness:
 
-| Command | Change Required |
-|---------|----------------|
-| `!lfg` | Get LFG channel from guild_config |
-| `!leaderboard` | Filter by guild or show global based on elo_mode |
-| `!masters_bracket` | Get masters roles from guild_roles table |
-| `!rank` | Show server or global rank based on elo_mode |
-| `!mystats` | Filter matches by guild or show all |
-| `!game_activity` | Add option to filter by server |
-| `!reset_elo` | Only reset for current server |
-| `!remove_player` | Only affect current server's matches |
+| Command            | Change Required                                  |
+| ------------------ | ------------------------------------------------ |
+| `!lfg`             | Get LFG channel from guild_config                |
+| `!leaderboard`     | Filter by guild or show global based on elo_mode |
+| `!masters_bracket` | Get masters roles from guild_roles table         |
+| `!rank`            | Show server or global rank based on elo_mode     |
+| `!mystats`         | Filter matches by guild or show all              |
+| `!game_activity`   | Add option to filter by server                   |
+| `!reset_elo`       | Only reset for current server                    |
+| `!remove_player`   | Only affect current server's matches             |
 
 ### 3.4 Cross-Server Features (Future)
 
@@ -241,13 +244,13 @@ Commands that need guild_id awareness:
 
 ### 4.1 Files to Modify
 
-| File | Changes |
-|------|---------|
-| `utils/database.py` | Add guild_id to all insert/update functions |
-| `utils/guild_config.py` | NEW - Guild configuration helpers |
-| `cogs/lfg.py` | Replace hardcoded IDs with guild_config lookups |
-| `cogs/elo.py` | Add guild awareness to rank/leaderboard commands |
-| `main.py` | Initialize guild_config database on startup |
+| File                    | Changes                                          |
+| ----------------------- | ------------------------------------------------ |
+| `utils/database.py`     | Add guild_id to all insert/update functions      |
+| `utils/guild_config.py` | NEW - Guild configuration helpers                |
+| `cogs/lfg.py`           | Replace hardcoded IDs with guild_config lookups  |
+| `cogs/elo.py`           | Add guild awareness to rank/leaderboard commands |
+| `main.py`               | Initialize guild_config database on startup      |
 
 ### 4.2 Function Signature Changes
 
@@ -255,7 +258,7 @@ Commands that need guild_id awareness:
 # Before
 async def winner_report(reporter_id, user_id, ...)
 
-# After  
+# After
 async def winner_report(guild_id, reporter_id, user_id, ...)
 ```
 
@@ -282,25 +285,25 @@ def update_elo_db(guild_id, user_id, user_display_name, did_win, opponent_id, el
 ```python
 def migrate_to_multi_server(primary_guild_id: int):
     """Migrate existing data to multi-server format."""
-    
+
     # 1. Add guild_id columns
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
-    
+
     try:
         cur.execute("ALTER TABLE match_records ADD COLUMN guild_id INTEGER")
     except sqlite3.OperationalError:
         pass  # Column exists
-    
+
     # 2. Set existing records to primary guild
     cur.execute(
         "UPDATE match_records SET guild_id = ? WHERE guild_id IS NULL",
         (primary_guild_id,)
     )
-    
+
     conn.commit()
     conn.close()
-    
+
     # 3. Create guild_config table and add primary server
     # ...
 ```

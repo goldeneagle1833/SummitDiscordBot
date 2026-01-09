@@ -1,0 +1,2878 @@
+[
+  {
+    "1st": {
+      "Avatar": [
+        {
+          "Name": "Sorcerer",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Onyx Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Philosopher's Stone",
+          "Quantity": 1,
+          "Cost": 1
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Bosk Troll",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Grim Reaper",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Autumn Unicorn",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Root Spider",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Dalcean Phalanx",
+          "Quantity": 3,
+          "Cost": 4
+        },
+        {
+          "Name": "Pudge Butcher",
+          "Quantity": 2,
+          "Cost": 4
+        },
+        {
+          "Name": "Atlas Wanderers",
+          "Quantity": 2,
+          "Cost": 5
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Bedrock",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Dark Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Gothic Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Holy Ground",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Lone Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Mirror Realm",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Mountain Pass",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Pillar of Zeiros",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Quagmire",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Rift Valley",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Watchtower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Windmill",
+          "Quantity": 3,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Divine Healing",
+          "Quantity": 2,
+          "Cost": 1
+        },
+        {
+          "Name": "Blink",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Common Sense",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Dispel",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Lightning Bolt",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Bury",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Grapple Shot",
+          "Quantity": 4,
+          "Cost": 3
+        },
+        {
+          "Name": "Gigantism",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Earthquake",
+          "Quantity": 2,
+          "Cost": 5
+        }
+      ],
+      "Aura": [],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "2nd": {
+      "Avatar": [
+        {
+          "Name": "Deathspeaker",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Amethyst Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Aquamarine Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Erik's Curiosa",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Onyx Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Philosopher's Stone",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Angels Egg",
+          "Quantity": 2,
+          "Cost": 3
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Highland Falconer",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Highland Princess",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Palliburrie Bats",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Sacred Scarabs",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Vile Imp",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Wayfaring Pilgrim",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Apprentice Wizard",
+          "Quantity": 4,
+          "Cost": 3
+        },
+        {
+          "Name": "Grandmaster Wizard",
+          "Quantity": 2,
+          "Cost": 6
+        },
+        {
+          "Name": "Nimbus Jinn",
+          "Quantity": 2,
+          "Cost": 6
+        },
+        {
+          "Name": "Death Dealer",
+          "Quantity": 1,
+          "Cost": 7
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Dark Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Gothic Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Lone Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Observatory",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Red Desert",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Remote Desert",
+          "Quantity": 4,
+          "Cost": null
+        },
+        {
+          "Name": "River of Flame",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Ruins",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Smokestacks of Gnaak",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "The Geistwood",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Browse",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Lightning Bolt",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Windblast",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Infiltrate",
+          "Quantity": 2,
+          "Cost": 4
+        },
+        {
+          "Name": "Pact with the Devil",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Poison Nova",
+          "Quantity": 1,
+          "Cost": 5
+        }
+      ],
+      "Aura": [
+        {
+          "Name": "Summoning Sphere",
+          "Quantity": 2,
+          "Cost": 1
+        }
+      ],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "3rd": {
+      "Avatar": [
+        {
+          "Name": "Avatar of Air",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Torshammar Trinket",
+          "Quantity": 2,
+          "Cost": 1
+        },
+        {
+          "Name": "Devils Egg",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Rolling Boulder",
+          "Quantity": 3,
+          "Cost": 4
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Highland Falconer",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Palliburrie Bats",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Vile Imp",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Plumed Pegasus",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Quarrelsome Kobolds",
+          "Quantity": 1,
+          "Cost": 3
+        },
+        {
+          "Name": "Gyre Hippogriffs",
+          "Quantity": 3,
+          "Cost": 4
+        },
+        {
+          "Name": "Petrosian Cavalry",
+          "Quantity": 4,
+          "Cost": 4
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Arid Desert",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Cloud City",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Dark Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Free City",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Gothic Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Lone Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Observatory",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Ruins",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "The Colour Out of Space",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Watchtower",
+          "Quantity": 2,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Blink",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Firebolts",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Lightning Bolt",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Blaze",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Infiltrate",
+          "Quantity": 1,
+          "Cost": 4
+        }
+      ],
+      "Aura": [],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "4th": {
+      "Avatar": [
+        {
+          "Name": "Geomancer",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Amethyst Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Onyx Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Iron Shackles",
+          "Quantity": 1,
+          "Cost": 3
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Bosk Troll",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Autumn Unicorn",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Root Spider",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Dalcean Phalanx",
+          "Quantity": 3,
+          "Cost": 4
+        },
+        {
+          "Name": "Pudge Butcher",
+          "Quantity": 3,
+          "Cost": 4
+        },
+        {
+          "Name": "Amazon Warriors",
+          "Quantity": 1,
+          "Cost": 5
+        },
+        {
+          "Name": "Atlas Wanderers",
+          "Quantity": 2,
+          "Cost": 5
+        },
+        {
+          "Name": "Hounds of Ondaros",
+          "Quantity": 2,
+          "Cost": 5
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Dark Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Gnome Hollows",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Gothic Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Holy Ground",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Lone Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Mirror Realm",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Observatory",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Pillar of Zeiros",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Quagmire",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Rift Valley",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Sinkhole",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Windmill",
+          "Quantity": 3,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Divine Healing",
+          "Quantity": 2,
+          "Cost": 1
+        },
+        {
+          "Name": "Blink",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Common Sense",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Dispel",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Lightning Bolt",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Bury",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Grapple Shot",
+          "Quantity": 4,
+          "Cost": 3
+        },
+        {
+          "Name": "Gigantism",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Earthquake",
+          "Quantity": 1,
+          "Cost": 5
+        }
+      ],
+      "Aura": [
+        {
+          "Name": "Crusade",
+          "Quantity": 1,
+          "Cost": 2
+        }
+      ],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "5th": {
+      "Avatar": [
+        {
+          "Name": "Sorcerer",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Onyx Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Rolling Boulder",
+          "Quantity": 2,
+          "Cost": 4
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Bosk Troll",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Dwarven Digging Team",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Land Surveyor",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Autumn Unicorn",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Cave Trolls",
+          "Quantity": 1,
+          "Cost": 3
+        },
+        {
+          "Name": "Shield Maidens",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "House Arn Bannerman",
+          "Quantity": 3,
+          "Cost": 4
+        },
+        {
+          "Name": "Royal Bodyguard",
+          "Quantity": 2,
+          "Cost": 4
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Bedrock",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Dome of Osiros",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Free City",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Humble Village",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Imperial Road",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Mirror Realm",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Pillar of Zeiros",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Rustic Village",
+          "Quantity": 4,
+          "Cost": null
+        },
+        {
+          "Name": "Simple Village",
+          "Quantity": 4,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Divine Healing",
+          "Quantity": 2,
+          "Cost": 1
+        },
+        {
+          "Name": "Call to War",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Common Sense",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Dispel",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Border Militia",
+          "Quantity": 4,
+          "Cost": 3
+        },
+        {
+          "Name": "Bury",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Earthquake",
+          "Quantity": 2,
+          "Cost": 5
+        }
+      ],
+      "Aura": [
+        {
+          "Name": "Crusade",
+          "Quantity": 1,
+          "Cost": 2
+        }
+      ],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "6th": {
+      "Avatar": [
+        {
+          "Name": "Battlemage",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Amethyst Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Kythera Mechanism",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Torshammar Trinket",
+          "Quantity": 2,
+          "Cost": 1
+        },
+        {
+          "Name": "Flaming Sword",
+          "Quantity": 2,
+          "Cost": 4
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Highland Princess",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Headless Haunt",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Phase Assassin",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Gyre Hippogriffs",
+          "Quantity": 3,
+          "Cost": 4
+        },
+        {
+          "Name": "Pirate Ship",
+          "Quantity": 3,
+          "Cost": 4
+        },
+        {
+          "Name": "Ruler of Thul",
+          "Quantity": 1,
+          "Cost": 4
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Cloud City",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Dark Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Floodplain",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Gothic Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Lighthouse",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Lone Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Observatory",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Sinkhole",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Undertow",
+          "Quantity": 3,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Blink",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Lightning Bolt",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Windblast",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Flanking Maneuver",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Grapple Shot",
+          "Quantity": 4,
+          "Cost": 3
+        },
+        {
+          "Name": "Chaos Twister",
+          "Quantity": 2,
+          "Cost": 4
+        }
+      ],
+      "Aura": [
+        {
+          "Name": "Thunderstorm",
+          "Quantity": 3,
+          "Cost": 4
+        },
+        {
+          "Name": "Atlantean Fate",
+          "Quantity": 1,
+          "Cost": 5
+        }
+      ],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "7th": {
+      "Avatar": [
+        {
+          "Name": "Geomancer",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Onyx Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Philosopher's Stone",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Ruby Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Orb of Ba'al Berith",
+          "Quantity": 1,
+          "Cost": 5
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Land Surveyor",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Vile Imp",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Crown Prince",
+          "Quantity": 1,
+          "Cost": 3
+        },
+        {
+          "Name": "Death Dealer",
+          "Quantity": 1,
+          "Cost": 7
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Bedrock",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Crossroads",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Gnome Hollows",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Mirror Realm",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Pillar of Zeiros",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Red Desert",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Remote Desert",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Rift Valley",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "River of Flame",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Roots of Yggdrasil",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Sinkhole",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Steppe",
+          "Quantity": 3,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Divine Healing",
+          "Quantity": 3,
+          "Cost": 1
+        },
+        {
+          "Name": "Common Sense",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Dispel",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Firebolts",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Border Militia",
+          "Quantity": 4,
+          "Cost": 3
+        },
+        {
+          "Name": "Bury",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Minor Explosion",
+          "Quantity": 1,
+          "Cost": 3
+        },
+        {
+          "Name": "Scorched Earth",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Infiltrate",
+          "Quantity": 2,
+          "Cost": 4
+        },
+        {
+          "Name": "Poison Nova",
+          "Quantity": 2,
+          "Cost": 5
+        },
+        {
+          "Name": "Major Explosion",
+          "Quantity": 2,
+          "Cost": 7
+        },
+        {
+          "Name": "Craterize",
+          "Quantity": 2,
+          "Cost": 8
+        }
+      ],
+      "Aura": [],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "8th": {
+      "Avatar": [
+        {
+          "Name": "Seer",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Angels Egg",
+          "Quantity": 1,
+          "Cost": 3
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Land Surveyor",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Vile Imp",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Autumn Unicorn",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Quarrelsome Kobolds",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Root Spider",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Petrosian Cavalry",
+          "Quantity": 4,
+          "Cost": 4
+        },
+        {
+          "Name": "Royal Bodyguard",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Sand Worm",
+          "Quantity": 2,
+          "Cost": 4
+        },
+        {
+          "Name": "Amazon Warriors",
+          "Quantity": 3,
+          "Cost": 5
+        },
+        {
+          "Name": "Atlas Wanderers",
+          "Quantity": 1,
+          "Cost": 5
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Arid Desert",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Bedrock",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Crossroads",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Gnome Hollows",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Mirror Realm",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Oasis",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Pillar of Zeiros",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Quagmire",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Red Desert",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "River of Flame",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Roots of Yggdrasil",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Sinkhole",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Smokestacks of Gnaak",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Steppe",
+          "Quantity": 3,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Common Sense",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Dispel",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Firebolts",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Blaze",
+          "Quantity": 1,
+          "Cost": 3
+        },
+        {
+          "Name": "Bury",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Scorched Earth",
+          "Quantity": 1,
+          "Cost": 3
+        },
+        {
+          "Name": "Gigantism",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Infiltrate",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Earthquake",
+          "Quantity": 2,
+          "Cost": 5
+        }
+      ],
+      "Aura": [
+        {
+          "Name": "Entangle Terrain",
+          "Quantity": 1,
+          "Cost": 4
+        }
+      ],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "9th": {
+      "Avatar": [
+        {
+          "Name": "Sorcerer",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Amethyst Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Aquamarine Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Mix Aer",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Philosopher's Stone",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Angels Egg",
+          "Quantity": 2,
+          "Cost": 3
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Adept Illusionist",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Grim Reaper",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Highland Princess",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Headless Haunt",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Phantasmal Shade",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Phantom Steed",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Ruler of Thul",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Hounds of Ondaros",
+          "Quantity": 2,
+          "Cost": 5
+        },
+        {
+          "Name": "Ghost Ship",
+          "Quantity": 2,
+          "Cost": 6
+        },
+        {
+          "Name": "Nimbus Jinn",
+          "Quantity": 2,
+          "Cost": 6
+        },
+        {
+          "Name": "Ultimate Horror",
+          "Quantity": 1,
+          "Cost": 8
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Autumn River",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Cloud City",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Dark Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Floodplain",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Gothic Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Imperial Road",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Lighthouse",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Lone Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Mirror Realm",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Observatory",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Tadpole Pool",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "The Colour Out of Space",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Watchtower",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Browse",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Blink",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Disenchant",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Lightning Bolt",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Grapple Shot",
+          "Quantity": 3,
+          "Cost": 3
+        }
+      ],
+      "Aura": [
+        {
+          "Name": "Evil Presence",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Atlantean Fate",
+          "Quantity": 1,
+          "Cost": 5
+        }
+      ],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "10th": {
+      "Avatar": [
+        {
+          "Name": "Battlemage",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Aquamarine Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Mix Aer",
+          "Quantity": 2,
+          "Cost": 1
+        },
+        {
+          "Name": "Philosopher's Stone",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Crown of the Victor",
+          "Quantity": 1,
+          "Cost": 3
+        },
+        {
+          "Name": "Screaming Skull",
+          "Quantity": 1,
+          "Cost": 3
+        },
+        {
+          "Name": "Flaming Sword",
+          "Quantity": 2,
+          "Cost": 4
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Highland Falconer",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Palliburrie Bats",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Headless Haunt",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Phase Assassin",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Gyre Hippogriffs",
+          "Quantity": 3,
+          "Cost": 4
+        },
+        {
+          "Name": "Ruler of Thul",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Daperyll Vampire",
+          "Quantity": 2,
+          "Cost": 5
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Cloud City",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Dark Tower",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Floodplain",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Gothic Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Imperial Road",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Lighthouse",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Lone Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Observatory",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Pillar of Zeiros",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Smokestacks of Gnaak",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "The Colour Out of Space",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Browse",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Shrink",
+          "Quantity": 2,
+          "Cost": 1
+        },
+        {
+          "Name": "Pollimorph",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Flanking Maneuver",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Grapple Shot",
+          "Quantity": 4,
+          "Cost": 3
+        },
+        {
+          "Name": "Whirling Blades",
+          "Quantity": 1,
+          "Cost": 5
+        }
+      ],
+      "Aura": [
+        {
+          "Name": "Thunderstorm",
+          "Quantity": 3,
+          "Cost": 4
+        },
+        {
+          "Name": "Atlantean Fate",
+          "Quantity": 1,
+          "Cost": 5
+        }
+      ],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "12th": {
+      "Avatar": [
+        {
+          "Name": "Enchantress",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Amethyst Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Kythera Mechanism",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Philosopher's Stone",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Ruby Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Angels Egg",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Chains of Prometheus",
+          "Quantity": 2,
+          "Cost": 4
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Courtesan Tha\u00efs",
+          "Quantity": 1,
+          "Cost": 5
+        },
+        {
+          "Name": "Grandmaster Wizard",
+          "Quantity": 2,
+          "Cost": 6
+        },
+        {
+          "Name": "Death Dealer",
+          "Quantity": 1,
+          "Cost": 7
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Arid Desert",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Dark Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Floodplain",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Gothic Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Lighthouse",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Lone Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Oasis",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Observatory",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Remote Desert",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Rift Valley",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "River of Flame",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Ruins",
+          "Quantity": 3,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Browse",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Blink",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Disenchant",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Firebolts",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Lightning Bolt",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Riptide",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Disintegrate",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Leap Attack",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Poison Nova",
+          "Quantity": 2,
+          "Cost": 5
+        },
+        {
+          "Name": "Major Explosion",
+          "Quantity": 2,
+          "Cost": 7
+        }
+      ],
+      "Aura": [
+        {
+          "Name": "Silence",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Thunderstorm",
+          "Quantity": 3,
+          "Cost": 4
+        },
+        {
+          "Name": "Wildfire",
+          "Quantity": 3,
+          "Cost": 4
+        },
+        {
+          "Name": "Abundance",
+          "Quantity": 2,
+          "Cost": 5
+        },
+        {
+          "Name": "Atlantean Fate",
+          "Quantity": 1,
+          "Cost": 5
+        }
+      ],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "13th": {
+      "Avatar": [
+        {
+          "Name": "Deathspeaker",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Amethyst Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Aquamarine Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Onyx Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Philosopher's Stone",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Ruby Core",
+          "Quantity": 1,
+          "Cost": 1
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Highland Princess",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Land Surveyor",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Vile Imp",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Apprentice Wizard",
+          "Quantity": 4,
+          "Cost": 3
+        },
+        {
+          "Name": "Cauldron Crones",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Grandmaster Wizard",
+          "Quantity": 2,
+          "Cost": 6
+        },
+        {
+          "Name": "Nimbus Jinn",
+          "Quantity": 2,
+          "Cost": 6
+        },
+        {
+          "Name": "Death Dealer",
+          "Quantity": 1,
+          "Cost": 7
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Bedrock",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Crossroads",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Dark Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Roots of Yggdrasil",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Ruins",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Sinkhole",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Steppe",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "The Colour Out of Space",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "The Geistwood",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Windmill",
+          "Quantity": 3,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Blink",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Common Sense",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Dispel",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Firebolts",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Lightning Bolt",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Bury",
+          "Quantity": 1,
+          "Cost": 3
+        },
+        {
+          "Name": "Scorched Earth",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Infiltrate",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Pact with the Devil",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Earthquake",
+          "Quantity": 1,
+          "Cost": 5
+        },
+        {
+          "Name": "Poison Nova",
+          "Quantity": 1,
+          "Cost": 5
+        },
+        {
+          "Name": "Major Explosion",
+          "Quantity": 1,
+          "Cost": 7
+        }
+      ],
+      "Aura": [
+        {
+          "Name": "Summoning Sphere",
+          "Quantity": 2,
+          "Cost": 1
+        }
+      ],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "14th": {
+      "Avatar": [
+        {
+          "Name": "Battlemage",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Amethyst Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Mix Ignis",
+          "Quantity": 2,
+          "Cost": 1
+        },
+        {
+          "Name": "Philosopher's Stone",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Ruby Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Crown of the Victor",
+          "Quantity": 1,
+          "Cost": 3
+        },
+        {
+          "Name": "Devils Egg",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Screaming Skull",
+          "Quantity": 1,
+          "Cost": 3
+        },
+        {
+          "Name": "Seven-League Boots",
+          "Quantity": 1,
+          "Cost": 3
+        },
+        {
+          "Name": "Chains of Prometheus",
+          "Quantity": 2,
+          "Cost": 4
+        },
+        {
+          "Name": "Flaming Sword",
+          "Quantity": 2,
+          "Cost": 4
+        }
+      ],
+      "Minion": [],
+      "Site": [
+        {
+          "Name": "Arid Desert",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Dark Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Gothic Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Lone Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Red Desert",
+          "Quantity": 4,
+          "Cost": null
+        },
+        {
+          "Name": "Remote Desert",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "River of Flame",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Ruins",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "The Colour Out of Space",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Blink",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Lightning Bolt",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Blaze",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Disintegrate",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Grapple Shot",
+          "Quantity": 4,
+          "Cost": 3
+        },
+        {
+          "Name": "Heat Ray",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Minor Explosion",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Spin Attack",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Infiltrate",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Leap Attack",
+          "Quantity": 3,
+          "Cost": 4
+        }
+      ],
+      "Aura": [],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "15th": {
+      "Avatar": [
+        {
+          "Name": "Sorcerer",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Onyx Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Philosopher's Stone",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Ruby Core",
+          "Quantity": 1,
+          "Cost": 1
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Bosk Troll",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Dwarven Digging Team",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Vile Imp",
+          "Quantity": 4,
+          "Cost": 2
+        },
+        {
+          "Name": "Colicky Dragonettes",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Quarrelsome Kobolds",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Root Spider",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Slumbering Giantess",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Clamor of Harpies",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Petrosian Cavalry",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Courtesan Tha\u00efs",
+          "Quantity": 1,
+          "Cost": 5
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Arid Desert",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Bedrock",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Imperial Road",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Mirror Realm",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Pillar of Zeiros",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Quagmire",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Red Desert",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Remote Desert",
+          "Quantity": 4,
+          "Cost": null
+        },
+        {
+          "Name": "Rift Valley",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "River of Flame",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Smokestacks of Gnaak",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Steppe",
+          "Quantity": 3,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Common Sense",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Dispel",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Firebolts",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Blaze",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Bury",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Heat Ray",
+          "Quantity": 1,
+          "Cost": 3
+        },
+        {
+          "Name": "Gigantism",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Infiltrate",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Earthquake",
+          "Quantity": 1,
+          "Cost": 5
+        },
+        {
+          "Name": "Flame Wave",
+          "Quantity": 1,
+          "Cost": 6
+        }
+      ],
+      "Aura": [],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "16th": {
+      "Avatar": [
+        {
+          "Name": "Sorcerer",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Amethyst Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Aquamarine Core",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Torshammar Trinket",
+          "Quantity": 2,
+          "Cost": 1
+        },
+        {
+          "Name": "Maddening Bells",
+          "Quantity": 2,
+          "Cost": 4
+        },
+        {
+          "Name": "Mask of Mayhem",
+          "Quantity": 2,
+          "Cost": 4
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Blood Ravens",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Highland Falconer",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Highland Princess",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Palliburrie Bats",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Candlemas Monks",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Phase Assassin",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Tufted Turtles",
+          "Quantity": 4,
+          "Cost": 3
+        },
+        {
+          "Name": "Bridge Troll",
+          "Quantity": 2,
+          "Cost": 4
+        },
+        {
+          "Name": "Ruler of Thul",
+          "Quantity": 1,
+          "Cost": 4
+        },
+        {
+          "Name": "Skirmishers of Mu",
+          "Quantity": 3,
+          "Cost": 4
+        },
+        {
+          "Name": "Daperyll Vampire",
+          "Quantity": 3,
+          "Cost": 5
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Dark Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Floodplain",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Free City",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Gothic Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Lighthouse",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Lone Tower",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Mirror Realm",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Observatory",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Sinkhole",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "The Colour Out of Space",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Watchtower",
+          "Quantity": 2,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Grapple Shot",
+          "Quantity": 4,
+          "Cost": 3
+        },
+        {
+          "Name": "Whirling Blades",
+          "Quantity": 2,
+          "Cost": 5
+        }
+      ],
+      "Aura": [
+        {
+          "Name": "Atlantean Fate",
+          "Quantity": 1,
+          "Cost": 5
+        }
+      ],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  },
+  {
+    "17th": {
+      "Avatar": [
+        {
+          "Name": "Avatar of Air",
+          "Quantity": 1,
+          "Cost": null
+        }
+      ],
+      "Artifact": [
+        {
+          "Name": "Torshammar Trinket",
+          "Quantity": 2,
+          "Cost": 1
+        },
+        {
+          "Name": "Devils Egg",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Maddening Bells",
+          "Quantity": 2,
+          "Cost": 4
+        },
+        {
+          "Name": "Rolling Boulder",
+          "Quantity": 3,
+          "Cost": 4
+        }
+      ],
+      "Minion": [
+        {
+          "Name": "Cloud Spirit",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Grim Reaper",
+          "Quantity": 1,
+          "Cost": 2
+        },
+        {
+          "Name": "Palliburrie Bats",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Headless Haunt",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Phase Assassin",
+          "Quantity": 3,
+          "Cost": 3
+        },
+        {
+          "Name": "Plumed Pegasus",
+          "Quantity": 4,
+          "Cost": 3
+        },
+        {
+          "Name": "Gyre Hippogriffs",
+          "Quantity": 3,
+          "Cost": 4
+        },
+        {
+          "Name": "Skirmishers of Mu",
+          "Quantity": 3,
+          "Cost": 4
+        }
+      ],
+      "Site": [
+        {
+          "Name": "Bottomless Pit",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Cloud City",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Dark Tower",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Free City",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Gothic Tower",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Lone Tower",
+          "Quantity": 3,
+          "Cost": null
+        },
+        {
+          "Name": "Observatory",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Pillar of Zeiros",
+          "Quantity": 1,
+          "Cost": null
+        },
+        {
+          "Name": "Sinkhole",
+          "Quantity": 2,
+          "Cost": null
+        },
+        {
+          "Name": "Watchtower",
+          "Quantity": 2,
+          "Cost": null
+        }
+      ],
+      "Magic": [
+        {
+          "Name": "Browse",
+          "Quantity": 1,
+          "Cost": 1
+        },
+        {
+          "Name": "Blink",
+          "Quantity": 3,
+          "Cost": 2
+        },
+        {
+          "Name": "Chain Lightning",
+          "Quantity": 2,
+          "Cost": 2
+        },
+        {
+          "Name": "Grapple Shot",
+          "Quantity": 2,
+          "Cost": 3
+        },
+        {
+          "Name": "Chaos Twister",
+          "Quantity": 2,
+          "Cost": 4
+        }
+      ],
+      "Aura": [],
+      "Sideboard": [],
+      "Maybeboard": []
+    }
+  }
+]

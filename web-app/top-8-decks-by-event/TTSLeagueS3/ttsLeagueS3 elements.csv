@@ -1,0 +1,7 @@
+"('Air', 'Earth')",6
+"('Air', 'Earth', 'Fire')",4
+"('Air', 'Earth', 'Fire', 'Water')",2
+"('Air', 'Earth', 'Water')",1
+"('Air', 'Fire')",2
+"('Deck Elements', 'Count')",1
+"('Earth', 'Water')",1

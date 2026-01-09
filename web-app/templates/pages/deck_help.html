@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deck Help - Sorcerers Summit</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <section class="hero">
+        <h1>Deck Help & Resources</h1>
+        <p>Build better decks and improve your game</p>
+      </section>
+
+      <section class="content">
+        <h2>Deck Building Resources</h2>
+        <p>Need help building a competitive deck? Check out these resources:</p>
+
+        <h3>Deck Builder Tools</h3>
+        <ul>
+          <li>
+            <a
+              href="https://curiosa.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Curiosa.io</a
+            >
+            - Build and share decks
+          </li>
+          <li>
+            <a
+              href="https://sorcerydeckdiff.com/analyze"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Sorcery Deck Diff</a
+            >
+            - Analyze deck construction and breakdowns
+          </li>
+          <li>
+            <a
+              href="https://sorcerytcg.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Official Sorcery TCG Site</a
+            >
+            - Card database and rules
+          </li>
+        </ul>
+
+        <h3>Community Guides</h3>
+        <p>Coming soon: Deck building guides and strategies from top players</p>
+
+        <h3>Meta Analysis</h3>
+        <p>Coming soon: Current meta trends and popular deck archetypes</p>
+      </section>
+    </main>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+  </body>
+</html>

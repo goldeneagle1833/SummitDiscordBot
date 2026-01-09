@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ event_name }} - Statistics</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+    <style>
+      .event-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      .back-link {
+        display: inline-block;
+        color: #4db8ff;
+        text-decoration: none;
+        margin-bottom: 1rem;
+        font-size: 0.95rem;
+      }
+
+      .back-link:hover {
+        text-decoration: underline;
+      }
+
+      .event-header {
+        margin-bottom: 2rem;
+      }
+
+      .event-header h1 {
+        color: #fff;
+        margin: 0.5rem 0;
+      }
+
+      .section-title {
+        color: #fff;
+        font-size: 1.5rem;
+        margin: 2rem 0 1rem 0;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .stats-table {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        margin-bottom: 2rem;
+      }
+
+      .stats-table thead {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .stats-table th {
+        padding: 1rem;
+        text-align: left;
+        color: rgba(255, 255, 255, 0.9);
+        font-weight: 600;
+      }
+
+      .stats-table td {
+        padding: 1rem;
+        color: rgba(255, 255, 255, 0.8);
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .stats-table tbody tr:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      .element-badge {
+        display: inline-block;
+        padding: 0.3rem 0.8rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        background: rgba(255, 165, 0, 0.2);
+        color: #ffb84d;
+      }
+
+      .rarity-badge {
+        padding: 0.2rem 0.6rem;
+        border-radius: 4px;
+        font-size: 0.85rem;
+      }
+
+      .rarity-unique {
+        background: rgba(255, 215, 0, 0.2);
+        color: #ffd700;
+      }
+
+      .rarity-elite {
+        background: rgba(138, 43, 226, 0.2);
+        color: #ba8bff;
+      }
+
+      .rarity-exceptional {
+        background: rgba(0, 150, 255, 0.2);
+        color: #4db8ff;
+      }
+
+      .rarity-ordinary {
+        background: rgba(128, 128, 128, 0.2);
+        color: #aaa;
+      }
+
+      .count-badge {
+        background: rgba(255, 215, 0, 0.2);
+        color: #ffd700;
+        padding: 0.3rem 0.6rem;
+        border-radius: 4px;
+        font-weight: 600;
+      }
+
+      .no-data {
+        padding: 2rem;
+        text-align: center;
+        color: rgba(255, 255, 255, 0.6);
+      }
+
+      .stat-highlight {
+        font-weight: 600;
+        color: #ffd700;
+      }
+
+      /* Search and filter controls */
+      .controls {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .search-input {
+        flex: 1;
+        min-width: 250px;
+        padding: 0.7rem 1rem;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        color: #fff;
+        font-size: 0.95rem;
+      }
+
+      .search-input::placeholder {
+        color: rgba(255, 255, 255, 0.5);
+      }
+
+      .filter-select {
+        padding: 0.7rem 1rem;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        color: #fff;
+        font-size: 0.95rem;
+        cursor: pointer;
+      }
+
+      .filter-select option {
+        background: #1a1a2e;
+        color: #fff;
+      }
+
+      @media (max-width: 768px) {
+        .stats-table {
+          font-size: 0.9rem;
+        }
+
+        .stats-table th,
+        .stats-table td {
+          padding: 0.7rem;
+        }
+
+        .stats-table th:nth-child(5),
+        .stats-table td:nth-child(5),
+        .stats-table th:nth-child(6),
+        .stats-table td:nth-child(6) {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <div class="event-container">
+        <a href="/stats" class="back-link">← Back to Events</a>
+
+        <div class="event-header">
+          <h1>{{ event_name }}</h1>
+          <p style="color: rgba(255, 255, 255, 0.6)">Card usage statistics</p>
+        </div>
+
+        <!-- Card Statistics Section -->
+        {% if card_data %}
+        <h2 class="section-title">Card Usage Statistics</h2>
+
+        <div class="controls">
+          <input
+            type="text"
+            id="card-search"
+            class="search-input"
+            placeholder="Search cards..."
+            onkeyup="filterCards()" />
+          <select
+            id="type-filter"
+            class="filter-select"
+            onchange="filterCards()">
+            <option value="">All Types</option>
+            <option value="Minion">Minion</option>
+            <option value="Magic">Magic</option>
+            <option value="Aura">Aura</option>
+            <option value="Artifact">Artifact</option>
+            <option value="Site">Site</option>
+          </select>
+          <select
+            id="element-filter"
+            class="filter-select"
+            onchange="filterCards()">
+            <option value="">All Elements</option>
+            <option value="Air">Air</option>
+            <option value="Earth">Earth</option>
+            <option value="Fire">Fire</option>
+            <option value="Water">Water</option>
+          </select>
+        </div>
+
+        <table class="stats-table" id="cards-table">
+          <thead>
+            <tr>
+              <th>Card Name</th>
+              <th>Type</th>
+              <th>Element</th>
+              <th>Rarity</th>
+              <th style="width: 100px">Total Count</th>
+              <th style="width: 120px">Avg Played</th>
+              <th style="width: 120px">% in Decks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for card in card_data %}
+            <tr
+              data-name="{{ card.name }}"
+              data-type="{{ card.type }}"
+              data-element="{{ card.element }}">
+              <td>{{ card.name }}</td>
+              <td>{{ card.type }}</td>
+              <td>{{ card.element }}</td>
+              <td>
+                <span class="rarity-badge rarity-{{ card.rarity|lower }}"
+                  >{{ card.rarity }}</span
+                >
+              </td>
+              <td>
+                <span class="count-badge">{{ card.count }}</span>
+              </td>
+              <td class="stat-highlight">{{ card.avg_played }}</td>
+              <td class="stat-highlight">{{ card.deck_percent }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %} {% if not card_data %}
+        <div class="no-data">
+          <p>No statistics data available for this event.</p>
+        </div>
+        {% endif %}
+      </div>
+    </main>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+    <script>
+      function filterCards() {
+        const searchTerm = document
+          .getElementById("card-search")
+          .value.toLowerCase();
+        const typeFilter = document.getElementById("type-filter").value;
+        const elementFilter = document.getElementById("element-filter").value;
+        const rows = document.querySelectorAll("#cards-table tbody tr");
+
+        rows.forEach((row) => {
+          const name = row.dataset.name.toLowerCase();
+          const type = row.dataset.type;
+          const element = row.dataset.element;
+
+          const matchesSearch = name.includes(searchTerm);
+          const matchesType = !typeFilter || type === typeFilter;
+          const matchesElement = !elementFilter || element === elementFilter;
+
+          row.style.display =
+            matchesSearch && matchesType && matchesElement ? "" : "none";
+        });
+      }
+    </script>
+  </body>
+</html>

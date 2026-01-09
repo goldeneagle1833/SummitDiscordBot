@@ -1,0 +1,404 @@
+Name,Type,Total_count_of_card,Decks_with_card,Percentage of decks with at least one copy
+Apprentice Wizard,Minion,63,19,29
+Blood Ravens,Minion,4,1,2
+Candlemas Monks,Minion,0,0,0
+Cloud Spirit,Minion,8,3,5
+Daperyll Vampire,Minion,22,11,17
+Dead of Night Demon,Minion,2,1,2
+East-West Dragon,Minion,0,0,0
+Grandmaster Wizard,Minion,39,22,33
+Grim Reaper,Minion,15,15,23
+Gyre Hippogriffs,Minion,28,12,18
+Haast Eagle,Minion,2,1,2
+Headless Haunt,Minion,15,7,11
+Highland Clansmen,Minion,4,3,5
+Highland Falconer,Minion,17,9,14
+Highland Princess,Minion,20,20,30
+Hounds of Ondaros,Minion,12,8,12
+Kite Archer,Minion,1,1,2
+Lord of the Void,Minion,3,3,5
+Men of Leng,Minion,5,2,3
+Midnight Rogue,Minion,2,1,2
+Moon Clan Werewolf,Minion,2,1,2
+Nightmare,Minion,4,3,5
+Nimbus Jinn,Minion,17,12,18
+Palliburrie Bats,Minion,22,9,14
+Peregrine Apparition,Minion,1,1,2
+Phantasmal Shade,Minion,5,3,5
+Phantom Steed,Minion,0,0,0
+Phase Assassin,Minion,21,8,12
+Plumed Pegasus,Minion,4,2,3
+Puppet Master,Minion,0,0,0
+Recurring Specter,Minion,0,0,0
+Riddle Sphinx,Minion,1,1,2
+Roaming Monster,Minion,2,1,2
+Skirmishers of Mu,Minion,19,8,12
+Sky Baron,Minion,0,0,0
+Sling Pixies,Minion,5,3,5
+Snow Leopard,Minion,1,1,2
+Spectral Stalker,Minion,15,5,8
+Spire Lich,Minion,4,2,3
+Ultimate Horror,Minion,1,1,2
+Vril Revenant,Minion,2,2,3
+Wind Sylph,Minion,1,1,2
+Witherwing Hero,Minion,4,4,6
+Zephyranne Airship,Minion,2,2,3
+Blink,Magic,93,37,56
+Browse,Magic,11,11,17
+Chain Lightning,Magic,9,6,9
+Chaos Twister,Magic,11,8,12
+Disenchant,Magic,31,22,33
+Dream-Quest,Magic,2,2,3
+Fade,Magic,11,5,8
+Flanking Maneuver,Magic,2,1,2
+Grapple Shot,Magic,98,30,45
+Lightning Bolt,Magic,82,38,58
+Mortality,Magic,0,0,0
+Occult Ritual,Magic,0,0,0
+Psionic Blast,Magic,0,0,0
+Rain of Arrows,Magic,0,0,0
+Raise Dead,Magic,5,2,3
+Recall,Magic,0,0,0
+Telekinesis,Magic,3,2,3
+Teleport,Magic,14,7,11
+Unlikely Alliance,Magic,2,1,2
+Waypoint Portal,Magic,2,1,2
+Whirling Blades,Magic,13,8,12
+Windblast,Magic,1,1,2
+Evil Presence,Aura,2,1,2
+Summoning Sphere,Aura,25,12,18
+Thunderstorm,Aura,23,10,15
+Wall of Air,Aura,0,0,0
+Albespine Pikemen,Minion,3,1,2
+Alvalinne Dryads,Minion,3,2,3
+Amazon Warriors,Minion,11,7,11
+Atlas Wanderers,Minion,16,9,14
+Autumn Unicorn,Minion,37,14,21
+Belmotte Longbowmen,Minion,2,1,2
+Bone Rabble,Minion,0,0,0
+Bosk Troll,Minion,28,10,15
+Cave Trolls,Minion,3,2,3
+Conqueror Worm,Minion,10,6,9
+Crown Prince,Minion,3,3,5
+Dalcean Phalanx,Minion,25,9,14
+Dwarven Digging Team,Minion,8,4,6
+Frontier Settlers,Minion,15,7,11
+Gneissgnath Gnomes,Minion,0,0,0
+Grey Wolves,Minion,49,2,3
+House Arn Bannerman,Minion,11,4,6
+King of the Realm,Minion,4,4,6
+Land Surveyor,Minion,38,12,18
+Mage Slayer,Minion,0,0,0
+Master Tracker,Minion,2,1,2
+Midland Army,Minion,2,2,3
+Miracle Workers,Minion,7,5,8
+Monastery Gargoyle,Minion,0,0,0
+Monster Hunter,Minion,0,0,0
+Mordric Druids,Minion,0,0,0
+Mountain Giant,Minion,2,2,3
+Pudge Butcher,Minion,35,14,21
+Queen of Midland,Minion,2,2,3
+Root Spider,Minion,54,23,35
+Royal Bodyguard,Minion,21,11,17
+Scent Hounds,Minion,5,5,8
+Scourge Zombies,Minion,0,0,0
+Shield Maidens,Minion,12,6,9
+Silver Valkyries,Minion,1,1,2
+Sirian Templar,Minion,0,0,0
+Sisters of Silence,Minion,0,0,0
+Slumbering Giantess,Minion,15,5,8
+Squirming Mass,Minion,2,1,2
+Stone-gaze Gorgons,Minion,3,3,5
+Tragedy Worrywart,Minion,5,3,5
+Vanguard Knights,Minion,0,0,0
+Wicked Witch,Minion,1,1,2
+Wild Boars,Minion,2,1,2
+Wraetannis Titan,Minion,18,12,18
+Yourke Crossbowmen,Minion,3,1,2
+Assorted Animals,Magic,2,1,2
+Border Militia,Magic,9,4,6
+Bury,Magic,60,32,48
+Call to War,Magic,1,1,2
+Cave-In,Magic,10,5,8
+Common Sense,Magic,79,31,47
+Craterize,Magic,17,10,15
+Dispel,Magic,30,25,38
+Divine Healing,Magic,25,13,20
+Earthquake,Magic,45,29,44
+Exorcism,Magic,0,0,0
+Gigantism,Magic,12,12,18
+Minecart Madness,Magic,0,0,0
+Overpower,Magic,11,5,8
+Shield Wall,Magic,0,0,0
+Star-Seeds of Uhr,Magic,0,0,0
+Unravel,Magic,0,0,0
+Crusade,Aura,8,8,12
+Entangle Terrain,Aura,2,1,2
+Rest in Peace,Aura,0,0,0
+Ancient Dragon,Minion,3,2,3
+Aramos Mercenaries,Minion,0,0,0
+Askelon Phoenix,Minion,4,3,5
+Awakened Mummies,Minion,0,0,0
+Azuridge Caravan,Minion,0,0,0
+Bane Widow,Minion,10,5,8
+Beast of Burden,Minion,0,0,0
+Bull Demons of Adum,Minion,1,1,2
+Cauldron Crones,Minion,7,3,5
+Cerberus in Chains,Minion,5,5,8
+Clamor of Harpies,Minion,7,4,6
+Colicky Dragonettes,Minion,19,8,12
+Courtesan Thais,Minion,6,6,9
+Death Dealer,Minion,16,16,24
+Doomsday Prophet,Minion,1,1,2
+Escyllion Cyclops,Minion,1,1,2
+Far East Assassin,Minion,0,0,0
+Grosse Poltergeist,Minion,0,0,0
+Hillock Basilisk,Minion,3,2,3
+Infernal Legion,Minion,6,4,6
+Karkemish Chimera,Minion,0,0,0
+Lava Salamander,Minion,3,2,3
+Maze Minotaur,Minion,0,0,0
+Ogre Goons,Minion,3,1,2
+Outback Strider,Minion,3,1,2
+Panorama Manticore,Minion,16,9,14
+Petrosian Cavalry,Minion,20,9,14
+Pit Vipers,Minion,12,5,8
+Quarrelsome Kobolds,Minion,27,11,17
+Raal Dromedary,Minion,2,1,2
+Rimland Nomads,Minion,2,1,2
+Sacred Scarabs,Minion,44,14,21
+Sand Worm,Minion,2,1,2
+Scavenging Fiend,Minion,0,0,0
+Seasoned Sellsword,Minion,0,0,0
+Sirocco Scorpions,Minion,2,1,2
+Swiven Scout,Minion,0,0,0
+Tvinnax Berserker,Minion,0,0,0
+Vile Imp,Minion,71,19,29
+Wayfaring Pilgrim,Minion,5,2,3
+Wills-o-the-Wisp,Minion,0,0,0
+Backstab,Magic,0,0,0
+Blaze,Magic,12,7,11
+Boil,Magic,5,2,3
+Cone of Flame,Magic,4,3,5
+Critical Strike,Magic,7,3,5
+Disintegrate,Magic,5,4,6
+Fireball,Magic,9,4,6
+Firebolts,Magic,62,23,35
+Flame Wave,Magic,7,4,6
+Heat Ray,Magic,18,12,18
+Immolation,Magic,3,3,5
+Incinerate,Magic,1,1,2
+Infiltrate,Magic,24,15,23
+Leap Attack,Magic,5,2,3
+Mad Dash,Magic,7,4,6
+Major Explosion,Magic,12,9,14
+Meteor Shower,Magic,0,0,0
+Minor Explosion,Magic,28,13,20
+Pact with the Devil,Magic,8,8,12
+Poison Nova,Magic,18,12,18
+Scorched Earth,Magic,6,3,5
+Spin Attack,Magic,1,1,2
+Warp Spasm,Magic,1,1,2
+Drought,Aura,4,3,5
+Jihad,Aura,6,6,9
+Sandstorm,Aura,3,1,2
+Wall of Fire,Aura,4,1,2
+Wildfire,Aura,13,5,8
+Accursed Albatross,Minion,0,0,0
+Adept Illusionist,Minion,4,2,3
+Anui Undine,Minion,10,4,6
+Bridge Troll,Minion,0,0,0
+Brobdingnag Bullfrog,Minion,0,0,0
+Captain Baldassare,Minion,2,2,3
+Coral-Reef Kelpie,Minion,0,0,0
+Court Jester,Minion,0,0,0
+Deep-Sea Mermaids,Minion,8,2,3
+Diluvian Kraken,Minion,4,3,5
+Felbog Frog Men,Minion,0,0,0
+Fenvale Muse,Minion,0,0,0
+Fey Changeling,Minion,11,5,8
+Ghost Ship,Minion,2,1,2
+Giant Shark,Minion,14,5,8
+Great Old One,Minion,5,5,8
+Guile Sirens,Minion,3,1,2
+Lord of Unland,Minion,3,3,5
+Megamoeba,Minion,2,1,2
+Mother Nature,Minion,0,0,0
+Muck Lampreys,Minion,0,0,0
+Old Salt Anchorman,Minion,0,0,0
+Ormund Harpooneers,Minion,0,0,0
+Pirate Ship,Minion,4,1,2
+Polar Bears,Minion,0,0,0
+Polar Explorers,Minion,2,1,2
+Porcupine Pufferfish,Minion,0,0,0
+Ruler of Thul,Minion,10,10,15
+Sea Raider,Minion,0,0,0
+Sea Serpent,Minion,0,0,0
+Sedge Crabs,Minion,0,0,0
+Seirawan Hydra,Minion,0,0,0
+Selfsame Simulacrum,Minion,9,6,9
+Sneak Thief,Minion,2,1,2
+Swamp Buffalo,Minion,0,0,0
+Swan Maidens,Minion,0,0,0
+Tide Naiads,Minion,0,0,0
+Tringh Constrictor,Minion,0,0,0
+Tufted Turtles,Minion,21,6,9
+Unland Angler,Minion,0,0,0
+Unland Eel,Minion,3,1,2
+Yokai Kappas,Minion,2,1,2
+Dodge Roll,Magic,3,1,2
+Drown,Magic,15,7,11
+Extinguish,Magic,0,0,0
+Fire Harpoons!,Magic,0,0,0
+Font of Life,Magic,2,2,3
+Frost Nova,Magic,0,0,0
+Geyser,Magic,5,2,3
+Ice Lance,Magic,2,1,2
+Marine Voyage,Magic,0,0,0
+Plague of Frogs,Magic,5,5,8
+Pollimorph,Magic,6,3,5
+Replication,Magic,0,0,0
+Riptide,Magic,21,6,9
+Shrink,Magic,2,1,2
+Sleep,Magic,8,4,6
+Stormy Seas,Magic,8,4,6
+Twist of Fate,Magic,3,3,5
+Upwelling,Magic,1,1,2
+Wrath of the Sea,Magic,4,3,5
+Abundance,Aura,7,4,6
+Atlantean Fate,Aura,13,13,20
+Blizzard,Aura,0,0,0
+Flood,Aura,15,6,9
+Mariners Curse,Aura,0,0,0
+Silence,Aura,5,4,6
+Wall of Ice,Aura,6,2,3
+All-terrain Vestments,Artifact,2,1,2
+Amethyst Core,Artifact,35,35,53
+Angels Egg,Artifact,0,0,0
+Aquamarine Core,Artifact,15,15,23
+Battering Ram,Artifact,0,0,0
+Belfry,Artifact,2,1,2
+Black Obelisk,Artifact,0,0,0
+Blasted Oak,Artifact,0,0,0
+Buried Treasure,Artifact,1,1,2
+Chains of Prometheus,Artifact,6,4,6
+Crave Golem,Artifact,0,0,0
+Crown of the Victor,Artifact,9,9,14
+Devils Egg,Artifact,0,0,0
+Doomsday Device,Artifact,0,0,0
+Drums of Doom,Artifact,5,4,6
+Erik's Curiosa,Artifact,0,0,0
+Flaming Sword,Artifact,18,11,17
+Gilded Aegis,Artifact,3,3,5
+Iron Shackles,Artifact,1,1,2
+Kythera Mechanism,Artifact,3,3,5
+Land Deed,Artifact,5,3,5
+Lucky Charm,Artifact,3,2,3
+Maddening Bells,Artifact,0,0,0
+Magellan Globe,Artifact,5,4,6
+Magnetic Muzzle,Artifact,0,0,0
+Mask of Mayhem,Artifact,0,0,0
+Mix Aer,Artifact,14,8,12
+Mix Aqua,Artifact,8,5,8
+Mix Ignis,Artifact,6,3,5
+Mix Terra,Artifact,13,8,12
+Onyx Core,Artifact,30,30,45
+Orb of Baal Berith,Artifact,0,0,0
+Payload Trebuchet,Artifact,0,0,0
+Pendulum of Peril,Artifact,1,1,2
+Philosophers Stone,Artifact,39,39,59
+Pnakotic Manuscripts,Artifact,0,0,0
+Poisonous Dagger,Artifact,9,6,9
+Purge Juggernaut,Artifact,0,0,0
+Rolling Boulder,Artifact,11,8,12
+Ruby Core,Artifact,25,25,38
+Scarecrow,Artifact,1,1,2
+Screaming Skull,Artifact,14,9,14
+Seven-League Boots,Artifact,14,14,21
+Siege Ballista,Artifact,0,0,0
+Spear of Destiny,Artifact,1,1,2
+Sunken Treasure,Artifact,0,0,0
+The Immortal Throne,Artifact,0,0,0
+Torshammar Trinket,Artifact,11,7,11
+Truesight Crossbow,Artifact,13,11,17
+Undertaker Engine,Artifact,0,0,0
+Wicker Manikin,Artifact,0,0,0
+Wings of Invention,Artifact,2,2,3
+Cloud City,Site,15,15,23
+Dark Tower,Site,64,47,71
+Gothic Tower,Site,60,46,70
+Lone Tower,Site,65,48,73
+Mountain Pass,Site,24,14,21
+Observatory,Site,47,31,47
+Updraft Ridge,Site,16,9,14
+Watchtower,Site,22,14,21
+Bedrock,Site,24,14,21
+Gnome Hollows,Site,35,18,27
+Holy Ground,Site,20,14,21
+Humble Village,Site,39,21,32
+Kingdom of Agartha,Site,2,2,3
+Pillar of Zeiros,Site,37,37,56
+Quagmire,Site,10,8,12
+Rift Valley,Site,29,18,27
+Rustic Village,Site,46,21,32
+Secret Tunnel,Site,10,8,12
+Simple Village,Site,39,20,30
+Vantage Hills,Site,6,5,8
+Arid Desert,Site,28,14,21
+Dwarven Forge,Site,5,4,6
+Mirage,Site,10,8,12
+Red Desert,Site,30,16,24
+Remote Desert,Site,31,17,26
+River of Flame,Site,23,23,35
+Shifting Sands,Site,13,8,12
+Smokestacks of Gnaak,Site,12,12,18
+Vesuvius,Site,17,17,26
+Autumn River,Site,14,6,9
+Floodplain,Site,33,14,21
+Iceburg,Site,0,0,0
+Island Leviathan,Site,6,4,6
+Maelstrom,Site,6,6,9
+Spring River,Site,17,6,9
+Summer River,Site,8,5,8
+Tadpole Pool,Site,6,6,9
+Undertow,Site,18,7,11
+Aqueduct,Site,11,4,6
+Lighthouse,Site,31,14,21
+Oasis,Site,32,15,23
+Pristine Paradise,Site,4,4,6
+Ruins,Site,61,26,39
+Steppe,Site,52,23,35
+The Colour Out of Space,Site,16,16,24
+Windmill,Site,62,28,42
+Astral Alcazar,Site,1,1,2
+Battlefield,Site,3,3,5
+Boneyard,Site,8,8,12
+Bottomless Pit,Site,13,7,11
+Cornerstone,Site,3,2,3
+Crossroads,Site,22,16,24
+Dome of Osiros,Site,1,1,2
+Donnybrook Inn,Site,1,1,2
+Edge of the World,Site,2,1,2
+Free City,Site,38,19,29
+Great Wall,Site,3,3,5
+Imperial Road,Site,12,7,11
+Mirror Realm,Site,20,20,30
+Mudflow,Site,4,4,6
+Planar Gate,Site,1,1,2
+Primodial Spring,Site,0,0,0
+Roots of Yggdrasil,Site,4,4,6
+Sinkhole,Site,19,12,18
+Standing Stones,Site,2,1,2
+The Geistwood,Site,8,8,12
+Vaults of Zul,Site,0,0,0
+Avatar of Air,Avatar,3,3,5
+Avatar of Earth,Avatar,5,5,8
+Avatar of Fire,Avatar,0,0,0
+Avatar of Water,Avatar,0,0,0
+Battlemage,Avatar,8,8,12
+Deathspeaker,Avatar,12,12,18
+Elementalist,Avatar,2,2,3
+Enchantress,Avatar,5,5,8
+Pathfinder,Avatar,8,8,12
+Seer,Avatar,1,1,2
+Sorcerer,Avatar,13,13,20

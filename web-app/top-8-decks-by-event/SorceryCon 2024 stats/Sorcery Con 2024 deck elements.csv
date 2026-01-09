@@ -1,0 +1,15 @@
+Deck Elements, Count
+"('Air',)",5
+"('Air', 'Earth')",9
+"('Air', 'Earth', 'Fire')",14
+"('Air', 'Earth', 'Fire', 'Water')",10
+"('Air', 'Earth', 'Water')",6
+"('Air', 'Fire')",14
+"('Air', 'Fire', 'Water')",2
+"('Air', 'Water')",1
+"('Earth',)",2
+"('Earth', 'Fire')",9
+"('Earth', 'Fire', 'Water')",2
+"('Earth', 'Water')",8
+"('Fire',)",2
+"('Fire', 'Water')",3

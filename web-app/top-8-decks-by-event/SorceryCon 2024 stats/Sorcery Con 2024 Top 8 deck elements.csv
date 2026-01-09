@@ -1,0 +1,7 @@
+Deck Elements, Count
+"('Air',)",1
+"('Air', 'Earth')",2
+"('Air', 'Earth', 'Fire')",2
+"('Air', 'Earth', 'Fire', 'Water')",1
+"('Air', 'Water')",1
+"('Fire')",1

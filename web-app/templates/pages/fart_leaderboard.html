@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>💨 Secret Fart Leaderboard - Sorcerers Summit</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+    <style>
+      .fart-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      .fart-emoji {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        animation: float 3s ease-in-out infinite;
+      }
+
+      @keyframes float {
+        0%,
+        100% {
+          transform: translateY(0px);
+        }
+        50% {
+          transform: translateY(-20px);
+        }
+      }
+
+      .fart-table {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        margin-top: 2rem;
+      }
+
+      .fart-table thead {
+        background: rgba(139, 69, 19, 0.3);
+      }
+
+      .fart-table th {
+        padding: 1rem;
+        text-align: left;
+        color: rgba(255, 255, 255, 0.9);
+        font-weight: 600;
+      }
+
+      .fart-table td {
+        padding: 1rem;
+        color: rgba(255, 255, 255, 0.8);
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .fart-table tbody tr:hover {
+        background: rgba(139, 69, 19, 0.2);
+      }
+
+      .fart-rank {
+        font-weight: 600;
+        font-size: 1.2rem;
+      }
+
+      .fart-rank-1 {
+        color: #ffd700;
+      }
+
+      .fart-rank-2 {
+        color: #c0c0c0;
+      }
+
+      .fart-rank-3 {
+        color: #cd7f32;
+      }
+
+      .fart-score {
+        font-weight: 600;
+        color: #8b4513;
+        background: rgba(139, 69, 19, 0.2);
+        padding: 0.3rem 0.8rem;
+        border-radius: 4px;
+        display: inline-block;
+      }
+
+      .fart-username {
+        font-weight: 500;
+      }
+
+      .fart-date {
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 0.9rem;
+      }
+
+      .trophy-emoji {
+        font-size: 1.5rem;
+        margin-right: 0.5rem;
+      }
+
+      .no-data {
+        text-align: center;
+        padding: 3rem;
+        color: rgba(255, 255, 255, 0.6);
+      }
+
+      .secret-warning {
+        background: rgba(139, 69, 19, 0.2);
+        border: 2px solid rgba(139, 69, 19, 0.4);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 2rem;
+        text-align: center;
+        color: #ffb84d;
+      }
+    </style>
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <section class="hero">
+        <div class="fart-emoji">💨</div>
+        <h1>Secret Fart Leaderboard</h1>
+        <p>The most prestigious leaderboard of all</p>
+      </section>
+
+      <section class="fart-container">
+        <div class="secret-warning">
+          🤫 Shhh... You've discovered a secret page! This leaderboard tracks
+          the legendary Fart Game scores.
+        </div>
+
+        {% if leaderboard %}
+        <table class="fart-table">
+          <thead>
+            <tr>
+              <th style="width: 100px">Rank</th>
+              <th>Player</th>
+              <th style="width: 150px">Score</th>
+              <th style="width: 200px">Last Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for player in leaderboard %}
+            <tr>
+              <td>
+                {% if player.rank == 1 %}
+                <span class="fart-rank fart-rank-1">
+                  <span class="trophy-emoji">🏆</span>{{ player.rank }}
+                </span>
+                {% elif player.rank == 2 %}
+                <span class="fart-rank fart-rank-2">
+                  <span class="trophy-emoji">🥈</span>{{ player.rank }}
+                </span>
+                {% elif player.rank == 3 %}
+                <span class="fart-rank fart-rank-3">
+                  <span class="trophy-emoji">🥉</span>{{ player.rank }}
+                </span>
+                {% else %}
+                <span class="fart-rank">{{ player.rank }}</span>
+                {% endif %}
+              </td>
+              <td class="fart-username">{{ player.username }}</td>
+              <td>
+                <span class="fart-score">💨 {{ player.score }}</span>
+              </td>
+              <td class="fart-date">
+                {% if player.last_updated %} {{
+                player.last_updated.split('T')[0] }} {% else %} N/A {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="no-data">
+          <p>💨 No fart scores found... yet.</p>
+        </div>
+        {% endif %}
+      </section>
+    </main>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved. (Even the farts.)</p>
+    </footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+  </body>
+</html>

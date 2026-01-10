@@ -16,7 +16,7 @@
 
     <main>
       <section class="hero">
-        <h1>Welcome to the Sorcery Community Leaderboard</h1>
+        <h1 id="hero-secret">Welcome to the Sorcery Community Leaderboard</h1>
       </section>
 
       <section class="leaderboard">
@@ -64,6 +64,34 @@
       fetchLeaderboard();
       // Auto-refresh every 30 seconds
       setInterval(fetchLeaderboard, 30000);
+
+      // Secret easter egg: Triple-click the hero title
+      const heroTitle = document.getElementById("hero-secret");
+      if (heroTitle) {
+        let clickCount = 0;
+        let clickTimer;
+
+        heroTitle.addEventListener("click", function (e) {
+          clickCount++;
+
+          if (clickCount === 3) {
+            window.location.href = "/secret-fart-leaderboard";
+            clickCount = 0;
+            clearTimeout(clickTimer);
+            return;
+          }
+
+          // Reset click count after 600ms if not triple-clicked
+          clearTimeout(clickTimer);
+          clickTimer = setTimeout(() => {
+            clickCount = 0;
+          }, 600);
+        });
+
+        // Add subtle cursor hint
+        heroTitle.style.cursor = "default";
+        heroTitle.style.userSelect = "none";
+      }
     </script>
 
     <footer>

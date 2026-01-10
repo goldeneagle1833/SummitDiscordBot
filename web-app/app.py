@@ -58,6 +58,42 @@ def about():
     return render_template("pages/about.html")
 
 
+@app.route("/secret-fart-leaderboard")
+def fart_leaderboard():
+    """Secret fart leaderboard - Easter egg page"""
+    try:
+        conn = sqlite3.connect(
+            Path(__file__).parent.parent / "discord-bot" / "fart_scores.db"
+        )
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT user_id, user_display_name, score, date_last_updated
+            FROM fart_scores
+            ORDER BY score DESC
+        """)
+
+        leaderboard_data = []
+        for rank, row in enumerate(cursor.fetchall(), start=1):
+            leaderboard_data.append(
+                {
+                    "rank": rank,
+                    "user_id": row[0],
+                    "username": row[1],
+                    "score": row[2],
+                    "last_updated": row[3],
+                }
+            )
+
+        conn.close()
+        return render_template(
+            "pages/fart_leaderboard.html", leaderboard=leaderboard_data
+        )
+    except Exception as e:
+        print(f"Error loading fart leaderboard: {e}")
+        return render_template("pages/fart_leaderboard.html", leaderboard=[])
+
+
 @app.route("/avatars")
 def avatars():
     """Avatar stats page"""

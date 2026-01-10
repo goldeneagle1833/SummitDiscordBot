@@ -88,8 +88,11 @@ class UtilityCog(commands.Cog):
         embed.add_field(
             name="🎮 Looking For Game",
             value=(
-                "`!lfg` `!cancel` `!check_lfg` `!challenge`\n"
-                "`!record_game` `!game_activity`\n"
+                "`!lfg` - Join matchmaking queue\n"
+                "`!cancel` - Leave the queue\n"
+                "`!challenge @user` - Challenge a player\n"
+                "`!record_game` - Report external match\n"
+                "`!game_activity` - View recent activity\n"
                 "➡️ Use `!lfg_help` for details"
             ),
             inline=False,
@@ -140,6 +143,13 @@ class UtilityCog(commands.Cog):
             inline=False,
         )
 
+        # Admin Commands
+        embed.add_field(
+            name="🔧 Admin Commands",
+            value="`!admin_help` - View admin commands (requires permissions)",
+            inline=False,
+        )
+
         embed.set_footer(text="Use !list_commands for the complete detailed list")
 
         await ctx.send(embed=embed)
@@ -162,7 +172,8 @@ class UtilityCog(commands.Cog):
                 "`!check_lfg` - Check who's in queue\n"
                 "`!challenge @user` - Challenge specific player\n"
                 "`!cancel` - Leave the queue\n"
-                "`!record_game` - Record a match result manually"
+                "`!record_game` - Record a match result manually\n"
+                "`!game_activity [hours]` - View games reported recently"
             ),
             inline=False,
         )
@@ -228,6 +239,20 @@ class UtilityCog(commands.Cog):
             inline=False,
         )
 
+        # Admin Commands
+        embed.add_field(
+            name="🔧 Admin Commands",
+            value=(
+                "`!admin_help` - View all admin commands with details\n"
+                "`!admin_report @winner @loser` - Manually report match\n"
+                "`!spot_elo_reset @user [elo]` - Set user's ELO\n"
+                "`!remove_match <id>` - Remove match & revert ELO\n"
+                "`!remove_player @user` - Remove player from rankings\n"
+                "`!reset_elo` - ⚠️ Reset all ELO & match history"
+            ),
+            inline=False,
+        )
+
         # Command Usage Notes
         embed.add_field(
             name="📝 Notes",
@@ -235,7 +260,8 @@ class UtilityCog(commands.Cog):
                 "• Most commands work in DMs for privacy\n"
                 "• `!challenge` must be used in #lfg channel\n"
                 "• Fun system commands have daily/weekly limits\n"
-                "• Use specific help commands (`!lfg_help`, `!helpfart`) for details"
+                "• Admin commands require administrator permissions\n"
+                "• Use specific help commands (`!lfg_help`, `!helpfart`, `!admin_help`) for details"
             ),
             inline=False,
         )

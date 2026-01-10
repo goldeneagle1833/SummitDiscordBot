@@ -446,13 +446,15 @@ class MatchConfirmationButtons(discord.ui.View):
             return
 
         await interaction.response.send_message(
-            f"You have disputed the match report. Please contact the reporter {self.reporter_global} to resolve this.",
+            f"You have disputed the match report. This dispute will not log an entry.\n\n"
+            f"To submit a corrected report, use `!challenge @{self.reporter_global}` to trigger a new report.",
             ephemeral=True,
         )
 
         # Remove the confirmation message
         await interaction.message.edit(
-            content=f"Match report disputed. Please resolve with {self.reporter_global}.",
+            content=f"Match report disputed by {self.opponent_global}. No entry was logged.\n\n"
+            f"To submit a corrected report, use `!challenge @opponent` to trigger a new report.",
             view=None,
         )
 
@@ -460,14 +462,16 @@ class MatchConfirmationButtons(discord.ui.View):
         try:
             reporter = await self.bot.fetch_user(self.reporter_id)
             await reporter.send(
-                f"{self.opponent_global} has disputed your match report. Please discuss and resolve."
+                f"{self.opponent_global} has disputed your match report. The dispute did not log an entry.\n\n"
+                f"To submit a corrected report, use `!challenge @{self.opponent_global}` to trigger a new report."
             )
         except discord.Forbidden:
             # If DM fails, send to match-report channel
             match_report_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
             if match_report_channel:
                 await match_report_channel.send(
-                    f"{reporter.mention} {self.opponent_global} has disputed your match report. Please discuss and resolve."
+                    f"{reporter.mention} {self.opponent_global} has disputed your match report. The dispute did not log an entry.\n\n"
+                    f"To submit a corrected report, use `!challenge @{self.opponent_global}` to trigger a new report."
                 )
         except Exception:
             pass
@@ -569,7 +573,8 @@ class ConfirmWithDecklistModal(discord.ui.Modal, title="Confirm with Decklist"):
         if not is_confirmed:
             # User said no - treat as dispute
             await interaction.response.send_message(
-                f"You have disputed the match report. Please contact the reporter {self.reporter_global} to resolve this.",
+                f"You have disputed the match report. This dispute will not log an entry.\n\n"
+                f"To submit a corrected report, use `!challenge @{self.reporter_global}` to trigger a new report.",
                 ephemeral=True,
             )
 
@@ -577,7 +582,8 @@ class ConfirmWithDecklistModal(discord.ui.Modal, title="Confirm with Decklist"):
             try:
                 reporter = await self.bot.fetch_user(self.reporter_id)
                 await reporter.send(
-                    f"{self.opponent_global} has disputed your match report. Please discuss and resolve."
+                    f"{self.opponent_global} has disputed your match report. The dispute did not log an entry.\n\n"
+                    f"To submit a corrected report, use `!challenge @{self.opponent_global}` to trigger a new report."
                 )
             except Exception:
                 pass
@@ -1115,6 +1121,19 @@ class ChallengeButtons(discord.ui.View):
         challenger = await interaction.client.fetch_user(self.challenger_id)
         accepter_global = interaction.user.global_name or interaction.user.display_name
 
+        # Remove both players from the LFG queue if they're in it
+        # This prevents overlap when someone uses !challenge instead of LFG pairing
+        if self.challenger_id in lfg_queue:
+            lfg_queue.pop(self.challenger_id, None)
+            logger.info(
+                f"Removed challenger {self.challenger_id} from LFG queue (accepted challenge)"
+            )
+        if interaction.user.id in lfg_queue:
+            lfg_queue.pop(interaction.user.id, None)
+            logger.info(
+                f"Removed accepter {interaction.user.id} from LFG queue (accepted challenge)"
+            )
+
         # Record match start time when challenge is accepted
         match_start_time = datetime.datetime.now()
 
@@ -1236,6 +1255,14 @@ class ChallengeButtons(discord.ui.View):
             await interaction.message.edit(view=None)
         except Exception:
             pass
+
+        # Update LFG status message if players were removed from queue
+        try:
+            lfg_cog = interaction.client.get_cog("LFG")
+            if lfg_cog:
+                await lfg_cog.update_lfg_status()
+        except Exception as e:
+            logger.error(f"Failed to update LFG status after challenge accept: {e}")
 
     @discord.ui.button(label="Decline Challenge", style=discord.ButtonStyle.danger)
     async def decline_button(
@@ -2413,9 +2440,13 @@ class LFGCog(commands.Cog):
         embed.add_field(
             name="🔍 Queue Commands",
             value=(
-                "`!lfg [minutes]` - Join queue (default 30 min)\n"
-                "`!check_lfg` - See if anyone is in queue\n"
-                "`!cancel` - Leave the queue"
+                "`!lfg [minutes]` - Join the matchmaking queue (default 30 min)\n"
+                "**When to use:** When you want to find an opponent for a game. "
+                "You'll be matched automatically with another player in queue.\n\n"
+                "`!check_lfg` - See if anyone is currently in queue\n"
+                "**When to use:** Before joining, to see if someone is already waiting.\n\n"
+                "`!cancel` - Leave the queue\n"
+                "**When to use:** If you need to step away or no longer want to play."
             ),
             inline=False,
         )
@@ -2423,7 +2454,11 @@ class LFGCog(commands.Cog):
         # Challenge System
         embed.add_field(
             name="⚔️ Challenge System",
-            value="`!challenge @user` - Challenge a specific player",
+            value=(
+                "`!challenge @user` - Challenge a specific player to a match\n"
+                "**When to use:** When you want to play against a specific person "
+                "instead of being matched randomly. They have 5 minutes to accept."
+            ),
             inline=False,
         )
 
@@ -2432,8 +2467,10 @@ class LFGCog(commands.Cog):
             name="📝 Match Reporting",
             value=(
                 "`!record_game` - Report a match played outside the bot\n"
-                "• Matched games: Use buttons sent to your DMs\n"
-                "• Add deck URL and match details (optional)"
+                "**When to use:** When you played a game in person, on TTS, or "
+                "anywhere else without using the LFG system. This still tracks your ELO!\n\n"
+                "• Matched games: Use buttons sent to your DMs after being paired\n"
+                "• You can add deck URL and match details (optional)"
             ),
             inline=False,
         )
@@ -2441,19 +2478,18 @@ class LFGCog(commands.Cog):
         # Statistics
         embed.add_field(
             name="📊 Statistics",
-            value="`!game_activity [hours]` - View games reported in last X hours (default 24)",
+            value=(
+                "`!game_activity [hours]` - View games reported in last X hours (default 24)\n"
+                "**When to use:** To see how active the community has been, "
+                "check if games are being played, or review server activity."
+            ),
             inline=False,
         )
 
         # Admin Commands
         embed.add_field(
             name="🔧 Admin Commands",
-            value=(
-                "`!admin_report @winner @loser` - Manually report a match\n"
-                "`!spot_elo_reset @user [elo]` - Set a user's ELO\n"
-                "`!remove_player @user` - Remove player & revert their ELO impact\n"
-                "`!reset_elo` - Reset all ELO ratings ⚠️"
-            ),
+            value="`!admin_help` - View all admin commands (requires admin permissions)",
             inline=False,
         )
 
@@ -2471,6 +2507,98 @@ class LFGCog(commands.Cog):
         embed.set_footer(text="Use !help for more commands")
 
         await ctx.send(embed=embed)
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def admin_help(self, ctx):
+        """Get detailed help for admin commands (requires administrator permissions)."""
+        embed = discord.Embed(
+            title="🔧 Admin Commands",
+            description="Administrative commands for managing ELO, matches, and players.",
+            color=discord.Color.orange(),
+        )
+
+        # Match Reporting
+        embed.add_field(
+            name="📝 Manual Match Reporting",
+            value=(
+                "`!admin_report @winner @loser`\n"
+                "Manually report a match result between two players.\n"
+                "**When to use:** When a match wasn't reported through normal channels, "
+                "or to correct a missed game."
+            ),
+            inline=False,
+        )
+
+        # ELO Management
+        embed.add_field(
+            name="📊 ELO Management",
+            value=(
+                "`!spot_elo_reset @user [elo]`\n"
+                "Set a specific user's ELO to a custom value (0-5000).\n"
+                "**When to use:** To correct ELO errors, set starting ELO for "
+                "experienced players, or adjust ratings after disputes."
+            ),
+            inline=False,
+        )
+
+        # Match Removal
+        embed.add_field(
+            name="🗑️ Match Removal",
+            value=(
+                "`!remove_match <match_id>`\n"
+                "Remove a specific match and revert the ELO changes from that match.\n"
+                "**When to use:** When a match was reported incorrectly, was a test game, "
+                "or needs to be invalidated for any reason."
+            ),
+            inline=False,
+        )
+
+        # Player Removal
+        embed.add_field(
+            name="👤 Player Removal",
+            value=(
+                "`!remove_player @user`\n"
+                "Remove a player from the system and revert ALL ELO changes from their matches.\n"
+                "**When to use:** When a player was cheating, using multiple accounts, "
+                "or needs to be completely removed from the ranking system.\n"
+                "⚠️ **Warning:** This affects all opponents' ELO as well!"
+            ),
+            inline=False,
+        )
+
+        # Full Reset
+        embed.add_field(
+            name="⚠️ Full Database Reset",
+            value=(
+                "`!reset_elo`\n"
+                "**DANGER:** Completely reset ALL ELO ratings and match history.\n"
+                "**When to use:** At the start of a new season, or when starting fresh.\n"
+                "🚨 **This action cannot be undone!**"
+            ),
+            inline=False,
+        )
+
+        # Activity Monitoring
+        embed.add_field(
+            name="📈 Activity Monitoring",
+            value=(
+                "`!game_activity [hours]`\n"
+                "View game statistics for the last X hours (default 24, max 8760).\n"
+                "**When to use:** To monitor server activity, check for unusual patterns, "
+                "or generate activity reports."
+            ),
+            inline=False,
+        )
+
+        embed.set_footer(text="All admin commands require administrator permissions")
+
+        await ctx.send(embed=embed)
+
+    @admin_help.error
+    async def admin_help_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
 
     @commands.command()
     async def record_game(self, ctx):

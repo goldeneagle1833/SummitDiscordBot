@@ -4,6 +4,7 @@ import datetime
 import logging
 import random
 from random import randrange
+import asyncio
 
 from utils.database import winner_report, losser_report, solo_match_report
 from utils.constants import SORCERY_NICKNAMES
@@ -16,6 +17,9 @@ DM_DISABLED_CHANNEL_ID = 1456299008023728302
 
 # In-memory LFG queue (user_id: {timestamp, timeframe})
 lfg_queue = {}
+
+# Lock to prevent race conditions when accessing the queue
+lfg_queue_lock = asyncio.Lock()
 
 # Track pending match reports awaiting confirmation
 # Key: (reporter_id, opponent_id), Value: match report data
@@ -1434,20 +1438,32 @@ class JoinQueueButton(discord.ui.View):
             )
             return
 
-        # Check if user is already in queue
-        if interaction.user.id in lfg_queue:
-            await interaction.response.send_message(
-                "You're already in the queue!", ephemeral=True
-            )
-            return
-
         await interaction.response.defer(ephemeral=True)
 
-        # Use the existing lfg logic
-        lfg_cog.clean_expired_lfg()
-        matched_user_id = lfg_cog.check_if_someone_is_lfg(ctx)
+        # Use lock to prevent race conditions when multiple people click at the same time
+        async with lfg_queue_lock:
+            # Check if user is already in queue (inside lock to be safe)
+            if interaction.user.id in lfg_queue:
+                await interaction.followup.send(
+                    "You're already in the queue!", ephemeral=True
+                )
+                return
 
-        if matched_user_id and matched_user_id != interaction.user.id:
+            # Use the existing lfg logic
+            lfg_cog.clean_expired_lfg()
+            matched_user_id = lfg_cog.check_if_someone_is_lfg(ctx)
+
+            if matched_user_id and matched_user_id != interaction.user.id:
+                # IMMEDIATELY remove matched user from queue to prevent double-matching
+                lfg_queue.pop(matched_user_id, None)
+                logger.info(
+                    f"Lock acquired: Matching {interaction.user.id} with {matched_user_id}"
+                )
+            else:
+                matched_user_id = None
+
+        # Now handle the match or queue add outside the lock (for the async operations)
+        if matched_user_id:
             # Match found!
             matched_user = await self.bot.fetch_user(matched_user_id)
             lfg_channel = self.bot.get_channel(lfg_cog.lfg_channel_id)
@@ -1584,7 +1600,8 @@ class JoinQueueButton(discord.ui.View):
                     f"**Match Found!** {interaction.user.mention} matched with {matched_user.mention}!"
                 )
 
-            lfg_cog.pair_players(ctx)
+            # We already removed the matched user from queue inside the lock
+            # Just update the status now
             await lfg_cog.update_lfg_status()
 
             await interaction.followup.send(
@@ -1592,9 +1609,17 @@ class JoinQueueButton(discord.ui.View):
                 ephemeral=True,
             )
         else:
-            # Add to queue
-            default_timeframe = 30
-            lfg_cog.add_to_lfg_queue(ctx, default_timeframe)
+            # Add to queue (use lock to be safe)
+            async with lfg_queue_lock:
+                # Double-check they're not in queue (someone else might have added them)
+                if interaction.user.id in lfg_queue:
+                    await interaction.followup.send(
+                        "You're already in the queue!", ephemeral=True
+                    )
+                    return
+
+                default_timeframe = 30
+                lfg_cog.add_to_lfg_queue(ctx, default_timeframe)
 
             try:
                 await interaction.user.send(
@@ -2118,20 +2143,41 @@ class LFGCog(commands.Cog):
         except Exception as e:
             logger.warning(f"Could not delete command message: {e}")
 
-        self.clean_expired_lfg()
-        logger.info(
-            f"Cleaned expired LFG entries. Current queue size: {len(lfg_queue)}"
-        )
-
         owner_id = 296846802924208130
         channel_id = 1336912830867439676
         owner = await self.bot.fetch_user(owner_id)
         lfg_channel = self.bot.get_channel(channel_id)
 
-        matched_user_id = self.check_if_someone_is_lfg(ctx)
-        logger.info(
-            f"Checked for existing LFG users. Matched user ID: {matched_user_id}"
-        )
+        # Use lock to prevent race conditions
+        async with lfg_queue_lock:
+            self.clean_expired_lfg()
+            logger.info(
+                f"Cleaned expired LFG entries. Current queue size: {len(lfg_queue)}"
+            )
+
+            matched_user_id = self.check_if_someone_is_lfg(ctx)
+            logger.info(
+                f"Checked for existing LFG users. Matched user ID: {matched_user_id}"
+            )
+
+            if matched_user_id and matched_user_id != ctx.author.id:
+                # IMMEDIATELY remove matched user from queue to prevent double-matching
+                lfg_queue.pop(matched_user_id, None)
+                lfg_queue.pop(
+                    ctx.author.id, None
+                )  # Also remove self if somehow in queue
+                logger.info(
+                    f"Lock acquired: Matching {ctx.author.id} with {matched_user_id}"
+                )
+            elif matched_user_id == ctx.author.id:
+                # User is already in queue
+                pass
+            else:
+                # No match - add to queue
+                self.add_to_lfg_queue(ctx, timeframe)
+                matched_user_id = None
+
+        # Handle the result outside the lock (for async operations)
         if matched_user_id and matched_user_id != ctx.author.id:
             logger.info(f"Match found! Pairing {ctx.author.id} with {matched_user_id}")
             matched_user = await self.bot.fetch_user(matched_user_id)
@@ -2251,7 +2297,7 @@ class LFGCog(commands.Cog):
                 await lfg_channel.send(
                     f"**Match Found!** {ctx.author.mention} matched with {matched_user.mention}!"
                 )
-            self.pair_players(ctx)
+            # Note: Users already removed from queue inside the lock above
 
             # Update status message after match
             await self.update_lfg_status()
@@ -2274,10 +2320,10 @@ class LFGCog(commands.Cog):
             )
         else:
             logger.info(
-                f"No match found. Adding {ctx.author.id} to queue for {timeframe} minutes"
+                f"No match found. Added {ctx.author.id} to queue for {timeframe} minutes"
             )
-            self.add_to_lfg_queue(ctx, timeframe)
-            logger.info(f"User added to queue. Queue contents: {lfg_queue}")
+            # Note: User was already added to queue inside the lock above
+            logger.info(f"Queue contents: {lfg_queue}")
 
             try:
                 await ctx.author.send(
@@ -2300,8 +2346,11 @@ class LFGCog(commands.Cog):
     @commands.command()
     async def check_lfg(self, ctx):
         """Check if anyone is currently in the LFG queue."""
-        self.clean_expired_lfg()
-        if len(lfg_queue) > 0:
+        async with lfg_queue_lock:
+            self.clean_expired_lfg()
+            queue_size = len(lfg_queue)
+
+        if queue_size > 0:
             await ctx.send(f"{ctx.author.mention}, yes, someone is in the queue!")
         else:
             await ctx.send(f"{ctx.author.mention}, no one is currently in the queue.")
@@ -2315,9 +2364,12 @@ class LFGCog(commands.Cog):
         except Exception as e:
             logger.warning(f"Could not delete cancel command message: {e}")
 
-        if ctx.author.id in lfg_queue:
-            lfg_queue.pop(ctx.author.id)
+        async with lfg_queue_lock:
+            was_in_queue = ctx.author.id in lfg_queue
+            if was_in_queue:
+                lfg_queue.pop(ctx.author.id)
 
+        if was_in_queue:
             # Send DM to user
             try:
                 await ctx.author.send("You have been removed from the LFG queue.")
@@ -2542,14 +2594,28 @@ class LFGCog(commands.Cog):
             inline=False,
         )
 
+        # Match Correction
+        embed.add_field(
+            name="🔄 Match Correction",
+            value=(
+                "`!correct_match <match_id>`\n"
+                "Flip the winner/loser of a match and recalculate ALL affected ELO.\n"
+                "**When to use:** When someone reported the wrong outcome. This will:\n"
+                "• Swap the winner and loser\n"
+                "• Recalculate ELO for all subsequent matches involving those players\n"
+                "✅ **Recommended over !remove_match** for incorrect reports."
+            ),
+            inline=False,
+        )
+
         # Match Removal
         embed.add_field(
             name="🗑️ Match Removal",
             value=(
                 "`!remove_match <match_id>`\n"
                 "Remove a specific match and revert the ELO changes from that match.\n"
-                "**When to use:** When a match was reported incorrectly, was a test game, "
-                "or needs to be invalidated for any reason."
+                "**When to use:** When a match was a test game or never actually happened.\n"
+                "⚠️ Does NOT recalculate subsequent matches. Use `!correct_match` instead for wrong reports."
             ),
             inline=False,
         )
@@ -2890,6 +2956,315 @@ class LFGCog(commands.Cog):
     async def spot_elo_reset_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def correct_match(self, ctx, match_id: int = None):
+        """Admin command to correct a match by flipping the outcome and recalculating all affected ELO.
+        Usage: !correct_match <match_id>
+
+        This command will:
+        1. Flip the winner/loser of the specified match
+        2. Recalculate ELO for all matches that happened after it involving either player
+        """
+        import sqlite3
+        from utils.database import update_elo
+
+        # Validate arguments
+        if match_id is None:
+            await ctx.send(
+                "Please provide a match ID. Usage: `!correct_match <match_id>`"
+            )
+            return
+
+        try:
+            # Send initial status message
+            status_msg = await ctx.send("🔄 Analyzing match history...")
+
+            # Connect to databases
+            elo_conn = sqlite3.connect("elo.db")
+            elo_cursor = elo_conn.cursor()
+
+            match_conn = sqlite3.connect("match_records.db")
+            match_cursor = match_conn.cursor()
+
+            # Get the match to correct
+            match_cursor.execute(
+                """
+                SELECT match_id, winner_id, losser_id, winner_display_name, losser_display_name, 
+                       timestamp, winner_elo_change, loser_elo_change
+                FROM match_records 
+                WHERE match_id = ?
+                """,
+                (match_id,),
+            )
+            target_match = match_cursor.fetchone()
+
+            if not target_match:
+                await status_msg.edit(content=f"❌ Match ID #{match_id} not found.")
+                elo_conn.close()
+                match_conn.close()
+                return
+
+            (
+                target_match_id,
+                original_winner_id,
+                original_loser_id,
+                original_winner_name,
+                original_loser_name,
+                target_timestamp,
+                target_winner_elo_change,
+                target_loser_elo_change,
+            ) = target_match
+
+            # Get all affected players (both from the target match)
+            affected_players = {original_winner_id, original_loser_id}
+
+            # Find ALL matches after this one that involve either player
+            # We need to recalculate these in order
+            match_cursor.execute(
+                """
+                SELECT match_id, winner_id, losser_id, winner_display_name, losser_display_name,
+                       timestamp, winner_elo_change, loser_elo_change
+                FROM match_records 
+                WHERE timestamp > ? 
+                AND (winner_id IN (?, ?) OR losser_id IN (?, ?))
+                ORDER BY timestamp ASC
+                """,
+                (
+                    target_timestamp,
+                    original_winner_id,
+                    original_loser_id,
+                    original_winner_id,
+                    original_loser_id,
+                ),
+            )
+            subsequent_matches = match_cursor.fetchall()
+
+            await status_msg.edit(
+                content=f"🔄 Found {len(subsequent_matches)} matches to recalculate..."
+            )
+
+            # Collect all players that will be affected (cascade effect)
+            all_affected_matches = [target_match] + list(subsequent_matches)
+            for match in subsequent_matches:
+                affected_players.add(match[1])  # winner_id
+                affected_players.add(match[2])  # loser_id
+
+            # Step 1: Revert ELO for all affected matches (in REVERSE order)
+            await status_msg.edit(content="🔄 Reverting ELO changes...")
+
+            # First, revert subsequent matches in reverse chronological order
+            for match in reversed(subsequent_matches):
+                m_id, w_id, l_id, w_name, l_name, ts, w_elo_change, l_elo_change = match
+
+                if w_elo_change:
+                    elo_cursor.execute(
+                        "UPDATE overall_standings SET elo = elo - ? WHERE user_id = ?",
+                        (w_elo_change, w_id),
+                    )
+                if l_elo_change:
+                    elo_cursor.execute(
+                        "UPDATE overall_standings SET elo = elo - ? WHERE user_id = ?",
+                        (l_elo_change, l_id),
+                    )
+
+            # Then revert the target match
+            if target_winner_elo_change:
+                elo_cursor.execute(
+                    "UPDATE overall_standings SET elo = elo - ? WHERE user_id = ?",
+                    (target_winner_elo_change, original_winner_id),
+                )
+            if target_loser_elo_change:
+                elo_cursor.execute(
+                    "UPDATE overall_standings SET elo = elo - ? WHERE user_id = ?",
+                    (target_loser_elo_change, original_loser_id),
+                )
+
+            elo_conn.commit()
+
+            # Step 2: Flip the target match outcome in the database
+            await status_msg.edit(content="🔄 Flipping match outcome...")
+
+            # Swap winner and loser
+            new_winner_id = original_loser_id
+            new_winner_name = original_loser_name
+            new_loser_id = original_winner_id
+            new_loser_name = original_winner_name
+
+            # Step 3: Recalculate ELO for the corrected match
+            # Get current ELO for both players
+            elo_cursor.execute(
+                "SELECT elo FROM overall_standings WHERE user_id = ?", (new_winner_id,)
+            )
+            row = elo_cursor.fetchone()
+            new_winner_elo_before = row[0] if row else 1500
+
+            elo_cursor.execute(
+                "SELECT elo FROM overall_standings WHERE user_id = ?", (new_loser_id,)
+            )
+            row = elo_cursor.fetchone()
+            new_loser_elo_before = row[0] if row else 1500
+
+            # Calculate new ELO changes
+            new_winner_elo_after = update_elo(
+                new_winner_elo_before, new_loser_elo_before, True
+            )
+            new_loser_elo_after = update_elo(
+                new_loser_elo_before, new_winner_elo_before, False
+            )
+
+            new_winner_elo_change = new_winner_elo_after - new_winner_elo_before
+            new_loser_elo_change = new_loser_elo_after - new_loser_elo_before
+
+            # Update ELO in database
+            elo_cursor.execute(
+                "UPDATE overall_standings SET elo = ? WHERE user_id = ?",
+                (new_winner_elo_after, new_winner_id),
+            )
+            elo_cursor.execute(
+                "UPDATE overall_standings SET elo = ? WHERE user_id = ?",
+                (new_loser_elo_after, new_loser_id),
+            )
+
+            # Update the match record with flipped outcome
+            match_cursor.execute(
+                """
+                UPDATE match_records 
+                SET winner_id = ?, winner_display_name = ?, 
+                    losser_id = ?, losser_display_name = ?,
+                    winner_elo_change = ?, loser_elo_change = ?
+                WHERE match_id = ?
+                """,
+                (
+                    new_winner_id,
+                    new_winner_name,
+                    new_loser_id,
+                    new_loser_name,
+                    new_winner_elo_change,
+                    new_loser_elo_change,
+                    match_id,
+                ),
+            )
+
+            elo_conn.commit()
+            match_conn.commit()
+
+            # Step 4: Recalculate ELO for all subsequent matches in chronological order
+            await status_msg.edit(
+                content=f"🔄 Recalculating {len(subsequent_matches)} subsequent matches..."
+            )
+
+            recalculated_count = 0
+            for match in subsequent_matches:
+                (
+                    m_id,
+                    w_id,
+                    l_id,
+                    w_name,
+                    l_name,
+                    ts,
+                    old_w_elo_change,
+                    old_l_elo_change,
+                ) = match
+
+                # Get current ELO for both players
+                elo_cursor.execute(
+                    "SELECT elo FROM overall_standings WHERE user_id = ?", (w_id,)
+                )
+                row = elo_cursor.fetchone()
+                winner_elo_before = row[0] if row else 1500
+
+                elo_cursor.execute(
+                    "SELECT elo FROM overall_standings WHERE user_id = ?", (l_id,)
+                )
+                row = elo_cursor.fetchone()
+                loser_elo_before = row[0] if row else 1500
+
+                # Calculate new ELO
+                winner_elo_after = update_elo(winner_elo_before, loser_elo_before, True)
+                loser_elo_after = update_elo(loser_elo_before, winner_elo_before, False)
+
+                w_elo_change = winner_elo_after - winner_elo_before
+                l_elo_change = loser_elo_after - loser_elo_before
+
+                # Update ELO in database
+                elo_cursor.execute(
+                    "UPDATE overall_standings SET elo = ? WHERE user_id = ?",
+                    (winner_elo_after, w_id),
+                )
+                elo_cursor.execute(
+                    "UPDATE overall_standings SET elo = ? WHERE user_id = ?",
+                    (loser_elo_after, l_id),
+                )
+
+                # Update the match record with new ELO changes
+                match_cursor.execute(
+                    """
+                    UPDATE match_records 
+                    SET winner_elo_change = ?, loser_elo_change = ?
+                    WHERE match_id = ?
+                    """,
+                    (w_elo_change, l_elo_change, m_id),
+                )
+
+                recalculated_count += 1
+
+            elo_conn.commit()
+            match_conn.commit()
+            elo_conn.close()
+            match_conn.close()
+
+            # Update leaderboard
+            await self.update_leaderboard()
+
+            # Send confirmation
+            success_embed = discord.Embed(
+                title="✅ Match Corrected",
+                description=(
+                    f"**Match ID:** #{match_id}\n\n"
+                    f"**Original Result:**\n"
+                    f"~~Winner: {original_winner_name}~~\n"
+                    f"~~Loser: {original_loser_name}~~\n\n"
+                    f"**Corrected Result:**\n"
+                    f"✅ Winner: **{new_winner_name}** ({new_winner_elo_change:+d} ELO)\n"
+                    f"❌ Loser: **{new_loser_name}** ({new_loser_elo_change:+d} ELO)"
+                ),
+                color=discord.Color.green(),
+            )
+            success_embed.add_field(
+                name="📊 Cascade Recalculation",
+                value=f"Recalculated **{recalculated_count}** subsequent matches\nAffected **{len(affected_players)}** players",
+                inline=False,
+            )
+            success_embed.set_footer(text=f"Corrected by {ctx.author.display_name}")
+
+            await status_msg.edit(content=None, embed=success_embed)
+
+            logger.info(
+                f"Admin {ctx.author} (ID: {ctx.author.id}) corrected match #{match_id}: "
+                f"{original_winner_name} -> {new_winner_name} (winner). "
+                f"Recalculated {recalculated_count} subsequent matches."
+            )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Match Correction Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Match correction failed: {e}")
+            import traceback
+
+            traceback.print_exc()
+
+    @correct_match.error
+    async def correct_match_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send("Invalid match ID. Please provide a valid number.")
 
     @commands.command()
     @commands.has_permissions(administrator=True)

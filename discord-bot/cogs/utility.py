@@ -246,6 +246,7 @@ class UtilityCog(commands.Cog):
                 "`!admin_help` - View all admin commands with details\n"
                 "`!admin_report @winner @loser` - Manually report match\n"
                 "`!spot_elo_reset @user [elo]` - Set user's ELO\n"
+                "`!correct_match <id>` - Flip outcome & recalculate ELO\n"
                 "`!remove_match <id>` - Remove match & revert ELO\n"
                 "`!remove_player @user` - Remove player from rankings\n"
                 "`!reset_elo` - ⚠️ Reset all ELO & match history"

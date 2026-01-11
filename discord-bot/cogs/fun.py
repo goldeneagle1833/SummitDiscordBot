@@ -516,6 +516,13 @@ class FunCog(commands.Cog):
             inline=False,
         )
 
+        # Admin Commands Section
+        embed.add_field(
+            name="🔧 Admin Commands",
+            value="`!reset_fart_cooldown @user` - Reset a user's fart cooldown",
+            inline=False,
+        )
+
         # Fart Types Section
         embed.add_field(
             name="💨 Fart Types & Points",
@@ -1520,6 +1527,82 @@ class FunCog(commands.Cog):
 
             traceback.print_exc()
             await ctx.send(f"An error occurred: {e}")
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def reset_fart_cooldown(self, ctx, user: discord.Member = None):
+        """Admin command to reset a user's fart cooldown (set last fart to 48 hours ago).
+        Usage: !reset_fart_cooldown @user
+        """
+        if user is None:
+            await ctx.send("Please mention a user. Usage: `!reset_fart_cooldown @user`")
+            return
+
+        if user.bot:
+            await ctx.send("Cannot reset fart cooldown for bots!")
+            return
+
+        try:
+            from datetime import datetime, timedelta
+            import pytz
+
+            # Calculate 48 hours ago
+            est = pytz.timezone("America/New_York")
+            time_48_hours_ago = datetime.now(est) - timedelta(hours=48)
+            time_string = time_48_hours_ago.strftime("%Y-%m-%d %H:%M:%S")
+
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+
+            # Check if user exists in database
+            cur.execute(
+                "SELECT date_last_updated FROM fart_scores WHERE user_id = ?",
+                (user.id,),
+            )
+            row = cur.fetchone()
+
+            if row:
+                # Update the last fart time
+                cur.execute(
+                    "UPDATE fart_scores SET date_last_updated = ? WHERE user_id = ?",
+                    (time_string, user.id),
+                )
+                conn.commit()
+                conn.close()
+
+                embed = discord.Embed(
+                    title="💨 Fart Cooldown Reset",
+                    description=(
+                        f"**User:** {user.mention}\n"
+                        f"**New last fart time:** {time_string} EST\n\n"
+                        f"They can now use `!fart` again!"
+                    ),
+                    color=discord.Color.green(),
+                )
+                embed.set_footer(text=f"Reset by {ctx.author.display_name}")
+                await ctx.send(embed=embed)
+                logger.info(
+                    f"Admin {ctx.author} reset fart cooldown for {user.display_name}"
+                )
+            else:
+                conn.close()
+                await ctx.send(
+                    f"{user.mention} has never farted! They don't have a cooldown to reset."
+                )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Fart Cooldown Reset Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Fart cooldown reset failed: {e}")
+
+    @reset_fart_cooldown.error
+    async def reset_fart_cooldown_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
 
 
 class FartPredictionView(discord.ui.View):

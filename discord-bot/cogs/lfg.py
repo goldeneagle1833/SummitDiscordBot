@@ -3067,10 +3067,10 @@ class LFGCog(commands.Cog):
             # Get the match to correct
             match_cursor.execute(
                 """
-                SELECT match_id, winner_id, losser_id, winner_display_name, losser_display_name, 
+                SELECT rowid, winner_id, losser_id, winner_display_name, losser_display_name, 
                        timestamp, winner_elo_change, loser_elo_change
                 FROM match_records 
-                WHERE match_id = ?
+                WHERE rowid = ?
                 """,
                 (match_id,),
             )
@@ -3100,7 +3100,7 @@ class LFGCog(commands.Cog):
             # We need to recalculate these in order
             match_cursor.execute(
                 """
-                SELECT match_id, winner_id, losser_id, winner_display_name, losser_display_name,
+                SELECT rowid, winner_id, losser_id, winner_display_name, losser_display_name,
                        timestamp, winner_elo_change, loser_elo_change
                 FROM match_records 
                 WHERE timestamp > ? 
@@ -3210,7 +3210,7 @@ class LFGCog(commands.Cog):
                 SET winner_id = ?, winner_display_name = ?, 
                     losser_id = ?, losser_display_name = ?,
                     winner_elo_change = ?, loser_elo_change = ?
-                WHERE match_id = ?
+                WHERE rowid = ?
                 """,
                 (
                     new_winner_id,
@@ -3279,7 +3279,7 @@ class LFGCog(commands.Cog):
                     """
                     UPDATE match_records 
                     SET winner_elo_change = ?, loser_elo_change = ?
-                    WHERE match_id = ?
+                    WHERE rowid = ?
                     """,
                     (w_elo_change, l_elo_change, m_id),
                 )

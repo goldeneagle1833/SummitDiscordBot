@@ -839,14 +839,11 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             reporter_deck_text = (
                 f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
             )
-            other_deck_text = (
-                f"\n**Opponent's Deck:** {other_deck_url}" if other_deck_url else ""
-            )
 
             # Send report buttons to the selected reporter
             try:
                 await reporter_user.send(
-                    f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{other_deck_text}{reporter_deck_text}\n\nReport the match result below:",
+                    f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\nReport the match result below:",
                     view=view_reporter,
                 )
             except discord.Forbidden:
@@ -854,18 +851,13 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                     dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{reporter_user.mention} **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!{other_deck_text}{reporter_deck_text}\n\nReport the match result below:",
+                            f"{reporter_user.mention} **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\nReport the match result below:",
                             view=view_reporter,
                         )
                 except Exception:
                     pass
 
             # Build match info message for the other player
-            other_reporter_deck_text = (
-                f"\n**Opponent's Deck:** {reporter_deck_url}"
-                if reporter_deck_url
-                else ""
-            )
             other_own_deck_text = (
                 f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
             )
@@ -873,7 +865,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             # Send informational message to the other player (no buttons)
             try:
                 await other_user.send(
-                    f"**Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_reporter_deck_text}{other_own_deck_text}\n\n"
+                    f"**Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
                     f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                 )
             except discord.Forbidden:
@@ -881,7 +873,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                     dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{other_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_reporter_deck_text}{other_own_deck_text}\n\n"
+                            f"{other_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
                             f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                         )
                 except Exception:
@@ -2290,9 +2282,6 @@ class LFGCog(commands.Cog):
             reporter_own_deck_text = (
                 f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
             )
-            reporter_opponent_deck_text = (
-                f"\n**Opponent's Deck:** {other_deck_url}" if other_deck_url else ""
-            )
 
             # Send report buttons to the selected reporter
             logger.info(
@@ -2300,7 +2289,7 @@ class LFGCog(commands.Cog):
             )
             try:
                 await reporter_user.send(
-                    f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_opponent_deck_text}{reporter_own_deck_text}\n\nReport the match result below:",
+                    f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_own_deck_text}\n\nReport the match result below:",
                     view=view_reporter,
                 )
             except discord.Forbidden:
@@ -2319,7 +2308,7 @@ class LFGCog(commands.Cog):
                     dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{reporter_user.mention} **Match Report**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!{reporter_opponent_deck_text}{reporter_own_deck_text}\n\nReport the match result below:",
+                            f"{reporter_user.mention} **Match Report**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!{reporter_own_deck_text}\n\nReport the match result below:",
                             view=view_reporter,
                         )
                         logger.info(
@@ -2338,11 +2327,6 @@ class LFGCog(commands.Cog):
             other_own_deck_text = (
                 f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
             )
-            other_opponent_deck_text = (
-                f"\n**Opponent's Deck:** {reporter_deck_url}"
-                if reporter_deck_url
-                else ""
-            )
 
             # Send informational message to the other player (no buttons)
             logger.info(
@@ -2350,7 +2334,7 @@ class LFGCog(commands.Cog):
             )
             try:
                 await other_user.send(
-                    f"**Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_opponent_deck_text}{other_own_deck_text}\n\n"
+                    f"**Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
                     f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                 )
             except discord.Forbidden:
@@ -2369,7 +2353,7 @@ class LFGCog(commands.Cog):
                     dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{other_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_opponent_deck_text}{other_own_deck_text}\n\n"
+                            f"{other_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
                             f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                         )
                         logger.info(

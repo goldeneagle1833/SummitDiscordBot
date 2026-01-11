@@ -1543,14 +1543,6 @@ class FunCog(commands.Cog):
             return
 
         try:
-            from datetime import datetime, timedelta
-            import pytz
-
-            # Calculate 48 hours ago
-            est = pytz.timezone("America/New_York")
-            time_48_hours_ago = datetime.now(est) - timedelta(hours=48)
-            time_string = time_48_hours_ago.strftime("%Y-%m-%d %H:%M:%S")
-
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
 
@@ -1562,6 +1554,18 @@ class FunCog(commands.Cog):
             row = cur.fetchone()
 
             if row:
+                # Parse the current time from database and subtract 48 hours
+                current_time = safe_parse_datetime(row[0])
+                if current_time:
+                    time_48_hours_ago = current_time - datetime.timedelta(hours=48)
+                else:
+                    # If parsing fails, use current time minus 48 hours
+                    time_48_hours_ago = datetime.datetime.now() - datetime.timedelta(
+                        hours=48
+                    )
+
+                time_string = time_48_hours_ago.isoformat()
+
                 # Update the last fart time
                 cur.execute(
                     "UPDATE fart_scores SET date_last_updated = ? WHERE user_id = ?",
@@ -1574,7 +1578,7 @@ class FunCog(commands.Cog):
                     title="💨 Fart Cooldown Reset",
                     description=(
                         f"**User:** {user.mention}\n"
-                        f"**New last fart time:** {time_string} EST\n\n"
+                        f"**New last fart time:** {time_string}\n\n"
                         f"They can now use `!fart` again!"
                     ),
                     color=discord.Color.green(),

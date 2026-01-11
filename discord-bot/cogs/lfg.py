@@ -15,7 +15,7 @@ logger = logging.getLogger("discord_bot")
 DM_DISABLED_ROLE_ID = 1445222741686095994
 DM_DISABLED_CHANNEL_ID = 1456299008023728302
 
-# In-memory LFG queue (user_id: {timestamp, timeframe})
+# In-memory LFG queue (user_id: {timestamp, timeframe, deck_url})
 lfg_queue = {}
 
 # Lock to prevent race conditions when accessing the queue
@@ -265,7 +265,7 @@ class DecklistReportModal(discord.ui.Modal, title="Report with Decklist"):
             )
 
             await interaction.followup.send(
-                f"✅ Match report sent to {opponent_global} for confirmation.\n"
+                f"Match report sent to {opponent_global} for confirmation.\n"
                 f"**Result:** {'Win' if is_winner else 'Loss'}\n"
                 f"**Decklist:** {curiosa_link}",
                 ephemeral=True,
@@ -305,6 +305,8 @@ class MatchConfirmationButtons(discord.ui.View):
         match_comment: str = "",
         reporter_global: str = None,
         opponent_global: str = None,
+        reporter_deck_url: str = None,
+        opponent_deck_url: str = None,
     ):
         super().__init__(timeout=86400)  # 24 hour timeout - plenty of time to confirm
         self.reporter_id = reporter_id
@@ -323,6 +325,8 @@ class MatchConfirmationButtons(discord.ui.View):
         self.first_player = first_player
         self.match_time = match_time
         self.match_comment = match_comment
+        self.reporter_deck_url = reporter_deck_url
+        self.opponent_deck_url = opponent_deck_url
 
     @discord.ui.button(
         label="Confirm",
@@ -376,6 +380,16 @@ class MatchConfirmationButtons(discord.ui.View):
             time_diff = datetime.datetime.now() - self.match_start_time
             match_time = int(time_diff.total_seconds() / 60)  # Convert to minutes
 
+        # Combine both decklists into curiosa_link for storage
+        # Reporter's deck is stored as primary, opponent's in comment
+        reporter_deck = self.reporter_deck_url or self.curiosa_link or "No URL provided"
+        opponent_deck = self.opponent_deck_url or "No URL provided"
+        combined_comment = (
+            f"Reporter deck: {reporter_deck} | Opponent deck: {opponent_deck}"
+        )
+        if self.match_comment:
+            combined_comment = f"{self.match_comment} | {combined_comment}"
+
         # Submit match report only ONCE (not twice)
         # This will insert one record and update ELO for the winner
         match_id, _, _ = await winner_report(
@@ -387,8 +401,8 @@ class MatchConfirmationButtons(discord.ui.View):
             self.loser_global,
             self.first_player,
             match_time,
-            self.curiosa_link,
-            self.match_comment,
+            reporter_deck,  # Use reporter's deck URL
+            combined_comment,  # Include both decks in comment
             self.winner_id,  # interaction_user_id
             self.winner_global,  # interaction_global
         )
@@ -398,15 +412,22 @@ class MatchConfirmationButtons(discord.ui.View):
 
         update_elo_db(self.loser_id, self.loser_global, False, self.winner_id)
 
+        # Build deck info for confirmation message
+        deck_info = ""
+        if self.reporter_deck_url:
+            deck_info += f"\n**Reporter's Deck:** {self.reporter_deck_url}"
+        if self.opponent_deck_url:
+            deck_info += f"\n**Opponent's Deck:** {self.opponent_deck_url}"
+
         # Remove the confirmation message
         await interaction.message.edit(
-            content=f"Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.",
+            content=f"Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.{deck_info}",
             view=None,
         )
 
         # Send confirmation to confirming user
         await interaction.followup.send(
-            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}",
+            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}{deck_info}",
             ephemeral=True,
         )
 
@@ -676,6 +697,235 @@ class ConfirmWithDecklistModal(discord.ui.Modal, title="Confirm with Decklist"):
             await lfg_cog.update_leaderboard()
 
 
+class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
+    """Modal for entering a deck URL when joining the LFG queue"""
+
+    deck_url = discord.ui.TextInput(
+        label="Curiosa Deck URL",
+        placeholder="https://curiosa.io/decks/... (optional)",
+        required=False,
+        max_length=200,
+    )
+
+    timeframe = discord.ui.TextInput(
+        label="Queue Duration (minutes)",
+        placeholder="30",
+        required=False,
+        default="30",
+        max_length=3,
+    )
+
+    def __init__(self, bot, is_button_join=True):
+        super().__init__()
+        self.bot = bot
+        self.is_button_join = (
+            is_button_join  # True if from button, False if from !lfg command
+        )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        # Parse timeframe
+        try:
+            timeframe_value = int(self.timeframe.value) if self.timeframe.value else 30
+            if timeframe_value < 5:
+                timeframe_value = 5
+            elif timeframe_value > 120:
+                timeframe_value = 120
+        except ValueError:
+            timeframe_value = 30
+
+        deck_url = self.deck_url.value.strip() if self.deck_url.value else None
+
+        # Create a fake context for compatibility
+        class FakeContext:
+            def __init__(self, bot, interaction):
+                self.bot = bot
+                self.author = interaction.user
+                self.guild = interaction.guild
+                self.channel = interaction.channel
+                self.message = None
+
+            async def send(self, *args, **kwargs):
+                pass
+
+        ctx = FakeContext(self.bot, interaction)
+        lfg_cog = self.bot.get_cog("LFGCog")
+
+        if not lfg_cog:
+            await interaction.followup.send(
+                "LFG system is not available.", ephemeral=True
+            )
+            return
+
+        # Use lock to prevent race conditions
+        async with lfg_queue_lock:
+            # Check if user is already in queue
+            if interaction.user.id in lfg_queue:
+                await interaction.followup.send(
+                    "You're already in the queue!", ephemeral=True
+                )
+                return
+
+            # Check for a match
+            lfg_cog.clean_expired_lfg()
+            matched_user_id = lfg_cog.check_if_someone_is_lfg(ctx)
+
+            if matched_user_id and matched_user_id != interaction.user.id:
+                # Get matched user's deck URL before removing from queue
+                matched_user_deck_url = lfg_queue.get(matched_user_id, {}).get(
+                    "deck_url"
+                )
+                # Remove matched user from queue
+                lfg_queue.pop(matched_user_id, None)
+                logger.info(
+                    f"Lock acquired: Matching {interaction.user.id} with {matched_user_id}"
+                )
+            else:
+                matched_user_id = None
+                matched_user_deck_url = None
+
+        # Handle the result outside the lock
+        if matched_user_id:
+            # Match found!
+            matched_user = await self.bot.fetch_user(matched_user_id)
+            lfg_channel = self.bot.get_channel(lfg_cog.lfg_channel_id)
+            joiner_global = (
+                interaction.user.global_name or interaction.user.display_name
+            )
+            matched_global = matched_user.global_name or matched_user.display_name
+
+            # Record match start time
+            match_start_time = datetime.datetime.now()
+
+            # Randomly select which player gets the report buttons
+            players = [
+                (interaction.user.id, joiner_global, interaction.user, deck_url, True),
+                (
+                    matched_user_id,
+                    matched_global,
+                    matched_user,
+                    matched_user_deck_url,
+                    False,
+                ),
+            ]
+            reporter_player, other_player = random.sample(players, 2)
+            (
+                reporter_id,
+                reporter_global,
+                reporter_user,
+                reporter_deck_url,
+                reporter_is_joiner,
+            ) = reporter_player
+            other_id, other_global, other_user, other_deck_url, other_is_joiner = (
+                other_player
+            )
+
+            # Create report buttons with deck URLs
+            view_reporter = LFGReportButtons(
+                reporter_id,
+                reporter_id,
+                reporter_global,
+                other_id,
+                other_global,
+                self.bot,
+                lfg_channel,
+                match_start_time=match_start_time,
+                reporter_deck_url=reporter_deck_url,
+                opponent_deck_url=other_deck_url,
+            )
+
+            # Build match message with deck info
+            reporter_deck_text = (
+                f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
+            )
+            other_deck_text = (
+                f"\n**Opponent's Deck:** {other_deck_url}" if other_deck_url else ""
+            )
+
+            # Send report buttons to the selected reporter
+            try:
+                await reporter_user.send(
+                    f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{other_deck_text}{reporter_deck_text}\n\nReport the match result below:",
+                    view=view_reporter,
+                )
+            except discord.Forbidden:
+                try:
+                    dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                    if dm_channel:
+                        await dm_channel.send(
+                            f"{reporter_user.mention} **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!{other_deck_text}{reporter_deck_text}\n\nReport the match result below:",
+                            view=view_reporter,
+                        )
+                except Exception:
+                    pass
+
+            # Build match info message for the other player
+            other_reporter_deck_text = (
+                f"\n**Opponent's Deck:** {reporter_deck_url}"
+                if reporter_deck_url
+                else ""
+            )
+            other_own_deck_text = (
+                f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
+            )
+
+            # Send informational message to the other player (no buttons)
+            try:
+                await other_user.send(
+                    f"**Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_reporter_deck_text}{other_own_deck_text}\n\n"
+                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
+                )
+            except discord.Forbidden:
+                try:
+                    dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                    if dm_channel:
+                        await dm_channel.send(
+                            f"{other_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_reporter_deck_text}{other_own_deck_text}\n\n"
+                            f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
+                        )
+                except Exception:
+                    pass
+
+            # Announce match in LFG channel
+            if lfg_channel:
+                await lfg_channel.send(
+                    f"**Match Found!** {interaction.user.mention} matched with {matched_user.mention}!"
+                )
+
+            await lfg_cog.update_lfg_status()
+
+            await interaction.followup.send(
+                f"Match found! You've been paired with {matched_global}. Check your DMs!",
+                ephemeral=True,
+            )
+        else:
+            # Add to queue with deck URL
+            async with lfg_queue_lock:
+                if interaction.user.id in lfg_queue:
+                    await interaction.followup.send(
+                        "You're already in the queue!", ephemeral=True
+                    )
+                    return
+
+                lfg_cog.add_to_lfg_queue(ctx, timeframe_value, deck_url)
+
+            deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
+            try:
+                await interaction.user.send(
+                    f"You have been added to the queue for {timeframe_value} minutes.{deck_msg}"
+                )
+            except discord.Forbidden:
+                pass
+
+            await lfg_cog.update_lfg_status()
+
+            await interaction.followup.send(
+                f"You've joined the queue for {timeframe_value} minutes!{deck_msg}",
+                ephemeral=True,
+            )
+
+
 class LFGReportButtons(discord.ui.View):
     def __init__(
         self,
@@ -687,12 +937,16 @@ class LFGReportButtons(discord.ui.View):
         bot=None,
         channel=None,
         match_start_time=None,
+        reporter_deck_url=None,
+        opponent_deck_url=None,
     ):
         super().__init__(timeout=None)
         self.match_id = match_id
         self.player1_id = player1_id
         self.player2_id = player2_id
         self.player1_global = player1_global
+        self.reporter_deck_url = reporter_deck_url
+        self.opponent_deck_url = opponent_deck_url
         self.player2_global = player2_global
         self.bot = bot
         self.channel = channel
@@ -735,7 +989,7 @@ class LFGReportButtons(discord.ui.View):
             )
             return
 
-        # Store pending report with opponent's message reference
+        # Store pending report with deck URLs
         pending_match_reports[(interaction.user.id, opponent_id)] = {
             "winner_id": interaction.user.id,
             "winner_global": interaction.user.global_name
@@ -748,6 +1002,8 @@ class LFGReportButtons(discord.ui.View):
             "is_winner": True,
             "opponent_message": None,  # Will be set after fetching opponent's DM
             "match_start_time": self.match_start_time,  # Track when match started
+            "reporter_deck_url": self.reporter_deck_url,  # Reporter's deck URL
+            "opponent_deck_url": self.opponent_deck_url,  # Opponent's deck URL
         }
 
         # Send confirmation to opponent
@@ -769,6 +1025,8 @@ class LFGReportButtons(discord.ui.View):
                 bot=self.bot,
                 channel=self.channel,
                 match_start_time=self.match_start_time,
+                reporter_deck_url=self.reporter_deck_url,
+                opponent_deck_url=self.opponent_deck_url,
             )
 
             # Check if opponent has DM-disabled role
@@ -829,11 +1087,11 @@ class LFGReportButtons(discord.ui.View):
                         )
                         if dm_channel:
                             await dm_channel.send(
-                                f"{opponent.mention} 🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
+                                f"{opponent.mention} **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
                                 view=confirmation_view,
                             )
                             await interaction.response.send_message(
-                                "✅ Match report sent. Waiting for confirmation...",
+                                "Match report sent. Waiting for confirmation...",
                                 ephemeral=True,
                             )
                             logger.info(
@@ -841,19 +1099,19 @@ class LFGReportButtons(discord.ui.View):
                             )
                         else:
                             await interaction.response.send_message(
-                                f"❌ Could not send confirmation to {opponent_global}.",
+                                f"Could not send confirmation to {opponent_global}.",
                                 ephemeral=True,
                             )
                     except Exception as e:
                         logger.error(f"Failed to handle DM failure for opponent: {e}")
                         if not interaction.response.is_done():
                             await interaction.response.send_message(
-                                f"❌ Could not send confirmation to {opponent_global}.",
+                                f"Could not send confirmation to {opponent_global}.",
                                 ephemeral=True,
                             )
                         else:
                             await interaction.followup.send(
-                                f"❌ Could not send confirmation to {opponent_global}.",
+                                f"Could not send confirmation to {opponent_global}.",
                                 ephemeral=True,
                             )
 
@@ -924,7 +1182,7 @@ class LFGReportButtons(discord.ui.View):
             )
             return
 
-        # Store pending report with opponent's message reference
+        # Store pending report with deck URLs
         pending_match_reports[(interaction.user.id, opponent_id)] = {
             "winner_id": opponent_id,
             "winner_global": opponent_global,
@@ -936,6 +1194,9 @@ class LFGReportButtons(discord.ui.View):
             or interaction.user.display_name,
             "is_winner": False,
             "opponent_message": None,  # Will be set after fetching opponent's DM
+            "match_start_time": self.match_start_time,  # Track when match started
+            "reporter_deck_url": self.reporter_deck_url,  # Reporter's deck URL
+            "opponent_deck_url": self.opponent_deck_url,  # Opponent's deck URL
         }
 
         # Send confirmation to opponent
@@ -957,6 +1218,8 @@ class LFGReportButtons(discord.ui.View):
                 bot=self.bot,
                 channel=self.channel,
                 match_start_time=self.match_start_time,
+                reporter_deck_url=self.reporter_deck_url,
+                opponent_deck_url=self.opponent_deck_url,
             )
 
             # Check if opponent has DM-disabled role
@@ -1017,11 +1280,11 @@ class LFGReportButtons(discord.ui.View):
                         )
                         if dm_channel:
                             await dm_channel.send(
-                                f"{opponent.mention} 🎮 **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
+                                f"{opponent.mention} **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
                                 view=confirmation_view,
                             )
                             await interaction.response.send_message(
-                                "✅ Match report sent. Waiting for confirmation...",
+                                "Match report sent. Waiting for confirmation...",
                                 ephemeral=True,
                             )
                             logger.info(
@@ -1029,19 +1292,19 @@ class LFGReportButtons(discord.ui.View):
                             )
                         else:
                             await interaction.response.send_message(
-                                f"❌ Could not send confirmation to {opponent_global}.",
+                                f"Could not send confirmation to {opponent_global}.",
                                 ephemeral=True,
                             )
                     except Exception as e:
                         logger.error(f"Failed to handle DM failure for opponent: {e}")
                         if not interaction.response.is_done():
                             await interaction.response.send_message(
-                                f"❌ Could not send confirmation to {opponent_global}.",
+                                f"Could not send confirmation to {opponent_global}.",
                                 ephemeral=True,
                             )
                         else:
                             await interaction.followup.send(
-                                f"❌ Could not send confirmation to {opponent_global}.",
+                                f"Could not send confirmation to {opponent_global}.",
                                 ephemeral=True,
                             )
 
@@ -1414,226 +1677,17 @@ class JoinQueueButton(discord.ui.View):
     async def join_queue_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        """Handle join queue button click"""
-
-        # Create a fake context to use with existing lfg command
-        class FakeContext:
-            def __init__(self, bot, interaction):
-                self.bot = bot
-                self.author = interaction.user
-                self.guild = interaction.guild
-                self.channel = interaction.channel
-                self.message = None
-
-            async def send(self, *args, **kwargs):
-                # Don't send to channel, will use interaction response
-                pass
-
-        ctx = FakeContext(self.bot, interaction)
-        lfg_cog = self.bot.get_cog("LFGCog")
-
-        if not lfg_cog:
+        """Handle join queue button click - shows the deck URL modal"""
+        # Check if user is already in queue before showing modal
+        if interaction.user.id in lfg_queue:
             await interaction.response.send_message(
-                "LFG system is not available.", ephemeral=True
+                "You're already in the queue!", ephemeral=True
             )
             return
 
-        await interaction.response.defer(ephemeral=True)
-
-        # Use lock to prevent race conditions when multiple people click at the same time
-        async with lfg_queue_lock:
-            # Check if user is already in queue (inside lock to be safe)
-            if interaction.user.id in lfg_queue:
-                await interaction.followup.send(
-                    "You're already in the queue!", ephemeral=True
-                )
-                return
-
-            # Use the existing lfg logic
-            lfg_cog.clean_expired_lfg()
-            matched_user_id = lfg_cog.check_if_someone_is_lfg(ctx)
-
-            if matched_user_id and matched_user_id != interaction.user.id:
-                # IMMEDIATELY remove matched user from queue to prevent double-matching
-                lfg_queue.pop(matched_user_id, None)
-                logger.info(
-                    f"Lock acquired: Matching {interaction.user.id} with {matched_user_id}"
-                )
-            else:
-                matched_user_id = None
-
-        # Now handle the match or queue add outside the lock (for the async operations)
-        if matched_user_id:
-            # Match found!
-            matched_user = await self.bot.fetch_user(matched_user_id)
-            lfg_channel = self.bot.get_channel(lfg_cog.lfg_channel_id)
-            joiner_global = (
-                interaction.user.global_name or interaction.user.display_name
-            )
-            matched_global = matched_user.global_name or matched_user.display_name
-
-            # Record match start time when players are matched
-            match_start_time = datetime.datetime.now()
-
-            # Randomly select which player gets the report buttons
-            players = [
-                (
-                    interaction.user.id,
-                    joiner_global,
-                    interaction.user,
-                    True,
-                ),  # True = the joiner
-                (
-                    matched_user_id,
-                    matched_global,
-                    matched_user,
-                    False,
-                ),  # False = the matched user
-            ]
-            reporter_player, other_player = random.sample(players, 2)
-            reporter_id, reporter_global, reporter_user, reporter_is_joiner = (
-                reporter_player
-            )
-            other_id, other_global, other_user, other_is_joiner = other_player
-
-            # Create report buttons for the randomly selected reporter
-            view_reporter = LFGReportButtons(
-                reporter_id,
-                reporter_id,
-                reporter_global,
-                other_id,
-                other_global,
-                self.bot,
-                lfg_channel,
-                match_start_time=match_start_time,
-            )
-
-            # Send report buttons to the selected reporter
-            if reporter_is_joiner:
-                # Reporter is the one who clicked Join Queue - send via DM
-                try:
-                    await interaction.user.send(
-                        f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!\n\nReport the match result below:",
-                        view=view_reporter,
-                    )
-                except discord.Forbidden:
-                    try:
-                        guild = interaction.guild
-                        if guild:
-                            role = guild.get_role(DM_DISABLED_ROLE_ID)
-                            member = guild.get_member(interaction.user.id)
-                            if role and member:
-                                await member.add_roles(role)
-
-                        dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
-                        if dm_channel:
-                            await dm_channel.send(
-                                f"{interaction.user.mention} **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)! Report the match result below:",
-                                view=view_reporter,
-                            )
-                    except Exception:
-                        pass
-            else:
-                # Reporter is the matched user from queue - send via DM
-                try:
-                    await matched_user.send(
-                        f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!\n\nReport the match result below:",
-                        view=view_reporter,
-                    )
-                except discord.Forbidden:
-                    try:
-                        guild = interaction.guild
-                        if guild:
-                            role = guild.get_role(DM_DISABLED_ROLE_ID)
-                            member = guild.get_member(matched_user_id)
-                            if role and member:
-                                await member.add_roles(role)
-
-                        dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
-                        if dm_channel:
-                            await dm_channel.send(
-                                f"{matched_user.mention} **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)! Report the match result below:",
-                                view=view_reporter,
-                            )
-                    except Exception:
-                        pass
-
-            # Send informational message to the other player (no buttons)
-            if other_is_joiner:
-                # Other player is the one who clicked Join Queue - send via DM
-                try:
-                    await interaction.user.send(
-                        f"**Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
-                        f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
-                    )
-                except discord.Forbidden:
-                    try:
-                        dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
-                        if dm_channel:
-                            await dm_channel.send(
-                                f"{interaction.user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
-                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
-                            )
-                    except Exception:
-                        pass
-            else:
-                # Other player is the matched user from queue - send via DM
-                try:
-                    await matched_user.send(
-                        f"**Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
-                        f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
-                    )
-                except discord.Forbidden:
-                    try:
-                        dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
-                        if dm_channel:
-                            await dm_channel.send(
-                                f"{matched_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
-                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
-                            )
-                    except Exception:
-                        pass
-
-            # Announce match in LFG channel
-            if lfg_channel:
-                await lfg_channel.send(
-                    f"**Match Found!** {interaction.user.mention} matched with {matched_user.mention}!"
-                )
-
-            # We already removed the matched user from queue inside the lock
-            # Just update the status now
-            await lfg_cog.update_lfg_status()
-
-            await interaction.followup.send(
-                f"Match found! You've been paired with {matched_global}. Check your DMs!",
-                ephemeral=True,
-            )
-        else:
-            # Add to queue (use lock to be safe)
-            async with lfg_queue_lock:
-                # Double-check they're not in queue (someone else might have added them)
-                if interaction.user.id in lfg_queue:
-                    await interaction.followup.send(
-                        "You're already in the queue!", ephemeral=True
-                    )
-                    return
-
-                default_timeframe = 30
-                lfg_cog.add_to_lfg_queue(ctx, default_timeframe)
-
-            try:
-                await interaction.user.send(
-                    f"You have been added to the queue for looking for a game for {default_timeframe} minutes."
-                )
-            except discord.Forbidden:
-                pass
-
-            await lfg_cog.update_lfg_status()
-
-            await interaction.followup.send(
-                f"You've joined the queue for {default_timeframe} minutes! You'll be notified when a match is found.",
-                ephemeral=True,
-            )
+        # Show the modal to collect deck URL and queue duration
+        modal = DeckURLModal(self.bot, is_button_join=True)
+        await interaction.response.send_modal(modal)
 
 
 class LFGCog(commands.Cog):
@@ -1843,7 +1897,7 @@ class LFGCog(commands.Cog):
         if len(lfg_queue) == 0:
             # RED - Empty queue
             embed = discord.Embed(
-                title="🔴 LFG Queue Status",
+                title="LFG Queue Status",
                 description="**Queue is empty**\n\nUse `!lfg` to join the queue and find a match!",
                 color=discord.Color.red(),
             )
@@ -1851,7 +1905,7 @@ class LFGCog(commands.Cog):
         else:
             # GREEN - Active queue
             embed = discord.Embed(
-                title="🟢 LFG Queue Status",
+                title="LFG Queue Status",
                 description=f"**{len(lfg_queue)} player(s) looking for a game!!**\n\nUse `!lfg` to join and get matched instantly!\nUse `!cancel` to leave the queue.",
                 color=discord.Color.green(),
             )
@@ -2087,10 +2141,11 @@ class LFGCog(commands.Cog):
                 return user_id
         return None
 
-    def add_to_lfg_queue(self, ctx, timeframe):
+    def add_to_lfg_queue(self, ctx, timeframe, deck_url=None):
         lfg_queue[ctx.author.id] = {
             "timestamp": datetime.datetime.now(),
             "timeframe": int(timeframe),
+            "deck_url": deck_url,
         }
 
     def pair_players(self, ctx):
@@ -2131,10 +2186,16 @@ class LFGCog(commands.Cog):
             logger.info(f"Cleaned up {len(expired)} old processed match entries")
 
     @commands.command(aliases=["LFG"])
-    async def lfg(self, ctx, timeframe: int = 30):
-        """Usage: !lfg [minutes]"""
+    async def lfg(self, ctx, timeframe: int = 30, *, deck_url: str = None):
+        """Usage: !lfg [minutes] [deck_url]
+
+        Examples:
+            !lfg - Join queue for 30 minutes
+            !lfg 60 - Join queue for 60 minutes
+            !lfg 30 https://curiosa.io/decks/... - Join with a deck URL
+        """
         logger.info(
-            f"LFG command started - User: {ctx.author} (ID: {ctx.author.id}), Channel: {ctx.channel}, Timeframe: {timeframe}"
+            f"LFG command started - User: {ctx.author} (ID: {ctx.author.id}), Channel: {ctx.channel}, Timeframe: {timeframe}, Deck URL: {deck_url}"
         )
 
         # Delete the user's command message
@@ -2161,6 +2222,10 @@ class LFGCog(commands.Cog):
             )
 
             if matched_user_id and matched_user_id != ctx.author.id:
+                # Get matched user's deck URL before removing from queue
+                matched_user_deck_url = lfg_queue.get(matched_user_id, {}).get(
+                    "deck_url"
+                )
                 # IMMEDIATELY remove matched user from queue to prevent double-matching
                 lfg_queue.pop(matched_user_id, None)
                 lfg_queue.pop(
@@ -2171,11 +2236,12 @@ class LFGCog(commands.Cog):
                 )
             elif matched_user_id == ctx.author.id:
                 # User is already in queue
-                pass
+                matched_user_deck_url = None
             else:
-                # No match - add to queue
-                self.add_to_lfg_queue(ctx, timeframe)
+                # No match - add to queue with deck URL
+                self.add_to_lfg_queue(ctx, timeframe, deck_url)
                 matched_user_id = None
+                matched_user_deck_url = None
 
         # Handle the result outside the lock (for async operations)
         if matched_user_id and matched_user_id != ctx.author.id:
@@ -2191,18 +2257,22 @@ class LFGCog(commands.Cog):
                     ctx.author.id,
                     ctx.author.global_name or ctx.author.display_name,
                     ctx.author,
+                    deck_url,  # Joiner's deck URL
                 ),
                 (
                     matched_user_id,
                     matched_user.global_name or matched_user.display_name,
                     matched_user,
+                    matched_user_deck_url,  # Matched user's deck URL from queue
                 ),
             ]
             reporter_player, other_player = random.sample(players, 2)
-            reporter_id, reporter_global, reporter_user = reporter_player
-            other_id, other_global, other_user = other_player
+            reporter_id, reporter_global, reporter_user, reporter_deck_url = (
+                reporter_player
+            )
+            other_id, other_global, other_user, other_deck_url = other_player
 
-            # Create report buttons for the randomly selected reporter
+            # Create report buttons for the randomly selected reporter with deck URLs
             view_reporter = LFGReportButtons(
                 reporter_id,
                 reporter_id,
@@ -2212,6 +2282,16 @@ class LFGCog(commands.Cog):
                 self.bot,
                 lfg_channel,
                 match_start_time=match_start_time,
+                reporter_deck_url=reporter_deck_url,
+                opponent_deck_url=other_deck_url,
+            )
+
+            # Build match message with deck info for reporter
+            reporter_own_deck_text = (
+                f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
+            )
+            reporter_opponent_deck_text = (
+                f"\n**Opponent's Deck:** {other_deck_url}" if other_deck_url else ""
             )
 
             # Send report buttons to the selected reporter
@@ -2220,7 +2300,7 @@ class LFGCog(commands.Cog):
             )
             try:
                 await reporter_user.send(
-                    f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!\n\nReport the match result below:",
+                    f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_opponent_deck_text}{reporter_own_deck_text}\n\nReport the match result below:",
                     view=view_reporter,
                 )
             except discord.Forbidden:
@@ -2239,7 +2319,7 @@ class LFGCog(commands.Cog):
                     dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{reporter_user.mention} **Match Report**\n\nYou've been matched with {other_user.mention} (**{other_global}**)! Report the match result below:",
+                            f"{reporter_user.mention} **Match Report**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!{reporter_opponent_deck_text}{reporter_own_deck_text}\n\nReport the match result below:",
                             view=view_reporter,
                         )
                         logger.info(
@@ -2254,13 +2334,23 @@ class LFGCog(commands.Cog):
                     f"Error sending DM to {reporter_global} (ID: {reporter_id}): {e}"
                 )
 
+            # Build match info message for the other player
+            other_own_deck_text = (
+                f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
+            )
+            other_opponent_deck_text = (
+                f"\n**Opponent's Deck:** {reporter_deck_url}"
+                if reporter_deck_url
+                else ""
+            )
+
             # Send informational message to the other player (no buttons)
             logger.info(
                 f"Sending match info (no buttons) to {other_global} (ID: {other_id}) via DM"
             )
             try:
                 await other_user.send(
-                    f"**Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
+                    f"**Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_opponent_deck_text}{other_own_deck_text}\n\n"
                     f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                 )
             except discord.Forbidden:
@@ -2279,7 +2369,7 @@ class LFGCog(commands.Cog):
                     dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{other_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
+                            f"{other_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_opponent_deck_text}{other_own_deck_text}\n\n"
                             f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                         )
                         logger.info(
@@ -2325,10 +2415,11 @@ class LFGCog(commands.Cog):
             # Note: User was already added to queue inside the lock above
             logger.info(f"Queue contents: {lfg_queue}")
 
+            deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
             try:
                 await ctx.author.send(
                     f"You have been added to the queue for looking for a game for "
-                    f"{timeframe} minutes. You can also use the `!lfg` command here to join the queue privately."
+                    f"{timeframe} minutes.{deck_msg}\n\nYou can also use the `!lfg` command here to join the queue privately."
                 )
                 logger.info(f"DM sent successfully to {ctx.author}")
             except discord.Forbidden:
@@ -2490,14 +2581,15 @@ class LFGCog(commands.Cog):
 
         # Queue Commands
         embed.add_field(
-            name="🔍 Queue Commands",
+            name="Queue Commands",
             value=(
-                "`!lfg [minutes]` - Join the matchmaking queue (default 30 min)\n"
+                "`!lfg [minutes] [deck_url]` - Join the matchmaking queue (default 30 min)\n"
                 "**When to use:** When you want to find an opponent for a game. "
-                "You'll be matched automatically with another player in queue.\n\n"
+                "You'll be matched automatically with another player in queue.\n"
+                "**Tip:** Use the **Join Queue** button to enter your deck URL!\n\n"
                 "`!check_lfg` - See if anyone is currently in queue\n"
                 "**When to use:** Before joining, to see if someone is already waiting.\n\n"
-                "`!cancel` - Leave the queue\n"
+                "`!cancel` - Leave the queue (clears your deck)\n"
                 "**When to use:** If you need to step away or no longer want to play."
             ),
             inline=False,
@@ -2505,7 +2597,7 @@ class LFGCog(commands.Cog):
 
         # Challenge System
         embed.add_field(
-            name="⚔️ Challenge System",
+            name="Challenge System",
             value=(
                 "`!challenge @user` - Challenge a specific player to a match\n"
                 "**When to use:** When you want to play against a specific person "
@@ -2516,7 +2608,7 @@ class LFGCog(commands.Cog):
 
         # Match Reporting
         embed.add_field(
-            name="📝 Match Reporting",
+            name="Match Reporting",
             value=(
                 "`!record_game` - Report a match played outside the bot\n"
                 "**When to use:** When you played a game in person, on TTS, or "
@@ -2529,7 +2621,7 @@ class LFGCog(commands.Cog):
 
         # Statistics
         embed.add_field(
-            name="📊 Statistics",
+            name="Statistics",
             value=(
                 "`!game_activity [hours]` - View games reported in last X hours (default 24)\n"
                 "**When to use:** To see how active the community has been, "
@@ -2540,14 +2632,14 @@ class LFGCog(commands.Cog):
 
         # Admin Commands
         embed.add_field(
-            name="🔧 Admin Commands",
+            name="Admin Commands",
             value="`!admin_help` - View all admin commands (requires admin permissions)",
             inline=False,
         )
 
         # Tips
         embed.add_field(
-            name="💡 Tips",
+            name="Tips",
             value=(
                 "• Queue time: 5-120 minutes\n"
                 "• Challenges expire after 5 minutes\n"
@@ -2565,14 +2657,14 @@ class LFGCog(commands.Cog):
     async def admin_help(self, ctx):
         """Get detailed help for admin commands (requires administrator permissions)."""
         embed = discord.Embed(
-            title="🔧 Admin Commands",
+            title="Admin Commands",
             description="Administrative commands for managing ELO, matches, and players.",
             color=discord.Color.orange(),
         )
 
         # Match Reporting
         embed.add_field(
-            name="📝 Manual Match Reporting",
+            name="Manual Match Reporting",
             value=(
                 "`!admin_report @winner @loser`\n"
                 "Manually report a match result between two players.\n"
@@ -2584,7 +2676,7 @@ class LFGCog(commands.Cog):
 
         # ELO Management
         embed.add_field(
-            name="📊 ELO Management",
+            name="ELO Management",
             value=(
                 "`!spot_elo_reset @user [elo]`\n"
                 "Set a specific user's ELO to a custom value (0-5000).\n"
@@ -2596,58 +2688,58 @@ class LFGCog(commands.Cog):
 
         # Match Correction
         embed.add_field(
-            name="🔄 Match Correction",
+            name="Match Correction",
             value=(
                 "`!correct_match <match_id>`\n"
                 "Flip the winner/loser of a match and recalculate ALL affected ELO.\n"
                 "**When to use:** When someone reported the wrong outcome. This will:\n"
                 "• Swap the winner and loser\n"
                 "• Recalculate ELO for all subsequent matches involving those players\n"
-                "✅ **Recommended over !remove_match** for incorrect reports."
+                "**Recommended over !remove_match** for incorrect reports."
             ),
             inline=False,
         )
 
         # Match Removal
         embed.add_field(
-            name="🗑️ Match Removal",
+            name="Match Removal",
             value=(
                 "`!remove_match <match_id>`\n"
                 "Remove a specific match and revert the ELO changes from that match.\n"
                 "**When to use:** When a match was a test game or never actually happened.\n"
-                "⚠️ Does NOT recalculate subsequent matches. Use `!correct_match` instead for wrong reports."
+                "Does NOT recalculate subsequent matches. Use `!correct_match` instead for wrong reports."
             ),
             inline=False,
         )
 
         # Player Removal
         embed.add_field(
-            name="👤 Player Removal",
+            name="Player Removal",
             value=(
                 "`!remove_player @user`\n"
                 "Remove a player from the system and revert ALL ELO changes from their matches.\n"
                 "**When to use:** When a player was cheating, using multiple accounts, "
                 "or needs to be completely removed from the ranking system.\n"
-                "⚠️ **Warning:** This affects all opponents' ELO as well!"
+                "**Warning:** This affects all opponents' ELO as well!"
             ),
             inline=False,
         )
 
         # Full Reset
         embed.add_field(
-            name="⚠️ Full Database Reset",
+            name="Full Database Reset",
             value=(
                 "`!reset_elo`\n"
                 "**DANGER:** Completely reset ALL ELO ratings and match history.\n"
                 "**When to use:** At the start of a new season, or when starting fresh.\n"
-                "🚨 **This action cannot be undone!**"
+                "**This action cannot be undone!**"
             ),
             inline=False,
         )
 
         # Activity Monitoring
         embed.add_field(
-            name="📈 Activity Monitoring",
+            name="Activity Monitoring",
             value=(
                 "`!game_activity [hours]`\n"
                 "View game statistics for the last X hours (default 24, max 8760).\n"
@@ -2979,7 +3071,7 @@ class LFGCog(commands.Cog):
 
         try:
             # Send initial status message
-            status_msg = await ctx.send("🔄 Analyzing match history...")
+            status_msg = await ctx.send("Analyzing match history...")
 
             # Connect to databases
             elo_conn = sqlite3.connect("elo.db")
@@ -3001,7 +3093,7 @@ class LFGCog(commands.Cog):
             target_match = match_cursor.fetchone()
 
             if not target_match:
-                await status_msg.edit(content=f"❌ Match ID #{match_id} not found.")
+                await status_msg.edit(content=f"Match ID #{match_id} not found.")
                 elo_conn.close()
                 match_conn.close()
                 return
@@ -3042,7 +3134,7 @@ class LFGCog(commands.Cog):
             subsequent_matches = match_cursor.fetchall()
 
             await status_msg.edit(
-                content=f"🔄 Found {len(subsequent_matches)} matches to recalculate..."
+                content=f"Found {len(subsequent_matches)} matches to recalculate..."
             )
 
             # Collect all players that will be affected (cascade effect)
@@ -3052,7 +3144,7 @@ class LFGCog(commands.Cog):
                 affected_players.add(match[2])  # loser_id
 
             # Step 1: Revert ELO for all affected matches (in REVERSE order)
-            await status_msg.edit(content="🔄 Reverting ELO changes...")
+            await status_msg.edit(content="Reverting ELO changes...")
 
             # First, revert subsequent matches in reverse chronological order
             for match in reversed(subsequent_matches):
@@ -3084,7 +3176,7 @@ class LFGCog(commands.Cog):
             elo_conn.commit()
 
             # Step 2: Flip the target match outcome in the database
-            await status_msg.edit(content="🔄 Flipping match outcome...")
+            await status_msg.edit(content="Flipping match outcome...")
 
             # Swap winner and loser
             new_winner_id = original_loser_id
@@ -3152,7 +3244,7 @@ class LFGCog(commands.Cog):
 
             # Step 4: Recalculate ELO for all subsequent matches in chronological order
             await status_msg.edit(
-                content=f"🔄 Recalculating {len(subsequent_matches)} subsequent matches..."
+                content=f"Recalculating {len(subsequent_matches)} subsequent matches..."
             )
 
             recalculated_count = 0
@@ -3220,20 +3312,20 @@ class LFGCog(commands.Cog):
 
             # Send confirmation
             success_embed = discord.Embed(
-                title="✅ Match Corrected",
+                title="Match Corrected",
                 description=(
                     f"**Match ID:** #{match_id}\n\n"
                     f"**Original Result:**\n"
                     f"~~Winner: {original_winner_name}~~\n"
                     f"~~Loser: {original_loser_name}~~\n\n"
                     f"**Corrected Result:**\n"
-                    f"✅ Winner: **{new_winner_name}** ({new_winner_elo_change:+d} ELO)\n"
-                    f"❌ Loser: **{new_loser_name}** ({new_loser_elo_change:+d} ELO)"
+                    f"Winner: **{new_winner_name}** ({new_winner_elo_change:+d} ELO)\n"
+                    f"Loser: **{new_loser_name}** ({new_loser_elo_change:+d} ELO)"
                 ),
                 color=discord.Color.green(),
             )
             success_embed.add_field(
-                name="📊 Cascade Recalculation",
+                name="Cascade Recalculation",
                 value=f"Recalculated **{recalculated_count}** subsequent matches\nAffected **{len(affected_players)}** players",
                 inline=False,
             )
@@ -3496,7 +3588,7 @@ class LFGCog(commands.Cog):
 
             # Send confirmation
             embed = discord.Embed(
-                title="🗑️ Player Removed",
+                title="Player Removed",
                 description=f"**Player:** {user.mention} ({user_name})",
                 color=discord.Color.orange(),
             )
@@ -3617,7 +3709,7 @@ class LFGCog(commands.Cog):
 
             # Create response embed
             embed = discord.Embed(
-                title=f"📊 Game Activity Report",
+                title=f"Game Activity Report",
                 description=f"Statistics for the last **{hours}** hours",
                 color=discord.Color.blue(),
             )

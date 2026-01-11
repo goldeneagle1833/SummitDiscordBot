@@ -2333,7 +2333,7 @@ class LFGCog(commands.Cog):
                 logger.info(f"DM sent successfully to {ctx.author}")
             except discord.Forbidden:
                 logger.warning(
-                    f"Could not send DM to {ctx.author} (ID: {ctx.author.id}) - DMs might be disabled"
+                    f"Could not send DM to {ctx.author} (ID: {ctx.author.id}) - DMs might be disable"
                 )
             except Exception as e:
                 logger.error(f"Error sending DM to {ctx.author}: {e}")

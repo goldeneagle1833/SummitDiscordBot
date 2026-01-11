@@ -237,7 +237,8 @@ class DecklistReportModal(discord.ui.Modal, title="Report with Decklist"):
         # Send confirmation to opponent
         try:
             opponent = await self.bot.fetch_user(opponent_id)
-            result_text = "won" if is_winner else "lost"
+            # Determine what the opponent's result is (opposite of reporter)
+            opponent_result = "LOST" if is_winner else "WON"
 
             confirm_view = MatchConfirmationButtons(
                 reporter_id=interaction.user.id,
@@ -259,7 +260,7 @@ class DecklistReportModal(discord.ui.Modal, title="Report with Decklist"):
 
             await opponent.send(
                 f"**Match Report Confirmation**\n\n"
-                f"{interaction_global} reported that they **{result_text}** against you.\n\n"
+                f"You **{opponent_result}** against {interaction_global}\n\n"
                 f"Please confirm or dispute this result:",
                 view=confirm_view,
             )
@@ -1036,7 +1037,7 @@ class LFGReportButtons(discord.ui.View):
                 dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
                 if dm_channel:
                     await dm_channel.send(
-                        f"{opponent.mention} **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
+                        f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:",
                         view=confirmation_view,
                     )
                     await interaction.response.send_message(
@@ -1054,7 +1055,7 @@ class LFGReportButtons(discord.ui.View):
             else:
                 try:
                     await opponent.send(
-                        f"**Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
+                        f"**Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:",
                         view=confirmation_view,
                     )
 
@@ -1079,7 +1080,7 @@ class LFGReportButtons(discord.ui.View):
                         )
                         if dm_channel:
                             await dm_channel.send(
-                                f"{opponent.mention} **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **won** against you.\n\nPlease confirm or dispute this report:",
+                                f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:",
                                 view=confirmation_view,
                             )
                             await interaction.response.send_message(
@@ -1229,7 +1230,7 @@ class LFGReportButtons(discord.ui.View):
                 dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
                 if dm_channel:
                     await dm_channel.send(
-                        f"{opponent.mention} **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
+                        f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:",
                         view=confirmation_view,
                     )
                     await interaction.response.send_message(
@@ -1247,7 +1248,7 @@ class LFGReportButtons(discord.ui.View):
             else:
                 try:
                     await opponent.send(
-                        f"**Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
+                        f"**Match Report Confirmation**\n\nYou **WON** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:",
                         view=confirmation_view,
                     )
 
@@ -1272,7 +1273,7 @@ class LFGReportButtons(discord.ui.View):
                         )
                         if dm_channel:
                             await dm_channel.send(
-                                f"{opponent.mention} **Match Report Confirmation**\n\n{interaction.user.global_name} reported that they **lost** to you (you won).\n\nPlease confirm or dispute this report:",
+                                f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:",
                                 view=confirmation_view,
                             )
                             await interaction.response.send_message(

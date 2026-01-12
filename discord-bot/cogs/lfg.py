@@ -997,22 +997,30 @@ class LFGReportButtons(discord.ui.View):
         await interaction.message.edit(view=None)
 
 
-class ChallengeButtons(discord.ui.View):
+class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
+    """Modal for entering deck URL when accepting a challenge"""
+
+    deck_url = discord.ui.TextInput(
+        label="Your Curiosa Deck URL (optional)",
+        placeholder="https://curiosa.io/decks/...",
+        required=False,
+        max_length=200,
+    )
+
     def __init__(self, challenger_id: int, challenger_global: str, channel=None):
-        super().__init__(timeout=300)  # 5 minute timeout
+        super().__init__()
         self.challenger_id = challenger_id
         self.challenger_global = challenger_global
         self.channel = channel
 
-    @discord.ui.button(label="Accept Challenge", style=discord.ButtonStyle.success)
-    async def accept_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
         challenger = await interaction.client.fetch_user(self.challenger_id)
         accepter_global = interaction.user.global_name or interaction.user.display_name
+        accepter_deck_url = self.deck_url.value if self.deck_url.value else None
 
         # Remove both players from the LFG queue if they're in it
-        # This prevents overlap when someone uses !challenge instead of LFG pairing
         if self.challenger_id in lfg_queue:
             lfg_queue.pop(self.challenger_id, None)
             logger.info(
@@ -1028,25 +1036,34 @@ class ChallengeButtons(discord.ui.View):
         match_start_time = datetime.datetime.now()
 
         # Randomly select which player gets the report buttons
+        # Challenger doesn't have a deck URL from the challenge, accepter does
         players = [
             (
                 self.challenger_id,
                 self.challenger_global,
                 challenger,
+                None,  # Challenger deck URL (not provided yet)
                 False,
-            ),  # False = not the accepter
+            ),
             (
                 interaction.user.id,
                 accepter_global,
                 interaction.user,
+                accepter_deck_url,  # Accepter's deck URL
                 True,
-            ),  # True = the accepter
+            ),
         ]
         reporter_player, other_player = random.sample(players, 2)
-        reporter_id, reporter_global, reporter_user, reporter_is_accepter = (
-            reporter_player
+        (
+            reporter_id,
+            reporter_global,
+            reporter_user,
+            reporter_deck_url,
+            reporter_is_accepter,
+        ) = reporter_player
+        other_id, other_global, other_user, other_deck_url, other_is_accepter = (
+            other_player
         )
-        other_id, other_global, other_user, other_is_accepter = other_player
 
         # Create report buttons for the randomly selected reporter
         reporter_view = LFGReportButtons(
@@ -1058,14 +1075,22 @@ class ChallengeButtons(discord.ui.View):
             interaction.client,
             self.channel,
             match_start_time=match_start_time,
+            reporter_deck_url=reporter_deck_url,
+            opponent_deck_url=other_deck_url,
         )
+
+        # Build deck message
+        reporter_deck_text = (
+            f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
+        )
+        other_deck_text = f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
 
         # Send report buttons to the selected reporter
         if reporter_is_accepter:
-            # Reporter is the one who accepted - use interaction response
+            # Reporter is the one who accepted - use followup since we deferred
             try:
-                await interaction.response.send_message(
-                    f"**Challenge Accepted!** You're playing against {other_user.mention} (**{other_global}**)!\n\nReport the match result below:",
+                await interaction.followup.send(
+                    f"**Challenge Accepted!** You're playing against {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\nReport the match result below:",
                     view=reporter_view,
                     ephemeral=True,
                 )
@@ -1075,84 +1100,77 @@ class ChallengeButtons(discord.ui.View):
             # Reporter is the challenger - send via DM
             try:
                 await challenger.send(
-                    f"**Challenge Accepted!** **{accepter_global}** accepted your challenge!\n\nReport the match result below:",
+                    f"**Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\nReport the match result below:",
                     view=reporter_view,
                 )
             except discord.Forbidden:
                 try:
-                    guild = interaction.guild
-                    if guild:
-                        role = guild.get_role(DM_DISABLED_ROLE_ID)
-                        member = guild.get_member(self.challenger_id)
-                        if role and member:
-                            await member.add_roles(role)
-                            logger.info(
-                                f"Added DM-disabled role to {challenger.display_name}"
-                            )
-
                     dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!\n\nReport the match result below:",
+                            f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\nReport the match result below:",
                             view=reporter_view,
                         )
                 except Exception as e:
                     logger.error(f"Failed to handle DM failure for challenger: {e}")
 
-        # Send informational message to the other player (no buttons)
+        # Send info to the other player (no buttons)
         if other_is_accepter:
-            # Other player is the one who accepted - use interaction response
+            # Other is the accepter - send followup
             try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        f"**Challenge Accepted!** You're playing against {reporter_user.mention} (**{reporter_global}**)!\n\n"
-                        f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome.",
-                        ephemeral=True,
-                    )
-                else:
-                    await interaction.followup.send(
-                        f"**Challenge Accepted!** You're playing against {reporter_user.mention} (**{reporter_global}**)!\n\n"
-                        f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome.",
-                        ephemeral=True,
-                    )
+                await interaction.followup.send(
+                    f"**Challenge Accepted!** You're playing against {reporter_user.mention} (**{reporter_global}**)!{other_deck_text}\n\n"
+                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button.",
+                    ephemeral=True,
+                )
             except Exception as e:
-                logger.error(f"Failed to send info message to accepter: {e}")
+                logger.error(f"Failed to send info to accepter: {e}")
         else:
-            # Other player is the challenger - send via DM
+            # Other is the challenger - send via DM
             try:
                 await challenger.send(
-                    f"**Challenge Accepted!** **{accepter_global}** accepted your challenge!\n\n"
-                    f"**{accepter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
+                    f"**Challenge Accepted!** **{accepter_global}** accepted your challenge!{other_deck_text}\n\n"
+                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button."
                 )
             except discord.Forbidden:
                 try:
                     dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!\n\n"
-                            f"**{accepter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
+                            f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!{other_deck_text}\n\n"
+                            f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button."
                         )
                 except Exception as e:
                     logger.error(
                         f"Failed to handle DM failure for challenger info: {e}"
                     )
 
-        # Make sure we respond if we haven't yet
-        if not interaction.response.is_done():
-            await interaction.response.defer()
+        # Announce in LFG channel
+        if self.channel:
+            await self.channel.send(
+                f"**Challenge Accepted!** {challenger.mention} vs {interaction.user.mention}!"
+            )
 
-        try:
-            await interaction.message.edit(view=None)
-        except Exception:
-            pass
 
-        # Update LFG status message if players were removed from queue
-        try:
-            lfg_cog = interaction.client.get_cog("LFG")
-            if lfg_cog:
-                await lfg_cog.update_lfg_status()
-        except Exception as e:
-            logger.error(f"Failed to update LFG status after challenge accept: {e}")
+class ChallengeButtons(discord.ui.View):
+    def __init__(self, challenger_id: int, challenger_global: str, channel=None):
+        super().__init__(timeout=300)  # 5 minute timeout
+        self.challenger_id = challenger_id
+        self.challenger_global = challenger_global
+        self.channel = channel
+
+    @discord.ui.button(label="Accept Challenge", style=discord.ButtonStyle.success)
+    async def accept_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        # Open modal for deck URL entry
+        modal = ChallengeAcceptModal(
+            challenger_id=self.challenger_id,
+            challenger_global=self.challenger_global,
+            channel=self.channel,
+        )
+        await interaction.response.send_modal(modal)
+        await interaction.message.edit(view=None)
 
     @discord.ui.button(label="Decline Challenge", style=discord.ButtonStyle.danger)
     async def decline_button(
@@ -1319,11 +1337,13 @@ class LFGCog(commands.Cog):
         self.lfg_channel_id = 1336912830867439676
         self.check_expired_queue.start()  # Start the background task
         self.cleanup_old_status_messages.start()  # Clean up old messages on startup
+        self.cleanup_old_leaderboard_messages.start()  # Clean up old leaderboard on startup
 
     def cog_unload(self):
         """Clean up when cog is unloaded"""
         self.check_expired_queue.cancel()
         self.cleanup_old_status_messages.cancel()
+        self.cleanup_old_leaderboard_messages.cancel()
 
     @tasks.loop(count=1)
     async def cleanup_old_status_messages(self):
@@ -1363,6 +1383,47 @@ class LFGCog(commands.Cog):
         """Wait for bot to be ready before cleanup"""
         await self.bot.wait_until_ready()
 
+    @tasks.loop(count=1)
+    async def cleanup_old_leaderboard_messages(self):
+        """One-time cleanup of old leaderboard messages on bot startup"""
+        try:
+            leaderboard_channel_id = 1457113321118629889
+            leaderboard_channel = self.bot.get_channel(leaderboard_channel_id)
+
+            if not leaderboard_channel:
+                logger.warning(
+                    f"Leaderboard channel {leaderboard_channel_id} not found"
+                )
+                return
+
+            # Fetch recent messages (limit to last 50 messages to avoid rate limits)
+            async for message in leaderboard_channel.history(limit=50):
+                # Check if message is from the bot and has an embed with "Leaderboard"
+                if (
+                    message.author.id == self.bot.user.id
+                    and message.embeds
+                    and any(
+                        "Leaderboard" in str(embed.title) for embed in message.embeds
+                    )
+                ):
+                    try:
+                        await message.delete()
+                        logger.info(f"Deleted old leaderboard message: {message.id}")
+                    except Exception as e:
+                        logger.warning(f"Could not delete old leaderboard message: {e}")
+
+            # After cleanup, create a new leaderboard
+            await self.update_leaderboard()
+            logger.info("Old leaderboard messages cleaned up and new one created")
+
+        except Exception as e:
+            logger.error(f"Error cleaning up old leaderboard messages: {e}")
+
+    @cleanup_old_leaderboard_messages.before_loop
+    async def before_cleanup_old_leaderboard_messages(self):
+        """Wait for bot to be ready before cleanup"""
+        await self.bot.wait_until_ready()
+
     async def update_leaderboard(self):
         """Update the leaderboard in the designated channel"""
         import sqlite3
@@ -1393,9 +1454,18 @@ class LFGCog(commands.Cog):
             conn_matches = sqlite3.connect("match_records.db")
             cursor_matches = conn_matches.cursor()
 
-            # Create leaderboard embed
+            # Calculate total games played across all matches
+            cursor_matches.execute("SELECT COUNT(*) FROM match_records")
+            total_match_records = cursor_matches.fetchone()[0]
+
+            cursor_matches.execute("SELECT COUNT(*) FROM solo_match_reports")
+            total_solo_reports = cursor_matches.fetchone()[0]
+
+            total_games_played = total_match_records + total_solo_reports
+
+            # Create leaderboard embed with total games in title
             embed = discord.Embed(
-                title="Top 16 Leaderboard",
+                title=f"Top 16 Leaderboard ({total_games_played} games played)",
                 description="Current ELO Rankings",
                 color=discord.Color.gold(),
             )

@@ -997,6 +997,127 @@ class LFGReportButtons(discord.ui.View):
         await interaction.message.edit(view=None)
 
 
+class ChallengeInitView(discord.ui.View):
+    """View with a button to open the challenge modal"""
+
+    def __init__(self, modal, challenger_id: int = None):
+        super().__init__(timeout=60)
+        self.modal = modal
+        self.challenger_id = challenger_id or modal.challenger.id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.challenger_id:
+            await interaction.response.send_message(
+                "This challenge is not for you!", ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="⚔️ Send Challenge", style=discord.ButtonStyle.primary)
+    async def send_challenge_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await interaction.response.send_modal(self.modal)
+        await interaction.message.delete()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await interaction.response.send_message("Challenge cancelled.", ephemeral=True)
+        await interaction.message.delete()
+
+
+class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
+    """Modal for entering deck URL when sending a challenge"""
+
+    deck_url = discord.ui.TextInput(
+        label="Your Curiosa Deck URL (optional)",
+        placeholder="https://curiosa.io/decks/...",
+        required=False,
+        max_length=200,
+    )
+
+    def __init__(self, challenger, opponent, lfg_channel, bot):
+        super().__init__()
+        self.challenger = challenger
+        self.opponent = opponent
+        self.lfg_channel = lfg_channel
+        self.bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        url = self.deck_url.value if self.deck_url.value else None
+        challenger_global = self.challenger.global_name or self.challenger.display_name
+        opponent_global = self.opponent.global_name or self.opponent.display_name
+
+        view = ChallengeButtons(
+            self.challenger.id,
+            challenger_global,
+            self.lfg_channel,
+            challenger_deck_url=url,
+        )
+
+        # Build deck URL message if provided
+        deck_msg = f"\n**Their Deck:** {url}" if url else ""
+
+        try:
+            # Send challenge to opponent
+            await self.opponent.send(
+                f"{challenger_global} has challenged you to a match!{deck_msg}",
+                view=view,
+            )
+            # Notify challenger
+            deck_confirm = f" Your deck: {url}" if url else ""
+            await interaction.followup.send(
+                f"Challenge sent to {opponent_global}! They have 5 minutes to accept.{deck_confirm}",
+                ephemeral=True,
+            )
+
+            # Confirm in channel (find original context channel)
+            if self.lfg_channel:
+                await self.lfg_channel.send(
+                    f"{self.challenger.mention} has challenged {self.opponent.mention} to a match!"
+                )
+
+        except discord.Forbidden:
+            # If DM fails, create a public thread
+            if self.lfg_channel:
+                try:
+                    temp_msg = await self.lfg_channel.send(
+                        f"{self.opponent.mention} You have been challenged!"
+                    )
+                    thread = await temp_msg.create_thread(
+                        name=f"Challenge from {self.challenger.display_name}",
+                        auto_archive_duration=60,
+                    )
+                    await thread.send(
+                        f"{self.opponent.mention} {challenger_global} has challenged you to a match!{deck_msg}",
+                        view=view,
+                    )
+                    await interaction.followup.send(
+                        f"Challenge sent to {self.opponent.mention} in a thread (they have DMs disabled).",
+                        ephemeral=True,
+                    )
+                except Exception as thread_error:
+                    logger.error(f"Failed to create challenge thread: {thread_error}")
+                    await interaction.followup.send(
+                        f"I couldn't send a DM or create a thread for {opponent_global}. They might have DMs disabled.",
+                        ephemeral=True,
+                    )
+            else:
+                await interaction.followup.send(
+                    f"I couldn't send a DM to {opponent_global}. They might have DMs disabled.",
+                    ephemeral=True,
+                )
+        except Exception as e:
+            await interaction.followup.send(
+                f"An error occurred: {str(e)}", ephemeral=True
+            )
+            logger.error(f"Challenge modal error: {e}")
+
+
 class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
     """Modal for entering deck URL when accepting a challenge"""
 
@@ -2195,14 +2316,15 @@ class LFGCog(commands.Cog):
                 logger.error(f"Error sending DM to {ctx.author}: {e}")
 
     @commands.command()
-    async def challenge(self, ctx, opponent: discord.Member = None, url: str = None):
+    async def challenge(self, ctx, opponent: discord.Member = None):
         """Challenge a specific player to a match
 
-        Usage: !challenge @username [deck_url]
+        Usage: !challenge @username
+        A modal will open for you to optionally enter your deck URL.
         """
         if opponent is None:
             await ctx.send(
-                "Please mention a user to challenge. Example: `!challenge @username` or `!challenge @username https://curiosa.io/decks/...`"
+                "Please mention a user to challenge. Example: `!challenge @username`"
             )
             return
 
@@ -2217,66 +2339,22 @@ class LFGCog(commands.Cog):
         channel_id = 1336912830867439676
         lfg_channel = self.bot.get_channel(channel_id)
 
-        view = ChallengeButtons(
-            ctx.author.id,
-            ctx.author.global_name or ctx.author.display_name,
-            lfg_channel,
-            challenger_deck_url=url,
+        # Show modal to get challenger's deck URL
+        modal = ChallengerDeckModal(
+            challenger=ctx.author,
+            opponent=opponent,
+            lfg_channel=lfg_channel,
+            bot=self.bot,
         )
 
-        # Build deck URL message if provided
-        deck_msg = f"\n**Their Deck:** {url}" if url else ""
-
-        try:
-            # Send challenge to opponent
-            await opponent.send(
-                f"{ctx.author.global_name or ctx.author.display_name} has challenged you to a match!{deck_msg}",
-                view=view,
-            )
-            # Notify challenger in DM
-            try:
-                deck_confirm = f" Your deck: {url}" if url else ""
-                await ctx.author.send(
-                    f"Challenge sent to {opponent.global_name}! They have 5 minutes to accept.{deck_confirm}"
-                )
-            except discord.Forbidden:
-                pass
-
-            # Confirm in channel
-            await ctx.send(
-                f"{ctx.author.mention} has challenged {opponent.mention} to a match!"
-            )
-
-        except discord.Forbidden:
-            # If DM fails, create a public thread
-            if lfg_channel:
-                try:
-                    temp_msg = await lfg_channel.send(
-                        f"{opponent.mention} You have been challenged!"
-                    )
-                    thread = await temp_msg.create_thread(
-                        name=f"Challenge from {ctx.author.display_name}",
-                        auto_archive_duration=60,
-                    )
-                    await thread.send(
-                        f"{opponent.mention} {ctx.author.global_name} has challenged you to a match!",
-                        view=view,
-                    )
-                    await ctx.send(
-                        f"Challenge sent to {opponent.mention} in a thread (they have DMs disabled)."
-                    )
-                except Exception as thread_error:
-                    logger.error(f"Failed to create challenge thread: {thread_error}")
-                    await ctx.send(
-                        f"I couldn't send a DM or create a thread for {opponent.global_name}. They might have DMs disabled."
-                    )
-            else:
-                await ctx.send(
-                    f"I couldn't send a DM to {opponent.global_name}. They might have DMs disabled."
-                )
-        except Exception as e:
-            await ctx.send(f"An error occurred: {str(e)}")
-            logger.error(f"Challenge command error: {e}")
+        # Create a temporary interaction to send the modal
+        # Since this is a prefix command, we need to use a button to trigger the modal
+        view = ChallengeInitView(modal)
+        await ctx.send(
+            f"Click below to enter your deck URL and send the challenge to {opponent.mention}:",
+            view=view,
+            delete_after=60,
+        )
 
     @commands.command()
     async def lfg_help(self, ctx):

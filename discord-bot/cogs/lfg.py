@@ -1007,11 +1007,18 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         max_length=200,
     )
 
-    def __init__(self, challenger_id: int, challenger_global: str, channel=None):
+    def __init__(
+        self,
+        challenger_id: int,
+        challenger_global: str,
+        channel=None,
+        challenger_deck_url: str = None,
+    ):
         super().__init__()
         self.challenger_id = challenger_id
         self.challenger_global = challenger_global
         self.channel = channel
+        self.challenger_deck_url = challenger_deck_url
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -1036,13 +1043,13 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         match_start_time = datetime.datetime.now()
 
         # Randomly select which player gets the report buttons
-        # Challenger doesn't have a deck URL from the challenge, accepter does
+        # Both challenger and accepter can have deck URLs
         players = [
             (
                 self.challenger_id,
                 self.challenger_global,
                 challenger,
-                None,  # Challenger deck URL (not provided yet)
+                self.challenger_deck_url,  # Challenger's deck URL (if provided)
                 False,
             ),
             (
@@ -1153,11 +1160,18 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
 
 
 class ChallengeButtons(discord.ui.View):
-    def __init__(self, challenger_id: int, challenger_global: str, channel=None):
+    def __init__(
+        self,
+        challenger_id: int,
+        challenger_global: str,
+        channel=None,
+        challenger_deck_url: str = None,
+    ):
         super().__init__(timeout=300)  # 5 minute timeout
         self.challenger_id = challenger_id
         self.challenger_global = challenger_global
         self.channel = channel
+        self.challenger_deck_url = challenger_deck_url
 
     @discord.ui.button(label="Accept Challenge", style=discord.ButtonStyle.success)
     async def accept_button(
@@ -1168,6 +1182,7 @@ class ChallengeButtons(discord.ui.View):
             challenger_id=self.challenger_id,
             challenger_global=self.challenger_global,
             channel=self.channel,
+            challenger_deck_url=self.challenger_deck_url,
         )
         await interaction.response.send_modal(modal)
         await interaction.message.edit(view=None)
@@ -2180,11 +2195,14 @@ class LFGCog(commands.Cog):
                 logger.error(f"Error sending DM to {ctx.author}: {e}")
 
     @commands.command()
-    async def challenge(self, ctx, opponent: discord.Member = None):
-        """Challenge a specific player to a match"""
+    async def challenge(self, ctx, opponent: discord.Member = None, url: str = None):
+        """Challenge a specific player to a match
+
+        Usage: !challenge @username [deck_url]
+        """
         if opponent is None:
             await ctx.send(
-                "Please mention a user to challenge. Example: `!challenge @username`"
+                "Please mention a user to challenge. Example: `!challenge @username` or `!challenge @username https://curiosa.io/decks/...`"
             )
             return
 
@@ -2203,18 +2221,23 @@ class LFGCog(commands.Cog):
             ctx.author.id,
             ctx.author.global_name or ctx.author.display_name,
             lfg_channel,
+            challenger_deck_url=url,
         )
+
+        # Build deck URL message if provided
+        deck_msg = f"\n**Their Deck:** {url}" if url else ""
 
         try:
             # Send challenge to opponent
             await opponent.send(
-                f"{ctx.author.global_name or ctx.author.display_name} has challenged you to a match!",
+                f"{ctx.author.global_name or ctx.author.display_name} has challenged you to a match!{deck_msg}",
                 view=view,
             )
             # Notify challenger in DM
             try:
+                deck_confirm = f" Your deck: {url}" if url else ""
                 await ctx.author.send(
-                    f"Challenge sent to {opponent.global_name}! They have 5 minutes to accept."
+                    f"Challenge sent to {opponent.global_name}! They have 5 minutes to accept.{deck_confirm}"
                 )
             except discord.Forbidden:
                 pass

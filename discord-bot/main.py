@@ -78,7 +78,7 @@ async def on_member_join(member):
         embed.add_field(
             name="🌐 Summit Website",
             value=(
-                "**[summit-sorcery.com](https://summit-sorcery.com)**\n"
+                "**[sorcererssummit.com](https://sorcererssummit.com)**\n"
                 "View leaderboards, match history, player stats, and more!"
             ),
             inline=False,

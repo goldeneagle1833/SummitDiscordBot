@@ -254,22 +254,15 @@ class MatchConfirmationButtons(discord.ui.View):
 
         update_elo_db(self.loser_id, self.loser_global, False, self.winner_id)
 
-        # Build deck info for confirmation message
-        deck_info = ""
-        if self.winner_deck_url:
-            deck_info += f"\n**{self.winner_global}'s Deck:** {self.winner_deck_url}"
-        if self.loser_deck_url:
-            deck_info += f"\n**{self.loser_global}'s Deck:** {self.loser_deck_url}"
-
         # Remove the confirmation message
         await interaction.message.edit(
-            content=f"Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.{deck_info}",
+            content=f"Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.",
             view=None,
         )
 
         # Send confirmation to confirming user
         await interaction.followup.send(
-            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}{deck_info}",
+            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}",
             ephemeral=True,
         )
 
@@ -1059,13 +1052,10 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
             challenger_deck_url=url,
         )
 
-        # Build deck URL message if provided
-        deck_msg = f"\n**Their Deck:** {url}" if url else ""
-
         try:
-            # Send challenge to opponent
+            # Send challenge to opponent (don't show challenger's deck)
             await self.opponent.send(
-                f"{challenger_global} has challenged you to a match!{deck_msg}",
+                f"{challenger_global} has challenged you to a match!",
                 view=view,
             )
             # Notify challenger
@@ -1093,7 +1083,7 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
                         auto_archive_duration=60,
                     )
                     await thread.send(
-                        f"{self.opponent.mention} {challenger_global} has challenged you to a match!{deck_msg}",
+                        f"{self.opponent.mention} {challenger_global} has challenged you to a match!",
                         view=view,
                     )
                     await interaction.followup.send(

@@ -74,6 +74,16 @@ async def on_member_join(member):
             color=discord.Color.blue(),
         )
 
+        # Website
+        embed.add_field(
+            name="🌐 Summit Website",
+            value=(
+                "**[summit-sorcery.com](https://summit-sorcery.com)**\n"
+                "View leaderboards, match history, player stats, and more!"
+            ),
+            inline=False,
+        )
+
         # Key Channels
         embed.add_field(
             name="Key Channels",
@@ -87,16 +97,19 @@ async def on_member_join(member):
 
         # Bot Commands
         embed.add_field(
-            name="Getting Started",
+            name="How to Find a Game",
             value=(
-                "Type `/` to see all commands\n"
-                "`/help` - Full feature list\n"
-                "📺 [Watch the Bot Tutorial](https://youtu.be/6eErwhPocL8) - Learn how to use the bot!"
+                " Head to <#1336912830867439676> and:\n"
+                "1️⃣ Type `!lfg` or click **Join Queue**\n"
+                "2️⃣ Enter your deck URL (optional)\n"
+                "3️⃣ Get matched with another player!\n\n"
+                "**Alternative:** Challenge someone directly with `!challenge @user`\n\n"
+                "Type `/lfg_help` for all commands • [Watch Tutorial](https://youtu.be/6eErwhPocL8)"
             ),
             inline=False,
         )
 
-        embed.set_footer(text="Ready to play? Head to the LFG channel!")
+        embed.set_footer(text="Questions? Ask in the server or check /help!")
 
         await channel.send(embed=embed)
 

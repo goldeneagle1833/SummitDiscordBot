@@ -742,14 +742,16 @@ def player_api(player_id):
     ]
     avg_match_time = sum(match_times) / len(match_times) if match_times else 0
 
-    # Avatar stats - use new separated winner/loser JSON columns
+    # Avatar stats - player's OWN avatars (what they played with)
     avatar_stats = {}
     for row in rows:
         did_win = row[0]
         winner_json = row[13] if len(row) > 13 else None  # json_deck_data_winner
         loser_json = row[14] if len(row) > 14 else None  # json_deck_data_loser
 
-        # Determine which JSON to use based on whether this player won
+        # Get PLAYER's deck based on match outcome
+        # If player won → they are the winner → use winner's deck
+        # If player lost → they are the loser → use loser's deck
         deck_json = winner_json if did_win else loser_json
 
         # Fallback to old json_deck_data column for backward compatibility
@@ -794,6 +796,63 @@ def player_api(player_id):
         )
     avatar_performance.sort(key=lambda x: x["wins"] + x["losses"], reverse=True)
 
+    # Avatar matchup records (opponents' avatars)
+    opponent_avatar_stats = {}
+    for row in rows:
+        did_win = row[0]
+        winner_json = row[13] if len(row) > 13 else None  # json_deck_data_winner
+        loser_json = row[14] if len(row) > 14 else None  # json_deck_data_loser
+
+        # Get OPPONENT's deck based on match outcome
+        # If player won → opponent is the loser → use loser's deck
+        # If player lost → opponent is the winner → use winner's deck
+        opponent_deck_json = loser_json if did_win else winner_json
+
+        # No fallback to old json_deck_data - it only had reporter's deck, not opponent's
+        if not opponent_deck_json or opponent_deck_json == "{}":
+            continue
+
+        try:
+            deck_data = json.loads(opponent_deck_json)
+            # Skip if deck_data is empty or has no avatar
+            if not deck_data or not deck_data.get("avatar"):
+                continue
+
+            avatar = deck_data.get("avatar", [])
+            if not avatar or not avatar[0] or not avatar[0].get("name"):
+                continue
+
+            opponent_avatar_name = avatar[0].get("name")
+
+            if opponent_avatar_name not in opponent_avatar_stats:
+                opponent_avatar_stats[opponent_avatar_name] = {
+                    "wins": 0,
+                    "losses": 0,
+                }
+
+            if did_win:
+                opponent_avatar_stats[opponent_avatar_name]["wins"] += 1
+            else:
+                opponent_avatar_stats[opponent_avatar_name]["losses"] += 1
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            continue
+
+    # Format avatar matchup records for response
+    avatar_matchups = []
+    for name, stats in opponent_avatar_stats.items():
+        total = stats["wins"] + stats["losses"]
+        rate = (stats["wins"] / total * 100) if total > 0 else 0
+        avatar_matchups.append(
+            {
+                "opponent_avatar": name,
+                "wins": stats["wins"],
+                "losses": stats["losses"],
+                "win_rate": round(rate, 1),
+                "total_games": total,
+            }
+        )
+    avatar_matchups.sort(key=lambda x: x["total_games"], reverse=True)
+
     # TODO: Replace with Discord OAuth check - only show deck details to profile owner
     # For now, hardcoded to False (public view only)
     # Future: is_owner = (logged_in_user_id == player_id)
@@ -813,13 +872,49 @@ def player_api(player_id):
         # Only include deck URLs for profile owner (privacy)
         player_deck_url = None
         opponent_deck_url = None
-        if is_owner:
-            winner_deck_url = row[15] if len(row) > 15 else row[9]
-            loser_deck_url = row[16] if len(row) > 16 else None
 
+        # Get winner/loser deck data
+        winner_deck_url = row[15] if len(row) > 15 else None
+        loser_deck_url = row[16] if len(row) > 16 else None
+        winner_json = row[13] if len(row) > 13 else None
+        loser_json = row[14] if len(row) > 14 else None
+        old_curiosa_url = row[9]  # Old single URL column
+        old_json_deck_data = row[2]  # Old single JSON column
+
+        # Determine player's deck data
+        player_deck_url_check = winner_deck_url if did_win else loser_deck_url
+        player_deck_json = winner_json if did_win else loser_json
+
+        # Check if player has deck data (URL or JSON) - including fallback to old columns
+        has_deck = False
+        if player_deck_url_check and player_deck_url_check not in (
+            "No URL provided",
+            "Admin reported match",
+            "{}",
+            "",
+            None,
+        ):
+            has_deck = True
+        elif player_deck_json and player_deck_json not in ("{}", "", None):
+            has_deck = True
+        elif old_curiosa_url and old_curiosa_url not in (
+            "No URL provided",
+            "Admin reported match",
+            "{}",
+            "",
+            None,
+        ):
+            # Fallback to old curiosa_url for matches before schema update
+            has_deck = True
+        elif old_json_deck_data and old_json_deck_data not in ("{}", "", None):
+            # Fallback to old json_deck_data for matches before schema update
+            has_deck = True
+
+        if is_owner:
             # Determine which deck URL belongs to this player
             player_deck_url = winner_deck_url if did_win else loser_deck_url
             opponent_deck_url = loser_deck_url if did_win else winner_deck_url
+
         match_history.append(
             {
                 "match_id": row[12],
@@ -835,6 +930,7 @@ def player_api(player_id):
                 "replay_url": row[9] if row[9] else None,
                 "player_deck_url": player_deck_url,
                 "opponent_deck_url": opponent_deck_url,
+                "has_deck": has_deck,
             }
         )
 
@@ -909,6 +1005,7 @@ def player_api(player_id):
             "on_draw_win_rate": round(draw_win_rate, 1),
             "avg_match_time": round(avg_match_time, 1),
             "avatar_performance": avatar_performance,
+            "avatar_matchups": avatar_matchups,
             "recent_decks": recent_decks,
             "matches": match_history,
             "is_owner": is_owner,  # TODO: Will be True when Discord OAuth implemented

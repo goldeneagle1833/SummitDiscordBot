@@ -601,6 +601,66 @@ a.feature-card {
   font-style: italic;
 }
 
+/* Avatar Matchup Records Section */
+.avatar-matchup-section {
+  margin: var(--spacing-2xl) 0;
+}
+
+.avatar-matchup-table-container {
+  background: var(--color-bg-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-soft);
+  overflow: hidden;
+}
+
+.avatar-matchup-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.avatar-matchup-table th,
+.avatar-matchup-table td {
+  padding: var(--spacing-md);
+  text-align: left;
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.avatar-matchup-table th {
+  background: var(--color-bg-elevated);
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.avatar-matchup-table tbody tr {
+  transition: background-color var(--transition-fast);
+}
+
+.avatar-matchup-table tbody tr:hover {
+  background: var(--color-bg-elevated);
+}
+
+.avatar-matchup-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.avatar-matchup-table .positive-rate {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.avatar-matchup-table .negative-rate {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.avatar-matchup-table .avatar-name {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
 /* Replay link */
 .replay-link {
   color: var(--color-primary);

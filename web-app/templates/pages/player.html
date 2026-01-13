@@ -51,32 +51,22 @@
           </div>
         </div>
 
-        <!-- Play/Draw Stats -->
-        <h3>🎯 Play vs Draw Stats</h3>
-        <div class="player-stats">
-          <div class="stat-card">
-            <div class="stat-value" id="stat-on-play">-</div>
-            <div class="stat-label">On the Play</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value" id="stat-on-play-rate">-</div>
-            <div class="stat-label">Play Win Rate</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value" id="stat-on-draw">-</div>
-            <div class="stat-label">On the Draw</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value" id="stat-on-draw-rate">-</div>
-            <div class="stat-label">Draw Win Rate</div>
-          </div>
-        </div>
-
         <!-- Avatar Performance -->
         <div class="avatar-section" id="avatar-section" style="display: none">
           <h3>🎭 Avatar Performance</h3>
           <div class="avatar-grid" id="avatar-grid">
             <!-- Avatar cards will be inserted here by JS -->
+          </div>
+        </div>
+
+        <!-- Performance Against Other Avatars -->
+        <div
+          class="avatar-matchup-section"
+          id="avatar-matchup-section"
+          style="display: none">
+          <h3>⚔️ Performance Against Other Avatars</h3>
+          <div class="avatar-grid" id="avatar-matchup-grid">
+            <!-- Avatar matchup cards will be inserted here by JS -->
           </div>
         </div>
 
@@ -140,20 +130,6 @@
           document.getElementById("stat-avg-time").textContent =
             data.avg_match_time > 0 ? `${data.avg_match_time} min` : "-";
 
-          // Update play/draw stats
-          document.getElementById(
-            "stat-on-play"
-          ).textContent = `${data.on_play_wins}/${data.on_play_matches}`;
-          document.getElementById(
-            "stat-on-play-rate"
-          ).textContent = `${data.on_play_win_rate}%`;
-          document.getElementById(
-            "stat-on-draw"
-          ).textContent = `${data.on_draw_wins}/${data.on_draw_matches}`;
-          document.getElementById(
-            "stat-on-draw-rate"
-          ).textContent = `${data.on_draw_win_rate}%`;
-
           // Update avatar performance
           if (data.avatar_performance && data.avatar_performance.length > 0) {
             document.getElementById("avatar-section").style.display = "block";
@@ -169,6 +145,27 @@
                   <span class="match-win">${avatar.wins}</span> - <span class="match-loss">${avatar.losses}</span>
                 </div>
                 <div class="avatar-winrate">${avatar.win_rate}%</div>
+              `;
+              avatarGrid.appendChild(card);
+            });
+          }
+
+          // Update performance against other avatars
+          if (data.avatar_matchups && data.avatar_matchups.length > 0) {
+            document.getElementById("avatar-matchup-section").style.display =
+              "block";
+            const avatarGrid = document.getElementById("avatar-matchup-grid");
+            avatarGrid.innerHTML = "";
+
+            data.avatar_matchups.forEach((matchup) => {
+              const card = document.createElement("div");
+              card.className = "avatar-card";
+              card.innerHTML = `
+                <div class="avatar-name">${matchup.opponent_avatar}</div>
+                <div class="avatar-record">
+                  <span class="match-win">${matchup.wins}</span> - <span class="match-loss">${matchup.losses}</span>
+                </div>
+                <div class="avatar-winrate">${matchup.win_rate}%</div>
               `;
               avatarGrid.appendChild(card);
             });
@@ -210,7 +207,8 @@
                 <th>ID</th>
                 <th>Result</th>
                 <th>Opponent</th>
-                <th>Deck</th>
+                <th>Deck Link</th>
+                <th>Deck Submitted</th>
                 <th>ELO</th>
                 <th>Play/Draw</th>
                 <th>Time</th>
@@ -223,6 +221,7 @@
                 <th>ID</th>
                 <th>Result</th>
                 <th>Opponent</th>
+                <th>Deck Submitted</th>
                 <th>ELO</th>
                 <th>Play/Draw</th>
                 <th>Time</th>
@@ -235,7 +234,7 @@
           const tbody = document.getElementById("match-history-tbody");
           tbody.innerHTML = "";
 
-          const colspanCount = data.is_owner ? 8 : 7;
+          const colspanCount = data.is_owner ? 9 : 8;
           if (data.matches.length === 0) {
             tbody.innerHTML = `<tr><td colspan="${colspanCount}" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>`;
             return;
@@ -251,6 +250,7 @@
               ? `${match.match_time} min`
               : "-";
             const matchId = match.match_id ? `#${match.match_id}` : "-";
+            const deckSubmitted = match.has_deck ? "✅" : "❌";
 
             // Build row HTML conditionally based on is_owner
             if (data.is_owner) {
@@ -261,7 +261,7 @@
                 match.player_deck_url !== "No URL provided" &&
                 match.player_deck_url !== "Admin reported match"
               ) {
-                deckLink = `<a href="${match.player_deck_url}" target="_blank" class="deck-link" title="View deck on Curiosa">🔗 Deck</a>`;
+                deckLink = `<a href="${match.player_deck_url}" target="_blank" class="deck-link" title="View deck on Curiosa">🔗</a>`;
               }
 
               row.innerHTML = `
@@ -271,19 +271,21 @@
                   match.opponent_id
                 }" class="opponent-link">${match.opponent}</a></td>
                 <td>${deckLink}</td>
+                <td>${deckSubmitted}</td>
                 <td class="${resultClass}">${eloSign}${match.elo_change}</td>
                 <td>${match.first_player || "-"}</td>
                 <td>${matchTime}</td>
                 <td>${date}</td>
               `;
             } else {
-              // Public view - no deck column
+              // Public view - show submitted status only
               row.innerHTML = `
                 <td class="match-id">${matchId}</td>
                 <td class="${resultClass}">${match.result}</td>
                 <td><a href="/player/${
                   match.opponent_id
                 }" class="opponent-link">${match.opponent}</a></td>
+                <td>${deckSubmitted}</td>
                 <td class="${resultClass}">${eloSign}${match.elo_change}</td>
                 <td>${match.first_player || "-"}</td>
                 <td>${matchTime}</td>

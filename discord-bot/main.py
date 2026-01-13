@@ -88,7 +88,7 @@ async def on_member_join(member):
         embed.add_field(
             name="Key Channels",
             value=(
-                "<#1336912830867439676> - Find games with `!lfg`\n"
+                "<#1336912830867439676> - Find games with the **Join Queue** button\n"
                 "<#1379476865089142844> - Event decks & decklists\n"
                 "<#1402265039951368273> - Fun & games"
             ),
@@ -99,12 +99,12 @@ async def on_member_join(member):
         embed.add_field(
             name="How to Find a Game",
             value=(
-                " Head to <#1336912830867439676> and:\n"
-                "1️⃣ Type `!lfg` or click **Join Queue**\n"
+                "Head to <#1336912830867439676> and:\n"
+                "1️⃣ Click the **Join Queue** button\n"
                 "2️⃣ Enter your deck URL (optional)\n"
                 "3️⃣ Get matched with another player!\n\n"
                 "**Alternative:** Challenge someone directly with `!challenge @user`\n\n"
-                "Type `/lfg_help` for all commands • [Watch Tutorial](https://youtu.be/6eErwhPocL8)"
+                "Type `!lfg_help` for all commands • [Watch Tutorial](https://youtu.be/6eErwhPocL8)"
             ),
             inline=False,
         )

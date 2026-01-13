@@ -5,6 +5,7 @@ import logging
 import random
 from random import randrange
 import asyncio
+import sqlite3
 
 from utils.database import winner_report, losser_report, solo_match_report
 from utils.constants import SORCERY_NICKNAMES
@@ -1716,16 +1717,16 @@ class LFGCog(commands.Cog):
         if len(lfg_queue) == 0:
             # RED - Empty queue
             embed = discord.Embed(
-                title="LFG Queue Status",
-                description="**Queue is empty**\n\nUse `!lfg` to join the queue and find a match!",
+                title="🔴 LFG Queue Status",
+                description="**Queue is empty**\n\nClick the **Join Queue** button below to find a match!\nUse `!cancel` to leave the queue.",
                 color=discord.Color.red(),
             )
             embed.set_footer(text="Status updates automatically")
         else:
             # GREEN - Active queue
             embed = discord.Embed(
-                title="LFG Queue Status",
-                description=f"**{len(lfg_queue)} player(s) looking for a game!!**\n\nUse `!lfg` to join and get matched instantly!\nUse `!cancel` to leave the queue.",
+                title="🟢 LFG Queue Status",
+                description=f"**{len(lfg_queue)} player(s) looking for a game!!**\n\nClick **Join Queue** button below to get matched!\nUse `!cancel` to leave the queue.",
                 color=discord.Color.green(),
             )
 
@@ -1948,17 +1949,84 @@ class LFGCog(commands.Cog):
 
         # Generic suggestion if no match found
         await ctx.send(
-            f"{ctx.author.mention}, that command doesn't exist. Use `!lfg` to find a game or `!lfg_help` to see all available commands."
+            f"{ctx.author.mention}, that command doesn't exist. Use the **Join Queue** button in the LFG channel to find a game, or `!lfg_help` to see all available commands."
         )
 
+    def check_last_match_opponent(self, player1_id, player2_id):
+        """Check if two players played each other in their most recent match.
+        Returns True if they should NOT be matched (played each other recently).
+        """
+        conn = sqlite3.connect("match_records.db")
+        cur = conn.cursor()
+
+        try:
+            # Get player1's last match
+            cur.execute(
+                """SELECT winner_id, losser_id FROM match_records 
+                WHERE (winner_id = ? OR losser_id = ?) 
+                ORDER BY timestamp DESC LIMIT 1""",
+                (player1_id, player1_id),
+            )
+            player1_last_match = cur.fetchone()
+
+            # Get player2's last match
+            cur.execute(
+                """SELECT winner_id, losser_id FROM match_records 
+                WHERE (winner_id = ? OR losser_id = ?) 
+                ORDER BY timestamp DESC LIMIT 1""",
+                (player2_id, player2_id),
+            )
+            player2_last_match = cur.fetchone()
+
+            # If either player has no match history, allow the match
+            if not player1_last_match or not player2_last_match:
+                return False
+
+            # Check if they played each other in their last match
+            p1_opponents = {player1_last_match[0], player1_last_match[1]}
+            if player2_id in p1_opponents:
+                logger.info(
+                    f"Anti-rematch: {player1_id} and {player2_id} played each other in their last match"
+                )
+                return True
+
+            return False
+
+        finally:
+            conn.close()
+
     def check_if_someone_is_lfg(self, ctx):
+        """Find oldest player in queue who didn't play against ctx.author recently.
+        Returns None if no valid match found.
+        """
         now = datetime.datetime.now()
+        oldest_valid_match = None
+        oldest_timestamp = None
+
         for user_id, info in lfg_queue.items():
+            if user_id == ctx.author.id:
+                continue
+
             timestamp = info["timestamp"]
             timeframe = info["timeframe"]
-            if (now - timestamp).total_seconds() < timeframe * 60:
-                return user_id
-        return None
+
+            # Check if still within timeframe
+            if (now - timestamp).total_seconds() >= timeframe * 60:
+                continue
+
+            # Check if they played each other recently
+            if self.check_last_match_opponent(ctx.author.id, user_id):
+                logger.info(
+                    f"Skipping {user_id} - played against {ctx.author.id} in last match"
+                )
+                continue
+
+            # Find the oldest eligible player (FIFO)
+            if oldest_timestamp is None or timestamp < oldest_timestamp:
+                oldest_timestamp = timestamp
+                oldest_valid_match = user_id
+
+        return oldest_valid_match
 
     def add_to_lfg_queue(self, ctx, timeframe, deck_url=None):
         lfg_queue[ctx.author.id] = {
@@ -2006,15 +2074,13 @@ class LFGCog(commands.Cog):
 
     @commands.command(aliases=["LFG"])
     async def lfg(self, ctx, timeframe: int = 30, *, deck_url: str = None):
-        """Usage: !lfg [minutes] [deck_url]
+        """Usage: !lfg - Directs you to join the queue via the Join Queue button
 
         Examples:
-            !lfg - Join queue for 30 minutes
-            !lfg 60 - Join queue for 60 minutes
-            !lfg 30 https://curiosa.io/decks/... - Join with a deck URL
+            !lfg - Get instructions to join the queue
         """
         logger.info(
-            f"LFG command started - User: {ctx.author} (ID: {ctx.author.id}), Channel: {ctx.channel}, Timeframe: {timeframe}, Deck URL: {deck_url}"
+            f"LFG command started - User: {ctx.author} (ID: {ctx.author.id}), Channel: {ctx.channel}"
         )
 
         # Delete the user's command message
@@ -2023,226 +2089,54 @@ class LFGCog(commands.Cog):
         except Exception as e:
             logger.warning(f"Could not delete command message: {e}")
 
-        owner_id = 296846802924208130
-        channel_id = 1336912830867439676
-        owner = await self.bot.fetch_user(owner_id)
-        lfg_channel = self.bot.get_channel(channel_id)
-
-        # Use lock to prevent race conditions
-        async with lfg_queue_lock:
-            self.clean_expired_lfg()
-            logger.info(
-                f"Cleaned expired LFG entries. Current queue size: {len(lfg_queue)}"
-            )
-
-            matched_user_id = self.check_if_someone_is_lfg(ctx)
-            logger.info(
-                f"Checked for existing LFG users. Matched user ID: {matched_user_id}"
-            )
-
-            if matched_user_id and matched_user_id != ctx.author.id:
-                # Get matched user's deck URL before removing from queue
-                matched_user_deck_url = lfg_queue.get(matched_user_id, {}).get(
-                    "deck_url"
-                )
-                # IMMEDIATELY remove matched user from queue to prevent double-matching
-                lfg_queue.pop(matched_user_id, None)
-                lfg_queue.pop(
-                    ctx.author.id, None
-                )  # Also remove self if somehow in queue
-                logger.info(
-                    f"Lock acquired: Matching {ctx.author.id} with {matched_user_id}"
-                )
-            elif matched_user_id == ctx.author.id:
-                # User is already in queue
-                matched_user_deck_url = None
-            else:
-                # No match - add to queue with deck URL
-                self.add_to_lfg_queue(ctx, timeframe, deck_url)
-                matched_user_id = None
-                matched_user_deck_url = None
-
-        # Handle the result outside the lock (for async operations)
-        if matched_user_id and matched_user_id != ctx.author.id:
-            logger.info(f"Match found! Pairing {ctx.author.id} with {matched_user_id}")
-            matched_user = await self.bot.fetch_user(matched_user_id)
-
-            # Record match start time when players are matched
-            match_start_time = datetime.datetime.now()
-
-            # Randomly select which player gets the report buttons
-            players = [
-                (
-                    ctx.author.id,
-                    ctx.author.global_name or ctx.author.display_name,
-                    ctx.author,
-                    deck_url,  # Joiner's deck URL
-                ),
-                (
-                    matched_user_id,
-                    matched_user.global_name or matched_user.display_name,
-                    matched_user,
-                    matched_user_deck_url,  # Matched user's deck URL from queue
-                ),
-            ]
-            reporter_player, other_player = random.sample(players, 2)
-            reporter_id, reporter_global, reporter_user, reporter_deck_url = (
-                reporter_player
-            )
-            other_id, other_global, other_user, other_deck_url = other_player
-
-            # Create report buttons for the randomly selected reporter with deck URLs
-            view_reporter = LFGReportButtons(
-                reporter_id,
-                reporter_id,
-                reporter_global,
-                other_id,
-                other_global,
-                self.bot,
-                lfg_channel,
-                match_start_time=match_start_time,
-                reporter_deck_url=reporter_deck_url,
-                opponent_deck_url=other_deck_url,
-            )
-
-            # Build match message with deck info for reporter
-            reporter_own_deck_text = (
-                f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
-            )
-
-            # Send report buttons to the selected reporter
-            logger.info(
-                f"Sending match report buttons to {reporter_global} (ID: {reporter_id}) via DM"
-            )
-            try:
-                await reporter_user.send(
-                    f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_own_deck_text}\n\nReport the match result below:",
-                    view=view_reporter,
-                )
-            except discord.Forbidden:
-                logger.error(
-                    f"Cannot DM {reporter_global} (ID: {reporter_id}) - DMs disabled or bot blocked"
-                )
-                try:
-                    guild = ctx.guild
-                    if guild:
-                        role = guild.get_role(DM_DISABLED_ROLE_ID)
-                        member = guild.get_member(reporter_id)
-                        if role and member:
-                            await member.add_roles(role)
-                            logger.info(f"Added DM-disabled role to {reporter_global}")
-
-                    dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
-                    if dm_channel:
-                        await dm_channel.send(
-                            f"{reporter_user.mention} **Match Report**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!{reporter_own_deck_text}\n\nReport the match result below:",
-                            view=view_reporter,
-                        )
-                        logger.info(
-                            f"Posted match report in DM-disabled channel for {reporter_global}"
-                        )
-                except Exception as e:
-                    logger.error(
-                        f"Failed to handle DM failure for {reporter_global}: {e}"
-                    )
-            except Exception as e:
-                logger.error(
-                    f"Error sending DM to {reporter_global} (ID: {reporter_id}): {e}"
-                )
-
-            # Build match info message for the other player
-            other_own_deck_text = (
-                f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
-            )
-
-            # Send informational message to the other player (no buttons)
-            logger.info(
-                f"Sending match info (no buttons) to {other_global} (ID: {other_id}) via DM"
-            )
-            try:
-                await other_user.send(
-                    f"**Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
-                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
-                )
-            except discord.Forbidden:
-                logger.error(
-                    f"Cannot DM {other_global} (ID: {other_id}) - DMs disabled or bot blocked"
-                )
-                try:
-                    guild = ctx.guild
-                    if guild:
-                        role = guild.get_role(DM_DISABLED_ROLE_ID)
-                        member = guild.get_member(other_id)
-                        if role and member:
-                            await member.add_roles(role)
-                            logger.info(f"Added DM-disabled role to {other_global}")
-
-                    dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
-                    if dm_channel:
-                        await dm_channel.send(
-                            f"{other_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
-                            f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
-                        )
-                        logger.info(
-                            f"Posted match info in DM-disabled channel for {other_global}"
-                        )
-                except Exception as e:
-                    logger.error(f"Failed to handle DM failure for {other_global}: {e}")
-            except Exception as e:
-                logger.error(
-                    f"Error sending DM to {other_global} (ID: {other_id}): {e}"
-                )
-
-            # Always announce match in LFG channel
-            if lfg_channel:
-                await lfg_channel.send(
-                    f"**Match Found!** {ctx.author.mention} matched with {matched_user.mention}!"
-                )
-            # Note: Users already removed from queue inside the lock above
-
-            # Update status message after match
-            await self.update_lfg_status()
-
-            # Notify owner about the match
-            if owner:
-                logger.info("Sending match notification to owner")
-                try:
-                    await owner.send(
-                        f"**Match Found!**\n"
-                        f"{ctx.author} (ID: {ctx.author.id}) matched with "
-                        f"{matched_user} (ID: {matched_user_id})"
-                    )
-                except Exception as e:
-                    logger.error(f"Error sending match notification to owner: {e}")
-        elif matched_user_id == ctx.author.id:
-            logger.info(f"User {ctx.author.id} is already in queue")
-            await ctx.send(
-                f"{ctx.author.mention}, you are already in the LFG queue. Please wait for someone to match with you."
-            )
-        else:
-            logger.info(
-                f"No match found. Added {ctx.author.id} to queue for {timeframe} minutes"
-            )
-            # Note: User was already added to queue inside the lock above
-            logger.info(f"Queue contents: {lfg_queue}")
-
-            deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
+        # Check if user is already in queue
+        if ctx.author.id in lfg_queue:
             try:
                 await ctx.author.send(
-                    f"You have been added to the queue for looking for a game for "
-                    f"{timeframe} minutes.{deck_msg}\n\nYou can also use the `!lfg` command here to join the queue privately."
+                    "You're already in the queue! Use `!cancel` to leave the queue if needed."
                 )
-                logger.info(f"DM sent successfully to {ctx.author}")
             except discord.Forbidden:
-                logger.warning(
-                    f"Could not send DM to {ctx.author} (ID: {ctx.author.id}) - DMs might be disable"
-                )
+                pass
+            return
+
+        # Get LFG channel reference
+        lfg_channel = self.bot.get_channel(self.lfg_channel_id)
+        channel_mention = lfg_channel.mention if lfg_channel else "#lfg-matchmaking"
+
+        # Send message directing user to the LFG channel
+        try:
+            await ctx.author.send(
+                f"**Ready to find a match?**\n\n"
+                f"Head over to {channel_mention} and click the **Join Queue** button to enter your deck URL and join the matchmaking queue!"
+            )
+        except discord.Forbidden:
+            # If DM fails, assign role and send to the channel
+            logger.warning(
+                f"Cannot DM {ctx.author} (ID: {ctx.author.id}) - DMs disabled or bot blocked"
+            )
+
+            # Try to assign the DM-disabled role
+            try:
+                if ctx.guild:
+                    role = ctx.guild.get_role(DM_DISABLED_ROLE_ID)
+                    member = ctx.guild.get_member(ctx.author.id)
+                    if role and member and role not in member.roles:
+                        await member.add_roles(role)
+                        logger.info(f"Added DM-disabled role to {ctx.author}")
             except Exception as e:
-                logger.error(f"Error sending DM to {ctx.author}: {e}")
+                logger.error(f"Failed to add DM-disabled role to {ctx.author}: {e}")
 
-            # Update status message after joining queue
-            await self.update_lfg_status()
+            # Send to the DM-disabled channel
+            dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+            if dm_channel:
+                await dm_channel.send(
+                    f"{ctx.author.mention} **Ready to find a match?**\n\n"
+                    f"Head over to {channel_mention} and click the **Join Queue** button to enter your deck URL and join the matchmaking queue!"
+                )
+            return
 
+        # Remove old code that directly added to queue
+        # Now all queue joins happen through the modal via the button
         logger.info(f"LFG command completed for {ctx.author} (ID: {ctx.author.id})")
 
     @commands.command()

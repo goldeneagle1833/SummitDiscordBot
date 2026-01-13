@@ -422,6 +422,193 @@ def player_profile(player_id):
     return render_template("pages/player.html", player_id=player_id)
 
 
+# Avatar profile page
+@app.route("/avatar/<avatar_name>")
+def avatar_profile(avatar_name):
+    from urllib.parse import unquote
+
+    avatar_name = unquote(avatar_name)
+    return render_template("pages/avatar.html", avatar_name=avatar_name)
+
+
+# Avatar API endpoint
+@app.route("/api/avatar/<avatar_name>")
+def avatar_api(avatar_name):
+    import json
+    from urllib.parse import unquote
+
+    avatar_name = unquote(avatar_name)
+
+    try:
+        conn = sqlite3.connect("../discord-bot/match_records.db")
+        cur = conn.cursor()
+
+        # Try to get matches with new columns, fallback to old schema
+        try:
+            cur.execute(
+                """
+                SELECT 
+                    winner_id,
+                    winner_display_name,
+                    losser_id,
+                    losser_display_name,
+                    timestamp,
+                    winner_elo_change,
+                    loser_elo_change,
+                    first_player,
+                    match_time,
+                    json_deck_data_winner,
+                    json_deck_data_loser,
+                    curiosa_url_winner,
+                    curiosa_url_loser,
+                    rowid as match_id
+                FROM match_records
+                WHERE json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL
+                ORDER BY timestamp DESC
+            """
+            )
+            rows = cur.fetchall()
+            use_new_columns = True
+        except sqlite3.OperationalError:
+            # Fallback to old schema
+            cur.execute(
+                """
+                SELECT 
+                    winner_id,
+                    winner_display_name,
+                    losser_id,
+                    losser_display_name,
+                    timestamp,
+                    winner_elo_change,
+                    loser_elo_change,
+                    first_player,
+                    match_time,
+                    json_deck_data,
+                    curiosa_url,
+                    rowid as match_id
+                FROM match_records
+                WHERE json_deck_data IS NOT NULL
+                ORDER BY timestamp DESC
+            """
+            )
+            rows = cur.fetchall()
+            use_new_columns = False
+
+        conn.close()
+    except sqlite3.OperationalError:
+        return jsonify({"error": "Database not found"}), 404
+
+    # Filter matches where this avatar was used
+    wins_matches = []
+    losses_matches = []
+    total_wins = 0
+    total_losses = 0
+
+    if use_new_columns:
+        for row in rows:
+            winner_json = row[9]
+            loser_json = row[10]
+
+            # Check if avatar is in winner's deck
+            avatar_in_winner = False
+            if winner_json and winner_json not in ("", "{}"):
+                try:
+                    deck_data = json.loads(winner_json)
+                    if deck_data.get("avatar") and len(deck_data["avatar"]) > 0:
+                        if deck_data["avatar"][0].get("name") == avatar_name:
+                            avatar_in_winner = True
+                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                    pass
+
+            # Check if avatar is in loser's deck
+            avatar_in_loser = False
+            if loser_json and loser_json not in ("", "{}"):
+                try:
+                    deck_data = json.loads(loser_json)
+                    if deck_data.get("avatar") and len(deck_data["avatar"]) > 0:
+                        if deck_data["avatar"][0].get("name") == avatar_name:
+                            avatar_in_loser = True
+                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                    pass
+
+            # Create match object
+            match_obj = {
+                "match_id": row[13],
+                "winner_id": str(row[0]),
+                "winner_name": row[1],
+                "loser_id": str(row[2]),
+                "loser_name": row[3],
+                "date": row[4],
+                "winner_elo_change": row[5] if row[5] else 0,
+                "loser_elo_change": row[6] if row[6] else 0,
+                "first_player": "Yes"
+                if row[7] and "y" in str(row[7]).lower()
+                else "No",
+                "match_time": row[8] if row[8] else None,
+                "winner_deck_url": row[11] if len(row) > 11 else None,
+                "loser_deck_url": row[12] if len(row) > 12 else None,
+            }
+
+            # Add to wins if avatar won
+            if avatar_in_winner:
+                total_wins += 1
+                wins_matches.append(match_obj.copy())
+
+            # Add to losses if avatar lost
+            if avatar_in_loser:
+                total_losses += 1
+                losses_matches.append(match_obj.copy())
+    else:
+        # Old schema fallback
+        for row in rows:
+            deck_json = row[9]
+
+            if not deck_json or deck_json in ("", "{}"):
+                continue
+
+            try:
+                deck_data = json.loads(deck_json)
+                if deck_data.get("avatar") and len(deck_data["avatar"]) > 0:
+                    if deck_data["avatar"][0].get("name") == avatar_name:
+                        # In old schema we can't determine if avatar won or lost
+                        # Add to both or mark as unknown
+                        match_obj = {
+                            "match_id": row[11],
+                            "winner_id": str(row[0]),
+                            "winner_name": row[1],
+                            "loser_id": str(row[2]),
+                            "loser_name": row[3],
+                            "date": row[4],
+                            "winner_elo_change": row[5] if row[5] else 0,
+                            "loser_elo_change": row[6] if row[6] else 0,
+                            "first_player": "Yes"
+                            if row[7] and "y" in str(row[7]).lower()
+                            else "No",
+                            "match_time": row[8] if row[8] else None,
+                            "winner_deck_url": row[10] if len(row) > 10 else None,
+                            "loser_deck_url": None,
+                        }
+                        # Can't determine wins/losses in old schema, add to general list
+                        wins_matches.append(match_obj)
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                continue
+
+    total_matches = total_wins + total_losses
+    win_rate = (total_wins / total_matches * 100) if total_matches > 0 else 0
+
+    return jsonify(
+        {
+            "name": avatar_name,
+            "total_matches": total_matches,
+            "wins": total_wins,
+            "losses": total_losses,
+            "win_rate": round(win_rate, 1),
+            "wins_matches": wins_matches[:100],  # Limit to 100 most recent
+            "losses_matches": losses_matches[:100],  # Limit to 100 most recent
+        }
+    )
+
+
 # Player API endpoint
 @app.route("/api/player/<player_id>")
 def player_api(player_id):
@@ -431,30 +618,61 @@ def player_api(player_id):
     conn = sqlite3.connect("../discord-bot/match_records.db")
     cur = conn.cursor()
 
-    # Get all matches for detailed stats
-    cur.execute(
-        """
-        SELECT 
-            CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
-            first_player,
-            json_deck_data,
-            match_time,
-            winner_display_name,
-            losser_display_name,
-            timestamp,
-            winner_elo_change,
-            loser_elo_change,
-            curiosa_url,
-            winner_id,
-            losser_id,
-            rowid as match_id
-        FROM match_records 
-        WHERE winner_id = ? OR losser_id = ?
-        ORDER BY timestamp DESC
-    """,
-        (player_id, player_id, player_id),
-    )
-    rows = cur.fetchall()
+    # Try to get all matches with new columns, fallback to old schema if columns don't exist
+    try:
+        cur.execute(
+            """
+            SELECT 
+                CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                first_player,
+                json_deck_data,
+                match_time,
+                winner_display_name,
+                losser_display_name,
+                timestamp,
+                winner_elo_change,
+                loser_elo_change,
+                curiosa_url,
+                winner_id,
+                losser_id,
+                rowid as match_id,
+                json_deck_data_winner,
+                json_deck_data_loser,
+                curiosa_url_winner,
+                curiosa_url_loser
+            FROM match_records 
+            WHERE winner_id = ? OR losser_id = ?
+            ORDER BY timestamp DESC
+        """,
+            (player_id, player_id, player_id),
+        )
+        rows = cur.fetchall()
+    except sqlite3.OperationalError:
+        # Fallback to old schema without new columns
+        cur.execute(
+            """
+            SELECT 
+                CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                first_player,
+                json_deck_data,
+                match_time,
+                winner_display_name,
+                losser_display_name,
+                timestamp,
+                winner_elo_change,
+                loser_elo_change,
+                curiosa_url,
+                winner_id,
+                losser_id,
+                rowid as match_id
+            FROM match_records 
+            WHERE winner_id = ? OR losser_id = ?
+            ORDER BY timestamp DESC
+        """,
+            (player_id, player_id, player_id),
+        )
+        rows = cur.fetchall()
+
     conn.close()
 
     if not rows:
@@ -524,12 +742,23 @@ def player_api(player_id):
     ]
     avg_match_time = sum(match_times) / len(match_times) if match_times else 0
 
-    # Avatar stats
+    # Avatar stats - use new separated winner/loser JSON columns
     avatar_stats = {}
     for row in rows:
-        if row[2] and row[2] != "{}":  # Skip empty JSON objects
+        did_win = row[0]
+        winner_json = row[13] if len(row) > 13 else None  # json_deck_data_winner
+        loser_json = row[14] if len(row) > 14 else None  # json_deck_data_loser
+
+        # Determine which JSON to use based on whether this player won
+        deck_json = winner_json if did_win else loser_json
+
+        # Fallback to old json_deck_data column for backward compatibility
+        if not deck_json or deck_json == "{}":
+            deck_json = row[2]
+
+        if deck_json and deck_json != "{}":
             try:
-                deck_data = json.loads(row[2])
+                deck_data = json.loads(deck_json)
                 # Skip if deck_data is empty or has no avatar
                 if not deck_data or not deck_data.get("avatar"):
                     continue
@@ -543,7 +772,7 @@ def player_api(player_id):
                 if avatar_name not in avatar_stats:
                     avatar_stats[avatar_name] = {"wins": 0, "losses": 0}
 
-                if row[0]:  # did_win
+                if did_win:
                     avatar_stats[avatar_name]["wins"] += 1
                 else:
                     avatar_stats[avatar_name]["losses"] += 1
@@ -565,6 +794,11 @@ def player_api(player_id):
         )
     avatar_performance.sort(key=lambda x: x["wins"] + x["losses"], reverse=True)
 
+    # TODO: Replace with Discord OAuth check - only show deck details to profile owner
+    # For now, hardcoded to False (public view only)
+    # Future: is_owner = (logged_in_user_id == player_id)
+    is_owner = False
+
     # Build match history (last 50 matches)
     match_history = []
     for row in rows[:50]:
@@ -574,6 +808,18 @@ def player_api(player_id):
         # When player lost, opponent is the winner (winner_id at index 10)
         opponent_id = str(row[11]) if did_win else str(row[10])
         elo_change = row[7] if did_win else row[8]
+
+        # Get deck URLs from new columns (indices 15, 16) with fallback to old column (index 9)
+        # Only include deck URLs for profile owner (privacy)
+        player_deck_url = None
+        opponent_deck_url = None
+        if is_owner:
+            winner_deck_url = row[15] if len(row) > 15 else row[9]
+            loser_deck_url = row[16] if len(row) > 16 else None
+
+            # Determine which deck URL belongs to this player
+            player_deck_url = winner_deck_url if did_win else loser_deck_url
+            opponent_deck_url = loser_deck_url if did_win else winner_deck_url
         match_history.append(
             {
                 "match_id": row[12],
@@ -587,8 +833,64 @@ def player_api(player_id):
                 else "No",
                 "match_time": row[3] if row[3] else None,
                 "replay_url": row[9] if row[9] else None,
+                "player_deck_url": player_deck_url,
+                "opponent_deck_url": opponent_deck_url,
             }
         )
+
+    # Extract recent unique decks (only for profile owner)
+    recent_decks = []
+    if is_owner:
+        seen_urls = set()
+        for row in rows:
+            did_win = row[0]
+            winner_deck_url = row[15] if len(row) > 15 else row[9]
+            loser_deck_url = row[16] if len(row) > 16 else None
+            winner_json = row[13] if len(row) > 13 else row[2]
+            loser_json = row[14] if len(row) > 14 else None
+
+            # Get this player's deck URL and JSON
+            player_deck_url = winner_deck_url if did_win else loser_deck_url
+            player_deck_json = winner_json if did_win else loser_json
+
+            # Skip if no URL or invalid URL
+            if not player_deck_url or player_deck_url in (
+                "No URL provided",
+                "Admin reported match",
+                "{}",
+            ):
+                continue
+
+            # Skip if we've already seen this URL
+            if player_deck_url in seen_urls:
+                continue
+
+            seen_urls.add(player_deck_url)
+
+            # Try to extract avatar and deck name from JSON
+            avatar_name = "Unknown"
+            deck_name = "Unnamed Deck"
+            if player_deck_json and player_deck_json not in ("", "{}"):
+                try:
+                    deck_data = json.loads(player_deck_json)
+                    if deck_data.get("avatar") and len(deck_data["avatar"]) > 0:
+                        avatar_name = deck_data["avatar"][0].get("name", "Unknown")
+                    if deck_data.get("name"):
+                        deck_name = deck_data["name"]
+                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                    pass
+
+            recent_decks.append(
+                {
+                    "url": player_deck_url,
+                    "avatar": avatar_name,
+                    "deck_name": deck_name,
+                    "date": row[6],
+                }
+            )
+
+            if len(recent_decks) >= 10:
+                break
 
     return jsonify(
         {
@@ -607,7 +909,9 @@ def player_api(player_id):
             "on_draw_win_rate": round(draw_win_rate, 1),
             "avg_match_time": round(avg_match_time, 1),
             "avatar_performance": avatar_performance,
+            "recent_decks": recent_decks,
             "matches": match_history,
+            "is_owner": is_owner,  # TODO: Will be True when Discord OAuth implemented
         }
     )
 
@@ -621,17 +925,33 @@ def avatars_api():
         conn = sqlite3.connect("../discord-bot/match_records.db")
         cur = conn.cursor()
 
-        # Get all matches with deck data
-        cur.execute(
+        # Try to get all matches with separated winner/loser deck data
+        try:
+            cur.execute(
+                """
+                SELECT 
+                    json_deck_data_winner,
+                    json_deck_data_loser
+                FROM match_records 
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}') 
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
             """
-            SELECT 
-                CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
-                json_deck_data
-            FROM match_records 
-            WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
-        """
-        )
-        rows = cur.fetchall()
+            )
+            rows = cur.fetchall()
+            use_new_columns = True
+        except sqlite3.OperationalError:
+            # Fallback to old json_deck_data column
+            cur.execute(
+                """
+                SELECT 
+                    CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
+                    json_deck_data
+                FROM match_records 
+                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+            """
+            )
+            rows = cur.fetchall()
+            use_new_columns = False
         conn.close()
     except sqlite3.OperationalError:
         # Table doesn't exist or database not found
@@ -639,30 +959,69 @@ def avatars_api():
 
     # Calculate avatar stats across all matches
     avatar_stats = {}
-    for row in rows:
-        reporter_won = row[0]
-        deck_data_str = row[1]
 
-        if not deck_data_str:
-            continue
+    if use_new_columns:
+        for row in rows:
+            winner_deck_data_str = row[0]
+            loser_deck_data_str = row[1]
 
-        try:
-            deck_data = json.loads(deck_data_str)
-            avatar = deck_data.get("avatar", [{}])
-            avatar_name = avatar[0].get("name", "Unknown") if avatar else "Unknown"
+            # Process winner's deck
+            if winner_deck_data_str and winner_deck_data_str not in ("", "{}"):
+                try:
+                    deck_data = json.loads(winner_deck_data_str)
+                    avatar = deck_data.get("avatar", [{}])
+                    avatar_name = (
+                        avatar[0].get("name", "Unknown") if avatar else "Unknown"
+                    )
 
-            if avatar_name == "Unknown" or not avatar_name:
+                    if avatar_name and avatar_name != "Unknown":
+                        if avatar_name not in avatar_stats:
+                            avatar_stats[avatar_name] = {"wins": 0, "losses": 0}
+                        avatar_stats[avatar_name]["wins"] += 1
+                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                    pass
+
+            # Process loser's deck
+            if loser_deck_data_str and loser_deck_data_str not in ("", "{}"):
+                try:
+                    deck_data = json.loads(loser_deck_data_str)
+                    avatar = deck_data.get("avatar", [{}])
+                    avatar_name = (
+                        avatar[0].get("name", "Unknown") if avatar else "Unknown"
+                    )
+
+                    if avatar_name and avatar_name != "Unknown":
+                        if avatar_name not in avatar_stats:
+                            avatar_stats[avatar_name] = {"wins": 0, "losses": 0}
+                        avatar_stats[avatar_name]["losses"] += 1
+                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                    pass
+    else:
+        # Old logic for backward compatibility
+        for row in rows:
+            reporter_won = row[0]
+            deck_data_str = row[1]
+
+            if not deck_data_str:
                 continue
 
-            if avatar_name not in avatar_stats:
-                avatar_stats[avatar_name] = {"wins": 0, "losses": 0}
+            try:
+                deck_data = json.loads(deck_data_str)
+                avatar = deck_data.get("avatar", [{}])
+                avatar_name = avatar[0].get("name", "Unknown") if avatar else "Unknown"
 
-            if reporter_won:
-                avatar_stats[avatar_name]["wins"] += 1
-            else:
-                avatar_stats[avatar_name]["losses"] += 1
-        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-            continue
+                if avatar_name == "Unknown" or not avatar_name:
+                    continue
+
+                if avatar_name not in avatar_stats:
+                    avatar_stats[avatar_name] = {"wins": 0, "losses": 0}
+
+                if reporter_won:
+                    avatar_stats[avatar_name]["wins"] += 1
+                else:
+                    avatar_stats[avatar_name]["losses"] += 1
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                continue
 
     # Format for response and sort by total games played
     avatar_list = []

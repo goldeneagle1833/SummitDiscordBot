@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Avatar Profile - Sorcerers Summit</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <a href="/avatars" class="back-link">← Back to Avatar Win Rates</a>
+
+      <div class="player-profile" id="avatar-profile">
+        <div class="player-header">
+          <div>
+            <h1 class="player-name" id="avatar-name">Loading...</h1>
+            <div class="player-elo" id="avatar-stats"></div>
+          </div>
+        </div>
+
+        <!-- Overall Stats -->
+        <h3>📊 Overall Stats</h3>
+        <div class="player-stats" id="avatar-stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="stat-wins">-</div>
+            <div class="stat-label">Wins</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-losses">-</div>
+            <div class="stat-label">Losses</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-winrate">-</div>
+            <div class="stat-label">Win Rate</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-matches">-</div>
+            <div class="stat-label">Total Matches</div>
+          </div>
+        </div>
+
+        <!-- Match History -->
+        <div class="match-history">
+          <h3>✅ Wins</h3>
+          <table class="match-history-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Winner</th>
+                <th>Loser</th>
+                <th>ELO Change</th>
+                <th>Play/Draw</th>
+                <th>Time</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody id="wins-history-tbody">
+              <!-- Win history rows will be inserted here by JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Losses History -->
+        <div class="match-history">
+          <h3>❌ Losses</h3>
+          <table class="match-history-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Winner</th>
+                <th>Loser</th>
+                <th>ELO Change</th>
+                <th>Play/Draw</th>
+                <th>Time</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody id="losses-history-tbody">
+              <!-- Loss history rows will be inserted here by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const avatarName = "{{ avatar_name }}";
+
+      async function fetchAvatarData() {
+        try {
+          const res = await fetch(
+            `/api/avatar/${encodeURIComponent(avatarName)}`
+          );
+          if (!res.ok) {
+            document.getElementById("avatar-name").textContent =
+              "Avatar not found";
+            return;
+          }
+          const data = await res.json();
+
+          // Update avatar info
+          document.getElementById("avatar-name").textContent = data.name;
+          document.getElementById(
+            "avatar-stats"
+          ).textContent = `${data.total_matches} matches played`;
+          document.title = `${data.name} - Sorcerers Summit`;
+
+          // Update overall stats
+          document.getElementById("stat-wins").textContent = data.wins;
+          document.getElementById("stat-losses").textContent = data.losses;
+          document.getElementById(
+            "stat-winrate"
+          ).textContent = `${data.win_rate}%`;
+          document.getElementById("stat-matches").textContent =
+            data.total_matches;
+
+          // Render wins history
+          const winsTbody = document.getElementById("wins-history-tbody");
+          winsTbody.innerHTML = "";
+
+          if (data.wins_matches.length === 0) {
+            winsTbody.innerHTML =
+              '<tr><td colspan="7" style="text-align: center; opacity: 0.6;">No wins recorded</td></tr>';
+          } else {
+            data.wins_matches.forEach((match) => {
+              const row = document.createElement("tr");
+              const date = new Date(match.date).toLocaleDateString();
+              const matchTime = match.match_time
+                ? `${match.match_time} min`
+                : "-";
+              const matchId = match.match_id ? `#${match.match_id}` : "-";
+              const eloChange = match.winner_elo_change;
+              const eloSign = eloChange >= 0 ? "+" : "";
+
+              row.innerHTML = `
+                <td class="match-id">${matchId}</td>
+                <td><a href="/player/${
+                  match.winner_id
+                }" class="opponent-link">${match.winner_name}</a></td>
+                <td><a href="/player/${match.loser_id}" class="opponent-link">${
+                match.loser_name
+              }</a></td>
+                <td class="match-win">${eloSign}${eloChange}</td>
+                <td>${match.first_player || "-"}</td>
+                <td>${matchTime}</td>
+                <td>${date}</td>
+              `;
+              winsTbody.appendChild(row);
+            });
+          }
+
+          // Render losses history
+          const lossesTbody = document.getElementById("losses-history-tbody");
+          lossesTbody.innerHTML = "";
+
+          if (data.losses_matches.length === 0) {
+            lossesTbody.innerHTML =
+              '<tr><td colspan="7" style="text-align: center; opacity: 0.6;">No losses recorded</td></tr>';
+          } else {
+            data.losses_matches.forEach((match) => {
+              const row = document.createElement("tr");
+              const date = new Date(match.date).toLocaleDateString();
+              const matchTime = match.match_time
+                ? `${match.match_time} min`
+                : "-";
+              const matchId = match.match_id ? `#${match.match_id}` : "-";
+              const eloChange = match.loser_elo_change;
+              const eloSign = eloChange >= 0 ? "+" : "";
+
+              row.innerHTML = `
+                <td class="match-id">${matchId}</td>
+                <td><a href="/player/${
+                  match.winner_id
+                }" class="opponent-link">${match.winner_name}</a></td>
+                <td><a href="/player/${match.loser_id}" class="opponent-link">${
+                match.loser_name
+              }</a></td>
+                <td class="match-loss">${eloSign}${eloChange}</td>
+                <td>${match.first_player || "-"}</td>
+                <td>${matchTime}</td>
+                <td>${date}</td>
+              `;
+              lossesTbody.appendChild(row);
+            });
+          }
+        } catch (error) {
+          document.getElementById("avatar-name").textContent =
+            "Error loading avatar";
+          console.error(error);
+        }
+      }
+
+      fetchAvatarData();
+    </script>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+  </body>
+</html>

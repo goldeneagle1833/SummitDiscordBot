@@ -107,6 +107,8 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
                 match_comment,
                 interaction_user_id,
                 interaction_global,
+                winner_deck_url=curiosa_link,
+                loser_deck_url=None,
             )
         else:
             match_id, _, _ = await losser_report(
@@ -122,6 +124,8 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
                 match_comment,
                 interaction_user_id,
                 interaction_global,
+                winner_deck_url=None,
+                loser_deck_url=curiosa_link,
             )
 
         await interaction.followup.send(
@@ -244,10 +248,12 @@ class MatchConfirmationButtons(discord.ui.View):
             self.loser_global,
             self.first_player,
             match_time,
-            winner_deck,  # Use winner's deck URL as primary
+            winner_deck,  # Use winner's deck URL as primary (backward compatibility)
             combined_comment,  # Include both decks in comment
             self.winner_id,  # interaction_user_id
             self.winner_global,  # interaction_global
+            winner_deck_url=self.winner_deck_url,
+            loser_deck_url=self.loser_deck_url,
         )
 
         # Update ELO for the loser as well
@@ -2589,6 +2595,8 @@ class LFGCog(commands.Cog):
                 "Match reported by admin",  # match_comment
                 winner.id,  # interaction_user_id
                 winner_name,  # interaction_global
+                winner_deck_url=None,
+                loser_deck_url=None,
             )
 
             # Update ELO for the loser as well

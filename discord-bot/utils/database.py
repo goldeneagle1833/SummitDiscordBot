@@ -49,6 +49,24 @@ def create_db():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Add new deck columns for winner and loser (Phase 1 migration)
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN curiosa_url_winner TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN curiosa_url_loser TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN json_deck_data_winner TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN json_deck_data_loser TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Create solo_match_reports table with auto-increment report_id
     cur.execute("""CREATE TABLE IF NOT EXISTS solo_match_reports
                    (report_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -177,6 +195,8 @@ async def winner_report(
     match_comment,
     interaction_user_id,
     interaction_global,
+    winner_deck_url=None,
+    loser_deck_url=None,
 ):
     """
     Log a win in the database.
@@ -189,8 +209,19 @@ async def winner_report(
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
 
-    json_deck_data = "{}"
-    json_deck_data = scrape_Curosa(curiosa_link, "deck_data_test.json")
+    # Fetch deck data for both players
+    json_deck_data_winner = "{}"
+    json_deck_data_loser = "{}"
+
+    # Use new deck URLs if provided, otherwise fall back to old curiosa_link
+    if winner_deck_url:
+        json_deck_data_winner = scrape_Curosa(winner_deck_url, "deck_data_test.json")
+    elif curiosa_link and curiosa_link != "No URL provided":
+        # Backward compatibility: if only one URL provided, assume it's winner's
+        json_deck_data_winner = scrape_Curosa(curiosa_link, "deck_data_test.json")
+
+    if loser_deck_url:
+        json_deck_data_loser = scrape_Curosa(loser_deck_url, "deck_data_test.json")
 
     # Update ELO and get the change values
     new_elo, elo_change = update_elo_db(
@@ -203,7 +234,9 @@ async def winner_report(
     cur.execute(
         "INSERT INTO match_records (reporter_id, winner_id, winner_display_name, "
         "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
-        "curiosa_url, match_comment, json_deck_data, winner_elo_change, loser_elo_change) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "curiosa_url, curiosa_url_winner, curiosa_url_loser, match_comment, "
+        "json_deck_data, json_deck_data_winner, json_deck_data_loser, winner_elo_change, loser_elo_change) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             reporter_id,
             user_id,
@@ -214,9 +247,13 @@ async def winner_report(
             datetime.datetime.now().isoformat(),
             first_player,
             match_time,
-            curiosa_link,
+            curiosa_link,  # Keep for backward compatibility
+            winner_deck_url or curiosa_link,
+            loser_deck_url,
             match_comment,
-            json_deck_data,
+            json_deck_data_winner,  # Keep for backward compatibility
+            json_deck_data_winner,
+            json_deck_data_loser,
             winner_elo_change,
             loser_elo_change,
         ),
@@ -242,6 +279,8 @@ async def losser_report(
     match_comment,
     interaction_user_id,
     interaction_global,
+    winner_deck_url=None,
+    loser_deck_url=None,
 ):
     """
     Log a loss in the database.
@@ -254,8 +293,19 @@ async def losser_report(
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
 
-    json_deck_data = "{}"
-    json_deck_data = scrape_Curosa(curiosa_link, "deck_data_test.json")
+    # Fetch deck data for both players
+    json_deck_data_winner = "{}"
+    json_deck_data_loser = "{}"
+
+    # Use new deck URLs if provided, otherwise fall back to old curiosa_link
+    if winner_deck_url:
+        json_deck_data_winner = scrape_Curosa(winner_deck_url, "deck_data_test.json")
+
+    if loser_deck_url:
+        json_deck_data_loser = scrape_Curosa(loser_deck_url, "deck_data_test.json")
+    elif curiosa_link and curiosa_link != "No URL provided":
+        # Backward compatibility: if only one URL provided, assume it's loser's
+        json_deck_data_loser = scrape_Curosa(curiosa_link, "deck_data_test.json")
 
     # Update ELO and get the change values
     new_elo, elo_change = update_elo_db(
@@ -270,7 +320,9 @@ async def losser_report(
     cur.execute(
         "INSERT INTO match_records (reporter_id, winner_id, winner_display_name, "
         "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
-        "curiosa_url, match_comment, json_deck_data, winner_elo_change, loser_elo_change) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "curiosa_url, curiosa_url_winner, curiosa_url_loser, match_comment, "
+        "json_deck_data, json_deck_data_winner, json_deck_data_loser, winner_elo_change, loser_elo_change) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             reporter_id,
             user_id,
@@ -281,9 +333,13 @@ async def losser_report(
             datetime.datetime.now().isoformat(),
             first_player,
             match_time,
-            curiosa_link,
+            curiosa_link,  # Keep for backward compatibility
+            winner_deck_url,
+            loser_deck_url or curiosa_link,
             match_comment,
-            json_deck_data,
+            json_deck_data_loser,  # Keep for backward compatibility
+            json_deck_data_winner,
+            json_deck_data_loser,
             winner_elo_change,
             loser_elo_change,
         ),

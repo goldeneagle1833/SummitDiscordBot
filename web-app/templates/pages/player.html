@@ -80,20 +80,23 @@
           </div>
         </div>
 
+        <!-- Recent Decks -->
+        <div
+          class="recent-decks-section"
+          id="recent-decks-section"
+          style="display: none">
+          <h3>🃏 Recent Decks</h3>
+          <div class="recent-decks-list" id="recent-decks-list">
+            <!-- Recent deck links will be inserted here by JS -->
+          </div>
+        </div>
+
         <!-- Match History -->
         <div class="match-history">
           <h3>📜 Match History</h3>
           <table class="match-history-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Result</th>
-                <th>Opponent</th>
-                <th>ELO</th>
-                <th>Play/Draw</th>
-                <th>Time</th>
-                <th>Date</th>
-              </tr>
+            <thead id="match-history-thead">
+              <!-- Table headers will be inserted by JS based on is_owner -->
             </thead>
             <tbody id="match-history-tbody">
               <!-- Match history rows will be inserted here by JS -->
@@ -171,13 +174,70 @@
             });
           }
 
+          // Update recent decks (only show to profile owner)
+          // TODO: When Discord OAuth is implemented, this will check if logged-in user owns this profile
+          if (
+            data.is_owner &&
+            data.recent_decks &&
+            data.recent_decks.length > 0
+          ) {
+            document.getElementById("recent-decks-section").style.display =
+              "block";
+            const decksList = document.getElementById("recent-decks-list");
+            decksList.innerHTML = "";
+
+            data.recent_decks.forEach((deck) => {
+              const deckItem = document.createElement("div");
+              deckItem.className = "recent-deck-item";
+              const date = new Date(deck.date).toLocaleDateString();
+              deckItem.innerHTML = `
+                <div class="deck-info">
+                  <div class="deck-avatar">🎭 ${deck.avatar}</div>
+                  <div class="deck-name">${deck.deck_name}</div>
+                  <div class="deck-date">${date}</div>
+                </div>
+                <a href="${deck.url}" target="_blank" class="deck-link-button">View Deck →</a>
+              `;
+              decksList.appendChild(deckItem);
+            });
+          }
+
+          // Render match history table headers (conditionally include Deck column)
+          const thead = document.getElementById("match-history-thead");
+          if (data.is_owner) {
+            thead.innerHTML = `
+              <tr>
+                <th>ID</th>
+                <th>Result</th>
+                <th>Opponent</th>
+                <th>Deck</th>
+                <th>ELO</th>
+                <th>Play/Draw</th>
+                <th>Time</th>
+                <th>Date</th>
+              </tr>
+            `;
+          } else {
+            thead.innerHTML = `
+              <tr>
+                <th>ID</th>
+                <th>Result</th>
+                <th>Opponent</th>
+                <th>ELO</th>
+                <th>Play/Draw</th>
+                <th>Time</th>
+                <th>Date</th>
+              </tr>
+            `;
+          }
+
           // Update match history
           const tbody = document.getElementById("match-history-tbody");
           tbody.innerHTML = "";
 
+          const colspanCount = data.is_owner ? 8 : 7;
           if (data.matches.length === 0) {
-            tbody.innerHTML =
-              '<tr><td colspan="7" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="${colspanCount}" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>`;
             return;
           }
 
@@ -192,17 +252,44 @@
               : "-";
             const matchId = match.match_id ? `#${match.match_id}` : "-";
 
-            row.innerHTML = `
-              <td class="match-id">${matchId}</td>
-              <td class="${resultClass}">${match.result}</td>
-              <td><a href="/player/${
-                match.opponent_id
-              }" class="opponent-link">${match.opponent}</a></td>
-              <td class="${resultClass}">${eloSign}${match.elo_change}</td>
-              <td>${match.first_player || "-"}</td>
-              <td>${matchTime}</td>
-              <td>${date}</td>
-            `;
+            // Build row HTML conditionally based on is_owner
+            if (data.is_owner) {
+              // Create deck link if available
+              let deckLink = "-";
+              if (
+                match.player_deck_url &&
+                match.player_deck_url !== "No URL provided" &&
+                match.player_deck_url !== "Admin reported match"
+              ) {
+                deckLink = `<a href="${match.player_deck_url}" target="_blank" class="deck-link" title="View deck on Curiosa">🔗 Deck</a>`;
+              }
+
+              row.innerHTML = `
+                <td class="match-id">${matchId}</td>
+                <td class="${resultClass}">${match.result}</td>
+                <td><a href="/player/${
+                  match.opponent_id
+                }" class="opponent-link">${match.opponent}</a></td>
+                <td>${deckLink}</td>
+                <td class="${resultClass}">${eloSign}${match.elo_change}</td>
+                <td>${match.first_player || "-"}</td>
+                <td>${matchTime}</td>
+                <td>${date}</td>
+              `;
+            } else {
+              // Public view - no deck column
+              row.innerHTML = `
+                <td class="match-id">${matchId}</td>
+                <td class="${resultClass}">${match.result}</td>
+                <td><a href="/player/${
+                  match.opponent_id
+                }" class="opponent-link">${match.opponent}</a></td>
+                <td class="${resultClass}">${eloSign}${match.elo_change}</td>
+                <td>${match.first_player || "-"}</td>
+                <td>${matchTime}</td>
+                <td>${date}</td>
+              `;
+            }
             tbody.appendChild(row);
           });
         } catch (error) {

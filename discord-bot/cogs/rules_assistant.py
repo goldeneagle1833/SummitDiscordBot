@@ -5,12 +5,10 @@ Uses RAG (Retrieval-Augmented Generation) to provide accurate answers based on o
 
 import sys
 from pathlib import Path
+import importlib.util
 
-# CRITICAL: Add SorceryAI to path BEFORE any other imports
-# This ensures SorceryAI's config.py is found instead of discord-bot's config.py
+# Path to SorceryAI directory
 SORCERY_AI_PATH = Path(__file__).parent.parent.parent / "SorceryAI"
-if str(SORCERY_AI_PATH) not in sys.path:
-    sys.path.insert(0, str(SORCERY_AI_PATH))
 
 import discord
 from discord import app_commands
@@ -41,13 +39,31 @@ class RulesAssistantCog(commands.Cog):
     async def _initialize_sorcery_ai(self):
         """Initialize the SorceryAI system (runs in background)."""
         try:
-            # Clear discord-bot's config from module cache to allow SorceryAI's config to load
-            if "config" in sys.modules:
-                del sys.modules["config"]
+            # Use importlib to explicitly load modules from SorceryAI directory
+            # This avoids polluting sys.modules and affecting other parts of the bot
 
-            # Import SorceryAI components
-            from core.retriever import RulesRetriever
-            from core.generator import RulesGenerator
+            # Load SorceryAI's config as a separate module
+            config_path = SORCERY_AI_PATH / "config.py"
+            spec = importlib.util.spec_from_file_location("sorcery_config", config_path)
+            sorcery_config = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(sorcery_config)
+
+            # Temporarily add SorceryAI to path for its internal imports
+            sorcery_ai_str = str(SORCERY_AI_PATH)
+            path_added = False
+            if sorcery_ai_str not in sys.path:
+                sys.path.insert(0, sorcery_ai_str)
+                path_added = True
+
+            try:
+                # Import SorceryAI components
+                from core.retriever import RulesRetriever
+                from core.generator import RulesGenerator
+                from core.knowledge_base import ensure_initialized
+            finally:
+                # Remove from path to avoid affecting other imports
+                if path_added and sorcery_ai_str in sys.path:
+                    sys.path.remove(sorcery_ai_str)
 
             logger.info("Initializing SorceryAI components...")
 

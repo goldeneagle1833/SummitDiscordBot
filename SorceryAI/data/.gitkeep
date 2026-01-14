@@ -1,0 +1,5 @@
+# Data Directory
+
+This directory contains the ChromaDB vector database and should be added to .gitignore.
+
+Do not commit the contents of this folder to version control.

@@ -12,6 +12,7 @@ from cogs.shop import ShopCog
 from cogs.slash_commands import SlashCommandsCog
 from cogs.anti_spam import AntiSpamCog
 from cogs.purchase_tracking import PurchaseTrackingCog
+from cogs.rules_assistant import RulesAssistantCog
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -89,6 +90,7 @@ async def on_member_join(member):
             name="Key Channels",
             value=(
                 "<#1336912830867439676> - Find games with the **Join Queue** button\n"
+                "<#1325775415100575818> - Rules questions (AI assistant: `!rules`)\n"
                 "<#1379476865089142844> - Event decks & decklists\n"
                 "<#1402265039951368273> - Fun & games"
             ),
@@ -123,6 +125,7 @@ async def setup_cogs():
     await bot.add_cog(ShopCog(bot))
     await bot.add_cog(SlashCommandsCog(bot))
     await bot.add_cog(PurchaseTrackingCog(bot))
+    await bot.add_cog(RulesAssistantCog(bot))  # SorceryAI rules assistant
 
 
 async def main():

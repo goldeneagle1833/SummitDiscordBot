@@ -182,6 +182,24 @@ def update_elo_db(user_id, user_display_name, did_win, opponent_id):
     return new_player_elo, elo_change
 
 
+def get_user_elo(user_id: int) -> int:
+    """
+    Get a user's current ELO from the database.
+
+    Args:
+        user_id: The Discord user ID
+
+    Returns:
+        The user's current ELO, or 1500 if not found
+    """
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+    cur.execute("SELECT elo FROM overall_standings WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row else 1500
+
+
 async def winner_report(
     reporter_id,
     user_id,
@@ -350,6 +368,32 @@ async def losser_report(
     conn.close()
 
     return (match_id, user_id, opponent_id)
+
+
+def get_total_match_count():
+    """Get the total number of matches recorded in the database."""
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM match_records")
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
+
+
+def check_milestone(match_id):
+    """
+    Check if the current match is a milestone (every 100 matches).
+
+    Args:
+        match_id: The ID of the just-recorded match
+
+    Returns:
+        int or None: The milestone number if this is a milestone match, None otherwise
+    """
+    total_matches = get_total_match_count()
+    if total_matches > 0 and total_matches % 100 == 0:
+        return total_matches
+    return None
 
 
 async def save_challenge_match(

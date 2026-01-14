@@ -41,6 +41,10 @@ class RulesAssistantCog(commands.Cog):
     async def _initialize_sorcery_ai(self):
         """Initialize the SorceryAI system (runs in background)."""
         try:
+            # Clear discord-bot's config from module cache to allow SorceryAI's config to load
+            if "config" in sys.modules:
+                del sys.modules["config"]
+
             # Import SorceryAI components
             from core.retriever import RulesRetriever
             from core.generator import RulesGenerator

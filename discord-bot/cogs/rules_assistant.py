@@ -3,18 +3,21 @@ Rules Assistant Cog - Integrates SorceryAI for answering Sorcery: Contested Real
 Uses RAG (Retrieval-Augmented Generation) to provide accurate answers based on official rules.
 """
 
+import sys
+from pathlib import Path
+
+# CRITICAL: Add SorceryAI to path BEFORE any other imports
+# This ensures SorceryAI's config.py is found instead of discord-bot's config.py
+SORCERY_AI_PATH = Path(__file__).parent.parent.parent / "SorceryAI"
+if str(SORCERY_AI_PATH) not in sys.path:
+    sys.path.insert(0, str(SORCERY_AI_PATH))
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 import logging
-import sys
-from pathlib import Path
 
 logger = logging.getLogger("discord_bot")
-
-# Add SorceryAI to path
-SORCERY_AI_PATH = Path(__file__).parent.parent.parent / "SorceryAI"
-sys.path.insert(0, str(SORCERY_AI_PATH))
 
 
 class RulesAssistantCog(commands.Cog):

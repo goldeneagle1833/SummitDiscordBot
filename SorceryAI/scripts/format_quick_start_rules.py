@@ -20,8 +20,7 @@ def format_quick_start_rules():
 
     with open(input_path, "r", encoding="utf-8") as f:
         content = f.read()
-
-    # Remove any existing formatting from previous runs
+    # Remove any existing formatting from previous runsdfzg
     # Remove lines that are just "###" followed by partial sentences
     content = re.sub(r"^### [A-Z][^\n]*?(?=\n\n[a-z])", "", content, flags=re.MULTILINE)
 

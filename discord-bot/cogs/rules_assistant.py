@@ -22,7 +22,7 @@ logger = logging.getLogger("discord_bot")
 
 class RulesAssistantCog(commands.Cog):
     """
-    AI-powered rules assistant for Sorcery: Contested Realm.
+    AI-powered rules assistant for Sorcery: Contested Realm.new
     Uses RAG to retrieve relevant rules and generate accurate answers.
     """
 

@@ -30,6 +30,33 @@ def is_indexed() -> bool:
         return False
 
 
+def cards_converted() -> bool:
+    """Check if cards have been converted to markdown."""
+    card_rulings_dir = config.KNOWLEDGE_BASE_DIR / "card_rulings"
+    if not card_rulings_dir.exists():
+        return False
+    # Check if we have the main card files
+    return (card_rulings_dir / "all_cards_reference.md").exists()
+
+
+def convert_cards():
+    """Convert card JSON to markdown if not already done."""
+    if cards_converted():
+        logger.info("Cards already converted to markdown")
+        return True
+
+    logger.info("Converting cards to markdown...")
+    try:
+        from scripts.convert_cards_to_markdown import convert_cards as do_convert
+
+        do_convert()
+        logger.info("Cards converted successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to convert cards: {e}")
+        return False
+
+
 def auto_index():
     """Automatically index knowledge base if not already done."""
     if is_indexed():
@@ -67,6 +94,10 @@ def initialize():
     if not config.KNOWLEDGE_BASE_DIR.exists():
         logger.error(f"Knowledge base directory not found: {config.KNOWLEDGE_BASE_DIR}")
         return False
+
+    # Convert cards to markdown if needed
+    if not convert_cards():
+        logger.warning("Failed to convert cards, continuing anyway...")
 
     # Auto-index if needed
     if not auto_index():

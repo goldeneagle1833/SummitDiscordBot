@@ -1203,9 +1203,7 @@ def rules_assistant_api():
         retriever, generator = get_rules_assistant()
 
         # Retrieve relevant context
-        retrieved_chunks = retriever.search_with_expansion(
-            question, top_k=5, num_variations=3
-        )
+        retrieved_chunks = retriever.search(question, top_k=5)
 
         # Generate answer
         response = generator.generate(question, retrieved_chunks)

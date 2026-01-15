@@ -154,3 +154,59 @@
 .chat-messages::-webkit-scrollbar-thumb:hover {
   background: #555;
 }
+
+/* Message content formatting */
+.message-content p {
+  margin: 0.5rem 0;
+}
+
+.message-content p:first-of-type {
+  margin-top: 0.25rem;
+}
+
+.message-content ul,
+.message-content ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.message-content li {
+  margin: 0.25rem 0;
+  line-height: 1.5;
+}
+
+.message-content strong {
+  color: var(--color-accent, #58a6ff);
+}
+
+.message-content em {
+  color: var(--color-text-muted, #8b949e);
+}
+
+/* Rule citations highlight */
+.rule-citation {
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--color-primary, #58a6ff);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 0.9em;
+}
+
+/* Sources section */
+.message-sources {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border, #30363d);
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #8b949e);
+}
+
+.sources-label {
+  font-weight: 600;
+}
+
+/* User message styling override for strong tag */
+.chat-message.user .message-content strong {
+  color: inherit;
+}

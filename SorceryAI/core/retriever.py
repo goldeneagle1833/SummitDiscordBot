@@ -114,7 +114,7 @@ Format: Return only the alternative questions, one per line."""
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
+            temperature=0.3,  # Lower for more consistent query variations
         )
 
         variations = [query]  # Include original

@@ -105,9 +105,7 @@ class RulesAssistantCog(commands.Cog):
 
         try:
             # Retrieve relevant context
-            context = self.retriever.search_with_expansion(
-                question, top_k=5, num_variations=3
-            )
+            context = self.retriever.search(question, top_k=8)
 
             # Generate answer
             response = self.generator.generate(question, context)
@@ -194,9 +192,7 @@ class RulesAssistantCog(commands.Cog):
         async with ctx.typing():
             try:
                 # Retrieve and generate
-                context = self.retriever.search_with_expansion(
-                    question, top_k=5, num_variations=3
-                )
+                context = self.retriever.search(question, top_k=5)
                 response = self.generator.generate(question, context)
 
                 # Build embed

@@ -7,7 +7,14 @@ import sqlite3
 import os
 import json
 import sys
+import logging
 from pathlib import Path
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 # Add discord-bot to path for shared config
 _bot_path = str(Path(__file__).parent.parent / "discord-bot")
@@ -39,7 +46,7 @@ def get_rules_assistant():
             _rules_generator = RulesGenerator()
             _rules_generator.ensure_initialized()
         except Exception as e:
-            print(f"Failed to initialize Rules Assistant: {e}")
+            logger.error(f"Failed to initialize Rules Assistant: {e}", exc_info=True)
             raise
 
     return _rules_retriever, _rules_generator
@@ -1206,11 +1213,7 @@ def rules_assistant_api():
         )
 
     except Exception as e:
-        import traceback
-
-        error_details = traceback.format_exc()
-        print(f"Rules Assistant API error: {e}")
-        print(f"Full traceback:\n{error_details}")
+        logger.error(f"Rules Assistant API error: {e}", exc_info=True)
         return jsonify(
             {
                 "success": False,

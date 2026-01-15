@@ -168,6 +168,38 @@
         color: #fff;
       }
 
+      /* Sortable table headers */
+      .stats-table th.sortable {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 1.5rem;
+      }
+
+      .stats-table th.sortable:hover {
+        background: rgba(255, 255, 255, 0.15);
+      }
+
+      .stats-table th.sortable::after {
+        content: '⇅';
+        position: absolute;
+        right: 0.5rem;
+        opacity: 0.4;
+        font-size: 0.8rem;
+      }
+
+      .stats-table th.sortable.asc::after {
+        content: '▲';
+        opacity: 1;
+        color: #4db8ff;
+      }
+
+      .stats-table th.sortable.desc::after {
+        content: '▼';
+        opacity: 1;
+        color: #4db8ff;
+      }
+
       @media (max-width: 768px) {
         .stats-table {
           font-size: 0.9rem;
@@ -236,13 +268,13 @@
         <table class="stats-table" id="cards-table">
           <thead>
             <tr>
-              <th>Card Name</th>
-              <th>Type</th>
-              <th>Element</th>
-              <th>Rarity</th>
-              <th style="width: 100px">Total Count</th>
-              <th style="width: 120px">Avg Played</th>
-              <th style="width: 120px">% in Decks</th>
+              <th class="sortable" data-sort="name" data-type="string">Card Name</th>
+              <th class="sortable" data-sort="type" data-type="string">Type</th>
+              <th class="sortable" data-sort="element" data-type="string">Element</th>
+              <th class="sortable" data-sort="rarity" data-type="string">Rarity</th>
+              <th class="sortable" data-sort="count" data-type="number" style="width: 100px">Total Count</th>
+              <th class="sortable" data-sort="avg" data-type="number" style="width: 120px">Avg Played</th>
+              <th class="sortable" data-sort="percent" data-type="number" style="width: 120px">% in Decks</th>
             </tr>
           </thead>
           <tbody>
@@ -250,7 +282,11 @@
             <tr
               data-name="{{ card.name }}"
               data-type="{{ card.type }}"
-              data-element="{{ card.element }}">
+              data-element="{{ card.element }}"
+              data-rarity="{{ card.rarity }}"
+              data-count="{{ card.count }}"
+              data-avg="{{ card.avg_played }}"
+              data-percent="{{ card.deck_percent }}">
               <td>{{ card.name }}</td>
               <td>{{ card.type }}</td>
               <td>{{ card.element }}</td>
@@ -282,6 +318,61 @@
 
     <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
     <script>
+      // Current sort state
+      let currentSort = { column: null, direction: 'asc' };
+
+      // Sort table by column
+      function sortTable(column, type) {
+        const table = document.getElementById('cards-table');
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const headers = table.querySelectorAll('th.sortable');
+
+        // Toggle direction if same column, otherwise default to ascending
+        if (currentSort.column === column) {
+          currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+          currentSort.column = column;
+          currentSort.direction = 'asc';
+        }
+
+        // Update header classes
+        headers.forEach(h => {
+          h.classList.remove('asc', 'desc');
+          if (h.dataset.sort === column) {
+            h.classList.add(currentSort.direction);
+          }
+        });
+
+        // Sort rows
+        rows.sort((a, b) => {
+          let aVal = a.dataset[column];
+          let bVal = b.dataset[column];
+
+          if (type === 'number') {
+            aVal = parseFloat(aVal) || 0;
+            bVal = parseFloat(bVal) || 0;
+          } else {
+            aVal = aVal.toLowerCase();
+            bVal = bVal.toLowerCase();
+          }
+
+          if (aVal < bVal) return currentSort.direction === 'asc' ? -1 : 1;
+          if (aVal > bVal) return currentSort.direction === 'asc' ? 1 : -1;
+          return 0;
+        });
+
+        // Re-append sorted rows
+        rows.forEach(row => tbody.appendChild(row));
+      }
+
+      // Add click listeners to sortable headers
+      document.querySelectorAll('th.sortable').forEach(header => {
+        header.addEventListener('click', () => {
+          sortTable(header.dataset.sort, header.dataset.type);
+        });
+      });
+
       function filterCards() {
         const searchTerm = document
           .getElementById("card-search")

@@ -1206,7 +1206,10 @@ def rules_assistant_api():
         )
 
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
         print(f"Rules Assistant API error: {e}")
+        print(f"Full traceback:\n{error_details}")
         return jsonify(
             {
                 "success": False,

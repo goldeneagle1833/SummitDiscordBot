@@ -1,6 +1,6 @@
 {
-  "indexed_at": "2026-01-13T21:45:18.241539",
-  "num_documents": 237,
+  "indexed_at": "2026-01-15T07:44:41.189963",
+  "num_documents": 500,
   "embedding_model": "text-embedding-3-small",
   "chunk_size": 500,
   "chunk_overlap": 50

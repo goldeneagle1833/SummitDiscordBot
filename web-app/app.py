@@ -2,13 +2,48 @@
 Summit Web Application - A lightweight Flask web app
 """
 
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 import sqlite3
 import os
 import json
+import sys
 from pathlib import Path
 
+# Add discord-bot to path for shared config
+_bot_path = str(Path(__file__).parent.parent / "discord-bot")
+if _bot_path not in sys.path:
+    sys.path.insert(0, _bot_path)
+
+# Add SorceryAI to path
+_sorcery_ai_path = str(Path(__file__).parent.parent / "SorceryAI")
+if _sorcery_ai_path not in sys.path:
+    sys.path.insert(0, _sorcery_ai_path)
+
 app = Flask(__name__)
+
+# Initialize SorceryAI components (lazy load)
+_rules_retriever = None
+_rules_generator = None
+
+
+def get_rules_assistant():
+    """Lazy load rules assistant components"""
+    global _rules_retriever, _rules_generator
+
+    if _rules_retriever is None or _rules_generator is None:
+        try:
+            from core.retriever import RulesRetriever
+            from core.generator import RulesGenerator
+
+            _rules_retriever = RulesRetriever()
+            _rules_generator = RulesGenerator()
+            _rules_generator.ensure_initialized()
+        except Exception as e:
+            print(f"Failed to initialize Rules Assistant: {e}")
+            raise
+
+    return _rules_retriever, _rules_generator
+
 
 # Path to top-8 event data
 TOP_8_DIR = Path(__file__).parent / "top-8-decks-by-event"
@@ -1140,6 +1175,44 @@ def avatars_api():
     avatar_list.sort(key=lambda x: x["total"], reverse=True)
 
     return jsonify(avatar_list)
+
+
+@app.route("/api/rules-assistant", methods=["POST"])
+def rules_assistant_api():
+    """API endpoint for Rules Assistant chat"""
+    try:
+        data = request.get_json()
+        question = data.get("question", "").strip()
+
+        if not question:
+            return jsonify({"success": False, "error": "Question is required"}), 400
+
+        if len(question) > 500:
+            return jsonify(
+                {"success": False, "error": "Question is too long (max 500 characters)"}
+            ), 400
+
+        # Get rules assistant components
+        retriever, generator = get_rules_assistant()
+
+        # Retrieve relevant context
+        retrieved_chunks = retriever.search(question, top_k=5)
+
+        # Generate answer
+        response = generator.generate(question, retrieved_chunks)
+
+        return jsonify(
+            {"success": True, "answer": response.answer, "sources": response.sources}
+        )
+
+    except Exception as e:
+        print(f"Rules Assistant API error: {e}")
+        return jsonify(
+            {
+                "success": False,
+                "error": "Failed to process your question. Please try again.",
+            }
+        ), 500
 
 
 if __name__ == "__main__":

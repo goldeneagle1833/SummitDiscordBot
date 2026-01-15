@@ -17,7 +17,16 @@ from core.retriever import RetrievedChunk
 from core.prompts import RULES_ASSISTANT_PROMPT
 import config
 
-client = OpenAI(api_key=config.OPENAI_API_KEY)
+# Lazy-loaded client to avoid initialization issues
+_client = None
+
+
+def _get_client():
+    """Get or create OpenAI client lazily."""
+    global _client
+    if _client is None:
+        _client = OpenAI(api_key=config.OPENAI_API_KEY)
+    return _client
 
 
 @dataclass
@@ -74,7 +83,7 @@ class RulesGenerator:
         prompt = RULES_ASSISTANT_PROMPT.format(context=context_str, question=question)
 
         # Generate response
-        response = client.chat.completions.create(
+        response = _get_client().chat.completions.create(
             model=self.model,
             messages=[
                 {

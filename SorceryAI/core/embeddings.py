@@ -15,7 +15,16 @@ from openai import OpenAI
 from typing import List, Union
 import config
 
-client = OpenAI(api_key=config.OPENAI_API_KEY)
+# Lazy-loaded client to avoid initialization issues
+_client = None
+
+
+def _get_client():
+    """Get or create OpenAI client lazily."""
+    global _client
+    if _client is None:
+        _client = OpenAI(api_key=config.OPENAI_API_KEY)
+    return _client
 
 
 def get_embedding(text: str, model: str = config.EMBEDDING_MODEL) -> List[float]:
@@ -30,7 +39,7 @@ def get_embedding(text: str, model: str = config.EMBEDDING_MODEL) -> List[float]
         List of floats representing the embedding vector
     """
     text = text.replace("\n", " ")
-    response = client.embeddings.create(input=[text], model=model)
+    response = _get_client().embeddings.create(input=[text], model=model)
     return response.data[0].embedding
 
 
@@ -48,7 +57,7 @@ def get_embeddings(
         List of embedding vectors
     """
     texts = [text.replace("\n", " ") for text in texts]
-    response = client.embeddings.create(input=texts, model=model)
+    response = _get_client().embeddings.create(input=texts, model=model)
     return [item.embedding for item in response.data]
 
 

@@ -2,6 +2,14 @@
 Embedding generation for documents and queries
 """
 
+import sys
+from pathlib import Path
+
+# Add discord-bot to path to use shared config
+_bot_path = str(Path(__file__).parent.parent.parent / "discord-bot")
+if _bot_path not in sys.path:
+    sys.path.insert(0, _bot_path)
+
 import tiktoken
 from openai import OpenAI
 from typing import List, Union

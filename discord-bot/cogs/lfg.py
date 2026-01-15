@@ -577,12 +577,25 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 try:
                     dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
+                        # Grant channel access to user who can't receive DMs
+                        guild = self.bot.get_guild(config.GUILD_ID)
+                        if guild:
+                            member = guild.get_member(reporter_user.id)
+                            if member:
+                                await dm_channel.set_permissions(
+                                    member, read_messages=True, send_messages=True
+                                )
+                                logger.info(
+                                    f"Granted channel access to {reporter_user.global_name} (can't receive DMs)"
+                                )
+
+                        # Post without deck URL in public channel
                         await dm_channel.send(
-                            f"{reporter_user.mention} **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\nReport the match result below:",
+                            f"{reporter_user.mention} **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\nReport the match result below:",
                             view=view_reporter,
                         )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error(f"Failed to handle DM failure for reporter: {e}")
 
             # Build match info message for the other player
             other_own_deck_text = (
@@ -599,12 +612,25 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 try:
                     dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
+                        # Grant channel access to user who can't receive DMs
+                        guild = self.bot.get_guild(config.GUILD_ID)
+                        if guild:
+                            member = guild.get_member(other_user.id)
+                            if member:
+                                await dm_channel.set_permissions(
+                                    member, read_messages=True, send_messages=True
+                                )
+                                logger.info(
+                                    f"Granted channel access to {other_user.global_name} (can't receive DMs)"
+                                )
+
+                        # Post without deck URL in public channel
                         await dm_channel.send(
-                            f"{other_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
+                            f"{other_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
                             f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                         )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error(f"Failed to handle DM failure for other player: {e}")
 
             # Announce match in LFG channel
             if lfg_channel:
@@ -791,7 +817,7 @@ class LFGReportButtons(discord.ui.View):
                         ephemeral=True,
                     )
                 except discord.Forbidden:
-                    # DM failed - add role and post in designated channel
+                    # DM failed - add role, grant channel access, and post in designated channel
                     try:
                         if guild:
                             role = guild.get_role(DM_DISABLED_ROLE_ID)
@@ -806,6 +832,17 @@ class LFGReportButtons(discord.ui.View):
                             DM_DISABLED_CHANNEL_ID
                         )
                         if dm_channel:
+                            # Grant channel access
+                            if guild:
+                                member = guild.get_member(opponent_id)
+                                if member:
+                                    await dm_channel.set_permissions(
+                                        member, read_messages=True, send_messages=True
+                                    )
+                                    logger.info(
+                                        f"Granted channel access to {opponent_global}"
+                                    )
+
                             await dm_channel.send(
                                 f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:",
                                 view=confirmation_view,
@@ -3137,16 +3174,28 @@ class LFGCog(commands.Cog):
             match_conn = sqlite3.connect("match_records.db")
             match_cursor = match_conn.cursor()
 
-            # Get the match record
-            match_cursor.execute(
-                """
-                SELECT match_id, winner_id, losser_id, winner_display_name, losser_display_name, 
-                       winner_elo_change, loser_elo_change, timestamp
-                FROM match_records 
-                WHERE match_id = ?
-                """,
-                (match_id,),
-            )
+            # Get the match record (use ROWID as fallback if match_id column doesn't exist)
+            try:
+                match_cursor.execute(
+                    """
+                    SELECT match_id, winner_id, losser_id, winner_display_name, losser_display_name, 
+                           winner_elo_change, loser_elo_change, timestamp
+                    FROM match_records 
+                    WHERE match_id = ?
+                    """,
+                    (match_id,),
+                )
+            except sqlite3.OperationalError:
+                # Fallback: column might be named differently or use ROWID
+                match_cursor.execute(
+                    """
+                    SELECT ROWID, winner_id, losser_id, winner_display_name, losser_display_name, 
+                           winner_elo_change, loser_elo_change, timestamp
+                    FROM match_records 
+                    WHERE ROWID = ?
+                    """,
+                    (match_id,),
+                )
             match = match_cursor.fetchone()
 
             if not match:
@@ -3187,10 +3236,15 @@ class LFGCog(commands.Cog):
                     f"**{loser_name}**: {-loser_elo_change if loser_elo_change else 0} ELO"
                 )
 
-            # Delete the match record
-            match_cursor.execute(
-                "DELETE FROM match_records WHERE match_id = ?", (match_id,)
-            )
+            # Delete the match record (use ROWID to be compatible with older schema)
+            try:
+                match_cursor.execute(
+                    "DELETE FROM match_records WHERE match_id = ?", (match_id,)
+                )
+            except sqlite3.OperationalError:
+                match_cursor.execute(
+                    "DELETE FROM match_records WHERE ROWID = ?", (match_id,)
+                )
 
             elo_conn.commit()
             match_conn.commit()

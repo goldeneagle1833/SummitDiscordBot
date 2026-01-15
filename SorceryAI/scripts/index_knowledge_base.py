@@ -8,6 +8,11 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 
+# Add discord-bot to path to use shared config
+_bot_path = str(Path(__file__).parent.parent.parent / "discord-bot")
+if _bot_path not in sys.path:
+    sys.path.insert(0, _bot_path)
+
 from core.embeddings import get_embeddings, chunk_text
 from core.vector_store import VectorStore
 import config

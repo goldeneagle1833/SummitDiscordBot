@@ -2,6 +2,14 @@
 LLM response generator with context
 """
 
+import sys
+from pathlib import Path
+
+# Add discord-bot to path to use shared config
+_bot_path = str(Path(__file__).parent.parent.parent / "discord-bot")
+if _bot_path not in sys.path:
+    sys.path.insert(0, _bot_path)
+
 from typing import List
 from dataclasses import dataclass
 from openai import OpenAI

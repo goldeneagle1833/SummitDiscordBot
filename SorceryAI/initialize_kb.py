@@ -10,7 +10,12 @@ from pathlib import Path
 # Add current directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core.knowledge_base import ensure_initialized
+# Add discord-bot to path to use shared config
+_bot_path = str(Path(__file__).parent.parent / "discord-bot")
+if _bot_path not in sys.path:
+    sys.path.insert(0, _bot_path)
+
+from init import initialize
 
 if __name__ == "__main__":
     print("Initializing SorceryAI knowledge base...")
@@ -18,9 +23,12 @@ if __name__ == "__main__":
     print("This may take a few minutes on first run...\n")
 
     try:
-        ensure_initialized()
-        print("\n✅ Knowledge base initialized successfully!")
-        print("The bot can now answer rules questions.")
+        if initialize():
+            print("\n✅ Knowledge base initialized successfully!")
+            print("The bot can now answer rules questions.")
+        else:
+            print("\n❌ Failed to initialize knowledge base")
+            sys.exit(1)
     except Exception as e:
         print(f"\n❌ Error initializing knowledge base: {e}")
         sys.exit(1)

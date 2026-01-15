@@ -2,6 +2,14 @@
 Vector store interface using ChromaDB
 """
 
+import sys
+from pathlib import Path
+
+# Add discord-bot to path to use shared config
+_bot_path = str(Path(__file__).parent.parent.parent / "discord-bot")
+if _bot_path not in sys.path:
+    sys.path.insert(0, _bot_path)
+
 import chromadb
 from chromadb.config import Settings
 from typing import List, Dict, Optional

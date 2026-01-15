@@ -5,22 +5,22 @@ Uses RAG (Retrieval-Augmented Generation) to provide accurate answers based on o
 
 import sys
 from pathlib import Path
-import importlib.util
-
-# Path to SorceryAI directory
-SORCERY_AI_PATH = Path(__file__).parent.parent.parent / "SorceryAI"
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 import logging
+import config  # Shared config with SorceryAI settings
 
 logger = logging.getLogger("discord_bot")
+
+# Path to SorceryAI directory for imports
+SORCERY_AI_PATH = config.SORCERY_AI_DIR
 
 
 class RulesAssistantCog(commands.Cog):
     """
-    AI-powered rules assistant for Sorcery: Contested Realm.new
+    AI-powered rules assistant for Sorcery: Contested Realm.
     Uses RAG to retrieve relevant rules and generate accurate answers.
     """
 
@@ -39,31 +39,14 @@ class RulesAssistantCog(commands.Cog):
     async def _initialize_sorcery_ai(self):
         """Initialize the SorceryAI system (runs in background)."""
         try:
-            # Use importlib to explicitly load modules from SorceryAI directory
-            # This avoids polluting sys.modules and affecting other parts of the bot
-
-            # Load SorceryAI's config as a separate module
-            config_path = SORCERY_AI_PATH / "config.py"
-            spec = importlib.util.spec_from_file_location("sorcery_config", config_path)
-            sorcery_config = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(sorcery_config)
-
-            # Temporarily add SorceryAI to path for its internal imports
+            # Add SorceryAI to path for its internal imports
             sorcery_ai_str = str(SORCERY_AI_PATH)
-            path_added = False
             if sorcery_ai_str not in sys.path:
                 sys.path.insert(0, sorcery_ai_str)
-                path_added = True
 
-            try:
-                # Import SorceryAI components
-                from core.retriever import RulesRetriever
-                from core.generator import RulesGenerator
-                from core.knowledge_base import ensure_initialized
-            finally:
-                # Remove from path to avoid affecting other imports
-                if path_added and sorcery_ai_str in sys.path:
-                    sys.path.remove(sorcery_ai_str)
+            # Import SorceryAI components (they use the shared config)
+            from core.retriever import RulesRetriever
+            from core.generator import RulesGenerator
 
             logger.info("Initializing SorceryAI components...")
 

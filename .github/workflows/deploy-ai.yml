@@ -1,0 +1,32 @@
+name: Deploy SorceryAI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "SorceryAI/**"
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Linode
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LINODE_HOST }}
+          username: ${{ secrets.LINODE_USERNAME }}
+          key: ${{ secrets.LINODE_SSH_KEY }}
+          script: |
+            cd /root/Summit/SummitDiscordBot
+            git pull origin main
+
+            # Install any new AI dependencies
+            source discord-bot/venv/bin/activate
+            pip install -r SorceryAI/requirements.txt 2>/dev/null || true
+
+            # Restart only the web app (not the bot)
+            systemctl restart summit-web
+
+            echo "SorceryAI deployed successfully"

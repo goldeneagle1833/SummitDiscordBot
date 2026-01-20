@@ -10,6 +10,110 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+    <style>
+      .distribution-section {
+        max-width: 600px;
+        margin: 2rem auto;
+        padding: 0 2rem;
+      }
+
+      .distribution-controls {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .distribution-controls label {
+        color: rgba(255, 255, 255, 0.8);
+        font-weight: 500;
+      }
+
+      .distribution-controls select,
+      .distribution-controls input {
+        padding: 0.5rem 1rem;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        color: #fff;
+        font-size: 0.95rem;
+      }
+
+      .distribution-controls select:focus,
+      .distribution-controls input:focus {
+        outline: none;
+        border-color: #4db8ff;
+      }
+
+      .distribution-controls select option {
+        background: #1a1a2e;
+        color: #fff;
+      }
+
+      .distribution-table-container {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 1.5rem;
+      }
+
+      .distribution-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      .distribution-table th {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 0.75rem;
+        text-align: left;
+        color: rgba(255, 255, 255, 0.9);
+        font-weight: 600;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .distribution-table td {
+        padding: 0.75rem;
+        color: rgba(255, 255, 255, 0.8);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .distribution-table tbody tr:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      .distribution-table th:last-child,
+      .distribution-table td:last-child {
+        text-align: right;
+      }
+
+      .elo-range {
+        font-weight: 600;
+        color: #4db8ff;
+      }
+
+      .player-count {
+        color: #ffd700;
+      }
+
+      .custom-inputs {
+        display: none;
+        gap: 0.5rem;
+        align-items: center;
+      }
+
+      .custom-inputs.visible {
+        display: flex;
+      }
+
+      .custom-inputs input {
+        width: 80px;
+      }
+
+      .custom-inputs input#custom-start {
+        width: 100px;
+      }
+    </style>
   </head>
   <body>
     {% include 'components/navbar.html' %}
@@ -18,6 +122,68 @@
       <section class="hero">
         <h1>ELO Leaderboards</h1>
         <p>Choose a server to view rankings</p>
+      </section>
+
+      <!-- ELO Distribution Section -->
+      <section class="distribution-section">
+        <h2 style="color: #fff; text-align: center; margin-bottom: 1rem">
+          ELO Distribution
+        </h2>
+
+        <div class="distribution-controls">
+          <label for="grouping-select">Grouping:</label>
+          <select id="grouping-select">
+            <option value="100-standard">100pt (1100, 1200, ...)</option>
+            <option value="100-offset">100pt offset (1050, 1150, ...)</option>
+            <option value="50-standard">50pt (1100, 1150, ...)</option>
+            <option value="custom">Custom</option>
+          </select>
+          <div class="custom-inputs" id="custom-inputs">
+            <label>Start:</label>
+            <input
+              type="number"
+              id="custom-start"
+              value="1100"
+              step="50"
+              min="1000"
+              max="2000" />
+            <label>Size:</label>
+            <input
+              type="number"
+              id="custom-size"
+              value="100"
+              step="25"
+              min="25"
+              max="500" />
+            <button
+              onclick="fetchDistribution()"
+              style="
+                padding: 0.5rem 1rem;
+                background: #4db8ff;
+                border: none;
+                border-radius: 6px;
+                color: #000;
+                cursor: pointer;
+              ">
+              Apply
+            </button>
+          </div>
+        </div>
+
+        <div class="distribution-table-container">
+          <table class="distribution-table">
+            <thead>
+              <tr>
+                <th>ELO Range</th>
+                <th>Players (of <span id="total-players">0</span>)</th>
+                <th>% of players</th>
+              </tr>
+            </thead>
+            <tbody id="distribution-body">
+              <!-- Rows will be inserted by JS -->
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section class="content">
@@ -66,6 +232,130 @@
         </div>
       </section>
     </main>
+
+    <script>
+      let allElos = [];
+
+      // Show/hide custom inputs based on selection
+      document
+        .getElementById("grouping-select")
+        .addEventListener("change", function () {
+          const customInputs = document.getElementById("custom-inputs");
+          if (this.value === "custom") {
+            customInputs.classList.add("visible");
+          } else {
+            customInputs.classList.remove("visible");
+            fetchDistribution();
+          }
+        });
+
+      // Calculate distribution based on grouping settings
+      function calculateDistribution(elos, startValue, bandSize) {
+        const total = elos.length;
+        if (total === 0) return [];
+
+        const bands = [];
+        const minElo = Math.min(...elos);
+        const maxElo = Math.max(...elos);
+
+        // Create bands from start value up to max ELO
+        for (
+          let lower = startValue;
+          lower <= maxElo + bandSize;
+          lower += bandSize
+        ) {
+          const upper = lower + bandSize - 1;
+          const count = elos.filter(
+            (elo) => elo >= lower && elo <= upper
+          ).length;
+          const percentage = (count / total) * 100;
+
+          bands.push({
+            range: `${lower}-${upper}`,
+            count: count,
+            percentage: percentage.toFixed(2),
+          });
+        }
+
+        // Add top bucket if there are any above the highest band
+        const highestBandStart =
+          Math.floor(maxElo / bandSize) * bandSize + (startValue % bandSize);
+
+        return bands
+          .filter((b) => b.count > 0 || parseInt(b.range.split("-")[0]) <= 1600)
+          .reverse();
+      }
+
+      // Render the distribution table
+      function renderDistribution(bands, totalPlayers) {
+        document.getElementById("total-players").textContent = totalPlayers;
+
+        const tbody = document.getElementById("distribution-body");
+        tbody.innerHTML = "";
+
+        bands.forEach((band) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td class="elo-range">${band.range}</td>
+            <td class="player-count">${band.count}</td>
+            <td>${band.percentage}%</td>
+          `;
+          tbody.appendChild(row);
+        });
+      }
+
+      // Fetch ELO data and render with current settings
+      async function fetchDistribution() {
+        try {
+          const res = await fetch("/api/leaderboard");
+          if (!res.ok) {
+            console.error("Failed to fetch leaderboard:", res.status);
+            return;
+          }
+          const data = await res.json();
+          allElos = data.map((p) => p.elo);
+
+          // Get grouping settings
+          const grouping = document.getElementById("grouping-select").value;
+          let startValue, bandSize;
+
+          switch (grouping) {
+            case "100-standard":
+              startValue = 1100;
+              bandSize = 100;
+              break;
+            case "100-offset":
+              startValue = 1050;
+              bandSize = 100;
+              break;
+            case "50-standard":
+              startValue = 1100;
+              bandSize = 50;
+              break;
+            case "custom":
+              startValue =
+                parseInt(document.getElementById("custom-start").value) || 1100;
+              bandSize =
+                parseInt(document.getElementById("custom-size").value) || 100;
+              break;
+            default:
+              startValue = 1100;
+              bandSize = 100;
+          }
+
+          const bands = calculateDistribution(allElos, startValue, bandSize);
+          renderDistribution(bands, allElos.length);
+        } catch (error) {
+          console.error("Error fetching distribution:", error);
+        }
+      }
+
+      // Initial fetch
+      fetchDistribution();
+
+      // Auto-refresh every 30 seconds
+      setInterval(fetchDistribution, 30000);
+    </script>
 
     <footer>
       <p>&copy; 2026 Summit. All rights reserved.</p>

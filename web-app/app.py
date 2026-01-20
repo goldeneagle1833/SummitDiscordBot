@@ -458,6 +458,83 @@ def leaderboard():
     return jsonify(leaderboard_data)
 
 
+@app.route("/api/elo-distribution")
+def elo_distribution():
+    """Get ELO distribution across bands"""
+    conn = sqlite3.connect("../discord-bot/elo.db")
+    cur = conn.cursor()
+    cur.execute("SELECT elo FROM overall_standings")
+    elos = [row[0] for row in cur.fetchall()]
+    conn.close()
+
+    total_players = len(elos)
+
+    if total_players == 0:
+        return jsonify({"increments": [], "offset": []})
+
+    # Define 100pt increments (1200-1299, 1300-1399, etc.)
+    increments = []
+    for lower in range(1100, 2100, 100):
+        upper = lower + 99
+        count = sum(1 for elo in elos if lower <= elo <= upper)
+        percentage = (count / total_players * 100) if count > 0 else 0
+        increments.append(
+            {
+                "range": f"{lower}-{upper}",
+                "count": count,
+                "percentage": round(percentage, 2),
+            }
+        )
+
+    # Add 2000+ bucket
+    count_2000_plus = sum(1 for elo in elos if elo >= 2000)
+    percentage_2000_plus = (
+        (count_2000_plus / total_players * 100) if count_2000_plus > 0 else 0
+    )
+    increments.append(
+        {
+            "range": "2000+",
+            "count": count_2000_plus,
+            "percentage": round(percentage_2000_plus, 2),
+        }
+    )
+
+    # Define 100pt offset (1050-1149, 1150-1249, etc.)
+    offset = []
+    for lower in range(1050, 2000, 100):
+        upper = lower + 99
+        count = sum(1 for elo in elos if lower <= elo <= upper)
+        percentage = (count / total_players * 100) if count > 0 else 0
+        offset.append(
+            {
+                "range": f"{lower}-{upper}",
+                "count": count,
+                "percentage": round(percentage, 2),
+            }
+        )
+
+    # Add 1950+ bucket
+    count_1950_plus = sum(1 for elo in elos if elo >= 1950)
+    percentage_1950_plus = (
+        (count_1950_plus / total_players * 100) if count_1950_plus > 0 else 0
+    )
+    offset.append(
+        {
+            "range": "1950+",
+            "count": count_1950_plus,
+            "percentage": round(percentage_1950_plus, 2),
+        }
+    )
+
+    return jsonify(
+        {
+            "increments": list(reversed(increments)),  # Reverse to show highest first
+            "offset": list(reversed(offset)),
+            "total_players": total_players,
+        }
+    )
+
+
 # Player profile page
 @app.route("/player/<player_id>")
 def player_profile(player_id):

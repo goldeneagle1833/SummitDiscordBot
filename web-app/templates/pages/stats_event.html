@@ -181,7 +181,7 @@
       }
 
       .stats-table th.sortable::after {
-        content: '⇅';
+        content: "⇅";
         position: absolute;
         right: 0.5rem;
         opacity: 0.4;
@@ -189,13 +189,13 @@
       }
 
       .stats-table th.sortable.asc::after {
-        content: '▲';
+        content: "▲";
         opacity: 1;
         color: #4db8ff;
       }
 
       .stats-table th.sortable.desc::after {
-        content: '▼';
+        content: "▼";
         opacity: 1;
         color: #4db8ff;
       }
@@ -268,13 +268,37 @@
         <table class="stats-table" id="cards-table">
           <thead>
             <tr>
-              <th class="sortable" data-sort="name" data-type="string">Card Name</th>
+              <th class="sortable" data-sort="name" data-type="string">
+                Card Name
+              </th>
               <th class="sortable" data-sort="type" data-type="string">Type</th>
-              <th class="sortable" data-sort="element" data-type="string">Element</th>
-              <th class="sortable" data-sort="rarity" data-type="string">Rarity</th>
-              <th class="sortable" data-sort="count" data-type="number" style="width: 100px">Total Count</th>
-              <th class="sortable" data-sort="avg" data-type="number" style="width: 120px">Avg Played</th>
-              <th class="sortable" data-sort="percent" data-type="number" style="width: 120px">% in Decks</th>
+              <th class="sortable" data-sort="element" data-type="string">
+                Element
+              </th>
+              <th class="sortable" data-sort="rarity" data-type="string">
+                Rarity
+              </th>
+              <th
+                class="sortable"
+                data-sort="count"
+                data-type="number"
+                style="width: 100px">
+                Total Count
+              </th>
+              <th
+                class="sortable"
+                data-sort="avg"
+                data-type="number"
+                style="width: 120px">
+                Avg Played
+              </th>
+              <th
+                class="sortable"
+                data-sort="percent"
+                data-type="number"
+                style="width: 120px">
+                % in Decks
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -319,26 +343,27 @@
     <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
     <script>
       // Current sort state
-      let currentSort = { column: null, direction: 'asc' };
+      let currentSort = { column: null, direction: "asc" };
 
       // Sort table by column
       function sortTable(column, type) {
-        const table = document.getElementById('cards-table');
-        const tbody = table.querySelector('tbody');
-        const rows = Array.from(tbody.querySelectorAll('tr'));
-        const headers = table.querySelectorAll('th.sortable');
+        const table = document.getElementById("cards-table");
+        const tbody = table.querySelector("tbody");
+        const rows = Array.from(tbody.querySelectorAll("tr"));
+        const headers = table.querySelectorAll("th.sortable");
 
         // Toggle direction if same column, otherwise default to ascending
         if (currentSort.column === column) {
-          currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+          currentSort.direction =
+            currentSort.direction === "asc" ? "desc" : "asc";
         } else {
           currentSort.column = column;
-          currentSort.direction = 'asc';
+          currentSort.direction = "asc";
         }
 
         // Update header classes
-        headers.forEach(h => {
-          h.classList.remove('asc', 'desc');
+        headers.forEach((h) => {
+          h.classList.remove("asc", "desc");
           if (h.dataset.sort === column) {
             h.classList.add(currentSort.direction);
           }
@@ -349,7 +374,7 @@
           let aVal = a.dataset[column];
           let bVal = b.dataset[column];
 
-          if (type === 'number') {
+          if (type === "number") {
             aVal = parseFloat(aVal) || 0;
             bVal = parseFloat(bVal) || 0;
           } else {
@@ -357,18 +382,18 @@
             bVal = bVal.toLowerCase();
           }
 
-          if (aVal < bVal) return currentSort.direction === 'asc' ? -1 : 1;
-          if (aVal > bVal) return currentSort.direction === 'asc' ? 1 : -1;
+          if (aVal < bVal) return currentSort.direction === "asc" ? -1 : 1;
+          if (aVal > bVal) return currentSort.direction === "asc" ? 1 : -1;
           return 0;
         });
 
         // Re-append sorted rows
-        rows.forEach(row => tbody.appendChild(row));
+        rows.forEach((row) => tbody.appendChild(row));
       }
 
       // Add click listeners to sortable headers
-      document.querySelectorAll('th.sortable').forEach(header => {
-        header.addEventListener('click', () => {
+      document.querySelectorAll("th.sortable").forEach((header) => {
+        header.addEventListener("click", () => {
           sortTable(header.dataset.sort, header.dataset.type);
         });
       });

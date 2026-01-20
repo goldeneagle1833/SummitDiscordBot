@@ -28,6 +28,170 @@
     </main>
 
     <script>
+      // Configurable image settings
+      const AVATAR_IMAGE_CONFIG = {
+        opacity: 0.15, // Opacity of background image (0.0 to 1.0)
+        defaultZoom: 100, // Default background-size percentage (100 = cover, >100 = more zoom, <100 = less zoom)
+        defaultPosition: "center center", // Default position (horizontal vertical)
+
+        // Per-avatar zoom overrides (adjust for specific avatars)
+        // 100 = fill card, <100 = show more of image, >100 = zoom in more
+        zoomOverrides: {
+          // Elemental Avatars
+          "avatar of air": 100,
+          "avatar of earth": 100,
+          "avatar of fire": 100,
+          "avatar of water": 100,
+
+          // GOT Avatars (larger images, need less zoom)
+          "animist": 85,
+          "bladedancer": 85,
+          "corruptor": 85,
+          "duplicator": 85,
+          "harbinger": 85,
+          "imposter": 85,
+          "interrogator": 100,
+          "ironclad": 85,
+          "magician": 85,
+          "necromancer": 85,
+          "persecutor": 85,
+          "realm eater": 85,
+          "savior": 85,
+
+          // Standard Avatars
+          "battlemage": 100,
+          "deathspeaker": 100,
+          "elementalist": 100,
+          "enchantress": 100,
+          "flamecaller": 100,
+          "geomancer": 100,
+          "pathfinder": 100,
+          "seer": 100,
+          "sorcerer": 100,
+          "sparkmage": 100,
+          "waveshaper": 100,
+        },
+
+        // Per-avatar position overrides
+        // Format: 'horizontal vertical'
+        // Horizontal: left, center, right, or percentage (e.g., '30%')
+        // Vertical: top, center, bottom, or percentage (e.g., '40%')
+        positionOverrides: {
+          // Elemental Avatars
+          "avatar of air": "50% 50%",
+          "avatar of earth": "50% 50%",
+          "avatar of fire": "50% 50%",
+          "avatar of water": "50% 50%",
+
+          // GOT Avatars
+          "animist": "50% 25%",
+          "bladedancer": "50% 50%",
+          "corruptor": "50% 50%",
+          "duplicator": "50% 50%",
+          "harbinger": "50% 50%",
+          "imposter": "50% 50%",
+          "interrogator": "50% 40%",
+          "ironclad": "50% 50%",
+          "magician": "50% 50%",
+          "necromancer": "20% 10%",
+          "persecutor": "50% 50%",
+          "realm eater": "50% 50%",
+          "savior": "50% 50%",
+          "spellslinger": "50% 25%",
+          "dragonlord": "50% 30%",
+
+          // Standard Avatars
+          "battlemage": "50% 50%",
+          "deathspeaker": "50% 50%",
+          "elementalist": "50% 50%",
+          "enchantress": "50% 50%",
+          "flamecaller": "50% 50%",
+          "geomancer": "50% 50%",
+          "pathfinder": "50% 20%",
+          "seer": "50% 50%",
+          "sorcerer": "50% 25%",
+          "sparkmage": "50% 50%",
+          "waveshaper": "50% 50%",
+        },
+      };
+
+      // Get zoom level for specific avatar
+      function getAvatarZoom(avatarName) {
+        const normalized = avatarName.toLowerCase();
+        return (
+          AVATAR_IMAGE_CONFIG.zoomOverrides[normalized] ||
+          AVATAR_IMAGE_CONFIG.defaultZoom
+        );
+      }
+
+      // Get position for specific avatar
+      function getAvatarPosition(avatarName) {
+        const normalized = avatarName.toLowerCase();
+        return (
+          AVATAR_IMAGE_CONFIG.positionOverrides[normalized] ||
+          AVATAR_IMAGE_CONFIG.defaultPosition
+        );
+      }
+
+      // Calculate gradient color for win rate
+      // 0% = red, 50% = white/neutral, 100% = green
+      function getWinRateColor(winRate) {
+        const percentage = Math.max(0, Math.min(100, winRate)); // Clamp between 0-100
+
+        if (percentage <= 50) {
+          // 0-50%: red to white
+          const ratio = percentage / 50;
+          const r = Math.round(231 + (255 - 231) * ratio);   // 231 → 255
+          const g = Math.round(76 + (255 - 76) * ratio);     // 76 → 255
+          const b = Math.round(60 + (255 - 60) * ratio);     // 60 → 255
+          return `rgb(${r}, ${g}, ${b})`;
+        } else {
+          // 50-100%: white to green
+          const ratio = (percentage - 50) / 50;
+          const r = Math.round(255 - (255 - 46) * ratio);   // 255 → 46
+          const g = Math.round(255 - (255 - 204) * ratio);  // 255 → 204
+          const b = Math.round(255 - (255 - 113) * ratio);  // 255 → 113
+          return `rgb(${r}, ${g}, ${b})`;
+        }
+      }
+
+      // Map avatar names to image files (fuzzy matching)
+      function getAvatarImagePath(avatarName) {
+        // Dynamically populated list of available image files from server
+        const availableImages = {{ avatar_image_files | tojson }};
+
+        // Normalize avatar name for matching
+        const normalize = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const normalizedName = normalize(avatarName);
+
+        // Try exact match first (normalized)
+        for (const img of availableImages) {
+          const imgBase = img.replace(/\.(png|jpg|jpeg)$/i, ""); // remove extension
+          if (normalize(imgBase) === normalizedName) {
+            return img;
+          }
+        }
+
+        // Try contains match (avatar name in filename)
+        for (const img of availableImages) {
+          const imgBase = img.replace(/\.(png|jpg|jpeg)$/i, "");
+          if (normalize(imgBase).includes(normalizedName)) {
+            return img;
+          }
+        }
+
+        // Try reverse contains (filename in avatar name)
+        for (const img of availableImages) {
+          const imgBase = img.replace(/\.(png|jpg|jpeg)$/i, "");
+          const normalizedImg = normalize(imgBase);
+          if (normalizedName.includes(normalizedImg)) {
+            return img;
+          }
+        }
+
+        return null;
+      }
+
       async function fetchAvatarStats() {
         try {
           const res = await fetch("/api/avatars");
@@ -41,28 +205,37 @@
             return;
           }
 
+          // Sort avatars by win rate (descending)
+          data.sort((a, b) => b.win_rate - a.win_rate);
+
           data.forEach((avatar, index) => {
             const card = document.createElement("a");
             card.href = `/avatar/${encodeURIComponent(avatar.name)}`;
             card.className = "avatar-stats-card";
 
-            // Determine win rate color class
-            let rateClass = "rate-neutral";
-            if (avatar.win_rate >= 55) rateClass = "rate-high";
-            else if (avatar.win_rate <= 45) rateClass = "rate-low";
+            // Add background image if available
+            const imagePath = getAvatarImagePath(avatar.name);
+            if (imagePath) {
+              card.style.backgroundImage = `url('/avatar-images/${imagePath}')`;
+              const zoom = getAvatarZoom(avatar.name);
+              card.style.backgroundSize = `${zoom}%`;
+              const position = getAvatarPosition(avatar.name);
+              card.style.backgroundPosition = position;
+            }
+
+            // Calculate win rate gradient color
+            const winRateColor = getWinRateColor(avatar.win_rate);
 
             card.innerHTML = `
               <div class="avatar-stats-rank">#${index + 1}</div>
               <div class="avatar-stats-name">${avatar.name}</div>
-              <div class="avatar-stats-winrate ${rateClass}">${
-              avatar.win_rate
-            }%</div>
-              <div class="avatar-stats-record">
-                <span class="match-win">${
-                  avatar.wins
-                }W</span> - <span class="match-loss">${avatar.losses}L</span>
+              <div class="avatar-stats-middle"></div>
+              <div class="avatar-stats-bottom">
+                <div class="avatar-stats-winrate" style="color: ${winRateColor};">${avatar.win_rate}%</div>
+                <div class="avatar-stats-record">
+                  <span class="match-win">${avatar.wins}W</span> - <span class="match-loss">${avatar.losses}L</span>
+                </div>
               </div>
-              <div class="avatar-stats-total">${avatar.total} games</div>
             `;
             grid.appendChild(card);
           });

@@ -699,14 +699,36 @@ a.feature-card {
   background: var(--color-bg-surface);
   border: var(--border-width) solid rgba(212, 175, 55, 0.2);
   border-radius: var(--radius-soft);
-  padding: var(--spacing-xl);
   text-align: center;
   transition: all var(--transition-normal);
   position: relative;
   cursor: pointer;
   text-decoration: none;
-  display: block;
+  display: flex;
+  flex-direction: column;
   color: inherit;
+  overflow: hidden;
+  min-height: 200px;
+}
+
+/* Background image overlay effect */
+.avatar-stats-card::before {
+  content: "";
+  position: absolute;
+  top: 15%;
+  left: 0;
+  right: 0;
+  bottom: 15%;
+  background: inherit;
+  opacity: 1;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Ensure content is above background */
+.avatar-stats-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .avatar-stats-card:hover {
@@ -715,31 +737,50 @@ a.feature-card {
   box-shadow: var(--shadow-harsh);
 }
 
-.avatar-stats-rank {
-  position: absolute;
-  top: var(--spacing-md);
-  left: var(--spacing-md);
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-  font-weight: 600;
-  font-style: italic;
-}
-
+/* Top black bar with avatar name */
 .avatar-stats-name {
+  background: rgba(0, 0, 0, 0.85);
+  height: 15%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 1.2rem;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--color-text);
-  margin-bottom: var(--spacing-md);
-  margin-top: var(--spacing-sm);
   letter-spacing: 0.01em;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  padding: 0 var(--spacing-sm);
+  position: relative;
+  z-index: 2;
+  margin: 0;
+}
+
+/* Middle section - image area */
+.avatar-stats-middle {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+}
+
+/* Bottom black bar */
+.avatar-stats-bottom {
+  background: rgba(0, 0, 0, 0.85);
+  height: 15%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--spacing-md);
+  position: relative;
+  z-index: 2;
 }
 
 .avatar-stats-winrate {
   font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 2.5rem;
+  font-size: 1.8rem;
   font-weight: 700;
-  margin-bottom: var(--spacing-sm);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  margin: 0;
 }
 
 .avatar-stats-winrate.rate-high {
@@ -755,15 +796,27 @@ a.feature-card {
 }
 
 .avatar-stats-record {
-  font-size: 1.1rem;
-  margin-bottom: var(--spacing-xs);
+  font-size: 0.9rem;
   font-weight: 600;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+  margin: 0;
 }
 
 .avatar-stats-total {
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
+  display: none;
+}
+
+.avatar-stats-rank {
+  position: absolute;
+  top: var(--spacing-xs);
+  left: var(--spacing-xs);
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 600;
   font-style: italic;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  z-index: 3;
 }
 
 .no-data {

@@ -139,7 +139,16 @@ def fart_leaderboard():
 @app.route("/avatars")
 def avatars():
     """Avatar stats page"""
-    return render_template("pages/avatars.html")
+    # Get list of avatar image files
+    avatar_imgs_dir = os.path.join(app.root_path, "templates", "avatar_imgs")
+    avatar_image_files = []
+    if os.path.exists(avatar_imgs_dir):
+        avatar_image_files = [
+            f
+            for f in os.listdir(avatar_imgs_dir)
+            if f.lower().endswith((".png", ".jpg", ".jpeg"))
+        ]
+    return render_template("pages/avatars.html", avatar_image_files=avatar_image_files)
 
 
 @app.route("/elo")
@@ -1297,6 +1306,15 @@ def rules_assistant_api():
                 "error": "Failed to process your question. Please try again.",
             }
         ), 500
+
+
+@app.route("/avatar-images/<path:filename>")
+def avatar_images(filename):
+    """Serve avatar images from templates/avatar_imgs folder"""
+    from flask import send_from_directory
+
+    avatar_imgs_dir = os.path.join(app.root_path, "templates", "avatar_imgs")
+    return send_from_directory(avatar_imgs_dir, filename)
 
 
 if __name__ == "__main__":

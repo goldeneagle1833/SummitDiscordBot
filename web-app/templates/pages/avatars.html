@@ -228,7 +228,10 @@
 
             card.innerHTML = `
               <div class="avatar-stats-rank">#${index + 1}</div>
-              <div class="avatar-stats-name">${avatar.name}</div>
+              <div class="avatar-stats-name">
+                ${avatar.name}
+                <span style="position: absolute; right: var(--spacing-sm); font-size: 0.7rem; color: rgba(255, 255, 255, 0.6);">${avatar.total} games</span>
+              </div>
               <div class="avatar-stats-middle"></div>
               <div class="avatar-stats-bottom">
                 <div class="avatar-stats-winrate" style="color: ${winRateColor};">${avatar.win_rate}%</div>

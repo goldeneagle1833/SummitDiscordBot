@@ -90,9 +90,8 @@ async def on_member_join(member):
             name="Key Channels",
             value=(
                 "<#1336912830867439676> - Find games with the **Join Queue** button\n"
-                "<#1325775415100575818> - Rules questions (AI assistant: `!rules`)\n"
                 "<#1379476865089142844> - Event decks & decklists\n"
-                "<#1402265039951368273> - Fun & games"
+                "<#1402265039951368273> - Fun & games / bot spam"
             ),
             inline=False,
         )
@@ -106,7 +105,17 @@ async def on_member_join(member):
                 "2️⃣ Enter your deck URL (optional)\n"
                 "3️⃣ Get matched with another player!\n\n"
                 "**Alternative:** Challenge someone directly with `!challenge @user`\n\n"
-                "Type `!lfg_help` for all commands • [Watch Tutorial](https://youtu.be/6eErwhPocL8)"
+                "Type `!lfg_help` for all commands"
+            ),
+            inline=False,
+        )
+
+        # TTS Setup Guide
+        embed.add_field(
+            name="New to TTS?",
+            value=(
+                "**[Watch the TTS Setup Guide](https://youtu.be/cr8PVGmrnNQ?si=X6rlciFILEG9_HDM)**\n"
+                "Learn how to set up Tabletop Simulator to play Sorcery!"
             ),
             inline=False,
         )

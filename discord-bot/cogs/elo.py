@@ -530,6 +530,9 @@ class EloCog(commands.Cog):
     async def mygames(self, ctx):
         """View your match history with details for games you reported."""
         try:
+            # Check if command is used in a DM
+            is_dm = isinstance(ctx.channel, discord.DMChannel)
+
             conn = sqlite3.connect("match_records.db")
             cur = conn.cursor()
 
@@ -662,7 +665,8 @@ class EloCog(commands.Cog):
 
                         game_line += f" "
 
-                        if replay_url and replay_url != "No URL provided":
+                        # Only show replay URLs if command is used in a DM
+                        if is_dm and replay_url and replay_url != "No URL provided":
                             game_line += f" • <{replay_url}>"
 
                         if match_comment:

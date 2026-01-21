@@ -190,9 +190,7 @@
             class="event-card"
             data-name="{{ event.name|lower }}"
             data-folder="{{ event.folder|lower }}"
-            href="/stats/{{ event.folder }}"
-            target="_blank"
-            rel="noopener noreferrer">
+            href="/stats/{{ event.folder }}">
             <h3>{{ event.name }}</h3>
             <div class="event-meta">
               {% if event.has_cards %}

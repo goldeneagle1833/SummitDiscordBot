@@ -187,7 +187,7 @@
             class="event-card"
             data-name="{{ event.name|lower }}"
             data-folder="{{ event.folder|lower }}"
-            onclick="window.location.href='/top-8/{{ event.folder }}'">
+            onclick="window.open('/top-8/{{ event.folder }}', '_blank')">
             <h3>{{ event.name }}</h3>
             <div class="event-meta">
               <span>{{ event.player_count }} decks</span>

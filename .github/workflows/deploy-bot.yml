@@ -1,15 +1,20 @@
 name: Deploy Discord Bot
 
 on:
-  push:
+  pull_request:
+    types:
+      - closed
     branches:
       - main
     paths:
       - "discord-bot/**"
       - "data/**"
+  workflow_dispatch: # Allow manual trigger
 
 jobs:
   deploy:
+    # Only run if PR was merged (not just closed)
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to Linode

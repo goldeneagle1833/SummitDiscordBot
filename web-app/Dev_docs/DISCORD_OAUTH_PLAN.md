@@ -8,18 +8,18 @@ Allow players to log in with Discord to edit their player page and add avatars t
 
 ## Current Status (Updated 2026-01-20)
 
-| Item                                 | Status  | Notes                                          |
-| ------------------------------------ | ------- | ---------------------------------------------- |
-| `is_owner` logic scaffolded          | ✅ Done | Hardcoded to `False` in `app.py:987`           |
-| Player page conditional deck display | ✅ Done | Already hides deck URLs when not owner         |
-| Avatar stats privacy                 | ❌ TODO | Need to hide avatar performance unless owner   |
-| OAuth routes                         | ❌ TODO | No `/auth/discord*` routes exist               |
-| Requirements                         | ❌ TODO | Missing `requests`, `Flask-Login`, `Flask-WTF` |
-| Session/SECRET_KEY                   | ❌ TODO | No session config in app.py                    |
-| `.env` file                          | ❌ TODO | Does not exist                                 |
-| Navbar login UI                      | ❌ TODO | No login/logout buttons                        |
-| Avatar API endpoint                  | ❌ TODO | `/api/player/<id>/avatars` missing             |
-| `player.js`                          | ❌ TODO | No dedicated JS for avatar selection           |
+| Item                                 | Status  | Notes                                                     |
+| ------------------------------------ | ------- | --------------------------------------------------------- |
+| `is_owner` logic scaffolded          | ✅ Done | Now uses session to check ownership                       |
+| Player page conditional deck display | ✅ Done | Already hides deck URLs when not owner                    |
+| Avatar stats privacy                 | ✅ Done | Hidden in API response unless owner                       |
+| OAuth routes                         | ✅ Done | `/auth/discord`, `/auth/discord/callback`, `/auth/logout` |
+| Requirements                         | ✅ Done | Added requests, Flask-Login, Flask-WTF, python-dotenv     |
+| Session/SECRET_KEY                   | ✅ Done | Configured in app.py                                      |
+| `.env` file                          | ✅ Done | Stored in `discord-bot/.env`                              |
+| Navbar login UI                      | ✅ Done | Login/logout buttons added to navbar                      |
+| Avatar API endpoint                  | ❌ TODO | `/api/player/<id>/avatars` missing                        |
+| `player.js`                          | ❌ TODO | No dedicated JS for avatar selection                      |
 
 ---
 
@@ -34,12 +34,16 @@ Allow players to log in with Discord to edit their player page and add avatars t
 
 ### 1.2 Environment Variables
 
+**Note:** OAuth credentials are stored in `discord-bot/.env` (shared between bot and web app)
+
 ```
 DISCORD_CLIENT_ID=your_client_id
 DISCORD_CLIENT_SECRET=your_client_secret
 DISCORD_REDIRECT_URI=https://yoursite.com/auth/discord/callback
 SECRET_KEY=random_secret_for_sessions
 ```
+
+The web app's `app.py` will load these values via `python-dotenv` from the parent directory's `.env` file.
 
 ---
 

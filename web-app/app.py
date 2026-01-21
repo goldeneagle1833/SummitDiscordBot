@@ -2,13 +2,20 @@
 Summit Web Application - A lightweight Flask web app
 """
 
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 import sqlite3
 import os
 import json
 import sys
 import logging
+import requests
 from pathlib import Path
+from dotenv import load_dotenv
+from urllib.parse import urlencode
+
+# Load environment variables from discord-bot/.env (shared config)
+_env_path = Path(__file__).parent.parent / "discord-bot" / ".env"
+load_dotenv(_env_path)
 
 # Configure logging
 logging.basicConfig(
@@ -27,6 +34,16 @@ if _sorcery_ai_path not in sys.path:
     sys.path.insert(0, _sorcery_ai_path)
 
 app = Flask(__name__)
+
+# Session configuration
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
+
+# Discord OAuth configuration
+DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID")
+DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET")
+DISCORD_REDIRECT_URI = os.environ.get(
+    "DISCORD_REDIRECT_URI", "http://localhost:5000/auth/discord/callback"
+)
 
 # Initialize SorceryAI components (lazy load)
 _rules_retriever = None
@@ -98,6 +115,118 @@ def home():
 def about():
     """About page"""
     return render_template("pages/about.html")
+
+
+# =============================================================================
+# Discord OAuth Routes
+# =============================================================================
+
+
+def get_current_user():
+    """Get the currently logged in user from session, or None"""
+    if "user_id" in session:
+        return {
+            "id": session["user_id"],
+            "username": session.get("username"),
+            "avatar": session.get("avatar"),
+        }
+    return None
+
+
+@app.context_processor
+def inject_user():
+    """Make current user available to all templates"""
+    return {"current_user": get_current_user()}
+
+
+@app.route("/auth/discord")
+def auth_discord():
+    """Redirect user to Discord OAuth authorization"""
+    if not DISCORD_CLIENT_ID:
+        logger.error("DISCORD_CLIENT_ID not configured")
+        return "OAuth not configured", 500
+
+    params = {
+        "client_id": DISCORD_CLIENT_ID,
+        "redirect_uri": DISCORD_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "identify",
+    }
+    auth_url = f"https://discord.com/api/oauth2/authorize?{urlencode(params)}"
+    return redirect(auth_url)
+
+
+@app.route("/auth/discord/callback")
+def auth_discord_callback():
+    """Handle Discord OAuth callback"""
+    error = request.args.get("error")
+    if error:
+        logger.error(f"Discord OAuth error: {error}")
+        return redirect(url_for("home"))
+
+    code = request.args.get("code")
+    if not code:
+        logger.error("No code received from Discord")
+        return redirect(url_for("home"))
+
+    # Exchange code for access token
+    token_url = "https://discord.com/api/oauth2/token"
+    token_data = {
+        "client_id": DISCORD_CLIENT_ID,
+        "client_secret": DISCORD_CLIENT_SECRET,
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": DISCORD_REDIRECT_URI,
+    }
+
+    try:
+        token_response = requests.post(token_url, data=token_data)
+        token_response.raise_for_status()
+        tokens = token_response.json()
+    except requests.RequestException as e:
+        logger.error(f"Failed to get Discord token: {e}")
+        return redirect(url_for("home"))
+
+    access_token = tokens.get("access_token")
+    if not access_token:
+        logger.error("No access token in Discord response")
+        return redirect(url_for("home"))
+
+    # Get user info from Discord
+    user_url = "https://discord.com/api/users/@me"
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    try:
+        user_response = requests.get(user_url, headers=headers)
+        user_response.raise_for_status()
+        user_data = user_response.json()
+    except requests.RequestException as e:
+        logger.error(f"Failed to get Discord user info: {e}")
+        return redirect(url_for("home"))
+
+    # Store user info in session
+    session["user_id"] = int(user_data["id"])
+    session["username"] = user_data["username"]
+    session["avatar"] = user_data.get("avatar")
+
+    logger.info(f"User {user_data['username']} (ID: {user_data['id']}) logged in")
+
+    # Redirect to home or previous page
+    return redirect(url_for("home"))
+
+
+@app.route("/auth/logout")
+def auth_logout():
+    """Clear session and log out user"""
+    username = session.get("username", "Unknown")
+    session.clear()
+    logger.info(f"User {username} logged out")
+    return redirect(url_for("home"))
+
+
+# =============================================================================
+# End Discord OAuth Routes
+# =============================================================================
 
 
 @app.route("/secret-fart-leaderboard")
@@ -981,10 +1110,11 @@ def player_api(player_id):
         )
     avatar_matchups.sort(key=lambda x: x["total_games"], reverse=True)
 
-    # TODO: Replace with Discord OAuth check - only show deck details to profile owner
-    # For now, hardcoded to False (public view only)
-    # Future: is_owner = (logged_in_user_id == player_id)
-    is_owner = False
+    # Check if logged-in user is the profile owner
+    logged_in_user_id = session.get("user_id")
+    is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(
+        player_id
+    )
 
     # Build match history (last 50 matches)
     match_history = []
@@ -1132,11 +1262,12 @@ def player_api(player_id):
             "on_draw_matches": draw_matches,
             "on_draw_win_rate": round(draw_win_rate, 1),
             "avg_match_time": round(avg_match_time, 1),
-            "avatar_performance": avatar_performance,
-            "avatar_matchups": avatar_matchups,
-            "recent_decks": recent_decks,
+            # Privacy: Only show avatar stats to profile owner
+            "avatar_performance": avatar_performance if is_owner else [],
+            "avatar_matchups": avatar_matchups if is_owner else [],
+            "recent_decks": recent_decks if is_owner else [],
             "matches": match_history,
-            "is_owner": is_owner,  # TODO: Will be True when Discord OAuth implemented
+            "is_owner": is_owner,
         }
     )
 

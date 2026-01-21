@@ -186,18 +186,20 @@
         </div>
         <div class="events-grid">
           {% for event in events %}
-          <div
+          <a
             class="event-card"
             data-name="{{ event.name|lower }}"
             data-folder="{{ event.folder|lower }}"
-            onclick="window.location.href='/stats/{{ event.folder }}'">
+            href="/stats/{{ event.folder }}"
+            target="_blank"
+            rel="noopener noreferrer">
             <h3>{{ event.name }}</h3>
             <div class="event-meta">
               {% if event.has_cards %}
               <span class="event-badge">Card Stats Available</span>
               {% endif %}
             </div>
-          </div>
+          </a>
           {% endfor %}
         </div>
         {% else %}

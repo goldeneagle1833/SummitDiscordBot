@@ -27,6 +27,16 @@
       >Patreon</a
     >
     <a href="/about" class="nav-link">About</a>
+
+    <!-- Discord Login/Logout -->
+    {% if current_user %}
+    <a href="/player/{{ current_user.id }}" class="nav-link user-link"
+      >{{ current_user.username }}</a
+    >
+    <a href="/auth/logout" class="nav-link logout-link">Logout</a>
+    {% else %}
+    <a href="/auth/discord" class="nav-link login-link">Login</a>
+    {% endif %}
   </div>
 </nav>
 

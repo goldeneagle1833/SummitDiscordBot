@@ -202,4 +202,43 @@ body:has(.sidebar.collapsed) .main-content {
     background: rgba(0, 0, 0, 0.5);
     z-index: -1;
   }
+
+  /* Hide username on mobile, show just icon */
+  .user-link {
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Login/Logout Styles */
+.login-link {
+  background: #5865f2; /* Discord blurple */
+  color: white !important;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-weight: 600;
+  transition: background var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.login-link:hover {
+  background: #4752c4;
+  color: white !important;
+  transform: translateY(-1px);
+}
+
+.user-link {
+  color: var(--color-primary) !important;
+  font-weight: 600;
+}
+
+.logout-link {
+  color: var(--color-text-muted) !important;
+  font-size: 0.9rem;
+}
+
+.logout-link:hover {
+  color: #e74c3c !important;
 }

@@ -10,6 +10,7 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body>
     {% include 'components/navbar.html' %}
@@ -48,6 +49,14 @@
           <div class="stat-card">
             <div class="stat-value" id="stat-avg-time">-</div>
             <div class="stat-label">Avg Match Time</div>
+          </div>
+        </div>
+
+        <!-- ELO History Graph -->
+        <div class="elo-chart-section" id="elo-chart-section" style="display: none">
+          <h3>📈 ELO History</h3>
+          <div class="elo-chart-container">
+            <canvas id="elo-chart"></canvas>
           </div>
         </div>
 
@@ -99,6 +108,168 @@
     <script>
       const playerId = "{{ player_id }}";
 
+      function renderEloChart(currentElo, matches) {
+        // Build ELO history by working backwards from current ELO
+        // Matches are in DESC order (newest first)
+        const eloHistory = [];
+        let elo = currentElo;
+
+        // Add current ELO as first point
+        eloHistory.push({
+          elo: elo,
+          date: new Date().toLocaleDateString(),
+          result: null,
+          matchIndex: 0
+        });
+
+        // Work backwards through matches to reconstruct ELO history
+        for (let i = 0; i < matches.length; i++) {
+          const match = matches[i];
+          // Subtract the change to get previous ELO
+          elo = elo - (match.elo_change || 0);
+          eloHistory.push({
+            elo: elo,
+            date: new Date(match.date).toLocaleDateString(),
+            result: match.result,
+            matchIndex: i + 1
+          });
+        }
+
+        // Reverse to get chronological order (oldest to newest)
+        eloHistory.reverse();
+
+        // Prepare chart data
+        const labels = eloHistory.map((_, i) => i === 0 ? 'Start' : `Match ${i}`);
+        const eloData = eloHistory.map(h => h.elo);
+        const pointColors = eloHistory.map(h => {
+          if (h.result === null) return '#58a6ff'; // Current (primary blue)
+          return h.result === 'Win' ? '#3fb950' : '#f85149'; // Win green / Loss red
+        });
+
+        // Calculate min/max with padding, centered around 1500
+        const minElo = Math.min(...eloData);
+        const maxElo = Math.max(...eloData);
+        const range = Math.max(maxElo - 1500, 1500 - minElo, 100);
+        const yMin = Math.floor((1500 - range - 50) / 50) * 50;
+        const yMax = Math.ceil((1500 + range + 50) / 50) * 50;
+
+        const ctx = document.getElementById('elo-chart').getContext('2d');
+        new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'ELO Rating',
+              data: eloData,
+              borderColor: '#58a6ff',
+              backgroundColor: 'rgba(88, 166, 255, 0.1)',
+              borderWidth: 2,
+              pointBackgroundColor: pointColors,
+              pointBorderColor: pointColors,
+              pointRadius: 4,
+              pointHoverRadius: 6,
+              fill: true,
+              tension: 0.1
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+              intersect: false,
+              mode: 'index'
+            },
+            plugins: {
+              legend: {
+                display: false
+              },
+              tooltip: {
+                backgroundColor: '#21262d',
+                titleColor: '#f0f6fc',
+                bodyColor: '#f0f6fc',
+                borderColor: '#30363d',
+                borderWidth: 1,
+                padding: 12,
+                displayColors: false,
+                callbacks: {
+                  title: function(context) {
+                    const idx = context[0].dataIndex;
+                    const point = eloHistory[idx];
+                    if (idx === eloHistory.length - 1) return 'Current';
+                    if (idx === 0) return 'Starting ELO';
+                    return `Match ${idx}`;
+                  },
+                  label: function(context) {
+                    const idx = context.dataIndex;
+                    const point = eloHistory[idx];
+                    const lines = [`ELO: ${point.elo}`];
+                    if (point.result) {
+                      lines.push(`Result: ${point.result}`);
+                    }
+                    return lines;
+                  }
+                }
+              }
+            },
+            scales: {
+              x: {
+                display: true,
+                grid: {
+                  color: 'rgba(48, 54, 61, 0.5)',
+                  drawBorder: false
+                },
+                ticks: {
+                  color: '#8b949e',
+                  maxTicksLimit: 10,
+                  font: {
+                    size: 11
+                  }
+                }
+              },
+              y: {
+                display: true,
+                min: yMin,
+                max: yMax,
+                grid: {
+                  color: function(context) {
+                    // Highlight the 1500 baseline
+                    if (context.tick.value === 1500) {
+                      return 'rgba(88, 166, 255, 0.5)';
+                    }
+                    return 'rgba(48, 54, 61, 0.5)';
+                  },
+                  lineWidth: function(context) {
+                    if (context.tick.value === 1500) {
+                      return 2;
+                    }
+                    return 1;
+                  },
+                  drawBorder: false
+                },
+                ticks: {
+                  color: function(context) {
+                    if (context.tick.value === 1500) {
+                      return '#58a6ff';
+                    }
+                    return '#8b949e';
+                  },
+                  font: {
+                    size: 11,
+                    weight: function(context) {
+                      if (context.tick && context.tick.value === 1500) {
+                        return 'bold';
+                      }
+                      return 'normal';
+                    }
+                  },
+                  stepSize: 50
+                }
+              }
+            }
+          }
+        });
+      }
+
       async function fetchPlayerData() {
         try {
           const res = await fetch(`/api/player/${playerId}`);
@@ -129,6 +300,12 @@
             data.wins + data.losses;
           document.getElementById("stat-avg-time").textContent =
             data.avg_match_time > 0 ? `${data.avg_match_time} min` : "-";
+
+          // Render ELO history chart (only for profile owner)
+          if (data.is_owner && data.matches && data.matches.length > 1) {
+            document.getElementById("elo-chart-section").style.display = "block";
+            renderEloChart(data.elo, data.matches);
+          }
 
           // Update avatar performance
           if (data.avatar_performance && data.avatar_performance.length > 0) {

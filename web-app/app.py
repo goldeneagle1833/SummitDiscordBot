@@ -307,6 +307,105 @@ def elo_server(server_id):
     )
 
 
+@app.route("/match-history")
+def match_history():
+    """Match history page - shows matches from last 24 hours"""
+    return render_template("pages/match_history.html")
+
+
+@app.route("/api/match-history/available-dates")
+def match_history_available_dates():
+    """API endpoint to get dates that have match data"""
+    try:
+        conn = sqlite3.connect("../discord-bot/match_records.db")
+        cur = conn.cursor()
+
+        # Get all unique dates that have matches
+        cur.execute("""
+            SELECT DISTINCT date(timestamp) as match_date
+            FROM match_records
+            WHERE timestamp IS NOT NULL
+            ORDER BY match_date DESC
+        """)
+
+        dates = [row[0] for row in cur.fetchall()]
+        conn.close()
+        return jsonify(dates)
+
+    except Exception as e:
+        logger.error(f"Error fetching available dates: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/match-history")
+def match_history_api():
+    """API endpoint for match history data"""
+    try:
+        conn = sqlite3.connect("../discord-bot/match_records.db")
+        cur = conn.cursor()
+
+        # Get optional date parameter (format: YYYY-MM-DD)
+        selected_date = request.args.get('date')
+
+        if selected_date:
+            # Fetch matches for specific date
+            cur.execute("""
+                SELECT
+                    rowid as match_id,
+                    winner_display_name,
+                    winner_elo_change,
+                    losser_display_name,
+                    loser_elo_change,
+                    match_time,
+                    timestamp,
+                    winner_id,
+                    losser_id
+                FROM match_records
+                WHERE date(timestamp) = ?
+                ORDER BY rowid DESC
+            """, (selected_date,))
+        else:
+            # Fetch matches from last 24 hours (default)
+            cur.execute("""
+                SELECT
+                    rowid as match_id,
+                    winner_display_name,
+                    winner_elo_change,
+                    losser_display_name,
+                    loser_elo_change,
+                    match_time,
+                    timestamp,
+                    winner_id,
+                    losser_id
+                FROM match_records
+                WHERE timestamp >= datetime('now', '-24 hours')
+                ORDER BY rowid DESC
+            """)
+
+        matches = []
+        for row in cur.fetchall():
+            matches.append(
+                {
+                    "match_id": row[0],
+                    "winner": row[1] or "Unknown",
+                    "winner_elo_change": row[2] or 0,
+                    "loser": row[3] or "Unknown",
+                    "loser_elo_change": row[4] or 0,
+                    "match_time": row[5] or 0,
+                    "timestamp": row[6],
+                    "winner_id": row[7],
+                    "loser_id": row[8],
+                }
+            )
+
+        conn.close()
+        return jsonify(matches)
+
+    except Exception as e:
+        logger.error(f"Error fetching match history: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/deck-help")
 def deck_help():
     """Deck help and resources page"""
@@ -689,6 +788,39 @@ def avatar_profile(avatar_name):
 
 
 # Avatar API endpoint
+def generate_pseudonym(player_id):
+    """Generate a consistent fun pseudonym from a player ID"""
+    import hashlib
+
+    adjectives = [
+        "Magical", "Sneaky", "Brave", "Silly", "Grumpy", "Happy", "Sleepy", "Dancing",
+        "Flying", "Jumping", "Mystical", "Crafty", "Clever", "Dizzy", "Wobbly", "Bouncy",
+        "Sparkly", "Fuzzy", "Quirky", "Jolly", "Wacky", "Zany", "Goofy", "Perky",
+        "Spicy", "Frosty", "Fiery", "Stormy", "Sunny", "Breezy", "Shadowy", "Glowing",
+        "Tiny", "Giant", "Swift", "Lazy", "Eager", "Shy", "Bold", "Wild",
+        "Gentle", "Fierce", "Peaceful", "Chaotic", "Lucky", "Clumsy", "Graceful", "Daring"
+    ]
+
+    nouns = [
+        "Wizard", "Dragon", "Penguin", "Unicorn", "Potato", "Banana", "Taco", "Ninja",
+        "Pirate", "Robot", "Ghost", "Phoenix", "Turtle", "Narwhal", "Pancake", "Wombat",
+        "Llama", "Koala", "Goblin", "Sphinx", "Kraken", "Yeti", "Mermaid", "Centaur",
+        "Griffin", "Chimera", "Troll", "Dwarf", "Elf", "Fairy", "Gnome", "Ogre",
+        "Badger", "Otter", "Panda", "Sloth", "Walrus", "Moose", "Raccoon", "Squirrel",
+        "Platypus", "Axolotl", "Capybara", "Hedgehog", "Mango", "Coconut", "Pickle", "Waffle"
+    ]
+
+    # Hash the player ID to get consistent indices
+    hash_obj = hashlib.md5(str(player_id).encode())
+    hash_int = int(hash_obj.hexdigest(), 16)
+
+    # Select adjective and noun based on hash
+    adj_index = hash_int % len(adjectives)
+    noun_index = (hash_int // len(adjectives)) % len(nouns)
+
+    return f"{adjectives[adj_index]} {nouns[noun_index]}"
+
+
 @app.route("/api/avatar/<avatar_name>")
 def avatar_api(avatar_name):
     import json
@@ -788,13 +920,13 @@ def avatar_api(avatar_name):
                 except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                     pass
 
-            # Create match object
+            # Create match object with sanitized names
             match_obj = {
                 "match_id": row[13],
                 "winner_id": str(row[0]),
-                "winner_name": row[1],
+                "winner_name": generate_pseudonym(row[0]),
                 "loser_id": str(row[2]),
-                "loser_name": row[3],
+                "loser_name": generate_pseudonym(row[2]),
                 "date": row[4],
                 "winner_elo_change": row[5] if row[5] else 0,
                 "loser_elo_change": row[6] if row[6] else 0,
@@ -832,9 +964,9 @@ def avatar_api(avatar_name):
                         match_obj = {
                             "match_id": row[11],
                             "winner_id": str(row[0]),
-                            "winner_name": row[1],
+                            "winner_name": generate_pseudonym(row[0]),
                             "loser_id": str(row[2]),
-                            "loser_name": row[3],
+                            "loser_name": generate_pseudonym(row[2]),
                             "date": row[4],
                             "winner_elo_change": row[5] if row[5] else 0,
                             "loser_elo_change": row[6] if row[6] else 0,

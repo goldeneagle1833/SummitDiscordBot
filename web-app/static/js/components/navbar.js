@@ -10,15 +10,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Initialize sidebar state based on screen size
   function initializeSidebar() {
-    if (isMobile()) {
-      // On mobile, start collapsed
-      sidebar.classList.remove("open");
-      sidebar.classList.add("collapsed");
-    } else {
-      // On desktop, start open
-      sidebar.classList.add("open");
-      sidebar.classList.remove("collapsed");
-    }
+    // Start collapsed on both mobile and desktop
+    sidebar.classList.remove("open");
+    sidebar.classList.add("collapsed");
   }
 
   // Toggle sidebar

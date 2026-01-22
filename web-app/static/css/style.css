@@ -947,6 +947,25 @@ a.feature-card {
   text-decoration: underline;
 }
 
+/* ELO History Chart */
+.elo-chart-section {
+  margin: var(--spacing-2xl) 0;
+}
+
+.elo-chart-container {
+  background: var(--color-bg-elevated);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-soft);
+  padding: var(--spacing-lg);
+  position: relative;
+  height: 300px;
+}
+
+.elo-chart-container canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
 /* Footer */
 footer {
   text-align: center;

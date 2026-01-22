@@ -141,12 +141,8 @@
 
               row.innerHTML = `
                 <td class="match-id">${matchId}</td>
-                <td><a href="/player/${
-                  match.winner_id
-                }" class="opponent-link">${match.winner_name}</a></td>
-                <td><a href="/player/${match.loser_id}" class="opponent-link">${
-                match.loser_name
-              }</a></td>
+                <td>${match.winner_name}</td>
+                <td>${match.loser_name}</td>
                 <td class="match-win">${eloSign}${eloChange}</td>
                 <td>${match.first_player || "-"}</td>
                 <td>${matchTime}</td>
@@ -176,12 +172,8 @@
 
               row.innerHTML = `
                 <td class="match-id">${matchId}</td>
-                <td><a href="/player/${
-                  match.winner_id
-                }" class="opponent-link">${match.winner_name}</a></td>
-                <td><a href="/player/${match.loser_id}" class="opponent-link">${
-                match.loser_name
-              }</a></td>
+                <td>${match.winner_name}</td>
+                <td>${match.loser_name}</td>
                 <td class="match-loss">${eloSign}${eloChange}</td>
                 <td>${match.first_player || "-"}</td>
                 <td>${matchTime}</td>

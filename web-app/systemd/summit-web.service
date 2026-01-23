@@ -1,0 +1,39 @@
+[Unit]
+Description=Summit Discord Bot Web Application
+Documentation=https://github.com/your-repo/SummitDiscordBot
+After=network.target
+
+[Service]
+Type=notify
+User=root
+Group=root
+WorkingDirectory=/root/Summit/SummitDiscordBot/web-app
+
+# Load environment variables from the shared .env file
+EnvironmentFile=/root/Summit/SummitDiscordBot/discord-bot/.env
+
+# Set PATH to ensure gunicorn is found
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+
+# Start gunicorn with the configuration file
+ExecStart=/usr/local/bin/gunicorn --config gunicorn_config.py app:app
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Process limits and resource management
+LimitNOFILE=4096
+TimeoutStopSec=30
+
+# Security settings (optional - uncomment for additional hardening)
+# NoNewPrivileges=true
+# PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=summit-web
+
+[Install]
+WantedBy=multi-user.target

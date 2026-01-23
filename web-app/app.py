@@ -12,6 +12,7 @@ import requests
 from pathlib import Path
 from dotenv import load_dotenv
 from urllib.parse import urlencode
+from functools import wraps
 
 # Load environment variables from discord-bot/.env (shared config)
 _env_path = Path(__file__).parent.parent / "discord-bot" / ".env"
@@ -45,9 +46,38 @@ DISCORD_REDIRECT_URI = os.environ.get(
     "DISCORD_REDIRECT_URI", "http://localhost:5000/auth/discord/callback"
 )
 
+# API Key configuration for external integrations
+# Support both single API_KEY and multiple API_KEYS (comma-separated)
+API_KEYS_ENV = os.environ.get("API_KEYS", os.environ.get("API_KEY", ""))
+VALID_API_KEYS = [key.strip() for key in API_KEYS_ENV.split(",") if key.strip()]
+
 # Initialize SorceryAI components (lazy load)
 _rules_retriever = None
 _rules_generator = None
+
+
+def require_api_key(f):
+    """Decorator to require API key authentication for endpoints"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check for API key in headers
+        provided_key = request.headers.get("X-API-Key") or request.headers.get("Authorization")
+
+        # Support "Bearer <key>" format
+        if provided_key and provided_key.startswith("Bearer "):
+            provided_key = provided_key[7:]
+
+        # Validate API key
+        if not VALID_API_KEYS:
+            logger.error("No API keys configured in environment")
+            return jsonify({"error": "API authentication not configured"}), 500
+
+        if not provided_key or provided_key not in VALID_API_KEYS:
+            logger.warning(f"Unauthorized API access attempt from {request.remote_addr}")
+            return jsonify({"error": "Invalid or missing API key"}), 401
+
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 def get_rules_assistant():
@@ -647,6 +677,155 @@ def help_page():
 def api_status():
     """Simple API endpoint to check if the server is running"""
     return jsonify({"status": "online", "message": "Summit Web App is running!"})
+
+
+@app.route("/api/report-match", methods=["POST"])
+@require_api_key
+def report_match():
+    """
+    API endpoint to report match results from external applications.
+
+    Required fields:
+    - winner_name: Display name of the winner
+    - winner_id: Discord ID of the winner
+    - loser_name: Display name of the loser
+    - loser_id: Discord ID of the loser
+
+    Optional fields:
+    - first_player: 'y' or 'n' to indicate who went first (default: 'n')
+    - match_time: Duration of match in minutes (default: 0)
+    - winner_deck_url: URL to winner's deck on Curiosa
+    - loser_deck_url: URL to loser's deck on Curiosa
+    - match_comment: Additional notes about the match
+    - reporter_id: Discord ID of the person reporting (defaults to winner_id)
+
+    Returns:
+    - match_id: The ID of the created match record
+    - winner_elo: New ELO rating for winner
+    - loser_elo: New ELO rating for loser
+    - winner_elo_change: ELO change for winner
+    - loser_elo_change: ELO change for loser
+    """
+    try:
+        data = request.get_json()
+
+        # Validate required fields
+        required_fields = ["winner_name", "winner_id", "loser_name", "loser_id"]
+        missing_fields = [field for field in required_fields if field not in data]
+
+        if missing_fields:
+            return jsonify({
+                "error": "Missing required fields",
+                "missing": missing_fields
+            }), 400
+
+        # Extract required fields
+        winner_name = str(data["winner_name"])
+        winner_id = int(data["winner_id"])
+        loser_name = str(data["loser_name"])
+        loser_id = int(data["loser_id"])
+
+        # Extract optional fields with defaults
+        first_player = str(data.get("first_player", "n")).lower()
+        match_time = int(data.get("match_time", 0))
+        winner_deck_url = data.get("winner_deck_url", "No URL provided")
+        loser_deck_url = data.get("loser_deck_url", "No URL provided")
+        match_comment = data.get("match_comment", "")
+        reporter_id = int(data.get("reporter_id", winner_id))
+
+        # Validate first_player value
+        if first_player not in ['y', 'n']:
+            return jsonify({
+                "error": "Invalid value for first_player",
+                "detail": "Must be 'y' or 'n'"
+            }), 400
+
+        # Add discord-bot to path to import database utilities
+        _bot_path = str(Path(__file__).parent.parent / "discord-bot")
+        if _bot_path not in sys.path:
+            sys.path.insert(0, _bot_path)
+
+        # Import database functions from discord-bot
+        from utils.database import winner_report
+        import asyncio
+
+        # Report the match (this will update ELO automatically)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            match_id, _, _ = loop.run_until_complete(
+                winner_report(
+                    reporter_id=reporter_id,
+                    user_id=winner_id,
+                    user_display_name=winner_name,
+                    did_win=True,
+                    opponent_id=loser_id,
+                    opponent_display_name=loser_name,
+                    first_player=first_player,
+                    match_time=match_time,
+                    curiosa_link=winner_deck_url,  # Legacy parameter
+                    match_comment=match_comment,
+                    interaction_user_id=winner_id,
+                    interaction_global=winner_name,
+                    winner_deck_url=winner_deck_url,
+                    loser_deck_url=loser_deck_url,
+                )
+            )
+        finally:
+            loop.close()
+
+        # Get updated ELO ratings
+        from utils.database import get_user_elo
+        winner_elo = get_user_elo(winner_id)
+        loser_elo = get_user_elo(loser_id)
+
+        # Get ELO changes from the match record
+        conn = sqlite3.connect("../discord-bot/match_records.db")
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT winner_elo_change, loser_elo_change FROM match_records WHERE match_id = ?",
+            (match_id,)
+        )
+        row = cur.fetchone()
+        conn.close()
+
+        winner_elo_change = row[0] if row else 0
+        loser_elo_change = row[1] if row else 0
+
+        logger.info(
+            f"Match reported via API: {winner_name} (ID: {winner_id}) defeated "
+            f"{loser_name} (ID: {loser_id}), Match ID: {match_id}"
+        )
+
+        return jsonify({
+            "success": True,
+            "match_id": match_id,
+            "winner": {
+                "name": winner_name,
+                "id": winner_id,
+                "elo": winner_elo,
+                "elo_change": winner_elo_change
+            },
+            "loser": {
+                "name": loser_name,
+                "id": loser_id,
+                "elo": loser_elo,
+                "elo_change": loser_elo_change
+            }
+        }), 201
+
+    except ValueError as e:
+        return jsonify({
+            "error": "Invalid data type",
+            "detail": str(e)
+        }), 400
+    except Exception as e:
+        logger.error(f"Error reporting match via API: {e}", exc_info=True)
+        return jsonify({
+            "error": "Failed to report match",
+            "detail": str(e)
+        }), 500
 
 
 # Leaderboard API endpoint
@@ -1581,4 +1760,7 @@ def avatar_images(filename):
 
 
 if __name__ == "__main__":
+    # This block is for LOCAL DEVELOPMENT ONLY
+    # Production deployment uses gunicorn with gunicorn_config.py
+    # See DEPLOYMENT.md for production setup instructions
     app.run(debug=True, host="0.0.0.0", port=5000)

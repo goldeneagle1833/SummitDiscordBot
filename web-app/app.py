@@ -109,6 +109,20 @@ def get_rules_assistant():
 TOP_8_DIR = Path(__file__).parent / "top-8-decks-by-event"
 
 
+def extract_year_from_name(name):
+    """Extract year from event name for sorting. Returns 0 if no year found."""
+    import re
+    # Look for 4-digit years (2020-2029)
+    match = re.search(r'20(2[0-9])', name)
+    if match:
+        return int("20" + match.group(1))
+    # Check for 2-digit years like "25" that likely mean 2025
+    match = re.search(r'(?<!\d)(2[3-9])(?!\d)', name)
+    if match:
+        return int("20" + match.group(1))
+    return 0
+
+
 def format_event_name(folder_name):
     """Format event folder name into a readable display name"""
     # Custom mappings for special cases
@@ -457,7 +471,7 @@ def top_8():
     events = []
 
     if TOP_8_DIR.exists():
-        for folder in sorted(TOP_8_DIR.iterdir(), reverse=True):
+        for folder in TOP_8_DIR.iterdir():
             if folder.is_dir():
                 # Look for JSON files in the folder
                 json_files = list(folder.glob("*.json"))
@@ -494,6 +508,9 @@ def top_8():
                             )
                     except Exception as e:
                         print(f"Error loading {json_path}: {e}")
+
+    # Sort by year (descending), events without dates go last
+    events.sort(key=lambda e: (extract_year_from_name(e["name"]) > 0, extract_year_from_name(e["name"])), reverse=True)
 
     return render_template("pages/top_8.html", events=events)
 
@@ -573,7 +590,7 @@ def stats():
     events = []
 
     if TOP_8_DIR.exists():
-        for folder in sorted(TOP_8_DIR.iterdir(), reverse=True):
+        for folder in TOP_8_DIR.iterdir():
             if folder.is_dir():
                 # Look for CSV files in the folder
                 csv_files = list(folder.glob("*.csv"))
@@ -597,6 +614,9 @@ def stats():
                             "has_cards": cards_csv is not None,
                         }
                     )
+
+    # Sort by year (descending), events without dates go last
+    events.sort(key=lambda e: (extract_year_from_name(e["name"]) > 0, extract_year_from_name(e["name"])), reverse=True)
 
     return render_template("pages/stats.html", events=events)
 

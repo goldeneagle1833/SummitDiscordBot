@@ -264,16 +264,6 @@ class MatchConfirmationButtons(discord.ui.View):
             )
             return
 
-        # Check if confirmer needs to provide a deck URL
-        # is_winner=True means confirmer won (their deck is winner_deck_url)
-        # is_winner=False means confirmer lost (their deck is loser_deck_url)
-        confirmer_deck_url = self.winner_deck_url if self.is_winner else self.loser_deck_url
-        if not confirmer_deck_url:
-            # Show modal to collect deck URL before proceeding
-            modal = ConfirmerDeckURLModal(self, interaction)
-            await interaction.response.send_modal(modal)
-            return
-
         # Disable button immediately to prevent double-clicks
         button.disabled = True
         for item in self.children:
@@ -439,7 +429,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
     deck_url = discord.ui.TextInput(
         label="Curiosa Deck URL",
         placeholder="Enter your deck URL",
-        required=True,
+        required=False,
     )
 
     def __init__(self, view: "LFGReportButtons", interaction: discord.Interaction, is_win: bool):
@@ -795,7 +785,7 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
     deck_url = discord.ui.TextInput(
         label="Curiosa Deck URL",
         placeholder="Enter your deck URL",
-        required=True,
+        required=False,
     )
 
     def __init__(self, view: "MatchConfirmationButtons", interaction: discord.Interaction):
@@ -1207,13 +1197,6 @@ class LFGReportButtons(discord.ui.View):
     async def won_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        # Check if reporter needs to provide a deck URL
-        if not self.reporter_deck_url:
-            # Show modal to collect deck URL before proceeding
-            modal = ReporterDeckURLModal(self, interaction, is_win=True)
-            await interaction.response.send_modal(modal)
-            return
-
         # Disable buttons immediately to prevent double-clicks
         for item in self.children:
             item.disabled = True
@@ -1419,13 +1402,6 @@ class LFGReportButtons(discord.ui.View):
     async def lost_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        # Check if reporter needs to provide a deck URL
-        if not self.reporter_deck_url:
-            # Show modal to collect deck URL before proceeding
-            modal = ReporterDeckURLModal(self, interaction, is_win=False)
-            await interaction.response.send_modal(modal)
-            return
-
         # Disable buttons immediately to prevent double-clicks
         for item in self.children:
             item.disabled = True

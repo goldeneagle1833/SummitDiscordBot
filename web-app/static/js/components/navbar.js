@@ -1,28 +1,25 @@
-// Navbar component JavaScript
+// Navbar component JavaScript - Updated for Tailwind CSS
 document.addEventListener("DOMContentLoaded", function () {
   const hamburgerBtn = document.getElementById("hamburger-toggle");
   const sidebar = document.getElementById("sidebar");
+  const backdrop = document.getElementById("sidebar-backdrop");
 
-  // Check if we're on mobile
-  function isMobile() {
-    return window.innerWidth <= 768;
-  }
-
-  // Initialize sidebar state based on screen size
-  function initializeSidebar() {
-    // Start collapsed on both mobile and desktop
-    sidebar.classList.remove("open");
-    sidebar.classList.add("collapsed");
-  }
-
-  // Toggle sidebar
+  // Toggle sidebar with backdrop
   function toggleSidebar() {
-    if (isMobile()) {
-      // On mobile: toggle open/closed
-      sidebar.classList.toggle("open");
+    const isOpen = !sidebar.classList.contains("-translate-x-full");
+
+    if (isOpen) {
+      // Close sidebar
+      sidebar.classList.add("-translate-x-full");
+      if (backdrop) {
+        backdrop.classList.add("opacity-0", "pointer-events-none");
+      }
     } else {
-      // On desktop: toggle collapsed/expanded
-      sidebar.classList.toggle("collapsed");
+      // Open sidebar
+      sidebar.classList.remove("-translate-x-full");
+      if (backdrop) {
+        backdrop.classList.remove("opacity-0", "pointer-events-none");
+      }
     }
   }
 
@@ -31,38 +28,28 @@ document.addEventListener("DOMContentLoaded", function () {
     hamburgerBtn.addEventListener("click", toggleSidebar);
   }
 
-  // Close sidebar on escape key (mobile only)
+  // Close sidebar when clicking backdrop
+  if (backdrop) {
+    backdrop.addEventListener("click", toggleSidebar);
+  }
+
+  // Close sidebar on escape key
   document.addEventListener("keydown", function (e) {
-    if (
-      e.key === "Escape" &&
-      isMobile() &&
-      sidebar.classList.contains("open")
-    ) {
-      sidebar.classList.remove("open");
+    if (e.key === "Escape" && !sidebar.classList.contains("-translate-x-full")) {
+      toggleSidebar();
     }
   });
 
-  // Close sidebar when clicking a link on mobile
-  const sidebarLinks = sidebar.querySelectorAll(".sidebar-link");
+  // Close sidebar when clicking a link (mobile only)
+  const sidebarLinks = sidebar.querySelectorAll("a");
   sidebarLinks.forEach((link) => {
     link.addEventListener("click", function () {
-      if (isMobile()) {
-        sidebar.classList.remove("open");
+      // Check if we're on mobile (< 768px)
+      if (window.innerWidth < 768) {
+        toggleSidebar();
       }
     });
   });
-
-  // Handle window resize
-  let resizeTimer;
-  window.addEventListener("resize", function () {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(function () {
-      initializeSidebar();
-    }, 250);
-  });
-
-  // Initialize on load
-  initializeSidebar();
 
   // Secret easter egg: Triple-click the brand name to access secret fart leaderboard
   const brandLink = document.getElementById("brand-secret");

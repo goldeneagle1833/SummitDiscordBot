@@ -5,7 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{% block title %}Sorcerers Summit{% endblock %}</title>
 
-    <!-- Global CSS (always loaded) -->
+    <!-- Tailwind CSS (load first) -->
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}" />
+
+    <!-- Custom CSS (load after for overrides) -->
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/global.css') }}" />
@@ -19,10 +24,12 @@
     <!-- Page-specific CSS -->
     {% block styles %}{% endblock %}
   </head>
-  <body>
+  <body class="min-h-screen bg-bg-dark text-text font-sans">
     {% include 'components/navbar.html' %}
 
-    <main class="main-content">{% block content %}{% endblock %}</main>
+    <main class="mt-16 mx-auto max-w-content px-4 sm:px-6 lg:px-8 py-8">
+      {% block content %}{% endblock %}
+    </main>
 
     {% include 'components/footer.html' %}
 

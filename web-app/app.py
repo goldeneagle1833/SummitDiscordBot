@@ -446,8 +446,8 @@ def match_history_api():
                     "loser_elo_change": row[4] or 0,
                     "match_time": row[5] or 0,
                     "timestamp": row[6],
-                    "winner_id": row[7],
-                    "loser_id": row[8],
+                    "winner_id": str(row[7]),
+                    "loser_id": str(row[8]),
                 }
             )
 

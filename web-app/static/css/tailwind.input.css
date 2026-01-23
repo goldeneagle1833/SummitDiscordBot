@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom layer for component overrides */
+@layer components {
+  /* Preserve critical custom components */
+  .feature-card {
+    @apply bg-bg-surface border border-border/20 rounded-soft p-xl transition-all duration-normal;
+  }
+
+  .feature-card:hover {
+    @apply -translate-y-2 border-primary shadow-harsh;
+  }
+}
+
+@layer utilities {
+  /* Custom utility classes */
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent;
+  }
+}

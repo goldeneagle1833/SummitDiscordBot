@@ -29,3 +29,8 @@ bot.log
 .github/workflows/deploy.yml
 web-app/curiosa-io-tools/curosa.py
 web-app/curiosa-io-tools/cardPercentages.py
+
+# Tailwind CSS
+web-app/tailwindcss.exe
+web-app/tailwindcss-windows-x64.exe
+web-app/static/css/tailwind.output.css

@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -m py_compile:*)"
+      "Bash(python -m py_compile:*)",
+      "Bash(grep:*)",
+      "Bash(for file in about.html avatar.html deck_help.html deck_snapshot.html elo.html elo_global.html elo_server.html error.html fart_leaderboard.html help.html match_history.html player.html stats.html stats_event.html top_8.html top_8_event.html)",
+      "Bash(do:*)",
+      "Bash(done)",
+      "Bash(python:*)"
     ]
   }
 }

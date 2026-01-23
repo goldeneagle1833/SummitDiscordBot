@@ -12,7 +12,6 @@ import config
 from utils.database import (
     winner_report,
     losser_report,
-    solo_match_report,
     check_milestone,
 )
 from utils.constants import SORCERY_NICKNAMES
@@ -265,6 +264,16 @@ class MatchConfirmationButtons(discord.ui.View):
             )
             return
 
+        # Check if confirmer needs to provide a deck URL
+        # is_winner=True means confirmer won (their deck is winner_deck_url)
+        # is_winner=False means confirmer lost (their deck is loser_deck_url)
+        confirmer_deck_url = self.winner_deck_url if self.is_winner else self.loser_deck_url
+        if not confirmer_deck_url:
+            # Show modal to collect deck URL before proceeding
+            modal = ConfirmerDeckURLModal(self, interaction)
+            await interaction.response.send_modal(modal)
+            return
+
         # Disable button immediately to prevent double-clicks
         button.disabled = True
         for item in self.children:
@@ -422,6 +431,500 @@ class MatchConfirmationButtons(discord.ui.View):
 
         # Remove from pending
         pending_match_reports.pop((self.reporter_id, self.opponent_id), None)
+
+
+class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
+    """Modal for capturing deck URL when reporter didn't provide one at queue join"""
+
+    deck_url = discord.ui.TextInput(
+        label="Curiosa Deck URL",
+        placeholder="Enter your deck URL",
+        required=True,
+    )
+
+    def __init__(self, view: "LFGReportButtons", interaction: discord.Interaction, is_win: bool):
+        super().__init__()
+        self.view = view
+        self.original_interaction = interaction
+        self.is_win = is_win
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Update the reporter's deck URL
+        self.view.reporter_deck_url = self.deck_url.value.strip() if self.deck_url.value else None
+
+        # Continue with the original flow
+        if self.is_win:
+            await self._process_win_report(interaction)
+        else:
+            await self._process_loss_report(interaction)
+
+    async def _process_win_report(self, interaction: discord.Interaction):
+        """Process win report after collecting deck URL"""
+        view = self.view
+        original_interaction = self.original_interaction
+
+        # Disable buttons immediately to prevent double-clicks
+        for item in view.children:
+            item.disabled = True
+        try:
+            await original_interaction.message.edit(view=view)
+        except Exception:
+            pass
+
+        opponent_id = (
+            view.player2_id
+            if original_interaction.user.id == view.player1_id
+            else view.player1_id
+        )
+        opponent_global = (
+            view.player2_global
+            if original_interaction.user.id == view.player1_id
+            else view.player1_global
+        )
+
+        # Check if a report is already pending for this match
+        if (original_interaction.user.id, opponent_id) in pending_match_reports or (
+            opponent_id,
+            original_interaction.user.id,
+        ) in pending_match_reports:
+            await interaction.response.send_message(
+                "A report for this match is already pending confirmation.",
+                ephemeral=True,
+            )
+            return
+
+        # Store pending report with deck URLs
+        pending_match_reports[(original_interaction.user.id, opponent_id)] = {
+            "winner_id": original_interaction.user.id,
+            "winner_global": original_interaction.user.global_name
+            or original_interaction.user.display_name,
+            "loser_id": opponent_id,
+            "loser_global": opponent_global,
+            "reporter_id": original_interaction.user.id,
+            "reporter_global": original_interaction.user.global_name
+            or original_interaction.user.display_name,
+            "is_winner": True,
+            "opponent_message": None,
+            "match_start_time": view.match_start_time,
+            "reporter_deck_url": view.reporter_deck_url,
+            "opponent_deck_url": view.opponent_deck_url,
+        }
+
+        # Send confirmation to opponent
+        try:
+            opponent = await view.bot.fetch_user(opponent_id)
+
+            confirmation_view = MatchConfirmationButtons(
+                reporter_id=original_interaction.user.id,
+                reporter_global=original_interaction.user.global_name
+                or original_interaction.user.display_name,
+                opponent_id=opponent_id,
+                opponent_global=opponent_global,
+                winner_id=original_interaction.user.id,
+                winner_global=original_interaction.user.global_name
+                or original_interaction.user.display_name,
+                loser_id=opponent_id,
+                loser_global=opponent_global,
+                is_winner=False,
+                bot=view.bot,
+                channel=view.channel,
+                match_start_time=view.match_start_time,
+                winner_deck_url=view.reporter_deck_url,
+                loser_deck_url=view.opponent_deck_url,
+            )
+
+            # Check if opponent has DM-disabled role
+            opponent_has_dm_issue = False
+            guild = original_interaction.guild
+            if guild:
+                role = guild.get_role(DM_DISABLED_ROLE_ID)
+                member = guild.get_member(opponent_id)
+                if role and member and role in member.roles:
+                    opponent_has_dm_issue = True
+
+            if opponent_has_dm_issue:
+                dm_channel = view.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                if dm_channel:
+                    await dm_channel.send(
+                        f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                        view=confirmation_view,
+                    )
+                    await interaction.response.send_message(
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"Could not send confirmation to {opponent_global}.",
+                        ephemeral=True,
+                    )
+            else:
+                try:
+                    await opponent.send(
+                        f"**Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                        view=confirmation_view,
+                    )
+                    await interaction.response.send_message(
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                except discord.Forbidden:
+                    try:
+                        if guild:
+                            role = guild.get_role(DM_DISABLED_ROLE_ID)
+                            member = guild.get_member(opponent_id)
+                            if role and member:
+                                await member.add_roles(role)
+
+                        dm_channel = view.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                        if dm_channel:
+                            if guild:
+                                member = guild.get_member(opponent_id)
+                                if member:
+                                    await dm_channel.set_permissions(
+                                        member, read_messages=True, send_messages=True
+                                    )
+                            await dm_channel.send(
+                                f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                                view=confirmation_view,
+                            )
+                            await interaction.response.send_message(
+                                "Match report sent. Waiting for confirmation...",
+                                ephemeral=True,
+                            )
+                        else:
+                            await interaction.response.send_message(
+                                f"Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+                    except Exception as e:
+                        logger.error(f"Failed to handle DM failure for opponent: {e}")
+                        if not interaction.response.is_done():
+                            await interaction.response.send_message(
+                                f"Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+
+            # Remove buttons from original message
+            if original_interaction.message:
+                try:
+                    await original_interaction.message.edit(view=None)
+                except Exception:
+                    pass
+
+        except discord.Forbidden:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    ephemeral=True,
+                )
+        except Exception as e:
+            logger.error(f"Error in ReporterDeckURLModal win report: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "An error occurred while processing your match report.",
+                    ephemeral=True,
+                )
+
+    async def _process_loss_report(self, interaction: discord.Interaction):
+        """Process loss report after collecting deck URL"""
+        view = self.view
+        original_interaction = self.original_interaction
+
+        # Disable buttons immediately to prevent double-clicks
+        for item in view.children:
+            item.disabled = True
+        try:
+            await original_interaction.message.edit(view=view)
+        except Exception:
+            pass
+
+        opponent_id = (
+            view.player2_id
+            if original_interaction.user.id == view.player1_id
+            else view.player1_id
+        )
+        opponent_global = (
+            view.player2_global
+            if original_interaction.user.id == view.player1_id
+            else view.player1_global
+        )
+
+        # Check if a report is already pending for this match
+        if (original_interaction.user.id, opponent_id) in pending_match_reports or (
+            opponent_id,
+            original_interaction.user.id,
+        ) in pending_match_reports:
+            await interaction.response.send_message(
+                "A report for this match is already pending confirmation.",
+                ephemeral=True,
+            )
+            return
+
+        # Store pending report with deck URLs
+        pending_match_reports[(original_interaction.user.id, opponent_id)] = {
+            "winner_id": opponent_id,
+            "winner_global": opponent_global,
+            "loser_id": original_interaction.user.id,
+            "loser_global": original_interaction.user.global_name
+            or original_interaction.user.display_name,
+            "reporter_id": original_interaction.user.id,
+            "reporter_global": original_interaction.user.global_name
+            or original_interaction.user.display_name,
+            "is_winner": False,
+            "opponent_message": None,
+            "match_start_time": view.match_start_time,
+            "reporter_deck_url": view.reporter_deck_url,
+            "opponent_deck_url": view.opponent_deck_url,
+        }
+
+        # Send confirmation to opponent
+        try:
+            opponent = await view.bot.fetch_user(opponent_id)
+
+            confirmation_view = MatchConfirmationButtons(
+                reporter_id=original_interaction.user.id,
+                reporter_global=original_interaction.user.global_name
+                or original_interaction.user.display_name,
+                opponent_id=opponent_id,
+                opponent_global=opponent_global,
+                winner_id=opponent_id,
+                winner_global=opponent_global,
+                loser_id=original_interaction.user.id,
+                loser_global=original_interaction.user.global_name
+                or original_interaction.user.display_name,
+                is_winner=True,
+                bot=view.bot,
+                channel=view.channel,
+                match_start_time=view.match_start_time,
+                winner_deck_url=view.opponent_deck_url,
+                loser_deck_url=view.reporter_deck_url,
+            )
+
+            # Check if opponent has DM-disabled role
+            opponent_has_dm_issue = False
+            guild = original_interaction.guild
+            if guild:
+                role = guild.get_role(DM_DISABLED_ROLE_ID)
+                member = guild.get_member(opponent_id)
+                if role and member and role in member.roles:
+                    opponent_has_dm_issue = True
+
+            if opponent_has_dm_issue:
+                dm_channel = view.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                if dm_channel:
+                    await dm_channel.send(
+                        f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                        view=confirmation_view,
+                    )
+                    await interaction.response.send_message(
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"Could not send confirmation to {opponent_global}.",
+                        ephemeral=True,
+                    )
+            else:
+                try:
+                    await opponent.send(
+                        f"**Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                        view=confirmation_view,
+                    )
+                    await interaction.response.send_message(
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                except discord.Forbidden:
+                    try:
+                        if guild:
+                            role = guild.get_role(DM_DISABLED_ROLE_ID)
+                            member = guild.get_member(opponent_id)
+                            if role and member:
+                                await member.add_roles(role)
+
+                        dm_channel = view.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+                        if dm_channel:
+                            await dm_channel.send(
+                                f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                                view=confirmation_view,
+                            )
+                            await interaction.response.send_message(
+                                "Match report sent. Waiting for confirmation...",
+                                ephemeral=True,
+                            )
+                        else:
+                            await interaction.response.send_message(
+                                f"Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+                    except Exception as e:
+                        logger.error(f"Failed to handle DM failure for opponent: {e}")
+                        if not interaction.response.is_done():
+                            await interaction.response.send_message(
+                                f"Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+
+            # Remove buttons from original message
+            if original_interaction.message:
+                try:
+                    await original_interaction.message.edit(view=None)
+                except Exception:
+                    pass
+
+        except discord.Forbidden:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    ephemeral=True,
+                )
+        except Exception as e:
+            logger.error(f"Error in ReporterDeckURLModal loss report: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "An error occurred while processing your match report.",
+                    ephemeral=True,
+                )
+
+
+class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
+    """Modal for capturing deck URL when confirmer didn't provide one at queue join"""
+
+    deck_url = discord.ui.TextInput(
+        label="Curiosa Deck URL",
+        placeholder="Enter your deck URL",
+        required=True,
+    )
+
+    def __init__(self, view: "MatchConfirmationButtons", interaction: discord.Interaction):
+        super().__init__()
+        self.view = view
+        self.original_interaction = interaction
+
+    async def on_submit(self, interaction: discord.Interaction):
+        deck_url = self.deck_url.value.strip() if self.deck_url.value else None
+
+        # Update the confirmer's deck URL based on whether they won or lost
+        if self.view.is_winner:
+            # Confirmer won, so their deck is winner_deck_url
+            self.view.winner_deck_url = deck_url
+        else:
+            # Confirmer lost, so their deck is loser_deck_url
+            self.view.loser_deck_url = deck_url
+
+        # Continue with the confirmation process
+        await self._process_confirmation(interaction)
+
+    async def _process_confirmation(self, interaction: discord.Interaction):
+        """Process confirmation after collecting deck URL"""
+        view = self.view
+        original_interaction = self.original_interaction
+
+        # Disable buttons immediately to prevent double-clicks
+        for item in view.children:
+            item.disabled = True
+        try:
+            await original_interaction.message.edit(view=view)
+        except Exception:
+            pass
+
+        # Check for duplicate match
+        match_key = frozenset({view.winner_id, view.loser_id})
+        now = datetime.datetime.now()
+        if match_key in processed_matches:
+            last_report_time = processed_matches[match_key]
+            if (now - last_report_time).total_seconds() < 300:
+                await interaction.response.send_message(
+                    "This match has already been recorded. Duplicate report prevented.",
+                    ephemeral=True,
+                )
+                await original_interaction.message.edit(
+                    content="Match already recorded (duplicate prevented).",
+                    view=None,
+                )
+                return
+
+        # Mark this match as processed
+        processed_matches[match_key] = now
+
+        await interaction.response.defer()
+
+        # Calculate match time
+        match_time = view.match_time
+        if match_time == 0 and view.match_start_time:
+            time_diff = datetime.datetime.now() - view.match_start_time
+            match_time = int(time_diff.total_seconds() / 60)
+
+        # Use winner and loser deck URLs properly
+        winner_deck = view.winner_deck_url or "No URL provided"
+        loser_deck = view.loser_deck_url or "No URL provided"
+        combined_comment = f"Winner deck: {winner_deck} | Loser deck: {loser_deck}"
+        if view.match_comment:
+            combined_comment = f"{view.match_comment} | {combined_comment}"
+
+        # Submit match report
+        match_id, _, _ = await winner_report(
+            view.reporter_id,
+            view.winner_id,
+            view.winner_global,
+            True,
+            view.loser_id,
+            view.loser_global,
+            view.first_player,
+            match_time,
+            winner_deck,
+            combined_comment,
+            view.winner_id,
+            view.winner_global,
+            winner_deck_url=view.winner_deck_url,
+            loser_deck_url=view.loser_deck_url,
+        )
+
+        # Update ELO for the loser
+        from utils.database import update_elo_db
+        update_elo_db(view.loser_id, view.loser_global, False, view.winner_id)
+
+        # Update the confirmation message
+        await original_interaction.message.edit(
+            content=f"Match confirmed! **Match ID: #{match_id}** - {view.winner_global} won against {view.loser_global}.",
+            view=None,
+        )
+
+        # Send confirmation to confirming user
+        await interaction.followup.send(
+            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {view.winner_global}\n**Loser:** {view.loser_global}",
+            ephemeral=True,
+        )
+
+        # Notify the reporter
+        try:
+            reporter = await view.bot.fetch_user(view.reporter_id)
+            await reporter.send(
+                f"{view.opponent_global} has confirmed your match report! Match has been recorded."
+            )
+        except discord.Forbidden:
+            match_report_channel = view.bot.get_channel(DM_DISABLED_CHANNEL_ID)
+            if match_report_channel:
+                await match_report_channel.send(
+                    f"<@{view.reporter_id}> {view.opponent_global} has confirmed your match report! Match has been recorded."
+                )
+        except Exception:
+            pass
+
+        # Remove from pending
+        pending_match_reports.pop((view.reporter_id, view.opponent_id), None)
+
+        # Update leaderboard
+        lfg_cog = view.bot.get_cog("LFGCog")
+        if lfg_cog:
+            await lfg_cog.update_leaderboard()
+
+        # Check for milestone
+        await send_milestone_announcement(
+            view.bot, view.winner_id, view.loser_id, match_id
+        )
 
 
 class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
@@ -704,6 +1207,13 @@ class LFGReportButtons(discord.ui.View):
     async def won_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        # Check if reporter needs to provide a deck URL
+        if not self.reporter_deck_url:
+            # Show modal to collect deck URL before proceeding
+            modal = ReporterDeckURLModal(self, interaction, is_win=True)
+            await interaction.response.send_modal(modal)
+            return
+
         # Disable buttons immediately to prevent double-clicks
         for item in self.children:
             item.disabled = True
@@ -909,6 +1419,13 @@ class LFGReportButtons(discord.ui.View):
     async def lost_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        # Check if reporter needs to provide a deck URL
+        if not self.reporter_deck_url:
+            # Show modal to collect deck URL before proceeding
+            modal = ReporterDeckURLModal(self, interaction, is_win=False)
+            await interaction.response.send_modal(modal)
+            return
+
         # Disable buttons immediately to prevent double-clicks
         for item in self.children:
             item.disabled = True
@@ -1433,125 +1950,6 @@ class ChallengeButtons(discord.ui.View):
         await interaction.message.edit(view=None)
 
 
-class ReportButtonsSolo(discord.ui.View):
-    def __init__(self, reporter_id: int, reporter_global: str, bot=None):
-        super().__init__(timeout=300)  # 5 minute timeout
-        self.reporter_id = reporter_id
-        self.reporter_global = reporter_global
-        self.bot = bot
-
-    @discord.ui.button(label="I Won!", style=discord.ButtonStyle.success)
-    async def won_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        await interaction.response.send_modal(
-            SoloMatchReportModal(
-                reporter_id=self.reporter_id,
-                reporter_global=self.reporter_global,
-                is_winner=True,
-                bot=self.bot,
-            )
-        )
-        await interaction.message.edit(view=None)
-
-    @discord.ui.button(label="I Lost", style=discord.ButtonStyle.danger)
-    async def lost_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        await interaction.response.send_modal(
-            SoloMatchReportModal(
-                reporter_id=self.reporter_id,
-                reporter_global=self.reporter_global,
-                is_winner=False,
-                bot=self.bot,
-            )
-        )
-        await interaction.message.edit(view=None)
-
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        await interaction.response.send_message(
-            "Match report cancelled.", ephemeral=True
-        )
-        await interaction.message.edit(view=None)
-
-
-class SoloMatchReportModal(discord.ui.Modal, title="Solo Match Report"):
-    opponent_name = discord.ui.TextInput(
-        label="Opponent's Name",
-        placeholder="Enter your opponent's name",
-        required=False,
-    )
-
-    curiosa_url = discord.ui.TextInput(
-        label="Curiosa Deck URL",
-        placeholder="Enter Your Curiosa Deck URL",
-        required=False,
-    )
-
-    first_player = discord.ui.TextInput(
-        label="Did you go first? (y/n)",
-        placeholder="Enter YES or NO",
-        required=False,
-        max_length=3,
-    )
-
-    match_time = discord.ui.TextInput(
-        label="Match time",
-        placeholder="Estimate match time in minutes (eg. 30)",
-        required=False,
-        max_length=3,
-        min_length=1,
-    )
-
-    match_comment = discord.ui.TextInput(
-        label="Notes",
-        placeholder="Anything else about the match?",
-        style=discord.TextStyle.paragraph,
-        required=False,
-    )
-
-    def __init__(
-        self, reporter_id: int, reporter_global: str, is_winner: bool, bot=None
-    ):
-        super().__init__()
-        self.reporter_id = reporter_id
-        self.reporter_global = reporter_global
-        self.is_winner = is_winner
-        self.bot = bot
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-
-        curiosa_link = (
-            self.curiosa_url.value if self.curiosa_url.value else "No URL provided"
-        )
-        match_comment = self.match_comment.value if self.match_comment.value else ""
-        first_player = self.first_player.value if self.first_player.value else "n"
-        match_time = (
-            int(self.match_time.value) if self.match_time.value.isdigit() else 0
-        )
-
-        report_id = await solo_match_report(
-            reporter_id=self.reporter_id,
-            reporter_global=self.reporter_global,
-            opponent_name=self.opponent_name.value,
-            is_winner=self.is_winner,
-            first_player=first_player,
-            match_time=match_time,
-            curiosa_link=curiosa_link,
-            match_comment=match_comment,
-        )
-
-        result = "Won" if self.is_winner else "Lost"
-        await interaction.followup.send(
-            f"Solo match report submitted! **Report ID: #S{report_id}**\n**Result:** {result}\n**Opponent:** {self.opponent_name.value}",
-            ephemeral=True,
-        )
-
-
 class JoinQueueButton(discord.ui.View):
     """Button for joining the LFG queue from the status message"""
 
@@ -1703,12 +2101,7 @@ class LFGCog(commands.Cog):
 
             # Calculate total games played across all matches
             cursor_matches.execute("SELECT COUNT(*) FROM match_records")
-            total_match_records = cursor_matches.fetchone()[0]
-
-            cursor_matches.execute("SELECT COUNT(*) FROM solo_match_reports")
-            total_solo_reports = cursor_matches.fetchone()[0]
-
-            total_games_played = total_match_records + total_solo_reports
+            total_games_played = cursor_matches.fetchone()[0]
 
             # Create leaderboard embed with total games in title
             embed = discord.Embed(
@@ -1742,24 +2135,12 @@ class LFGCog(commands.Cog):
                     # Count games played by this user (as winner or loser)
                     cursor_matches.execute(
                         """
-                        SELECT COUNT(*) FROM match_records 
+                        SELECT COUNT(*) FROM match_records
                         WHERE winner_id = ? OR losser_id = ?
                     """,
                         (user_id, user_id),
                     )
-                    match_count = cursor_matches.fetchone()[0]
-
-                    # Also count solo matches
-                    cursor_matches.execute(
-                        """
-                        SELECT COUNT(*) FROM solo_match_reports 
-                        WHERE reporter_id = ?
-                    """,
-                        (user_id,),
-                    )
-                    solo_count = cursor_matches.fetchone()[0]
-
-                    total_games = match_count + solo_count
+                    total_games = cursor_matches.fetchone()[0]
 
                     leaderboard_text.append(
                         f"**{idx}.** {display_name} - **{elo}** ELO ({total_games} games)"
@@ -2549,21 +2930,6 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
 
     @commands.command()
-    async def record_game(self, ctx):
-        """Submit a match report without being matched through LFG"""
-        # Create view with both buttons
-        view = ReportButtonsSolo(ctx.author.id, ctx.author.global_name, self.bot)
-
-        try:
-            await ctx.author.send("Please select match outcome:", view=view)
-            await ctx.send("Check your DMs to submit the match report!", ephemeral=True)
-        except discord.Forbidden:
-            await ctx.send(
-                "I couldn't send you a DM. Please enable DMs from server members.",
-                ephemeral=True,
-            )
-
-    @commands.command()
     @commands.has_permissions(administrator=True)
     async def reset_elo(self, ctx):
         """Admin command to reset all ELO ratings and match history"""
@@ -2593,13 +2959,12 @@ class LFGCog(commands.Cog):
 
             # Drop all tables
             cur_matches.execute("DROP TABLE IF EXISTS match_records")
-            cur_matches.execute("DROP TABLE IF EXISTS solo_match_reports")
             cur_matches.execute("DROP TABLE IF EXISTS challenge_matches")
 
             # Recreate match_records table
             cur_matches.execute("""CREATE TABLE match_records
                                    (reporter_id INTEGER,
-                                    winner_id INTEGER, 
+                                    winner_id INTEGER,
                                     winner_display_name TEXT,
                                     losser_id INTEGER,
                                     losser_display_name TEXT,
@@ -2609,20 +2974,6 @@ class LFGCog(commands.Cog):
                                     match_time INTEGER,
                                     curiosa_url TEXT,
                                     match_comment TEXT,
-                                    json_deck_data TEXT
-                                   )""")
-
-            # Recreate solo_match_reports table
-            cur_matches.execute("""CREATE TABLE solo_match_reports
-                                   (reporter_id INTEGER,
-                                    reporter_name TEXT,
-                                    opponent_name TEXT,
-                                    is_winner BOOLEAN,
-                                    first_player TEXT,
-                                    match_time INTEGER,
-                                    curiosa_link TEXT,
-                                    match_comment TEXT,
-                                    report_date DATETIME,
                                     json_deck_data TEXT
                                    )""")
 
@@ -2644,7 +2995,7 @@ class LFGCog(commands.Cog):
 
             success_embed = discord.Embed(
                 title="Database Reset Complete",
-                description="All databases have been dropped and recreated:\n• ELO database reset\n• Match records cleared\n• Solo match reports cleared\n• Challenge matches cleared\n\nAll tables are ready to use.",
+                description="All databases have been dropped and recreated:\n• ELO database reset\n• Match records cleared\n• Challenge matches cleared\n\nAll tables are ready to use.",
                 color=discord.Color.green(),
             )
             await ctx.send(embed=success_embed)
@@ -3377,12 +3728,6 @@ class LFGCog(commands.Cog):
             )
             matches_deleted = match_cursor.rowcount
 
-            # Delete solo match reports by this player
-            match_cursor.execute(
-                "DELETE FROM solo_match_reports WHERE reporter_id = ?", (user.id,)
-            )
-            solo_deleted = match_cursor.rowcount
-
             # Remove player from ELO standings
             elo_cursor.execute(
                 "DELETE FROM overall_standings WHERE user_id = ?", (user.id,)
@@ -3406,7 +3751,7 @@ class LFGCog(commands.Cog):
             )
             embed.add_field(
                 name="Matches Deleted",
-                value=f"{matches_deleted} ranked match(es)\n{solo_deleted} solo report(s)",
+                value=f"{matches_deleted} ranked match(es)",
                 inline=False,
             )
 
@@ -3435,7 +3780,7 @@ class LFGCog(commands.Cog):
 
             logger.info(
                 f"Admin {ctx.author} (ID: {ctx.author.id}) removed player {user_name} (ID: {user.id}). "
-                f"Deleted {matches_deleted} matches, {solo_deleted} solo reports. "
+                f"Deleted {matches_deleted} matches. "
                 f"ELO adjustments: {elo_adjustments}"
             )
 
@@ -3479,24 +3824,12 @@ class LFGCog(commands.Cog):
             # Count matches from match_records table
             cursor.execute(
                 """
-                SELECT COUNT(*) FROM match_records 
+                SELECT COUNT(*) FROM match_records
                 WHERE timestamp >= ?
             """,
                 (cutoff_time.isoformat(),),
             )
-            match_records_count = cursor.fetchone()[0]
-
-            # Count solo match reports
-            cursor.execute(
-                """
-                SELECT COUNT(*) FROM solo_match_reports 
-                WHERE report_date >= ?
-            """,
-                (cutoff_time.strftime("%Y-%m-%d %H:%M:%S"),),
-            )
-            solo_reports_count = cursor.fetchone()[0]
-
-            total_games = match_records_count + solo_reports_count
+            total_games = cursor.fetchone()[0]
 
             # Get unique players who participated
             cursor.execute(
@@ -3505,14 +3838,11 @@ class LFGCog(commands.Cog):
                     SELECT winner_id as user_id FROM match_records WHERE timestamp >= ?
                     UNION ALL
                     SELECT losser_id as user_id FROM match_records WHERE timestamp >= ?
-                    UNION ALL
-                    SELECT reporter_id as user_id FROM solo_match_reports WHERE report_date >= ?
                 )
             """,
                 (
                     cutoff_time.isoformat(),
                     cutoff_time.isoformat(),
-                    cutoff_time.strftime("%Y-%m-%d %H:%M:%S"),
                 ),
             )
             unique_players = cursor.fetchone()[0]
@@ -3536,18 +3866,6 @@ class LFGCog(commands.Cog):
                 name="Unique Players",
                 value=f"**{unique_players}** players",
                 inline=True,
-            )
-
-            embed.add_field(name="\u200b", value="\u200b", inline=True)  # Spacer
-
-            embed.add_field(
-                name="Matched Games",
-                value=f"{match_records_count} games",
-                inline=True,
-            )
-
-            embed.add_field(
-                name="Solo Reports", value=f"{solo_reports_count} games", inline=True
             )
 
             if total_games > 0:

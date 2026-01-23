@@ -58,10 +58,13 @@ _rules_generator = None
 
 def require_api_key(f):
     """Decorator to require API key authentication for endpoints"""
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
         # Check for API key in headers
-        provided_key = request.headers.get("X-API-Key") or request.headers.get("Authorization")
+        provided_key = request.headers.get("X-API-Key") or request.headers.get(
+            "Authorization"
+        )
 
         # Support "Bearer <key>" format
         if provided_key and provided_key.startswith("Bearer "):
@@ -73,10 +76,13 @@ def require_api_key(f):
             return jsonify({"error": "API authentication not configured"}), 500
 
         if not provided_key or provided_key not in VALID_API_KEYS:
-            logger.warning(f"Unauthorized API access attempt from {request.remote_addr}")
+            logger.warning(
+                f"Unauthorized API access attempt from {request.remote_addr}"
+            )
             return jsonify({"error": "Invalid or missing API key"}), 401
 
         return f(*args, **kwargs)
+
     return decorated_function
 
 
@@ -375,11 +381,12 @@ def match_history_api():
         cur = conn.cursor()
 
         # Get optional date parameter (format: YYYY-MM-DD)
-        selected_date = request.args.get('date')
+        selected_date = request.args.get("date")
 
         if selected_date:
             # Fetch matches for specific date
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT
                     rowid as match_id,
                     winner_display_name,
@@ -393,7 +400,9 @@ def match_history_api():
                 FROM match_records
                 WHERE date(timestamp) = ?
                 ORDER BY rowid DESC
-            """, (selected_date,))
+            """,
+                (selected_date,),
+            )
         else:
             # Fetch matches from last 24 hours (default)
             cur.execute("""
@@ -714,10 +723,9 @@ def report_match():
         missing_fields = [field for field in required_fields if field not in data]
 
         if missing_fields:
-            return jsonify({
-                "error": "Missing required fields",
-                "missing": missing_fields
-            }), 400
+            return jsonify(
+                {"error": "Missing required fields", "missing": missing_fields}
+            ), 400
 
         # Extract required fields
         winner_name = str(data["winner_name"])
@@ -734,11 +742,13 @@ def report_match():
         reporter_id = int(data.get("reporter_id", winner_id))
 
         # Validate first_player value
-        if first_player not in ['y', 'n']:
-            return jsonify({
-                "error": "Invalid value for first_player",
-                "detail": "Must be 'y' or 'n'"
-            }), 400
+        if first_player not in ["y", "n"]:
+            return jsonify(
+                {
+                    "error": "Invalid value for first_player",
+                    "detail": "Must be 'y' or 'n'",
+                }
+            ), 400
 
         # Add discord-bot to path to import database utilities
         _bot_path = str(Path(__file__).parent.parent / "discord-bot")
@@ -777,6 +787,7 @@ def report_match():
 
         # Get updated ELO ratings
         from utils.database import get_user_elo
+
         winner_elo = get_user_elo(winner_id)
         loser_elo = get_user_elo(loser_id)
 
@@ -785,7 +796,7 @@ def report_match():
         cur = conn.cursor()
         cur.execute(
             "SELECT winner_elo_change, loser_elo_change FROM match_records WHERE match_id = ?",
-            (match_id,)
+            (match_id,),
         )
         row = cur.fetchone()
         conn.close()
@@ -798,34 +809,30 @@ def report_match():
             f"{loser_name} (ID: {loser_id}), Match ID: {match_id}"
         )
 
-        return jsonify({
-            "success": True,
-            "match_id": match_id,
-            "winner": {
-                "name": winner_name,
-                "id": winner_id,
-                "elo": winner_elo,
-                "elo_change": winner_elo_change
-            },
-            "loser": {
-                "name": loser_name,
-                "id": loser_id,
-                "elo": loser_elo,
-                "elo_change": loser_elo_change
+        return jsonify(
+            {
+                "success": True,
+                "match_id": match_id,
+                "winner": {
+                    "name": winner_name,
+                    "id": winner_id,
+                    "elo": winner_elo,
+                    "elo_change": winner_elo_change,
+                },
+                "loser": {
+                    "name": loser_name,
+                    "id": loser_id,
+                    "elo": loser_elo,
+                    "elo_change": loser_elo_change,
+                },
             }
-        }), 201
+        ), 201
 
     except ValueError as e:
-        return jsonify({
-            "error": "Invalid data type",
-            "detail": str(e)
-        }), 400
+        return jsonify({"error": "Invalid data type", "detail": str(e)}), 400
     except Exception as e:
         logger.error(f"Error reporting match via API: {e}", exc_info=True)
-        return jsonify({
-            "error": "Failed to report match",
-            "detail": str(e)
-        }), 500
+        return jsonify({"error": "Failed to report match", "detail": str(e)}), 500
 
 
 # Leaderboard API endpoint
@@ -966,27 +973,243 @@ def avatar_profile(avatar_name):
     return render_template("pages/avatar.html", avatar_name=avatar_name)
 
 
+# Deck snapshot page
+@app.route("/deck-snapshot/<int:match_id>/<player_id>")
+def deck_snapshot(match_id, player_id):
+    # Check if logged-in user is the profile owner
+    logged_in_user_id = session.get("user_id")
+    is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(
+        player_id
+    )
+
+    # Auto-set owner to true on localhost for development
+    if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
+        is_owner = True
+
+    if not is_owner:
+        return render_template(
+            "pages/error.html", error="You can only view your own deck snapshots"
+        ), 403
+
+    return render_template(
+        "pages/deck_snapshot.html", match_id=match_id, player_id=player_id
+    )
+
+
+# Deck snapshot API endpoint
+@app.route("/api/deck-snapshot/<int:match_id>/<player_id>")
+def deck_snapshot_api(match_id, player_id):
+    import json
+
+    # Check if logged-in user is the profile owner
+    logged_in_user_id = session.get("user_id")
+    is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(
+        player_id
+    )
+
+    # Auto-set owner to true on localhost for development
+    if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
+        is_owner = True
+
+    if not is_owner:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    # Get the match data
+    conn = sqlite3.connect("../discord-bot/match_records.db")
+    cur = conn.cursor()
+
+    try:
+        cur.execute(
+            """
+            SELECT
+                winner_id,
+                losser_id,
+                winner_display_name,
+                losser_display_name,
+                timestamp,
+                json_deck_data,
+                json_deck_data_winner,
+                json_deck_data_loser
+            FROM match_records
+            WHERE rowid = ?
+        """,
+            (match_id,),
+        )
+        row = cur.fetchone()
+    except sqlite3.OperationalError:
+        # Fallback to old schema
+        cur.execute(
+            """
+            SELECT
+                winner_id,
+                losser_id,
+                winner_display_name,
+                losser_display_name,
+                timestamp,
+                json_deck_data
+            FROM match_records
+            WHERE rowid = ?
+        """,
+            (match_id,),
+        )
+        row = cur.fetchone()
+
+    conn.close()
+
+    if not row:
+        return jsonify({"error": "Match not found"}), 404
+
+    winner_id = str(row[0])
+    loser_id = str(row[1])
+    winner_name = row[2]
+    loser_name = row[3]
+    timestamp = row[4]
+    old_json_deck = row[5] if len(row) > 5 else None
+    winner_json = row[6] if len(row) > 6 else None
+    loser_json = row[7] if len(row) > 7 else None
+
+    # Determine if player was winner or loser
+    player_id_str = str(player_id)
+    if player_id_str == winner_id:
+        deck_json = (
+            winner_json if winner_json and winner_json != "{}" else old_json_deck
+        )
+        player_name = winner_name
+        result = "Win"
+        opponent_name = loser_name
+    elif player_id_str == loser_id:
+        deck_json = loser_json if loser_json and loser_json != "{}" else old_json_deck
+        player_name = loser_name
+        result = "Loss"
+        opponent_name = winner_name
+    else:
+        return jsonify({"error": "Player not found in this match"}), 404
+
+    if not deck_json or deck_json == "{}":
+        return jsonify({"error": "No deck data available for this match"}), 404
+
+    try:
+        deck_data = json.loads(deck_json)
+    except json.JSONDecodeError:
+        return jsonify({"error": "Invalid deck data"}), 500
+
+    return jsonify(
+        {
+            "match_id": match_id,
+            "player_name": player_name,
+            "opponent_name": opponent_name,
+            "result": result,
+            "date": timestamp,
+            "deck": deck_data,
+        }
+    )
+
+
 # Avatar API endpoint
 def generate_pseudonym(player_id):
     """Generate a consistent fun pseudonym from a player ID"""
     import hashlib
 
     adjectives = [
-        "Magical", "Sneaky", "Brave", "Silly", "Grumpy", "Happy", "Sleepy", "Dancing",
-        "Flying", "Jumping", "Mystical", "Crafty", "Clever", "Dizzy", "Wobbly", "Bouncy",
-        "Sparkly", "Fuzzy", "Quirky", "Jolly", "Wacky", "Zany", "Goofy", "Perky",
-        "Spicy", "Frosty", "Fiery", "Stormy", "Sunny", "Breezy", "Shadowy", "Glowing",
-        "Tiny", "Giant", "Swift", "Lazy", "Eager", "Shy", "Bold", "Wild",
-        "Gentle", "Fierce", "Peaceful", "Chaotic", "Lucky", "Clumsy", "Graceful", "Daring"
+        "Magical",
+        "Sneaky",
+        "Brave",
+        "Silly",
+        "Grumpy",
+        "Happy",
+        "Sleepy",
+        "Dancing",
+        "Flying",
+        "Jumping",
+        "Mystical",
+        "Crafty",
+        "Clever",
+        "Dizzy",
+        "Wobbly",
+        "Bouncy",
+        "Sparkly",
+        "Fuzzy",
+        "Quirky",
+        "Jolly",
+        "Wacky",
+        "Zany",
+        "Goofy",
+        "Perky",
+        "Spicy",
+        "Frosty",
+        "Fiery",
+        "Stormy",
+        "Sunny",
+        "Breezy",
+        "Shadowy",
+        "Glowing",
+        "Tiny",
+        "Giant",
+        "Swift",
+        "Lazy",
+        "Eager",
+        "Shy",
+        "Bold",
+        "Wild",
+        "Gentle",
+        "Fierce",
+        "Peaceful",
+        "Chaotic",
+        "Lucky",
+        "Clumsy",
+        "Graceful",
+        "Daring",
     ]
 
     nouns = [
-        "Wizard", "Dragon", "Penguin", "Unicorn", "Potato", "Banana", "Taco", "Ninja",
-        "Pirate", "Robot", "Ghost", "Phoenix", "Turtle", "Narwhal", "Pancake", "Wombat",
-        "Llama", "Koala", "Goblin", "Sphinx", "Kraken", "Yeti", "Mermaid", "Centaur",
-        "Griffin", "Chimera", "Troll", "Dwarf", "Elf", "Fairy", "Gnome", "Ogre",
-        "Badger", "Otter", "Panda", "Sloth", "Walrus", "Moose", "Raccoon", "Squirrel",
-        "Platypus", "Axolotl", "Capybara", "Hedgehog", "Mango", "Coconut", "Pickle", "Waffle"
+        "Wizard",
+        "Dragon",
+        "Penguin",
+        "Unicorn",
+        "Potato",
+        "Banana",
+        "Taco",
+        "Ninja",
+        "Pirate",
+        "Robot",
+        "Ghost",
+        "Phoenix",
+        "Turtle",
+        "Narwhal",
+        "Pancake",
+        "Wombat",
+        "Llama",
+        "Koala",
+        "Goblin",
+        "Sphinx",
+        "Kraken",
+        "Yeti",
+        "Mermaid",
+        "Centaur",
+        "Griffin",
+        "Chimera",
+        "Troll",
+        "Dwarf",
+        "Elf",
+        "Fairy",
+        "Gnome",
+        "Ogre",
+        "Badger",
+        "Otter",
+        "Panda",
+        "Sloth",
+        "Walrus",
+        "Moose",
+        "Raccoon",
+        "Squirrel",
+        "Platypus",
+        "Axolotl",
+        "Capybara",
+        "Hedgehog",
+        "Mango",
+        "Coconut",
+        "Pickle",
+        "Waffle",
     ]
 
     # Hash the player ID to get consistent indices
@@ -1427,6 +1650,10 @@ def player_api(player_id):
         player_id
     )
 
+    # Auto-set owner to true on localhost for development
+    if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
+        is_owner = True
+
     # Build match history (last 50 matches)
     match_history = []
     for row in rows[:50]:
@@ -1456,6 +1683,7 @@ def player_api(player_id):
 
         # Check if player has deck data (URL or JSON) - including fallback to old columns
         has_deck = False
+        has_deck_json = False
         if player_deck_url_check and player_deck_url_check not in (
             "No URL provided",
             "Admin reported match",
@@ -1464,8 +1692,9 @@ def player_api(player_id):
             None,
         ):
             has_deck = True
-        elif player_deck_json and player_deck_json not in ("{}", "", None):
+        if player_deck_json and player_deck_json not in ("{}", "", None):
             has_deck = True
+            has_deck_json = True
         elif old_curiosa_url and old_curiosa_url not in (
             "No URL provided",
             "Admin reported match",
@@ -1475,9 +1704,11 @@ def player_api(player_id):
         ):
             # Fallback to old curiosa_url for matches before schema update
             has_deck = True
-        elif old_json_deck_data and old_json_deck_data not in ("{}", "", None):
+        if old_json_deck_data and old_json_deck_data not in ("{}", "", None):
             # Fallback to old json_deck_data for matches before schema update
             has_deck = True
+            if not has_deck_json:
+                has_deck_json = True
 
         if is_owner:
             # Determine which deck URL belongs to this player
@@ -1500,6 +1731,7 @@ def player_api(player_id):
                 "player_deck_url": player_deck_url,
                 "opponent_deck_url": opponent_deck_url,
                 "has_deck": has_deck,
+                "has_deck_json": has_deck_json,
             }
         )
 

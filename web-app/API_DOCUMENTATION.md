@@ -9,6 +9,7 @@ http://your-server-domain:5000
 ```
 
 For local development:
+
 ```
 http://localhost:5000
 ```
@@ -20,11 +21,13 @@ All API endpoints require authentication using an API key. The API key must be i
 ### Header Format
 
 **Option 1: X-API-Key Header**
+
 ```
 X-API-Key: your_api_key_here
 ```
 
 **Option 2: Bearer Token**
+
 ```
 Authorization: Bearer your_api_key_here
 ```
@@ -44,6 +47,7 @@ Check if the API server is running.
 **Authentication:** Not required
 
 **Response:**
+
 ```json
 {
   "status": "online",
@@ -56,6 +60,7 @@ Check if the API server is running.
 ### 2. Report Match Result
 
 Submit a match result between two players. This endpoint will:
+
 - Record the match in the database
 - Update ELO ratings for both players
 - Optionally scrape and store deck data from Curiosa URLs
@@ -70,23 +75,23 @@ Submit a match result between two players. This endpoint will:
 
 ##### Required Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `winner_name` | string | Display name of the winning player |
-| `winner_id` | integer | Discord user ID of the winner |
-| `loser_name` | string | Display name of the losing player |
-| `loser_id` | integer | Discord user ID of the loser |
+| Field         | Type    | Description                        |
+| ------------- | ------- | ---------------------------------- |
+| `winner_name` | string  | Display name of the winning player |
+| `winner_id`   | integer | Discord user ID of the winner      |
+| `loser_name`  | string  | Display name of the losing player  |
+| `loser_id`    | integer | Discord user ID of the loser       |
 
 ##### Optional Fields
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `first_player` | string | `"n"` | Who went first: `"y"` (winner went first) or `"n"` (loser went first) |
-| `match_time` | integer | `0` | Duration of the match in minutes |
-| `winner_deck_url` | string | `"No URL provided"` | URL to winner's deck on Curiosa.io |
-| `loser_deck_url` | string | `"No URL provided"` | URL to loser's deck on Curiosa.io |
-| `match_comment` | string | `""` | Additional notes or comments about the match |
-| `reporter_id` | integer | `winner_id` | Discord user ID of the person reporting the match |
+| Field             | Type    | Default             | Description                                                           |
+| ----------------- | ------- | ------------------- | --------------------------------------------------------------------- |
+| `first_player`    | string  | `"n"`               | Who went first: `"y"` (winner went first) or `"n"` (loser went first) |
+| `match_time`      | integer | `0`                 | Duration of the match in minutes                                      |
+| `winner_deck_url` | string  | `"No URL provided"` | URL to winner's deck on Curiosa.io                                    |
+| `loser_deck_url`  | string  | `"No URL provided"` | URL to loser's deck on Curiosa.io                                     |
+| `match_comment`   | string  | `""`                | Additional notes or comments about the match                          |
+| `reporter_id`     | integer | `winner_id`         | Discord user ID of the person reporting the match                     |
 
 #### Example Request
 
@@ -133,6 +138,7 @@ curl -X POST http://localhost:5000/api/report-match \
 #### Error Responses
 
 **Missing Required Fields (400 Bad Request)**
+
 ```json
 {
   "error": "Missing required fields",
@@ -141,6 +147,7 @@ curl -X POST http://localhost:5000/api/report-match \
 ```
 
 **Invalid Data Type (400 Bad Request)**
+
 ```json
 {
   "error": "Invalid data type",
@@ -149,6 +156,7 @@ curl -X POST http://localhost:5000/api/report-match \
 ```
 
 **Invalid first_player Value (400 Bad Request)**
+
 ```json
 {
   "error": "Invalid value for first_player",
@@ -157,6 +165,7 @@ curl -X POST http://localhost:5000/api/report-match \
 ```
 
 **Authentication Error (401 Unauthorized)**
+
 ```json
 {
   "error": "Invalid or missing API key"
@@ -164,6 +173,7 @@ curl -X POST http://localhost:5000/api/report-match \
 ```
 
 **Server Error (500 Internal Server Error)**
+
 ```json
 {
   "error": "Failed to report match",
@@ -215,39 +225,48 @@ else:
 ### JavaScript (Node.js)
 
 ```javascript
-const axios = require('axios');
+const axios = require("axios");
 
-const API_URL = 'http://localhost:5000/api/report-match';
-const API_KEY = 'your_api_key_here';
+const API_URL = "http://localhost:5000/api/report-match";
+const API_KEY = "your_api_key_here";
 
 const matchData = {
-  winner_name: 'Alice',
+  winner_name: "Alice",
   winner_id: 111111111,
-  loser_name: 'Bob',
+  loser_name: "Bob",
   loser_id: 222222222,
-  first_player: 'y',
+  first_player: "y",
   match_time: 30,
-  winner_deck_url: 'https://curiosa.io/decks/alice-deck',
-  loser_deck_url: 'https://curiosa.io/decks/bob-deck',
-  match_comment: 'Tournament semifinal match'
+  winner_deck_url: "https://curiosa.io/decks/alice-deck",
+  loser_deck_url: "https://curiosa.io/decks/bob-deck",
+  match_comment: "Tournament semifinal match",
 };
 
-axios.post(API_URL, matchData, {
-  headers: {
-    'Content-Type': 'application/json',
-    'X-API-Key': API_KEY
-  }
-})
-.then(response => {
-  const result = response.data;
-  console.log(`Match recorded successfully! Match ID: ${result.match_id}`);
-  console.log(`Winner ELO: ${result.winner.elo} (${result.winner.elo_change >= 0 ? '+' : ''}${result.winner.elo_change})`);
-  console.log(`Loser ELO: ${result.loser.elo} (${result.loser.elo_change >= 0 ? '+' : ''}${result.loser.elo_change})`);
-})
-.catch(error => {
-  console.error('Error:', error.response?.status);
-  console.error(error.response?.data);
-});
+axios
+  .post(API_URL, matchData, {
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": API_KEY,
+    },
+  })
+  .then((response) => {
+    const result = response.data;
+    console.log(`Match recorded successfully! Match ID: ${result.match_id}`);
+    console.log(
+      `Winner ELO: ${result.winner.elo} (${
+        result.winner.elo_change >= 0 ? "+" : ""
+      }${result.winner.elo_change})`
+    );
+    console.log(
+      `Loser ELO: ${result.loser.elo} (${
+        result.loser.elo_change >= 0 ? "+" : ""
+      }${result.loser.elo_change})`
+    );
+  })
+  .catch((error) => {
+    console.error("Error:", error.response?.status);
+    console.error(error.response?.data);
+  });
 ```
 
 ### cURL
@@ -307,6 +326,7 @@ The bot uses a standard ELO rating system with the following parameters:
 - **Formula:** `new_elo = old_elo + K * (actual_score - expected_score)`
 
 Where:
+
 - `expected_score = 1 / (1 + 10^((opponent_elo - player_elo) / 400))`
 - `actual_score = 1` for wins, `0` for losses
 
@@ -355,6 +375,7 @@ Both players' ELO ratings are updated automatically when a match is reported.
 ## Support
 
 For additional support or questions:
+
 - Check the main bot documentation
 - Contact your server administrator
 - Review the API logs on the server for detailed error messages
@@ -364,8 +385,77 @@ For additional support or questions:
 ## Changelog
 
 ### Version 1.0 (Initial Release)
+
 - POST /api/report-match endpoint
 - API key authentication
 - ELO calculation and updates
 - Deck data scraping from Curiosa.io
 - Comprehensive error handling
+
+Summary of Changes
+
+1. API Authentication System (web-app/app.py)
+   Added API key authentication using the @require_api_key decorator
+   Supports both X-API-Key header and Authorization: Bearer formats
+   Secure validation with logging of unauthorized attempts
+2. Match Reporting Endpoint (web-app/app.py)
+   Endpoint: POST /api/report-match
+   Required fields:
+   winner_name and winner_id
+   loser_name and loser_id
+   Optional fields:
+   first_player (y/n)
+   match_time (minutes)
+   winner_deck_url and loser_deck_url
+   match_comment
+   reporter_id
+   Automatically updates ELO ratings for both players
+   Returns match ID and updated ELO stats
+3. Comprehensive Documentation (web-app/API_DOCUMENTATION.md)
+   Complete API reference with all endpoints
+   Code examples in Python, JavaScript, and cURL
+   Error handling guide
+   Best practices and troubleshooting tips
+4. Environment Configuration (discord-bot/.env)
+   Added API_KEY variable (currently set to a placeholder)
+   IMPORTANT: Change the API key before deploying to production!
+   Quick Start
+   Example API Call
+
+import requests
+
+response = requests.post(
+"http://localhost:5000/api/report-match",
+headers={
+"Content-Type": "application/json",
+"X-API-Key": "summit_api_key_change_this_in_production_12345"
+},
+json={
+"winner_name": "Alice",
+"winner_id": 123456789,
+"loser_name": "Bob",
+"loser_id": 987654321,
+"match_time": 25,
+"winner_deck_url": "https://curiosa.io/decks/abc123"
+}
+)
+
+print(response.json())
+
+# Returns: {"success": true, "match_id": 1234, "winner": {...}, "loser": {...}}
+
+Next Steps
+Change the API Key - Update the API_KEY in discord-bot/.env to a secure random value before production use
+
+Test the API - Start your Flask web app and test the endpoint:
+
+cd web-app
+python app.py
+Share Documentation - Provide API_DOCUMENTATION.md to other developers who need to integrate with your bot
+
+Deploy Securely - When deploying to production:
+
+Use HTTPS
+Generate a cryptographically secure API key
+Consider rate limiting if needed
+The API is fully integrated with your existing database and ELO system, so all matches reported through the API will appear in your match history and update player rankings automatically!

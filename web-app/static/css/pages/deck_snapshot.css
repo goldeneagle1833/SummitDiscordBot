@@ -1,0 +1,135 @@
+/* Deck Snapshot Page Styles */
+
+.deck-snapshot-container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.deck-header {
+  text-align: center;
+  margin-bottom: var(--spacing-xl);
+  padding-bottom: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.deck-title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: var(--spacing-xs);
+}
+
+.deck-avatar {
+  color: var(--color-primary);
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin-bottom: var(--spacing-sm);
+}
+
+.match-info {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.match-info .match-win {
+  color: #3fb950;
+  font-weight: 600;
+}
+
+.match-info .match-loss {
+  color: #f85149;
+  font-weight: 600;
+}
+
+/* Deck Sections Grid */
+.deck-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--spacing-lg);
+  align-items: start;
+}
+
+/* Section Tiles */
+.deck-section-tile {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-soft);
+  padding: var(--spacing-md);
+}
+
+.section-header {
+  font-size: 1rem;
+  color: var(--color-primary);
+  margin-bottom: var(--spacing-sm);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 2px solid var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Card List */
+.card-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.card-list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 0.35rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.9rem;
+}
+
+.card-list-item:last-child {
+  border-bottom: none;
+}
+
+.card-count {
+  color: var(--color-primary);
+  font-weight: 600;
+  min-width: 1.75rem;
+}
+
+.card-name {
+  color: var(--color-text);
+  flex: 1;
+}
+
+.card-cost {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+/* Error Message */
+.error-message {
+  text-align: center;
+  color: var(--color-danger);
+  padding: var(--spacing-xl);
+  font-size: 1.1rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .deck-title {
+    font-size: 1.4rem;
+  }
+
+  .deck-sections {
+    grid-template-columns: 1fr;
+  }
+
+  .section-header {
+    font-size: 0.9rem;
+  }
+
+  .card-list-item {
+    font-size: 0.85rem;
+  }
+}

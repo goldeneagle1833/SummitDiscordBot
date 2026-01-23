@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Error - Sorcerers Summit</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <section class="content" style="text-align: center; padding: 4rem 2rem;">
+        <h1 style="color: #f85149;">Error</h1>
+        <p style="font-size: 1.2rem; opacity: 0.8;">{{ error }}</p>
+        <a href="/" class="back-link" style="display: inline-block; margin-top: 2rem;">← Back to Home</a>
+      </section>
+    </main>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+  </body>
+</html>

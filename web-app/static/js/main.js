@@ -2,45 +2,9 @@
 
 document.addEventListener("DOMContentLoaded", () => {
   // Initialize all components
-  initializeNavbar();
   initializeScrollEffects();
   initializeTooltips();
 });
-
-// Navbar initialization
-function initializeNavbar() {
-  const hamburger = document.getElementById("hamburger-toggle");
-  const sidebar = document.getElementById("sidebar");
-  const sidebarClose = document.getElementById("sidebar-close");
-  const overlay = document.getElementById("sidebar-overlay");
-
-  if (hamburger && sidebar) {
-    hamburger.addEventListener("click", () => {
-      sidebar.classList.add("active");
-      if (overlay) overlay.classList.add("active");
-    });
-
-    if (sidebarClose) {
-      sidebarClose.addEventListener("click", closeSidebar);
-    }
-
-    if (overlay) {
-      overlay.addEventListener("click", closeSidebar);
-    }
-
-    // Close sidebar on escape key
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && sidebar.classList.contains("active")) {
-        closeSidebar();
-      }
-    });
-  }
-
-  function closeSidebar() {
-    sidebar.classList.remove("active");
-    if (overlay) overlay.classList.remove("active");
-  }
-}
 
 // Scroll effects
 function initializeScrollEffects() {

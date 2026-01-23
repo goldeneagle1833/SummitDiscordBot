@@ -160,7 +160,7 @@
       // Map avatar names to image files (fuzzy matching)
       function getAvatarImagePath(avatarName) {
         // Dynamically populated list of available image files from server
-        const availableImages = {{ avatar_image_files | tojson }};
+        const availableImages = {{ avatar_image_files | tojson | safe }};
 
         // Normalize avatar name for matching
         const normalize = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, "");

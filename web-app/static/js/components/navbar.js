@@ -39,7 +39,7 @@ document.addEventListener("DOMContentLoaded", function () {
             setTimeout(() => {
               backdrop.classList.add("opacity-100");
               backdrop.classList.remove("opacity-0");
-              console.log("[navbar] backdrop shown");
+              console.log("[navbar] backdrop shown 12345");
             }, 10);
           }
         }

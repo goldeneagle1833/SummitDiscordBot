@@ -13,7 +13,8 @@
       "Bash(git push)",
       "Bash(chmod:*)",
       "Bash(powershell:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git fetch:*)"
     ]
   }
 }

@@ -2,6 +2,11 @@ import requests
 import json
 import os
 import time
+try:
+    import certifi
+    _REQUESTS_VERIFY = certifi.where()
+except Exception:
+    _REQUESTS_VERIFY = True
 
 
 def get_deck_id(url: str) -> str:
@@ -23,7 +28,9 @@ def scrape_Curosa(deck_url, name):
     for attempt in range(2):  # Try up to 2 times (only retry on 400)
         try:
             response = requests.get(
-                "https://curiosa.io/api/decks?ids=" + deck_id, timeout=30
+                "https://curiosa.io/api/decks?ids=" + deck_id,
+                timeout=30,
+                verify=_REQUESTS_VERIFY,
             )
 
             if response.status_code == 400:

@@ -23,6 +23,32 @@
       Sorcerers Summit
     </a>
     <script>
+      // Inline hamburger diagnostics (runs even if external JS is cached)
+      document.addEventListener("DOMContentLoaded", function () {
+        try {
+          const hb = document.getElementById("hamburger-toggle");
+          const sb = document.getElementById("sidebar");
+          const bd = document.getElementById("sidebar-backdrop");
+          console.log("[inline-hamburger] elements:", {
+            hamburger: !!hb,
+            sidebar: !!sb,
+            backdrop: !!bd,
+          });
+          if (hb) {
+            hb.addEventListener("click", function (e) {
+              console.log("[inline-hamburger] clicked", e);
+              console.log(
+                "[inline-hamburger] sidebar classes:",
+                sb ? sb.className : null
+              );
+            });
+          }
+        } catch (err) {
+          console.error("[inline-hamburger] error", err);
+        }
+      });
+    </script>
+    <script>
       document.addEventListener("DOMContentLoaded", function () {
         try {
           var _brand = document.getElementById("brand-secret");

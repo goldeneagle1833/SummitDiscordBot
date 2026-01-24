@@ -1,150 +1,153 @@
 <!-- Backdrop overlay (mobile only) -->
 <div
-  class="fixed inset-0 bg-black/50 z-[900]
-         hidden opacity-0
-         transition-opacity duration-300 md:hidden"
-  id="sidebar-backdrop"
-></div>
+  class="fixed inset-0 bg-black/50 z-[900] hidden opacity-0 transition-opacity duration-300 md:hidden"
+  id="sidebar-backdrop"></div>
 
 <!-- Navbar -->
-<nav class="fixed top-0 left-0 right-0 z-[1000]
-            bg-bg-elevated h-16
-            flex items-center justify-between
-            px-4 md:px-6 lg:px-8
-            shadow-md">
-
+<nav
+  class="fixed top-0 left-0 right-0 z-[1000] bg-bg-elevated h-16 flex items-center justify-between px-4 md:px-6 lg:px-8 shadow-md">
   <!-- Left side: Hamburger + Brand -->
   <div class="flex items-center gap-4">
     <!-- Hamburger button (mobile only) -->
     <button
-      class="md:hidden w-10 h-10 flex items-center justify-center
-             rounded hover:bg-white/10 transition-colors"
+      class="md:hidden w-10 h-10 flex items-center justify-center rounded hover:bg-white/10 transition-colors"
       id="hamburger-toggle"
-      aria-label="Toggle menu"
-    >
+      aria-label="Toggle menu">
       <span class="text-2xl font-bold leading-none">☰</span>
     </button>
 
-    <a href="/"
-       class="text-lg md:text-xl font-bold text-secondary
-              hover:text-text transition-colors"
-       id="brand-secret">
+    <a
+      href="/"
+      class="text-lg md:text-xl font-bold text-secondary hover:text-text transition-colors"
+      id="brand-secret">
       Sorcerers Summit
     </a>
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        try {
+          var _brand = document.getElementById("brand-secret");
+          if (_brand) {
+            _brand.addEventListener("click", function (e) {
+              console.log("[brand] Sorcerers Summit header clicked", e);
+            });
+          } else {
+            console.warn("[brand] brand-secret element not found");
+          }
+        } catch (err) {
+          console.error("[brand] inline script error", err);
+        }
+      });
+    </script>
   </div>
 
   <!-- Desktop nav links (hidden on mobile) -->
   <div class="hidden md:flex items-center gap-6">
-    <a href="/"
-       class="text-text hover:text-secondary transition-colors font-medium">
+    <a
+      href="/"
+      class="text-text hover:text-secondary transition-colors font-medium">
       Home
     </a>
-    <a href="https://discord.gg/ZDqHSK9VGx"
-       class="text-text hover:text-secondary transition-colors font-medium"
-       target="_blank" rel="noopener noreferrer">
+    <a
+      href="https://discord.gg/ZDqHSK9VGx"
+      class="text-text hover:text-secondary transition-colors font-medium"
+      target="_blank"
+      rel="noopener noreferrer">
       Discord
     </a>
-    <a href="https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink"
-       class="text-text hover:text-secondary transition-colors font-medium"
-       target="_blank" rel="noopener noreferrer">
+    <a
+      href="https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink"
+      class="text-text hover:text-secondary transition-colors font-medium"
+      target="_blank"
+      rel="noopener noreferrer">
       Patreon
     </a>
-    <a href="/about"
-       class="text-text hover:text-secondary transition-colors font-medium">
+    <a
+      href="/about"
+      class="text-text hover:text-secondary transition-colors font-medium">
       About
     </a>
 
     {% if current_user %}
-      <a href="/player/{{ current_user.id }}"
-         class="text-secondary hover:text-text font-semibold transition-colors">
-        {{ current_user.username }}
-      </a>
-      <a href="/auth/logout"
-         class="text-text-muted hover:text-accent-red text-sm transition-colors">
-        Logout
-      </a>
+    <a
+      href="/player/{{ current_user.id }}"
+      class="text-secondary hover:text-text font-semibold transition-colors">
+      {{ current_user.username }}
+    </a>
+    <a
+      href="/auth/logout"
+      class="text-text-muted hover:text-accent-red text-sm transition-colors">
+      Logout
+    </a>
     {% else %}
-      <a href="/auth/discord"
-         class="inline-flex items-center justify-center
-                px-4 py-2 rounded bg-[#5865f2] text-white
-                font-semibold hover:bg-[#4752c4]
-                transition-all hover:-translate-y-0.5">
-        Login
-      </a>
+    <a
+      href="/auth/discord"
+      class="inline-flex items-center justify-center px-4 py-2 rounded bg-[#5865f2] text-white font-semibold hover:bg-[#4752c4] transition-all hover:-translate-y-0.5">
+      Login
+    </a>
     {% endif %}
   </div>
 
   <!-- Mobile user info (show only on mobile) -->
   <div class="flex items-center gap-3 md:hidden">
     {% if current_user %}
-      <a href="/player/{{ current_user.id }}"
-         class="text-secondary font-semibold truncate max-w-[80px] text-sm">
-        {{ current_user.username }}
-      </a>
-      <a href="/auth/logout"
-         class="text-text-muted hover:text-accent-red text-xs transition-colors">
-        Logout
-      </a>
+    <a
+      href="/player/{{ current_user.id }}"
+      class="text-secondary font-semibold truncate max-w-[80px] text-sm">
+      {{ current_user.username }}
+    </a>
+    <a
+      href="/auth/logout"
+      class="text-text-muted hover:text-accent-red text-xs transition-colors">
+      Logout
+    </a>
     {% else %}
-      <a href="/auth/discord"
-         class="inline-flex items-center justify-center
-                px-3 py-2 rounded bg-[#5865f2] text-white text-sm
-                font-semibold active:scale-95 transition-transform">
-        Login
-      </a>
+    <a
+      href="/auth/discord"
+      class="inline-flex items-center justify-center px-3 py-2 rounded bg-[#5865f2] text-white text-sm font-semibold active:scale-95 transition-transform">
+      Login
+    </a>
     {% endif %}
   </div>
 </nav>
 
 <!-- Sidebar - Simple text navigation, hidden on mobile by default -->
 <aside
-  class="fixed top-16 left-0 w-48 h-[calc(100vh-4rem)] z-[950]
-         bg-bg-elevated shadow-lg overflow-y-auto
-         -translate-x-full md:translate-x-0
-         transition-transform duration-300 ease-in-out"
-  id="sidebar"
->
+  class="fixed top-16 left-0 w-48 h-[calc(100vh-4rem)] z-[950] bg-bg-elevated shadow-lg overflow-y-auto -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out"
+  id="sidebar">
   <nav class="py-4">
-    <a href="/avatars"
-       class="block px-4 py-3
-              text-text hover:bg-secondary/10 hover:text-secondary
-              transition-colors font-medium">
+    <a
+      href="/avatars"
+      class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       Avatar Winrates
     </a>
-    <a href="/elo"
-       class="block px-4 py-3
-              text-text hover:bg-secondary/10 hover:text-secondary
-              transition-colors font-medium">
+    <a
+      href="/elo"
+      class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       ELO Leaderboards
     </a>
-    <a href="/match-history"
-       class="block px-4 py-3
-              text-text hover:bg-secondary/10 hover:text-secondary
-              transition-colors font-medium">
+    <a
+      href="/match-history"
+      class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       Match History
     </a>
-    <a href="/deck-help"
-       class="block px-4 py-3
-              text-text hover:bg-secondary/10 hover:text-secondary
-              transition-colors font-medium">
+    <a
+      href="/deck-help"
+      class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       Deck Help
     </a>
-    <a href="/top-8"
-       class="block px-4 py-3
-              text-text hover:bg-secondary/10 hover:text-secondary
-              transition-colors font-medium">
+    <a
+      href="/top-8"
+      class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       Top 8 Decks
     </a>
-    <a href="/stats"
-       class="block px-4 py-3
-              text-text hover:bg-secondary/10 hover:text-secondary
-              transition-colors font-medium">
+    <a
+      href="/stats"
+      class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       Statistics
     </a>
-    <a href="/help"
-       class="block px-4 py-3
-              text-text hover:bg-secondary/10 hover:text-secondary
-              transition-colors font-medium">
+    <a
+      href="/help"
+      class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       Help
     </a>
   </nav>

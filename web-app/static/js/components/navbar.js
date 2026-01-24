@@ -1,60 +1,48 @@
-// Navbar component JavaScript - Updated for Tailwind CSS
+// Navbar component JavaScript - Icon-based sidebar
 document.addEventListener("DOMContentLoaded", function () {
-  const hamburgerBtn = document.getElementById("hamburger-toggle");
+  const sidebarToggle = document.getElementById("sidebar-toggle");
   const sidebar = document.getElementById("sidebar");
-  const backdrop = document.getElementById("sidebar-backdrop");
+  const sidebarTexts = document.querySelectorAll(".sidebar-text");
 
-  // Remove legacy 'collapsed' class if it exists (from cache)
-  if (sidebar) {
-    sidebar.classList.remove("collapsed");
+  // Check if sidebar was expanded (from localStorage)
+  const isExpanded = localStorage.getItem("sidebarExpanded") === "true";
+  if (isExpanded) {
+    expandSidebar();
   }
 
-  // Toggle sidebar with backdrop
+  // Toggle sidebar width
   function toggleSidebar() {
-    const isOpen = !sidebar.classList.contains("-translate-x-full");
-
-    if (isOpen) {
-      // Close sidebar
-      sidebar.classList.add("-translate-x-full");
-      if (backdrop) {
-        backdrop.classList.add("opacity-0", "pointer-events-none");
-      }
+    if (sidebar.classList.contains("w-16")) {
+      expandSidebar();
+      localStorage.setItem("sidebarExpanded", "true");
     } else {
-      // Open sidebar
-      sidebar.classList.remove("-translate-x-full");
-      if (backdrop) {
-        backdrop.classList.remove("opacity-0", "pointer-events-none");
-      }
+      collapseSidebar();
+      localStorage.setItem("sidebarExpanded", "false");
     }
   }
 
-  // Event listener for hamburger button
-  if (hamburgerBtn) {
-    hamburgerBtn.addEventListener("click", toggleSidebar);
-  }
-
-  // Close sidebar when clicking backdrop
-  if (backdrop) {
-    backdrop.addEventListener("click", toggleSidebar);
-  }
-
-  // Close sidebar on escape key
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && !sidebar.classList.contains("-translate-x-full")) {
-      toggleSidebar();
-    }
-  });
-
-  // Close sidebar when clicking a link (mobile only)
-  const sidebarLinks = sidebar.querySelectorAll("a");
-  sidebarLinks.forEach((link) => {
-    link.addEventListener("click", function () {
-      // Check if we're on mobile (< 768px)
-      if (window.innerWidth < 768) {
-        toggleSidebar();
-      }
+  function expandSidebar() {
+    sidebar.classList.remove("w-16");
+    sidebar.classList.add("w-60");
+    sidebarTexts.forEach(text => {
+      text.classList.remove("opacity-0", "w-0");
+      text.classList.add("opacity-100", "w-auto");
     });
-  });
+  }
+
+  function collapseSidebar() {
+    sidebar.classList.remove("w-60");
+    sidebar.classList.add("w-16");
+    sidebarTexts.forEach(text => {
+      text.classList.remove("opacity-100", "w-auto");
+      text.classList.add("opacity-0", "w-0");
+    });
+  }
+
+  // Event listener for toggle button
+  if (sidebarToggle) {
+    sidebarToggle.addEventListener("click", toggleSidebar);
+  }
 
   // Secret easter egg: Triple-click the brand name to access secret fart leaderboard
   const brandLink = document.getElementById("brand-secret");

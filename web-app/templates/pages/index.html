@@ -24,6 +24,9 @@
     <main>
       <section class="hero">
         <h1 id="hero-secret">Welcome to the Sorcery Community Leaderboard</h1>
+        <p id="temp-notice" style="font-size: 0.9rem; color: #a0a0a0; margin-top: 0.5rem; text-align: center;">
+          The menu (top left) should work now after a browser refresh (Ctrl+Shift+R)
+        </p>
       </section>
 
       <section class="leaderboard">
@@ -46,6 +49,17 @@
     </main>
 
     <script>
+      // Hide temporary notice after 48 hours (expires Jan 26, 2026 at 21:37 UTC)
+      (function() {
+        const notice = document.getElementById('temp-notice');
+        if (notice) {
+          const expiryDate = new Date('2026-01-26T21:37:00Z');
+          if (new Date() > expiryDate) {
+            notice.style.display = 'none';
+          }
+        }
+      })();
+
       // Fetch and render leaderboard from ELO DB
       async function fetchLeaderboard() {
         const res = await fetch("/api/leaderboard");

@@ -12,55 +12,48 @@
     <button
       class="md:hidden w-10 h-10 flex items-center justify-center rounded hover:bg-white/10 transition-colors"
       id="hamburger-toggle"
-      aria-label="Toggle menu">
-      <span class="text-2xl font-bold leading-none">☰</span>
-    <button
-      class="md:hidden w-10 h-10 flex items-center justify-center
-             rounded hover:bg-white/10 transition-colors"
-      id="hamburger-toggle"
       aria-label="Toggle menu"
-      onclick="inlineToggleHamburger(event)"
-    >
+      onclick="inlineToggleHamburger(event)">
       <span class="text-2xl font-bold leading-none">☰</span>
     </button>
     <script>
       // Inline hamburger diagnostics and fallback toggle (global function)
       window.inlineToggleHamburger = function (e) {
         try {
-          console.log('[inline-hamburger] clicked', e);
-          const sb = document.getElementById('sidebar');
-          const bd = document.getElementById('sidebar-backdrop');
-          console.log('[inline-hamburger] elements:', {sidebar: !!sb, backdrop: !!bd});
+          console.log("[inline-hamburger] clicked", e);
+          const sb = document.getElementById("sidebar");
+          const bd = document.getElementById("sidebar-backdrop");
+          console.log("[inline-hamburger] elements:", {
+            sidebar: !!sb,
+            backdrop: !!bd,
+          });
           if (sb) {
-            sb.classList.toggle('open');
-            console.log('[inline-hamburger] sidebar classes:', sb.className);
-          }
-        } catch (err) {
-          console.error('[inline-hamburger] error', err);
-        }
-      };
-
-      // Also useful: attach a click handler if present (keeps existing behavior)
-      document.addEventListener('DOMContentLoaded', function () {
-        try {
-          const hb = document.getElementById('hamburger-toggle');
-          const sb = document.getElementById('sidebar');
-          const bd = document.getElementById('sidebar-backdrop');
-          console.log('[inline-hamburger] init elements:', {hamburger: !!hb, sidebar: !!sb, backdrop: !!bd});
-          if (hb) {
-            hb.addEventListener('click', function (e) {
-              console.log('[inline-hamburger] click event (attached)', e);
-            });
-          }
-        } catch (err) {
-          console.error('[inline-hamburger] init error', err);
-        }
-      });
-    </script>
-            });
+            sb.classList.toggle("open");
+            console.log("[inline-hamburger] sidebar classes:", sb.className);
           }
         } catch (err) {
           console.error("[inline-hamburger] error", err);
+        }
+      };
+
+      // Also attach a diagnostic click handler when DOM is ready
+      document.addEventListener("DOMContentLoaded", function () {
+        try {
+          const hb = document.getElementById("hamburger-toggle");
+          const sb = document.getElementById("sidebar");
+          const bd = document.getElementById("sidebar-backdrop");
+          console.log("[inline-hamburger] init elements:", {
+            hamburger: !!hb,
+            sidebar: !!sb,
+            backdrop: !!bd,
+          });
+          if (hb) {
+            hb.addEventListener("click", function (e) {
+              console.log("[inline-hamburger] click event (attached)", e);
+            });
+          }
+        } catch (err) {
+          console.error("[inline-hamburger] init error", err);
         }
       });
     </script>

@@ -8,18 +8,18 @@
     <!-- Tailwind CSS (load first) -->
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.output.css') }}" />
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
 
     <!-- Custom CSS (load after for overrides) -->
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/global.css') }}" />
+      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/utilities.css') }}" />
+      href="{{ url_for('static', filename='css/utilities.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
 
     <!-- Page-specific CSS -->
     {% block styles %}{% endblock %}
@@ -34,23 +34,8 @@
     {% include 'components/footer.html' %}
 
     <!-- Global JS -->
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-    <script>
-      // Load navbar.js with cache-busting timestamp to force fresh fetch
-      (function () {
-        try {
-          var s = document.createElement("script");
-          s.src =
-            "{{ url_for('static', filename='js/components/navbar.js') }}" +
-            "?v=" +
-            Date.now();
-          s.defer = true;
-          document.body.appendChild(s);
-        } catch (e) {
-          console.error("[base] failed to load navbar.js dynamically", e);
-        }
-      })();
-    </script>
+    <script src="{{ url_for('static', filename='js/main.js') }}?v={{ app_version }}"></script>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}" defer></script>
 
     <!-- Page-specific JS -->
     {% block scripts %}{% endblock %}

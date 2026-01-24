@@ -39,6 +39,37 @@ app = Flask(__name__)
 # Session configuration
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
 
+# Application version for cache busting
+def get_app_version():
+    """Get application version from git commit hash or fallback to timestamp"""
+    try:
+        # Try to get git commit hash
+        git_dir = Path(__file__).parent.parent / ".git"
+        if git_dir.exists():
+            head_file = git_dir / "HEAD"
+            if head_file.exists():
+                with open(head_file, 'r') as f:
+                    ref = f.read().strip()
+                if ref.startswith('ref: '):
+                    ref_path = git_dir / ref[5:]
+                    if ref_path.exists():
+                        with open(ref_path, 'r') as f:
+                            return f.read().strip()[:8]  # Short hash (8 chars)
+                else:
+                    return ref[:8]  # Detached HEAD
+    except Exception as e:
+        logger.warning(f"Could not get git version: {e}")
+
+    # Fallback to app file modification time
+    try:
+        mtime = os.path.getmtime(__file__)
+        return str(int(mtime))
+    except:
+        return "1.0.0"
+
+APP_VERSION = get_app_version()
+logger.info(f"Application version: {APP_VERSION}")
+
 # Discord OAuth configuration
 DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID")
 DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET")
@@ -185,8 +216,11 @@ def get_current_user():
 
 @app.context_processor
 def inject_user():
-    """Make current user available to all templates"""
-    return {"current_user": get_current_user()}
+    """Make current user and app version available to all templates"""
+    return {
+        "current_user": get_current_user(),
+        "app_version": APP_VERSION
+    }
 
 
 @app.route("/auth/discord")

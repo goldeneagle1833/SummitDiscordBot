@@ -4,13 +4,13 @@ document.addEventListener("DOMContentLoaded", function () {
   const sidebar = document.getElementById("sidebar");
   const backdrop = document.getElementById("sidebar-backdrop");
 
-  // Toggle sidebar (mobile only)
+  // Toggle sidebar
   function toggleSidebar() {
-    const isOpen = !sidebar.classList.contains("-translate-x-full");
+    const isOpen = sidebar.classList.contains("open");
 
     if (isOpen) {
       // Close sidebar
-      sidebar.classList.add("-translate-x-full");
+      sidebar.classList.remove("open");
       if (backdrop) {
         backdrop.classList.add("opacity-0");
         backdrop.classList.remove("opacity-100");
@@ -20,7 +20,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     } else {
       // Open sidebar
-      sidebar.classList.remove("-translate-x-full");
+      sidebar.classList.add("open");
       if (backdrop) {
         backdrop.classList.remove("hidden");
         setTimeout(() => {
@@ -41,18 +41,18 @@ document.addEventListener("DOMContentLoaded", function () {
     backdrop.addEventListener("click", toggleSidebar);
   }
 
-  // Close sidebar on escape key (mobile only)
+  // Close sidebar on escape key
   document.addEventListener("keydown", function (e) {
-    if (window.innerWidth < 768 && e.key === "Escape" && !sidebar.classList.contains("-translate-x-full")) {
+    if (e.key === "Escape" && sidebar.classList.contains("open")) {
       toggleSidebar();
     }
   });
 
-  // Close sidebar when clicking a link (mobile only)
+  // Close sidebar when clicking a link
   const sidebarLinks = sidebar.querySelectorAll("a");
   sidebarLinks.forEach((link) => {
     link.addEventListener("click", function () {
-      if (window.innerWidth < 768) {
+      if (sidebar.classList.contains("open")) {
         toggleSidebar();
       }
     });

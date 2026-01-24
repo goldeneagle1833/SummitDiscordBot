@@ -1,3 +1,11 @@
+<!-- Backdrop overlay (mobile only) -->
+<div
+  class="fixed inset-0 bg-black/50 z-[900]
+         hidden opacity-0
+         transition-opacity duration-300 md:hidden"
+  id="sidebar-backdrop"
+></div>
+
 <!-- Navbar -->
 <nav class="fixed top-0 left-0 right-0 z-[1000]
             bg-bg-elevated h-16
@@ -5,8 +13,18 @@
             px-4 md:px-6 lg:px-8
             shadow-md">
 
-  <!-- Left side: Brand -->
+  <!-- Left side: Hamburger + Brand -->
   <div class="flex items-center gap-4">
+    <!-- Hamburger button (mobile only) -->
+    <button
+      class="md:hidden w-10 h-10 flex items-center justify-center
+             rounded hover:bg-white/10 transition-colors"
+      id="hamburger-toggle"
+      aria-label="Toggle menu"
+    >
+      <span class="text-2xl font-bold leading-none">☰</span>
+    </button>
+
     <a href="/"
        class="text-lg md:text-xl font-bold text-secondary
               hover:text-text transition-colors"
@@ -78,10 +96,12 @@
   </div>
 </nav>
 
-<!-- Sidebar - Simple text navigation -->
+<!-- Sidebar - Simple text navigation, hidden on mobile by default -->
 <aside
   class="fixed top-16 left-0 w-48 h-[calc(100vh-4rem)] z-[950]
-         bg-bg-elevated shadow-lg overflow-y-auto"
+         bg-bg-elevated shadow-lg overflow-y-auto
+         -translate-x-full md:translate-x-0
+         transition-transform duration-300 ease-in-out"
   id="sidebar"
 >
   <nav class="py-4">

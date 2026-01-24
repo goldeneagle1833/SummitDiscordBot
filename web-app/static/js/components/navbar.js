@@ -1,5 +1,63 @@
 // Navbar component JavaScript
 document.addEventListener("DOMContentLoaded", function () {
+  const hamburgerBtn = document.getElementById("hamburger-toggle");
+  const sidebar = document.getElementById("sidebar");
+  const backdrop = document.getElementById("sidebar-backdrop");
+
+  // Toggle sidebar (mobile only)
+  function toggleSidebar() {
+    const isOpen = !sidebar.classList.contains("-translate-x-full");
+
+    if (isOpen) {
+      // Close sidebar
+      sidebar.classList.add("-translate-x-full");
+      if (backdrop) {
+        backdrop.classList.add("opacity-0");
+        backdrop.classList.remove("opacity-100");
+        setTimeout(() => {
+          backdrop.classList.add("hidden");
+        }, 300);
+      }
+    } else {
+      // Open sidebar
+      sidebar.classList.remove("-translate-x-full");
+      if (backdrop) {
+        backdrop.classList.remove("hidden");
+        setTimeout(() => {
+          backdrop.classList.add("opacity-100");
+          backdrop.classList.remove("opacity-0");
+        }, 10);
+      }
+    }
+  }
+
+  // Event listener for hamburger button
+  if (hamburgerBtn) {
+    hamburgerBtn.addEventListener("click", toggleSidebar);
+  }
+
+  // Close sidebar when clicking backdrop
+  if (backdrop) {
+    backdrop.addEventListener("click", toggleSidebar);
+  }
+
+  // Close sidebar on escape key (mobile only)
+  document.addEventListener("keydown", function (e) {
+    if (window.innerWidth < 768 && e.key === "Escape" && !sidebar.classList.contains("-translate-x-full")) {
+      toggleSidebar();
+    }
+  });
+
+  // Close sidebar when clicking a link (mobile only)
+  const sidebarLinks = sidebar.querySelectorAll("a");
+  sidebarLinks.forEach((link) => {
+    link.addEventListener("click", function () {
+      if (window.innerWidth < 768) {
+        toggleSidebar();
+      }
+    });
+  });
+
   // Secret easter egg: Triple-click the brand name to access secret fart leaderboard
   const brandLink = document.getElementById("brand-secret");
   if (brandLink) {

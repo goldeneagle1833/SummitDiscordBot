@@ -82,24 +82,7 @@
   align-items: center;
 }
 
-/* Sidebar */
-.sidebar {
-  position: fixed;
-  top: 60px;
-  left: 0;
-  width: 240px;
-  height: calc(100vh - 60px);
-  background: #1e2a3a;
-  z-index: 900;
-  transition: transform var(--transition-normal);
-  overflow-y: auto;
-  box-shadow: var(--shadow-md);
-  transform: translateX(0);
-}
-
-.sidebar.collapsed {
-  transform: translateX(-240px);
-}
+/* Sidebar - Using Tailwind classes, legacy CSS removed to prevent conflicts */
 
 .sidebar-nav {
   padding: var(--spacing-lg) 0;
@@ -150,20 +133,7 @@
   font-size: 0.95rem;
 }
 
-/* Main content spacing to account for fixed navbar and sidebar */
-.main-content {
-  margin-top: 60px;
-  margin-left: 240px;
-  padding: var(--spacing-xl);
-  transition: margin-left var(--transition-normal);
-  min-height: calc(100vh - 60px);
-}
-
-/* When sidebar is collapsed, content takes full width */
-.sidebar.collapsed ~ .main-content,
-body:has(.sidebar.collapsed) .main-content {
-  margin-left: 0;
-}
+/* Main content - Using Tailwind classes now */
 
 /* Responsive */
 @media (max-width: 768px) {
@@ -179,29 +149,7 @@ body:has(.sidebar.collapsed) .main-content {
     gap: var(--spacing-md);
   }
 
-  /* On mobile, sidebar is collapsed by default */
-  .sidebar {
-    transform: translateX(-240px);
-    z-index: 1100;
-  }
-
-  .sidebar.open {
-    transform: translateX(0);
-  }
-
-  /* On mobile, content doesn't shift */
-  .main-content {
-    margin-left: 0;
-  }
-
-  /* Add overlay on mobile when sidebar is open */
-  .sidebar.open::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: -1;
-  }
+  /* Mobile sidebar - Using Tailwind classes now */
 
   /* Hide username on mobile, show just icon */
   .user-link {

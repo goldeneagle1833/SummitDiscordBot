@@ -4,6 +4,11 @@ document.addEventListener("DOMContentLoaded", function () {
   const sidebar = document.getElementById("sidebar");
   const backdrop = document.getElementById("sidebar-backdrop");
 
+  // Remove legacy 'collapsed' class if it exists (from cache)
+  if (sidebar) {
+    sidebar.classList.remove("collapsed");
+  }
+
   // Toggle sidebar with backdrop
   function toggleSidebar() {
     const isOpen = !sidebar.classList.contains("-translate-x-full");

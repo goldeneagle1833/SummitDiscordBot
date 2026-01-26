@@ -39,6 +39,7 @@ app = Flask(__name__)
 # Session configuration
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
 
+
 # Application version for cache busting
 def get_app_version():
     """Get application version from git commit hash or fallback to timestamp"""
@@ -48,12 +49,12 @@ def get_app_version():
         if git_dir.exists():
             head_file = git_dir / "HEAD"
             if head_file.exists():
-                with open(head_file, 'r') as f:
+                with open(head_file, "r") as f:
                     ref = f.read().strip()
-                if ref.startswith('ref: '):
+                if ref.startswith("ref: "):
                     ref_path = git_dir / ref[5:]
                     if ref_path.exists():
-                        with open(ref_path, 'r') as f:
+                        with open(ref_path, "r") as f:
                             return f.read().strip()[:8]  # Short hash (8 chars)
                 else:
                     return ref[:8]  # Detached HEAD
@@ -66,6 +67,7 @@ def get_app_version():
         return str(int(mtime))
     except:
         return "1.0.0"
+
 
 APP_VERSION = get_app_version()
 logger.info(f"Application version: {APP_VERSION}")
@@ -143,12 +145,13 @@ TOP_8_DIR = Path(__file__).parent / "top-8-decks-by-event"
 def extract_year_from_name(name):
     """Extract year from event name for sorting. Returns 0 if no year found."""
     import re
+
     # Look for 4-digit years (2020-2029)
-    match = re.search(r'20(2[0-9])', name)
+    match = re.search(r"20(2[0-9])", name)
     if match:
         return int("20" + match.group(1))
     # Check for 2-digit years like "25" that likely mean 2025
-    match = re.search(r'(?<!\d)(2[3-9])(?!\d)', name)
+    match = re.search(r"(?<!\d)(2[3-9])(?!\d)", name)
     if match:
         return int("20" + match.group(1))
     return 0
@@ -217,10 +220,7 @@ def get_current_user():
 @app.context_processor
 def inject_user():
     """Make current user and app version available to all templates"""
-    return {
-        "current_user": get_current_user(),
-        "app_version": APP_VERSION
-    }
+    return {"current_user": get_current_user(), "app_version": APP_VERSION}
 
 
 @app.route("/auth/discord")
@@ -362,6 +362,12 @@ def avatars():
             if f.lower().endswith((".png", ".jpg", ".jpeg"))
         ]
     return render_template("pages/avatars.html", avatar_image_files=avatar_image_files)
+
+
+@app.route("/cards")
+def cards():
+    """Card winrates page"""
+    return render_template("pages/cards.html")
 
 
 @app.route("/elo")
@@ -544,7 +550,13 @@ def top_8():
                         print(f"Error loading {json_path}: {e}")
 
     # Sort by year (descending), events without dates go last
-    events.sort(key=lambda e: (extract_year_from_name(e["name"]) > 0, extract_year_from_name(e["name"])), reverse=True)
+    events.sort(
+        key=lambda e: (
+            extract_year_from_name(e["name"]) > 0,
+            extract_year_from_name(e["name"]),
+        ),
+        reverse=True,
+    )
 
     return render_template("pages/top_8.html", events=events)
 
@@ -650,7 +662,13 @@ def stats():
                     )
 
     # Sort by year (descending), events without dates go last
-    events.sort(key=lambda e: (extract_year_from_name(e["name"]) > 0, extract_year_from_name(e["name"])), reverse=True)
+    events.sort(
+        key=lambda e: (
+            extract_year_from_name(e["name"]) > 0,
+            extract_year_from_name(e["name"]),
+        ),
+        reverse=True,
+    )
 
     return render_template("pages/stats.html", events=events)
 
@@ -1998,6 +2016,235 @@ def avatars_api():
     return jsonify(avatar_list)
 
 
+@app.route("/api/cards")
+def cards_api():
+    """API endpoint for per-card winrates from all matches with deck data"""
+    import json
+    import re
+
+    # Build card image lookup: card_name_normalized -> filename
+    card_imgs_dir = os.path.join(app.root_path, "card_images", "Card_Images")
+    card_image_lookup = {}
+    if os.path.exists(card_imgs_dir):
+        for filename in os.listdir(card_imgs_dir):
+            if not filename.lower().endswith(".png"):
+                continue
+            # Extract card name from filename: {set}-{card_name}-{variant}.png
+            # Example: alp-dark_tower-b-s.png -> dark_tower
+            # Remove known variant suffixes and set prefix
+            base = filename[:-4].lower()  # Remove .png
+            # Remove variant suffixes (b-s, b-f, bt-s, bt-f, scg-f, etc.)
+            for suffix in ["-b-s", "-b-f", "-bt-s", "-bt-f", "-scg-f", "-bt-s-r"]:
+                if base.endswith(suffix):
+                    base = base[: -len(suffix)]
+                    break
+            # Remove set prefix (first part before -)
+            if "-" in base:
+                card_name_normalized = base.split("-", 1)[1]
+                is_standard = "-b-s" in filename.lower() or "-bt-s" in filename.lower()
+                # Prefer standard variant
+                if card_name_normalized not in card_image_lookup or is_standard:
+                    card_image_lookup[card_name_normalized] = filename
+
+    def find_card_image(card_name):
+        """Find matching image filename for a card name"""
+        # Normalize: lowercase, spaces to underscores, remove special chars
+        normalized = card_name.lower().replace(" ", "_").replace("'", "").replace(",", "")
+        normalized = re.sub(r"[^a-z0-9_]", "", normalized)
+        return card_image_lookup.get(normalized)
+
+    try:
+        conn = sqlite3.connect("../discord-bot/match_records.db")
+        cur = conn.cursor()
+
+        # Try to read separated winner/loser deck columns first
+        try:
+            cur.execute(
+                """
+                SELECT
+                    json_deck_data_winner,
+                    json_deck_data_loser
+                FROM match_records
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+            """
+            )
+            rows = cur.fetchall()
+            use_new_columns = True
+        except sqlite3.OperationalError:
+            # Fallback to old single json_deck_data column (reporter only)
+            cur.execute(
+                """
+                SELECT
+                    CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
+                    json_deck_data
+                FROM match_records
+                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+            """
+            )
+            rows = cur.fetchall()
+            use_new_columns = False
+
+        conn.close()
+    except sqlite3.OperationalError:
+        return jsonify([])
+
+    # Tally card wins/losses per deck presence (count deck once per card name)
+    card_stats = {}
+    sections = ["spellbook", "atlas", "sideboard"]
+
+    if use_new_columns:
+        for row in rows:
+            winner_deck_str = row[0]
+            loser_deck_str = row[1]
+
+            if winner_deck_str and winner_deck_str not in ("", "{}"):
+                try:
+                    deck_data = json.loads(winner_deck_str)
+                    deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+                    names = set()
+                    for sec in sections:
+                        for card in deck.get(sec, []) or []:
+                            name = card.get("name")
+                            if name:
+                                names.add(name)
+
+                    # types will be collected in the loop below
+                    # names set already built; now collect types per name
+                    # iterate sections again to capture types
+                    for sec in sections:
+                        for card in deck.get(sec, []) or []:
+                            name = card.get("name")
+                            if not name:
+                                continue
+                            ctype = card.get("type") or "Unknown"
+                            if name not in card_stats:
+                                card_stats[name] = {
+                                    "wins": 0,
+                                    "losses": 0,
+                                    "type": ctype,
+                                }
+                            else:
+                                # prefer existing type, otherwise set
+                                if not card_stats[name].get("type"):
+                                    card_stats[name]["type"] = ctype
+
+                    for name in names:
+                        if name not in card_stats:
+                            card_stats[name] = {
+                                "wins": 0,
+                                "losses": 0,
+                                "type": "Unknown",
+                            }
+                        card_stats[name]["wins"] += 1
+                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                    pass
+
+            if loser_deck_str and loser_deck_str not in ("", "{}"):
+                try:
+                    deck_data = json.loads(loser_deck_str)
+                    deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+                    names = set()
+                    for sec in sections:
+                        for card in deck.get(sec, []) or []:
+                            name = card.get("name")
+                            if name:
+                                names.add(name)
+
+                    for sec in sections:
+                        for card in deck.get(sec, []) or []:
+                            name = card.get("name")
+                            if not name:
+                                continue
+                            ctype = card.get("type") or "Unknown"
+                            if name not in card_stats:
+                                card_stats[name] = {
+                                    "wins": 0,
+                                    "losses": 0,
+                                    "type": ctype,
+                                }
+                            else:
+                                if not card_stats[name].get("type"):
+                                    card_stats[name]["type"] = ctype
+
+                    for name in names:
+                        if name not in card_stats:
+                            card_stats[name] = {
+                                "wins": 0,
+                                "losses": 0,
+                                "type": "Unknown",
+                            }
+                        card_stats[name]["losses"] += 1
+                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                    pass
+
+    else:
+        # Old logic: only reporter's deck present, use reporter_won flag
+        for row in rows:
+            reporter_won = row[0]
+            deck_json = row[1]
+
+            if not deck_json:
+                continue
+
+            try:
+                deck_data = json.loads(deck_json)
+                deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+                names = set()
+                for sec in sections:
+                    for card in deck.get(sec, []) or []:
+                        name = card.get("name")
+                        if name:
+                            names.add(name)
+
+                # capture types and counts
+                for sec in sections:
+                    for card in deck.get(sec, []) or []:
+                        name = card.get("name")
+                        if not name:
+                            continue
+                        ctype = card.get("type") or "Unknown"
+                        if name not in card_stats:
+                            card_stats[name] = {"wins": 0, "losses": 0, "type": ctype}
+                        else:
+                            if not card_stats[name].get("type"):
+                                card_stats[name]["type"] = ctype
+
+                for name in names:
+                    if name not in card_stats:
+                        card_stats[name] = {"wins": 0, "losses": 0, "type": "Unknown"}
+                    if reporter_won:
+                        card_stats[name]["wins"] += 1
+                    else:
+                        card_stats[name]["losses"] += 1
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                continue
+
+    # Format response
+    card_list = []
+    for name, stats in card_stats.items():
+        total = stats["wins"] + stats["losses"]
+        if total > 0:
+            win_rate = stats["wins"] / total * 100
+            image = find_card_image(name)
+            card_list.append(
+                {
+                    "name": name,
+                    "wins": stats["wins"],
+                    "losses": stats["losses"],
+                    "total": total,
+                    "win_rate": round(win_rate, 1),
+                    "type": stats.get("type", "Unknown"),
+                    "image": image,
+                }
+            )
+
+    # Sort by win_rate then total
+    card_list.sort(key=lambda x: (x["win_rate"], x["total"]), reverse=True)
+
+    return jsonify(card_list)
+
+
 @app.route("/api/rules-assistant", methods=["POST"])
 def rules_assistant_api():
     """API endpoint for Rules Assistant chat"""
@@ -2043,6 +2290,15 @@ def avatar_images(filename):
 
     avatar_imgs_dir = os.path.join(app.root_path, "templates", "avatar_imgs")
     return send_from_directory(avatar_imgs_dir, filename)
+
+
+@app.route("/card-images/<path:filename>")
+def card_images(filename):
+    """Serve card images from card_images/Card_Images folder"""
+    from flask import send_from_directory
+
+    card_imgs_dir = os.path.join(app.root_path, "card_images", "Card_Images")
+    return send_from_directory(card_imgs_dir, filename)
 
 
 if __name__ == "__main__":

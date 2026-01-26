@@ -14,7 +14,9 @@
       "Bash(chmod:*)",
       "Bash(powershell:*)",
       "Bash(git add:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(sqlite3:*)",
+      "Bash(tree:*)"
     ]
   }
 }

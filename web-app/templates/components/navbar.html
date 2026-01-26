@@ -104,7 +104,7 @@
       class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       Avatar Winrates
     </a>
-
+    {% if can_view_cards %}
     <a
       href="/cards"
       class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
@@ -115,7 +115,7 @@
       class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       Element Winrates
     </a>
-
+    {% endif %}
     <a
       href="/elo"
       class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">

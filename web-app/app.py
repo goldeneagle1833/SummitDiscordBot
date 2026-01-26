@@ -2429,12 +2429,20 @@ def elements_api():
                     else:
                         element_stats[element]["losses"] += 1
 
+    # Calculate total wins and losses across all matches
+    total_wins = sum(stats["wins"] for stats in element_stats.values())
+    total_losses = sum(stats["losses"] for stats in element_stats.values())
+
     # Format response - only include the 4 main elements
     element_list = []
     for name in ["Fire", "Water", "Earth", "Air"]:
         stats = element_stats[name]
         total = stats["wins"] + stats["losses"]
         win_rate = (stats["wins"] / total * 100) if total > 0 else 50.0
+        # Calculate what % of winning decks contained this element
+        win_presence = (stats["wins"] / total_wins * 100) if total_wins > 0 else 0
+        # Calculate what % of losing decks contained this element
+        loss_presence = (stats["losses"] / total_losses * 100) if total_losses > 0 else 0
         element_list.append(
             {
                 "name": name,
@@ -2442,6 +2450,8 @@ def elements_api():
                 "losses": stats["losses"],
                 "total": total,
                 "win_rate": round(win_rate, 1),
+                "win_presence": round(win_presence, 1),
+                "loss_presence": round(loss_presence, 1),
             }
         )
 

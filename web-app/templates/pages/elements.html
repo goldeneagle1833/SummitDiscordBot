@@ -18,7 +18,7 @@
       href="{{ url_for('static', filename='css/components/navbar.css') }}" />
     <style>
       .elements-chart-section {
-        max-width: 800px;
+        max-width: 900px;
         margin: 2rem auto;
         padding: 0 1rem;
       }
@@ -27,12 +27,19 @@
         border-radius: 12px;
         padding: 2rem;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        margin-bottom: 2rem;
       }
       .chart-title {
         text-align: center;
         font-size: 1.5rem;
-        margin-bottom: 2rem;
+        margin-bottom: 0.5rem;
         color: var(--color-text, #fff);
+      }
+      .chart-subtitle {
+        text-align: center;
+        font-size: 0.9rem;
+        margin-bottom: 2rem;
+        color: rgba(255, 255, 255, 0.6);
       }
       .element-bars {
         display: flex;
@@ -75,7 +82,7 @@
         text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
       }
       .element-stats {
-        width: 150px;
+        width: 160px;
         text-align: right;
         font-size: 0.9rem;
         color: rgba(255, 255, 255, 0.7);
@@ -89,14 +96,95 @@
       .element-air .element-label { color: #87ceeb; }
       .element-air .element-bar { background: linear-gradient(90deg, #87ceeb, #5dade2); }
 
+      /* Presence chart specific */
+      .presence-bars {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      .presence-row {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+      .presence-label {
+        width: 80px;
+        font-weight: bold;
+        font-size: 1rem;
+        text-shadow: 0 0 10px currentColor;
+      }
+      .presence-bar-group {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .presence-bar-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .presence-bar-label {
+        width: 50px;
+        font-size: 0.75rem;
+        color: rgba(255, 255, 255, 0.6);
+      }
+      .presence-bar-container {
+        flex: 1;
+        height: 20px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .presence-bar {
+        height: 100%;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        padding-right: 8px;
+        min-width: 40px;
+        transition: width 0.8s ease-out;
+      }
+      .presence-bar.wins {
+        background: linear-gradient(90deg, #2ecc71, #27ae60);
+      }
+      .presence-bar.losses {
+        background: linear-gradient(90deg, #e74c3c, #c0392b);
+      }
+      .presence-bar-text {
+        font-size: 0.75rem;
+        font-weight: bold;
+        color: #fff;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+      }
+      .presence-stats {
+        width: 80px;
+        text-align: right;
+        font-size: 0.8rem;
+        color: rgba(255, 255, 255, 0.7);
+      }
+
       .chart-legend {
         display: flex;
         justify-content: center;
         gap: 2rem;
         margin-top: 1.5rem;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
         color: rgba(255, 255, 255, 0.6);
       }
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .legend-color {
+        width: 16px;
+        height: 16px;
+        border-radius: 3px;
+      }
+      .legend-color.wins { background: #2ecc71; }
+      .legend-color.losses { background: #e74c3c; }
       .loading-text {
         text-align: center;
         padding: 2rem;
@@ -116,13 +204,31 @@
       </section>
 
       <section class="elements-chart-section">
+        <!-- Chart 1: Win Rate by Element -->
         <div class="elements-chart-container">
           <h2 class="chart-title">Win Rate by Element</h2>
+          <p class="chart-subtitle">How often does a deck containing this element win?</p>
           <div id="element-bars" class="element-bars">
             <p class="loading-text">Loading element data...</p>
           </div>
+        </div>
+
+        <!-- Chart 2: Element Presence in Wins vs Losses -->
+        <div class="elements-chart-container">
+          <h2 class="chart-title">Element Presence</h2>
+          <p class="chart-subtitle">What % of winning/losing decks contain each element?</p>
+          <div id="presence-bars" class="presence-bars">
+            <p class="loading-text">Loading...</p>
+          </div>
           <div class="chart-legend">
-            <span>Bar width = win rate percentage</span>
+            <div class="legend-item">
+              <div class="legend-color wins"></div>
+              <span>% of winning decks</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color losses"></div>
+              <span>% of losing decks</span>
+            </div>
           </div>
         </div>
       </section>
@@ -135,19 +241,19 @@
           const data = await res.json();
 
           const container = document.getElementById("element-bars");
+          const presenceContainer = document.getElementById("presence-bars");
 
           if (!data || data.length === 0) {
             container.innerHTML =
               '<p class="loading-text">No element data available yet. Report matches with decklists to see stats!</p>';
+            presenceContainer.innerHTML = '';
             return;
           }
 
-          // Sort by win rate descending
-          data.sort((a, b) => b.win_rate - a.win_rate);
-
-          // Build the bars
+          // Chart 1: Win Rate - sort by win rate descending
+          const sortedByWinRate = [...data].sort((a, b) => b.win_rate - a.win_rate);
           let html = "";
-          data.forEach((element) => {
+          sortedByWinRate.forEach((element) => {
             const elementClass = `element-${element.name.toLowerCase()}`;
             html += `
               <div class="element-row ${elementClass}">
@@ -158,18 +264,52 @@
                   </div>
                 </div>
                 <div class="element-stats">
-                  ${element.wins}W - ${element.losses}L (${element.total} games)
+                  ${element.wins}W - ${element.losses}L
                 </div>
               </div>
             `;
           });
-
           container.innerHTML = html;
+
+          // Chart 2: Presence - sort by win presence descending
+          const sortedByPresence = [...data].sort((a, b) => b.win_presence - a.win_presence);
+          let presenceHtml = "";
+          sortedByPresence.forEach((element) => {
+            const elementClass = `element-${element.name.toLowerCase()}`;
+            presenceHtml += `
+              <div class="presence-row ${elementClass}">
+                <div class="presence-label">${element.name}</div>
+                <div class="presence-bar-group">
+                  <div class="presence-bar-row">
+                    <div class="presence-bar-label">Wins</div>
+                    <div class="presence-bar-container">
+                      <div class="presence-bar wins" style="width: ${element.win_presence}%;">
+                        <span class="presence-bar-text">${element.win_presence}%</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="presence-bar-row">
+                    <div class="presence-bar-label">Losses</div>
+                    <div class="presence-bar-container">
+                      <div class="presence-bar losses" style="width: ${element.loss_presence}%;">
+                        <span class="presence-bar-text">${element.loss_presence}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="presence-stats">
+                  Δ ${(element.win_presence - element.loss_presence).toFixed(1)}%
+                </div>
+              </div>
+            `;
+          });
+          presenceContainer.innerHTML = presenceHtml;
 
         } catch (err) {
           console.error("Error fetching element stats", err);
           document.getElementById("element-bars").innerHTML =
             '<p class="loading-text">Error loading element stats</p>';
+          document.getElementById("presence-bars").innerHTML = '';
         }
       }
 

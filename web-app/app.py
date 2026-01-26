@@ -90,7 +90,9 @@ DISCORD_REDIRECT_URI = os.environ.get(
 
 # Allowed Discord IDs for card winrates page (add your Discord ID and any others)
 ALLOWED_CARD_VIEWERS = [
-    "296846802924208130"
+    "296846802924208130",
+    "146923845549424640",
+    "128690099432062976",
     # Add Discord IDs here (as integers or strings)
     # Example: 123456789012345678,
 ]

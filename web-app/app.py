@@ -137,6 +137,9 @@ def require_api_key(f):
 
 def is_allowed_card_viewer():
     """Check if the current user is allowed to view card winrates"""
+    # Auto-allow access on localhost for development
+    if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
+        return True
     user_id = session.get("user_id")
     if user_id is None:
         return False
@@ -398,10 +401,7 @@ def avatars():
 @app.route("/cards")
 def cards():
     """Card winrates page - restricted to allowed Discord users"""
-    # Auto-allow access on localhost for development
-    is_localhost = request.host.startswith("localhost") or request.host.startswith("127.0.0.1")
-
-    if not is_localhost and not is_allowed_card_viewer():
+    if not is_allowed_card_viewer():
         if session.get("user_id") is None:
             # Not logged in - redirect to login
             return redirect(url_for("auth_discord"))
@@ -410,6 +410,20 @@ def cards():
             "pages/error.html", error="You don't have permission to view this page."
         ), 403
     return render_template("pages/cards.html")
+
+
+@app.route("/elements")
+def elements():
+    """Elemental winrates page - restricted to allowed Discord users"""
+    if not is_allowed_card_viewer():
+        if session.get("user_id") is None:
+            # Not logged in - redirect to login
+            return redirect(url_for("auth_discord"))
+        # Logged in but not authorized
+        return render_template(
+            "pages/error.html", error="You don't have permission to view this page."
+        ), 403
+    return render_template("pages/elements.html")
 
 
 @app.route("/elo")
@@ -2061,10 +2075,7 @@ def avatars_api():
 @app.route("/api/cards")
 def cards_api():
     """API endpoint for per-card winrates from all matches with deck data - restricted access"""
-    # Auto-allow access on localhost for development
-    is_localhost = request.host.startswith("localhost") or request.host.startswith("127.0.0.1")
-
-    if not is_localhost and not is_allowed_card_viewer():
+    if not is_allowed_card_viewer():
         return jsonify({"error": "Unauthorized"}), 403
 
     import json
@@ -2296,6 +2307,143 @@ def cards_api():
     card_list.sort(key=lambda x: (x["win_rate"], x["total"]), reverse=True)
 
     return jsonify(card_list)
+
+
+@app.route("/api/elements")
+def elements_api():
+    """API endpoint for elemental winrates from all matches with deck data - restricted access"""
+    if not is_allowed_card_viewer():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    import json
+
+    # Load All_Cards_Array.json for card name -> element lookup
+    all_cards_path = Path(__file__).parent / "curiosa-io-tools" / "All_Cards_Array.json"
+    card_elements = {}  # card_name -> set of elements
+    try:
+        with open(all_cards_path, "r", encoding="utf-8") as f:
+            all_cards = json.load(f)
+            for card in all_cards:
+                name = card.get("name", "")
+                elements_str = card.get("elements", "None")
+                if name and elements_str and elements_str != "None":
+                    # Elements can be comma-separated like "Fire, Water"
+                    card_elements[name.lower()] = set(
+                        e.strip() for e in elements_str.split(",") if e.strip()
+                    )
+    except Exception as e:
+        logger.error(f"Failed to load All_Cards_Array.json: {e}")
+
+    try:
+        conn = sqlite3.connect("../discord-bot/match_records.db")
+        cur = conn.cursor()
+
+        # Try to read separated winner/loser deck columns first
+        try:
+            cur.execute(
+                """
+                SELECT
+                    json_deck_data_winner,
+                    json_deck_data_loser
+                FROM match_records
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+            """
+            )
+            rows = cur.fetchall()
+            use_new_columns = True
+        except sqlite3.OperationalError:
+            # Fallback to old single json_deck_data column (reporter only)
+            cur.execute(
+                """
+                SELECT
+                    CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
+                    json_deck_data
+                FROM match_records
+                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+            """
+            )
+            rows = cur.fetchall()
+            use_new_columns = False
+
+        conn.close()
+    except sqlite3.OperationalError:
+        return jsonify([])
+
+    # Tally element wins/losses based on cards in deck
+    element_stats = {
+        "Fire": {"wins": 0, "losses": 0},
+        "Water": {"wins": 0, "losses": 0},
+        "Earth": {"wins": 0, "losses": 0},
+        "Air": {"wins": 0, "losses": 0},
+    }
+    sections = ["spellbook", "atlas", "sideboard"]
+
+    def get_deck_elements(deck_json):
+        """Extract unique elements from cards in a deck using All_Cards_Array lookup"""
+        elements = set()
+        if not deck_json or deck_json in ("", "{}"):
+            return elements
+        try:
+            deck_data = json.loads(deck_json)
+            deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+            for sec in sections:
+                for card in deck.get(sec, []) or []:
+                    card_name = (card.get("name") or "").lower()
+                    # Look up element from All_Cards_Array
+                    if card_name in card_elements:
+                        elements.update(card_elements[card_name])
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            pass
+        return elements
+
+    if use_new_columns:
+        for row in rows:
+            winner_deck_str = row[0]
+            loser_deck_str = row[1]
+
+            # Get elements from winner's deck
+            winner_elements = get_deck_elements(winner_deck_str)
+            for element in winner_elements:
+                if element in element_stats:
+                    element_stats[element]["wins"] += 1
+
+            # Get elements from loser's deck
+            loser_elements = get_deck_elements(loser_deck_str)
+            for element in loser_elements:
+                if element in element_stats:
+                    element_stats[element]["losses"] += 1
+    else:
+        # Old logic: only reporter's deck present, use reporter_won flag
+        for row in rows:
+            reporter_won = row[0]
+            deck_json = row[1]
+
+            elements = get_deck_elements(deck_json)
+            for element in elements:
+                if element in element_stats:
+                    if reporter_won:
+                        element_stats[element]["wins"] += 1
+                    else:
+                        element_stats[element]["losses"] += 1
+
+    # Format response - only include the 4 main elements
+    element_list = []
+    for name in ["Fire", "Water", "Earth", "Air"]:
+        stats = element_stats[name]
+        total = stats["wins"] + stats["losses"]
+        win_rate = (stats["wins"] / total * 100) if total > 0 else 50.0
+        element_list.append(
+            {
+                "name": name,
+                "wins": stats["wins"],
+                "losses": stats["losses"],
+                "total": total,
+                "win_rate": round(win_rate, 1),
+            }
+        )
+
+    return jsonify(element_list)
 
 
 @app.route("/api/rules-assistant", methods=["POST"])

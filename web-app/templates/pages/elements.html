@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Elemental Win Rates - Sorcerers Summit</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/global.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+    <style>
+      .elements-chart-section {
+        max-width: 800px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      .elements-chart-container {
+        background: var(--color-surface, #1a1a2e);
+        border-radius: 12px;
+        padding: 2rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      }
+      .chart-title {
+        text-align: center;
+        font-size: 1.5rem;
+        margin-bottom: 2rem;
+        color: var(--color-text, #fff);
+      }
+      .element-bars {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+      .element-row {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+      .element-label {
+        width: 80px;
+        font-weight: bold;
+        font-size: 1.1rem;
+        text-shadow: 0 0 10px currentColor;
+      }
+      .element-bar-container {
+        flex: 1;
+        height: 40px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        overflow: hidden;
+        position: relative;
+      }
+      .element-bar {
+        height: 100%;
+        border-radius: 8px;
+        transition: width 0.8s ease-out;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        padding-right: 10px;
+        min-width: 60px;
+      }
+      .element-bar-text {
+        font-weight: bold;
+        font-size: 1rem;
+        color: #fff;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+      }
+      .element-stats {
+        width: 150px;
+        text-align: right;
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.7);
+      }
+      .element-fire .element-label { color: #e74c3c; }
+      .element-fire .element-bar { background: linear-gradient(90deg, #e74c3c, #c0392b); }
+      .element-water .element-label { color: #3498db; }
+      .element-water .element-bar { background: linear-gradient(90deg, #3498db, #2980b9); }
+      .element-earth .element-label { color: #8b4513; }
+      .element-earth .element-bar { background: linear-gradient(90deg, #8b4513, #654321); }
+      .element-air .element-label { color: #87ceeb; }
+      .element-air .element-bar { background: linear-gradient(90deg, #87ceeb, #5dade2); }
+
+      .chart-legend {
+        display: flex;
+        justify-content: center;
+        gap: 2rem;
+        margin-top: 1.5rem;
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.6);
+      }
+      .loading-text {
+        text-align: center;
+        padding: 2rem;
+        color: rgba(255, 255, 255, 0.6);
+      }
+    </style>
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <section class="hero">
+        <h1>Elemental Win Rates</h1>
+        <p>
+          Win rates by element based on cards in reported decklists
+        </p>
+      </section>
+
+      <section class="elements-chart-section">
+        <div class="elements-chart-container">
+          <h2 class="chart-title">Win Rate by Element</h2>
+          <div id="element-bars" class="element-bars">
+            <p class="loading-text">Loading element data...</p>
+          </div>
+          <div class="chart-legend">
+            <span>Bar width = win rate percentage</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      async function fetchElementStats() {
+        try {
+          const res = await fetch("/api/elements");
+          const data = await res.json();
+
+          const container = document.getElementById("element-bars");
+
+          if (!data || data.length === 0) {
+            container.innerHTML =
+              '<p class="loading-text">No element data available yet. Report matches with decklists to see stats!</p>';
+            return;
+          }
+
+          // Sort by win rate descending
+          data.sort((a, b) => b.win_rate - a.win_rate);
+
+          // Build the bars
+          let html = "";
+          data.forEach((element) => {
+            const elementClass = `element-${element.name.toLowerCase()}`;
+            html += `
+              <div class="element-row ${elementClass}">
+                <div class="element-label">${element.name}</div>
+                <div class="element-bar-container">
+                  <div class="element-bar" style="width: ${element.win_rate}%;">
+                    <span class="element-bar-text">${element.win_rate}%</span>
+                  </div>
+                </div>
+                <div class="element-stats">
+                  ${element.wins}W - ${element.losses}L (${element.total} games)
+                </div>
+              </div>
+            `;
+          });
+
+          container.innerHTML = html;
+
+        } catch (err) {
+          console.error("Error fetching element stats", err);
+          document.getElementById("element-bars").innerHTML =
+            '<p class="loading-text">Error loading element stats</p>';
+        }
+      }
+
+      fetchElementStats();
+    </script>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+  </body>
+</html>

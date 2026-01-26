@@ -87,14 +87,30 @@
         font-size: 0.9rem;
         color: rgba(255, 255, 255, 0.7);
       }
-      .element-fire .element-label { color: #e74c3c; }
-      .element-fire .element-bar { background: linear-gradient(90deg, #e74c3c, #c0392b); }
-      .element-water .element-label { color: #3498db; }
-      .element-water .element-bar { background: linear-gradient(90deg, #3498db, #2980b9); }
-      .element-earth .element-label { color: #8b4513; }
-      .element-earth .element-bar { background: linear-gradient(90deg, #8b4513, #654321); }
-      .element-air .element-label { color: #87ceeb; }
-      .element-air .element-bar { background: linear-gradient(90deg, #87ceeb, #5dade2); }
+      .element-fire .element-label {
+        color: #e74c3c;
+      }
+      .element-fire .element-bar {
+        background: linear-gradient(90deg, #e74c3c, #c0392b);
+      }
+      .element-water .element-label {
+        color: #3498db;
+      }
+      .element-water .element-bar {
+        background: linear-gradient(90deg, #3498db, #2980b9);
+      }
+      .element-earth .element-label {
+        color: #8b4513;
+      }
+      .element-earth .element-bar {
+        background: linear-gradient(90deg, #8b4513, #654321);
+      }
+      .element-air .element-label {
+        color: #87ceeb;
+      }
+      .element-air .element-bar {
+        background: linear-gradient(90deg, #87ceeb, #5dade2);
+      }
 
       /* Presence chart specific */
       .presence-bars {
@@ -183,8 +199,12 @@
         height: 16px;
         border-radius: 3px;
       }
-      .legend-color.wins { background: #2ecc71; }
-      .legend-color.losses { background: #e74c3c; }
+      .legend-color.wins {
+        background: #2ecc71;
+      }
+      .legend-color.losses {
+        background: #e74c3c;
+      }
       .loading-text {
         text-align: center;
         padding: 2rem;
@@ -198,16 +218,19 @@
     <main>
       <section class="hero">
         <h1>Elemental Win Rates</h1>
-        <p>
-          Win rates by element based on cards in reported decklists
-        </p>
+        <p>Win rates by element based on cards in reported decklists</p>
       </section>
 
       <section class="elements-chart-section">
         <!-- Chart 1: Win Rate by Element -->
         <div class="elements-chart-container">
           <h2 class="chart-title">Win Rate by Element</h2>
-          <p class="chart-subtitle">How often does a deck containing this element win?</p>
+          <p class="chart-subtitle">Example with 100 matches (200 decks):</p>
+          <ul class="chart-subtitle">
+            <li>If 50% of decks have Fire cards → Fire shows ~500 games</li>
+            <li>If 60% of decks have Earth cards → Earth shows ~600 games</li>
+            <li>These overlap because many decks run multiple elements</li>
+          </ul>
           <div id="element-bars" class="element-bars">
             <p class="loading-text">Loading element data...</p>
           </div>
@@ -216,7 +239,22 @@
         <!-- Chart 2: Element Presence in Wins vs Losses -->
         <div class="elements-chart-container">
           <h2 class="chart-title">Element Presence</h2>
-          <p class="chart-subtitle">What % of winning/losing decks contain each element?</p>
+          <p class="chart-subtitle">Example with 100 matches (200 decks):</p>
+          <ul class="chart-subtitle">
+            <li>Assume 100 winning decks and 100 losing decks.</li>
+            <li>
+              Fire: 50% of winning decks → Win presence 50% (50/100). Loss
+              presence 30% → 30/100. Δ +20% (more common in winners).
+            </li>
+            <li>
+              Earth: 40% of winning decks → 40%. Loss presence 60% → 60%. Δ −20%
+              (more common in losers).
+            </li>
+            <li>
+              Interpretation: Presence shows how often an element appears in
+              winning vs losing decks. Δ indicates correlation, not causation.
+            </li>
+          </ul>
           <div id="presence-bars" class="presence-bars">
             <p class="loading-text">Loading...</p>
           </div>
@@ -246,12 +284,14 @@
           if (!data || data.length === 0) {
             container.innerHTML =
               '<p class="loading-text">No element data available yet. Report matches with decklists to see stats!</p>';
-            presenceContainer.innerHTML = '';
+            presenceContainer.innerHTML = "";
             return;
           }
 
           // Chart 1: Win Rate - sort by win rate descending
-          const sortedByWinRate = [...data].sort((a, b) => b.win_rate - a.win_rate);
+          const sortedByWinRate = [...data].sort(
+            (a, b) => b.win_rate - a.win_rate
+          );
           let html = "";
           sortedByWinRate.forEach((element) => {
             const elementClass = `element-${element.name.toLowerCase()}`;
@@ -272,7 +312,9 @@
           container.innerHTML = html;
 
           // Chart 2: Presence - sort by win presence descending
-          const sortedByPresence = [...data].sort((a, b) => b.win_presence - a.win_presence);
+          const sortedByPresence = [...data].sort(
+            (a, b) => b.win_presence - a.win_presence
+          );
           let presenceHtml = "";
           sortedByPresence.forEach((element) => {
             const elementClass = `element-${element.name.toLowerCase()}`;
@@ -283,33 +325,42 @@
                   <div class="presence-bar-row">
                     <div class="presence-bar-label">Wins</div>
                     <div class="presence-bar-container">
-                      <div class="presence-bar wins" style="width: ${element.win_presence}%;">
-                        <span class="presence-bar-text">${element.win_presence}%</span>
+                      <div class="presence-bar wins" style="width: ${
+                        element.win_presence
+                      }%;">
+                        <span class="presence-bar-text">${
+                          element.win_presence
+                        }%</span>
                       </div>
                     </div>
                   </div>
                   <div class="presence-bar-row">
                     <div class="presence-bar-label">Losses</div>
                     <div class="presence-bar-container">
-                      <div class="presence-bar losses" style="width: ${element.loss_presence}%;">
-                        <span class="presence-bar-text">${element.loss_presence}%</span>
+                      <div class="presence-bar losses" style="width: ${
+                        element.loss_presence
+                      }%;">
+                        <span class="presence-bar-text">${
+                          element.loss_presence
+                        }%</span>
                       </div>
                     </div>
                   </div>
                 </div>
                 <div class="presence-stats">
-                  Δ ${(element.win_presence - element.loss_presence).toFixed(1)}%
+                  Δ ${(element.win_presence - element.loss_presence).toFixed(
+                    1
+                  )}%
                 </div>
               </div>
             `;
           });
           presenceContainer.innerHTML = presenceHtml;
-
         } catch (err) {
           console.error("Error fetching element stats", err);
           document.getElementById("element-bars").innerHTML =
             '<p class="loading-text">Error loading element stats</p>';
-          document.getElementById("presence-bars").innerHTML = '';
+          document.getElementById("presence-bars").innerHTML = "";
         }
       }
 

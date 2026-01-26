@@ -82,6 +82,84 @@
         }
       }
 
+      // Lazy loading configuration
+      const CARDS_PER_PAGE = 20;
+      let allCards = [];
+      let filteredCards = [];
+      let renderedCount = 0;
+      let isLoading = false;
+
+      function createCardTile(card, idx) {
+        const color = getWinRateColor(card.win_rate);
+        const cardTile = document.createElement("div");
+        cardTile.className = "avatar-stats-card";
+        cardTile.setAttribute("data-type", card.type || "Unknown");
+        cardTile.setAttribute("data-name", card.name.toLowerCase());
+
+        const isSite = (card.type || "").toLowerCase() === "site";
+        const bgImageHtml = card.image
+          ? `<div class="card-bg-image" style="background-image: url('/card-images/${card.image}');${isSite ? ' transform: rotate(90deg); background-size: contain;' : ''}"></div>`
+          : '';
+
+        cardTile.innerHTML = `
+          ${bgImageHtml}
+          <div class="avatar-stats-rank">#${idx + 1}</div>
+          <div class="avatar-stats-name">
+            ${card.name}
+            <span style="position: absolute; right: var(--spacing-sm); font-size: 0.7rem; color: rgba(255, 255, 255, 0.6);">${
+              card.type || "Unknown"
+            }</span>
+          </div>
+          <div class="avatar-stats-middle"></div>
+          <div class="avatar-stats-bottom">
+            <div class="avatar-stats-winrate" style="color: ${color};">${card.win_rate}%</div>
+            <div class="avatar-stats-record">
+              <span class="match-win">${card.wins}W</span> - <span class="match-loss">${card.losses}L</span>
+            </div>
+          </div>
+        `;
+        return cardTile;
+      }
+
+      function renderMoreCards() {
+        if (isLoading || renderedCount >= filteredCards.length) return;
+        isLoading = true;
+
+        const grid = document.getElementById("card-stats-grid");
+        const endIdx = Math.min(renderedCount + CARDS_PER_PAGE, filteredCards.length);
+
+        for (let i = renderedCount; i < endIdx; i++) {
+          const cardTile = createCardTile(filteredCards[i], i);
+          grid.appendChild(cardTile);
+        }
+
+        renderedCount = endIdx;
+        document.getElementById("visible-count").textContent = renderedCount;
+        isLoading = false;
+      }
+
+      function applyFilters() {
+        const typeFilter = document.getElementById("type-filter");
+        const searchInput = document.getElementById("card-search");
+        const type = typeFilter.value.toLowerCase();
+        const q = searchInput.value.trim().toLowerCase();
+
+        filteredCards = allCards.filter((card) => {
+          const cardType = (card.type || "").toLowerCase();
+          const name = card.name.toLowerCase();
+          const typeMatch = !type || cardType === type;
+          const searchMatch = !q || name.includes(q);
+          return typeMatch && searchMatch;
+        });
+
+        // Reset and re-render
+        const grid = document.getElementById("card-stats-grid");
+        grid.innerHTML = "";
+        renderedCount = 0;
+        document.getElementById("total-count").textContent = filteredCards.length;
+        renderMoreCards();
+      }
+
       async function fetchCardStats() {
         try {
           const res = await fetch("/api/cards");
@@ -98,78 +176,28 @@
 
           // Sort by win_rate desc
           data.sort((a, b) => b.win_rate - a.win_rate || b.total - a.total);
+          allCards = data;
+          filteredCards = data;
 
           // Update total count
           document.getElementById("total-count").textContent = data.length;
 
-          const renderedCards = [];
-          data.forEach((card, idx) => {
-            const color = getWinRateColor(card.win_rate);
-            const cardTile = document.createElement("div");
-            cardTile.className = "avatar-stats-card";
-            cardTile.setAttribute("data-type", card.type || "Unknown");
-            cardTile.setAttribute("data-name", card.name.toLowerCase());
+          // Render first batch
+          renderMoreCards();
 
-            // Build background image HTML if image exists
-            const bgImageHtml = card.image
-              ? `<div class="card-bg-image" style="background-image: url('/card-images/${card.image}');"></div>`
-              : '';
-
-            cardTile.innerHTML = `
-              ${bgImageHtml}
-              <div class="avatar-stats-rank">#${idx + 1}</div>
-              <div class="avatar-stats-name">
-                ${card.name}
-                <span style="position: absolute; right: var(--spacing-sm); font-size: 0.7rem; color: rgba(255, 255, 255, 0.6);">${
-                  card.type || "Unknown"
-                }</span>
-              </div>
-              <div class="avatar-stats-middle"></div>
-              <div class="avatar-stats-bottom">
-                <div class="avatar-stats-winrate" style="color: ${color};">${
-              card.win_rate
-            }%</div>
-                <div class="avatar-stats-record">
-                  <span class="match-win">${
-                    card.wins
-                  }W</span> - <span class="match-loss">${card.losses}L</span>
-                </div>
-              </div>
-            `;
-            grid.appendChild(cardTile);
-            renderedCards.push(cardTile);
-          });
-
-          // Filtering logic
+          // Set up filters
           const typeFilter = document.getElementById("type-filter");
           const searchInput = document.getElementById("card-search");
+          typeFilter.addEventListener("change", applyFilters);
+          searchInput.addEventListener("input", applyFilters);
 
-          function filterCards() {
-            const type = typeFilter.value;
-            const q = searchInput.value.trim().toLowerCase();
-            let visible = 0;
-            renderedCards.forEach((el) => {
-              const cardType = el.getAttribute("data-type") || "";
-              const name = el.getAttribute("data-name") || "";
-              const typeMatch =
-                !type ||
-                (cardType && cardType.toLowerCase() === type.toLowerCase());
-              const searchMatch = !q || name.includes(q);
-              if (typeMatch && searchMatch) {
-                el.style.display = "flex";
-                visible++;
-              } else {
-                el.style.display = "none";
-              }
-            });
-            // Update visible count
-            document.getElementById("visible-count").textContent = visible;
-          }
+          // Set up infinite scroll
+          window.addEventListener("scroll", () => {
+            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
+              renderMoreCards();
+            }
+          });
 
-          typeFilter.addEventListener("change", filterCards);
-          searchInput.addEventListener("input", filterCards);
-          // initial filter pass
-          filterCards();
         } catch (err) {
           console.error("Error fetching card stats", err);
           document.getElementById("card-stats-grid").innerHTML =

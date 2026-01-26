@@ -14,8 +14,10 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/style.css') }}" />
+    <link rel href="{{ url_for('static', filename='css/utilities.css') }}" />
     <link
       rel="stylesheet"
+      ="stylesheet"
       href="{{ url_for('static', filename='css/components/navbar.css') }}" />
     <style>
       .event-container {
@@ -231,7 +233,13 @@
 
     <main>
       <div class="event-container">
-        <a href="/stats" class="back-link">← Back to Events</a>
+        <a
+          href="/stats"
+          class="back-link"
+          target="_blank"
+          rel="noopener noreferrer"
+          >← Back to Events</a
+        >
 
         <div class="event-header">
           <h1>{{ event_name }}</h1>

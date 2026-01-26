@@ -2,7 +2,16 @@
 Summit Web Application - A lightweight Flask web app
 """
 
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+from flask import (
+    Flask,
+    render_template,
+    jsonify,
+    request,
+    session,
+    redirect,
+    url_for,
+    send_from_directory,
+)
 import sqlite3
 import os
 import json
@@ -238,7 +247,11 @@ def get_current_user():
 @app.context_processor
 def inject_user():
     """Make current user and app version available to all templates"""
-    return {"current_user": get_current_user(), "app_version": APP_VERSION}
+    return {
+        "current_user": get_current_user(),
+        "app_version": APP_VERSION,
+        "can_view_cards": is_allowed_card_viewer(),
+    }
 
 
 @app.route("/auth/discord")
@@ -385,7 +398,10 @@ def avatars():
 @app.route("/cards")
 def cards():
     """Card winrates page - restricted to allowed Discord users"""
-    if not is_allowed_card_viewer():
+    # Auto-allow access on localhost for development
+    is_localhost = request.host.startswith("localhost") or request.host.startswith("127.0.0.1")
+
+    if not is_localhost and not is_allowed_card_viewer():
         if session.get("user_id") is None:
             # Not logged in - redirect to login
             return redirect(url_for("auth_discord"))
@@ -2045,7 +2061,10 @@ def avatars_api():
 @app.route("/api/cards")
 def cards_api():
     """API endpoint for per-card winrates from all matches with deck data - restricted access"""
-    if not is_allowed_card_viewer():
+    # Auto-allow access on localhost for development
+    is_localhost = request.host.startswith("localhost") or request.host.startswith("127.0.0.1")
+
+    if not is_localhost and not is_allowed_card_viewer():
         return jsonify({"error": "Unauthorized"}), 403
 
     import json
@@ -2257,6 +2276,9 @@ def cards_api():
         total = stats["wins"] + stats["losses"]
         if total > 0:
             win_rate = stats["wins"] / total * 100
+            # Filter out cards with 100% win rate and less than 10 reports (likely noise)
+            if win_rate == 100 and total < 10:
+                continue
             image = find_card_image(name)
             card_list.append(
                 {

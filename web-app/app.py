@@ -79,6 +79,13 @@ DISCORD_REDIRECT_URI = os.environ.get(
     "DISCORD_REDIRECT_URI", "http://localhost:5000/auth/discord/callback"
 )
 
+# Allowed Discord IDs for card winrates page (add your Discord ID and any others)
+ALLOWED_CARD_VIEWERS = [
+    "296846802924208130"
+    # Add Discord IDs here (as integers or strings)
+    # Example: 123456789012345678,
+]
+
 # API Key configuration for external integrations
 # Support both single API_KEY and multiple API_KEYS (comma-separated)
 API_KEYS_ENV = os.environ.get("API_KEYS", os.environ.get("API_KEY", ""))
@@ -117,6 +124,17 @@ def require_api_key(f):
         return f(*args, **kwargs)
 
     return decorated_function
+
+
+def is_allowed_card_viewer():
+    """Check if the current user is allowed to view card winrates"""
+    user_id = session.get("user_id")
+    if user_id is None:
+        return False
+    # Check if user's Discord ID is in the allowed list
+    return int(user_id) in ALLOWED_CARD_VIEWERS or str(user_id) in [
+        str(x) for x in ALLOWED_CARD_VIEWERS
+    ]
 
 
 def get_rules_assistant():
@@ -366,7 +384,15 @@ def avatars():
 
 @app.route("/cards")
 def cards():
-    """Card winrates page"""
+    """Card winrates page - restricted to allowed Discord users"""
+    if not is_allowed_card_viewer():
+        if session.get("user_id") is None:
+            # Not logged in - redirect to login
+            return redirect(url_for("auth_discord"))
+        # Logged in but not authorized
+        return render_template(
+            "pages/error.html", error="You don't have permission to view this page."
+        ), 403
     return render_template("pages/cards.html")
 
 
@@ -2018,12 +2044,15 @@ def avatars_api():
 
 @app.route("/api/cards")
 def cards_api():
-    """API endpoint for per-card winrates from all matches with deck data"""
+    """API endpoint for per-card winrates from all matches with deck data - restricted access"""
+    if not is_allowed_card_viewer():
+        return jsonify({"error": "Unauthorized"}), 403
+
     import json
     import re
 
     # Build card image lookup: card_name_normalized -> filename
-    card_imgs_dir = os.path.join(app.root_path, "card_images", "Card_Images")
+    card_imgs_dir = os.path.join(app.root_path, "card_images")
     card_image_lookup = {}
     if os.path.exists(card_imgs_dir):
         for filename in os.listdir(card_imgs_dir):
@@ -2049,7 +2078,9 @@ def cards_api():
     def find_card_image(card_name):
         """Find matching image filename for a card name"""
         # Normalize: lowercase, spaces to underscores, remove special chars
-        normalized = card_name.lower().replace(" ", "_").replace("'", "").replace(",", "")
+        normalized = (
+            card_name.lower().replace(" ", "_").replace("'", "").replace(",", "")
+        )
         normalized = re.sub(r"[^a-z0-9_]", "", normalized)
         return card_image_lookup.get(normalized)
 
@@ -2294,10 +2325,10 @@ def avatar_images(filename):
 
 @app.route("/card-images/<path:filename>")
 def card_images(filename):
-    """Serve card images from card_images/Card_Images folder"""
+    """Serve card images from card_images folder"""
     from flask import send_from_directory
 
-    card_imgs_dir = os.path.join(app.root_path, "card_images", "Card_Images")
+    card_imgs_dir = os.path.join(app.root_path, "card_images")
     return send_from_directory(card_imgs_dir, filename)
 
 

@@ -23,7 +23,9 @@
     <main>
       <section class="hero">
         <h1>Card Win Rates</h1>
-        <p>Global card win rates calculated from matches reported with decklists</p>
+        <p>
+          Global card win rates calculated from matches reported with decklists
+        </p>
       </section>
 
       <!-- Filters -->
@@ -50,7 +52,8 @@
             </div>
           </div>
           <div class="card-filter-count">
-            Showing <span id="visible-count">0</span> of <span id="total-count">0</span> cards
+            Showing <span id="visible-count">0</span> of
+            <span id="total-count">0</span> cards
           </div>
         </div>
       </section>
@@ -98,8 +101,14 @@
 
         const isSite = (card.type || "").toLowerCase() === "site";
         const bgImageHtml = card.image
-          ? `<div class="card-bg-image" style="background-image: url('/card-images/${card.image}');${isSite ? ' transform: rotate(90deg); background-size: contain;' : ''}"></div>`
-          : '';
+          ? `<div class="card-bg-image" style="background-image: url('/card-images/${
+              card.image
+            }');${
+              isSite
+                ? " transform: rotate(90deg) scale(1.5); background-position: center;"
+                : ""
+            }"></div>`
+          : "";
 
         cardTile.innerHTML = `
           ${bgImageHtml}
@@ -112,9 +121,13 @@
           </div>
           <div class="avatar-stats-middle"></div>
           <div class="avatar-stats-bottom">
-            <div class="avatar-stats-winrate" style="color: ${color};">${card.win_rate}%</div>
+            <div class="avatar-stats-winrate" style="color: ${color};">${
+          card.win_rate
+        }%</div>
             <div class="avatar-stats-record">
-              <span class="match-win">${card.wins}W</span> - <span class="match-loss">${card.losses}L</span>
+              <span class="match-win">${
+                card.wins
+              }W</span> - <span class="match-loss">${card.losses}L</span>
             </div>
           </div>
         `;
@@ -126,7 +139,10 @@
         isLoading = true;
 
         const grid = document.getElementById("card-stats-grid");
-        const endIdx = Math.min(renderedCount + CARDS_PER_PAGE, filteredCards.length);
+        const endIdx = Math.min(
+          renderedCount + CARDS_PER_PAGE,
+          filteredCards.length
+        );
 
         for (let i = renderedCount; i < endIdx; i++) {
           const cardTile = createCardTile(filteredCards[i], i);
@@ -156,7 +172,8 @@
         const grid = document.getElementById("card-stats-grid");
         grid.innerHTML = "";
         renderedCount = 0;
-        document.getElementById("total-count").textContent = filteredCards.length;
+        document.getElementById("total-count").textContent =
+          filteredCards.length;
         renderMoreCards();
       }
 
@@ -193,11 +210,13 @@
 
           // Set up infinite scroll
           window.addEventListener("scroll", () => {
-            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
+            if (
+              window.innerHeight + window.scrollY >=
+              document.body.offsetHeight - 500
+            ) {
               renderMoreCards();
             }
           });
-
         } catch (err) {
           console.error("Error fetching card stats", err);
           document.getElementById("card-stats-grid").innerHTML =

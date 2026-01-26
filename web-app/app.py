@@ -417,14 +417,6 @@ def cards():
 @app.route("/elements")
 def elements():
     """Elemental winrates page - restricted to allowed Discord users"""
-    if not is_allowed_card_viewer():
-        if session.get("user_id") is None:
-            # Not logged in - redirect to login
-            return redirect(url_for("auth_discord"))
-        # Logged in but not authorized
-        return render_template(
-            "pages/error.html", error="You don't have permission to view this page."
-        ), 403
     return render_template("pages/elements.html")
 
 
@@ -2442,7 +2434,9 @@ def elements_api():
         # Calculate what % of winning decks contained this element
         win_presence = (stats["wins"] / total_wins * 100) if total_wins > 0 else 0
         # Calculate what % of losing decks contained this element
-        loss_presence = (stats["losses"] / total_losses * 100) if total_losses > 0 else 0
+        loss_presence = (
+            (stats["losses"] / total_losses * 100) if total_losses > 0 else 0
+        )
         element_list.append(
             {
                 "name": name,

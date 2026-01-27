@@ -3702,6 +3702,55 @@ class LFGCog(commands.Cog):
             logger.error(f"eligible_for_masters_braket error: {e}")
             await ctx.send("Error fetching eligible players. See logs for details.")
 
+    @commands.command(name="top16")
+    async def top_16_free_entryx(self, ctx):
+        """Show top 16 ELO players (no role requirement)."""
+        import sqlite3
+
+        try:
+            conn = sqlite3.connect("elo.db")
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT user_id, user_display_name, elo FROM overall_standings ORDER BY elo DESC LIMIT 16"
+            )
+            rows = cur.fetchall()
+            conn.close()
+
+            if not rows:
+                await ctx.send("No ELO standings available.")
+                return
+
+            lines = []
+            for i, (user_id, display_name, elo) in enumerate(rows):
+                mention = None
+                display = display_name or ""
+                try:
+                    uid = int(user_id)
+                except Exception:
+                    uid = None
+
+                if ctx.guild and uid:
+                    member = ctx.guild.get_member(uid)
+                    if member:
+                        mention = member.mention
+                        display = display_name or (member.display_name or member.name)
+
+                if not mention:
+                    mention = display or str(user_id)
+
+                lines.append(f"**{i + 1}.** {mention} — **{elo}** ELO ({display})")
+
+            embed = discord.Embed(
+                title="Top 16 for free Bannana Dancer",
+                description="\n".join(lines),
+                color=discord.Color.gold(),
+            )
+            embed.set_footer(text=f"Requested by {ctx.author.display_name}")
+            await ctx.send(embed=embed)
+        except Exception as e:
+            logger.error(f"top16 error: {e}")
+            await ctx.send("Error fetching top 16. See logs for details.")
+
     @commands.command()
     @commands.has_permissions(administrator=True)
     async def remove_player(self, ctx, user: discord.Member = None):

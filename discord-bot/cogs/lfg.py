@@ -3702,8 +3702,8 @@ class LFGCog(commands.Cog):
             logger.error(f"eligible_for_masters_braket error: {e}")
             await ctx.send("Error fetching eligible players. See logs for details.")
 
-    @commands.command(name="top16")
-    async def top_16_free_entryx(self, ctx):
+    @commands.command(name="top_16_free_entry")
+    async def top_16_free_entry(self, ctx):
         """Show top 16 ELO players (no role requirement)."""
         import sqlite3
 
@@ -3711,7 +3711,7 @@ class LFGCog(commands.Cog):
             conn = sqlite3.connect("elo.db")
             cur = conn.cursor()
             cur.execute(
-                "SELECT user_id, user_display_name, elo FROM overall_standings ORDER BY elo DESC LIMIT 16"
+                "SELECT user_id, user_display_name, elo FROM overall_standings ORDER BY elo DESC"
             )
             rows = cur.fetchall()
             conn.close()
@@ -3720,8 +3720,14 @@ class LFGCog(commands.Cog):
                 await ctx.send("No ELO standings available.")
                 return
 
+            ROLE_IDS = {1445433610609102990, 1455669646370799667}
+
             lines = []
-            for i, (user_id, display_name, elo) in enumerate(rows):
+            count = 0
+            for user_id, display_name, elo in rows:
+                if count >= 16:
+                    break
+
                 mention = None
                 display = display_name or ""
                 try:
@@ -3729,20 +3735,25 @@ class LFGCog(commands.Cog):
                 except Exception:
                     uid = None
 
+                # If member exists in this guild and has any excluded role, skip them
                 if ctx.guild and uid:
                     member = ctx.guild.get_member(uid)
                     if member:
+                        if any(r.id in ROLE_IDS for r in member.roles):
+                            continue
                         mention = member.mention
                         display = display_name or (member.display_name or member.name)
 
                 if not mention:
+                    # If user not in guild, assume they don't have the excluded roles and include them
                     mention = display or str(user_id)
 
-                lines.append(f"**{i + 1}.** {mention} — **{elo}** ELO ({display})")
+                count += 1
+                lines.append(f"**{count}.** {mention} — **{elo}** ELO ({display})")
 
             embed = discord.Embed(
-                title="Top 16 for free Bannana Dancer",
-                description="\n".join(lines),
+                title="Top 16 — Eligible (without specified roles)",
+                description="\n".join(lines) if lines else "No eligible players found.",
                 color=discord.Color.gold(),
             )
             embed.set_footer(text=f"Requested by {ctx.author.display_name}")

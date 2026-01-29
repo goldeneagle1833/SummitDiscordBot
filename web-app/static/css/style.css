@@ -1091,6 +1091,41 @@ footer {
   font-style: italic;
 }
 
+/* Collapsible Sections */
+.collapsible-header {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  user-select: none;
+  transition: color var(--transition-fast);
+}
+
+.collapsible-header:hover {
+  color: var(--color-primary);
+}
+
+.collapsible-header .chevron {
+  display: inline-block;
+  transition: transform var(--transition-fast);
+  font-size: 0.8em;
+}
+
+.collapsible-header.collapsed .chevron {
+  transform: rotate(-90deg);
+}
+
+.collapsible-content {
+  transition: opacity var(--transition-fast), max-height var(--transition-fast);
+  opacity: 1;
+  overflow: hidden;
+}
+
+.collapsible-content.collapsed {
+  max-height: 0;
+  opacity: 0;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .hero h1 {

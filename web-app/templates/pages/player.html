@@ -76,16 +76,22 @@
           class="elo-chart-section"
           id="elo-chart-section"
           style="display: none">
-          <h3>📈 ELO History</h3>
-          <div class="elo-chart-container">
+          <h3 class="collapsible-header collapsed" id="elo-chart-section-header">
+            <span class="chevron">▼</span>
+            📈 ELO History
+          </h3>
+          <div class="elo-chart-container collapsible-content collapsed" id="elo-chart-container">
             <canvas id="elo-chart"></canvas>
           </div>
         </div>
 
         <!-- Avatar Performance -->
         <div class="avatar-section" id="avatar-section" style="display: none">
-          <h3>🎭 Avatar Performance</h3>
-          <div class="avatar-grid" id="avatar-grid">
+          <h3 class="collapsible-header" id="avatar-section-header">
+            <span class="chevron">▼</span>
+            🎭 Avatar Performance
+          </h3>
+          <div class="avatar-grid collapsible-content" id="avatar-grid">
             <!-- Avatar cards will be inserted here by JS -->
           </div>
         </div>
@@ -95,8 +101,11 @@
           class="avatar-matchup-section"
           id="avatar-matchup-section"
           style="display: none">
-          <h3>⚔️ Performance Against Other Avatars</h3>
-          <div class="avatar-grid" id="avatar-matchup-grid">
+          <h3 class="collapsible-header" id="avatar-matchup-section-header">
+            <span class="chevron">▼</span>
+            ⚔️ Performance Against Other Avatars
+          </h3>
+          <div class="avatar-grid collapsible-content" id="avatar-matchup-grid">
             <!-- Avatar matchup cards will be inserted here by JS -->
           </div>
         </div>
@@ -106,8 +115,11 @@
           class="recent-decks-section"
           id="recent-decks-section"
           style="display: none">
-          <h3>🃏 Recent Decks</h3>
-          <div class="recent-decks-list" id="recent-decks-list">
+          <h3 class="collapsible-header collapsed" id="recent-decks-section-header">
+            <span class="chevron">▼</span>
+            🃏 Recent Decks
+          </h3>
+          <div class="recent-decks-list collapsible-content collapsed" id="recent-decks-list">
             <!-- Recent deck links will be inserted here by JS -->
           </div>
         </div>
@@ -794,10 +806,54 @@
         }
       }
 
+      // Setup collapsible sections
+      function setupCollapsibleSections() {
+        const collapsibleHeaders = document.querySelectorAll('.collapsible-header');
+
+        collapsibleHeaders.forEach(header => {
+          header.addEventListener('click', () => {
+            // Toggle collapsed state on header
+            header.classList.toggle('collapsed');
+
+            // Find the next sibling that's the collapsible content
+            const content = header.nextElementSibling;
+            if (content && content.classList.contains('collapsible-content')) {
+              content.classList.toggle('collapsed');
+            }
+
+            // Save state to localStorage
+            const sectionId = header.id.replace('-header', '');
+            const isCollapsed = header.classList.contains('collapsed');
+            localStorage.setItem(`section-collapsed-${sectionId}`, isCollapsed);
+          });
+
+          // Restore state from localStorage if it exists
+          const sectionId = header.id.replace('-header', '');
+          const savedState = localStorage.getItem(`section-collapsed-${sectionId}`);
+          if (savedState !== null) {
+            const wasCollapsed = savedState === 'true';
+            if (wasCollapsed && !header.classList.contains('collapsed')) {
+              header.classList.add('collapsed');
+              const content = header.nextElementSibling;
+              if (content && content.classList.contains('collapsible-content')) {
+                content.classList.add('collapsed');
+              }
+            } else if (!wasCollapsed && header.classList.contains('collapsed')) {
+              header.classList.remove('collapsed');
+              const content = header.nextElementSibling;
+              if (content && content.classList.contains('collapsible-content')) {
+                content.classList.remove('collapsed');
+              }
+            }
+          }
+        });
+      }
+
       // Initialize modal when page loads
       document.addEventListener('DOMContentLoaded', () => {
         loadAvatars();
         setupToggleButtons();
+        setupCollapsibleSections();
 
         // Event listeners
         document.getElementById('record-game-btn')?.addEventListener('click', showRecordGameModal);

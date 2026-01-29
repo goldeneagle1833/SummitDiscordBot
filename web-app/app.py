@@ -681,9 +681,7 @@ def top_8_event(event_folder):
     for csv_file in csv_files:
         if "element" in csv_file.name.lower():
             elements_csv = csv_file
-        elif not any(
-            x in csv_file.name.lower() for x in ["element", "top8", "top 8"]
-        ):
+        elif not any(x in csv_file.name.lower() for x in ["element", "top8", "top 8"]):
             cards_csv = csv_file
 
     element_data = []
@@ -697,7 +695,7 @@ def top_8_event(event_folder):
                 for row in reader:
                     element_data.append(
                         {
-                            "elements": row.get("Deck Elements", "").strip('"()\' '),
+                            "elements": row.get("Deck Elements", "").strip("\"()' "),
                             "count": row.get(" Count", row.get("Count", "0")),
                         }
                     )
@@ -1742,7 +1740,9 @@ def player_api(player_id):
     )
 
     # On the draw stats
-    draw_matches = sum(1 for row in all_rows if row[1] and "y" not in str(row[1]).lower())
+    draw_matches = sum(
+        1 for row in all_rows if row[1] and "y" not in str(row[1]).lower()
+    )
     draw_wins = sum(
         1 for row in all_rows if row[0] and row[1] and "y" not in str(row[1]).lower()
     )
@@ -1816,7 +1816,9 @@ def player_api(player_id):
         did_win = row[0]
         winner_json = row[13] if len(row) > 13 else None  # json_deck_data_winner
         loser_json = row[14] if len(row) > 14 else None  # json_deck_data_loser
-        opponent_name = row[5]  # opponent name from either regular matches or solo reports
+        opponent_name = row[
+            5
+        ]  # opponent name from either regular matches or solo reports
 
         opponent_avatar_name = None
 
@@ -2025,21 +2027,27 @@ def player_api(player_id):
 
     # Build recorded games list (self-reported games from solo_match_reports)
     recorded_games = []
-    sorted_solo_rows = sorted(solo_rows, key=lambda x: x[6] if x[6] else "", reverse=True)
+    sorted_solo_rows = sorted(
+        solo_rows, key=lambda x: x[6] if x[6] else "", reverse=True
+    )
     for row in sorted_solo_rows[:50]:
         did_win = row[0]
         opponent_name = row[5]  # opponent_name from solo_match_reports
         deck_url = row[9]  # curiosa_link
 
-        recorded_games.append({
-            "report_id": row[12],  # report_id
-            "opponent": opponent_name,
-            "result": "Win" if did_win else "Loss",
-            "date": row[6],  # report_date
-            "first_player": "Yes" if row[1] and "y" in str(row[1]).lower() else "No",
-            "match_time": row[3] if row[3] else None,
-            "deck_url": deck_url,
-        })
+        recorded_games.append(
+            {
+                "report_id": row[12],  # report_id
+                "opponent": opponent_name,
+                "result": "Win" if did_win else "Loss",
+                "date": row[6],  # report_date
+                "first_player": "Yes"
+                if row[1] and "y" in str(row[1]).lower()
+                else "No",
+                "match_time": row[3] if row[3] else None,
+                "deck_url": deck_url,
+            }
+        )
 
     return jsonify(
         {
@@ -2624,7 +2632,9 @@ def list_all_avatars():
     import json
 
     try:
-        all_cards_path = Path(__file__).parent / "curiosa-io-tools" / "All_Cards_Array.json"
+        all_cards_path = (
+            Path(__file__).parent / "curiosa-io-tools" / "All_Cards_Array.json"
+        )
         with open(all_cards_path, "r", encoding="utf-8") as f:
             all_cards = json.load(f)
 
@@ -2650,6 +2660,7 @@ def list_all_avatars():
 def record_game():
     """
     API endpoint for users to record personal match results (non-ELO).
+    Directly inserts into solo_match_reports table.
     Requires user to be logged in via session.
     """
     # Check authentication
@@ -2683,37 +2694,47 @@ def record_game():
         # Construct opponent name from avatar
         opponent_name = f"Opponent ({opponent_avatar})"
 
-        # Import database function
-        from utils.database import solo_match_report
-        import asyncio
-
-        # Save the report
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
+        # Insert directly into solo_match_reports table
         try:
-            report_id = loop.run_until_complete(
-                solo_match_report(
-                    reporter_id=int(user_id),
-                    reporter_global=username,
-                    opponent_name=opponent_name,
-                    is_winner=did_win,
-                    first_player=went_first,
-                    match_time=match_time,
-                    curiosa_link=deck_url,
-                    match_comment=match_comment,
-                )
-            )
-        finally:
-            loop.close()
+            conn = sqlite3.connect("../discord-bot/match_records.db")
+            cur = conn.cursor()
 
-        return jsonify(
-            {
-                "success": True,
-                "report_id": report_id,
-                "message": "Game recorded successfully",
-            }
-        )
+            cur.execute(
+                """INSERT INTO solo_match_reports
+                   (reporter_id, reporter_name, opponent_name, is_winner,
+                    first_player, match_time, curiosa_link, match_comment,
+                    report_date, json_deck_data)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)""",
+                (
+                    int(user_id),
+                    username,
+                    opponent_name,
+                    did_win,
+                    went_first,
+                    match_time,
+                    deck_url,
+                    match_comment,
+                    "{}",
+                ),
+            )
+
+            # Get the inserted row ID
+            report_id = cur.lastrowid
+
+            conn.commit()
+            conn.close()
+
+            return jsonify(
+                {
+                    "success": True,
+                    "report_id": report_id,
+                    "message": "Game recorded successfully",
+                }
+            )
+
+        except sqlite3.Error as e:
+            logger.error(f"Database error recording game: {e}", exc_info=True)
+            return jsonify({"error": "Failed to save to database", "success": False}), 500
 
     except ValueError as e:
         return jsonify({"error": f"Invalid data: {str(e)}", "success": False}), 400
@@ -2746,9 +2767,7 @@ def delete_recorded_game(report_id):
         if not row:
             conn.close()
             return (
-                jsonify(
-                    {"error": "Recorded game not found", "success": False}
-                ),
+                jsonify({"error": "Recorded game not found", "success": False}),
                 404,
             )
 

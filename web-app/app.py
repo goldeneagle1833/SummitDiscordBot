@@ -416,7 +416,7 @@ def cards():
 
 @app.route("/elements")
 def elements():
-    """Elemental winrates page - restricted to allowed Discord users"""
+    """Elemental winrates page"""
     return render_template("pages/elements.html")
 
 
@@ -2366,10 +2366,7 @@ def cards_api():
 
 @app.route("/api/elements")
 def elements_api():
-    """API endpoint for elemental winrates from all matches with deck data - restricted access"""
-    if not is_allowed_card_viewer():
-        return jsonify({"error": "Unauthorized"}), 403
-
+    """API endpoint for elemental winrates from all matches with deck data"""
     import json
 
     # Load All_Cards_Array.json for card name -> element lookup

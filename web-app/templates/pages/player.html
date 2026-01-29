@@ -124,6 +124,31 @@
             </tbody>
           </table>
         </div>
+
+        <!-- Self-Reported Games (only shown to profile owner) -->
+        <div class="match-history" id="recorded-games-section" style="display: none;">
+          <h3>📝 Self-Reported Games</h3>
+          <p style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-md);">
+            Games you've recorded for personal tracking. These do not affect your ELO rating.
+          </p>
+          <table class="match-history-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Result</th>
+                <th>Opponent Avatar</th>
+                <th>Deck Link</th>
+                <th>Play/Draw</th>
+                <th>Time</th>
+                <th>Date</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="recorded-games-tbody">
+              <!-- Recorded games rows will be inserted here by JS -->
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- Record Game Modal -->
@@ -492,7 +517,6 @@
                 <th>Play/Draw</th>
                 <th>Time</th>
                 <th>Date</th>
-                <th>Action</th>
               </tr>
             `;
           } else {
@@ -514,7 +538,7 @@
           const tbody = document.getElementById("match-history-tbody");
           tbody.innerHTML = "";
 
-          const colspanCount = data.is_owner ? 11 : 8;
+          const colspanCount = data.is_owner ? 10 : 8;
           if (data.matches.length === 0) {
             tbody.innerHTML = `<tr><td colspan="${colspanCount}" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>`;
             return;
@@ -550,12 +574,6 @@
                 snapshotLink = `<a href="/deck-snapshot/${match.match_id}/${playerId}" class="snapshot-link" title="View deck snapshot">View</a>`;
               }
 
-              // Check if this is a recorded game (opponent_id === 0 means it's from solo_match_reports)
-              let actionCell = "-";
-              if (match.opponent_id === 0) {
-                actionCell = `<button class="delete-recorded-game-btn" data-report-id="${match.match_id}" style="background: #d32f2f; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">Delete</button>`;
-              }
-
               row.innerHTML = `
                 <td class="match-id">${matchId}</td>
                 <td class="${resultClass}">${match.result}</td>
@@ -569,7 +587,6 @@
                 <td>${match.first_player || "-"}</td>
                 <td>${matchTime}</td>
                 <td>${date}</td>
-                <td>${actionCell}</td>
               `;
             } else {
               // Public view - show submitted status only
@@ -588,6 +605,39 @@
             }
             tbody.appendChild(row);
           });
+
+          // Render self-reported games (only for profile owner)
+          if (data.is_owner && data.recorded_games && data.recorded_games.length > 0) {
+            document.getElementById("recorded-games-section").style.display = "block";
+            const recordedTbody = document.getElementById("recorded-games-tbody");
+            recordedTbody.innerHTML = "";
+
+            data.recorded_games.forEach((game) => {
+              const row = document.createElement("tr");
+              const resultClass = game.result === "Win" ? "match-win" : "match-loss";
+              const date = new Date(game.date).toLocaleDateString();
+              const matchTime = game.match_time ? `${game.match_time} min` : "-";
+              const reportId = game.report_id ? `#${game.report_id}` : "-";
+
+              // Create deck link if available
+              let deckLink = "-";
+              if (game.deck_url && game.deck_url !== "No URL provided") {
+                deckLink = `<a href="${game.deck_url}" target="_blank" class="deck-link" title="View deck on Curiosa">🔗</a>`;
+              }
+
+              row.innerHTML = `
+                <td class="match-id">${reportId}</td>
+                <td class="${resultClass}">${game.result}</td>
+                <td>${game.opponent}</td>
+                <td>${deckLink}</td>
+                <td>${game.first_player || "-"}</td>
+                <td>${matchTime}</td>
+                <td>${date}</td>
+                <td><button class="delete-recorded-game-btn" data-report-id="${game.report_id}" style="background: #d32f2f; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">Delete</button></td>
+              `;
+              recordedTbody.appendChild(row);
+            });
+          }
 
           // Add event listeners for delete buttons
           document.querySelectorAll('.delete-recorded-game-btn').forEach(btn => {
@@ -615,8 +665,8 @@
           const data = await res.json();
 
           if (res.ok && data.success) {
-            alert('Recorded game deleted successfully!');
             fetchPlayerData(); // Refresh the page data
+            alert('Recorded game deleted successfully!');
           } else {
             alert('Error: ' + (data.error || 'Failed to delete game'));
           }
@@ -732,9 +782,9 @@
           const data = await res.json();
 
           if (res.ok && data.success) {
-            alert('Game recorded successfully!');
             hideRecordGameModal();
             fetchPlayerData(); // Refresh the page data
+            alert('Game recorded successfully!');
           } else {
             alert('Error: ' + (data.error || 'Failed to record game'));
           }

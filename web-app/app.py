@@ -1688,11 +1688,16 @@ def player_api(player_id):
         return jsonify({"error": "Player not found"}), 404
 
     # Get player name from their most recent match
-    first_match = rows[0]
-    if first_match[0]:  # did_win is True, so player was winner
-        player_name = first_match[4]  # winner_display_name
-    else:
-        player_name = first_match[5]  # losser_display_name
+    player_name = None
+    if rows:
+        first_match = rows[0]
+        if first_match[0]:  # did_win is True, so player was winner
+            player_name = first_match[4]  # winner_display_name
+        else:
+            player_name = first_match[5]  # losser_display_name
+    elif solo_rows:
+        # Fallback to solo_match_reports reporter_name
+        player_name = solo_rows[0][4]  # reporter_name
 
     # Try to get player ELO from elo.db if available
     player_elo = 1500  # Default ELO
@@ -1811,40 +1816,49 @@ def player_api(player_id):
         did_win = row[0]
         winner_json = row[13] if len(row) > 13 else None  # json_deck_data_winner
         loser_json = row[14] if len(row) > 14 else None  # json_deck_data_loser
+        opponent_name = row[5]  # opponent name from either regular matches or solo reports
 
-        # Get OPPONENT's deck based on match outcome
-        # If player won → opponent is the loser → use loser's deck
-        # If player lost → opponent is the winner → use winner's deck
+        opponent_avatar_name = None
+
+        # Try to get opponent's avatar from deck JSON (regular matches)
         opponent_deck_json = loser_json if did_win else winner_json
 
-        # No fallback to old json_deck_data - it only had reporter's deck, not opponent's
-        if not opponent_deck_json or opponent_deck_json == "{}":
+        if opponent_deck_json and opponent_deck_json != "{}":
+            try:
+                deck_data = json.loads(opponent_deck_json)
+                # Skip if deck_data is empty or has no avatar
+                if deck_data and deck_data.get("avatar"):
+                    avatar = deck_data.get("avatar", [])
+                    if avatar and avatar[0] and avatar[0].get("name"):
+                        opponent_avatar_name = avatar[0].get("name")
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                pass
+
+        # For recorded games (solo reports), extract opponent avatar from opponent_name
+        # Format: "Opponent (Avatar Name)"
+        if not opponent_avatar_name and opponent_name and "Opponent (" in opponent_name:
+            try:
+                # Extract avatar name from "Opponent (Avatar Name)"
+                start = opponent_name.find("(") + 1
+                end = opponent_name.find(")")
+                if start > 0 and end > start:
+                    opponent_avatar_name = opponent_name[start:end].strip()
+            except (IndexError, ValueError):
+                pass
+
+        if not opponent_avatar_name:
             continue
 
-        try:
-            deck_data = json.loads(opponent_deck_json)
-            # Skip if deck_data is empty or has no avatar
-            if not deck_data or not deck_data.get("avatar"):
-                continue
+        if opponent_avatar_name not in opponent_avatar_stats:
+            opponent_avatar_stats[opponent_avatar_name] = {
+                "wins": 0,
+                "losses": 0,
+            }
 
-            avatar = deck_data.get("avatar", [])
-            if not avatar or not avatar[0] or not avatar[0].get("name"):
-                continue
-
-            opponent_avatar_name = avatar[0].get("name")
-
-            if opponent_avatar_name not in opponent_avatar_stats:
-                opponent_avatar_stats[opponent_avatar_name] = {
-                    "wins": 0,
-                    "losses": 0,
-                }
-
-            if did_win:
-                opponent_avatar_stats[opponent_avatar_name]["wins"] += 1
-            else:
-                opponent_avatar_stats[opponent_avatar_name]["losses"] += 1
-        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-            continue
+        if did_win:
+            opponent_avatar_stats[opponent_avatar_name]["wins"] += 1
+        else:
+            opponent_avatar_stats[opponent_avatar_name]["losses"] += 1
 
     # Format avatar matchup records for response
     avatar_matchups = []
@@ -1872,10 +1886,10 @@ def player_api(player_id):
     if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
         is_owner = True
 
-    # Build match history (last 50 matches, sorted with newest first)
+    # Build match history (last 50 official matches, sorted with newest first)
     match_history = []
-    # Sort all_rows by date (index 6) in descending order
-    sorted_rows = sorted(all_rows, key=lambda x: x[6] if x[6] else "", reverse=True)
+    # Sort regular matches only (not solo reports) by date (index 6) in descending order
+    sorted_rows = sorted(rows, key=lambda x: x[6] if x[6] else "", reverse=True)
     for row in sorted_rows[:50]:
         did_win = row[0]
         opponent_name = row[5] if did_win else row[4]
@@ -2009,6 +2023,24 @@ def player_api(player_id):
             if len(recent_decks) >= 10:
                 break
 
+    # Build recorded games list (self-reported games from solo_match_reports)
+    recorded_games = []
+    sorted_solo_rows = sorted(solo_rows, key=lambda x: x[6] if x[6] else "", reverse=True)
+    for row in sorted_solo_rows[:50]:
+        did_win = row[0]
+        opponent_name = row[5]  # opponent_name from solo_match_reports
+        deck_url = row[9]  # curiosa_link
+
+        recorded_games.append({
+            "report_id": row[12],  # report_id
+            "opponent": opponent_name,
+            "result": "Win" if did_win else "Loss",
+            "date": row[6],  # report_date
+            "first_player": "Yes" if row[1] and "y" in str(row[1]).lower() else "No",
+            "match_time": row[3] if row[3] else None,
+            "deck_url": deck_url,
+        })
+
     return jsonify(
         {
             "id": player_id,
@@ -2030,6 +2062,7 @@ def player_api(player_id):
             "avatar_matchups": avatar_matchups if is_owner else [],
             "recent_decks": recent_decks if is_owner else [],
             "matches": match_history,
+            "recorded_games": recorded_games if is_owner else [],
             "is_owner": is_owner,
         }
     )

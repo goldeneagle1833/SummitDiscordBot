@@ -1649,7 +1649,42 @@ def player_api(player_id):
 
     conn.close()
 
-    if not rows:
+    # Also get recorded games from solo_match_reports
+    solo_rows = []
+    try:
+        solo_conn = sqlite3.connect("../discord-bot/match_records.db")
+        solo_cur = solo_conn.cursor()
+        solo_cur.execute(
+            """
+            SELECT
+                is_winner,
+                first_player,
+                json_deck_data,
+                match_time,
+                reporter_name,
+                opponent_name,
+                report_date,
+                0 as elo_change,
+                0 as elo_change_2,
+                curiosa_link,
+                reporter_id,
+                0 as opponent_id,
+                report_id as match_id
+            FROM solo_match_reports
+            WHERE reporter_id = ?
+            ORDER BY report_date DESC
+            """,
+            (player_id,),
+        )
+        solo_rows = solo_cur.fetchall()
+        solo_conn.close()
+    except Exception as e:
+        logger.warning(f"Could not fetch solo_match_reports: {e}")
+
+    # Combine regular and recorded matches
+    all_rows = rows + solo_rows
+
+    if not rows and not solo_rows:
         return jsonify({"error": "Player not found"}), 404
 
     # Get player name from their most recent match
@@ -1682,18 +1717,18 @@ def player_api(player_id):
     except sqlite3.OperationalError:
         pass  # Table doesn't exist yet
 
-    # Calculate detailed stats
-    total_matches = len(rows)
-    wins = sum(1 for row in rows if row[0])
+    # Calculate detailed stats using all matches (regular + recorded)
+    total_matches = len(all_rows)
+    wins = sum(1 for row in all_rows if row[0])
     losses = total_matches - wins
     win_rate = (wins / total_matches * 100) if total_matches > 0 else 0
 
     # First player (on the play) stats
     first_player_matches = sum(
-        1 for row in rows if row[1] and "y" in str(row[1]).lower()
+        1 for row in all_rows if row[1] and "y" in str(row[1]).lower()
     )
     first_player_wins = sum(
-        1 for row in rows if row[0] and row[1] and "y" in str(row[1]).lower()
+        1 for row in all_rows if row[0] and row[1] and "y" in str(row[1]).lower()
     )
     first_player_win_rate = (
         (first_player_wins / first_player_matches * 100)
@@ -1702,23 +1737,23 @@ def player_api(player_id):
     )
 
     # On the draw stats
-    draw_matches = sum(1 for row in rows if row[1] and "y" not in str(row[1]).lower())
+    draw_matches = sum(1 for row in all_rows if row[1] and "y" not in str(row[1]).lower())
     draw_wins = sum(
-        1 for row in rows if row[0] and row[1] and "y" not in str(row[1]).lower()
+        1 for row in all_rows if row[0] and row[1] and "y" not in str(row[1]).lower()
     )
     draw_win_rate = (draw_wins / draw_matches * 100) if draw_matches > 0 else 0
 
     # Average match time
     match_times = [
         float(row[3])
-        for row in rows
+        for row in all_rows
         if row[3] and str(row[3]).replace(".", "").isdigit()
     ]
     avg_match_time = sum(match_times) / len(match_times) if match_times else 0
 
     # Avatar stats - player's OWN avatars (what they played with)
     avatar_stats = {}
-    for row in rows:
+    for row in all_rows:
         did_win = row[0]
         winner_json = row[13] if len(row) > 13 else None  # json_deck_data_winner
         loser_json = row[14] if len(row) > 14 else None  # json_deck_data_loser
@@ -1772,7 +1807,7 @@ def player_api(player_id):
 
     # Avatar matchup records (opponents' avatars)
     opponent_avatar_stats = {}
-    for row in rows:
+    for row in all_rows:
         did_win = row[0]
         winner_json = row[13] if len(row) > 13 else None  # json_deck_data_winner
         loser_json = row[14] if len(row) > 14 else None  # json_deck_data_loser
@@ -1837,9 +1872,11 @@ def player_api(player_id):
     if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
         is_owner = True
 
-    # Build match history (last 50 matches)
+    # Build match history (last 50 matches, sorted with newest first)
     match_history = []
-    for row in rows[:50]:
+    # Sort all_rows by date (index 6) in descending order
+    sorted_rows = sorted(all_rows, key=lambda x: x[6] if x[6] else "", reverse=True)
+    for row in sorted_rows[:50]:
         did_win = row[0]
         opponent_name = row[5] if did_win else row[4]
         # When player won, opponent is the loser (losser_id at index 11)
@@ -1922,7 +1959,7 @@ def player_api(player_id):
     recent_decks = []
     if is_owner:
         seen_urls = set()
-        for row in rows:
+        for row in all_rows:
             did_win = row[0]
             winner_deck_url = row[15] if len(row) > 15 else row[9]
             loser_deck_url = row[16] if len(row) > 16 else None
@@ -2649,6 +2686,65 @@ def record_game():
         return jsonify({"error": f"Invalid data: {str(e)}", "success": False}), 400
     except Exception as e:
         logger.error(f"Error recording game: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error", "success": False}), 500
+
+
+@app.route("/api/delete-recorded-game/<int:report_id>", methods=["DELETE"])
+def delete_recorded_game(report_id):
+    """
+    API endpoint to delete a recorded game (solo_match_report).
+    Only the owner of the report can delete it.
+    """
+    # Check authentication
+    user_id = session.get("user_id")
+    if user_id is None:
+        return jsonify({"error": "Authentication required", "success": False}), 401
+
+    try:
+        # Check if the report belongs to this user
+        conn = sqlite3.connect("../discord-bot/match_records.db")
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT reporter_id FROM solo_match_reports WHERE report_id = ?",
+            (report_id,),
+        )
+        row = cur.fetchone()
+
+        if not row:
+            conn.close()
+            return (
+                jsonify(
+                    {"error": "Recorded game not found", "success": False}
+                ),
+                404,
+            )
+
+        if int(row[0]) != int(user_id):
+            conn.close()
+            return (
+                jsonify(
+                    {
+                        "error": "You can only delete your own recorded games",
+                        "success": False,
+                    }
+                ),
+                403,
+            )
+
+        # Delete the report
+        cur.execute("DELETE FROM solo_match_reports WHERE report_id = ?", (report_id,))
+        conn.commit()
+        conn.close()
+
+        return jsonify(
+            {
+                "success": True,
+                "message": "Recorded game deleted successfully",
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error deleting recorded game: {e}", exc_info=True)
         return jsonify({"error": "Internal server error", "success": False}), 500
 
 

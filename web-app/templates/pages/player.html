@@ -492,6 +492,7 @@
                 <th>Play/Draw</th>
                 <th>Time</th>
                 <th>Date</th>
+                <th>Action</th>
               </tr>
             `;
           } else {
@@ -513,7 +514,7 @@
           const tbody = document.getElementById("match-history-tbody");
           tbody.innerHTML = "";
 
-          const colspanCount = data.is_owner ? 10 : 8;
+          const colspanCount = data.is_owner ? 11 : 8;
           if (data.matches.length === 0) {
             tbody.innerHTML = `<tr><td colspan="${colspanCount}" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>`;
             return;
@@ -549,6 +550,12 @@
                 snapshotLink = `<a href="/deck-snapshot/${match.match_id}/${playerId}" class="snapshot-link" title="View deck snapshot">View</a>`;
               }
 
+              // Check if this is a recorded game (opponent_id === 0 means it's from solo_match_reports)
+              let actionCell = "-";
+              if (match.opponent_id === 0) {
+                actionCell = `<button class="delete-recorded-game-btn" data-report-id="${match.match_id}" style="background: #d32f2f; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">Delete</button>`;
+              }
+
               row.innerHTML = `
                 <td class="match-id">${matchId}</td>
                 <td class="${resultClass}">${match.result}</td>
@@ -562,6 +569,7 @@
                 <td>${match.first_player || "-"}</td>
                 <td>${matchTime}</td>
                 <td>${date}</td>
+                <td>${actionCell}</td>
               `;
             } else {
               // Public view - show submitted status only
@@ -580,10 +588,41 @@
             }
             tbody.appendChild(row);
           });
+
+          // Add event listeners for delete buttons
+          document.querySelectorAll('.delete-recorded-game-btn').forEach(btn => {
+            btn.addEventListener('click', deleteRecordedGame);
+          });
         } catch (error) {
           document.getElementById("player-name").textContent =
             "Error loading player";
           console.error(error);
+        }
+      }
+
+      // Delete a recorded game
+      async function deleteRecordedGame(e) {
+        const reportId = e.target.getAttribute('data-report-id');
+        if (!confirm('Are you sure you want to delete this recorded game?')) {
+          return;
+        }
+
+        try {
+          const res = await fetch(`/api/delete-recorded-game/${reportId}`, {
+            method: 'DELETE'
+          });
+
+          const data = await res.json();
+
+          if (res.ok && data.success) {
+            alert('Recorded game deleted successfully!');
+            fetchPlayerData(); // Refresh the page data
+          } else {
+            alert('Error: ' + (data.error || 'Failed to delete game'));
+          }
+        } catch (error) {
+          console.error('Delete error:', error);
+          alert('Failed to delete. Please try again.');
         }
       }
 

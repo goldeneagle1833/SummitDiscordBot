@@ -2548,6 +2548,110 @@ def rules_assistant_api():
         ), 500
 
 
+@app.route("/api/list-all-avatars")
+def list_all_avatars():
+    """API endpoint to get all available avatar cards from All_Cards_Array.json"""
+    import json
+
+    try:
+        all_cards_path = Path(__file__).parent / "curiosa-io-tools" / "All_Cards_Array.json"
+        with open(all_cards_path, "r", encoding="utf-8") as f:
+            all_cards = json.load(f)
+
+        # Extract only cards with type "Avatar"
+        avatar_names = []
+        for card in all_cards:
+            guardian = card.get("guardian", {})
+            if guardian.get("type") == "Avatar":
+                name = card.get("name", "").strip()
+                if name:
+                    avatar_names.append({"name": name})
+
+        # Sort alphabetically
+        avatar_names.sort(key=lambda x: x["name"])
+
+        return jsonify(avatar_names)
+    except Exception as e:
+        logger.error(f"Error loading avatars: {e}")
+        return jsonify([])
+
+
+@app.route("/api/record-game", methods=["POST"])
+def record_game():
+    """
+    API endpoint for users to record personal match results (non-ELO).
+    Requires user to be logged in via session.
+    """
+    # Check authentication
+    user_id = session.get("user_id")
+    if user_id is None:
+        return jsonify({"error": "Authentication required", "success": False}), 401
+
+    username = session.get("username", "Unknown User")
+
+    try:
+        data = request.get_json()
+
+        # Validate required fields
+        required = ["deck_url", "opponent_avatar", "did_win", "went_first"]
+        missing = [f for f in required if f not in data]
+        if missing:
+            return jsonify(
+                {
+                    "error": f"Missing required fields: {', '.join(missing)}",
+                    "success": False,
+                }
+            ), 400
+
+        deck_url = str(data["deck_url"]).strip()
+        opponent_avatar = str(data["opponent_avatar"]).strip()
+        did_win = bool(data["did_win"])
+        went_first = "y" if data["went_first"] else "n"
+        match_time = int(data.get("match_time", 0))
+        match_comment = str(data.get("match_comment", "")).strip()
+
+        # Construct opponent name from avatar
+        opponent_name = f"Opponent ({opponent_avatar})"
+
+        # Import database function
+        from utils.database import solo_match_report
+        import asyncio
+
+        # Save the report
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            report_id = loop.run_until_complete(
+                solo_match_report(
+                    reporter_id=int(user_id),
+                    reporter_global=username,
+                    opponent_name=opponent_name,
+                    is_winner=did_win,
+                    first_player=went_first,
+                    match_time=match_time,
+                    curiosa_link=deck_url,
+                    match_comment=match_comment,
+                )
+            )
+        finally:
+            loop.close()
+
+        return jsonify(
+            {
+                "success": True,
+                "report_id": report_id,
+                "message": "Game recorded successfully",
+            }
+        )
+
+    except ValueError as e:
+        return jsonify({"error": f"Invalid data: {str(e)}", "success": False}), 400
+    except Exception as e:
+        logger.error(f"Error recording game: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error", "success": False}), 500
+
+
 @app.route("/avatar-images/<path:filename>")
 def avatar_images(filename):
     """Serve avatar images from templates/avatar_imgs folder"""

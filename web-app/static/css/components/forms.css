@@ -31,6 +31,17 @@
   transition: all var(--transition-fast);
 }
 
+/* Improved select styling for better contrast */
+.form-select {
+  background: rgba(0, 0, 0, 0.3);
+  color: #f0f6fc;
+}
+
+.form-select option {
+  background: #0d1117;
+  color: #f0f6fc;
+}
+
 .form-input:focus,
 .form-select:focus,
 .form-textarea:focus {

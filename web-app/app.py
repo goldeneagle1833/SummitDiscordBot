@@ -614,6 +614,8 @@ def top_8():
 @app.route("/top-8/<event_folder>")
 def top_8_event(event_folder):
     """Display Top 8 decks for a specific event"""
+    import csv
+
     event_path = TOP_8_DIR / event_folder
 
     if not event_path.exists():
@@ -671,12 +673,71 @@ def top_8_event(event_folder):
         except Exception as e:
             print(f"Error loading full event: {e}")
 
+    # Look for CSV files for statistics
+    csv_files = list(event_path.glob("*.csv"))
+    elements_csv = None
+    cards_csv = None
+
+    for csv_file in csv_files:
+        if "element" in csv_file.name.lower():
+            elements_csv = csv_file
+        elif not any(
+            x in csv_file.name.lower() for x in ["element", "top8", "top 8"]
+        ):
+            cards_csv = csv_file
+
+    element_data = []
+    card_data = []
+
+    # Load element distribution data (optional - currently not displayed)
+    if elements_csv:
+        try:
+            with open(elements_csv, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    element_data.append(
+                        {
+                            "elements": row.get("Deck Elements", "").strip('"()\' '),
+                            "count": row.get(" Count", row.get("Count", "0")),
+                        }
+                    )
+        except Exception as e:
+            print(f"Error loading elements CSV: {e}")
+
+    # Load card statistics data
+    if cards_csv:
+        try:
+            with open(cards_csv, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    count = int(row.get("Count", 0))
+                    if count > 0:  # Only include cards with count > 0
+                        card_data.append(
+                            {
+                                "name": row.get("Name", "Unknown"),
+                                "type": row.get("Type", "Unknown"),
+                                "element": row.get("Element", "Unknown"),
+                                "count": count,
+                                "rarity": row.get("Rarity", "Unknown"),
+                                "avg_played": row.get("Average_Played", "0"),
+                                "deck_percent": row.get(
+                                    "Percent_of_Decks_with_at_least_one_copy", "0"
+                                ),
+                            }
+                        )
+            # Sort by count descending
+            card_data.sort(key=lambda x: x["count"], reverse=True)
+        except Exception as e:
+            print(f"Error loading cards CSV: {e}")
+
     return render_template(
         "pages/top_8_event.html",
         event_name=format_event_name(event_folder),
         event_folder=event_folder,
         top8_decks=top8_decks,
         all_decks=all_decks,
+        card_data=card_data,
+        element_data=element_data,
     )
 
 

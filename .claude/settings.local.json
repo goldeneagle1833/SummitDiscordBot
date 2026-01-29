@@ -16,7 +16,8 @@
       "Bash(git add:*)",
       "Bash(git fetch:*)",
       "Bash(sqlite3:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(git mv:*)"
     ]
   }
 }

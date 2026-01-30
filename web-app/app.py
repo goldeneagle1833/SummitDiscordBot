@@ -1905,8 +1905,8 @@ def player_api(player_id):
                 pass
 
         # For recorded games (solo reports), get opponent avatar from opponent_name
-        # New format: just the avatar name directly
-        # Old format: "Opponent (Avatar Name)" - for backwards compatibility
+        # Only use opponent_name as avatar if it's from solo_match_reports
+        # We can identify solo reports because they won't have player display names with special chars
         if not opponent_avatar_name and opponent_name:
             if "Opponent (" in opponent_name:
                 try:
@@ -1917,8 +1917,10 @@ def player_api(player_id):
                         opponent_avatar_name = opponent_name[start:end].strip()
                 except (IndexError, ValueError):
                     pass
-            else:
-                # New format: opponent_name is the avatar name directly
+            elif " - " not in opponent_name and len(opponent_name) < 30:
+                # New format: opponent_name is the avatar name directly (from solo reports)
+                # Only use it if it doesn't look like a player display name
+                # Player names usually have " - " separator or are longer
                 opponent_avatar_name = opponent_name
 
         if not opponent_avatar_name:

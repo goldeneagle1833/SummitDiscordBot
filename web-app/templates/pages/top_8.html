@@ -135,6 +135,21 @@
       .event-card.hidden {
         display: none;
       }
+
+      .event-rating {
+        display: flex;
+        gap: 0.2rem;
+        margin-top: 0.5rem;
+      }
+
+      .star {
+        color: #ffd700;
+        font-size: 1.1rem;
+      }
+
+      .star.empty {
+        color: rgba(255, 255, 255, 0.2);
+      }
     </style>
   </head>
   <body>
@@ -196,6 +211,15 @@
             data-folder="{{ event.folder|lower }}"
             href="/top-8/{{ event.folder }}">
             <h3>{{ event.name }}</h3>
+            <div class="event-rating">
+              {% for i in range(1, 4) %}
+                {% if i <= event.rating %}
+                  <span class="star">★</span>
+                {% else %}
+                  <span class="star empty">★</span>
+                {% endif %}
+              {% endfor %}
+            </div>
             <div class="event-meta">
               <span>{{ event.player_count }} decks</span>
             </div>

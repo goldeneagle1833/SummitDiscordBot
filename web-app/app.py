@@ -224,6 +224,36 @@ def get_rules_assistant():
 # Path to top-8 event data
 TOP_8_DIR = Path(__file__).parent / "top-8-decks-by-event"
 
+# Event star ratings (1-3 stars) - organized alphabetically
+# Add folder names here with their corresponding rating
+EVENT_RATINGS = {
+    "ColumbusExplor2025": 1,
+    "CortCup2024Stats": 2,
+    "EU Crossroads 2025": 3,
+    "Explorer96": 1,
+    "GenCon2023Stats": 3,
+    "GenCon2024Stats": 3,
+    "Gencon2025": 3,
+    "Houston SCGcon 2025 Crossroads": 3,
+    "King of the Realm Cornerstone in NYC - 2025": 1,
+    "OchoaDecklists": 1,
+    "SCG CON Baltimore 2025 Crossroads": 3,
+    "SCG Con Alanta 2026": 1,
+    "SCG Con Portland 2026": 1,
+    "SCG Con Vegas 2025 Crossroads": 3,
+    "SORCERY CON": 3,
+    "SS2": 1,
+    "Season6TTSLeage": 1,
+    "SorcerersSummit": 2,
+    "SorceryFest2025": 2,
+    "Sydney Cornerstone Top 4 2025": 1,
+    "TTSLeague2023champions": 1,
+    "TTSLeagueS3": 1,
+    "TTSLeagueS7topCut": 1,
+    "UnlandCup25": 1,
+    "Sorcerers Summit 'Bottom' 5 avatars": 1,
+}
+
 
 def extract_year_from_name(name):
     """Extract year from event name for sorting. Returns 0 if no year found."""
@@ -645,6 +675,9 @@ def top_8():
                                     "player_count": player_count,
                                     "has_top8": top8_json is not None,
                                     "has_full": full_json is not None,
+                                    "rating": EVENT_RATINGS.get(
+                                        folder.name, 1
+                                    ),  # Default to 1 star if not in dict
                                 }
                             )
                     except Exception as e:
@@ -1637,7 +1670,6 @@ def avatar_api(avatar_name):
 def player_api(player_id):
     import json
 
-
     # Get detailed match data from match_records db first
     conn = sqlite3.connect("../discord-bot/match_records.db")
     cur = conn.cursor()
@@ -1713,7 +1745,6 @@ def player_api(player_id):
             player_id_int = None
 
         if player_id_int is not None:
-
             query = """
                 SELECT
                     is_winner,

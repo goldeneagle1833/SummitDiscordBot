@@ -1904,17 +1904,22 @@ def player_api(player_id):
             except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                 pass
 
-        # For recorded games (solo reports), extract opponent avatar from opponent_name
-        # Format: "Opponent (Avatar Name)"
-        if not opponent_avatar_name and opponent_name and "Opponent (" in opponent_name:
-            try:
-                # Extract avatar name from "Opponent (Avatar Name)"
-                start = opponent_name.find("(") + 1
-                end = opponent_name.find(")")
-                if start > 0 and end > start:
-                    opponent_avatar_name = opponent_name[start:end].strip()
-            except (IndexError, ValueError):
-                pass
+        # For recorded games (solo reports), get opponent avatar from opponent_name
+        # New format: just the avatar name directly
+        # Old format: "Opponent (Avatar Name)" - for backwards compatibility
+        if not opponent_avatar_name and opponent_name:
+            if "Opponent (" in opponent_name:
+                try:
+                    # Extract avatar name from old "Opponent (Avatar Name)" format
+                    start = opponent_name.find("(") + 1
+                    end = opponent_name.find(")")
+                    if start > 0 and end > start:
+                        opponent_avatar_name = opponent_name[start:end].strip()
+                except (IndexError, ValueError):
+                    pass
+            else:
+                # New format: opponent_name is the avatar name directly
+                opponent_avatar_name = opponent_name
 
         if not opponent_avatar_name:
             continue
@@ -2759,8 +2764,8 @@ def record_game():
         match_time = int(data.get("match_time", 0))
         match_comment = str(data.get("match_comment", "")).strip()
 
-        # Construct opponent name from avatar
-        opponent_name = f"Opponent ({opponent_avatar})"
+        # Use avatar name directly as opponent name
+        opponent_name = opponent_avatar
 
         # Fetch deck data from Curiosa API
         json_deck_data = fetch_deck_data_from_curiosa(deck_url)

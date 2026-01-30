@@ -107,6 +107,57 @@ _rules_retriever = None
 _rules_generator = None
 
 
+# Curiosa API helpers
+def get_deck_id_from_url(url: str) -> str:
+    """Extract deck ID from Curiosa URL."""
+    # Split on '?' to remove any query parameters
+    base_url = url.split("?")[0]
+    # Get the last part of the URL path
+    deck_id = base_url.rstrip("/").split("/")[-1]
+    return deck_id
+
+
+def fetch_deck_data_from_curiosa(deck_url: str) -> str:
+    """
+    Fetch deck data from Curiosa API.
+    Returns JSON string of deck data, or '{}' on failure.
+    """
+    try:
+        deck_id = get_deck_id_from_url(deck_url)
+        if not deck_id:
+            logger.warning("Could not extract deck ID from URL")
+            return "{}"
+
+        response = requests.get(
+            f"https://curiosa.io/api/decks?ids={deck_id}",
+            timeout=30,
+        )
+
+        if response.status_code != 200:
+            logger.warning(f"Curiosa API returned status {response.status_code}")
+            return "{}"
+
+        json_data = response.json()
+
+        # Check if we got a valid list with data
+        if not isinstance(json_data, list) or len(json_data) == 0:
+            logger.warning("Curiosa API did not return valid deck data")
+            return "{}"
+
+        # Return the first deck as JSON string
+        return json.dumps(json_data[0])
+
+    except requests.exceptions.Timeout:
+        logger.warning("Curiosa API request timed out")
+        return "{}"
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"Curiosa API request failed: {e}")
+        return "{}"
+    except (json.JSONDecodeError, IndexError, KeyError) as e:
+        logger.warning(f"Failed to parse Curiosa response: {e}")
+        return "{}"
+
+
 def require_api_key(f):
     """Decorator to require API key authentication for endpoints"""
 
@@ -2694,6 +2745,13 @@ def record_game():
         # Construct opponent name from avatar
         opponent_name = f"Opponent ({opponent_avatar})"
 
+        # Fetch deck data from Curiosa API
+        json_deck_data = fetch_deck_data_from_curiosa(deck_url)
+        if json_deck_data != "{}":
+            logger.info("Successfully fetched deck data for recorded game")
+        else:
+            logger.warning(f"Could not fetch deck data from Curiosa for URL: {deck_url}")
+
         # Insert directly into solo_match_reports table
         try:
             conn = sqlite3.connect("../discord-bot/match_records.db")
@@ -2714,7 +2772,7 @@ def record_game():
                     match_time,
                     deck_url,
                     match_comment,
-                    "{}",
+                    json_deck_data,
                 ),
             )
 

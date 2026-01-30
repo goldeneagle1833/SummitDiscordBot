@@ -27,6 +27,32 @@
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/buttons.css') }}" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      /* Spinner animation for submit button */
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .btn-spinner {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .spinner-icon {
+        animation: spin 1s linear infinite;
+      }
+      #modal-submit {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-width: 100px;
+      }
+      #modal-submit:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+      }
+    </style>
   </head>
   <body>
     {% include 'components/navbar.html' %}
@@ -226,7 +252,15 @@
           </div>
           <div class="modal__footer">
             <button type="button" class="btn btn--secondary" id="modal-cancel">Cancel</button>
-            <button type="button" class="btn btn--primary" id="modal-submit">Submit</button>
+            <button type="button" class="btn btn--primary" id="modal-submit">
+              <span class="btn-text">Submit</span>
+              <span class="btn-spinner" style="display: none;">
+                <svg class="spinner-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/>
+                </svg>
+              </span>
+            </button>
           </div>
         </div>
       </div>
@@ -618,8 +652,9 @@
             tbody.appendChild(row);
           });
 
-          // Render self-reported games (only for profile owner)
-          if (data.is_owner && data.recorded_games && data.recorded_games.length > 0) {
+          // Render self-reported games (only for profile owner or local server)
+          const isLocalServer = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+          if ((data.is_owner || isLocalServer) && data.recorded_games && data.recorded_games.length > 0) {
             document.getElementById("recorded-games-section").style.display = "block";
             const recordedTbody = document.getElementById("recorded-games-tbody");
             recordedTbody.innerHTML = "";
@@ -777,6 +812,16 @@
           return;
         }
 
+        // Get button elements
+        const submitBtn = document.getElementById('modal-submit');
+        const btnText = submitBtn.querySelector('.btn-text');
+        const btnSpinner = submitBtn.querySelector('.btn-spinner');
+
+        // Disable button and show spinner
+        submitBtn.disabled = true;
+        btnText.textContent = 'Submitting...';
+        btnSpinner.style.display = 'inline-flex';
+
         try {
           const res = await fetch('/api/record-game', {
             method: 'POST',
@@ -803,6 +848,11 @@
         } catch (error) {
           console.error('Submit error:', error);
           alert('Failed to submit. Please try again.');
+        } finally {
+          // Re-enable button and hide spinner
+          submitBtn.disabled = false;
+          btnText.textContent = 'Submit';
+          btnSpinner.style.display = 'none';
         }
       }
 

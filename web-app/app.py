@@ -1564,9 +1564,9 @@ def avatar_api(avatar_name):
                 "date": row[4],
                 "winner_elo_change": row[5] if row[5] else 0,
                 "loser_elo_change": row[6] if row[6] else 0,
-                "first_player": "Yes"
+                "first_player": "Play"
                 if row[7] and "y" in str(row[7]).lower()
-                else "No",
+                else "Draw",
                 "match_time": row[8] if row[8] else None,
                 "winner_deck_url": row[11] if len(row) > 11 else None,
                 "loser_deck_url": row[12] if len(row) > 12 else None,
@@ -1604,9 +1604,9 @@ def avatar_api(avatar_name):
                             "date": row[4],
                             "winner_elo_change": row[5] if row[5] else 0,
                             "loser_elo_change": row[6] if row[6] else 0,
-                            "first_player": "Yes"
+                            "first_player": "Play"
                             if row[7] and "y" in str(row[7]).lower()
-                            else "No",
+                            else "Draw",
                             "match_time": row[8] if row[8] else None,
                             "winner_deck_url": row[10] if len(row) > 10 else None,
                             "loser_deck_url": None,
@@ -1885,9 +1885,8 @@ def player_api(player_id):
         did_win = row[0]
         winner_json = row[13] if len(row) > 13 else None  # json_deck_data_winner
         loser_json = row[14] if len(row) > 14 else None  # json_deck_data_loser
-        opponent_name = row[
-            5
-        ]  # opponent name from either regular matches or solo reports
+        # Get opponent name: if player won, opponent is loser; if player lost, opponent is winner
+        opponent_name = row[5] if did_win else row[4]
 
         opponent_avatar_name = None
 
@@ -2028,9 +2027,9 @@ def player_api(player_id):
                 "result": "Win" if did_win else "Loss",
                 "elo_change": elo_change if elo_change else 0,
                 "date": row[6],
-                "first_player": "Yes"
+                "first_player": "Play"
                 if row[1] and "y" in str(row[1]).lower()
-                else "No",
+                else "Draw",
                 "match_time": row[3] if row[3] else None,
                 "replay_url": row[9] if row[9] else None,
                 "player_deck_url": player_deck_url,
@@ -2110,9 +2109,9 @@ def player_api(player_id):
                 "opponent": opponent_name,
                 "result": "Win" if did_win else "Loss",
                 "date": row[6],  # report_date
-                "first_player": "Yes"
+                "first_player": "Play"
                 if row[1] and "y" in str(row[1]).lower()
-                else "No",
+                else "Draw",
                 "match_time": row[3] if row[3] else None,
                 "deck_url": deck_url,
             }

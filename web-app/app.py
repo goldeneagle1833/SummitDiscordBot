@@ -1637,6 +1637,7 @@ def avatar_api(avatar_name):
 def player_api(player_id):
     import json
 
+
     # Get detailed match data from match_records db first
     conn = sqlite3.connect("../discord-bot/match_records.db")
     cur = conn.cursor()
@@ -1703,31 +1704,47 @@ def player_api(player_id):
     try:
         solo_conn = sqlite3.connect("../discord-bot/match_records.db")
         solo_cur = solo_conn.cursor()
-        solo_cur.execute(
-            """
-            SELECT
-                is_winner,
-                first_player,
-                json_deck_data,
-                match_time,
-                reporter_name,
-                opponent_name,
-                report_date,
-                0 as elo_change,
-                0 as elo_change_2,
-                curiosa_link,
-                reporter_id,
-                0 as opponent_id,
-                report_id as match_id
-            FROM solo_match_reports
-            WHERE reporter_id = ?
-            ORDER BY report_date DESC
-            """,
-            (int(player_id),),
-        )
-        solo_rows = solo_cur.fetchall()
+
+        # Convert player_id to int for the query with better error handling
+        try:
+            player_id_int = int(player_id)
+        except (ValueError, TypeError) as e:
+            logger.error(f"Failed to convert player_id '{player_id}' to int: {e}")
+            player_id_int = None
+
+        if player_id_int is not None:
+
+            query = """
+                SELECT
+                    is_winner,
+                    first_player,
+                    json_deck_data,
+                    match_time,
+                    CASE WHEN is_winner THEN reporter_name ELSE opponent_name END,
+                    CASE WHEN is_winner THEN opponent_name ELSE reporter_name END,
+                    report_date,
+                    0,
+                    0,
+                    curiosa_link,
+                    CASE WHEN is_winner THEN reporter_id ELSE 0 END,
+                    CASE WHEN is_winner THEN 0 ELSE reporter_id END,
+                    rowid,
+                    CASE WHEN is_winner THEN json_deck_data ELSE NULL END,
+                    CASE WHEN is_winner THEN NULL ELSE json_deck_data END,
+                    CASE WHEN is_winner THEN curiosa_link ELSE NULL END,
+                    CASE WHEN is_winner THEN NULL ELSE curiosa_link END
+                FROM solo_match_reports
+                WHERE reporter_id = ?
+                ORDER BY report_date DESC
+                """
+            solo_cur.execute(query, (player_id_int,))
+            solo_rows = solo_cur.fetchall()
+        else:
+            logger.warning(
+                "Skipping solo_match_reports query - could not convert player_id"
+            )
+
         solo_conn.close()
-        logger.info(f"Fetched {len(solo_rows)} solo_match_reports for player {player_id}")
     except Exception as e:
         logger.warning(f"Could not fetch solo_match_reports: {e}", exc_info=True)
 
@@ -2079,7 +2096,6 @@ def player_api(player_id):
 
     # Build recorded games list (self-reported games from solo_match_reports)
     recorded_games = []
-    logger.info(f"Building recorded_games from {len(solo_rows)} solo_rows, is_owner={is_owner}")
     sorted_solo_rows = sorted(
         solo_rows, key=lambda x: x[6] if x[6] else "", reverse=True
     )
@@ -2752,7 +2768,9 @@ def record_game():
         if json_deck_data != "{}":
             logger.info("Successfully fetched deck data for recorded game")
         else:
-            logger.warning(f"Could not fetch deck data from Curiosa for URL: {deck_url}")
+            logger.warning(
+                f"Could not fetch deck data from Curiosa for URL: {deck_url}"
+            )
 
         # Insert directly into solo_match_reports table
         try:
@@ -2794,7 +2812,9 @@ def record_game():
 
         except sqlite3.Error as e:
             logger.error(f"Database error recording game: {e}", exc_info=True)
-            return jsonify({"error": "Failed to save to database", "success": False}), 500
+            return jsonify(
+                {"error": "Failed to save to database", "success": False}
+            ), 500
 
     except ValueError as e:
         return jsonify({"error": f"Invalid data: {str(e)}", "success": False}), 400

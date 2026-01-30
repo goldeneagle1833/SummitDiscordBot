@@ -654,12 +654,13 @@
 
           // Render self-reported games (only for profile owner or local server)
           const isLocalServer = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
           if ((data.is_owner || isLocalServer) && data.recorded_games && data.recorded_games.length > 0) {
             document.getElementById("recorded-games-section").style.display = "block";
             const recordedTbody = document.getElementById("recorded-games-tbody");
             recordedTbody.innerHTML = "";
 
-            data.recorded_games.forEach((game) => {
+            data.recorded_games.forEach((game, index) => {
               const row = document.createElement("tr");
               const resultClass = game.result === "Win" ? "match-win" : "match-loss";
               const date = new Date(game.date).toLocaleDateString();

@@ -1887,6 +1887,8 @@ def player_api(player_id):
         loser_json = row[14] if len(row) > 14 else None  # json_deck_data_loser
         # Get opponent name: if player won, opponent is loser; if player lost, opponent is winner
         opponent_name = row[5] if did_win else row[4]
+        # Get opponent ID to identify solo reports (opponent_id == 0 for solo reports)
+        opponent_id = row[11] if did_win else row[10] if len(row) > 10 else None
 
         opponent_avatar_name = None
 
@@ -1905,9 +1907,8 @@ def player_api(player_id):
                 pass
 
         # For recorded games (solo reports), get opponent avatar from opponent_name
-        # Only use opponent_name as avatar if it's from solo_match_reports
-        # We can identify solo reports because they won't have player display names with special chars
-        if not opponent_avatar_name and opponent_name:
+        # Only use opponent_name as avatar if it's from solo_match_reports (opponent_id == 0)
+        if not opponent_avatar_name and opponent_name and opponent_id == 0:
             if "Opponent (" in opponent_name:
                 try:
                     # Extract avatar name from old "Opponent (Avatar Name)" format
@@ -1917,10 +1918,8 @@ def player_api(player_id):
                         opponent_avatar_name = opponent_name[start:end].strip()
                 except (IndexError, ValueError):
                     pass
-            elif " - " not in opponent_name and len(opponent_name) < 30:
+            else:
                 # New format: opponent_name is the avatar name directly (from solo reports)
-                # Only use it if it doesn't look like a player display name
-                # Player names usually have " - " separator or are longer
                 opponent_avatar_name = opponent_name
 
         if not opponent_avatar_name:

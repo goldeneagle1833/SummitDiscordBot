@@ -2106,7 +2106,7 @@ def player_api(player_id):
 
         recorded_games.append(
             {
-                "report_id": row[12],  # report_id
+                "report_id": row[12],  # rowid from solo_match_reports
                 "opponent": opponent_name,
                 "result": "Win" if did_win else "Loss",
                 "date": row[6],  # report_date
@@ -2839,7 +2839,7 @@ def delete_recorded_game(report_id):
         conn = sqlite3.connect("../discord-bot/match_records.db")
         cur = conn.cursor()
         cur.execute(
-            "SELECT reporter_id FROM solo_match_reports WHERE report_id = ?",
+            "SELECT reporter_id FROM solo_match_reports WHERE rowid = ?",
             (report_id,),
         )
         row = cur.fetchone()
@@ -2864,7 +2864,7 @@ def delete_recorded_game(report_id):
             )
 
         # Delete the report
-        cur.execute("DELETE FROM solo_match_reports WHERE report_id = ?", (report_id,))
+        cur.execute("DELETE FROM solo_match_reports WHERE rowid = ?", (report_id,))
         conn.commit()
         conn.close()
 

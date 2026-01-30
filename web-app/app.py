@@ -1723,12 +1723,13 @@ def player_api(player_id):
             WHERE reporter_id = ?
             ORDER BY report_date DESC
             """,
-            (player_id,),
+            (int(player_id),),
         )
         solo_rows = solo_cur.fetchall()
         solo_conn.close()
+        logger.info(f"Fetched {len(solo_rows)} solo_match_reports for player {player_id}")
     except Exception as e:
-        logger.warning(f"Could not fetch solo_match_reports: {e}")
+        logger.warning(f"Could not fetch solo_match_reports: {e}", exc_info=True)
 
     # Combine regular and recorded matches
     all_rows = rows + solo_rows
@@ -2078,6 +2079,7 @@ def player_api(player_id):
 
     # Build recorded games list (self-reported games from solo_match_reports)
     recorded_games = []
+    logger.info(f"Building recorded_games from {len(solo_rows)} solo_rows, is_owner={is_owner}")
     sorted_solo_rows = sorted(
         solo_rows, key=lambda x: x[6] if x[6] else "", reverse=True
     )

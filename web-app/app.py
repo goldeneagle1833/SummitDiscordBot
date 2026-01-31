@@ -90,9 +90,10 @@ DISCORD_REDIRECT_URI = os.environ.get(
 
 # Allowed Discord IDs for card winrates page (add your Discord ID and any others)
 ALLOWED_CARD_VIEWERS = [
-    "296846802924208130",
-    "146923845549424640",
-    "128690099432062976",
+    "296846802924208130",  # My Discord ID
+    "146923845549424640",  # keven
+    "128690099432062976",  # ember
+    "212395045125357568",  # IRA
     # Add Discord IDs here (as integers or strings)
     # Example: 123456789012345678,
 ]
@@ -2580,7 +2581,9 @@ def live_popular_cards_api():
                     "type": card.get("guardian", {}).get("type", "Unknown"),
                     "element": card.get("elements", "None"),
                     "rarity": card.get("guardian", {}).get("rarity", "Unknown"),
-                    "set": card.get("sets", [{}])[0].get("name", "Unknown") if card.get("sets") else "Unknown",
+                    "set": card.get("sets", [{}])[0].get("name", "Unknown")
+                    if card.get("sets")
+                    else "Unknown",
                 }
     except Exception as e:
         logger.error(f"Error loading card pool: {e}")
@@ -2711,23 +2714,27 @@ def live_popular_cards_api():
             continue
 
         average_played = round(total_count / decks_with) if decks_with > 0 else 0
-        percent_of_decks = round((decks_with / total_decks) * 100) if total_decks > 0 else 0
+        percent_of_decks = (
+            round((decks_with / total_decks) * 100) if total_decks > 0 else 0
+        )
 
         # Get metadata from card pool
         meta = card_metadata.get(name, {})
 
-        card_list.append({
-            "name": name,
-            "type": meta.get("type", "Unknown"),
-            "element": meta.get("element", "None"),
-            "count": total_count,
-            "rarity": meta.get("rarity", "Unknown"),
-            "set": meta.get("set", "Unknown"),
-            "average_played": average_played,
-            "percent_of_decks": percent_of_decks,
-            "decks_with_card": decks_with,
-            "total_decks": total_decks,
-        })
+        card_list.append(
+            {
+                "name": name,
+                "type": meta.get("type", "Unknown"),
+                "element": meta.get("element", "None"),
+                "count": total_count,
+                "rarity": meta.get("rarity", "Unknown"),
+                "set": meta.get("set", "Unknown"),
+                "average_played": average_played,
+                "percent_of_decks": percent_of_decks,
+                "decks_with_card": decks_with,
+                "total_decks": total_decks,
+            }
+        )
 
     # Sort by percent_of_decks descending (most popular first)
     card_list.sort(key=lambda x: (x["percent_of_decks"], x["count"]), reverse=True)

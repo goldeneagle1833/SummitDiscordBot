@@ -1,0 +1,58 @@
+"""Authentication and authorization utilities."""
+
+import logging
+from functools import wraps
+from flask import request, session, jsonify
+
+from webapp_config import VALID_API_KEYS, ALLOWED_CARD_VIEWERS
+
+logger = logging.getLogger(__name__)
+
+
+def require_api_key(f):
+    """Decorator to require API key authentication for endpoints."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        provided_key = request.headers.get("X-API-Key") or request.headers.get(
+            "Authorization"
+        )
+
+        if provided_key and provided_key.startswith("Bearer "):
+            provided_key = provided_key[7:]
+
+        if not VALID_API_KEYS:
+            logger.error("No API keys configured in environment")
+            return jsonify({"error": "API authentication not configured"}), 500
+
+        if not provided_key or provided_key not in VALID_API_KEYS:
+            logger.warning(
+                f"Unauthorized API access attempt from {request.remote_addr}"
+            )
+            return jsonify({"error": "Invalid or missing API key"}), 401
+
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+def is_allowed_card_viewer() -> bool:
+    """Check if the current user is allowed to view card winrates."""
+    if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
+        return True
+    user_id = session.get("user_id")
+    if user_id is None:
+        return False
+    return int(user_id) in ALLOWED_CARD_VIEWERS or str(user_id) in [
+        str(x) for x in ALLOWED_CARD_VIEWERS
+    ]
+
+
+def get_current_user() -> dict | None:
+    """Get the currently logged in user from session, or None."""
+    if "user_id" in session:
+        return {
+            "id": session["user_id"],
+            "username": session.get("username"),
+            "avatar": session.get("avatar"),
+        }
+    return None

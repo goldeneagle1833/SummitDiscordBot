@@ -54,9 +54,18 @@ class MatchRepository:
 
     def get_recent_matches(self, hours: int = 24) -> list[dict]:
         """Get matches from the last N hours."""
+        # Validate hours is a positive integer to prevent injection
+        if not isinstance(hours, int) or hours < 1:
+            hours = 24
+        if hours > 8760:  # Cap at 1 year
+            hours = 8760
+
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute(f"""
+        # Use parameterized query - SQLite datetime modifier needs string concatenation
+        # but we've validated hours is a safe integer above
+        hours_modifier = f"-{hours} hours"
+        cur.execute("""
             SELECT
                 rowid as match_id,
                 winner_display_name,
@@ -68,9 +77,9 @@ class MatchRepository:
                 winner_id,
                 losser_id
             FROM match_records
-            WHERE timestamp >= datetime('now', '-{hours} hours')
+            WHERE timestamp >= datetime('now', ?)
             ORDER BY rowid DESC
-        """)
+        """, (hours_modifier,))
         rows = cur.fetchall()
         conn.close()
         return self._rows_to_match_dicts(rows)

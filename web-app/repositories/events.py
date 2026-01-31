@@ -2,6 +2,7 @@
 
 import json
 import csv
+import re
 from pathlib import Path
 
 from webapp_config import TOP_8_DIR, EVENT_RATINGS
@@ -11,8 +12,40 @@ from utils.formatting import format_event_name, extract_year_from_name
 class EventRepository:
     """Data access for event JSON/CSV files."""
 
+    # Safe pattern: alphanumeric, spaces, hyphens, underscores, apostrophes
+    SAFE_FOLDER_PATTERN = re.compile(r"^[a-zA-Z0-9 _\-']+$")
+
     def __init__(self, events_dir: Path | None = None):
         self._events_dir = events_dir or TOP_8_DIR
+
+    def _validate_event_folder(self, event_folder: str) -> Path | None:
+        """
+        Validate event_folder to prevent path traversal attacks.
+        Returns the safe path if valid, None otherwise.
+        """
+        # Reject empty or obviously malicious input
+        if not event_folder or not isinstance(event_folder, str):
+            return None
+
+        # Reject path traversal attempts
+        if ".." in event_folder or "/" in event_folder or "\\" in event_folder:
+            return None
+
+        # Only allow safe characters
+        if not self.SAFE_FOLDER_PATTERN.match(event_folder):
+            return None
+
+        # Construct and resolve the path
+        event_path = (self._events_dir / event_folder).resolve()
+
+        # Verify the resolved path is still within the events directory
+        try:
+            event_path.relative_to(self._events_dir.resolve())
+        except ValueError:
+            # Path escaped the events directory
+            return None
+
+        return event_path
 
     def get_all_events(self) -> list[dict]:
         """Get all events with their metadata."""
@@ -104,9 +137,9 @@ class EventRepository:
 
     def get_event_decks(self, event_folder: str) -> dict:
         """Get deck data for a specific event."""
-        event_path = self._events_dir / event_folder
+        event_path = self._validate_event_folder(event_folder)
 
-        if not event_path.exists():
+        if event_path is None or not event_path.exists():
             return None
 
         json_files = list(event_path.glob("*.json"))
@@ -157,9 +190,9 @@ class EventRepository:
 
     def get_event_stats(self, event_folder: str) -> dict:
         """Get statistics data for a specific event."""
-        event_path = self._events_dir / event_folder
+        event_path = self._validate_event_folder(event_folder)
 
-        if not event_path.exists():
+        if event_path is None or not event_path.exists():
             return None
 
         csv_files = list(event_path.glob("*.csv"))

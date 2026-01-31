@@ -23,7 +23,21 @@ MATCH_RECORDS_DB_PATH = BOT_DIR / "match_records.db"
 FART_SCORES_DB_PATH = BOT_DIR / "fart_scores.db"
 
 # Flask configuration
-SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
+# SECURITY: SECRET_KEY must be set in production via environment variable
+# In development, a random key is generated (sessions won't persist across restarts)
+_secret_key_env = os.environ.get("SECRET_KEY")
+if _secret_key_env:
+    SECRET_KEY = _secret_key_env
+elif os.environ.get("FLASK_ENV") == "production" or os.environ.get("FLASK_DEBUG") == "0":
+    raise ValueError(
+        "SECURITY ERROR: SECRET_KEY environment variable must be set in production. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+    )
+else:
+    # Development only: generate random key (sessions reset on restart)
+    import secrets
+    SECRET_KEY = secrets.token_hex(32)
+    print("WARNING: Using randomly generated SECRET_KEY. Set SECRET_KEY env var for persistent sessions.")
 
 # Discord OAuth configuration
 DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID")

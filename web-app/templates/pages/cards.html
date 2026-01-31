@@ -191,8 +191,8 @@
             return;
           }
 
-          // Sort by win_rate desc
-          data.sort((a, b) => b.win_rate - a.win_rate || b.total - a.total);
+          // Sort by accuracy score (win_rate × total games)
+          data.sort((a, b) => (b.win_rate * b.total) - (a.win_rate * a.total));
           allCards = data;
           filteredCards = data;
 

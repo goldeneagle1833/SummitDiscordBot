@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Live Popular Cards - Sorcerers Summit</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/global.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+    <style>
+      .popular-cards-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
+        font-size: 0.9rem;
+      }
+      .popular-cards-table th,
+      .popular-cards-table td {
+        padding: 0.75rem 1rem;
+        text-align: left;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .popular-cards-table th {
+        background: rgba(255, 255, 255, 0.15);
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.95);
+        cursor: pointer;
+        user-select: none;
+      }
+      .popular-cards-table th:hover {
+        background: rgba(255, 255, 255, 0.2);
+      }
+      .popular-cards-table th.sorted-asc::after {
+        content: " ▲";
+      }
+      .popular-cards-table th.sorted-desc::after {
+        content: " ▼";
+      }
+      .popular-cards-table tr:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .popular-cards-table .percent-bar {
+        display: inline-block;
+        height: 8px;
+        background: var(--color-secondary);
+        border-radius: 4px;
+        margin-left: 0.5rem;
+        vertical-align: middle;
+      }
+      .table-container {
+        overflow-x: auto;
+        background: var(--color-bg-elevated);
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 0 auto;
+        max-width: 1400px;
+      }
+      .stats-summary {
+        display: flex;
+        gap: 2rem;
+        justify-content: center;
+        margin-bottom: 1.5rem;
+        flex-wrap: wrap;
+      }
+      .stats-summary .stat {
+        text-align: center;
+      }
+      .stats-summary .stat-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: var(--color-secondary);
+      }
+      .stats-summary .stat-label {
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+      }
+      .element-badge {
+        display: inline-block;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+      .element-fire { background: rgba(231, 76, 60, 0.3); color: #e74c3c; }
+      .element-water { background: rgba(52, 152, 219, 0.3); color: #3498db; }
+      .element-earth { background: rgba(46, 204, 113, 0.3); color: #2ecc71; }
+      .element-air { background: rgba(155, 89, 182, 0.3); color: #9b59b6; }
+      .element-none { background: rgba(149, 165, 166, 0.3); color: #95a5a6; }
+      .rarity-unique { color: #f1c40f; }
+      .rarity-exceptional { color: #9b59b6; }
+      .rarity-elite { color: #3498db; }
+      .rarity-ordinary { color: #95a5a6; }
+    </style>
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <section class="hero">
+        <h1>Live Popular Cards</h1>
+        <p>
+          Card popularity calculated from all matches with deck data in the database
+        </p>
+      </section>
+
+      <!-- Filters -->
+      <section class="card-filters-section">
+        <div class="card-filters-container">
+          <div class="card-filters-row">
+            <div class="card-filter-group">
+              <label for="type-filter">Type</label>
+              <select id="type-filter">
+                <option value="">All Types</option>
+                <option value="Minion">Minion</option>
+                <option value="Magic">Magic</option>
+                <option value="Artifact">Artifact</option>
+                <option value="Site">Site</option>
+                <option value="Aura">Aura</option>
+                <option value="Avatar">Avatar</option>
+              </select>
+            </div>
+            <div class="card-filter-group">
+              <label for="element-filter">Element</label>
+              <select id="element-filter">
+                <option value="">All Elements</option>
+                <option value="Fire">Fire</option>
+                <option value="Water">Water</option>
+                <option value="Earth">Earth</option>
+                <option value="Air">Air</option>
+                <option value="None">None</option>
+              </select>
+            </div>
+            <div class="card-filter-group card-filter-search">
+              <label for="card-search">Search</label>
+              <input
+                id="card-search"
+                type="text"
+                placeholder="Search cards..." />
+            </div>
+          </div>
+          <div class="card-filter-count">
+            Showing <span id="visible-count">0</span> of
+            <span id="total-count">0</span> cards
+          </div>
+        </div>
+      </section>
+
+      <!-- Stats Summary -->
+      <section class="stats-summary" id="stats-summary" style="display: none;">
+        <div class="stat">
+          <div class="stat-value" id="total-decks">0</div>
+          <div class="stat-label">Total Decks Analyzed</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="unique-cards">0</div>
+          <div class="stat-label">Unique Cards Played</div>
+        </div>
+      </section>
+
+      <!-- Table -->
+      <section class="avatar-stats-section">
+        <div class="table-container">
+          <table class="popular-cards-table" id="cards-table">
+            <thead>
+              <tr>
+                <th data-sort="name">Name</th>
+                <th data-sort="type">Type</th>
+                <th data-sort="element">Element</th>
+                <th data-sort="rarity">Rarity</th>
+                <th data-sort="percent_of_decks" class="sorted-desc">% of Decks</th>
+                <th data-sort="count">Total Count</th>
+                <th data-sort="average_played">Avg Played</th>
+                <th data-sort="decks_with_card">Decks With</th>
+              </tr>
+            </thead>
+            <tbody id="cards-tbody">
+              <tr>
+                <td colspan="8" style="text-align: center; padding: 2rem;">
+                  Loading card data...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      let allCards = [];
+      let filteredCards = [];
+      let currentSort = { field: "percent_of_decks", direction: "desc" };
+
+      function getElementClass(element) {
+        const el = (element || "none").toLowerCase();
+        if (el.includes("fire")) return "element-fire";
+        if (el.includes("water")) return "element-water";
+        if (el.includes("earth")) return "element-earth";
+        if (el.includes("air")) return "element-air";
+        return "element-none";
+      }
+
+      function getRarityClass(rarity) {
+        const r = (rarity || "").toLowerCase();
+        if (r === "unique") return "rarity-unique";
+        if (r === "exceptional") return "rarity-exceptional";
+        if (r === "elite") return "rarity-elite";
+        return "rarity-ordinary";
+      }
+
+      function renderTable() {
+        const tbody = document.getElementById("cards-tbody");
+
+        if (filteredCards.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="8" style="text-align: center; padding: 2rem;">
+                No cards match the current filters.
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        tbody.innerHTML = filteredCards
+          .map((card) => `
+            <tr>
+              <td><strong>${card.name}</strong></td>
+              <td>${card.type}</td>
+              <td><span class="element-badge ${getElementClass(card.element)}">${card.element}</span></td>
+              <td class="${getRarityClass(card.rarity)}">${card.rarity}</td>
+              <td>
+                ${card.percent_of_decks}%
+                <span class="percent-bar" style="width: ${Math.min(card.percent_of_decks, 100)}px;"></span>
+              </td>
+              <td>${card.count}</td>
+              <td>${card.average_played}</td>
+              <td>${card.decks_with_card}</td>
+            </tr>
+          `)
+          .join("");
+
+        document.getElementById("visible-count").textContent = filteredCards.length;
+      }
+
+      function sortCards(field) {
+        const headers = document.querySelectorAll(".popular-cards-table th");
+        headers.forEach((h) => h.classList.remove("sorted-asc", "sorted-desc"));
+
+        if (currentSort.field === field) {
+          currentSort.direction = currentSort.direction === "asc" ? "desc" : "asc";
+        } else {
+          currentSort.field = field;
+          currentSort.direction = "desc";
+        }
+
+        const header = document.querySelector(`th[data-sort="${field}"]`);
+        if (header) {
+          header.classList.add(`sorted-${currentSort.direction}`);
+        }
+
+        filteredCards.sort((a, b) => {
+          let aVal = a[field];
+          let bVal = b[field];
+
+          // Handle string vs number sorting
+          if (typeof aVal === "string") {
+            aVal = aVal.toLowerCase();
+            bVal = (bVal || "").toLowerCase();
+            return currentSort.direction === "asc"
+              ? aVal.localeCompare(bVal)
+              : bVal.localeCompare(aVal);
+          }
+
+          return currentSort.direction === "asc" ? aVal - bVal : bVal - aVal;
+        });
+
+        renderTable();
+      }
+
+      function applyFilters() {
+        const typeFilter = document.getElementById("type-filter").value.toLowerCase();
+        const elementFilter = document.getElementById("element-filter").value.toLowerCase();
+        const searchQuery = document.getElementById("card-search").value.trim().toLowerCase();
+
+        filteredCards = allCards.filter((card) => {
+          const typeMatch = !typeFilter || (card.type || "").toLowerCase() === typeFilter;
+          const elementMatch = !elementFilter || (card.element || "").toLowerCase().includes(elementFilter);
+          const searchMatch = !searchQuery || card.name.toLowerCase().includes(searchQuery);
+          return typeMatch && elementMatch && searchMatch;
+        });
+
+        // Re-apply current sort
+        sortCards(currentSort.field);
+      }
+
+      async function fetchCardStats() {
+        try {
+          const res = await fetch("/api/live-popular-cards");
+
+          if (res.status === 403) {
+            document.getElementById("cards-tbody").innerHTML = `
+              <tr>
+                <td colspan="8" style="text-align: center; padding: 2rem; color: #e74c3c;">
+                  You don't have permission to view this data.
+                </td>
+              </tr>
+            `;
+            return;
+          }
+
+          const data = await res.json();
+
+          if (!data || data.length === 0) {
+            document.getElementById("cards-tbody").innerHTML = `
+              <tr>
+                <td colspan="8" style="text-align: center; padding: 2rem;">
+                  No card data available yet. Report matches with decklists to see stats!
+                </td>
+              </tr>
+            `;
+            return;
+          }
+
+          allCards = data;
+          filteredCards = [...data];
+
+          // Update summary stats
+          const totalDecks = data[0]?.total_decks || 0;
+          document.getElementById("total-decks").textContent = totalDecks;
+          document.getElementById("unique-cards").textContent = data.length;
+          document.getElementById("stats-summary").style.display = "flex";
+
+          // Update counts
+          document.getElementById("total-count").textContent = data.length;
+
+          // Set up sorting
+          document.querySelectorAll(".popular-cards-table th[data-sort]").forEach((th) => {
+            th.addEventListener("click", () => sortCards(th.dataset.sort));
+          });
+
+          // Set up filters
+          document.getElementById("type-filter").addEventListener("change", applyFilters);
+          document.getElementById("element-filter").addEventListener("change", applyFilters);
+          document.getElementById("card-search").addEventListener("input", applyFilters);
+
+          // Initial render
+          renderTable();
+        } catch (err) {
+          console.error("Error fetching card stats", err);
+          document.getElementById("cards-tbody").innerHTML = `
+            <tr>
+              <td colspan="8" style="text-align: center; padding: 2rem; color: #e74c3c;">
+                Error loading card stats
+              </td>
+            </tr>
+          `;
+        }
+      }
+
+      fetchCardStats();
+    </script>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+  </body>
+</html>

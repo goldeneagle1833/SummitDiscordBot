@@ -495,6 +495,20 @@ def cards():
     return render_template("pages/cards.html")
 
 
+@app.route("/live-popular-cards")
+def live_popular_cards():
+    """Live popular cards page - restricted to allowed Discord users"""
+    if not is_allowed_card_viewer():
+        if session.get("user_id") is None:
+            # Not logged in - redirect to login
+            return redirect(url_for("auth_discord"))
+        # Logged in but not authorized
+        return render_template(
+            "pages/error.html", error="You don't have permission to view this page."
+        ), 403
+    return render_template("pages/live_popular_cards.html")
+
+
 @app.route("/elements")
 def elements():
     """Elemental winrates page"""
@@ -2543,6 +2557,180 @@ def cards_api():
 
     # Sort by win_rate then total
     card_list.sort(key=lambda x: (x["win_rate"], x["total"]), reverse=True)
+
+    return jsonify(card_list)
+
+
+@app.route("/api/live-popular-cards")
+def live_popular_cards_api():
+    """API endpoint for live card popularity stats from all matches with deck data - restricted access"""
+    import json
+
+    if not is_allowed_card_viewer():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    # Load All_Cards_Array.json for card metadata
+    card_pool_path = Path(__file__).parent / "curiosa-io-tools" / "All_Cards_Array.json"
+    card_metadata = {}
+    try:
+        with open(card_pool_path, "r", encoding="utf-8") as f:
+            cards_array = json.load(f)
+            for card in cards_array:
+                card_metadata[card["name"]] = {
+                    "type": card.get("guardian", {}).get("type", "Unknown"),
+                    "element": card.get("elements", "None"),
+                    "rarity": card.get("guardian", {}).get("rarity", "Unknown"),
+                    "set": card.get("sets", [{}])[0].get("name", "Unknown") if card.get("sets") else "Unknown",
+                }
+    except Exception as e:
+        logger.error(f"Error loading card pool: {e}")
+        return jsonify({"error": "Failed to load card data"}), 500
+
+    # Get all deck data from database
+    all_decks = []
+    conn = sqlite3.connect("../discord-bot/match_records.db")
+    cur = conn.cursor()
+
+    # Try new schema first (separate winner/loser deck data)
+    use_new_columns = True
+    try:
+        cur.execute(
+            """
+            SELECT
+                json_deck_data_winner,
+                json_deck_data_loser
+            FROM match_records
+            WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+               OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+            """
+        )
+        rows = cur.fetchall()
+    except sqlite3.OperationalError:
+        use_new_columns = False
+        cur.execute(
+            """
+            SELECT json_deck_data
+            FROM match_records
+            WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+            """
+        )
+        rows = cur.fetchall()
+
+    if use_new_columns:
+        for row in rows:
+            winner_deck_str = row[0]
+            loser_deck_str = row[1]
+            if winner_deck_str and winner_deck_str not in ("", "{}"):
+                try:
+                    deck_data = json.loads(winner_deck_str)
+                    all_decks.append(deck_data)
+                except json.JSONDecodeError:
+                    pass
+            if loser_deck_str and loser_deck_str not in ("", "{}"):
+                try:
+                    deck_data = json.loads(loser_deck_str)
+                    all_decks.append(deck_data)
+                except json.JSONDecodeError:
+                    pass
+    else:
+        for row in rows:
+            deck_str = row[0]
+            if deck_str:
+                try:
+                    deck_data = json.loads(deck_str)
+                    all_decks.append(deck_data)
+                except json.JSONDecodeError:
+                    pass
+
+    # Also get solo match reports
+    try:
+        cur.execute(
+            """
+            SELECT json_deck_data
+            FROM solo_match_reports
+            WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+        """
+        )
+        solo_rows = cur.fetchall()
+        for row in solo_rows:
+            deck_str = row[0]
+            if deck_str:
+                try:
+                    deck_data = json.loads(deck_str)
+                    all_decks.append(deck_data)
+                except json.JSONDecodeError:
+                    pass
+    except sqlite3.OperationalError:
+        pass
+
+    conn.close()
+
+    if not all_decks:
+        return jsonify([])
+
+    # Calculate card statistics
+    card_stats = {}  # card_name -> {total_count, decks_with_card}
+    total_decks = len(all_decks)
+    sections = ["avatar", "spellbook", "atlas", "sideboard"]
+
+    for deck in all_decks:
+        # Handle if deck is wrapped in a list
+        if isinstance(deck, list) and len(deck) > 0:
+            deck = deck[0]
+
+        cards_in_deck = set()  # Track unique cards in this deck
+
+        for section in sections:
+            for card in deck.get(section, []) or []:
+                card_name = card.get("name")
+                quantity = card.get("quantity", 1)
+
+                if not card_name:
+                    continue
+
+                if card_name not in card_stats:
+                    card_stats[card_name] = {
+                        "total_count": 0,
+                        "decks_with_card": 0,
+                    }
+
+                card_stats[card_name]["total_count"] += quantity
+
+                # Only count deck once per card
+                if card_name not in cards_in_deck:
+                    card_stats[card_name]["decks_with_card"] += 1
+                    cards_in_deck.add(card_name)
+
+    # Format response similar to curosa.py CSV output
+    card_list = []
+    for name, stats in card_stats.items():
+        decks_with = stats["decks_with_card"]
+        total_count = stats["total_count"]
+
+        if decks_with == 0:
+            continue
+
+        average_played = round(total_count / decks_with) if decks_with > 0 else 0
+        percent_of_decks = round((decks_with / total_decks) * 100) if total_decks > 0 else 0
+
+        # Get metadata from card pool
+        meta = card_metadata.get(name, {})
+
+        card_list.append({
+            "name": name,
+            "type": meta.get("type", "Unknown"),
+            "element": meta.get("element", "None"),
+            "count": total_count,
+            "rarity": meta.get("rarity", "Unknown"),
+            "set": meta.get("set", "Unknown"),
+            "average_played": average_played,
+            "percent_of_decks": percent_of_decks,
+            "decks_with_card": decks_with,
+            "total_decks": total_decks,
+        })
+
+    # Sort by percent_of_decks descending (most popular first)
+    card_list.sort(key=lambda x: (x["percent_of_decks"], x["count"]), reverse=True)
 
     return jsonify(card_list)
 

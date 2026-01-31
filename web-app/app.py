@@ -3037,6 +3037,139 @@ def elements_api():
     return jsonify(element_list)
 
 
+@app.route("/api/deck-composition")
+def deck_composition_api():
+    """API endpoint for deck element composition across all decks (ALLOWED_CARD_VIEWERS only)"""
+    import json
+    from collections import Counter
+
+    # Permission check
+    if not is_allowed_card_viewer():
+        return jsonify({"error": "Forbidden"}), 403
+
+    # Load All_Cards_Array.json for card name -> element lookup
+    all_cards_path = Path(__file__).parent / "curiosa-io-tools" / "All_Cards_Array.json"
+    card_elements = {}  # card_name -> set of elements
+    try:
+        with open(all_cards_path, "r", encoding="utf-8") as f:
+            all_cards = json.load(f)
+            for card in all_cards:
+                name = card.get("name", "")
+                elements_str = card.get("elements", "None")
+                if name and elements_str and elements_str != "None":
+                    # Elements can be comma-separated like "Fire, Water"
+                    card_elements[name.lower()] = set(
+                        e.strip() for e in elements_str.split(",") if e.strip()
+                    )
+    except Exception as e:
+        logger.error(f"Failed to load All_Cards_Array.json: {e}")
+
+    try:
+        conn = sqlite3.connect("../discord-bot/match_records.db")
+        cur = conn.cursor()
+
+        # Try to get matches with new columns
+        try:
+            cur.execute(
+                """
+                SELECT
+                    json_deck_data_winner,
+                    json_deck_data_loser
+                FROM match_records
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+            """
+            )
+            rows = cur.fetchall()
+            use_new_columns = True
+        except sqlite3.OperationalError:
+            # Fallback to old schema
+            cur.execute(
+                """
+                SELECT
+                    json_deck_data
+                FROM match_records
+                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+            """
+            )
+            rows = cur.fetchall()
+            use_new_columns = False
+
+        conn.close()
+    except sqlite3.OperationalError:
+        return jsonify({"error": "Database not found"}), 404
+
+    sections = ["spellbook"]  # Only count spellbook, not sites (atlas)
+
+    def get_deck_elements(deck_json):
+        """Extract unique elements from spell cards in a deck (excludes sites) using All_Cards_Array lookup"""
+        elements = set()
+        if not deck_json or deck_json in ("", "{}"):
+            return elements
+        try:
+            deck_data = json.loads(deck_json)
+            deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+            for sec in sections:
+                for card in deck.get(sec, []) or []:
+                    card_name = (card.get("name") or "").lower()
+                    # Look up element from All_Cards_Array
+                    if card_name in card_elements:
+                        elements.update(card_elements[card_name])
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            pass
+        return elements
+
+    # Track element combinations for all decks
+    element_combo_counter = Counter()
+    total_decks = 0
+
+    if use_new_columns:
+        for row in rows:
+            winner_json = row[0]
+            loser_json = row[1]
+
+            # Count winner's deck
+            if winner_json and winner_json not in ("", "{}"):
+                elements = get_deck_elements(winner_json)
+                if elements:
+                    # Sort elements for consistent combination naming
+                    combo = ", ".join(sorted(elements))
+                    element_combo_counter[combo] += 1
+                    total_decks += 1
+
+            # Count loser's deck
+            if loser_json and loser_json not in ("", "{}"):
+                elements = get_deck_elements(loser_json)
+                if elements:
+                    combo = ", ".join(sorted(elements))
+                    element_combo_counter[combo] += 1
+                    total_decks += 1
+    else:
+        # Old schema
+        for row in rows:
+            deck_json = row[0]
+            if deck_json and deck_json not in ("", "{}"):
+                elements = get_deck_elements(deck_json)
+                if elements:
+                    combo = ", ".join(sorted(elements))
+                    element_combo_counter[combo] += 1
+                    total_decks += 1
+
+    # Format response
+    composition_data = []
+    for combo, count in element_combo_counter.most_common():
+        percent = (count / total_decks * 100) if total_decks > 0 else 0
+        composition_data.append(
+            {
+                "elements": combo,
+                "count": count,
+                "percent": round(percent, 1),
+            }
+        )
+
+    return jsonify({"total_decks": total_decks, "composition": composition_data})
+
+
 @app.route("/api/rules-assistant", methods=["POST"])
 def rules_assistant_api():
     """API endpoint for Rules Assistant chat"""

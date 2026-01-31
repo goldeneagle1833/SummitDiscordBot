@@ -210,6 +210,66 @@
         padding: 2rem;
         color: rgba(255, 255, 255, 0.6);
       }
+
+      /* Deck composition specific styles */
+      .composition-bars {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      .composition-row {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+      .composition-label {
+        min-width: 200px;
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+      .composition-bar-container {
+        flex: 1;
+        height: 32px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        position: relative;
+        display: flex;
+        align-items: center;
+      }
+      .composition-bar {
+        height: 100%;
+        border-radius: 6px;
+        transition: width 0.8s ease-out;
+      }
+      .composition-bar-text {
+        position: absolute;
+        right: 10px;
+        font-weight: bold;
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.9);
+      }
+      .composition-stats {
+        min-width: 120px;
+        text-align: right;
+        font-size: 0.85rem;
+        color: rgba(255, 255, 255, 0.7);
+      }
+      .element-fire .composition-bar {
+        background: linear-gradient(90deg, #e74c3c, #c0392b);
+      }
+      .element-water .composition-bar {
+        background: linear-gradient(90deg, #3498db, #2980b9);
+      }
+      .element-earth .composition-bar {
+        background: linear-gradient(90deg, #8b4513, #654321);
+      }
+      .element-air .composition-bar {
+        background: linear-gradient(90deg, #87ceeb, #5dade2);
+      }
+      .element-multi .composition-bar {
+        background: linear-gradient(90deg, #9b59b6, #8e44ad);
+      }
+      .element-multi { color: #9b59b6; }
     </style>
   </head>
   <body>
@@ -263,6 +323,17 @@
               <div class="legend-color losses"></div>
               <span>% of losing decks</span>
             </div>
+          </div>
+        </div>
+
+        <!-- Chart 3: Deck Element Composition (ALLOWED_CARD_VIEWERS only) -->
+        <div class="elements-chart-container" id="deck-composition-container" style="display: none;">
+          <h2 class="chart-title">Deck Element Composition</h2>
+          <p class="chart-subtitle">
+            Element combinations across all decks in the database (spellbook only, excludes sites)
+          </p>
+          <div id="composition-bars" class="composition-bars">
+            <p class="loading-text">Loading deck composition...</p>
           </div>
         </div>
       </section>
@@ -361,6 +432,93 @@
       }
 
       fetchElementStats();
+
+      async function fetchDeckComposition() {
+        try {
+          const res = await fetch("/api/deck-composition");
+
+          // Check if user has permission
+          if (res.status === 403) {
+            // Hide the section if no permission
+            document.getElementById("deck-composition-container").style.display = "none";
+            return;
+          }
+
+          if (!res.ok) {
+            document.getElementById("composition-bars").innerHTML =
+              '<p class="loading-text">Error loading deck composition</p>';
+            return;
+          }
+
+          const data = await res.json();
+          const container = document.getElementById("composition-bars");
+
+          if (!data || !data.composition || data.composition.length === 0) {
+            container.innerHTML =
+              '<p class="loading-text">No deck data available yet.</p>';
+            document.getElementById("deck-composition-container").style.display = "block";
+            return;
+          }
+
+          // Show the section
+          document.getElementById("deck-composition-container").style.display = "block";
+
+          // Helper function to get element color class
+          function getElementColorClass(elementName) {
+            const el = elementName.toLowerCase();
+            if (el === "fire") return "element-fire";
+            if (el === "water") return "element-water";
+            if (el === "earth") return "element-earth";
+            if (el === "air") return "element-air";
+            return "";
+          }
+
+          // Render composition bars
+          let html = "";
+          data.composition.forEach((item) => {
+            // Determine element class based on composition (for bar color)
+            let barElementClass = "element-multi";
+            const elements = item.elements.split(", ");
+            if (elements.length === 1) {
+              const el = elements[0].toLowerCase();
+              if (el === "fire") barElementClass = "element-fire";
+              else if (el === "water") barElementClass = "element-water";
+              else if (el === "earth") barElementClass = "element-earth";
+              else if (el === "air") barElementClass = "element-air";
+            }
+
+            // Render element names with individual colors
+            let labelHtml = elements
+              .map((el) => {
+                const colorClass = getElementColorClass(el);
+                return `<span class="element-name ${colorClass}">${el}</span>`;
+              })
+              .join(", ");
+
+            html += `
+              <div class="composition-row ${barElementClass}">
+                <div class="composition-label">${labelHtml}</div>
+                <div class="composition-bar-container">
+                  <div class="composition-bar" style="width: ${item.percent}%;"></div>
+                  <span class="composition-bar-text">${item.percent}%</span>
+                </div>
+                <div class="composition-stats">
+                  ${item.count} deck${item.count !== 1 ? "s" : ""}
+                </div>
+              </div>
+            `;
+          });
+
+          container.innerHTML = html;
+        } catch (error) {
+          console.error("Error fetching deck composition:", error);
+          document.getElementById("composition-bars").innerHTML =
+            '<p class="loading-text">Error loading deck composition</p>';
+        }
+      }
+
+      // Fetch deck composition data
+      fetchDeckComposition();
     </script>
 
     <footer>

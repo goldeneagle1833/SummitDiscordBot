@@ -48,24 +48,21 @@
         height: 32px;
         background: rgba(255, 255, 255, 0.1);
         border-radius: 6px;
-        overflow: hidden;
         position: relative;
+        display: flex;
+        align-items: center;
       }
       .composition-bar {
         height: 100%;
         border-radius: 6px;
         transition: width 0.8s ease-out;
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        padding-right: 10px;
-        min-width: 50px;
       }
       .composition-bar-text {
+        position: absolute;
+        right: 10px;
         font-weight: bold;
         font-size: 0.9rem;
-        color: #fff;
-        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+        color: rgba(255, 255, 255, 0.9);
       }
       .composition-stats {
         min-width: 100px;
@@ -399,9 +396,8 @@
               <div class="composition-row ${barElementClass}">
                 <div class="composition-label">${labelHtml}</div>
                 <div class="composition-bar-container">
-                  <div class="composition-bar" style="width: ${item.percent}%;">
-                    <span class="composition-bar-text">${item.percent}%</span>
-                  </div>
+                  <div class="composition-bar" style="width: ${item.percent}%;"></div>
+                  <span class="composition-bar-text">${item.percent}%</span>
                 </div>
                 <div class="composition-stats">
                   ${item.count} deck${item.count !== 1 ? 's' : ''}

@@ -39,10 +39,9 @@
         gap: 1rem;
       }
       .composition-label {
-        min-width: 120px;
+        min-width: 200px;
         font-weight: 600;
         font-size: 0.95rem;
-        text-shadow: 0 0 8px currentColor;
       }
       .composition-bar-container {
         flex: 1;
@@ -366,23 +365,39 @@
           // Show the section
           document.getElementById("deck-composition-section").style.display = "block";
 
+          // Helper function to get element color class
+          function getElementColorClass(elementName) {
+            const el = elementName.toLowerCase();
+            if (el === "fire") return "element-fire";
+            if (el === "water") return "element-water";
+            if (el === "earth") return "element-earth";
+            if (el === "air") return "element-air";
+            return "";
+          }
+
           // Render composition bars
           let html = "";
           data.composition.forEach((item) => {
-            // Determine element class based on composition
-            let elementClass = "element-multi";
+            // Determine element class based on composition (for bar color)
+            let barElementClass = "element-multi";
             const elements = item.elements.split(", ");
             if (elements.length === 1) {
               const el = elements[0].toLowerCase();
-              if (el === "fire") elementClass = "element-fire";
-              else if (el === "water") elementClass = "element-water";
-              else if (el === "earth") elementClass = "element-earth";
-              else if (el === "air") elementClass = "element-air";
+              if (el === "fire") barElementClass = "element-fire";
+              else if (el === "water") barElementClass = "element-water";
+              else if (el === "earth") barElementClass = "element-earth";
+              else if (el === "air") barElementClass = "element-air";
             }
 
+            // Render element names with individual colors
+            let labelHtml = elements.map(el => {
+              const colorClass = getElementColorClass(el);
+              return `<span class="element-name ${colorClass}">${el}</span>`;
+            }).join(", ");
+
             html += `
-              <div class="composition-row ${elementClass}">
-                <div class="composition-label">${item.elements}</div>
+              <div class="composition-row ${barElementClass}">
+                <div class="composition-label">${labelHtml}</div>
                 <div class="composition-bar-container">
                   <div class="composition-bar" style="width: ${item.percent}%;">
                     <span class="composition-bar-text">${item.percent}%</span>

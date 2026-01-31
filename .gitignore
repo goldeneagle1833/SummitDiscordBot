@@ -17,6 +17,7 @@ bot.log
 *.mdb
 *.accdb
 *.pdb
+*.claude
 
 # JSON and related files
 *.jsonl
@@ -37,3 +38,4 @@ web-app/static/css/tailwind.output.css
 web-app/card_images/
 tailwindcss.exe
 nul
+.claude/skills/frontend-design/SKILL.md

@@ -4,6 +4,8 @@ import logging
 
 from flask import Blueprint, jsonify, request
 
+from utils.auth import require_auth
+
 logger = logging.getLogger(__name__)
 
 rules_bp = Blueprint("rules", __name__)
@@ -33,8 +35,14 @@ def _get_rules_assistant():
 
 
 @rules_bp.route("/rules-assistant", methods=["POST"])
+@require_auth
 def rules_assistant():
-    """API endpoint for Rules Assistant chat."""
+    """API endpoint for Rules Assistant chat.
+
+    Requires either:
+    - Valid session (logged-in user from browser)
+    - Valid API key (X-API-Key header for server-to-server calls)
+    """
     try:
         data = request.get_json()
         question = data.get("question", "").strip()

@@ -198,9 +198,6 @@ def deck_snapshot(match_id, player_id):
     logged_in_user_id = session.get("user_id")
     is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(player_id)
 
-    if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
-        is_owner = True
-
     if not is_owner:
         return render_template(
             "pages/error.html", error="You can only view your own deck snapshots"

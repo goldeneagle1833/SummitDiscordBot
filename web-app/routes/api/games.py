@@ -7,6 +7,7 @@ from flask import Blueprint, jsonify, request, session
 
 from webapp_config import MATCH_RECORDS_DB_PATH
 from services.curiosa import CuriosaService
+from utils.auth import require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -14,15 +15,20 @@ games_bp = Blueprint("games", __name__)
 
 
 @games_bp.route("/record-game", methods=["POST"])
+@require_auth
 def record_game():
     """
     API endpoint for users to record personal match results (non-ELO).
     Directly inserts into solo_match_reports table.
-    Requires user to be logged in via session.
+    Requires session login or API key.
     """
     user_id = session.get("user_id")
     if user_id is None:
-        return jsonify({"error": "Authentication required", "success": False}), 401
+        # API key auth - get user_id from request body for server-to-server calls
+        data = request.get_json() or {}
+        user_id = data.get("user_id")
+        if user_id is None:
+            return jsonify({"error": "user_id required for API key auth", "success": False}), 400
 
     username = session.get("username", "Unknown User")
 
@@ -99,14 +105,19 @@ def record_game():
 
 
 @games_bp.route("/delete-recorded-game/<int:report_id>", methods=["DELETE"])
+@require_auth
 def delete_recorded_game(report_id):
     """
     API endpoint to delete a recorded game (solo_match_report).
     Only the owner of the report can delete it.
+    Requires session login or API key.
     """
     user_id = session.get("user_id")
     if user_id is None:
-        return jsonify({"error": "Authentication required", "success": False}), 401
+        # API key auth - get user_id from query param or body
+        user_id = request.args.get("user_id")
+        if user_id is None:
+            return jsonify({"error": "user_id required for API key auth", "success": False}), 400
 
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))

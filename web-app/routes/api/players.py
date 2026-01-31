@@ -20,7 +20,10 @@ def deck_snapshot(match_id, player_id):
     logged_in_user_id = session.get("user_id")
     is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(player_id)
 
-    if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
+    # API key grants access (for server-to-server calls)
+    from webapp_config import VALID_API_KEYS
+    api_key = request.headers.get("X-API-Key")
+    if api_key and api_key in VALID_API_KEYS:
         is_owner = True
 
     if not is_owner:
@@ -297,7 +300,11 @@ def player_api(player_id):
     # Check ownership
     logged_in_user_id = session.get("user_id")
     is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(player_id)
-    if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
+
+    # API key grants owner-level access (for server-to-server calls)
+    from webapp_config import VALID_API_KEYS
+    api_key = request.headers.get("X-API-Key")
+    if api_key and api_key in VALID_API_KEYS:
         is_owner = True
 
     # Build match history

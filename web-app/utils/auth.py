@@ -35,10 +35,54 @@ def require_api_key(f):
     return decorated_function
 
 
+def require_auth(f):
+    """Decorator requiring either session login OR valid API key.
+
+    Use this for endpoints that should be accessible from:
+    - Browser users who are logged in (session)
+    - Server-to-server calls (API key)
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check session first
+        if session.get("user_id"):
+            return f(*args, **kwargs)
+
+        # Check API key
+        provided_key = request.headers.get("X-API-Key") or request.headers.get(
+            "Authorization"
+        )
+        if provided_key and provided_key.startswith("Bearer "):
+            provided_key = provided_key[7:]
+
+        if provided_key and provided_key in VALID_API_KEYS:
+            return f(*args, **kwargs)
+
+        logger.warning(
+            f"Unauthorized access attempt to {request.path} from {request.remote_addr}"
+        )
+        return jsonify({"error": "Authentication required (login or API key)"}), 401
+
+    return decorated_function
+
+
 def is_allowed_card_viewer() -> bool:
-    """Check if the current user is allowed to view card winrates."""
-    if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
+    """Check if the current user is allowed to view card winrates.
+
+    Access granted if:
+    - User is in ALLOWED_CARD_VIEWERS list (session auth)
+    - Request has valid API key
+    """
+    # API key grants access
+    provided_key = request.headers.get("X-API-Key") or request.headers.get(
+        "Authorization"
+    )
+    if provided_key and provided_key.startswith("Bearer "):
+        provided_key = provided_key[7:]
+    if provided_key and provided_key in VALID_API_KEYS:
         return True
+
+    # Check session user against allowlist
     user_id = session.get("user_id")
     if user_id is None:
         return False

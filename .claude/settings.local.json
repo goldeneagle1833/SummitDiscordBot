@@ -17,7 +17,8 @@
       "Bash(git fetch:*)",
       "Bash(sqlite3:*)",
       "Bash(tree:*)",
-      "Bash(git mv:*)"
+      "Bash(git mv:*)",
+      "Bash(curl:*)"
     ]
   },
   "enabledPlugins": {

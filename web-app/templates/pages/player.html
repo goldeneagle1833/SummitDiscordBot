@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -30,8 +30,12 @@
     <style>
       /* Spinner animation for submit button */
       @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
       }
       .btn-spinner {
         display: inline-flex;
@@ -67,7 +71,10 @@
             <div class="player-elo" id="player-elo"></div>
             <div class="player-rank" id="player-rank"></div>
           </div>
-          <button id="record-game-btn" class="btn btn--primary" style="display: none;">
+          <button
+            id="record-game-btn"
+            class="btn btn--primary"
+            style="display: none">
             Record Game
           </button>
         </div>
@@ -102,11 +109,15 @@
           class="elo-chart-section"
           id="elo-chart-section"
           style="display: none">
-          <h3 class="collapsible-header collapsed" id="elo-chart-section-header">
+          <h3
+            class="collapsible-header collapsed"
+            id="elo-chart-section-header">
             <span class="chevron">▼</span>
             📈 ELO History
           </h3>
-          <div class="elo-chart-container collapsible-content collapsed" id="elo-chart-container">
+          <div
+            class="elo-chart-container collapsible-content collapsed"
+            id="elo-chart-container">
             <canvas id="elo-chart"></canvas>
           </div>
         </div>
@@ -141,11 +152,15 @@
           class="recent-decks-section"
           id="recent-decks-section"
           style="display: none">
-          <h3 class="collapsible-header collapsed" id="recent-decks-section-header">
+          <h3
+            class="collapsible-header collapsed"
+            id="recent-decks-section-header">
             <span class="chevron">▼</span>
             🃏 Recent Decks
           </h3>
-          <div class="recent-decks-list collapsible-content collapsed" id="recent-decks-list">
+          <div
+            class="recent-decks-list collapsible-content collapsed"
+            id="recent-decks-list">
             <!-- Recent deck links will be inserted here by JS -->
           </div>
         </div>
@@ -164,10 +179,19 @@
         </div>
 
         <!-- Self-Reported Games (only shown to profile owner) -->
-        <div class="match-history" id="recorded-games-section" style="display: none;">
+        <div
+          class="match-history"
+          id="recorded-games-section"
+          style="display: none">
           <h3>📝 Self-Reported Games</h3>
-          <p style="color: var(--color-text-muted); font-size: var(--font-size-sm); margin-bottom: var(--spacing-md);">
-            Games you've recorded for personal tracking. These do not affect your ELO rating.
+          <p
+            style="
+              color: var(--color-text-muted);
+              font-size: var(--font-size-sm);
+              margin-bottom: var(--spacing-md);
+            ">
+            Games you've recorded for personal tracking. These do not affect
+            your ELO rating.
           </p>
           <table class="match-history-table">
             <thead>
@@ -201,9 +225,15 @@
             <form id="record-game-form">
               <!-- Deck URL field -->
               <div class="form-group">
-                <label class="form-label form-label--required" for="deck-url">Your Deck URL</label>
-                <input type="url" class="form-input" id="deck-url"
-                       placeholder="https://curiosa.io/decks/..." required>
+                <label class="form-label form-label--required" for="deck-url"
+                  >Your Deck URL</label
+                >
+                <input
+                  type="url"
+                  class="form-input"
+                  id="deck-url"
+                  placeholder="https://curiosa.io/decks/..."
+                  required />
                 <span class="form-help">Link to your deck on Curiosa</span>
               </div>
 
@@ -217,47 +247,83 @@
 
               <!-- Did you win toggle -->
               <div class="form-group">
-                <label class="form-label form-label--required">Did you win?</label>
+                <label class="form-label form-label--required"
+                  >Did you win?</label
+                >
                 <div class="btn-group">
-                  <button type="button" class="btn btn--secondary" id="win-yes">Won</button>
-                  <button type="button" class="btn btn--secondary" id="win-no">Lost</button>
+                  <button type="button" class="btn btn--secondary" id="win-yes">
+                    Won
+                  </button>
+                  <button type="button" class="btn btn--secondary" id="win-no">
+                    Lost
+                  </button>
                 </div>
-                <input type="hidden" id="did-win" value="">
+                <input type="hidden" id="did-win" value="" />
               </div>
 
               <!-- Did you go first toggle -->
               <div class="form-group">
-                <label class="form-label form-label--required">Did you go first?</label>
+                <label class="form-label form-label--required"
+                  >Did you go first?</label
+                >
                 <div class="btn-group">
-                  <button type="button" class="btn btn--secondary" id="first-yes">On the Play</button>
-                  <button type="button" class="btn btn--secondary" id="first-no">On the Draw</button>
+                  <button
+                    type="button"
+                    class="btn btn--secondary"
+                    id="first-yes">
+                    On the Play
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn--secondary"
+                    id="first-no">
+                    On the Draw
+                  </button>
                 </div>
-                <input type="hidden" id="went-first" value="">
+                <input type="hidden" id="went-first" value="" />
               </div>
 
               <!-- Optional: Match time -->
               <div class="form-group">
-                <label class="form-label" for="match-time">Match Duration (minutes)</label>
-                <input type="number" class="form-input" id="match-time"
-                       min="0" max="999" placeholder="Optional">
+                <label class="form-label" for="match-time"
+                  >Match Duration (minutes)</label
+                >
+                <input
+                  type="number"
+                  class="form-input"
+                  id="match-time"
+                  min="0"
+                  max="999"
+                  placeholder="Optional" />
               </div>
 
               <!-- Optional: Notes -->
               <div class="form-group">
                 <label class="form-label" for="match-comment">Notes</label>
-                <textarea class="form-textarea" id="match-comment"
-                          placeholder="Optional match notes..."></textarea>
+                <textarea
+                  class="form-textarea"
+                  id="match-comment"
+                  placeholder="Optional match notes..."></textarea>
               </div>
             </form>
           </div>
           <div class="modal__footer">
-            <button type="button" class="btn btn--secondary" id="modal-cancel">Cancel</button>
+            <button type="button" class="btn btn--secondary" id="modal-cancel">
+              Cancel
+            </button>
             <button type="button" class="btn btn--primary" id="modal-submit">
               <span class="btn-text">Submit</span>
-              <span class="btn-spinner" style="display: none;">
-                <svg class="spinner-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
-                  <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/>
+              <span class="btn-spinner" style="display: none">
+                <svg
+                  class="spinner-icon"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2">
+                  <circle cx="12" cy="12" r="10" stroke-opacity="0.25" />
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round" />
                 </svg>
               </span>
             </button>
@@ -301,7 +367,7 @@
 
         // Prepare chart data
         const labels = eloHistory.map((_, i) =>
-          i === 0 ? "Start" : `Match ${i}`
+          i === 0 ? "Start" : `Match ${i}`,
         );
         const eloData = eloHistory.map((h) => h.elo);
         const pointColors = eloHistory.map((h) => {
@@ -445,35 +511,41 @@
           }
           const data = await res.json();
 
+          // Check if running on localhost for full access
+          const isLocalServer =
+            window.location.hostname === "localhost" ||
+            window.location.hostname === "127.0.0.1";
+
           // Update player info
           document.getElementById("player-name").textContent = data.name;
-          document.getElementById(
-            "player-elo"
-          ).textContent = `ELO: ${data.elo}`;
-          document.getElementById(
-            "player-rank"
-          ).textContent = `Rank #${data.rank}`;
+          document.getElementById("player-elo").textContent =
+            `ELO: ${data.elo}`;
+          document.getElementById("player-rank").textContent =
+            `Rank #${data.rank}`;
           document.title = `${data.name} - Sorcerers Summit`;
 
           // Update overall stats
           document.getElementById("stat-wins").textContent = data.wins;
           document.getElementById("stat-losses").textContent = data.losses;
-          document.getElementById(
-            "stat-winrate"
-          ).textContent = `${data.win_rate}%`;
+          document.getElementById("stat-winrate").textContent =
+            `${data.win_rate}%`;
           document.getElementById("stat-matches").textContent =
             data.wins + data.losses;
           document.getElementById("stat-avg-time").textContent =
             data.avg_match_time > 0 ? `${data.avg_match_time} min` : "-";
 
-          // Show Record Game button for profile owner
-          if (data.is_owner) {
+          // Show Record Game button for profile owner or localhost
+          if (data.is_owner || isLocalServer) {
             const recordBtn = document.getElementById("record-game-btn");
             if (recordBtn) recordBtn.style.display = "inline-flex";
           }
 
-          // Render ELO history chart (only for profile owner)
-          if (data.is_owner && data.matches && data.matches.length > 1) {
+          // Render ELO history chart (only for profile owner or localhost)
+          if (
+            (data.is_owner || isLocalServer) &&
+            data.matches &&
+            data.matches.length > 1
+          ) {
             document.getElementById("elo-chart-section").style.display =
               "block";
             renderEloChart(data.elo, data.matches);
@@ -520,10 +592,9 @@
             });
           }
 
-          // Update recent decks (only show to profile owner)
-          // TODO: When Discord OAuth is implemented, this will check if logged-in user owns this profile
+          // Update recent decks (only show to profile owner or localhost)
           if (
-            data.is_owner &&
+            (data.is_owner || isLocalServer) &&
             data.recent_decks &&
             data.recent_decks.length > 0
           ) {
@@ -550,7 +621,7 @@
 
           // Render match history table headers (conditionally include Deck column)
           const thead = document.getElementById("match-history-thead");
-          if (data.is_owner) {
+          if (data.is_owner || isLocalServer) {
             thead.innerHTML = `
               <tr>
                 <th>ID</th>
@@ -584,7 +655,7 @@
           const tbody = document.getElementById("match-history-tbody");
           tbody.innerHTML = "";
 
-          const colspanCount = data.is_owner ? 10 : 8;
+          const colspanCount = data.is_owner || isLocalServer ? 10 : 8;
           if (data.matches.length === 0) {
             tbody.innerHTML = `<tr><td colspan="${colspanCount}" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>`;
             return;
@@ -602,8 +673,8 @@
             const matchId = match.match_id ? `#${match.match_id}` : "-";
             const deckSubmitted = match.has_deck ? "✅" : "❌";
 
-            // Build row HTML conditionally based on is_owner
-            if (data.is_owner) {
+            // Build row HTML conditionally based on is_owner or localhost
+            if (data.is_owner || isLocalServer) {
               // Create deck link if available
               let deckLink = "-";
               if (
@@ -652,19 +723,27 @@
             tbody.appendChild(row);
           });
 
-          // Render self-reported games (only for profile owner or local server)
-          const isLocalServer = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-          if ((data.is_owner || isLocalServer) && data.recorded_games && data.recorded_games.length > 0) {
-            document.getElementById("recorded-games-section").style.display = "block";
-            const recordedTbody = document.getElementById("recorded-games-tbody");
+          // Render self-reported games (only for profile owner or localhost)
+          if (
+            (data.is_owner || isLocalServer) &&
+            data.recorded_games &&
+            data.recorded_games.length > 0
+          ) {
+            document.getElementById("recorded-games-section").style.display =
+              "block";
+            const recordedTbody = document.getElementById(
+              "recorded-games-tbody",
+            );
             recordedTbody.innerHTML = "";
 
             data.recorded_games.forEach((game, index) => {
               const row = document.createElement("tr");
-              const resultClass = game.result === "Win" ? "match-win" : "match-loss";
+              const resultClass =
+                game.result === "Win" ? "match-win" : "match-loss";
               const date = new Date(game.date).toLocaleDateString();
-              const matchTime = game.match_time ? `${game.match_time} min` : "-";
+              const matchTime = game.match_time
+                ? `${game.match_time} min`
+                : "-";
               const reportId = game.report_id ? `#${game.report_id}` : "-";
 
               // Create deck link if available
@@ -688,9 +767,11 @@
           }
 
           // Add event listeners for delete buttons
-          document.querySelectorAll('.delete-recorded-game-btn').forEach(btn => {
-            btn.addEventListener('click', deleteRecordedGame);
-          });
+          document
+            .querySelectorAll(".delete-recorded-game-btn")
+            .forEach((btn) => {
+              btn.addEventListener("click", deleteRecordedGame);
+            });
         } catch (error) {
           document.getElementById("player-name").textContent =
             "Error loading player";
@@ -700,27 +781,27 @@
 
       // Delete a recorded game
       async function deleteRecordedGame(e) {
-        const reportId = e.target.getAttribute('data-report-id');
-        if (!confirm('Are you sure you want to delete this recorded game?')) {
+        const reportId = e.target.getAttribute("data-report-id");
+        if (!confirm("Are you sure you want to delete this recorded game?")) {
           return;
         }
 
         try {
           const res = await fetch(`/api/delete-recorded-game/${reportId}`, {
-            method: 'DELETE'
+            method: "DELETE",
           });
 
           const data = await res.json();
 
           if (res.ok && data.success) {
             fetchPlayerData(); // Refresh the page data
-            alert('Recorded game deleted successfully!');
+            alert("Recorded game deleted successfully!");
           } else {
-            alert('Error: ' + (data.error || 'Failed to delete game'));
+            alert("Error: " + (data.error || "Failed to delete game"));
           }
         } catch (error) {
-          console.error('Delete error:', error);
-          alert('Failed to delete. Please try again.');
+          console.error("Delete error:", error);
+          alert("Failed to delete. Please try again.");
         }
       }
 
@@ -731,110 +812,116 @@
       // Fetch avatars for dropdown
       async function loadAvatars() {
         try {
-          const res = await fetch('/api/list-all-avatars');
+          const res = await fetch("/api/list-all-avatars");
           const data = await res.json();
           avatarsList = data;
-          const select = document.getElementById('opponent-avatar');
-          data.forEach(avatar => {
-            const option = document.createElement('option');
-            option.value = avatar.name;
-            option.textContent = avatar.name;
+          const select = document.getElementById("opponent-avatar");
+          data.forEach((avatarName) => {
+            const option = document.createElement("option");
+            option.value = avatarName;
+            option.textContent = avatarName;
             select.appendChild(option);
           });
         } catch (error) {
-          console.error('Failed to load avatars:', error);
+          console.error("Failed to load avatars:", error);
         }
       }
 
       // Show/hide modal
       function showRecordGameModal() {
-        document.getElementById('record-game-modal').classList.add('modal--active');
+        document
+          .getElementById("record-game-modal")
+          .classList.add("modal--active");
       }
 
       function hideRecordGameModal() {
-        document.getElementById('record-game-modal').classList.remove('modal--active');
+        document
+          .getElementById("record-game-modal")
+          .classList.remove("modal--active");
         resetRecordGameForm();
       }
 
       function resetRecordGameForm() {
-        document.getElementById('record-game-form').reset();
-        document.getElementById('did-win').value = '';
-        document.getElementById('went-first').value = '';
+        document.getElementById("record-game-form").reset();
+        document.getElementById("did-win").value = "";
+        document.getElementById("went-first").value = "";
         // Reset button states
-        ['win-yes', 'win-no', 'first-yes', 'first-no'].forEach(id => {
-          document.getElementById(id).classList.remove('btn--active');
+        ["win-yes", "win-no", "first-yes", "first-no"].forEach((id) => {
+          document.getElementById(id).classList.remove("btn--active");
         });
       }
 
       // Toggle button selection
       function setupToggleButtons() {
-        const winYes = document.getElementById('win-yes');
-        const winNo = document.getElementById('win-no');
-        const firstYes = document.getElementById('first-yes');
-        const firstNo = document.getElementById('first-no');
+        const winYes = document.getElementById("win-yes");
+        const winNo = document.getElementById("win-no");
+        const firstYes = document.getElementById("first-yes");
+        const firstNo = document.getElementById("first-no");
 
-        winYes.addEventListener('click', () => {
-          document.getElementById('did-win').value = 'true';
-          winYes.classList.add('btn--active');
-          winNo.classList.remove('btn--active');
+        winYes.addEventListener("click", () => {
+          document.getElementById("did-win").value = "true";
+          winYes.classList.add("btn--active");
+          winNo.classList.remove("btn--active");
         });
 
-        winNo.addEventListener('click', () => {
-          document.getElementById('did-win').value = 'false';
-          winNo.classList.add('btn--active');
-          winYes.classList.remove('btn--active');
+        winNo.addEventListener("click", () => {
+          document.getElementById("did-win").value = "false";
+          winNo.classList.add("btn--active");
+          winYes.classList.remove("btn--active");
         });
 
-        firstYes.addEventListener('click', () => {
-          document.getElementById('went-first').value = 'true';
-          firstYes.classList.add('btn--active');
-          firstNo.classList.remove('btn--active');
+        firstYes.addEventListener("click", () => {
+          document.getElementById("went-first").value = "true";
+          firstYes.classList.add("btn--active");
+          firstNo.classList.remove("btn--active");
         });
 
-        firstNo.addEventListener('click', () => {
-          document.getElementById('went-first').value = 'false';
-          firstNo.classList.add('btn--active');
-          firstYes.classList.remove('btn--active');
+        firstNo.addEventListener("click", () => {
+          document.getElementById("went-first").value = "false";
+          firstNo.classList.add("btn--active");
+          firstYes.classList.remove("btn--active");
         });
       }
 
       // Submit form
       async function submitRecordGame() {
-        const deckUrl = document.getElementById('deck-url').value.trim();
-        const opponentAvatar = document.getElementById('opponent-avatar').value;
-        const didWin = document.getElementById('did-win').value;
-        const wentFirst = document.getElementById('went-first').value;
-        const matchTime = document.getElementById('match-time').value;
-        const matchComment = document.getElementById('match-comment').value.trim();
+        const deckUrl = document.getElementById("deck-url").value.trim();
+        const opponentAvatar = document.getElementById("opponent-avatar").value;
+        const didWin = document.getElementById("did-win").value;
+        const wentFirst = document.getElementById("went-first").value;
+        const matchTime = document.getElementById("match-time").value;
+        const matchComment = document
+          .getElementById("match-comment")
+          .value.trim();
 
         // Validation
         if (!deckUrl || !opponentAvatar || !didWin || !wentFirst) {
-          alert('Please fill in all required fields');
+          alert("Please fill in all required fields");
           return;
         }
 
         // Get button elements
-        const submitBtn = document.getElementById('modal-submit');
-        const btnText = submitBtn.querySelector('.btn-text');
-        const btnSpinner = submitBtn.querySelector('.btn-spinner');
+        const submitBtn = document.getElementById("modal-submit");
+        const btnText = submitBtn.querySelector(".btn-text");
+        const btnSpinner = submitBtn.querySelector(".btn-spinner");
 
         // Disable button and show spinner
         submitBtn.disabled = true;
-        btnText.textContent = 'Submitting...';
-        btnSpinner.style.display = 'inline-flex';
+        btnText.textContent = "Submitting...";
+        btnSpinner.style.display = "inline-flex";
 
         try {
-          const res = await fetch('/api/record-game', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          const res = await fetch("/api/record-game", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               deck_url: deckUrl,
               opponent_avatar: opponentAvatar,
-              did_win: didWin === 'true',
-              went_first: wentFirst === 'true',
+              did_win: didWin === "true",
+              went_first: wentFirst === "true",
               match_time: matchTime ? parseInt(matchTime) : 0,
-              match_comment: matchComment
-            })
+              match_comment: matchComment,
+            }),
           });
 
           const data = await res.json();
@@ -842,58 +929,71 @@
           if (res.ok && data.success) {
             hideRecordGameModal();
             fetchPlayerData(); // Refresh the page data
-            alert('Game recorded successfully!');
+            alert("Game recorded successfully!");
           } else {
-            alert('Error: ' + (data.error || 'Failed to record game'));
+            alert("Error: " + (data.error || "Failed to record game"));
           }
         } catch (error) {
-          console.error('Submit error:', error);
-          alert('Failed to submit. Please try again.');
+          console.error("Submit error:", error);
+          alert("Failed to submit. Please try again.");
         } finally {
           // Re-enable button and hide spinner
           submitBtn.disabled = false;
-          btnText.textContent = 'Submit';
-          btnSpinner.style.display = 'none';
+          btnText.textContent = "Submit";
+          btnSpinner.style.display = "none";
         }
       }
 
       // Setup collapsible sections
       function setupCollapsibleSections() {
-        const collapsibleHeaders = document.querySelectorAll('.collapsible-header');
+        const collapsibleHeaders = document.querySelectorAll(
+          ".collapsible-header",
+        );
 
-        collapsibleHeaders.forEach(header => {
-          header.addEventListener('click', () => {
+        collapsibleHeaders.forEach((header) => {
+          header.addEventListener("click", () => {
             // Toggle collapsed state on header
-            header.classList.toggle('collapsed');
+            header.classList.toggle("collapsed");
 
             // Find the next sibling that's the collapsible content
             const content = header.nextElementSibling;
-            if (content && content.classList.contains('collapsible-content')) {
-              content.classList.toggle('collapsed');
+            if (content && content.classList.contains("collapsible-content")) {
+              content.classList.toggle("collapsed");
             }
 
             // Save state to localStorage
-            const sectionId = header.id.replace('-header', '');
-            const isCollapsed = header.classList.contains('collapsed');
+            const sectionId = header.id.replace("-header", "");
+            const isCollapsed = header.classList.contains("collapsed");
             localStorage.setItem(`section-collapsed-${sectionId}`, isCollapsed);
           });
 
           // Restore state from localStorage if it exists
-          const sectionId = header.id.replace('-header', '');
-          const savedState = localStorage.getItem(`section-collapsed-${sectionId}`);
+          const sectionId = header.id.replace("-header", "");
+          const savedState = localStorage.getItem(
+            `section-collapsed-${sectionId}`,
+          );
           if (savedState !== null) {
-            const wasCollapsed = savedState === 'true';
-            if (wasCollapsed && !header.classList.contains('collapsed')) {
-              header.classList.add('collapsed');
+            const wasCollapsed = savedState === "true";
+            if (wasCollapsed && !header.classList.contains("collapsed")) {
+              header.classList.add("collapsed");
               const content = header.nextElementSibling;
-              if (content && content.classList.contains('collapsible-content')) {
-                content.classList.add('collapsed');
+              if (
+                content &&
+                content.classList.contains("collapsible-content")
+              ) {
+                content.classList.add("collapsed");
               }
-            } else if (!wasCollapsed && header.classList.contains('collapsed')) {
-              header.classList.remove('collapsed');
+            } else if (
+              !wasCollapsed &&
+              header.classList.contains("collapsed")
+            ) {
+              header.classList.remove("collapsed");
               const content = header.nextElementSibling;
-              if (content && content.classList.contains('collapsible-content')) {
-                content.classList.remove('collapsed');
+              if (
+                content &&
+                content.classList.contains("collapsible-content")
+              ) {
+                content.classList.remove("collapsed");
               }
             }
           }
@@ -901,21 +1001,31 @@
       }
 
       // Initialize modal when page loads
-      document.addEventListener('DOMContentLoaded', () => {
+      document.addEventListener("DOMContentLoaded", () => {
         loadAvatars();
         setupToggleButtons();
         setupCollapsibleSections();
 
         // Event listeners
-        document.getElementById('record-game-btn')?.addEventListener('click', showRecordGameModal);
-        document.getElementById('modal-close')?.addEventListener('click', hideRecordGameModal);
-        document.getElementById('modal-backdrop')?.addEventListener('click', hideRecordGameModal);
-        document.getElementById('modal-cancel')?.addEventListener('click', hideRecordGameModal);
-        document.getElementById('modal-submit')?.addEventListener('click', submitRecordGame);
+        document
+          .getElementById("record-game-btn")
+          ?.addEventListener("click", showRecordGameModal);
+        document
+          .getElementById("modal-close")
+          ?.addEventListener("click", hideRecordGameModal);
+        document
+          .getElementById("modal-backdrop")
+          ?.addEventListener("click", hideRecordGameModal);
+        document
+          .getElementById("modal-cancel")
+          ?.addEventListener("click", hideRecordGameModal);
+        document
+          .getElementById("modal-submit")
+          ?.addEventListener("click", submitRecordGame);
 
         // Close on Escape key
-        document.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape') hideRecordGameModal();
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") hideRecordGameModal();
         });
       });
 

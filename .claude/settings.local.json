@@ -19,5 +19,11 @@
       "Bash(tree:*)",
       "Bash(git mv:*)"
     ]
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": true,
+    "api-reference-documentation@claude-skills": true,
+    "api-security-hardening@claude-skills": true
   }
 }

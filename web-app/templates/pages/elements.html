@@ -326,7 +326,40 @@
           </div>
         </div>
 
-        <!-- Chart 3: Deck Element Composition (ADMINS only) -->
+        <!-- Chart 3: Dominant Element Win Rate -->
+        <div class="elements-chart-container" id="dominant-container">
+          <h2 class="chart-title">Dominant Element Win Rate</h2>
+          <p class="chart-subtitle">
+            Only the element with the most cards in each deck is counted. Spellbook only, no sites.
+          </p>
+          <div id="dominant-bars" class="element-bars">
+            <p class="loading-text">Loading dominant element data...</p>
+          </div>
+        </div>
+
+        <!-- Chart 4: Splash Element Win Rates (ADMINS only) -->
+        <div class="elements-chart-container" id="splash-container" style="display: none;">
+          <h2 class="chart-title">Splash Element Win Rate</h2>
+          <p class="chart-subtitle">
+            Only the element with the least cards in each deck is counted. Multi-element decks only, spellbook only.
+          </p>
+          <div id="splash-bars" class="element-bars">
+            <p class="loading-text">Loading splash element data...</p>
+          </div>
+        </div>
+
+        <!-- Chart 5: Element Combination Win Rates (ADMINS only) -->
+        <div class="elements-chart-container" id="combo-container" style="display: none;">
+          <h2 class="chart-title">Element Combination Win Rates</h2>
+          <p class="chart-subtitle">
+            Win rates for specific element pairings (minimum 3 games to show).
+          </p>
+          <div id="combo-bars" class="composition-bars">
+            <p class="loading-text">Loading combination data...</p>
+          </div>
+        </div>
+
+        <!-- Chart 6: Deck Element Composition (ADMINS only) -->
         <div class="elements-chart-container" id="deck-composition-container" style="display: none;">
           <h2 class="chart-title">Deck Element Composition</h2>
           <p class="chart-subtitle">
@@ -340,6 +373,90 @@
     </main>
 
     <script>
+      // Helper to get element color class for combo labels
+      function getElementColorClass(elementName) {
+        const el = elementName.toLowerCase().trim();
+        if (el === "fire") return "element-fire";
+        if (el === "water") return "element-water";
+        if (el === "earth") return "element-earth";
+        if (el === "air") return "element-air";
+        return "";
+      }
+
+      // Render element bars (used for charts 1 and 3)
+      function renderElementBars(data, containerId, sortByWinRate = true) {
+        const container = document.getElementById(containerId);
+        if (!data || data.length === 0) {
+          container.innerHTML = '<p class="loading-text">No data available.</p>';
+          return;
+        }
+        const sorted = sortByWinRate
+          ? [...data].sort((a, b) => b.win_rate - a.win_rate)
+          : data;
+        let html = "";
+        sorted.forEach((element) => {
+          const elementClass = `element-${element.name.toLowerCase()}`;
+          html += `
+            <div class="element-row ${elementClass}">
+              <div class="element-label">${element.name}</div>
+              <div class="element-bar-container">
+                <div class="element-bar" style="width: ${element.win_rate}%;">
+                  <span class="element-bar-text">${element.win_rate}%</span>
+                </div>
+              </div>
+              <div class="element-stats">
+                ${element.wins}W - ${element.losses}L
+              </div>
+            </div>
+          `;
+        });
+        container.innerHTML = html;
+      }
+
+      // Render combo bars (for chart 4)
+      function renderComboBars(combos, containerId) {
+        const container = document.getElementById(containerId);
+        if (!combos || combos.length === 0) {
+          container.innerHTML = '<p class="loading-text">No combination data available yet.</p>';
+          return;
+        }
+
+        // Sort by win rate descending
+        const sorted = [...combos].sort((a, b) => b.win_rate - a.win_rate);
+
+        let html = "";
+        sorted.forEach((combo) => {
+          const elements = combo.name.split(", ");
+          // Determine bar color class
+          let barElementClass = "element-multi";
+          if (elements.length === 1) {
+            barElementClass = getElementColorClass(elements[0]) || "element-multi";
+          }
+
+          // Render element names with individual colors
+          const labelHtml = elements
+            .map((el) => {
+              const colorClass = getElementColorClass(el);
+              return `<span class="${colorClass}" style="text-shadow: 0 0 10px currentColor;">${el.trim()}</span>`;
+            })
+            .join(" / ");
+
+          html += `
+            <div class="composition-row ${barElementClass}">
+              <div class="composition-label">${labelHtml}</div>
+              <div class="composition-bar-container">
+                <div class="composition-bar" style="width: ${combo.win_rate}%;"></div>
+                <span class="composition-bar-text">${combo.win_rate}%</span>
+              </div>
+              <div class="composition-stats">
+                ${combo.wins}W - ${combo.losses}L (${combo.total})
+              </div>
+            </div>
+          `;
+        });
+        container.innerHTML = html;
+      }
+
       async function fetchElementStats() {
         try {
           const res = await fetch("/api/elements");
@@ -347,39 +464,29 @@
 
           const container = document.getElementById("element-bars");
           const presenceContainer = document.getElementById("presence-bars");
+          const dominantContainer = document.getElementById("dominant-bars");
+          const comboContainer = document.getElementById("combo-bars");
 
-          if (!data || data.length === 0) {
+          // Handle both old array format and new object format
+          const elements = Array.isArray(data) ? data : data.elements;
+          const dominant = data.dominant || [];
+          const splash = data.splash || [];
+          const combinations = data.combinations || [];
+
+          if (!elements || elements.length === 0) {
             container.innerHTML =
               '<p class="loading-text">No element data available yet. Report matches with decklists to see stats!</p>';
             presenceContainer.innerHTML = "";
+            dominantContainer.innerHTML = "";
+            comboContainer.innerHTML = "";
             return;
           }
 
-          // Chart 1: Win Rate - sort by win rate descending
-          const sortedByWinRate = [...data].sort(
-            (a, b) => b.win_rate - a.win_rate
-          );
-          let html = "";
-          sortedByWinRate.forEach((element) => {
-            const elementClass = `element-${element.name.toLowerCase()}`;
-            html += `
-              <div class="element-row ${elementClass}">
-                <div class="element-label">${element.name}</div>
-                <div class="element-bar-container">
-                  <div class="element-bar" style="width: ${element.win_rate}%;">
-                    <span class="element-bar-text">${element.win_rate}%</span>
-                  </div>
-                </div>
-                <div class="element-stats">
-                  ${element.wins}W - ${element.losses}L
-                </div>
-              </div>
-            `;
-          });
-          container.innerHTML = html;
+          // Chart 1: Win Rate by Element (with overlap)
+          renderElementBars(elements, "element-bars");
 
           // Chart 2: Presence - sort by win presence descending
-          const sortedByPresence = [...data].sort(
+          const sortedByPresence = [...elements].sort(
             (a, b) => b.win_presence - a.win_presence
           );
           let presenceHtml = "";
@@ -423,11 +530,30 @@
             `;
           });
           presenceContainer.innerHTML = presenceHtml;
+
+          // Chart 3: Dominant Element Win Rates (public)
+          renderElementBars(dominant, "dominant-bars");
+
+          // Chart 4: Splash Element Win Rates (admin only)
+          if (splash && splash.length > 0) {
+            document.getElementById("splash-container").style.display = "block";
+            renderElementBars(splash, "splash-bars");
+          }
+
+          // Chart 5: Element Combination Win Rates (admin only)
+          if (combinations && combinations.length > 0) {
+            document.getElementById("combo-container").style.display = "block";
+            renderComboBars(combinations, "combo-bars");
+          }
+
         } catch (err) {
           console.error("Error fetching element stats", err);
           document.getElementById("element-bars").innerHTML =
             '<p class="loading-text">Error loading element stats</p>';
           document.getElementById("presence-bars").innerHTML = "";
+          document.getElementById("dominant-bars").innerHTML = "";
+          document.getElementById("splash-bars").innerHTML = "";
+          document.getElementById("combo-bars").innerHTML = "";
         }
       }
 
@@ -462,16 +588,6 @@
 
           // Show the section
           document.getElementById("deck-composition-container").style.display = "block";
-
-          // Helper function to get element color class
-          function getElementColorClass(elementName) {
-            const el = elementName.toLowerCase();
-            if (el === "fire") return "element-fire";
-            if (el === "water") return "element-water";
-            if (el === "earth") return "element-earth";
-            if (el === "air") return "element-air";
-            return "";
-          }
 
           // Render composition bars
           let html = "";

@@ -336,6 +336,11 @@ def player_api(player_id):
         player_deck_url_check = winner_deck_url if did_win else loser_deck_url
         player_deck_json = winner_json if did_win else loser_json
 
+        # Only count deck as submitted if the player-specific columns have data.
+        # We intentionally do NOT use old_curiosa_url or old_json_deck_data because
+        # those legacy columns belong to whoever reported the match, not necessarily
+        # the player being viewed. This prevents showing the opponent's deck submission
+        # status on your profile.
         has_deck = False
         has_deck_json = False
         if player_deck_url_check and player_deck_url_check not in ("No URL provided", "Admin reported match", "{}", "", None):
@@ -343,12 +348,6 @@ def player_api(player_id):
         if player_deck_json and player_deck_json not in ("{}", "", None):
             has_deck = True
             has_deck_json = True
-        elif old_curiosa_url and old_curiosa_url not in ("No URL provided", "Admin reported match", "{}", "", None):
-            has_deck = True
-        if old_json_deck_data and old_json_deck_data not in ("{}", "", None):
-            has_deck = True
-            if not has_deck_json:
-                has_deck_json = True
 
         if is_owner:
             player_deck_url = winner_deck_url if did_win else loser_deck_url

@@ -39,14 +39,16 @@ class MatchService:
         player_id_str = str(player_id)
 
         if player_id_str == winner_id:
-            deck_json = (
-                winner_json if winner_json and winner_json != "{}" else old_json_deck
-            )
+            # Only use winner-specific deck data; don't fall back to old_json_deck
+            # because it might belong to the loser (whoever reported the match)
+            deck_json = winner_json if winner_json and winner_json != "{}" else None
             player_name = winner_name
             result = "Win"
             opponent_name = loser_name
         elif player_id_str == loser_id:
-            deck_json = loser_json if loser_json and loser_json != "{}" else old_json_deck
+            # Only use loser-specific deck data; don't fall back to old_json_deck
+            # because it might belong to the winner (whoever reported the match)
+            deck_json = loser_json if loser_json and loser_json != "{}" else None
             player_name = loser_name
             result = "Loss"
             opponent_name = winner_name

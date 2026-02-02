@@ -339,45 +339,114 @@ def get_elements():
         "Earth": {"wins": 0, "losses": 0},
         "Air": {"wins": 0, "losses": 0},
     }
-    sections = ["spellbook", "atlas", "sideboard"]
+    # Stats for dominant element only (element with most cards)
+    dominant_stats = {
+        "Fire": {"wins": 0, "losses": 0},
+        "Water": {"wins": 0, "losses": 0},
+        "Earth": {"wins": 0, "losses": 0},
+        "Air": {"wins": 0, "losses": 0},
+    }
+    # Stats for splash element (element with least cards, excluding mono-element decks)
+    splash_stats = {
+        "Fire": {"wins": 0, "losses": 0},
+        "Water": {"wins": 0, "losses": 0},
+        "Earth": {"wins": 0, "losses": 0},
+        "Air": {"wins": 0, "losses": 0},
+    }
+    # Stats for element combinations
+    combination_stats = {}  # {"Fire, Water": {"wins": 0, "losses": 0}, ...}
 
-    def get_deck_elements(deck_json):
+    sections = ["spellbook", "atlas", "sideboard"]
+    # For dominant/splash, only count spellbook (no sites)
+    spellbook_only = ["spellbook"]
+
+    def get_deck_elements_detailed(deck_json):
+        """Returns (elements_set, element_counts, dominant_element, splash_element, combo_key)."""
         elements = set()
+        element_counts = Counter()  # For spellbook only (no sites)
         if not deck_json or deck_json in ("", "{}"):
-            return elements
+            return elements, element_counts, None, None, None
         try:
             deck_data = json.loads(deck_json)
             deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+            # Count all elements for presence tracking
             for sec in sections:
                 for card in deck.get(sec, []) or []:
                     card_name = (card.get("name") or "").lower()
                     if card_name in card_elements:
                         elements.update(card_elements[card_name])
+            # Count only spellbook for dominant/splash calculation
+            for sec in spellbook_only:
+                for card in deck.get(sec, []) or []:
+                    card_name = (card.get("name") or "").lower()
+                    if card_name in card_elements:
+                        card_els = card_elements[card_name]
+                        qty = card.get("quantity", 1) or 1
+                        for el in card_els:
+                            element_counts[el] += qty
         except (json.JSONDecodeError, KeyError, IndexError, TypeError):
             pass
+
+        dominant = element_counts.most_common(1)[0][0] if element_counts else None
+        # Splash is the least common element (only if 2+ elements)
+        splash = None
+        if len(element_counts) >= 2:
+            splash = element_counts.most_common()[-1][0]
+        # Combo key uses spellbook elements only (no sites)
+        spellbook_elements = set(element_counts.keys())
+        combo_key = ", ".join(sorted(spellbook_elements)) if spellbook_elements else None
+        return elements, element_counts, dominant, splash, combo_key
+
+    def get_deck_elements(deck_json):
+        """Legacy function - returns just elements set."""
+        elements, _, _, _, _ = get_deck_elements_detailed(deck_json)
         return elements
+
+    def record_stats(deck_json, is_win):
+        """Record stats for a deck in all tracking methods."""
+        elements, counts, dominant, splash, combo = get_deck_elements_detailed(deck_json)
+
+        # Original: count all elements present
+        for element in elements:
+            if element in element_stats:
+                if is_win:
+                    element_stats[element]["wins"] += 1
+                else:
+                    element_stats[element]["losses"] += 1
+
+        # Dominant element only
+        if dominant and dominant in dominant_stats:
+            if is_win:
+                dominant_stats[dominant]["wins"] += 1
+            else:
+                dominant_stats[dominant]["losses"] += 1
+
+        # Splash element (least cards, only for multi-element decks)
+        if splash and splash in splash_stats:
+            if is_win:
+                splash_stats[splash]["wins"] += 1
+            else:
+                splash_stats[splash]["losses"] += 1
+
+        # Element combination
+        if combo:
+            if combo not in combination_stats:
+                combination_stats[combo] = {"wins": 0, "losses": 0}
+            if is_win:
+                combination_stats[combo]["wins"] += 1
+            else:
+                combination_stats[combo]["losses"] += 1
 
     if use_new_columns:
         for row in rows:
-            winner_elements = get_deck_elements(row[0])
-            for element in winner_elements:
-                if element in element_stats:
-                    element_stats[element]["wins"] += 1
-
-            loser_elements = get_deck_elements(row[1])
-            for element in loser_elements:
-                if element in element_stats:
-                    element_stats[element]["losses"] += 1
+            if row[0]:  # winner deck exists
+                record_stats(row[0], is_win=True)
+            if row[1]:  # loser deck exists
+                record_stats(row[1], is_win=False)
     else:
         for row in rows:
             reporter_won = row[0]
-            elements = get_deck_elements(row[1])
-            for element in elements:
-                if element in element_stats:
-                    if reporter_won:
-                        element_stats[element]["wins"] += 1
-                    else:
-                        element_stats[element]["losses"] += 1
+            record_stats(row[1], is_win=bool(reporter_won))
 
     total_wins = sum(stats["wins"] for stats in element_stats.values())
     total_losses = sum(stats["losses"] for stats in element_stats.values())
@@ -399,7 +468,58 @@ def get_elements():
             "loss_presence": round(loss_presence, 1),
         })
 
-    return jsonify(element_list)
+    # Base response with public data
+    response = {"elements": element_list}
+
+    # Build dominant element list (public)
+    dominant_list = []
+    for name in ["Fire", "Water", "Earth", "Air"]:
+        stats = dominant_stats[name]
+        total = stats["wins"] + stats["losses"]
+        win_rate = (stats["wins"] / total * 100) if total > 0 else 50.0
+        dominant_list.append({
+            "name": name,
+            "wins": stats["wins"],
+            "losses": stats["losses"],
+            "total": total,
+            "win_rate": round(win_rate, 1),
+        })
+    response["dominant"] = dominant_list
+
+    # Admin-only data: splash element and combinations
+    if is_admin():
+        # Build splash element list (least common element in multi-element decks)
+        splash_list = []
+        for name in ["Fire", "Water", "Earth", "Air"]:
+            stats = splash_stats[name]
+            total = stats["wins"] + stats["losses"]
+            win_rate = (stats["wins"] / total * 100) if total > 0 else 50.0
+            splash_list.append({
+                "name": name,
+                "wins": stats["wins"],
+                "losses": stats["losses"],
+                "total": total,
+                "win_rate": round(win_rate, 1),
+            })
+        response["splash"] = splash_list
+
+        # Build combination list (sorted by total games descending)
+        combo_list = []
+        for combo, stats in combination_stats.items():
+            total = stats["wins"] + stats["losses"]
+            if total >= 3:  # Only show combos with at least 3 games
+                win_rate = (stats["wins"] / total * 100) if total > 0 else 50.0
+                combo_list.append({
+                    "name": combo,
+                    "wins": stats["wins"],
+                    "losses": stats["losses"],
+                    "total": total,
+                    "win_rate": round(win_rate, 1),
+                })
+        combo_list.sort(key=lambda x: x["total"], reverse=True)
+        response["combinations"] = combo_list
+
+    return jsonify(response)
 
 
 @cards_bp.route("/deck-composition")

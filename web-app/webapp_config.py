@@ -46,8 +46,8 @@ DISCORD_REDIRECT_URI = os.environ.get(
     "DISCORD_REDIRECT_URI", "http://localhost:5000/auth/discord/callback"
 )
 
-# Allowed Discord IDs for card winrates page
-ALLOWED_CARD_VIEWERS = [
+# Admin Discord IDs - full access to all features in production
+ADMINS = [
     "296846802924208130",  # Owner
     "146923845549424640",  # keven
     "128690099432062976",  # ember

@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify
 
 from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH
 from utils.formatting import generate_pseudonym
-from utils.auth import is_allowed_card_viewer
+from utils.auth import is_admin
 
 logger = logging.getLogger(__name__)
 
@@ -282,7 +282,7 @@ def get_avatar(avatar_name):
 @avatars_bp.route("/avatar/<avatar_name>/deck-composition")
 def get_avatar_deck_composition(avatar_name):
     """API endpoint for deck element composition for a specific avatar."""
-    if not is_allowed_card_viewer():
+    if not is_admin():
         return jsonify({"error": "Forbidden"}), 403
 
     avatar_name = unquote(avatar_name)

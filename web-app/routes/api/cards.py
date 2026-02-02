@@ -11,7 +11,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify, current_app
 
 from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH, CARD_IMAGES_DIR
-from utils.auth import is_allowed_card_viewer
+from utils.auth import is_admin
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def _find_card_image(card_name, lookup):
 @cards_bp.route("/cards")
 def get_cards():
     """API endpoint for per-card winrates from all matches with deck data."""
-    if not is_allowed_card_viewer():
+    if not is_admin():
         return jsonify({"error": "Unauthorized"}), 403
 
     card_image_lookup = _build_card_image_lookup()
@@ -165,7 +165,7 @@ def get_cards():
 @cards_bp.route("/live-popular-cards")
 def get_live_popular_cards():
     """API endpoint for live card popularity stats from all matches with deck data."""
-    if not is_allowed_card_viewer():
+    if not is_admin():
         return jsonify({"error": "Unauthorized"}), 403
 
     # Load card metadata
@@ -405,7 +405,7 @@ def get_elements():
 @cards_bp.route("/deck-composition")
 def get_deck_composition():
     """API endpoint for deck element composition across all decks."""
-    if not is_allowed_card_viewer():
+    if not is_admin():
         return jsonify({"error": "Forbidden"}), 403
 
     card_elements = _load_card_elements()

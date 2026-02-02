@@ -6,8 +6,9 @@ import sqlite3
 
 from flask import Blueprint, jsonify, session, request
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH
+from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, VALID_API_KEYS
 from services.match import MatchService
+from utils.auth import is_admin
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +22,12 @@ def deck_snapshot(match_id, player_id):
     is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(player_id)
 
     # API key grants access (for server-to-server calls)
-    from webapp_config import VALID_API_KEYS
     api_key = request.headers.get("X-API-Key")
     if api_key and api_key in VALID_API_KEYS:
+        is_owner = True
+
+    # Admins have full access
+    if is_admin():
         is_owner = True
 
     if not is_owner:
@@ -302,9 +306,12 @@ def player_api(player_id):
     is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(player_id)
 
     # API key grants owner-level access (for server-to-server calls)
-    from webapp_config import VALID_API_KEYS
     api_key = request.headers.get("X-API-Key")
     if api_key and api_key in VALID_API_KEYS:
+        is_owner = True
+
+    # Admins have full access to all player profiles
+    if is_admin():
         is_owner = True
 
     # Build match history

@@ -4,7 +4,7 @@ import os
 from flask import Blueprint, render_template, redirect, url_for, session, request
 
 from webapp_config import AVATAR_IMAGES_DIR, TOP_8_DIR
-from utils.auth import is_allowed_card_viewer
+from utils.auth import is_admin
 from utils.formatting import format_event_name
 from repositories.fart import FartRepository
 from repositories.events import EventRepository
@@ -63,7 +63,7 @@ def avatars():
 @pages_bp.route("/cards")
 def cards():
     """Card winrates page - restricted to allowed Discord users."""
-    if not is_allowed_card_viewer():
+    if not is_admin():
         if session.get("user_id") is None:
             return redirect(url_for("auth.discord_login"))
         return render_template(
@@ -75,7 +75,7 @@ def cards():
 @pages_bp.route("/live-popular-cards")
 def live_popular_cards():
     """Live popular cards page - restricted to allowed Discord users."""
-    if not is_allowed_card_viewer():
+    if not is_admin():
         if session.get("user_id") is None:
             return redirect(url_for("auth.discord_login"))
         return render_template(
@@ -198,7 +198,8 @@ def deck_snapshot(match_id, player_id):
     logged_in_user_id = session.get("user_id")
     is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(player_id)
 
-    if not is_owner:
+    # Admins can view any deck snapshot
+    if not is_owner and not is_admin():
         return render_template(
             "pages/error.html", error="You can only view your own deck snapshots"
         ), 403

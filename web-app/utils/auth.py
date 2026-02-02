@@ -4,7 +4,7 @@ import logging
 from functools import wraps
 from flask import request, session, jsonify
 
-from webapp_config import VALID_API_KEYS, ALLOWED_CARD_VIEWERS
+from webapp_config import VALID_API_KEYS, ADMINS
 
 logger = logging.getLogger(__name__)
 
@@ -66,11 +66,11 @@ def require_auth(f):
     return decorated_function
 
 
-def is_allowed_card_viewer() -> bool:
-    """Check if the current user is allowed to view card winrates.
+def is_admin() -> bool:
+    """Check if the current user is an admin.
 
     Access granted if:
-    - User is in ALLOWED_CARD_VIEWERS list (session auth)
+    - User is in ADMINS list (session auth)
     - Request has valid API key
     """
     # API key grants access
@@ -82,12 +82,12 @@ def is_allowed_card_viewer() -> bool:
     if provided_key and provided_key in VALID_API_KEYS:
         return True
 
-    # Check session user against allowlist
+    # Check session user against admin list
     user_id = session.get("user_id")
     if user_id is None:
         return False
-    return int(user_id) in ALLOWED_CARD_VIEWERS or str(user_id) in [
-        str(x) for x in ALLOWED_CARD_VIEWERS
+    return int(user_id) in ADMINS or str(user_id) in [
+        str(x) for x in ADMINS
     ]
 
 

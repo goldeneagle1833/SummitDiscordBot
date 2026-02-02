@@ -26,7 +26,7 @@ if _sorcery_ai_path not in sys.path:
     sys.path.append(_sorcery_ai_path)
 
 from utils.version import APP_VERSION
-from utils.auth import get_current_user, is_allowed_card_viewer
+from utils.auth import get_current_user, is_admin
 from routes import register_blueprints
 
 # Configure logging
@@ -55,7 +55,7 @@ def create_app() -> Flask:
         return {
             "current_user": get_current_user(),
             "app_version": APP_VERSION,
-            "can_view_cards": is_allowed_card_viewer(),
+            "is_admin": is_admin(),
         }
 
     logger.info(f"Application initialized, version: {APP_VERSION}")

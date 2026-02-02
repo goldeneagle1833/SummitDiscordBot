@@ -528,18 +528,18 @@ a.feature-card {
 .player-profile h3 {
   font-family: "Inter", sans-serif;
   color: var(--color-text);
-  margin: var(--spacing-xl) 0 var(--spacing-md);
+  margin: 0 0 var(--spacing-sm);
   font-size: 1.125rem;
   font-weight: 600;
 }
 
-.player-profile h3:first-of-type {
-  margin-top: 0;
+.player-profile h3.collapsible-header {
+  margin: 0;
 }
 
 /* Avatar Performance Section */
 .avatar-section {
-  margin: var(--spacing-2xl) 0;
+  margin: var(--spacing-md) 0;
 }
 
 .avatar-grid {
@@ -603,7 +603,7 @@ a.feature-card {
 
 /* Avatar Matchup Records Section */
 .avatar-matchup-section {
-  margin: var(--spacing-2xl) 0;
+  margin: var(--spacing-md) 0;
 }
 
 .avatar-matchup-table-container {
@@ -952,7 +952,7 @@ a.feature-card {
 
 /* Recent Decks Section */
 .recent-decks-section {
-  margin: var(--spacing-2xl) 0;
+  margin: var(--spacing-md) 0;
 }
 
 .recent-decks-list {
@@ -1061,14 +1061,72 @@ a.feature-card {
 
 /* ELO History Chart */
 .elo-chart-section {
-  margin: var(--spacing-2xl) 0;
+  margin: var(--spacing-md) 0;
 }
 
-.elo-chart-container {
+.elo-chart-wrapper {
   background: var(--color-bg-elevated);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-soft);
   padding: var(--spacing-lg);
+}
+
+.elo-chart-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.elo-chart-controls label {
+  white-space: nowrap;
+}
+
+.elo-chart-controls #elo-range-value {
+  color: var(--color-primary);
+  font-weight: 600;
+  min-width: 2ch;
+  display: inline-block;
+}
+
+.elo-chart-controls input[type="range"] {
+  flex: 1;
+  max-width: 200px;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--color-border);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.elo-chart-controls input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+
+.elo-chart-controls input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.elo-chart-controls input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--color-primary);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.elo-chart-container {
   position: relative;
   height: 300px;
 }
@@ -1099,6 +1157,11 @@ footer {
   gap: 0.5rem;
   user-select: none;
   transition: color var(--transition-fast);
+  margin-bottom: var(--spacing-sm);
+}
+
+.collapsible-header.collapsed {
+  margin-bottom: 0;
 }
 
 .collapsible-header:hover {

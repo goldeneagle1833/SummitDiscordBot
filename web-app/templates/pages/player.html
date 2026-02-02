@@ -116,9 +116,19 @@
             📈 ELO History
           </h3>
           <div
-            class="elo-chart-container collapsible-content collapsed"
+            class="elo-chart-wrapper collapsible-content collapsed"
             id="elo-chart-container">
-            <canvas id="elo-chart"></canvas>
+            <div class="elo-chart-controls">
+              <label for="elo-range-slider">Show last <span id="elo-range-value">50</span> matches</label>
+              <input type="range" id="elo-range-slider" min="10" max="100" value="50" step="5">
+            </div>
+            <div class="elo-chart-controls">
+              <label for="elo-scale-slider">Y-axis range: ±<span id="elo-scale-value">200</span></label>
+              <input type="range" id="elo-scale-slider" min="50" max="500" value="200" step="25">
+            </div>
+            <div class="elo-chart-container">
+              <canvas id="elo-chart"></canvas>
+            </div>
           </div>
         </div>
 
@@ -334,8 +344,22 @@
 
     <script>
       const playerId = "{{ player_id }}";
+      let eloChartInstance = null;
+      let storedElo = null;
+      let storedMatches = null;
+      let currentMaxMatches = 50;
+      let currentScale = 200;
 
-      function renderEloChart(currentElo, matches) {
+      function renderEloChart(currentElo, matches, maxMatches = 50, scale = 200) {
+        // Destroy existing chart if it exists
+        if (eloChartInstance) {
+          eloChartInstance.destroy();
+          eloChartInstance = null;
+        }
+
+        // Limit matches to maxMatches (most recent)
+        const limitedMatches = matches.slice(0, maxMatches);
+
         // Build ELO history by working backwards from current ELO
         // Matches are in DESC order (newest first)
         const eloHistory = [];
@@ -350,8 +374,8 @@
         });
 
         // Work backwards through matches to reconstruct ELO history
-        for (let i = 0; i < matches.length; i++) {
-          const match = matches[i];
+        for (let i = 0; i < limitedMatches.length; i++) {
+          const match = limitedMatches[i];
           // Subtract the change to get previous ELO
           elo = elo - (match.elo_change || 0);
           eloHistory.push({
@@ -375,15 +399,16 @@
           return h.result === "Win" ? "#3fb950" : "#f85149"; // Win green / Loss red
         });
 
-        // Calculate min/max with padding, centered around 1500
-        const minElo = Math.min(...eloData);
-        const maxElo = Math.max(...eloData);
-        const range = Math.max(maxElo - 1500, 1500 - minElo, 100);
-        const yMin = Math.floor((1500 - range - 50) / 50) * 50;
-        const yMax = Math.ceil((1500 + range + 50) / 50) * 50;
+        // Calculate average ELO of displayed data points, rounded to nearest 50 for tick alignment
+        const rawAvgElo = eloData.reduce((sum, elo) => sum + elo, 0) / eloData.length;
+        const avgElo = Math.round(rawAvgElo / 50) * 50;
+
+        // Calculate min/max based on scale parameter, centered around average ELO
+        const yMin = avgElo - scale;
+        const yMax = avgElo + scale;
 
         const ctx = document.getElementById("elo-chart").getContext("2d");
-        new Chart(ctx, {
+        eloChartInstance = new Chart(ctx, {
           type: "line",
           data: {
             labels: labels,
@@ -463,14 +488,14 @@
                 max: yMax,
                 grid: {
                   color: function (context) {
-                    // Highlight the 1500 baseline
-                    if (context.tick.value === 1500) {
+                    // Highlight the average ELO baseline
+                    if (context.tick.value === avgElo) {
                       return "rgba(88, 166, 255, 0.5)";
                     }
                     return "rgba(48, 54, 61, 0.5)";
                   },
                   lineWidth: function (context) {
-                    if (context.tick.value === 1500) {
+                    if (context.tick.value === avgElo) {
                       return 2;
                     }
                     return 1;
@@ -479,7 +504,7 @@
                 },
                 ticks: {
                   color: function (context) {
-                    if (context.tick.value === 1500) {
+                    if (context.tick.value === avgElo) {
                       return "#58a6ff";
                     }
                     return "#8b949e";
@@ -487,7 +512,7 @@
                   font: {
                     size: 11,
                     weight: function (context) {
-                      if (context.tick && context.tick.value === 1500) {
+                      if (context.tick && context.tick.value === avgElo) {
                         return "bold";
                       }
                       return "normal";
@@ -499,6 +524,36 @@
             },
           },
         });
+      }
+
+      function setupEloSliders() {
+        const rangeSlider = document.getElementById("elo-range-slider");
+        const rangeValue = document.getElementById("elo-range-value");
+        const scaleSlider = document.getElementById("elo-scale-slider");
+        const scaleValue = document.getElementById("elo-scale-value");
+
+        if (rangeSlider && storedMatches) {
+          // Set max to total matches or 100, whichever is smaller
+          const maxValue = Math.min(storedMatches.length, 100);
+          rangeSlider.max = maxValue;
+          rangeSlider.value = Math.min(50, maxValue);
+          currentMaxMatches = parseInt(rangeSlider.value);
+          rangeValue.textContent = rangeSlider.value;
+
+          rangeSlider.addEventListener("input", function() {
+            rangeValue.textContent = this.value;
+            currentMaxMatches = parseInt(this.value);
+            renderEloChart(storedElo, storedMatches, currentMaxMatches, currentScale);
+          });
+        }
+
+        if (scaleSlider) {
+          scaleSlider.addEventListener("input", function() {
+            scaleValue.textContent = this.value;
+            currentScale = parseInt(this.value);
+            renderEloChart(storedElo, storedMatches, currentMaxMatches, currentScale);
+          });
+        }
       }
 
       async function fetchPlayerData() {
@@ -548,7 +603,12 @@
           ) {
             document.getElementById("elo-chart-section").style.display =
               "block";
-            renderEloChart(data.elo, data.matches);
+            // Store data for sliders
+            storedElo = data.elo;
+            storedMatches = data.matches;
+            setupEloSliders();
+            currentMaxMatches = Math.min(50, data.matches.length);
+            renderEloChart(data.elo, data.matches, currentMaxMatches, currentScale);
           }
 
           // Update avatar performance

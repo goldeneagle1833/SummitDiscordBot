@@ -70,9 +70,16 @@ def is_admin() -> bool:
     """Check if the current user is an admin.
 
     Access granted if:
+    - Request is from localhost
     - User is in ADMINS list (session auth)
     - Request has valid API key
     """
+    # Localhost has full admin access
+    remote_addr = request.remote_addr or ""
+    host = request.host or ""
+    if remote_addr in ("127.0.0.1", "::1", "localhost") or host.startswith("localhost") or host.startswith("127.0.0.1"):
+        return True
+
     # API key grants access
     provided_key = request.headers.get("X-API-Key") or request.headers.get(
         "Authorization"

@@ -159,7 +159,7 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
         )
 
         if self.is_winner:
-            match_id, _, _ = await winner_report(
+            match_id, _, _, event_active = await winner_report(
                 interaction_user_id,
                 self.winner_id,
                 self.winner_global,
@@ -176,7 +176,7 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
                 loser_deck_url=None,
             )
         else:
-            match_id, _, _ = await losser_report(
+            match_id, _, _, event_active = await losser_report(
                 interaction_user_id,
                 self.winner_id,
                 self.winner_global,
@@ -193,8 +193,9 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
                 loser_deck_url=curiosa_link,
             )
 
+        elo_msg = "" if event_active else "\n*(No active event - ELO not affected)*"
         await interaction.followup.send(
-            f"Match report submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}",
+            f"Match report submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}{elo_msg}",
             ephemeral=True,
         )
 
@@ -322,7 +323,7 @@ class MatchConfirmationButtons(discord.ui.View):
 
         # Submit match report only ONCE (not twice)
         # This will insert one record and update ELO for the winner
-        match_id, _, _ = await winner_report(
+        match_id, _, _, event_active = await winner_report(
             self.reporter_id,  # reporter_id (who originally reported)
             self.winner_id,
             self.winner_global,
@@ -344,15 +345,16 @@ class MatchConfirmationButtons(discord.ui.View):
 
         update_elo_db(self.loser_id, self.loser_global, False, self.winner_id)
 
+        elo_msg = "" if event_active else " *(No active event - ELO not affected)*"
         # Remove the confirmation message
         await interaction.message.edit(
-            content=f"Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.",
+            content=f"Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.{elo_msg}",
             view=None,
         )
 
         # Send confirmation to confirming user
         await interaction.followup.send(
-            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}",
+            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}{elo_msg}",
             ephemeral=True,
         )
 
@@ -873,7 +875,7 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             combined_comment = f"{view.match_comment} | {combined_comment}"
 
         # Submit match report
-        match_id, _, _ = await winner_report(
+        match_id, _, _, event_active = await winner_report(
             view.reporter_id,
             view.winner_id,
             view.winner_global,
@@ -895,15 +897,16 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
 
         update_elo_db(view.loser_id, view.loser_global, False, view.winner_id)
 
+        elo_msg = "" if event_active else " *(No active event - ELO not affected)*"
         # Update the confirmation message
         await original_interaction.message.edit(
-            content=f"Match confirmed! **Match ID: #{match_id}** - {view.winner_global} won against {view.loser_global}.",
+            content=f"Match confirmed! **Match ID: #{match_id}** - {view.winner_global} won against {view.loser_global}.{elo_msg}",
             view=None,
         )
 
         # Send confirmation to confirming user
         await interaction.followup.send(
-            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {view.winner_global}\n**Loser:** {view.loser_global}",
+            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {view.winner_global}\n**Loser:** {view.loser_global}{elo_msg}",
             ephemeral=True,
         )
 
@@ -2929,6 +2932,22 @@ class LFGCog(commands.Cog):
             inline=False,
         )
 
+        # Event Management
+        embed.add_field(
+            name="Event Management",
+            value=(
+                "`!start_event <event_name>`\n"
+                "Start a new event/season. Archives current event (if any) and resets event ELO.\n"
+                "**When to use:** At the start of a new tournament or season.\n\n"
+                "`!end_event`\n"
+                "End the current event without starting a new one.\n"
+                "**When to use:** To have a break between seasons.\n\n"
+                "`!event_status`\n"
+                "View current event status including name, K-value, and days elapsed."
+            ),
+            inline=False,
+        )
+
         embed.set_footer(text="All admin commands require administrator permissions")
 
         await ctx.send(embed=embed)
@@ -3056,7 +3075,7 @@ class LFGCog(commands.Cog):
             # Report the match using the existing database functions
             from utils.database import update_elo_db
 
-            match_id, _, _ = await winner_report(
+            match_id, _, _, event_active = await winner_report(
                 ctx.author.id,  # reporter_id (admin who is reporting)
                 winner.id,
                 winner_name,
@@ -3083,9 +3102,10 @@ class LFGCog(commands.Cog):
             await send_milestone_announcement(self.bot, winner.id, loser.id, match_id)
 
             # Send confirmation
+            elo_status = "ELO updated" if event_active else "ELO not affected (no active event)"
             success_embed = discord.Embed(
                 title="Match Reported",
-                description=f"**Match ID:** #{match_id}\n**Winner:** {winner.mention} ({winner_name})\n**Loser:** {loser.mention} ({loser_name})",
+                description=f"**Match ID:** #{match_id}\n**Winner:** {winner.mention} ({winner_name})\n**Loser:** {loser.mention} ({loser_name})\n**Status:** {elo_status}",
                 color=discord.Color.green(),
             )
             success_embed.set_footer(text=f"Reported by {ctx.author.display_name}")
@@ -3108,6 +3128,225 @@ class LFGCog(commands.Cog):
     async def admin_report_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def start_event(self, ctx, *, event_name: str = None):
+        """
+        Start a new event/season. Archives current event and resets event ELO.
+        Usage: !start_event Event Name Here
+        """
+        from utils.database import start_new_event, get_active_event, calculate_event_k_value
+
+        if not event_name:
+            await ctx.send("Please provide an event name. Usage: `!start_event Event Name Here`")
+            return
+
+        try:
+            # Start the new event
+            result = start_new_event(event_name)
+
+            # Build response embed
+            embed = discord.Embed(
+                title="New Event Started!",
+                description=f"**{result['event_name']}** has begun!",
+                color=discord.Color.green(),
+            )
+
+            embed.add_field(
+                name="Event Details",
+                value=(
+                    f"**Event ID:** {result['event_id']}\n"
+                    f"**Started:** {result['start_date'].strftime('%Y-%m-%d %H:%M')}\n"
+                    f"**Starting K-Value:** 16\n"
+                    f"**All event ELO reset to:** 1500"
+                ),
+                inline=False,
+            )
+
+            # Add previous event summary if there was one
+            if result.get('previous_event'):
+                prev = result['previous_event']
+                top_players_str = "\n".join(
+                    [f"  {i+1}. {name} ({elo} ELO)" for i, (name, elo) in enumerate(prev['top_players'])]
+                ) if prev['top_players'] else "No ranked players"
+
+                embed.add_field(
+                    name=f"Previous Event Archived: {prev['event_name']}",
+                    value=(
+                        f"**Total Matches:** {prev['total_matches']}\n"
+                        f"**Ranked Players:** {prev['total_players']}\n"
+                        f"**Top 3:**\n{top_players_str}"
+                    ),
+                    inline=False,
+                )
+
+            embed.set_footer(text=f"Started by {ctx.author.display_name}")
+            await ctx.send(embed=embed)
+
+            # Update leaderboard
+            await self.update_leaderboard()
+
+            logger.info(f"Event '{event_name}' started by {ctx.author} (ID: {ctx.author.id})")
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Failed to Start Event",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Failed to start event: {e}")
+
+    @start_event.error
+    async def start_event_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def end_event(self, ctx):
+        """
+        End the current event without starting a new one.
+        Archives standings and matches, then leaves no active event.
+        """
+        from utils.database import get_active_event, end_current_event
+
+        active_event = get_active_event()
+        if not active_event:
+            await ctx.send("There is no active event to end.")
+            return
+
+        try:
+            # End and archive the current event
+            summary = end_current_event()
+
+            if not summary:
+                await ctx.send("Failed to end event - no data returned.")
+                return
+
+            # Build response embed
+            embed = discord.Embed(
+                title="Event Ended",
+                description=f"**{summary['event_name']}** has been archived.",
+                color=discord.Color.orange(),
+            )
+
+            # Top players
+            if summary['top_players']:
+                top_players_str = "\n".join(
+                    [f"  {i+1}. {name} ({elo} ELO)" for i, (name, elo) in enumerate(summary['top_players'])]
+                )
+            else:
+                top_players_str = "No ranked players"
+
+            embed.add_field(
+                name="Final Results",
+                value=(
+                    f"**Total Matches:** {summary['total_matches']}\n"
+                    f"**Ranked Players:** {summary['total_players']}\n"
+                    f"**Top 3:**\n{top_players_str}"
+                ),
+                inline=False,
+            )
+
+            embed.add_field(
+                name="What's Next?",
+                value=(
+                    "No event is currently active.\n"
+                    "Matches can still be reported but ELO will not be affected.\n"
+                    "Use `!start_event <name>` to begin a new event."
+                ),
+                inline=False,
+            )
+
+            embed.set_footer(text=f"Ended by {ctx.author.display_name}")
+            await ctx.send(embed=embed)
+
+            # Update leaderboard
+            await self.update_leaderboard()
+
+            logger.info(f"Event '{summary['event_name']}' ended by {ctx.author} (ID: {ctx.author.id})")
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Failed to End Event",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Failed to end event: {e}")
+
+    @end_event.error
+    async def end_event_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+
+    @commands.command()
+    async def event_status(self, ctx):
+        """View current event status including K-value and days elapsed."""
+        from utils.database import get_active_event, calculate_event_k_value
+
+        active_event = get_active_event()
+
+        if not active_event:
+            embed = discord.Embed(
+                title="No Active Event",
+                description="There is no event currently running.\nMatches can still be recorded, but ELO will not be affected.",
+                color=discord.Color.orange(),
+            )
+            await ctx.send(embed=embed)
+            return
+
+        # Calculate event stats
+        start_date = active_event['start_date']
+        days_elapsed = (datetime.datetime.now() - start_date).days
+        current_k = calculate_event_k_value(start_date)
+
+        # Get match count for current event
+        import sqlite3
+        conn = sqlite3.connect("match_records.db")
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM match_records")
+        match_count = cur.fetchone()[0]
+        conn.close()
+
+        embed = discord.Embed(
+            title=f"Current Event: {active_event['event_name']}",
+            color=discord.Color.blue(),
+        )
+
+        embed.add_field(
+            name="Event Details",
+            value=(
+                f"**Event ID:** {active_event['event_id']}\n"
+                f"**Started:** {start_date.strftime('%Y-%m-%d %H:%M')}\n"
+                f"**Days Elapsed:** {days_elapsed}\n"
+                f"**Matches Played:** {match_count}"
+            ),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="K-Value Info",
+            value=(
+                f"**Current K-Value:** {current_k}\n"
+                f"**K-Value Range:** 16 → 32\n"
+                f"**Increases:** +2 per day"
+            ),
+            inline=False,
+        )
+
+        # K-value progression
+        if current_k < 32:
+            days_to_max = (32 - current_k) // 2
+            embed.add_field(
+                name="K-Value Progression",
+                value=f"K-value will reach maximum (32) in {days_to_max} day(s)",
+                inline=False,
+            )
+
+        await ctx.send(embed=embed)
 
     @commands.command()
     @commands.has_permissions(administrator=True)

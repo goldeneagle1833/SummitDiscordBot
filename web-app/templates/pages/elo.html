@@ -193,6 +193,57 @@
         </div>
       </section>
 
+      <!-- Lifetime Leaderboard Section -->
+      <section class="distribution-section" style="max-width: 800px;">
+        <h2 style="color: #fff; text-align: center; margin-bottom: 1rem">
+          Lifetime ELO Leaderboard
+        </h2>
+        <p style="color: rgba(255,255,255,0.6); text-align: center; margin-bottom: 1rem; font-size: 0.9rem;">
+          Cumulative rankings across all events
+        </p>
+
+        <div class="distribution-table-container">
+          <table class="distribution-table">
+            <thead>
+              <tr>
+                <th style="width: 60px;">Rank</th>
+                <th>Player</th>
+                <th style="text-align: right;">ELO</th>
+                <th style="text-align: right;">W/L</th>
+              </tr>
+            </thead>
+            <tbody id="lifetime-leaderboard-body">
+              <!-- Rows will be inserted by JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Event Leaderboard Section -->
+      <section class="distribution-section" style="max-width: 800px;">
+        <h2 style="color: #fff; text-align: center; margin-bottom: 0.5rem" id="event-title">
+          Current Event Leaderboard
+        </h2>
+        <p style="color: rgba(255,255,255,0.6); text-align: center; margin-bottom: 1rem; font-size: 0.9rem;" id="event-subtitle">
+          Loading event info...
+        </p>
+
+        <div class="distribution-table-container">
+          <table class="distribution-table">
+            <thead>
+              <tr>
+                <th style="width: 60px;">Rank</th>
+                <th>Player</th>
+                <th style="text-align: right;">Event ELO</th>
+              </tr>
+            </thead>
+            <tbody id="event-leaderboard-body">
+              <!-- Rows will be inserted by JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="content">
         <h2>Server-Specific Leaderboards</h2>
         <div class="features">
@@ -362,6 +413,95 @@
 
       // Auto-refresh every 30 seconds
       setInterval(fetchDistribution, 30000);
+
+      // Fetch and render leaderboards
+      async function fetchLeaderboards() {
+        try {
+          const res = await fetch("/api/leaderboard/combined");
+          if (!res.ok) {
+            console.error("Failed to fetch leaderboards:", res.status);
+            return;
+          }
+          const data = await res.json();
+
+          // Render lifetime leaderboard
+          renderLifetimeLeaderboard(data.lifetime);
+
+          // Render event leaderboard
+          renderEventLeaderboard(data.event);
+        } catch (error) {
+          console.error("Error fetching leaderboards:", error);
+        }
+      }
+
+      function renderLifetimeLeaderboard(players) {
+        const tbody = document.getElementById("lifetime-leaderboard-body");
+        tbody.innerHTML = "";
+
+        // Show top 25
+        players.slice(0, 25).forEach((player, index) => {
+          const row = document.createElement("tr");
+          const rankDisplay = index < 3
+            ? ["🥇", "🥈", "🥉"][index]
+            : `#${index + 1}`;
+
+          row.innerHTML = `
+            <td style="font-weight: 600;">${rankDisplay}</td>
+            <td>${player.name}</td>
+            <td style="text-align: right; color: #4db8ff; font-weight: 600;">${player.elo}</td>
+            <td style="text-align: right; color: rgba(255,255,255,0.7);">${player.wins}-${player.losses}</td>
+          `;
+          tbody.appendChild(row);
+        });
+
+        if (players.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: rgba(255,255,255,0.5);">No players yet</td></tr>';
+        }
+      }
+
+      function renderEventLeaderboard(eventData) {
+        const titleEl = document.getElementById("event-title");
+        const subtitleEl = document.getElementById("event-subtitle");
+        const tbody = document.getElementById("event-leaderboard-body");
+
+        if (!eventData.info) {
+          titleEl.textContent = "No Active Event";
+          subtitleEl.textContent = "ELO tracking is paused between events";
+          tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: rgba(255,255,255,0.5);">No active event</td></tr>';
+          return;
+        }
+
+        titleEl.textContent = eventData.info.event_name;
+        subtitleEl.textContent = `Started: ${new Date(eventData.info.start_date).toLocaleDateString()}`;
+
+        tbody.innerHTML = "";
+
+        if (eventData.leaderboard.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: rgba(255,255,255,0.5);">No matches played yet</td></tr>';
+          return;
+        }
+
+        // Show top 25
+        eventData.leaderboard.slice(0, 25).forEach((player, index) => {
+          const row = document.createElement("tr");
+          const rankDisplay = index < 3
+            ? ["🥇", "🥈", "🥉"][index]
+            : `#${index + 1}`;
+
+          row.innerHTML = `
+            <td style="font-weight: 600;">${rankDisplay}</td>
+            <td>${player.name}</td>
+            <td style="text-align: right; color: #ffd700; font-weight: 600;">${player.event_elo}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      }
+
+      // Fetch leaderboards on load
+      fetchLeaderboards();
+
+      // Refresh leaderboards every 30 seconds
+      setInterval(fetchLeaderboards, 30000);
     </script>
 
     <footer>

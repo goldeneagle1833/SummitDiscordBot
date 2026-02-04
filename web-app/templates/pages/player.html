@@ -573,8 +573,11 @@
 
           // Update player info
           document.getElementById("player-name").textContent = data.name;
-          document.getElementById("player-elo").textContent =
-            `ELO: ${data.elo}`;
+          let eloText = `Lifetime ELO: ${data.elo}`;
+          if (data.event_elo && data.event_elo !== 1500) {
+            eloText += ` | Event ELO: ${data.event_elo}`;
+          }
+          document.getElementById("player-elo").textContent = eloText;
           document.getElementById("player-rank").textContent =
             `Rank #${data.rank}`;
           document.title = `${data.name} - Sorcerers Summit`;

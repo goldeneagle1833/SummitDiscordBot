@@ -105,7 +105,40 @@ def player_api(player_id):
         """, (player_id, player_id, player_id))
         rows = cur.fetchall()
 
+    # Also check archive table for historical matches
+    archived_rows = []
+    try:
+        cur.execute("""
+            SELECT
+                CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                first_player,
+                json_deck_data,
+                match_time,
+                winner_display_name,
+                losser_display_name,
+                timestamp,
+                winner_elo_change,
+                loser_elo_change,
+                curiosa_url,
+                winner_id,
+                losser_id,
+                original_match_id as match_id,
+                json_deck_data_winner,
+                json_deck_data_loser,
+                curiosa_url_winner,
+                curiosa_url_loser
+            FROM match_records_archive
+            WHERE winner_id = ? OR losser_id = ?
+            ORDER BY timestamp DESC
+        """, (player_id, player_id, player_id))
+        archived_rows = cur.fetchall()
+    except sqlite3.OperationalError:
+        pass  # Archive table may not exist
+
     conn.close()
+
+    # Combine current and archived matches
+    rows = list(rows) + list(archived_rows)
 
     # Get solo match reports
     solo_rows = []
@@ -151,32 +184,39 @@ def player_api(player_id):
 
     all_rows = rows + solo_rows
 
-    if not rows and not solo_rows:
+    # Get player ELO and name from ELO database first
+    player_elo = 1500
+    event_elo = 1500
+    rank = 0
+    player_name_from_elo = None
+    try:
+        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
+        elo_cur = elo_conn.cursor()
+        elo_cur.execute("SELECT elo, user_display_name, event_elo FROM overall_standings WHERE user_id = ?", (player_id,))
+        elo_row = elo_cur.fetchone()
+        if elo_row:
+            player_elo = elo_row[0]
+            player_name_from_elo = elo_row[1]
+            event_elo = elo_row[2] if elo_row[2] else 1500
+            elo_cur.execute("SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (player_elo,))
+            rank = elo_cur.fetchone()[0] + 1
+        elo_conn.close()
+    except sqlite3.OperationalError:
+        pass
+
+    # Player not found if no matches AND not in ELO database
+    if not rows and not solo_rows and not player_name_from_elo:
         return jsonify({"error": "Player not found"}), 404
 
-    # Get player name
+    # Get player name - prefer from matches, fallback to ELO database
     player_name = None
     if rows:
         first_match = rows[0]
         player_name = first_match[4] if first_match[0] else first_match[5]
     elif solo_rows:
         player_name = solo_rows[0][4]
-
-    # Get player ELO
-    player_elo = 1500
-    rank = 0
-    try:
-        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
-        elo_cur = elo_conn.cursor()
-        elo_cur.execute("SELECT elo FROM overall_standings WHERE user_id = ?", (player_id,))
-        elo_row = elo_cur.fetchone()
-        if elo_row:
-            player_elo = elo_row[0]
-            elo_cur.execute("SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (player_elo,))
-            rank = elo_cur.fetchone()[0] + 1
-        elo_conn.close()
-    except sqlite3.OperationalError:
-        pass
+    elif player_name_from_elo:
+        player_name = player_name_from_elo
 
     # Calculate stats
     total_matches = len(all_rows)
@@ -198,7 +238,7 @@ def player_api(player_id):
     match_times = [float(row[3]) for row in all_rows if row[3] and str(row[3]).replace(".", "").isdigit()]
     avg_match_time = sum(match_times) / len(match_times) if match_times else 0
 
-    # Avatar stats
+    # Avatar stats - only count the main avatar (type: "Avatar"), exclude sideboard
     avatar_stats = {}
     for row in all_rows:
         did_win = row[0]
@@ -215,19 +255,32 @@ def player_api(player_id):
                 if not deck_data or not deck_data.get("avatar"):
                     continue
 
-                avatar = deck_data.get("avatar", [])
-                if not avatar or not avatar[0] or not avatar[0].get("name"):
+                avatar_list = deck_data.get("avatar", [])
+                if not avatar_list:
                     continue
 
-                avatar_name = avatar[0].get("name")
+                # Find the main avatar - must have type "Avatar" (not sideboard avatars)
+                # For Imposter decks, this ensures we only count Imposter, not the extra avatars
+                main_avatar_name = None
+                for av in avatar_list:
+                    if av and av.get("type") == "Avatar" and av.get("name"):
+                        main_avatar_name = av.get("name")
+                        break
 
-                if avatar_name not in avatar_stats:
-                    avatar_stats[avatar_name] = {"wins": 0, "losses": 0}
+                # Fallback: if no type field, use first avatar with a name
+                if not main_avatar_name and avatar_list[0] and avatar_list[0].get("name"):
+                    main_avatar_name = avatar_list[0].get("name")
+
+                if not main_avatar_name:
+                    continue
+
+                if main_avatar_name not in avatar_stats:
+                    avatar_stats[main_avatar_name] = {"wins": 0, "losses": 0}
 
                 if did_win:
-                    avatar_stats[avatar_name]["wins"] += 1
+                    avatar_stats[main_avatar_name]["wins"] += 1
                 else:
-                    avatar_stats[avatar_name]["losses"] += 1
+                    avatar_stats[main_avatar_name]["losses"] += 1
             except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                 continue
 
@@ -243,7 +296,7 @@ def player_api(player_id):
         })
     avatar_performance.sort(key=lambda x: x["wins"] + x["losses"], reverse=True)
 
-    # Opponent avatar stats
+    # Opponent avatar stats - only count main avatar (type: "Avatar"), exclude sideboard
     opponent_avatar_stats = {}
     for row in all_rows:
         did_win = row[0]
@@ -259,9 +312,15 @@ def player_api(player_id):
             try:
                 deck_data = json.loads(opponent_deck_json)
                 if deck_data and deck_data.get("avatar"):
-                    avatar = deck_data.get("avatar", [])
-                    if avatar and avatar[0] and avatar[0].get("name"):
-                        opponent_avatar_name = avatar[0].get("name")
+                    avatar_list = deck_data.get("avatar", [])
+                    # Find the main avatar - must have type "Avatar"
+                    for av in avatar_list:
+                        if av and av.get("type") == "Avatar" and av.get("name"):
+                            opponent_avatar_name = av.get("name")
+                            break
+                    # Fallback: if no type field, use first avatar with a name
+                    if not opponent_avatar_name and avatar_list and avatar_list[0] and avatar_list[0].get("name"):
+                        opponent_avatar_name = avatar_list[0].get("name")
             except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                 pass
 
@@ -435,6 +494,7 @@ def player_api(player_id):
         "id": player_id,
         "name": player_name,
         "elo": player_elo,
+        "event_elo": event_elo,
         "rank": rank,
         "wins": wins,
         "losses": losses,

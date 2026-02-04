@@ -65,7 +65,10 @@ def _find_card_image(card_name, lookup):
 
 @cards_bp.route("/cards")
 def get_cards():
-    """API endpoint for per-card winrates from all matches with deck data."""
+    """API endpoint for per-card winrates from all matches with deck data.
+
+    Includes both current event matches and archived matches for lifetime stats.
+    """
     if not is_admin():
         return jsonify({"error": "Unauthorized"}), 403
 
@@ -75,6 +78,10 @@ def get_cards():
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
 
+        all_rows = []
+        use_new_columns = True
+
+        # Query current match_records
         try:
             cur.execute("""
                 SELECT json_deck_data_winner, json_deck_data_loser
@@ -82,8 +89,7 @@ def get_cards():
                 WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
                    OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
             """)
-            rows = cur.fetchall()
-            use_new_columns = True
+            all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
             cur.execute("""
                 SELECT
@@ -92,9 +98,23 @@ def get_cards():
                 FROM match_records
                 WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
             """)
-            rows = cur.fetchall()
+            all_rows.extend(cur.fetchall())
             use_new_columns = False
 
+        # Also query match_records_archive for lifetime stats
+        if use_new_columns:
+            try:
+                cur.execute("""
+                    SELECT json_deck_data_winner, json_deck_data_loser
+                    FROM match_records_archive
+                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                """)
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass  # Archive table may not exist
+
+        rows = all_rows
         conn.close()
     except sqlite3.OperationalError:
         return jsonify([])
@@ -189,6 +209,9 @@ def get_live_popular_cards():
     cur = conn.cursor()
 
     use_new_columns = True
+    all_rows = []
+
+    # Query current match_records
     try:
         cur.execute("""
             SELECT json_deck_data_winner, json_deck_data_loser
@@ -196,7 +219,7 @@ def get_live_popular_cards():
             WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
                OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
         """)
-        rows = cur.fetchall()
+        all_rows.extend(cur.fetchall())
     except sqlite3.OperationalError:
         use_new_columns = False
         cur.execute("""
@@ -204,7 +227,22 @@ def get_live_popular_cards():
             FROM match_records
             WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
         """)
-        rows = cur.fetchall()
+        all_rows.extend(cur.fetchall())
+
+    # Also query match_records_archive for lifetime stats
+    if use_new_columns:
+        try:
+            cur.execute("""
+                SELECT json_deck_data_winner, json_deck_data_loser
+                FROM match_records_archive
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+            """)
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError:
+            pass  # Archive table may not exist
+
+    rows = all_rows
 
     if use_new_columns:
         for row in rows:
@@ -302,13 +340,20 @@ def get_live_popular_cards():
 
 @cards_bp.route("/elements")
 def get_elements():
-    """API endpoint for elemental winrates from all matches with deck data."""
+    """API endpoint for elemental winrates from all matches with deck data.
+
+    Includes both current event matches and archived matches for lifetime stats.
+    """
     card_elements = _load_card_elements()
 
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
 
+        all_rows = []
+        use_new_columns = True
+
+        # Query current match_records
         try:
             cur.execute("""
                 SELECT json_deck_data_winner, json_deck_data_loser
@@ -316,8 +361,7 @@ def get_elements():
                 WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
                    OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
             """)
-            rows = cur.fetchall()
-            use_new_columns = True
+            all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
             cur.execute("""
                 SELECT
@@ -326,9 +370,23 @@ def get_elements():
                 FROM match_records
                 WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
             """)
-            rows = cur.fetchall()
+            all_rows.extend(cur.fetchall())
             use_new_columns = False
 
+        # Also query match_records_archive for lifetime stats
+        if use_new_columns:
+            try:
+                cur.execute("""
+                    SELECT json_deck_data_winner, json_deck_data_loser
+                    FROM match_records_archive
+                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                """)
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass  # Archive table may not exist
+
+        rows = all_rows
         conn.close()
     except sqlite3.OperationalError:
         return jsonify([])
@@ -524,7 +582,10 @@ def get_elements():
 
 @cards_bp.route("/deck-composition")
 def get_deck_composition():
-    """API endpoint for deck element composition across all decks."""
+    """API endpoint for deck element composition across all decks.
+
+    Includes both current event matches and archived matches for lifetime stats.
+    """
     if not is_admin():
         return jsonify({"error": "Forbidden"}), 403
 
@@ -534,6 +595,10 @@ def get_deck_composition():
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
 
+        all_rows = []
+        use_new_columns = True
+
+        # Query current match_records
         try:
             cur.execute("""
                 SELECT json_deck_data_winner, json_deck_data_loser
@@ -541,17 +606,30 @@ def get_deck_composition():
                 WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
                    OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
             """)
-            rows = cur.fetchall()
-            use_new_columns = True
+            all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
             cur.execute("""
                 SELECT json_deck_data
                 FROM match_records
                 WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
             """)
-            rows = cur.fetchall()
+            all_rows.extend(cur.fetchall())
             use_new_columns = False
 
+        # Also query match_records_archive for lifetime stats
+        if use_new_columns:
+            try:
+                cur.execute("""
+                    SELECT json_deck_data_winner, json_deck_data_loser
+                    FROM match_records_archive
+                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                """)
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass  # Archive table may not exist
+
+        rows = all_rows
         conn.close()
     except sqlite3.OperationalError:
         return jsonify({"error": "Database not found"}), 404

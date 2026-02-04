@@ -222,10 +222,15 @@ class MatchRepository:
         return (row[0] if row else 0, row[1] if row else 0)
 
     def get_matches_with_deck_data(self) -> list[dict]:
-        """Get all matches that have deck data for avatar/card analysis."""
+        """Get all matches that have deck data for avatar/card analysis.
+
+        Includes both current event matches and archived matches for lifetime stats.
+        """
         conn = self._get_connection()
         cur = conn.cursor()
+        all_results = []
 
+        # Query current match_records
         try:
             cur.execute("""
                 SELECT
@@ -248,7 +253,8 @@ class MatchRepository:
                 ORDER BY timestamp DESC
             """)
             rows = cur.fetchall()
-            use_new_columns = True
+            for row in rows:
+                all_results.append({"row": row, "use_new_columns": True})
         except sqlite3.OperationalError:
             cur.execute("""
                 SELECT
@@ -269,17 +275,63 @@ class MatchRepository:
                 ORDER BY timestamp DESC
             """)
             rows = cur.fetchall()
-            use_new_columns = False
+            for row in rows:
+                all_results.append({"row": row, "use_new_columns": False})
+
+        # Also query match_records_archive for lifetime stats
+        try:
+            cur.execute("""
+                SELECT
+                    winner_id,
+                    winner_display_name,
+                    losser_id,
+                    losser_display_name,
+                    timestamp,
+                    winner_elo_change,
+                    loser_elo_change,
+                    first_player,
+                    match_time,
+                    json_deck_data_winner,
+                    json_deck_data_loser,
+                    curiosa_url_winner,
+                    curiosa_url_loser,
+                    rowid as match_id
+                FROM match_records_archive
+                WHERE json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL
+                ORDER BY timestamp DESC
+            """)
+            archive_rows = cur.fetchall()
+            for row in archive_rows:
+                all_results.append({"row": row, "use_new_columns": True})
+        except sqlite3.OperationalError:
+            # Archive table may not exist or have old schema
+            try:
+                cur.execute("""
+                    SELECT
+                        winner_id,
+                        winner_display_name,
+                        losser_id,
+                        losser_display_name,
+                        timestamp,
+                        winner_elo_change,
+                        loser_elo_change,
+                        first_player,
+                        match_time,
+                        json_deck_data,
+                        curiosa_url,
+                        rowid as match_id
+                    FROM match_records_archive
+                    WHERE json_deck_data IS NOT NULL
+                    ORDER BY timestamp DESC
+                """)
+                archive_rows = cur.fetchall()
+                for row in archive_rows:
+                    all_results.append({"row": row, "use_new_columns": False})
+            except sqlite3.OperationalError:
+                pass  # Archive table doesn't exist yet
 
         conn.close()
-
-        return [
-            {
-                "row": row,
-                "use_new_columns": use_new_columns,
-            }
-            for row in rows
-        ]
+        return all_results
 
     def get_player_matches(self, player_id: str, limit: int = 100) -> list[dict]:
         """Get matches for a specific player."""

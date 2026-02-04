@@ -128,7 +128,7 @@
     <main>
       <section class="hero">
         <h1>ELO Leaderboards</h1>
-        <p>Choose a server to view rankings</p>
+        <p>Track player rankings across events</p>
       </section>
 
       <!-- ELO Distribution Section -->
@@ -202,6 +202,17 @@
           Cumulative rankings across all events
         </p>
 
+        <div class="distribution-controls" style="justify-content: center; margin-bottom: 1rem;">
+          <label for="lifetime-count-select">Show:</label>
+          <select id="lifetime-count-select">
+            <option value="16" selected>Top 16</option>
+            <option value="32">Top 32</option>
+            <option value="50">Top 50</option>
+            <option value="100">Top 100</option>
+            <option value="all">All Players</option>
+          </select>
+        </div>
+
         <div class="distribution-table-container">
           <table class="distribution-table">
             <thead>
@@ -228,6 +239,17 @@
           Loading event info...
         </p>
 
+        <div class="distribution-controls" style="justify-content: center; margin-bottom: 1rem;">
+          <label for="event-count-select">Show:</label>
+          <select id="event-count-select">
+            <option value="16" selected>Top 16</option>
+            <option value="32">Top 32</option>
+            <option value="50">Top 50</option>
+            <option value="100">Top 100</option>
+            <option value="all">All Players</option>
+          </select>
+        </div>
+
         <div class="distribution-table-container">
           <table class="distribution-table">
             <thead>
@@ -244,51 +266,6 @@
         </div>
       </section>
 
-      <section class="content">
-        <h2>Server-Specific Leaderboards</h2>
-        <div class="features">
-          <a
-            href="/elo/server/sorcerers-summit"
-            class="feature-card"
-            style="text-decoration: none; color: inherit">
-            <h3>🏰 Sorcerers Summit</h3>
-            <p>Rankings for the Sorcerers Summit server</p>
-          </a>
-          <a
-            href="/elo/server/tts-league"
-            class="feature-card"
-            style="text-decoration: none; color: inherit">
-            <h3>🎮 TTS League</h3>
-            <p>Rankings for the TTS League server</p>
-          </a>
-          <a
-            href="/elo/server/competitive"
-            class="feature-card"
-            style="text-decoration: none; color: inherit">
-            <h3>⚔️ Competitive Server</h3>
-            <p>Rankings for the Competitive server</p>
-          </a>
-        </div>
-        <div
-          style="
-            margin-top: var(--spacing-lg);
-            padding: var(--spacing-md);
-            background: var(--color-bg-elevated);
-            border-radius: var(--radius-soft);
-            border: 1px solid var(--color-border);
-          ">
-          <p
-            style="
-              margin: 0;
-              color: var(--color-text-muted);
-              font-size: 0.9rem;
-            ">
-            <strong>Note:</strong> Server-specific leaderboards currently
-            display global data. Individual server tracking will be implemented
-            soon.
-          </p>
-        </div>
-      </section>
     </main>
 
     <script>
@@ -414,6 +391,19 @@
       // Auto-refresh every 30 seconds
       setInterval(fetchDistribution, 30000);
 
+      // Store leaderboard data for re-rendering with different counts
+      let lifetimeData = [];
+      let eventData = null;
+
+      // Listen for count select changes
+      document.getElementById("lifetime-count-select").addEventListener("change", function() {
+        renderLifetimeLeaderboard(lifetimeData);
+      });
+
+      document.getElementById("event-count-select").addEventListener("change", function() {
+        if (eventData) renderEventLeaderboard(eventData);
+      });
+
       // Fetch and render leaderboards
       async function fetchLeaderboards() {
         try {
@@ -424,11 +414,15 @@
           }
           const data = await res.json();
 
+          // Store data for re-rendering
+          lifetimeData = data.lifetime;
+          eventData = data.event;
+
           // Render lifetime leaderboard
-          renderLifetimeLeaderboard(data.lifetime);
+          renderLifetimeLeaderboard(lifetimeData);
 
           // Render event leaderboard
-          renderEventLeaderboard(data.event);
+          renderEventLeaderboard(eventData);
         } catch (error) {
           console.error("Error fetching leaderboards:", error);
         }
@@ -438,8 +432,13 @@
         const tbody = document.getElementById("lifetime-leaderboard-body");
         tbody.innerHTML = "";
 
-        // Show top 25
-        players.slice(0, 25).forEach((player, index) => {
+        // Get display count from select
+        const countSelect = document.getElementById("lifetime-count-select");
+        const countValue = countSelect.value;
+        const displayCount = countValue === "all" ? players.length : parseInt(countValue);
+
+        // Show players based on selected count
+        players.slice(0, displayCount).forEach((player, index) => {
           const row = document.createElement("tr");
           const rankDisplay = index < 3
             ? ["🥇", "🥈", "🥉"][index]
@@ -447,10 +446,12 @@
 
           row.innerHTML = `
             <td style="font-weight: 600;">${rankDisplay}</td>
-            <td>${player.name}</td>
+            <td><a href="/player/${player.id}" style="color: #fff; text-decoration: none;">${player.name}</a></td>
             <td style="text-align: right; color: #4db8ff; font-weight: 600;">${player.elo}</td>
             <td style="text-align: right; color: rgba(255,255,255,0.7);">${player.wins}-${player.losses}</td>
           `;
+          row.querySelector("a").addEventListener("mouseover", function() { this.style.textDecoration = "underline"; });
+          row.querySelector("a").addEventListener("mouseout", function() { this.style.textDecoration = "none"; });
           tbody.appendChild(row);
         });
 
@@ -481,8 +482,13 @@
           return;
         }
 
-        // Show top 25
-        eventData.leaderboard.slice(0, 25).forEach((player, index) => {
+        // Get display count from select
+        const countSelect = document.getElementById("event-count-select");
+        const countValue = countSelect.value;
+        const displayCount = countValue === "all" ? eventData.leaderboard.length : parseInt(countValue);
+
+        // Show players based on selected count
+        eventData.leaderboard.slice(0, displayCount).forEach((player, index) => {
           const row = document.createElement("tr");
           const rankDisplay = index < 3
             ? ["🥇", "🥈", "🥉"][index]
@@ -490,9 +496,11 @@
 
           row.innerHTML = `
             <td style="font-weight: 600;">${rankDisplay}</td>
-            <td>${player.name}</td>
+            <td><a href="/player/${player.id}" style="color: #fff; text-decoration: none;">${player.name}</a></td>
             <td style="text-align: right; color: #ffd700; font-weight: 600;">${player.event_elo}</td>
           `;
+          row.querySelector("a").addEventListener("mouseover", function() { this.style.textDecoration = "underline"; });
+          row.querySelector("a").addEventListener("mouseout", function() { this.style.textDecoration = "none"; });
           tbody.appendChild(row);
         });
       }

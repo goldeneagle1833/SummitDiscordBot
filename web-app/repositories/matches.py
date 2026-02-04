@@ -102,28 +102,56 @@ class MatchRepository:
         ]
 
     def get_wins_count(self, user_id: int) -> int:
-        """Get number of wins for a user."""
+        """Get number of wins for a user (includes archived matches for lifetime stats)."""
         conn = self._get_connection()
         cur = conn.cursor()
+
+        # Count from current match_records
         cur.execute(
             "SELECT COUNT(*) FROM match_records WHERE winner_id = ?",
             (user_id,)
         )
-        count = cur.fetchone()[0]
+        current_count = cur.fetchone()[0]
+
+        # Also count from archive if it exists (for lifetime stats)
+        archive_count = 0
+        try:
+            cur.execute(
+                "SELECT COUNT(*) FROM match_records_archive WHERE winner_id = ?",
+                (user_id,)
+            )
+            archive_count = cur.fetchone()[0]
+        except Exception:
+            pass  # Archive table may not exist
+
         conn.close()
-        return count
+        return current_count + archive_count
 
     def get_losses_count(self, user_id: int) -> int:
-        """Get number of losses for a user."""
+        """Get number of losses for a user (includes archived matches for lifetime stats)."""
         conn = self._get_connection()
         cur = conn.cursor()
+
+        # Count from current match_records
         cur.execute(
             "SELECT COUNT(*) FROM match_records WHERE losser_id = ?",
             (user_id,)
         )
-        count = cur.fetchone()[0]
+        current_count = cur.fetchone()[0]
+
+        # Also count from archive if it exists (for lifetime stats)
+        archive_count = 0
+        try:
+            cur.execute(
+                "SELECT COUNT(*) FROM match_records_archive WHERE losser_id = ?",
+                (user_id,)
+            )
+            archive_count = cur.fetchone()[0]
+        except Exception:
+            pass  # Archive table may not exist
+
         conn.close()
-        return count
+        return current_count + archive_count
 
     def get_match_by_id(self, match_id: int) -> dict | None:
         """Get a single match by its ID."""

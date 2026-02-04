@@ -28,16 +28,21 @@ FART_SCORES_DB_PATH = BOT_DIR / "fart_scores.db"
 _secret_key_env = os.environ.get("SECRET_KEY")
 if _secret_key_env:
     SECRET_KEY = _secret_key_env
-elif os.environ.get("FLASK_ENV") == "production" or os.environ.get("FLASK_DEBUG") == "0":
+elif (
+    os.environ.get("FLASK_ENV") == "production" or os.environ.get("FLASK_DEBUG") == "0"
+):
     raise ValueError(
         "SECURITY ERROR: SECRET_KEY environment variable must be set in production. "
-        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+        'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
     )
 else:
     # Development only: generate random key (sessions reset on restart)
     import secrets
+
     SECRET_KEY = secrets.token_hex(32)
-    print("WARNING: Using randomly generated SECRET_KEY. Set SECRET_KEY env var for persistent sessions.")
+    print(
+        "WARNING: Using randomly generated SECRET_KEY. Set SECRET_KEY env var for persistent sessions."
+    )
 
 # Discord OAuth configuration
 DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID")
@@ -52,6 +57,7 @@ ADMINS = [
     "146923845549424640",  # keven
     "128690099432062976",  # ember
     "212395045125357568",  # IRA
+    "292113529585008640",  # CJ
 ]
 
 # API Key configuration for external integrations

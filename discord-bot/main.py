@@ -13,6 +13,7 @@ from cogs.slash_commands import SlashCommandsCog
 from cogs.anti_spam import AntiSpamCog
 from cogs.purchase_tracking import PurchaseTrackingCog
 from cogs.rules_assistant import RulesAssistantCog
+from cogs.streaming import StreamingCog
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -33,6 +34,7 @@ logger.addHandler(stream_handler)
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
+intents.presences = True  # Required for streaming detection
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 bot.remove_command("help")  # Remove default help command
@@ -135,6 +137,7 @@ async def setup_cogs():
     await bot.add_cog(SlashCommandsCog(bot))
     await bot.add_cog(PurchaseTrackingCog(bot))
     await bot.add_cog(RulesAssistantCog(bot))  # SorceryAI rules assistant
+    await bot.add_cog(StreamingCog(bot))  # Streaming detection for website banner
 
 
 async def main():

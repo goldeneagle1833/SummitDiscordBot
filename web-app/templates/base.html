@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -25,7 +25,8 @@
     {% block styles %}{% endblock %}
   </head>
   <body class="min-h-screen bg-bg-dark text-text font-sans md:ml-48">
-    {% include 'components/navbar.html' %}
+    {% include 'components/navbar.html' %} {% include
+    'components/streaming_banner.html' %}
 
     <main class="mt-16 mx-auto max-w-content px-4 sm:px-6 lg:px-8 py-8">
       {% block content %}{% endblock %}
@@ -35,7 +36,9 @@
 
     <!-- Global JS -->
     <script src="{{ url_for('static', filename='js/main.js') }}?v={{ app_version }}"></script>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}" defer></script>
+    <script
+      src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"
+      defer></script>
 
     <!-- Page-specific JS -->
     {% block scripts %}{% endblock %}

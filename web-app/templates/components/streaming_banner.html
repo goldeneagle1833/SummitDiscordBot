@@ -1,0 +1,157 @@
+<!-- Streaming Banner Component -->
+<!-- This banner appears when someone from the Discord is streaming -->
+<div
+  id="streaming-banner"
+  class="hidden fixed top-16 left-0 right-0 z-[800] md:ml-48">
+  <div
+    class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-3 shadow-lg">
+    <div
+      class="max-w-content mx-auto flex items-center justify-between gap-4 flex-wrap">
+      <div class="flex items-center gap-3">
+        <!-- Live indicator -->
+        <span class="flex items-center gap-2">
+          <span class="relative flex h-3 w-3">
+            <span
+              class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span
+              class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+          </span>
+          <span class="font-bold text-sm uppercase tracking-wide">Live</span>
+        </span>
+
+        <!-- Streamer info -->
+        <div class="flex items-center gap-2">
+          <img
+            id="streamer-avatar"
+            src=""
+            alt="Streamer avatar"
+            class="w-8 h-8 rounded-full border-2 border-white/30 hidden" />
+          <div class="flex flex-col">
+            <span class="font-semibold text-sm" id="streamer-name"
+              >Someone</span
+            >
+            <span class="text-xs opacity-80" id="stream-game"
+              >is streaming</span
+            >
+          </div>
+        </div>
+      </div>
+
+      <!-- Watch button -->
+      <a
+        id="stream-link"
+        href="#"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-full text-sm font-semibold transition-colors">
+        <span id="platform-icon">📺</span>
+        <span>Watch Stream</span>
+      </a>
+
+      <!-- Close button -->
+      <button
+        id="close-streaming-banner"
+        class="text-white/70 hover:text-white transition-colors p-1"
+        aria-label="Close banner">
+        <svg
+          class="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const BANNER_DISMISSED_KEY = "streaming_banner_dismissed";
+    const CHECK_INTERVAL = 60000; // Check every 60 seconds
+
+    let currentStreamerId = null;
+
+    async function checkStreamers() {
+      try {
+        const response = await fetch("/api/streamers/banner");
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const banner = document.getElementById("streaming-banner");
+
+        if (!data.is_live || !data.streamer) {
+          banner.classList.add("hidden");
+          currentStreamerId = null;
+          sessionStorage.removeItem(BANNER_DISMISSED_KEY);
+          return;
+        }
+
+        const streamer = data.streamer;
+
+        // Check if user dismissed this specific streamer's banner
+        const dismissed = sessionStorage.getItem(BANNER_DISMISSED_KEY);
+        if (dismissed === streamer.display_name) {
+          return;
+        }
+
+        // Update banner content
+        document.getElementById("streamer-name").textContent =
+          streamer.display_name;
+        document.getElementById("stream-game").textContent = streamer.game_name
+          ? `Playing ${streamer.game_name}`
+          : "is streaming";
+
+        const avatar = document.getElementById("streamer-avatar");
+        if (streamer.avatar_url) {
+          avatar.src = streamer.avatar_url;
+          avatar.classList.remove("hidden");
+        } else {
+          avatar.classList.add("hidden");
+        }
+
+        const link = document.getElementById("stream-link");
+        link.href = streamer.stream_url || "#";
+
+        // Set platform icon
+        const platformIcon = document.getElementById("platform-icon");
+        if (streamer.platform === "Twitch") {
+          platformIcon.textContent = "🟣";
+        } else if (streamer.platform === "YouTube") {
+          platformIcon.textContent = "🔴";
+        } else {
+          platformIcon.textContent = "📺";
+        }
+
+        // Show banner
+        banner.classList.remove("hidden");
+        currentStreamerId = streamer.display_name;
+      } catch (error) {
+        console.error("Error checking streamers:", error);
+      }
+    }
+
+    function closeBanner() {
+      const banner = document.getElementById("streaming-banner");
+      banner.classList.add("hidden");
+      if (currentStreamerId) {
+        sessionStorage.setItem(BANNER_DISMISSED_KEY, currentStreamerId);
+      }
+    }
+
+    // Set up close button
+    document
+      .getElementById("close-streaming-banner")
+      .addEventListener("click", closeBanner);
+
+    // Initial check
+    checkStreamers();
+
+    // Periodic check
+    setInterval(checkStreamers, CHECK_INTERVAL);
+  })();
+</script>

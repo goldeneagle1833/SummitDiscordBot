@@ -18,7 +18,8 @@
       "Bash(sqlite3:*)",
       "Bash(tree:*)",
       "Bash(git mv:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "WebFetch(domain:www.youtube.com)"
     ]
   },
   "enabledPlugins": {

@@ -1,0 +1,259 @@
+"""
+Streaming Detection Cog
+
+Monitors Discord presence updates to detect when members are streaming.
+Stores streaming status in a shared database for the web app to display.
+"""
+
+import discord
+from discord.ext import commands, tasks
+import sqlite3
+import datetime
+import logging
+from pathlib import Path
+
+logger = logging.getLogger("discord_bot")
+
+# Database path - shared location for web app access
+DB_PATH = Path(__file__).parent.parent.parent / "data" / "streamers.db"
+
+
+def init_database():
+    """Initialize the streamers database."""
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS active_streamers (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            avatar_url TEXT,
+            stream_url TEXT,
+            stream_title TEXT,
+            game_name TEXT,
+            platform TEXT,
+            started_at TEXT NOT NULL,
+            last_seen TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+    logger.info(f"Streamers database initialized at {DB_PATH}")
+
+
+class StreamingCog(commands.Cog):
+    """Cog for detecting and tracking streaming members."""
+
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        init_database()
+        self.cleanup_stale_streamers.start()
+        logger.info("StreamingCog initialized")
+
+    def cog_unload(self):
+        self.cleanup_stale_streamers.cancel()
+
+    def _get_streaming_activity(
+        self, member: discord.Member
+    ) -> discord.Streaming | None:
+        """Extract streaming activity from a member's activities."""
+        for activity in member.activities:
+            if isinstance(activity, discord.Streaming):
+                return activity
+        return None
+
+    def _add_streamer(self, member: discord.Member, activity: discord.Streaming):
+        """Add or update a streamer in the database."""
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        now = datetime.datetime.utcnow().isoformat()
+        avatar_url = str(member.display_avatar.url) if member.display_avatar else None
+
+        # Determine platform from URL
+        platform = "Unknown"
+        if activity.url:
+            if "twitch.tv" in activity.url.lower():
+                platform = "Twitch"
+            elif (
+                "youtube.com" in activity.url.lower()
+                or "youtu.be" in activity.url.lower()
+            ):
+                platform = "YouTube"
+
+        cursor.execute(
+            """
+            INSERT INTO active_streamers 
+                (user_id, username, display_name, avatar_url, stream_url, stream_title, game_name, platform, started_at, last_seen)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                username = excluded.username,
+                display_name = excluded.display_name,
+                avatar_url = excluded.avatar_url,
+                stream_url = excluded.stream_url,
+                stream_title = excluded.stream_title,
+                game_name = excluded.game_name,
+                platform = excluded.platform,
+                last_seen = excluded.last_seen
+        """,
+            (
+                member.id,
+                member.name,
+                member.display_name,
+                avatar_url,
+                activity.url,
+                activity.name,  # Stream title
+                activity.game,  # Game being played
+                platform,
+                now,
+                now,
+            ),
+        )
+
+        conn.commit()
+        conn.close()
+        logger.info(f"Added/updated streamer: {member.display_name} - {activity.url}")
+
+    def _remove_streamer(self, user_id: int):
+        """Remove a streamer from the database."""
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM active_streamers WHERE user_id = ?", (user_id,))
+        affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+        if affected > 0:
+            logger.info(f"Removed streamer with user_id: {user_id}")
+
+    @commands.Cog.listener()
+    async def on_presence_update(self, before: discord.Member, after: discord.Member):
+        """Detect when a member starts or stops streaming."""
+        before_streaming = self._get_streaming_activity(before)
+        after_streaming = self._get_streaming_activity(after)
+
+        # Started streaming
+        if after_streaming and not before_streaming:
+            logger.info(
+                f"{after.display_name} started streaming: {after_streaming.url}"
+            )
+            self._add_streamer(after, after_streaming)
+
+        # Stopped streaming
+        elif before_streaming and not after_streaming:
+            logger.info(f"{after.display_name} stopped streaming")
+            self._remove_streamer(after.id)
+
+        # Updated stream info (e.g., changed game)
+        elif after_streaming and before_streaming:
+            if (
+                after_streaming.url != before_streaming.url
+                or after_streaming.game != before_streaming.game
+                or after_streaming.name != before_streaming.name
+            ):
+                self._add_streamer(after, after_streaming)
+
+    @tasks.loop(minutes=5)
+    async def cleanup_stale_streamers(self):
+        """Clean up streamers who haven't been seen in a while (in case we missed an update)."""
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        # Remove streamers not seen in the last 30 minutes
+        cutoff = (
+            datetime.datetime.utcnow() - datetime.timedelta(minutes=30)
+        ).isoformat()
+        cursor.execute("DELETE FROM active_streamers WHERE last_seen < ?", (cutoff,))
+        removed = cursor.rowcount
+
+        conn.commit()
+        conn.close()
+
+        if removed > 0:
+            logger.info(f"Cleaned up {removed} stale streamer entries")
+
+    @cleanup_stale_streamers.before_loop
+    async def before_cleanup(self):
+        """Wait for bot to be ready before starting the cleanup loop."""
+        await self.bot.wait_until_ready()
+
+    @commands.command(name="streamers")
+    async def list_streamers(self, ctx: commands.Context):
+        """List all currently streaming members."""
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT display_name, stream_url, game_name, stream_title, platform, started_at
+            FROM active_streamers
+            ORDER BY started_at DESC
+        """)
+        streamers = cursor.fetchall()
+        conn.close()
+
+        if not streamers:
+            embed = discord.Embed(
+                title="📺 Active Streams",
+                description="No one is currently streaming!",
+                color=discord.Color.greyple(),
+            )
+            await ctx.send(embed=embed)
+            return
+
+        embed = discord.Embed(
+            title="📺 Active Streams",
+            description=f"**{len(streamers)}** member(s) are currently live!",
+            color=discord.Color.purple(),
+        )
+
+        for (
+            display_name,
+            stream_url,
+            game_name,
+            stream_title,
+            platform,
+            started_at,
+        ) in streamers:
+            game_text = f"🎮 {game_name}" if game_name else "🎮 Unknown game"
+            platform_emoji = (
+                "🟣"
+                if platform == "Twitch"
+                else "🔴"
+                if platform == "YouTube"
+                else "📺"
+            )
+
+            field_value = f"{platform_emoji} **{platform}**\n{game_text}"
+            if stream_url:
+                field_value += f"\n[Watch Stream]({stream_url})"
+
+            embed.add_field(name=f"{display_name}", value=field_value, inline=True)
+
+        embed.set_footer(text="Check sorcererssummit.com for the live stream banner!")
+        await ctx.send(embed=embed)
+
+    @commands.command(name="refresh_streamers")
+    @commands.has_permissions(administrator=True)
+    async def refresh_streamers(self, ctx: commands.Context):
+        """Manually refresh the streamers list by checking all members."""
+        await ctx.send("🔄 Refreshing streamers list...")
+
+        # Clear the database first
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM active_streamers")
+        conn.commit()
+        conn.close()
+
+        count = 0
+        for guild in self.bot.guilds:
+            for member in guild.members:
+                streaming = self._get_streaming_activity(member)
+                if streaming:
+                    self._add_streamer(member, streaming)
+                    count += 1
+
+        await ctx.send(f"✅ Found **{count}** active streamer(s)!")
+
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(StreamingCog(bot))

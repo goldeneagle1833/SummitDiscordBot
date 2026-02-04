@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -19,7 +19,8 @@
       href="{{ url_for('static', filename='css/components/navbar.css') }}" />
   </head>
   <body>
-    {% include 'components/navbar.html' %}
+    {% include 'components/navbar.html' %} {% include
+    'components/streaming_banner.html' %}
 
     <main>
       <section class="hero">
@@ -38,20 +39,32 @@
       </section>
 
       <!-- Active Event Leaderboard Section -->
-      <section class="leaderboard" style="max-width: 900px; margin: 0 auto;" id="event-section">
+      <section
+        class="leaderboard"
+        style="max-width: 900px; margin: 0 auto"
+        id="event-section">
         <div class="leaderboard-content">
-          <h2 style="color: #fff; text-align: center; margin-bottom: 0.5rem" id="event-title">
+          <h2
+            style="color: #fff; text-align: center; margin-bottom: 0.5rem"
+            id="event-title">
             Current Event Leaderboard
           </h2>
-          <p style="color: rgba(255,255,255,0.6); text-align: center; margin-bottom: 1rem; font-size: 0.9rem;" id="event-subtitle">
+          <p
+            style="
+              color: rgba(255, 255, 255, 0.6);
+              text-align: center;
+              margin-bottom: 1rem;
+              font-size: 0.9rem;
+            "
+            id="event-subtitle">
             Loading event info...
           </p>
           <table id="event-leaderboard-table">
             <thead>
               <tr>
-                <th style="width: 60px;">Rank</th>
+                <th style="width: 60px">Rank</th>
                 <th>Player</th>
-                <th style="text-align: right;">Event ELO</th>
+                <th style="text-align: right">Event ELO</th>
               </tr>
             </thead>
             <tbody id="event-leaderboard-tbody">
@@ -62,19 +75,44 @@
       </section>
 
       <!-- No Active Event Section (hidden by default) -->
-      <section id="no-event-section" style="display: none; max-width: 900px; margin: 0 auto; padding: 2rem;">
-        <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 2rem; text-align: center;">
-          <h2 style="color: #fff; margin-bottom: 1rem;">No Active Event</h2>
-          <p style="color: rgba(255,255,255,0.7); font-size: 1.1rem; margin-bottom: 1.5rem;">
+      <section
+        id="no-event-section"
+        style="display: none; max-width: 900px; margin: 0 auto; padding: 2rem">
+        <div
+          style="
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+          ">
+          <h2 style="color: #fff; margin-bottom: 1rem">No Active Event</h2>
+          <p
+            style="
+              color: rgba(255, 255, 255, 0.7);
+              font-size: 1.1rem;
+              margin-bottom: 1.5rem;
+            ">
             Check back soon for the next event leaderboard!
           </p>
-          <p style="color: rgba(255,255,255,0.6); margin-bottom: 2rem;">
-            In the meantime, check out the <a href="/avatars" style="color: #ffd700; text-decoration: underline;">Avatar Win Rates</a>
+          <p style="color: rgba(255, 255, 255, 0.6); margin-bottom: 2rem">
+            In the meantime, check out the
+            <a
+              href="/avatars"
+              style="color: #ffd700; text-decoration: underline"
+              >Avatar Win Rates</a
+            >
             or catch up on some Sorcery content from the community:
           </p>
 
           <!-- YouTube Videos Grid -->
-          <div id="youtube-videos" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
+          <div
+            id="youtube-videos"
+            style="
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+              gap: 1.5rem;
+              margin-top: 1.5rem;
+            ">
             <!-- Videos will be inserted here by JS -->
           </div>
         </div>
@@ -106,7 +144,8 @@
           if (!video) continue;
 
           const card = document.createElement("div");
-          card.style.cssText = "background: rgba(0,0,0,0.3); border-radius: 8px; overflow: hidden; text-align: left;";
+          card.style.cssText =
+            "background: rgba(0,0,0,0.3); border-radius: 8px; overflow: hidden; text-align: left;";
           card.innerHTML = `
             <a href="${video.url}" target="_blank" rel="noopener noreferrer" style="display: block;">
               <img src="${video.thumbnail}" alt="${video.title}" style="width: 100%; aspect-ratio: 16/9; object-fit: cover;">
@@ -164,16 +203,18 @@
         tbody.innerHTML = "";
 
         if (eventData.leaderboard.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: rgba(255,255,255,0.5);">No matches played yet</td></tr>';
+          tbody.innerHTML =
+            '<tr><td colspan="3" style="text-align: center; color: rgba(255,255,255,0.5);">No matches played yet</td></tr>';
           return;
         }
 
         // Show top 25
         eventData.leaderboard.slice(0, 25).forEach((player, index) => {
           const row = document.createElement("tr");
-          const rankDisplay = index < 3
-            ? ["\u{1F947}", "\u{1F948}", "\u{1F949}"][index]
-            : `#${index + 1}`;
+          const rankDisplay =
+            index < 3
+              ? ["\u{1F947}", "\u{1F948}", "\u{1F949}"][index]
+              : `#${index + 1}`;
 
           row.innerHTML = `
             <td style="font-weight: 600;">${rankDisplay}</td>

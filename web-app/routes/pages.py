@@ -24,6 +24,12 @@ def about():
     return render_template("pages/about.html")
 
 
+@pages_bp.route("/community")
+def community():
+    """Community links page."""
+    return render_template("pages/community.html")
+
+
 @pages_bp.route("/help")
 def help_page():
     """Help and documentation page."""

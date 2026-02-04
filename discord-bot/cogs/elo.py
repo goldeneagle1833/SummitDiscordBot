@@ -123,6 +123,19 @@ class EloCog(commands.Cog):
             "myperformance": "!mystats",
             "stat": "!mystats",
             "mystat": "!mystats",
+            # Event leaderboard variations
+            "eventleaderboard": "!event_leaderboard",
+            "eventboard": "!event_leaderboard",
+            "eventlb": "!event_leaderboard",
+            "eventranking": "!event_leaderboard",
+            "eventrankings": "!event_leaderboard",
+            "seasonleaderboard": "!event_leaderboard",
+            "seasonboard": "!event_leaderboard",
+            # Event status variations
+            "eventstatus": "!event_status",
+            "event": "!event_status",
+            "currentevent": "!event_status",
+            "season": "!event_status",
         }
 
         # Check for exact matches
@@ -145,6 +158,8 @@ class EloCog(commands.Cog):
             "masters_bracket": "!masters_bracket",
             "mastersbracket": "!masters_bracket",
             "mystats": "!mystats",
+            "event_leaderboard": "!event_leaderboard",
+            "event_status": "!event_status",
         }
 
         # Find closest match based on edit distance
@@ -166,30 +181,54 @@ class EloCog(commands.Cog):
 
     @commands.command()
     async def rank(self, ctx, user: discord.Member = None):
-        """Check your current Elo ranking, or check another user's rank by tagging them."""
+        """Check your current Elo ranking (lifetime and event), or check another user's rank by tagging them."""
+        from utils.database import get_active_event
+
         # Determine which user to check
         target_user = user if user else ctx.author
         is_self = target_user == ctx.author
+        target_name = target_user.display_name
 
         conn = sqlite3.connect("elo.db")
         cur = conn.cursor()
+
+        # Get both lifetime and event ELO
         cur.execute(
-            "SELECT elo FROM overall_standings WHERE user_id=?", (target_user.id,)
+            "SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (target_user.id,)
         )
         row = cur.fetchone()
+
         if row:
-            elo = row[0]
-            cur.execute("SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (elo,))
-            rank = cur.fetchone()[0] + 1
+            lifetime_elo = row[0]
+            event_elo = row[1] if row[1] else 1500
+
+            # Get lifetime rank
+            cur.execute("SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (lifetime_elo,))
+            lifetime_rank = cur.fetchone()[0] + 1
+
+            # Get event rank (only count players with event_elo != 1500)
+            cur.execute("SELECT COUNT(*) FROM overall_standings WHERE event_elo > ? AND event_elo != 1500", (event_elo,))
+            event_rank = cur.fetchone()[0] + 1
+
+            # Check if there's an active event
+            active_event = get_active_event()
 
             if is_self:
-                await ctx.send(
-                    f"{ctx.author.mention}, your current Elo rating is {elo} and your rank is #{rank}."
-                )
+                msg = f"{ctx.author.mention}\n"
             else:
-                await ctx.send(
-                    f"{target_user.display_name}'s current Elo rating is {elo} and their rank is #{rank}."
-                )
+                msg = f"**{target_name}**\n"
+
+            msg += f"**Lifetime ELO:** {lifetime_elo} (Rank #{lifetime_rank})\n"
+
+            if active_event:
+                if event_elo != 1500:
+                    msg += f"**Event ELO ({active_event['event_name']}):** {event_elo} (Rank #{event_rank})"
+                else:
+                    msg += f"**Event ELO ({active_event['event_name']}):** 1500 (No matches yet)"
+            else:
+                msg += "*No active event*"
+
+            await ctx.send(msg)
         else:
             if is_self:
                 await ctx.send(
@@ -198,14 +237,14 @@ class EloCog(commands.Cog):
                 )
             else:
                 await ctx.send(
-                    f"{target_user.display_name} doesn't have an Elo rating yet. "
+                    f"{target_name} doesn't have an Elo rating yet. "
                     "They need to play some matches to get started!"
                 )
         conn.close()
 
     @commands.command()
     async def leaderboard(self, ctx):
-        """Check the top 16 Elo rankings."""
+        """Check the top 16 lifetime Elo rankings."""
         conn = sqlite3.connect("elo.db")
         cur = conn.cursor()
         cur.execute(
@@ -213,13 +252,41 @@ class EloCog(commands.Cog):
         )
         rows = cur.fetchall()
         if rows:
-            leaderboard = "🏆 **Elo Leaderboard** 🏆\n"
+            leaderboard = "🏆 **Lifetime Elo Leaderboard** 🏆\n"
             for i, (user_display_name, elo) in enumerate(rows, start=1):
                 leaderboard += f"#{i}: {user_display_name} - {elo} Elo\n"
             await ctx.send(leaderboard)
         else:
             await ctx.send("No Elo ratings found. Play some matches to get started!")
         conn.close()
+
+    @commands.command()
+    async def event_leaderboard(self, ctx):
+        """Check the top 16 event Elo rankings for the current event."""
+        from utils.database import get_active_event
+
+        active_event = get_active_event()
+        if not active_event:
+            await ctx.send("No active event. Use `!leaderboard` to see lifetime rankings.")
+            return
+
+        conn = sqlite3.connect("elo.db")
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT user_display_name, event_elo FROM overall_standings
+               WHERE event_elo != 1500
+               ORDER BY event_elo DESC LIMIT 16"""
+        )
+        rows = cur.fetchall()
+        conn.close()
+
+        if rows:
+            leaderboard = f"🏆 **{active_event['event_name']} Leaderboard** 🏆\n"
+            for i, (user_display_name, elo) in enumerate(rows, start=1):
+                leaderboard += f"#{i}: {user_display_name} - {elo} Elo\n"
+            await ctx.send(leaderboard)
+        else:
+            await ctx.send(f"No rankings yet for {active_event['event_name']}. Play some matches to get started!")
 
     @commands.command()
     async def masters_bracket(self, ctx):

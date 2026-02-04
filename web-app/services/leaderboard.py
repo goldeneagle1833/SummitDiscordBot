@@ -16,7 +16,7 @@ class LeaderboardService:
         self._match_repo = match_repo or MatchRepository()
 
     def get_leaderboard(self) -> list[dict]:
-        """Get full leaderboard with win/loss records."""
+        """Get full lifetime leaderboard with win/loss records."""
         standings = self._elo_repo.get_all_standings()
 
         leaderboard_data = []
@@ -34,6 +34,65 @@ class LeaderboardService:
             })
 
         return leaderboard_data
+
+    def get_event_leaderboard(self) -> dict:
+        """Get event leaderboard with active event info."""
+        active_event = self._elo_repo.get_active_event()
+        standings = self._elo_repo.get_event_standings()
+
+        leaderboard_data = []
+        for standing in standings:
+            user_id = standing["user_id"]
+            leaderboard_data.append({
+                "id": str(user_id),
+                "name": standing["display_name"],
+                "event_elo": standing["event_elo"],
+            })
+
+        return {
+            "event": active_event,
+            "leaderboard": leaderboard_data
+        }
+
+    def get_combined_leaderboard(self) -> dict:
+        """Get both lifetime and event leaderboards."""
+        active_event = self._elo_repo.get_active_event()
+        standings = self._elo_repo.get_all_standings_with_event()
+
+        lifetime_data = []
+        event_data = []
+
+        for standing in standings:
+            user_id = standing["user_id"]
+            wins = self._match_repo.get_wins_count(user_id)
+            losses = self._match_repo.get_losses_count(user_id)
+
+            lifetime_data.append({
+                "id": str(user_id),
+                "name": standing["display_name"],
+                "elo": standing["elo"],
+                "wins": wins,
+                "losses": losses,
+            })
+
+            # Only include in event if they have non-default ELO
+            if standing["event_elo"] != 1500:
+                event_data.append({
+                    "id": str(user_id),
+                    "name": standing["display_name"],
+                    "event_elo": standing["event_elo"],
+                })
+
+        # Sort event data by event_elo descending
+        event_data.sort(key=lambda x: x["event_elo"], reverse=True)
+
+        return {
+            "lifetime": lifetime_data,
+            "event": {
+                "info": active_event,
+                "leaderboard": event_data
+            }
+        }
 
     def get_elo_distribution(self) -> dict:
         """Get ELO distribution across bands."""

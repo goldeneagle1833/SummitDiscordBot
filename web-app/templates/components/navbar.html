@@ -3,96 +3,311 @@
   class="fixed inset-0 bg-black/50 z-[900] hidden opacity-0 transition-opacity duration-300 md:hidden"
   id="sidebar-backdrop"></div>
 
+<!-- Navbar Streaming Styles -->
+<style>
+  .navbar-streamers {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 1;
+    overflow: hidden;
+    max-width: 50%;
+  }
+
+  .navbar-streamers.show {
+    display: flex;
+  }
+
+  .navbar-live-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #ef4444;
+    white-space: nowrap;
+  }
+
+  .navbar-streamer-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(147, 51, 234, 0.2);
+    border: 1px solid rgba(147, 51, 234, 0.4);
+    border-radius: 20px;
+    padding: 3px 8px;
+    text-decoration: none;
+    color: white;
+    font-size: 11px;
+    transition:
+      background 0.2s,
+      border-color 0.2s;
+    white-space: nowrap;
+  }
+
+  .navbar-streamer-chip:hover {
+    background: rgba(147, 51, 234, 0.35);
+    border-color: rgba(147, 51, 234, 0.6);
+  }
+
+  .navbar-live-dot {
+    position: relative;
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+  }
+
+  .navbar-live-dot::before {
+    content: "";
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: #ef4444;
+    animation: navbar-ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  .navbar-live-dot::after {
+    content: "";
+    position: relative;
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ef4444;
+  }
+
+  @keyframes navbar-ping {
+    75%,
+    100% {
+      transform: scale(2);
+      opacity: 0;
+    }
+  }
+
+  .navbar-streamer-avatar {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid rgba(147, 51, 234, 0.5);
+    flex-shrink: 0;
+  }
+
+  .navbar-streamer-name {
+    font-weight: 600;
+    color: #e0e0e0;
+  }
+
+  .navbar-platform-icon {
+    font-size: 11px;
+  }
+
+  .navbar-right-links {
+    flex-shrink: 0;
+  }
+</style>
+
 <!-- Navbar -->
 <nav
-  class="fixed top-0 left-0 right-0 z-[1000] bg-bg-elevated h-16 flex items-center justify-between px-4 md:px-6 lg:px-8 shadow-md">
+  class="fixed top-0 left-0 right-0 z-[1000] bg-bg-elevated h-16 flex items-center justify-between px-4 md:px-6 lg:px-8 shadow-md"
+  style="
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: #1a1a2e;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  ">
   <!-- Left side: Hamburger + Brand -->
-  <div class="flex items-center gap-4">
+  <div
+    class="flex items-center gap-4"
+    style="display: flex; align-items: center; gap: 16px; flex: 1">
     <!-- Hamburger button (mobile only) -->
     <button
       class="md:hidden w-10 h-10 flex items-center justify-center rounded hover:bg-white/10 transition-colors"
       id="hamburger-toggle"
-      aria-label="Toggle menu">
+      aria-label="Toggle menu"
+      style="display: none">
       <span class="text-2xl font-bold leading-none">☰</span>
     </button>
 
     <a
       href="/"
       class="text-lg md:text-xl font-bold text-secondary hover:text-text transition-colors"
-      id="brand-secret">
+      id="brand-secret"
+      style="
+        font-size: 1.25rem;
+        font-weight: bold;
+        color: #4db8ff;
+        text-decoration: none;
+      ">
       Sorcerers Summit
     </a>
   </div>
 
-  <!-- Desktop nav links (hidden on mobile) -->
-  <div class="hidden md:flex items-center gap-6">
-    <a
-      href="/"
-      class="text-text hover:text-secondary transition-colors font-medium">
+  <!-- Center: Live Streamers (shown when someone is live) - absolutely centered -->
+  <div
+    class="navbar-streamers"
+    id="navbar-streamers"
+    style="
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      align-items: center;
+      gap: 8px;
+    ">
+    <!-- Streamer chips will be inserted here by JavaScript -->
+  </div>
+
+  <!-- Desktop nav links -->
+  <div
+    class="navbar-right-links"
+    style="
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex: 1;
+      justify-content: flex-end;
+    ">
+    <a href="/" style="color: #e0e0e0; text-decoration: none; font-weight: 500">
       Home
     </a>
     <a
       href="https://discord.gg/ZDqHSK9VGx"
-      class="text-text hover:text-secondary transition-colors font-medium"
       target="_blank"
-      rel="noopener noreferrer">
+      rel="noopener noreferrer"
+      style="color: #e0e0e0; text-decoration: none; font-weight: 500">
       Discord
     </a>
     <a
       href="https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink"
-      class="text-text hover:text-secondary transition-colors font-medium"
       target="_blank"
-      rel="noopener noreferrer">
+      rel="noopener noreferrer"
+      style="color: #e0e0e0; text-decoration: none; font-weight: 500">
       Patreon
     </a>
     <a
       href="/about"
-      class="text-text hover:text-secondary transition-colors font-medium">
+      style="color: #e0e0e0; text-decoration: none; font-weight: 500">
       About
     </a>
 
     {% if current_user %}
     <a
       href="/player/{{ current_user.id }}"
-      class="text-secondary hover:text-text font-semibold transition-colors">
+      style="color: #4db8ff; text-decoration: none; font-weight: 600">
       {{ current_user.username }}
     </a>
     <a
       href="/auth/logout"
-      class="text-text-muted hover:text-accent-red text-sm transition-colors">
+      style="color: #888; text-decoration: none; font-size: 0.875rem">
       Logout
     </a>
     {% else %}
     <a
       href="/auth/discord"
-      class="inline-flex items-center justify-center px-4 py-2 rounded bg-[#5865f2] text-white font-semibold hover:bg-[#4752c4] transition-all hover:-translate-y-0.5">
-      Login
-    </a>
-    {% endif %}
-  </div>
-
-  <!-- Mobile user info (show only on mobile) -->
-  <div class="flex items-center gap-3 md:hidden">
-    {% if current_user %}
-    <a
-      href="/player/{{ current_user.id }}"
-      class="text-secondary font-semibold truncate max-w-[80px] text-sm">
-      {{ current_user.username }}
-    </a>
-    <a
-      href="/auth/logout"
-      class="text-text-muted hover:text-accent-red text-xs transition-colors">
-      Logout
-    </a>
-    {% else %}
-    <a
-      href="/auth/discord"
-      class="inline-flex items-center justify-center px-3 py-2 rounded bg-[#5865f2] text-white text-sm font-semibold active:scale-95 transition-transform">
+      style="
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 16px;
+        border-radius: 4px;
+        background: #5865f2;
+        color: white;
+        font-weight: 600;
+        text-decoration: none;
+      ">
       Login
     </a>
     {% endif %}
   </div>
 </nav>
+
+<!-- Navbar Streaming Script -->
+<script>
+  (function () {
+    const CHECK_INTERVAL = 60000;
+
+    function getPlatformIcon(platform) {
+      if (platform === "Twitch") return "🟣";
+      if (platform === "YouTube") return "🔴";
+      return "📺";
+    }
+
+    function createStreamerChip(streamer) {
+      const chip = document.createElement("a");
+      chip.href = streamer.stream_url || "#";
+      chip.target = "_blank";
+      chip.rel = "noopener noreferrer";
+      chip.className = "navbar-streamer-chip";
+      chip.title =
+        streamer.stream_title ||
+        `${streamer.display_name} is streaming ${streamer.game_name || ""}`;
+
+      chip.innerHTML = `
+      ${streamer.avatar_url ? `<img src="${streamer.avatar_url}" alt="" class="navbar-streamer-avatar">` : ""}
+      <span class="navbar-streamer-name">${streamer.display_name}</span>
+      <span class="navbar-platform-icon">${getPlatformIcon(streamer.platform)}</span>
+    `;
+
+      return chip;
+    }
+
+    function createLiveLabel() {
+      const label = document.createElement("span");
+      label.className = "navbar-live-label";
+      label.innerHTML = `
+      <span class="navbar-live-dot"></span>
+      Live Game
+    `;
+      return label;
+    }
+
+    async function checkNavbarStreamers() {
+      try {
+        const response = await fetch("/api/streamers");
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const container = document.getElementById("navbar-streamers");
+        if (!container) return;
+
+        if (!data.streamers || data.streamers.length === 0) {
+          container.style.display = "none";
+          container.innerHTML = "";
+          return;
+        }
+
+        container.innerHTML = "";
+        container.appendChild(createLiveLabel());
+        data.streamers.forEach((streamer) => {
+          container.appendChild(createStreamerChip(streamer));
+        });
+        container.style.display = "flex";
+      } catch (error) {
+        console.error("Error checking navbar streamers:", error);
+      }
+    }
+
+    // Initial check when DOM is ready
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => {
+        checkNavbarStreamers();
+        setInterval(checkNavbarStreamers, CHECK_INTERVAL);
+      });
+    } else {
+      checkNavbarStreamers();
+      setInterval(checkNavbarStreamers, CHECK_INTERVAL);
+    }
+  })();
+</script>
 
 <!-- Sidebar - Simple text navigation, hidden on mobile by default -->
 <aside

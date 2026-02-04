@@ -1,63 +1,177 @@
 <!-- Streaming Banner Component -->
 <!-- This banner appears when someone from the Discord is streaming -->
-<div
-  id="streaming-banner"
-  class="hidden fixed top-16 left-0 right-0 z-[800] md:ml-48">
-  <div
-    class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-3 shadow-lg">
-    <div
-      class="max-w-content mx-auto flex items-center justify-between gap-4 flex-wrap">
-      <div class="flex items-center gap-3">
-        <!-- Live indicator -->
-        <span class="flex items-center gap-2">
-          <span class="relative flex h-3 w-3">
-            <span
-              class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-            <span
-              class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-          </span>
-          <span class="font-bold text-sm uppercase tracking-wide">Live</span>
-        </span>
+<style>
+  .streaming-banner {
+    position: fixed;
+    top: 64px; /* navbar height */
+    left: 0;
+    right: 0;
+    z-index: 800;
+    display: none;
+  }
 
-        <!-- Streamer info -->
-        <div class="flex items-center gap-2">
-          <img
-            id="streamer-avatar"
-            src=""
-            alt="Streamer avatar"
-            class="w-8 h-8 rounded-full border-2 border-white/30 hidden" />
-          <div class="flex flex-col">
-            <span class="font-semibold text-sm" id="streamer-name"
-              >Someone</span
-            >
-            <span class="text-xs opacity-80" id="stream-game"
-              >is streaming</span
-            >
-          </div>
-        </div>
+  @media (min-width: 768px) {
+    .streaming-banner {
+      margin-left: 192px; /* sidebar width */
+    }
+  }
+
+  .streaming-banner.show {
+    display: block;
+  }
+
+  .streaming-banner-inner {
+    background: transparent;
+    color: white;
+    padding: 8px 16px;
+  }
+
+  .streaming-banner-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .streamers-list {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .streamer-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(147, 51, 234, 0.15);
+    border: 1px solid rgba(147, 51, 234, 0.3);
+    border-radius: 8px;
+    padding: 8px 12px;
+    text-decoration: none;
+    color: white;
+    transition:
+      background 0.2s,
+      border-color 0.2s;
+  }
+
+  .streamer-card:hover {
+    background: rgba(147, 51, 234, 0.25);
+    border-color: rgba(147, 51, 234, 0.5);
+  }
+
+  .live-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .live-dot-container {
+    position: relative;
+    width: 10px;
+    height: 10px;
+  }
+
+  .live-dot-ping {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: #f87171;
+    opacity: 0.75;
+    animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  .live-dot {
+    position: relative;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ef4444;
+  }
+
+  @keyframes ping {
+    75%,
+    100% {
+      transform: scale(2);
+      opacity: 0;
+    }
+  }
+
+  .live-text {
+    font-weight: 700;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #ef4444;
+  }
+
+  .streamer-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid rgba(147, 51, 234, 0.5);
+  }
+
+  .streamer-details {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .streamer-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: #e0e0e0;
+  }
+
+  .stream-game {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .platform-icon {
+    font-size: 14px;
+  }
+
+  .close-banner-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.4);
+    cursor: pointer;
+    padding: 4px;
+    transition: color 0.2s;
+    margin-left: auto;
+  }
+
+  .close-banner-btn:hover {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .close-banner-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .hidden {
+    display: none !important;
+  }
+</style>
+
+<div id="streaming-banner" class="streaming-banner">
+  <div class="streaming-banner-inner">
+    <div class="streaming-banner-content">
+      <div class="streamers-list" id="streamers-list">
+        <!-- Streamer cards will be inserted here by JavaScript -->
       </div>
-
-      <!-- Watch button -->
-      <a
-        id="stream-link"
-        href="#"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-full text-sm font-semibold transition-colors">
-        <span id="platform-icon">📺</span>
-        <span>Watch Stream</span>
-      </a>
 
       <!-- Close button -->
       <button
         id="close-streaming-banner"
-        class="text-white/70 hover:text-white transition-colors p-1"
+        class="close-banner-btn"
         aria-label="Close banner">
-        <svg
-          class="w-5 h-5"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             stroke-linecap="round"
             stroke-linejoin="round"
@@ -74,62 +188,77 @@
     const BANNER_DISMISSED_KEY = "streaming_banner_dismissed";
     const CHECK_INTERVAL = 60000; // Check every 60 seconds
 
-    let currentStreamerId = null;
+    function getPlatformIcon(platform) {
+      if (platform === "Twitch") return "🟣";
+      if (platform === "YouTube") return "🔴";
+      return "📺";
+    }
+
+    function createStreamerCard(streamer) {
+      const card = document.createElement("a");
+      card.href = streamer.stream_url || "#";
+      card.target = "_blank";
+      card.rel = "noopener noreferrer";
+      card.className = "streamer-card";
+
+      card.innerHTML = `
+        <span class="live-indicator">
+          <span class="live-dot-container">
+            <span class="live-dot-ping"></span>
+            <span class="live-dot"></span>
+          </span>
+          <span class="live-text">Live</span>
+        </span>
+        ${streamer.avatar_url ? `<img src="${streamer.avatar_url}" alt="${streamer.display_name}" class="streamer-avatar">` : ""}
+        <div class="streamer-details">
+          <span class="streamer-name">${streamer.display_name}</span>
+          <span class="stream-game">${streamer.game_name || "Streaming"}</span>
+        </div>
+        <span class="platform-icon">${getPlatformIcon(streamer.platform)}</span>
+      `;
+
+      return card;
+    }
 
     async function checkStreamers() {
       try {
-        const response = await fetch("/api/streamers/banner");
-        if (!response.ok) return;
+        const response = await fetch("/api/streamers");
+        if (!response.ok) {
+          console.warn(
+            "Streamers API returned non-ok status:",
+            response.status,
+          );
+          return;
+        }
 
         const data = await response.json();
+        console.log("Streamers API response:", data);
         const banner = document.getElementById("streaming-banner");
+        const streamersList = document.getElementById("streamers-list");
 
-        if (!data.is_live || !data.streamer) {
-          banner.classList.add("hidden");
-          currentStreamerId = null;
+        if (!data.streamers || data.streamers.length === 0) {
+          console.log("No active streamers, hiding banner");
+          banner.classList.remove("show");
           sessionStorage.removeItem(BANNER_DISMISSED_KEY);
           return;
         }
 
-        const streamer = data.streamer;
-
-        // Check if user dismissed this specific streamer's banner
+        // Check if user dismissed the banner this session
         const dismissed = sessionStorage.getItem(BANNER_DISMISSED_KEY);
-        if (dismissed === streamer.display_name) {
+        if (dismissed === "true") {
+          console.log("Banner was dismissed by user");
           return;
         }
 
-        // Update banner content
-        document.getElementById("streamer-name").textContent =
-          streamer.display_name;
-        document.getElementById("stream-game").textContent = streamer.game_name
-          ? `Playing ${streamer.game_name}`
-          : "is streaming";
-
-        const avatar = document.getElementById("streamer-avatar");
-        if (streamer.avatar_url) {
-          avatar.src = streamer.avatar_url;
-          avatar.classList.remove("hidden");
-        } else {
-          avatar.classList.add("hidden");
-        }
-
-        const link = document.getElementById("stream-link");
-        link.href = streamer.stream_url || "#";
-
-        // Set platform icon
-        const platformIcon = document.getElementById("platform-icon");
-        if (streamer.platform === "Twitch") {
-          platformIcon.textContent = "🟣";
-        } else if (streamer.platform === "YouTube") {
-          platformIcon.textContent = "🔴";
-        } else {
-          platformIcon.textContent = "📺";
-        }
+        // Clear and rebuild streamer cards
+        streamersList.innerHTML = "";
+        data.streamers.forEach((streamer) => {
+          streamersList.appendChild(createStreamerCard(streamer));
+        });
 
         // Show banner
-        banner.classList.remove("hidden");
-        currentStreamerId = streamer.display_name;
+        console.log("Showing banner for", data.streamers.length, "streamers");
+        banner.classList.add("show");
       } catch (error) {
         console.error("Error checking streamers:", error);
       }
@@ -137,21 +266,41 @@
 
     function closeBanner() {
       const banner = document.getElementById("streaming-banner");
-      banner.classList.add("hidden");
-      if (currentStreamerId) {
-        sessionStorage.setItem(BANNER_DISMISSED_KEY, currentStreamerId);
-      }
+      banner.classList.remove("show");
+      sessionStorage.setItem(BANNER_DISMISSED_KEY, "true");
     }
 
-    // Set up close button
-    document
-      .getElementById("close-streaming-banner")
-      .addEventListener("click", closeBanner);
+    // Wait for DOM to be ready
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", function () {
+        console.log("DOM loaded, initializing streaming banner");
 
-    // Initial check
-    checkStreamers();
+        // Set up close button
+        const closeBtn = document.getElementById("close-streaming-banner");
+        if (closeBtn) {
+          closeBtn.addEventListener("click", closeBanner);
+        }
 
-    // Periodic check
-    setInterval(checkStreamers, CHECK_INTERVAL);
+        // Initial check
+        checkStreamers();
+
+        // Periodic check
+        setInterval(checkStreamers, CHECK_INTERVAL);
+      });
+    } else {
+      console.log("DOM already loaded, initializing streaming banner");
+
+      // Set up close button
+      const closeBtn = document.getElementById("close-streaming-banner");
+      if (closeBtn) {
+        closeBtn.addEventListener("click", closeBanner);
+      }
+
+      // Initial check
+      checkStreamers();
+
+      // Periodic check
+      setInterval(checkStreamers, CHECK_INTERVAL);
+    }
   })();
 </script>

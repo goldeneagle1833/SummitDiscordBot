@@ -64,7 +64,7 @@ class StreamingCog(commands.Cog):
         return None
 
     def _add_streamer(self, member: discord.Member, activity: discord.Streaming):
-        """Add or update a streamer in the database."""
+        """Add or update a streamer in the database (for Twitch/YouTube streaming)."""
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
 
@@ -115,6 +115,56 @@ class StreamingCog(commands.Cog):
         conn.close()
         logger.info(f"Added/updated streamer: {member.display_name} - {activity.url}")
 
+    def _add_voice_streamer(
+        self, member: discord.Member, channel: discord.VoiceChannel
+    ):
+        """Add a member who is Go Live in a voice channel."""
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        now = datetime.datetime.utcnow().isoformat()
+        avatar_url = str(member.display_avatar.url) if member.display_avatar else None
+
+        # Check what game they're playing (if any)
+        game_name = None
+        for activity in member.activities:
+            if isinstance(activity, (discord.Game, discord.Activity)):
+                game_name = activity.name
+                break
+
+        cursor.execute(
+            """
+            INSERT INTO active_streamers 
+                (user_id, username, display_name, avatar_url, stream_url, stream_title, game_name, platform, started_at, last_seen)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                username = excluded.username,
+                display_name = excluded.display_name,
+                avatar_url = excluded.avatar_url,
+                stream_url = excluded.stream_url,
+                stream_title = excluded.stream_title,
+                game_name = excluded.game_name,
+                platform = excluded.platform,
+                last_seen = excluded.last_seen
+        """,
+            (
+                member.id,
+                member.name,
+                member.display_name,
+                avatar_url,
+                None,  # No external URL for Discord Go Live
+                f"Live in #{channel.name}",  # Stream title
+                game_name,
+                "Discord",  # Platform
+                now,
+                now,
+            ),
+        )
+
+        conn.commit()
+        conn.close()
+        logger.info(f"Added voice streamer: {member.display_name} in #{channel.name}")
+
     def _remove_streamer(self, user_id: int):
         """Remove a streamer from the database."""
         conn = sqlite3.connect(DB_PATH)
@@ -152,6 +202,32 @@ class StreamingCog(commands.Cog):
                 or after_streaming.name != before_streaming.name
             ):
                 self._add_streamer(after, after_streaming)
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ):
+        """Detect when a member starts or stops Go Live (screen sharing) in a voice channel."""
+        # Started streaming in voice channel
+        if after.self_stream and not before.self_stream:
+            if after.channel:
+                logger.info(
+                    f"{member.display_name} started Go Live in #{after.channel.name}"
+                )
+                self._add_voice_streamer(member, after.channel)
+
+        # Stopped streaming (turned off Go Live or left channel)
+        elif before.self_stream and not after.self_stream:
+            logger.info(f"{member.display_name} stopped Go Live")
+            self._remove_streamer(member.id)
+
+        # Left voice channel while streaming
+        elif before.self_stream and before.channel and not after.channel:
+            logger.info(f"{member.display_name} left voice channel while streaming")
+            self._remove_streamer(member.id)
 
     @tasks.loop(minutes=5)
     async def cleanup_stale_streamers(self):
@@ -244,15 +320,28 @@ class StreamingCog(commands.Cog):
         conn.commit()
         conn.close()
 
-        count = 0
+        stream_count = 0
+        voice_count = 0
+
         for guild in self.bot.guilds:
+            # Check for Twitch/YouTube streaming presence
             for member in guild.members:
                 streaming = self._get_streaming_activity(member)
                 if streaming:
                     self._add_streamer(member, streaming)
-                    count += 1
+                    stream_count += 1
 
-        await ctx.send(f"✅ Found **{count}** active streamer(s)!")
+            # Check for Go Live in voice channels
+            for channel in guild.voice_channels:
+                for member in channel.members:
+                    if member.voice and member.voice.self_stream:
+                        self._add_voice_streamer(member, channel)
+                        voice_count += 1
+
+        total = stream_count + voice_count
+        await ctx.send(
+            f"✅ Found **{total}** active streamer(s)! ({stream_count} Twitch/YouTube, {voice_count} Discord Go Live)"
+        )
 
     @commands.command(name="debug_activities")
     @commands.has_permissions(administrator=True)
@@ -311,6 +400,55 @@ class StreamingCog(commands.Cog):
             name="Streaming detected", value=str(streaming_count), inline=True
         )
         embed.set_footer(text="Only discord.Streaming type counts as 'streaming'")
+
+        await ctx.send(embed=embed)
+
+    @commands.command(name="debug_voice")
+    @commands.has_permissions(administrator=True)
+    async def debug_voice(self, ctx: commands.Context):
+        """Debug: Show all members in voice channels and their streaming status."""
+        lines = []
+        streaming_count = 0
+
+        for channel in ctx.guild.voice_channels:
+            if channel.members:
+                lines.append(f"\n**#{channel.name}**")
+                for member in channel.members:
+                    if member.bot:
+                        continue
+                    voice = member.voice
+                    if voice:
+                        status = []
+                        if voice.self_stream:
+                            status.append("🔴 GO LIVE")
+                            streaming_count += 1
+                        if voice.self_video:
+                            status.append("📹 Camera")
+                        if voice.self_mute:
+                            status.append("🔇 Muted")
+                        if voice.self_deaf:
+                            status.append("🔈 Deafened")
+
+                        status_str = " | ".join(status) if status else "🎤 In voice"
+                        lines.append(f"  • {member.display_name}: {status_str}")
+
+        if not lines:
+            await ctx.send("⚠️ No one is in voice channels!")
+            return
+
+        output = "\n".join(lines[:40])
+        if len(lines) > 40:
+            output += f"\n... and {len(lines) - 40} more"
+
+        embed = discord.Embed(
+            title="🎙️ Voice Channel Debug",
+            description=output,
+            color=discord.Color.green(),
+        )
+        embed.add_field(
+            name="Go Live detected", value=str(streaming_count), inline=True
+        )
+        embed.set_footer(text="🔴 GO LIVE = Screen sharing in Discord")
 
         await ctx.send(embed=embed)
 

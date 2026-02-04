@@ -243,13 +243,11 @@
 
     function createStreamerChip(streamer) {
       const chip = document.createElement("a");
-      chip.href = streamer.stream_url || "#";
+      chip.href = "https://discord.gg/ZDqHSK9VGx";
       chip.target = "_blank";
       chip.rel = "noopener noreferrer";
       chip.className = "navbar-streamer-chip";
-      chip.title =
-        streamer.stream_title ||
-        `${streamer.display_name} is streaming ${streamer.game_name || ""}`;
+      chip.title = `${streamer.display_name} is playing a live game - Join Discord to watch!`;
 
       chip.innerHTML = `
       ${streamer.avatar_url ? `<img src="${streamer.avatar_url}" alt="" class="navbar-streamer-avatar">` : ""}

@@ -254,6 +254,66 @@ class StreamingCog(commands.Cog):
 
         await ctx.send(f"✅ Found **{count}** active streamer(s)!")
 
+    @commands.command(name="debug_activities")
+    @commands.has_permissions(administrator=True)
+    async def debug_activities(self, ctx: commands.Context):
+        """Debug: Show all members with any activity (to diagnose streaming detection)."""
+        lines = []
+        streaming_count = 0
+        activity_count = 0
+
+        for member in ctx.guild.members:
+            if member.bot:
+                continue
+            if member.activities:
+                activity_count += 1
+                for activity in member.activities:
+                    activity_type = type(activity).__name__
+                    if isinstance(activity, discord.Streaming):
+                        streaming_count += 1
+                        lines.append(
+                            f"🟣 **{member.display_name}**: STREAMING - {activity.url}"
+                        )
+                    elif isinstance(activity, discord.Game):
+                        lines.append(
+                            f"🎮 {member.display_name}: Playing {activity.name}"
+                        )
+                    elif isinstance(activity, discord.Activity):
+                        lines.append(
+                            f"📌 {member.display_name}: {activity.type.name} {activity.name}"
+                        )
+                    elif isinstance(activity, discord.CustomActivity):
+                        lines.append(
+                            f"💬 {member.display_name}: Custom - {activity.name}"
+                        )
+                    else:
+                        lines.append(f"❓ {member.display_name}: {activity_type}")
+
+        if not lines:
+            await ctx.send(
+                "⚠️ **No activities detected!**\n\nThis likely means the **Presence Intent** is not enabled.\n\n"
+                "Go to Discord Developer Portal → Your App → Bot → Privileged Gateway Intents → Enable **Presence Intent**"
+            )
+            return
+
+        # Truncate if too long
+        output = "\n".join(lines[:30])
+        if len(lines) > 30:
+            output += f"\n... and {len(lines) - 30} more"
+
+        embed = discord.Embed(
+            title="🔍 Activity Debug", description=output, color=discord.Color.blue()
+        )
+        embed.add_field(
+            name="Members with activities", value=str(activity_count), inline=True
+        )
+        embed.add_field(
+            name="Streaming detected", value=str(streaming_count), inline=True
+        )
+        embed.set_footer(text="Only discord.Streaming type counts as 'streaming'")
+
+        await ctx.send(embed=embed)
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(StreamingCog(bot))

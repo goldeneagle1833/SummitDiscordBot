@@ -38,7 +38,7 @@
       </section>
 
       <!-- Active Event Leaderboard Section -->
-      <section class="leaderboard" style="max-width: 900px; margin: 0 auto;">
+      <section class="leaderboard" style="max-width: 900px; margin: 0 auto;" id="event-section">
         <div class="leaderboard-content">
           <h2 style="color: #fff; text-align: center; margin-bottom: 0.5rem" id="event-title">
             Current Event Leaderboard
@@ -60,6 +60,25 @@
           </table>
         </div>
       </section>
+
+      <!-- No Active Event Section (hidden by default) -->
+      <section id="no-event-section" style="display: none; max-width: 900px; margin: 0 auto; padding: 2rem;">
+        <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 2rem; text-align: center;">
+          <h2 style="color: #fff; margin-bottom: 1rem;">No Active Event</h2>
+          <p style="color: rgba(255,255,255,0.7); font-size: 1.1rem; margin-bottom: 1.5rem;">
+            Check back soon for the next event leaderboard!
+          </p>
+          <p style="color: rgba(255,255,255,0.6); margin-bottom: 2rem;">
+            In the meantime, check out the <a href="/avatars" style="color: #ffd700; text-decoration: underline;">Avatar Win Rates</a>
+            or catch up on some Sorcery content from the community:
+          </p>
+
+          <!-- YouTube Videos Grid -->
+          <div id="youtube-videos" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
+            <!-- Videos will be inserted here by JS -->
+          </div>
+        </div>
+      </section>
     </main>
 
     <script>
@@ -74,18 +93,70 @@
         }
       })();
 
+      // Render YouTube videos
+      function renderYouTubeVideos(videos) {
+        const container = document.getElementById("youtube-videos");
+        if (!container) return;
+
+        container.innerHTML = "";
+
+        const channelOrder = ["goldeneagle", "cj"];
+        for (const key of channelOrder) {
+          const video = videos[key];
+          if (!video) continue;
+
+          const card = document.createElement("div");
+          card.style.cssText = "background: rgba(0,0,0,0.3); border-radius: 8px; overflow: hidden; text-align: left;";
+          card.innerHTML = `
+            <a href="${video.url}" target="_blank" rel="noopener noreferrer" style="display: block;">
+              <img src="${video.thumbnail}" alt="${video.title}" style="width: 100%; aspect-ratio: 16/9; object-fit: cover;">
+            </a>
+            <div style="padding: 1rem;">
+              <p style="color: rgba(255,255,255,0.6); font-size: 0.85rem; margin-bottom: 0.5rem;">
+                <a href="${video.channel_url}" target="_blank" rel="noopener noreferrer" style="color: #ffd700; text-decoration: none;">
+                  ${video.channel_display_name}
+                </a>
+              </p>
+              <a href="${video.url}" target="_blank" rel="noopener noreferrer" style="color: #fff; text-decoration: none; font-weight: 500; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+                ${video.title}
+              </a>
+            </div>
+          `;
+          container.appendChild(card);
+        }
+      }
+
+      // Fetch YouTube videos
+      async function fetchYouTubeVideos() {
+        try {
+          const res = await fetch("/api/youtube-videos");
+          if (!res.ok) return;
+          const data = await res.json();
+          renderYouTubeVideos(data);
+        } catch (error) {
+          console.error("Error fetching YouTube videos:", error);
+        }
+      }
+
       // Render event leaderboard
       function renderEventLeaderboard(eventData) {
         const titleEl = document.getElementById("event-title");
         const subtitleEl = document.getElementById("event-subtitle");
         const tbody = document.getElementById("event-leaderboard-tbody");
+        const eventSection = document.getElementById("event-section");
+        const noEventSection = document.getElementById("no-event-section");
 
         if (!eventData.event) {
-          titleEl.textContent = "No Active Event";
-          subtitleEl.textContent = "ELO tracking is paused between events";
-          tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: rgba(255,255,255,0.5);">No active event</td></tr>';
+          // Hide event leaderboard, show no-event content
+          eventSection.style.display = "none";
+          noEventSection.style.display = "block";
+          fetchYouTubeVideos();
           return;
         }
+
+        // Show event leaderboard, hide no-event content
+        eventSection.style.display = "block";
+        noEventSection.style.display = "none";
 
         titleEl.textContent = eventData.event.event_name;
         subtitleEl.textContent = `Started: ${new Date(eventData.event.start_date).toLocaleDateString()}`;

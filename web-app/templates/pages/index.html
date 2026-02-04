@@ -37,8 +37,34 @@
         </p>
       </section>
 
+      <!-- Active Event Leaderboard Section -->
+      <section class="leaderboard" style="max-width: 900px; margin: 0 auto;">
+        <div class="leaderboard-content">
+          <h2 style="color: #fff; text-align: center; margin-bottom: 0.5rem" id="event-title">
+            Current Event Leaderboard
+          </h2>
+          <p style="color: rgba(255,255,255,0.6); text-align: center; margin-bottom: 1rem; font-size: 0.9rem;" id="event-subtitle">
+            Loading event info...
+          </p>
+          <table id="event-leaderboard-table">
+            <thead>
+              <tr>
+                <th style="width: 60px;">Rank</th>
+                <th>Player</th>
+                <th style="text-align: right;">Event ELO</th>
+              </tr>
+            </thead>
+            <tbody id="event-leaderboard-tbody">
+              <!-- Event leaderboard rows will be inserted here by JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Lifetime Leaderboard Section -->
       <section class="leaderboard">
         <div class="leaderboard-content">
+          <h2 style="color: #fff; text-align: center; margin-bottom: 1rem">Lifetime Leaderboard</h2>
           <table id="leaderboard-table">
             <thead>
               <tr>
@@ -68,14 +94,53 @@
         }
       })();
 
-      // Fetch and render leaderboard from ELO DB
-      async function fetchLeaderboard() {
-        const res = await fetch("/api/leaderboard");
-        const data = await res.json();
+      // Render event leaderboard
+      function renderEventLeaderboard(eventData) {
+        const titleEl = document.getElementById("event-title");
+        const subtitleEl = document.getElementById("event-subtitle");
+        const tbody = document.getElementById("event-leaderboard-tbody");
+
+        if (!eventData.info) {
+          titleEl.textContent = "No Active Event";
+          subtitleEl.textContent = "ELO tracking is paused between events";
+          tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: rgba(255,255,255,0.5);">No active event</td></tr>';
+          return;
+        }
+
+        titleEl.textContent = eventData.info.event_name;
+        subtitleEl.textContent = `Started: ${new Date(eventData.info.start_date).toLocaleDateString()}`;
+
+        tbody.innerHTML = "";
+
+        if (eventData.leaderboard.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: rgba(255,255,255,0.5);">No matches played yet</td></tr>';
+          return;
+        }
+
+        // Show top 25
+        eventData.leaderboard.slice(0, 25).forEach((player, index) => {
+          const row = document.createElement("tr");
+          const rankDisplay = index < 3
+            ? ["\u{1F947}", "\u{1F948}", "\u{1F949}"][index]
+            : `#${index + 1}`;
+
+          row.innerHTML = `
+            <td style="font-weight: 600;">${rankDisplay}</td>
+            <td><a href="/player/${player.id}" class="player-link">${player.name}</a></td>
+            <td style="text-align: right; color: #ffd700; font-weight: 600;">${player.event_elo}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      }
+
+      // Render lifetime leaderboard
+      function renderLifetimeLeaderboard(players) {
         const tbody = document.getElementById("leaderboard-tbody");
         tbody.innerHTML = "";
-        data.forEach((player, i) => {
-          const rank = i + 1;
+
+        // Show top 25
+        players.slice(0, 25).forEach((player, index) => {
+          const rank = index + 1;
           let rankDisplay = rank;
           if (rank <= 3) {
             rankDisplay = `<span class="rank-badge rank-${rank}">${rank}</span>`;
@@ -90,9 +155,30 @@
           tbody.appendChild(row);
         });
       }
-      fetchLeaderboard();
+
+      // Fetch and render both leaderboards
+      async function fetchLeaderboards() {
+        try {
+          const res = await fetch("/api/leaderboard/combined");
+          if (!res.ok) {
+            console.error("Failed to fetch leaderboards:", res.status);
+            return;
+          }
+          const data = await res.json();
+
+          // Render event leaderboard
+          renderEventLeaderboard(data.event);
+
+          // Render lifetime leaderboard
+          renderLifetimeLeaderboard(data.lifetime);
+        } catch (error) {
+          console.error("Error fetching leaderboards:", error);
+        }
+      }
+
+      fetchLeaderboards();
       // Auto-refresh every 30 seconds
-      setInterval(fetchLeaderboard, 30000);
+      setInterval(fetchLeaderboards, 30000);
 
       // Secret easter egg: Triple-click the hero title
       const heroTitle = document.getElementById("hero-secret");

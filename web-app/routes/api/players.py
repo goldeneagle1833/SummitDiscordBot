@@ -80,7 +80,9 @@ def player_api(player_id):
                 json_deck_data_winner,
                 json_deck_data_loser,
                 curiosa_url_winner,
-                curiosa_url_loser
+                curiosa_url_loser,
+                winner_went_first,
+                loser_went_first
             FROM match_records
             WHERE winner_id = ? OR losser_id = ?
             ORDER BY timestamp DESC
@@ -135,7 +137,9 @@ def player_api(player_id):
                 json_deck_data_winner,
                 json_deck_data_loser,
                 curiosa_url_winner,
-                curiosa_url_loser
+                curiosa_url_loser,
+                winner_went_first,
+                loser_went_first
             FROM match_records_archive
             WHERE winner_id = ? OR losser_id = ?
             ORDER BY timestamp DESC
@@ -144,7 +148,7 @@ def player_api(player_id):
         )
         archived_rows = cur.fetchall()
     except sqlite3.OperationalError:
-        pass  # Archive table may not exist
+        pass  # Archive table may not exist or columns may not exist
 
     conn.close()
 
@@ -241,12 +245,24 @@ def player_api(player_id):
     win_rate = (wins / total_matches * 100) if total_matches > 0 else 0
 
     # First player stats (on the play)
-    # first_player='y' means WINNER went first, 'n' means LOSER went first
-    # So for the player being viewed:
-    # - If they won AND first_player='y' → they were on the play
-    # - If they lost AND first_player='n' → they were on the play (loser went first = them)
+    # New columns: winner_went_first (index 17), loser_went_first (index 18)
+    # did_win (index 0): 1 if viewed player is winner, 0 if loser
     def player_was_on_play(row):
         did_win = row[0]
+        # Try new columns first (indices 17 and 18)
+        winner_went_first = row[17] if len(row) > 17 else None
+        loser_went_first = row[18] if len(row) > 18 else None
+
+        # Use new columns if available
+        if winner_went_first is not None or loser_went_first is not None:
+            if did_win:
+                # Player is the winner - check if winner went first
+                return winner_went_first and "y" in str(winner_went_first).lower()
+            else:
+                # Player is the loser - check if loser went first
+                return loser_went_first and "y" in str(loser_went_first).lower()
+
+        # Fallback to old first_player column (for historical data)
         first_player = row[1]
         if not first_player:
             return False
@@ -269,6 +285,20 @@ def player_api(player_id):
     # On the draw stats
     def player_was_on_draw(row):
         did_win = row[0]
+        # Try new columns first (indices 17 and 18)
+        winner_went_first = row[17] if len(row) > 17 else None
+        loser_went_first = row[18] if len(row) > 18 else None
+
+        # Use new columns if available
+        if winner_went_first is not None or loser_went_first is not None:
+            if did_win:
+                # Player is the winner - on draw if winner did NOT go first
+                return winner_went_first and "n" in str(winner_went_first).lower()
+            else:
+                # Player is the loser - on draw if loser did NOT go first
+                return loser_went_first and "n" in str(loser_went_first).lower()
+
+        # Fallback to old first_player column (for historical data)
         first_player = row[1]
         if not first_player:
             return False

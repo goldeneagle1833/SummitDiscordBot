@@ -158,7 +158,14 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
             int(self.match_time.value) if self.match_time.value.isdigit() else 0
         )
 
+        # Determine winner_went_first and loser_went_first
+        # first_player is what the reporter answered about whether THEY went first
+        reporter_went_first = "y" in str(first_player).lower()
+
         if self.is_winner:
+            # Reporter is the winner
+            winner_went_first = "y" if reporter_went_first else "n"
+            loser_went_first = "n" if reporter_went_first else "y"
             match_id, _, _, event_active = await winner_report(
                 interaction_user_id,
                 self.winner_id,
@@ -174,8 +181,13 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
                 interaction_global,
                 winner_deck_url=curiosa_link,
                 loser_deck_url=None,
+                winner_went_first=winner_went_first,
+                loser_went_first=loser_went_first,
             )
         else:
+            # Reporter is the loser
+            winner_went_first = "n" if reporter_went_first else "y"
+            loser_went_first = "y" if reporter_went_first else "n"
             match_id, _, _, event_active = await losser_report(
                 interaction_user_id,
                 self.winner_id,
@@ -191,6 +203,8 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
                 interaction_global,
                 winner_deck_url=None,
                 loser_deck_url=curiosa_link,
+                winner_went_first=winner_went_first,
+                loser_went_first=loser_went_first,
             )
 
         elo_msg = "" if event_active else "\n*(No active event - ELO not affected)*"
@@ -321,6 +335,23 @@ class MatchConfirmationButtons(discord.ui.View):
         if self.match_comment:
             combined_comment = f"{self.match_comment} | {combined_comment}"
 
+        # Determine winner_went_first and loser_went_first based on reporter
+        # first_player indicates if the REPORTER went first
+        # We need to translate this to winner/loser perspective
+        reporter_went_first = (
+            self.first_player and "y" in str(self.first_player).lower()
+        )
+        reporter_is_winner = self.reporter_id == self.winner_id
+
+        if reporter_is_winner:
+            # Reporter is winner
+            winner_went_first = "y" if reporter_went_first else "n"
+            loser_went_first = "n" if reporter_went_first else "y"
+        else:
+            # Reporter is loser
+            winner_went_first = "n" if reporter_went_first else "y"
+            loser_went_first = "y" if reporter_went_first else "n"
+
         # Submit match report only ONCE (not twice)
         # This will insert one record and update ELO for the winner
         match_id, _, _, event_active = await winner_report(
@@ -338,6 +369,8 @@ class MatchConfirmationButtons(discord.ui.View):
             self.winner_global,  # interaction_global
             winner_deck_url=self.winner_deck_url,
             loser_deck_url=self.loser_deck_url,
+            winner_went_first=winner_went_first,
+            loser_went_first=loser_went_first,
         )
 
         # Update ELO for the loser as well
@@ -878,6 +911,19 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         if view.match_comment:
             combined_comment = f"{view.match_comment} | {combined_comment}"
 
+        # Determine winner_went_first and loser_went_first based on reporter
+        reporter_went_first = (
+            view.first_player and "y" in str(view.first_player).lower()
+        )
+        reporter_is_winner = view.reporter_id == view.winner_id
+
+        if reporter_is_winner:
+            winner_went_first = "y" if reporter_went_first else "n"
+            loser_went_first = "n" if reporter_went_first else "y"
+        else:
+            winner_went_first = "n" if reporter_went_first else "y"
+            loser_went_first = "y" if reporter_went_first else "n"
+
         # Submit match report
         match_id, _, _, event_active = await winner_report(
             view.reporter_id,
@@ -894,6 +940,8 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             view.winner_global,
             winner_deck_url=view.winner_deck_url,
             loser_deck_url=view.loser_deck_url,
+            winner_went_first=winner_went_first,
+            loser_went_first=loser_went_first,
         )
 
         # Update ELO for the loser
@@ -3196,6 +3244,8 @@ class LFGCog(commands.Cog):
                 winner_name,  # interaction_global
                 winner_deck_url=None,
                 loser_deck_url=None,
+                winner_went_first=None,  # Not specified for admin reports
+                loser_went_first=None,
             )
 
             # Update ELO for the loser as well

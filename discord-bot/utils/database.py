@@ -67,6 +67,16 @@ def create_db():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Add winner/loser went first columns (replaces ambiguous first_player)
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN winner_went_first TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN loser_went_first TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Create solo_match_reports table with auto-increment report_id
     cur.execute("""CREATE TABLE IF NOT EXISTS solo_match_reports
                    (report_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -177,7 +187,9 @@ def ensure_event_elo_column():
     cur = conn.cursor()
 
     try:
-        cur.execute("ALTER TABLE overall_standings ADD COLUMN event_elo INTEGER DEFAULT 1500")
+        cur.execute(
+            "ALTER TABLE overall_standings ADD COLUMN event_elo INTEGER DEFAULT 1500"
+        )
     except sqlite3.OperationalError:
         pass  # Column already exists
 
@@ -205,9 +217,9 @@ def get_active_event():
 
     if row:
         return {
-            'event_id': row[0],
-            'event_name': row[1],
-            'start_date': datetime.datetime.fromisoformat(row[2])
+            "event_id": row[0],
+            "event_name": row[1],
+            "start_date": datetime.datetime.fromisoformat(row[2]),
         }
     return None
 
@@ -262,7 +274,7 @@ def start_new_event(event_name):
     start_date = datetime.datetime.now().isoformat()
     cur.execute(
         "INSERT INTO events (event_name, start_date, is_active) VALUES (?, ?, 1)",
-        (event_name, start_date)
+        (event_name, start_date),
     )
     event_id = cur.lastrowid
 
@@ -273,10 +285,10 @@ def start_new_event(event_name):
     conn.close()
 
     return {
-        'event_id': event_id,
-        'event_name': event_name,
-        'start_date': datetime.datetime.fromisoformat(start_date),
-        'previous_event': previous_event_summary
+        "event_id": event_id,
+        "event_name": event_name,
+        "start_date": datetime.datetime.fromisoformat(start_date),
+        "previous_event": previous_event_summary,
     }
 
 
@@ -291,8 +303,8 @@ def end_current_event():
     if not active_event:
         return None
 
-    event_id = active_event['event_id']
-    event_name = active_event['event_name']
+    event_id = active_event["event_id"]
+    event_name = active_event["event_name"]
 
     # Archive standings
     conn_elo = sqlite3.connect("elo.db")
@@ -312,13 +324,13 @@ def end_current_event():
             """INSERT INTO event_standings_archive
                (event_id, user_id, user_display_name, final_event_elo, final_rank, archived_at)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (event_id, user_id, display_name, event_elo, rank, archived_at)
+            (event_id, user_id, display_name, event_elo, rank, archived_at),
         )
 
     # Mark event as ended
     cur_elo.execute(
         "UPDATE events SET is_active = 0, end_date = ? WHERE event_id = ?",
-        (archived_at, event_id)
+        (archived_at, event_id),
     )
 
     conn_elo.commit()
@@ -349,27 +361,27 @@ def end_current_event():
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 event_id,
-                match_dict.get('match_id'),
-                match_dict.get('reporter_id'),
-                match_dict.get('winner_id'),
-                match_dict.get('winner_display_name'),
-                match_dict.get('losser_id'),
-                match_dict.get('losser_display_name'),
-                match_dict.get('did_win'),
-                match_dict.get('timestamp'),
-                match_dict.get('first_player'),
-                match_dict.get('match_time'),
-                match_dict.get('curiosa_url'),
-                match_dict.get('curiosa_url_winner'),
-                match_dict.get('curiosa_url_loser'),
-                match_dict.get('match_comment'),
-                match_dict.get('json_deck_data'),
-                match_dict.get('json_deck_data_winner'),
-                match_dict.get('json_deck_data_loser'),
-                match_dict.get('winner_elo_change'),
-                match_dict.get('loser_elo_change'),
-                archived_at
-            )
+                match_dict.get("match_id"),
+                match_dict.get("reporter_id"),
+                match_dict.get("winner_id"),
+                match_dict.get("winner_display_name"),
+                match_dict.get("losser_id"),
+                match_dict.get("losser_display_name"),
+                match_dict.get("did_win"),
+                match_dict.get("timestamp"),
+                match_dict.get("first_player"),
+                match_dict.get("match_time"),
+                match_dict.get("curiosa_url"),
+                match_dict.get("curiosa_url_winner"),
+                match_dict.get("curiosa_url_loser"),
+                match_dict.get("match_comment"),
+                match_dict.get("json_deck_data"),
+                match_dict.get("json_deck_data_winner"),
+                match_dict.get("json_deck_data_loser"),
+                match_dict.get("winner_elo_change"),
+                match_dict.get("loser_elo_change"),
+                archived_at,
+            ),
         )
 
     # Clear match_records table
@@ -381,11 +393,11 @@ def end_current_event():
     # Return summary
     top_3 = standings[:3] if len(standings) >= 3 else standings
     return {
-        'event_id': event_id,
-        'event_name': event_name,
-        'total_matches': match_count,
-        'total_players': len(standings),
-        'top_players': [(name, elo) for _, name, elo in top_3]
+        "event_id": event_id,
+        "event_name": event_name,
+        "total_matches": match_count,
+        "total_players": len(standings),
+        "top_players": [(name, elo) for _, name, elo in top_3],
     }
 
 
@@ -428,10 +440,10 @@ def get_past_events():
 
     return [
         {
-            'event_id': row[0],
-            'event_name': row[1],
-            'start_date': row[2],
-            'end_date': row[3]
+            "event_id": row[0],
+            "event_name": row[1],
+            "start_date": row[2],
+            "end_date": row[3],
         }
         for row in rows
     ]
@@ -450,11 +462,14 @@ def get_event_archive_standings(event_id: int):
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
 
-    cur.execute("""SELECT final_rank, user_display_name, final_event_elo
+    cur.execute(
+        """SELECT final_rank, user_display_name, final_event_elo
                    FROM event_standings_archive
                    WHERE event_id = ?
                    ORDER BY final_rank ASC
-                   LIMIT 16""", (event_id,))
+                   LIMIT 16""",
+        (event_id,),
+    )
     rows = cur.fetchall()
     conn.close()
 
@@ -503,13 +518,20 @@ def update_elo_db(user_id, user_display_name, did_win, opponent_id):
     active_event = get_active_event()
 
     # Get player's current ELOs (or insert if new)
-    cur.execute("SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (user_id,))
+    cur.execute(
+        "SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (user_id,)
+    )
     player_row = cur.fetchone()
 
     if player_row:
         player_lifetime_elo = player_row[0]
         player_event_elo = player_row[1] if player_row[1] else 1500
-        print("Existing player found with lifetime ELO:", player_lifetime_elo, "event ELO:", player_event_elo)
+        print(
+            "Existing player found with lifetime ELO:",
+            player_lifetime_elo,
+            "event ELO:",
+            player_event_elo,
+        )
     else:
         player_lifetime_elo = 1500
         player_event_elo = 1500
@@ -521,13 +543,20 @@ def update_elo_db(user_id, user_display_name, did_win, opponent_id):
         print("New player inserted with default ELOs:", player_lifetime_elo)
 
     # Get opponent's ELOs (or use default if not found)
-    cur.execute("SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (opponent_id,))
+    cur.execute(
+        "SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (opponent_id,)
+    )
     opponent_row = cur.fetchone()
 
     if opponent_row:
         opponent_lifetime_elo = opponent_row[0]
         opponent_event_elo = opponent_row[1] if opponent_row[1] else 1500
-        print("Opponent found with lifetime ELO:", opponent_lifetime_elo, "event ELO:", opponent_event_elo)
+        print(
+            "Opponent found with lifetime ELO:",
+            opponent_lifetime_elo,
+            "event ELO:",
+            opponent_event_elo,
+        )
     else:
         opponent_lifetime_elo = 1500
         opponent_event_elo = 1500
@@ -540,15 +569,21 @@ def update_elo_db(user_id, user_display_name, did_win, opponent_id):
         return (player_lifetime_elo, 0, player_event_elo, 0, False)
 
     # Calculate new lifetime ELO (always K=32)
-    new_lifetime_elo = update_elo(player_lifetime_elo, opponent_lifetime_elo, did_win, k=32)
+    new_lifetime_elo = update_elo(
+        player_lifetime_elo, opponent_lifetime_elo, did_win, k=32
+    )
     lifetime_change = new_lifetime_elo - player_lifetime_elo
-    print(f"Lifetime ELO: {player_lifetime_elo} -> {new_lifetime_elo} (change: {lifetime_change:+d})")
+    print(
+        f"Lifetime ELO: {player_lifetime_elo} -> {new_lifetime_elo} (change: {lifetime_change:+d})"
+    )
 
     # Calculate new event ELO (dynamic K based on days elapsed)
-    event_k = calculate_event_k_value(active_event['start_date'])
+    event_k = calculate_event_k_value(active_event["start_date"])
     new_event_elo = update_elo(player_event_elo, opponent_event_elo, did_win, k=event_k)
     event_change = new_event_elo - player_event_elo
-    print(f"Event ELO (K={event_k}): {player_event_elo} -> {new_event_elo} (change: {event_change:+d})")
+    print(
+        f"Event ELO (K={event_k}): {player_event_elo} -> {new_event_elo} (change: {event_change:+d})"
+    )
 
     # Update player's ELOs
     cur.execute(
@@ -559,7 +594,9 @@ def update_elo_db(user_id, user_display_name, did_win, opponent_id):
     conn.commit()
     conn.close()
 
-    print(f"Player {user_id} ELO updated - lifetime: {new_lifetime_elo}, event: {new_event_elo}")
+    print(
+        f"Player {user_id} ELO updated - lifetime: {new_lifetime_elo}, event: {new_event_elo}"
+    )
     return (new_lifetime_elo, lifetime_change, new_event_elo, event_change, True)
 
 
@@ -596,6 +633,8 @@ async def winner_report(
     interaction_global,
     winner_deck_url=None,
     loser_deck_url=None,
+    winner_went_first=None,
+    loser_went_first=None,
 ):
     """
     Log a win in the database.
@@ -624,20 +663,23 @@ async def winner_report(
         json_deck_data_loser = scrape_Curosa(loser_deck_url, "deck_data_test.json")
 
     # Update ELO and get the change values (returns 5 values now)
-    new_lifetime_elo, lifetime_change, new_event_elo, event_change, event_active = update_elo_db(
-        interaction_user_id, interaction_global, did_win, opponent_id
+    new_lifetime_elo, lifetime_change, new_event_elo, event_change, event_active = (
+        update_elo_db(interaction_user_id, interaction_global, did_win, opponent_id)
     )
     # For winner_report, did_win is True so this is the winner's elo change
     # Use event_change for display (or lifetime_change if you prefer)
     winner_elo_change = event_change if event_active else 0
-    loser_elo_change = -event_change if event_active else 0  # Approximate: loser loses roughly what winner gains
+    loser_elo_change = (
+        -event_change if event_active else 0
+    )  # Approximate: loser loses roughly what winner gains
 
     cur.execute(
         "INSERT INTO match_records (reporter_id, winner_id, winner_display_name, "
         "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
         "curiosa_url, curiosa_url_winner, curiosa_url_loser, match_comment, "
-        "json_deck_data, json_deck_data_winner, json_deck_data_loser, winner_elo_change, loser_elo_change) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "json_deck_data, json_deck_data_winner, json_deck_data_loser, winner_elo_change, loser_elo_change, "
+        "winner_went_first, loser_went_first) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             reporter_id,
             user_id,
@@ -657,6 +699,8 @@ async def winner_report(
             json_deck_data_loser,
             winner_elo_change,
             loser_elo_change,
+            winner_went_first,
+            loser_went_first,
         ),
     )
 
@@ -682,6 +726,8 @@ async def losser_report(
     interaction_global,
     winner_deck_url=None,
     loser_deck_url=None,
+    winner_went_first=None,
+    loser_went_first=None,
 ):
     """
     Log a loss in the database.
@@ -710,19 +756,22 @@ async def losser_report(
         json_deck_data_loser = scrape_Curosa(curiosa_link, "deck_data_test.json")
 
     # Update ELO and get the change values (returns 5 values now)
-    new_lifetime_elo, lifetime_change, new_event_elo, event_change, event_active = update_elo_db(
-        interaction_user_id, interaction_global, did_win, opponent_id
+    new_lifetime_elo, lifetime_change, new_event_elo, event_change, event_active = (
+        update_elo_db(interaction_user_id, interaction_global, did_win, opponent_id)
     )
     # For losser_report, did_win is False so this is the loser's elo change
     loser_elo_change = event_change if event_active else 0
-    winner_elo_change = -event_change if event_active else 0  # Approximate: winner gains roughly what loser loses
+    winner_elo_change = (
+        -event_change if event_active else 0
+    )  # Approximate: winner gains roughly what loser loses
 
     cur.execute(
         "INSERT INTO match_records (reporter_id, winner_id, winner_display_name, "
         "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
         "curiosa_url, curiosa_url_winner, curiosa_url_loser, match_comment, "
-        "json_deck_data, json_deck_data_winner, json_deck_data_loser, winner_elo_change, loser_elo_change) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "json_deck_data, json_deck_data_winner, json_deck_data_loser, winner_elo_change, loser_elo_change, "
+        "winner_went_first, loser_went_first) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             reporter_id,
             user_id,
@@ -742,6 +791,8 @@ async def losser_report(
             json_deck_data_loser,
             winner_elo_change,
             loser_elo_change,
+            winner_went_first,
+            loser_went_first,
         ),
     )
 

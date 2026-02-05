@@ -19,7 +19,9 @@ players_bp = Blueprint("players", __name__)
 def deck_snapshot(match_id, player_id):
     """Get deck snapshot for a specific player in a match."""
     logged_in_user_id = session.get("user_id")
-    is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(player_id)
+    is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(
+        player_id
+    )
 
     # API key grants access (for server-to-server calls)
     api_key = request.headers.get("X-API-Key")
@@ -59,7 +61,8 @@ def player_api(player_id):
 
     # Try new schema first, fallback to old
     try:
-        cur.execute("""
+        cur.execute(
+            """
             SELECT
                 CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
                 first_player,
@@ -81,10 +84,13 @@ def player_api(player_id):
             FROM match_records
             WHERE winner_id = ? OR losser_id = ?
             ORDER BY timestamp DESC
-        """, (player_id, player_id, player_id))
+        """,
+            (player_id, player_id, player_id),
+        )
         rows = cur.fetchall()
     except sqlite3.OperationalError:
-        cur.execute("""
+        cur.execute(
+            """
             SELECT
                 CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
                 first_player,
@@ -102,13 +108,16 @@ def player_api(player_id):
             FROM match_records
             WHERE winner_id = ? OR losser_id = ?
             ORDER BY timestamp DESC
-        """, (player_id, player_id, player_id))
+        """,
+            (player_id, player_id, player_id),
+        )
         rows = cur.fetchall()
 
     # Also check archive table for historical matches
     archived_rows = []
     try:
-        cur.execute("""
+        cur.execute(
+            """
             SELECT
                 CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
                 first_player,
@@ -130,7 +139,9 @@ def player_api(player_id):
             FROM match_records_archive
             WHERE winner_id = ? OR losser_id = ?
             ORDER BY timestamp DESC
-        """, (player_id, player_id, player_id))
+        """,
+            (player_id, player_id, player_id),
+        )
         archived_rows = cur.fetchall()
     except sqlite3.OperationalError:
         pass  # Archive table may not exist
@@ -192,13 +203,18 @@ def player_api(player_id):
     try:
         elo_conn = sqlite3.connect(str(ELO_DB_PATH))
         elo_cur = elo_conn.cursor()
-        elo_cur.execute("SELECT elo, user_display_name, event_elo FROM overall_standings WHERE user_id = ?", (player_id,))
+        elo_cur.execute(
+            "SELECT elo, user_display_name, event_elo FROM overall_standings WHERE user_id = ?",
+            (player_id,),
+        )
         elo_row = elo_cur.fetchone()
         if elo_row:
             player_elo = elo_row[0]
             player_name_from_elo = elo_row[1]
             event_elo = elo_row[2] if elo_row[2] else 1500
-            elo_cur.execute("SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (player_elo,))
+            elo_cur.execute(
+                "SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (player_elo,)
+            )
             rank = elo_cur.fetchone()[0] + 1
         elo_conn.close()
     except sqlite3.OperationalError:
@@ -224,18 +240,56 @@ def player_api(player_id):
     losses = total_matches - wins
     win_rate = (wins / total_matches * 100) if total_matches > 0 else 0
 
-    # First player stats
-    first_player_matches = sum(1 for row in all_rows if row[1] and "y" in str(row[1]).lower())
-    first_player_wins = sum(1 for row in all_rows if row[0] and row[1] and "y" in str(row[1]).lower())
-    first_player_win_rate = (first_player_wins / first_player_matches * 100) if first_player_matches > 0 else 0
+    # First player stats (on the play)
+    # first_player='y' means WINNER went first, 'n' means LOSER went first
+    # So for the player being viewed:
+    # - If they won AND first_player='y' → they were on the play
+    # - If they lost AND first_player='n' → they were on the play (loser went first = them)
+    def player_was_on_play(row):
+        did_win = row[0]
+        first_player = row[1]
+        if not first_player:
+            return False
+        fp_lower = str(first_player).lower()
+        # Winner went first
+        if "y" in fp_lower:
+            return did_win  # Player was on play only if they won
+        else:
+            # Loser went first
+            return not did_win  # Player was on play only if they lost
+
+    first_player_matches = sum(1 for row in all_rows if player_was_on_play(row))
+    first_player_wins = sum(1 for row in all_rows if row[0] and player_was_on_play(row))
+    first_player_win_rate = (
+        (first_player_wins / first_player_matches * 100)
+        if first_player_matches > 0
+        else 0
+    )
 
     # On the draw stats
-    draw_matches = sum(1 for row in all_rows if row[1] and "y" not in str(row[1]).lower())
-    draw_wins = sum(1 for row in all_rows if row[0] and row[1] and "y" not in str(row[1]).lower())
+    def player_was_on_draw(row):
+        did_win = row[0]
+        first_player = row[1]
+        if not first_player:
+            return False
+        fp_lower = str(first_player).lower()
+        # Winner went first
+        if "y" in fp_lower:
+            return not did_win  # Player was on draw only if they lost
+        else:
+            # Loser went first
+            return did_win  # Player was on draw only if they won
+
+    draw_matches = sum(1 for row in all_rows if player_was_on_draw(row))
+    draw_wins = sum(1 for row in all_rows if row[0] and player_was_on_draw(row))
     draw_win_rate = (draw_wins / draw_matches * 100) if draw_matches > 0 else 0
 
     # Average match time
-    match_times = [float(row[3]) for row in all_rows if row[3] and str(row[3]).replace(".", "").isdigit()]
+    match_times = [
+        float(row[3])
+        for row in all_rows
+        if row[3] and str(row[3]).replace(".", "").isdigit()
+    ]
     avg_match_time = sum(match_times) / len(match_times) if match_times else 0
 
     # Avatar stats - only count the main avatar (type: "Avatar"), exclude sideboard
@@ -268,7 +322,11 @@ def player_api(player_id):
                         break
 
                 # Fallback: if no type field, use first avatar with a name
-                if not main_avatar_name and avatar_list[0] and avatar_list[0].get("name"):
+                if (
+                    not main_avatar_name
+                    and avatar_list[0]
+                    and avatar_list[0].get("name")
+                ):
                     main_avatar_name = avatar_list[0].get("name")
 
                 if not main_avatar_name:
@@ -288,12 +346,14 @@ def player_api(player_id):
     for name, stats in avatar_stats.items():
         total = stats["wins"] + stats["losses"]
         rate = (stats["wins"] / total * 100) if total > 0 else 0
-        avatar_performance.append({
-            "name": name,
-            "wins": stats["wins"],
-            "losses": stats["losses"],
-            "win_rate": round(rate, 1),
-        })
+        avatar_performance.append(
+            {
+                "name": name,
+                "wins": stats["wins"],
+                "losses": stats["losses"],
+                "win_rate": round(rate, 1),
+            }
+        )
     avatar_performance.sort(key=lambda x: x["wins"] + x["losses"], reverse=True)
 
     # Opponent avatar stats - only count main avatar (type: "Avatar"), exclude sideboard
@@ -319,7 +379,12 @@ def player_api(player_id):
                             opponent_avatar_name = av.get("name")
                             break
                     # Fallback: if no type field, use first avatar with a name
-                    if not opponent_avatar_name and avatar_list and avatar_list[0] and avatar_list[0].get("name"):
+                    if (
+                        not opponent_avatar_name
+                        and avatar_list
+                        and avatar_list[0]
+                        and avatar_list[0].get("name")
+                    ):
                         opponent_avatar_name = avatar_list[0].get("name")
             except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                 pass
@@ -351,18 +416,22 @@ def player_api(player_id):
     for name, stats in opponent_avatar_stats.items():
         total = stats["wins"] + stats["losses"]
         rate = (stats["wins"] / total * 100) if total > 0 else 0
-        avatar_matchups.append({
-            "opponent_avatar": name,
-            "wins": stats["wins"],
-            "losses": stats["losses"],
-            "win_rate": round(rate, 1),
-            "total_games": total,
-        })
+        avatar_matchups.append(
+            {
+                "opponent_avatar": name,
+                "wins": stats["wins"],
+                "losses": stats["losses"],
+                "win_rate": round(rate, 1),
+                "total_games": total,
+            }
+        )
     avatar_matchups.sort(key=lambda x: x["total_games"], reverse=True)
 
     # Check ownership
     logged_in_user_id = session.get("user_id")
-    is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(player_id)
+    is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(
+        player_id
+    )
 
     # API key grants owner-level access (for server-to-server calls)
     api_key = request.headers.get("X-API-Key")
@@ -402,7 +471,13 @@ def player_api(player_id):
         # status on your profile.
         has_deck = False
         has_deck_json = False
-        if player_deck_url_check and player_deck_url_check not in ("No URL provided", "Admin reported match", "{}", "", None):
+        if player_deck_url_check and player_deck_url_check not in (
+            "No URL provided",
+            "Admin reported match",
+            "{}",
+            "",
+            None,
+        ):
             has_deck = True
         if player_deck_json and player_deck_json not in ("{}", "", None):
             has_deck = True
@@ -412,21 +487,41 @@ def player_api(player_id):
             player_deck_url = winner_deck_url if did_win else loser_deck_url
             opponent_deck_url = loser_deck_url if did_win else winner_deck_url
 
-        match_history.append({
-            "match_id": row[12],
-            "opponent": opponent_name,
-            "opponent_id": opponent_id,
-            "result": "Win" if did_win else "Loss",
-            "elo_change": elo_change if elo_change else 0,
-            "date": row[6],
-            "first_player": "Play" if row[1] and "y" in str(row[1]).lower() else "Draw",
-            "match_time": row[3] if row[3] else None,
-            "replay_url": row[9] if row[9] else None,
-            "player_deck_url": player_deck_url,
-            "opponent_deck_url": opponent_deck_url,
-            "has_deck": has_deck,
-            "has_deck_json": has_deck_json,
-        })
+        # Determine if this player was on the play for this match
+        # first_player='y' means winner went first, 'n' means loser went first
+        first_player_val = row[1]
+        if first_player_val:
+            fp_lower = str(first_player_val).lower()
+            if "y" in fp_lower:
+                # Winner went first
+                player_on_play = did_win
+            else:
+                # Loser went first
+                player_on_play = not did_win
+        else:
+            player_on_play = None
+
+        match_history.append(
+            {
+                "match_id": row[12],
+                "opponent": opponent_name,
+                "opponent_id": opponent_id,
+                "result": "Win" if did_win else "Loss",
+                "elo_change": elo_change if elo_change else 0,
+                "date": row[6],
+                "first_player": "Play"
+                if player_on_play
+                else "Draw"
+                if player_on_play is False
+                else None,
+                "match_time": row[3] if row[3] else None,
+                "replay_url": row[9] if row[9] else None,
+                "player_deck_url": player_deck_url,
+                "opponent_deck_url": opponent_deck_url,
+                "has_deck": has_deck,
+                "has_deck_json": has_deck_json,
+            }
+        )
 
     # Recent decks (owner only)
     recent_decks = []
@@ -442,7 +537,11 @@ def player_api(player_id):
             player_deck_url = winner_deck_url if did_win else loser_deck_url
             player_deck_json = winner_json if did_win else loser_json
 
-            if not player_deck_url or player_deck_url in ("No URL provided", "Admin reported match", "{}"):
+            if not player_deck_url or player_deck_url in (
+                "No URL provided",
+                "Admin reported match",
+                "{}",
+            ):
                 continue
 
             if player_deck_url in seen_urls:
@@ -462,54 +561,64 @@ def player_api(player_id):
                 except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                     pass
 
-            recent_decks.append({
-                "url": player_deck_url,
-                "avatar": avatar_name,
-                "deck_name": deck_name,
-                "date": row[6],
-            })
+            recent_decks.append(
+                {
+                    "url": player_deck_url,
+                    "avatar": avatar_name,
+                    "deck_name": deck_name,
+                    "date": row[6],
+                }
+            )
 
             if len(recent_decks) >= 10:
                 break
 
     # Recorded games (owner only)
     recorded_games = []
-    sorted_solo_rows = sorted(solo_rows, key=lambda x: x[6] if x[6] else "", reverse=True)
+    sorted_solo_rows = sorted(
+        solo_rows, key=lambda x: x[6] if x[6] else "", reverse=True
+    )
     for row in sorted_solo_rows[:50]:
         did_win = row[0]
         opponent_name = row[5]
         deck_url = row[9]
 
-        recorded_games.append({
-            "report_id": row[12],
-            "opponent": opponent_name,
-            "result": "Win" if did_win else "Loss",
-            "date": row[6],
-            "first_player": "Play" if row[1] and "y" in str(row[1]).lower() else "Draw",
-            "match_time": row[3] if row[3] else None,
-            "deck_url": deck_url,
-        })
+        recorded_games.append(
+            {
+                "report_id": row[12],
+                "opponent": opponent_name,
+                "result": "Win" if did_win else "Loss",
+                "date": row[6],
+                "first_player": "Play"
+                if row[1] and "y" in str(row[1]).lower()
+                else "Draw",
+                "match_time": row[3] if row[3] else None,
+                "deck_url": deck_url,
+            }
+        )
 
-    return jsonify({
-        "id": player_id,
-        "name": player_name,
-        "elo": player_elo,
-        "event_elo": event_elo,
-        "rank": rank,
-        "wins": wins,
-        "losses": losses,
-        "win_rate": round(win_rate, 1),
-        "on_play_wins": first_player_wins,
-        "on_play_matches": first_player_matches,
-        "on_play_win_rate": round(first_player_win_rate, 1),
-        "on_draw_wins": draw_wins,
-        "on_draw_matches": draw_matches,
-        "on_draw_win_rate": round(draw_win_rate, 1),
-        "avg_match_time": round(avg_match_time, 1),
-        "avatar_performance": avatar_performance if is_owner else [],
-        "avatar_matchups": avatar_matchups if is_owner else [],
-        "recent_decks": recent_decks if is_owner else [],
-        "matches": match_history,
-        "recorded_games": recorded_games if is_owner else [],
-        "is_owner": is_owner,
-    })
+    return jsonify(
+        {
+            "id": player_id,
+            "name": player_name,
+            "elo": player_elo,
+            "event_elo": event_elo,
+            "rank": rank,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": round(win_rate, 1),
+            "on_play_wins": first_player_wins,
+            "on_play_matches": first_player_matches,
+            "on_play_win_rate": round(first_player_win_rate, 1),
+            "on_draw_wins": draw_wins,
+            "on_draw_matches": draw_matches,
+            "on_draw_win_rate": round(draw_win_rate, 1),
+            "avg_match_time": round(avg_match_time, 1),
+            "avatar_performance": avatar_performance if is_owner else [],
+            "avatar_matchups": avatar_matchups if is_owner else [],
+            "recent_decks": recent_decks if is_owner else [],
+            "matches": match_history,
+            "recorded_games": recorded_games if is_owner else [],
+            "is_owner": is_owner,
+        }
+    )

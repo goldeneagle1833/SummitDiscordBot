@@ -516,6 +516,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             "match_start_time": view.match_start_time,
             "reporter_deck_url": view.reporter_deck_url,
             "opponent_deck_url": view.opponent_deck_url,
+            "first_player": view.first_player,
         }
 
         # Send confirmation to opponent
@@ -537,6 +538,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 bot=view.bot,
                 channel=view.channel,
                 match_start_time=view.match_start_time,
+                first_player=view.first_player,
                 winner_deck_url=view.reporter_deck_url,
                 loser_deck_url=view.opponent_deck_url,
             )
@@ -684,6 +686,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             "match_start_time": view.match_start_time,
             "reporter_deck_url": view.reporter_deck_url,
             "opponent_deck_url": view.opponent_deck_url,
+            "first_player": view.first_player,
         }
 
         # Send confirmation to opponent
@@ -705,6 +708,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 bot=view.bot,
                 channel=view.channel,
                 match_start_time=view.match_start_time,
+                first_player=view.first_player,
                 winner_deck_url=view.opponent_deck_url,
                 loser_deck_url=view.reporter_deck_url,
             )
@@ -1063,8 +1067,13 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 other_player
             )
 
-            # Create report buttons with deck URLs
-            view_reporter = LFGReportButtons(
+            # Build match message with deck info
+            reporter_deck_text = (
+                f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
+            )
+
+            # Create "Did you go first?" view (step before win/lose buttons)
+            went_first_view = WentFirstView(
                 reporter_id,
                 reporter_id,
                 reporter_global,
@@ -1075,18 +1084,15 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 match_start_time=match_start_time,
                 reporter_deck_url=reporter_deck_url,
                 opponent_deck_url=other_deck_url,
+                opponent_user=other_user,
+                reporter_deck_text=reporter_deck_text,
             )
 
-            # Build match message with deck info
-            reporter_deck_text = (
-                f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
-            )
-
-            # Send report buttons to the selected reporter
+            # Send "Did you go first?" question to the selected reporter
             try:
                 await reporter_user.send(
-                    f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\nReport the match result below:",
-                    view=view_reporter,
+                    f"**Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Did you go first?**",
+                    view=went_first_view,
                 )
             except discord.Forbidden:
                 try:
@@ -1106,8 +1112,8 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
 
                         # Post without deck URL in public channel
                         await dm_channel.send(
-                            f"{reporter_user.mention} **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\nReport the match result below:",
-                            view=view_reporter,
+                            f"{reporter_user.mention} **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n**Did you go first?**",
+                            view=went_first_view,
                         )
                 except Exception as e:
                     logger.error(f"Failed to handle DM failure for reporter: {e}")
@@ -1186,6 +1192,98 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             )
 
 
+class WentFirstView(discord.ui.View):
+    """View that asks the reporter if they went first before showing win/lose buttons."""
+
+    def __init__(
+        self,
+        match_id: int,
+        player1_id: int,
+        player1_global: str,
+        player2_id: int,
+        player2_global: str,
+        bot=None,
+        channel=None,
+        match_start_time=None,
+        reporter_deck_url=None,
+        opponent_deck_url=None,
+        opponent_user=None,
+        reporter_deck_text: str = "",
+    ):
+        super().__init__(timeout=None)
+        self.match_id = match_id
+        self.player1_id = player1_id
+        self.player1_global = player1_global
+        self.player2_id = player2_id
+        self.player2_global = player2_global
+        self.bot = bot
+        self.channel = channel
+        self.match_start_time = match_start_time or datetime.datetime.now()
+        self.reporter_deck_url = reporter_deck_url
+        self.opponent_deck_url = opponent_deck_url
+        self.opponent_user = opponent_user
+        self.reporter_deck_text = reporter_deck_text
+
+    @discord.ui.button(
+        label="Yes, I went first",
+        style=discord.ButtonStyle.primary,
+        custom_id="went_first_yes",
+    )
+    async def yes_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await self._send_report_buttons(interaction, first_player="y")
+
+    @discord.ui.button(
+        label="No, opponent went first",
+        style=discord.ButtonStyle.secondary,
+        custom_id="went_first_no",
+    )
+    async def no_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await self._send_report_buttons(interaction, first_player="n")
+
+    async def _send_report_buttons(
+        self, interaction: discord.Interaction, first_player: str
+    ):
+        """Delete this message and send the actual report buttons."""
+        # Delete the "Did you go first?" message
+        try:
+            await interaction.message.delete()
+        except Exception as e:
+            logger.warning(f"Could not delete went first message: {e}")
+
+        # Create report buttons with the first_player info
+        view_reporter = LFGReportButtons(
+            self.match_id,
+            self.player1_id,
+            self.player1_global,
+            self.player2_id,
+            self.player2_global,
+            self.bot,
+            self.channel,
+            match_start_time=self.match_start_time,
+            reporter_deck_url=self.reporter_deck_url,
+            opponent_deck_url=self.opponent_deck_url,
+            first_player=first_player,
+        )
+
+        # Send the report buttons
+        try:
+            await interaction.response.send_message(
+                f"**Match Found!** You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\nReport the match result below:",
+                view=view_reporter,
+            )
+        except Exception as e:
+            logger.error(f"Error sending report buttons after went first: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "An error occurred. Please try again.",
+                    ephemeral=True,
+                )
+
+
 class LFGReportButtons(discord.ui.View):
     def __init__(
         self,
@@ -1199,6 +1297,7 @@ class LFGReportButtons(discord.ui.View):
         match_start_time=None,
         reporter_deck_url=None,
         opponent_deck_url=None,
+        first_player: str = "n",
     ):
         super().__init__(timeout=None)
         self.match_id = match_id
@@ -1210,6 +1309,7 @@ class LFGReportButtons(discord.ui.View):
         self.player2_global = player2_global
         self.bot = bot
         self.channel = channel
+        self.first_player = first_player
         # Track when the match started for automatic match time calculation
         self.match_start_time = match_start_time or datetime.datetime.now()
 
@@ -1271,6 +1371,7 @@ class LFGReportButtons(discord.ui.View):
             "match_start_time": self.match_start_time,  # Track when match started
             "reporter_deck_url": self.reporter_deck_url,  # Reporter's deck URL
             "opponent_deck_url": self.opponent_deck_url,  # Opponent's deck URL
+            "first_player": self.first_player,  # Did reporter go first
         }
 
         # Send confirmation to opponent
@@ -1293,6 +1394,7 @@ class LFGReportButtons(discord.ui.View):
                 bot=self.bot,
                 channel=self.channel,
                 match_start_time=self.match_start_time,
+                first_player=self.first_player,
                 winner_deck_url=self.reporter_deck_url,  # Reporter won, so their deck is winner's
                 loser_deck_url=self.opponent_deck_url,  # Opponent lost, so their deck is loser's
             )
@@ -1483,6 +1585,7 @@ class LFGReportButtons(discord.ui.View):
             "match_start_time": self.match_start_time,  # Track when match started
             "reporter_deck_url": self.reporter_deck_url,  # Reporter's deck URL
             "opponent_deck_url": self.opponent_deck_url,  # Opponent's deck URL
+            "first_player": self.first_player,  # Did reporter go first
         }
 
         # Send confirmation to opponent
@@ -1505,6 +1608,7 @@ class LFGReportButtons(discord.ui.View):
                 bot=self.bot,
                 channel=self.channel,
                 match_start_time=self.match_start_time,
+                first_player=self.first_player,
                 winner_deck_url=self.opponent_deck_url,  # Opponent won, so their deck is winner's
                 loser_deck_url=self.reporter_deck_url,  # Reporter lost, so their deck is loser's
             )
@@ -1833,8 +1937,14 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
             other_player
         )
 
-        # Create report buttons for the randomly selected reporter
-        reporter_view = LFGReportButtons(
+        # Build deck message
+        reporter_deck_text = (
+            f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
+        )
+        other_deck_text = f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
+
+        # Create "Did you go first?" view for the reporter
+        went_first_view = WentFirstView(
             0,  # match_id not needed for direct challenges
             reporter_id,
             reporter_global,
@@ -1845,39 +1955,35 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
             match_start_time=match_start_time,
             reporter_deck_url=reporter_deck_url,
             opponent_deck_url=other_deck_url,
+            opponent_user=other_user,
+            reporter_deck_text=reporter_deck_text,
         )
 
-        # Build deck message
-        reporter_deck_text = (
-            f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
-        )
-        other_deck_text = f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
-
-        # Send report buttons to the selected reporter
+        # Send "Did you go first?" question to the selected reporter
         if reporter_is_accepter:
             # Reporter is the one who accepted - use followup since we deferred
             try:
                 await interaction.followup.send(
-                    f"**Challenge Accepted!** You're playing against {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\nReport the match result below:",
-                    view=reporter_view,
+                    f"**Challenge Accepted!** You're playing against {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Did you go first?**",
+                    view=went_first_view,
                     ephemeral=True,
                 )
             except Exception as e:
-                logger.error(f"Failed to send report buttons to accepter: {e}")
+                logger.error(f"Failed to send went first question to accepter: {e}")
         else:
             # Reporter is the challenger - send via DM
             try:
                 await challenger.send(
-                    f"**Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\nReport the match result below:",
-                    view=reporter_view,
+                    f"**Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\n**Did you go first?**",
+                    view=went_first_view,
                 )
             except discord.Forbidden:
                 try:
                     dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\nReport the match result below:",
-                            view=reporter_view,
+                            f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\n**Did you go first?**",
+                            view=went_first_view,
                         )
                 except Exception as e:
                     logger.error(f"Failed to handle DM failure for challenger: {e}")
@@ -3102,7 +3208,9 @@ class LFGCog(commands.Cog):
             await send_milestone_announcement(self.bot, winner.id, loser.id, match_id)
 
             # Send confirmation
-            elo_status = "ELO updated" if event_active else "ELO not affected (no active event)"
+            elo_status = (
+                "ELO updated" if event_active else "ELO not affected (no active event)"
+            )
             success_embed = discord.Embed(
                 title="Match Reported",
                 description=f"**Match ID:** #{match_id}\n**Winner:** {winner.mention} ({winner_name})\n**Loser:** {loser.mention} ({loser_name})\n**Status:** {elo_status}",
@@ -3136,10 +3244,16 @@ class LFGCog(commands.Cog):
         Start a new event/season. Archives current event and resets event ELO.
         Usage: !start_event Event Name Here
         """
-        from utils.database import start_new_event, get_active_event, calculate_event_k_value
+        from utils.database import (
+            start_new_event,
+            get_active_event,
+            calculate_event_k_value,
+        )
 
         if not event_name:
-            await ctx.send("Please provide an event name. Usage: `!start_event Event Name Here`")
+            await ctx.send(
+                "Please provide an event name. Usage: `!start_event Event Name Here`"
+            )
             return
 
         try:
@@ -3165,11 +3279,18 @@ class LFGCog(commands.Cog):
             )
 
             # Add previous event summary if there was one
-            if result.get('previous_event'):
-                prev = result['previous_event']
-                top_players_str = "\n".join(
-                    [f"  {i+1}. {name} ({elo} ELO)" for i, (name, elo) in enumerate(prev['top_players'])]
-                ) if prev['top_players'] else "No ranked players"
+            if result.get("previous_event"):
+                prev = result["previous_event"]
+                top_players_str = (
+                    "\n".join(
+                        [
+                            f"  {i + 1}. {name} ({elo} ELO)"
+                            for i, (name, elo) in enumerate(prev["top_players"])
+                        ]
+                    )
+                    if prev["top_players"]
+                    else "No ranked players"
+                )
 
                 embed.add_field(
                     name=f"Previous Event Archived: {prev['event_name']}",
@@ -3187,7 +3308,9 @@ class LFGCog(commands.Cog):
             # Update leaderboard
             await self.update_leaderboard()
 
-            logger.info(f"Event '{event_name}' started by {ctx.author} (ID: {ctx.author.id})")
+            logger.info(
+                f"Event '{event_name}' started by {ctx.author} (ID: {ctx.author.id})"
+            )
 
         except Exception as e:
             error_embed = discord.Embed(
@@ -3233,9 +3356,12 @@ class LFGCog(commands.Cog):
             )
 
             # Top players
-            if summary['top_players']:
+            if summary["top_players"]:
                 top_players_str = "\n".join(
-                    [f"  {i+1}. {name} ({elo} ELO)" for i, (name, elo) in enumerate(summary['top_players'])]
+                    [
+                        f"  {i + 1}. {name} ({elo} ELO)"
+                        for i, (name, elo) in enumerate(summary["top_players"])
+                    ]
                 )
             else:
                 top_players_str = "No ranked players"
@@ -3266,7 +3392,9 @@ class LFGCog(commands.Cog):
             # Update leaderboard
             await self.update_leaderboard()
 
-            logger.info(f"Event '{summary['event_name']}' ended by {ctx.author} (ID: {ctx.author.id})")
+            logger.info(
+                f"Event '{summary['event_name']}' ended by {ctx.author} (ID: {ctx.author.id})"
+            )
 
         except Exception as e:
             error_embed = discord.Embed(
@@ -3299,12 +3427,13 @@ class LFGCog(commands.Cog):
             return
 
         # Calculate event stats
-        start_date = active_event['start_date']
+        start_date = active_event["start_date"]
         days_elapsed = (datetime.datetime.now() - start_date).days
         current_k = calculate_event_k_value(start_date)
 
         # Get match count for current event
         import sqlite3
+
         conn = sqlite3.connect("match_records.db")
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM match_records")

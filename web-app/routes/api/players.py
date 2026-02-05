@@ -91,29 +91,68 @@ def player_api(player_id):
         )
         rows = cur.fetchall()
     except sqlite3.OperationalError:
-        cur.execute(
-            """
-            SELECT
-                CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
-                first_player,
-                json_deck_data,
-                match_time,
-                winner_display_name,
-                losser_display_name,
-                timestamp,
-                winner_elo_change,
-                loser_elo_change,
-                curiosa_url,
-                winner_id,
-                losser_id,
-                rowid as match_id
-            FROM match_records
-            WHERE winner_id = ? OR losser_id = ?
-            ORDER BY timestamp DESC
-        """,
-            (player_id, player_id, player_id),
-        )
-        rows = cur.fetchall()
+        # Fallback: try without new columns but with deck columns
+        try:
+            cur.execute(
+                """
+                SELECT
+                    CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                    first_player,
+                    json_deck_data,
+                    match_time,
+                    winner_display_name,
+                    losser_display_name,
+                    timestamp,
+                    winner_elo_change,
+                    loser_elo_change,
+                    curiosa_url,
+                    winner_id,
+                    losser_id,
+                    rowid as match_id,
+                    json_deck_data_winner,
+                    json_deck_data_loser,
+                    curiosa_url_winner,
+                    curiosa_url_loser,
+                    NULL as winner_went_first,
+                    NULL as loser_went_first
+                FROM match_records
+                WHERE winner_id = ? OR losser_id = ?
+                ORDER BY timestamp DESC
+            """,
+                (player_id, player_id, player_id),
+            )
+            rows = cur.fetchall()
+        except sqlite3.OperationalError:
+            # Final fallback: minimal columns for very old schema
+            cur.execute(
+                """
+                SELECT
+                    CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                    first_player,
+                    json_deck_data,
+                    match_time,
+                    winner_display_name,
+                    losser_display_name,
+                    timestamp,
+                    winner_elo_change,
+                    loser_elo_change,
+                    curiosa_url,
+                    winner_id,
+                    losser_id,
+                    rowid as match_id,
+                    NULL as json_deck_data_winner,
+                    NULL as json_deck_data_loser,
+                    NULL as curiosa_url_winner,
+                    NULL as curiosa_url_loser,
+                    NULL as winner_went_first,
+                    NULL as loser_went_first
+                FROM match_records
+                WHERE winner_id = ? OR losser_id = ?
+                ORDER BY timestamp DESC
+            """,
+                (player_id, player_id, player_id),
+            )
+            rows = cur.fetchall()
 
     # Also check archive table for historical matches
     archived_rows = []
@@ -148,7 +187,39 @@ def player_api(player_id):
         )
         archived_rows = cur.fetchall()
     except sqlite3.OperationalError:
-        pass  # Archive table may not exist or columns may not exist
+        # Try without new columns
+        try:
+            cur.execute(
+                """
+                SELECT
+                    CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                    first_player,
+                    json_deck_data,
+                    match_time,
+                    winner_display_name,
+                    losser_display_name,
+                    timestamp,
+                    winner_elo_change,
+                    loser_elo_change,
+                    curiosa_url,
+                    winner_id,
+                    losser_id,
+                    original_match_id as match_id,
+                    json_deck_data_winner,
+                    json_deck_data_loser,
+                    curiosa_url_winner,
+                    curiosa_url_loser,
+                    NULL as winner_went_first,
+                    NULL as loser_went_first
+                FROM match_records_archive
+                WHERE winner_id = ? OR losser_id = ?
+                ORDER BY timestamp DESC
+            """,
+                (player_id, player_id, player_id),
+            )
+            archived_rows = cur.fetchall()
+        except sqlite3.OperationalError:
+            pass  # Archive table may not exist
 
     conn.close()
 
@@ -185,7 +256,9 @@ def player_api(player_id):
                     CASE WHEN is_winner THEN json_deck_data ELSE NULL END,
                     CASE WHEN is_winner THEN NULL ELSE json_deck_data END,
                     CASE WHEN is_winner THEN curiosa_link ELSE NULL END,
-                    CASE WHEN is_winner THEN NULL ELSE curiosa_link END
+                    CASE WHEN is_winner THEN NULL ELSE curiosa_link END,
+                    NULL as winner_went_first,
+                    NULL as loser_went_first
                 FROM solo_match_reports
                 WHERE reporter_id = ?
                 ORDER BY report_date DESC
@@ -518,18 +591,33 @@ def player_api(player_id):
             opponent_deck_url = loser_deck_url if did_win else winner_deck_url
 
         # Determine if this player was on the play for this match
-        # first_player='y' means winner went first, 'n' means loser went first
-        first_player_val = row[1]
-        if first_player_val:
-            fp_lower = str(first_player_val).lower()
-            if "y" in fp_lower:
-                # Winner went first
-                player_on_play = did_win
+        # New columns: winner_went_first (index 17), loser_went_first (index 18)
+        winner_went_first = row[17] if len(row) > 17 else None
+        loser_went_first = row[18] if len(row) > 18 else None
+
+        if winner_went_first is not None or loser_went_first is not None:
+            # Use new explicit columns
+            if did_win:
+                player_on_play = (
+                    winner_went_first and "y" in str(winner_went_first).lower()
+                )
             else:
-                # Loser went first
-                player_on_play = not did_win
+                player_on_play = (
+                    loser_went_first and "y" in str(loser_went_first).lower()
+                )
         else:
-            player_on_play = None
+            # Fallback to old first_player column
+            first_player_val = row[1]
+            if first_player_val:
+                fp_lower = str(first_player_val).lower()
+                if "y" in fp_lower:
+                    # Winner went first
+                    player_on_play = did_win
+                else:
+                    # Loser went first
+                    player_on_play = not did_win
+            else:
+                player_on_play = None
 
         match_history.append(
             {

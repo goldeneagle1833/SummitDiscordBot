@@ -34,7 +34,6 @@ web-app/curiosa-io-tools/
 # Tailwind CSS
 web-app/tailwindcss.exe
 web-app/tailwindcss-windows-x64.exe
-web-app/static/css/tailwind.output.css
 web-app/card_images/
 tailwindcss.exe
 nul

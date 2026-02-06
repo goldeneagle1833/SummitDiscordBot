@@ -125,8 +125,8 @@
     <!-- Streamer chips will be inserted here by JavaScript -->
   </div>
 
-  <!-- Nav links -->
-  <div class="flex items-center gap-5 flex-1 justify-end">
+  <!-- Nav links (hidden on mobile, shown on md+) -->
+  <div class="hidden md:flex items-center gap-5 flex-1 justify-end">
     <a
       href="/"
       class="text-text hover:text-secondary no-underline font-medium transition-colors">
@@ -255,6 +255,51 @@
   class="fixed top-16 left-0 w-48 h-[calc(100vh-4rem)] z-[950] bg-bg-elevated shadow-lg overflow-y-auto -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out"
   id="sidebar">
   <nav class="py-4">
+    <!-- Mobile-only nav links -->
+    <div class="md:hidden border-b border-white/10 pb-2 mb-2">
+      <a
+        href="/"
+        class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
+        Home
+      </a>
+      <a
+        href="https://discord.gg/ZDqHSK9VGx"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
+        Discord
+      </a>
+      <a
+        href="https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
+        Patreon
+      </a>
+      <a
+        href="/about"
+        class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
+        About
+      </a>
+      {% if current_user %}
+      <a
+        href="/player/{{ current_user.id }}"
+        class="block px-4 py-3 text-primary hover:bg-secondary/10 transition-colors font-semibold">
+        {{ current_user.username }}
+      </a>
+      <a
+        href="/auth/logout"
+        class="block px-4 py-3 text-text-muted hover:bg-accent-red/10 hover:text-accent-red transition-colors text-sm">
+        Logout
+      </a>
+      {% else %}
+      <a
+        href="/auth/discord"
+        class="block mx-4 my-2 px-4 py-2 rounded-md bg-[#5865f2] hover:bg-[#4752c4] text-white text-center font-semibold transition-all">
+        Login with Discord
+      </a>
+      {% endif %}
+    </div>
     <a
       href="/avatars"
       class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">

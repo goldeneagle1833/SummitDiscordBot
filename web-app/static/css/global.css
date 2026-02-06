@@ -14,8 +14,8 @@
   --color-info: #2196f3;
 
   /* Typography */
-  --font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    sans-serif;
+  --font-family:
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-size-base: 16px;
   --font-size-sm: 0.875rem;
   --font-size-lg: 1.25rem;
@@ -192,14 +192,23 @@ footer {
   height: calc(100vh - 4rem);
   z-index: 950;
   background-color: #21262d;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 4px 6px -4px rgba(0, 0, 0, 0.1);
   overflow-y: auto;
-  translate: -100% 0 !important;
-  transition: translate 300ms ease-in-out;
+  transform: translateX(-100%);
+  transition: transform 300ms ease-in-out;
 }
 
 #sidebar.open {
-  translate: 0 0 !important;
+  transform: translateX(0);
+}
+
+/* On desktop (768px+), sidebar is always visible */
+@media (min-width: 768px) {
+  #sidebar {
+    transform: translateX(0);
+  }
 }
 
 #sidebar nav {
@@ -238,4 +247,3 @@ footer {
   opacity: 0;
   transition: opacity 300ms ease;
 }
-

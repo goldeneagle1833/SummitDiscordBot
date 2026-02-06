@@ -11,6 +11,13 @@
     max-width: 50%;
   }
 
+  /* Hide navbar streamers on mobile - sidebar shows them instead */
+  @media (max-width: 767px) {
+    .navbar-streamers {
+      display: none !important;
+    }
+  }
+
   .navbar-live-label {
     display: flex;
     align-items: center;
@@ -104,7 +111,7 @@
   <div class="flex items-center gap-4 flex-1">
     <!-- Hamburger button -->
     <button
-      class="flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
+      class="flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors text-white"
       id="hamburger-toggle"
       aria-label="Toggle menu">
       <span class="text-2xl font-bold leading-none">☰</span>
@@ -118,7 +125,7 @@
     </a>
   </div>
 
-  <!-- Center: Live Streamers (shown when someone is live) - absolutely centered -->
+  <!-- Center: Live Streamers (shown when someone is live) - absolutely centered, hidden on mobile -->
   <div
     class="navbar-streamers absolute left-1/2 -translate-x-1/2 hidden items-center gap-2"
     id="navbar-streamers">
@@ -211,27 +218,69 @@
       return label;
     }
 
+    function createSidebarStreamerLink(streamer) {
+      const link = document.createElement("a");
+      link.href = "https://discord.gg/ZDqHSK9VGx";
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.className =
+        "flex items-center gap-2 py-2 text-white hover:text-secondary transition-colors";
+      link.title = `${streamer.display_name} is playing a live game - Join Discord to watch!`;
+
+      link.innerHTML = `
+        <span class="navbar-live-dot" style="width:6px;height:6px;"></span>
+        ${streamer.avatar_url ? `<img src="${streamer.avatar_url}" alt="" class="w-5 h-5 rounded-full">` : ""}
+        <span class="text-sm font-medium">${streamer.display_name}</span>
+        <span class="text-xs">${getPlatformIcon(streamer.platform)}</span>
+      `;
+
+      return link;
+    }
+
     async function checkNavbarStreamers() {
       try {
         const response = await fetch("/api/streamers");
         if (!response.ok) return;
 
         const data = await response.json();
-        const container = document.getElementById("navbar-streamers");
-        if (!container) return;
+        const navbarContainer = document.getElementById("navbar-streamers");
+        const sidebarContainer = document.getElementById("sidebar-streamers");
 
         if (!data.streamers || data.streamers.length === 0) {
-          container.style.display = "none";
-          container.innerHTML = "";
+          if (navbarContainer) {
+            navbarContainer.style.display = "none";
+            navbarContainer.innerHTML = "";
+          }
+          if (sidebarContainer) {
+            sidebarContainer.classList.add("hidden");
+            sidebarContainer.innerHTML = "";
+          }
           return;
         }
 
-        container.innerHTML = "";
-        container.appendChild(createLiveLabel());
-        data.streamers.forEach((streamer) => {
-          container.appendChild(createStreamerChip(streamer));
-        });
-        container.style.display = "flex";
+        // Populate navbar (desktop)
+        if (navbarContainer) {
+          navbarContainer.innerHTML = "";
+          navbarContainer.appendChild(createLiveLabel());
+          data.streamers.forEach((streamer) => {
+            navbarContainer.appendChild(createStreamerChip(streamer));
+          });
+          navbarContainer.style.display = "flex";
+        }
+
+        // Populate sidebar (mobile)
+        if (sidebarContainer) {
+          sidebarContainer.innerHTML = "";
+          const header = document.createElement("div");
+          header.className =
+            "flex items-center gap-2 text-xs font-bold uppercase text-red-500 mb-2";
+          header.innerHTML = `<span class="navbar-live-dot"></span> Live Games`;
+          sidebarContainer.appendChild(header);
+          data.streamers.forEach((streamer) => {
+            sidebarContainer.appendChild(createSidebarStreamerLink(streamer));
+          });
+          sidebarContainer.classList.remove("hidden");
+        }
       } catch (error) {
         console.error("Error checking navbar streamers:", error);
       }
@@ -252,9 +301,15 @@
 
 <!-- Sidebar - Simple text navigation, hidden on mobile by default -->
 <aside
-  class="fixed top-16 left-0 w-48 h-[calc(100vh-4rem)] z-[950] bg-bg-elevated shadow-lg overflow-y-auto -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out"
+  class="fixed top-16 left-0 w-48 h-[calc(100vh-4rem)] z-[950] bg-bg-elevated shadow-lg overflow-y-auto"
   id="sidebar">
   <nav class="py-4">
+    <!-- Mobile-only live streamers -->
+    <div
+      class="md:hidden hidden border-b border-white/10 pb-2 mb-2 px-4"
+      id="sidebar-streamers">
+      <!-- Populated by JavaScript when streamers are live -->
+    </div>
     <!-- Mobile-only nav links -->
     <div class="md:hidden border-b border-white/10 pb-2 mb-2">
       <a

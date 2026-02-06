@@ -95,11 +95,11 @@
   .navbar-platform-icon {
     font-size: 11px;
   }
-
 </style>
 
 <!-- Navbar -->
-<nav class="fixed top-0 inset-x-0 z-[1000] bg-bg-elevated h-16 flex items-center px-4 md:px-6 lg:px-8 shadow-md">
+<nav
+  class="fixed top-0 inset-x-0 z-[1000] bg-bg-elevated h-16 flex items-center px-4 md:px-6 lg:px-8 shadow-md">
   <!-- Left side: Hamburger + Brand -->
   <div class="flex items-center gap-4 flex-1">
     <!-- Hamburger button -->
@@ -125,9 +125,11 @@
     <!-- Streamer chips will be inserted here by JavaScript -->
   </div>
 
-  <!-- Desktop nav links -->
-  <div class="hidden md:flex items-center gap-5 flex-1 justify-end">
-    <a href="/" class="text-text hover:text-secondary no-underline font-medium transition-colors">
+  <!-- Nav links -->
+  <div class="flex items-center gap-5 flex-1 justify-end">
+    <a
+      href="/"
+      class="text-text hover:text-secondary no-underline font-medium transition-colors">
       Home
     </a>
     <a

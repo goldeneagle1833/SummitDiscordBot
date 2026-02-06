@@ -1,13 +1,21 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Community Links - Sorcerers Summit</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.output.css') }}" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/global.css') }}" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
     <style>
       .community-section {
         max-width: 1000px;
@@ -32,7 +40,9 @@
         background: rgba(255, 255, 255, 0.05);
         border-radius: 12px;
         padding: 1.5rem;
-        transition: transform 0.2s, background 0.2s;
+        transition:
+          transform 0.2s,
+          background 0.2s;
       }
       .link-card:hover {
         background: rgba(255, 255, 255, 0.08);
@@ -75,7 +85,7 @@
     <main>
       <section class="hero">
         <h1>Community Links</h1>
-        <p style="color: rgba(255,255,255,0.7); margin-top: 0.5rem;">
+        <p style="color: rgba(255, 255, 255, 0.7); margin-top: 0.5rem">
           Connect with the Sorcery community
         </p>
       </section>
@@ -97,7 +107,10 @@
           <!-- TODO: Add Discord server invites -->
           <div class="link-card">
             <h3>Sorcerers Summit</h3>
-            <p>The official Summit Discord for competitive play and community events.</p>
+            <p>
+              The official Summit Discord for competitive play and community
+              events.
+            </p>
             <a href="#" target="_blank" rel="noopener noreferrer">
               Join Server &rarr;
             </a>
@@ -114,15 +127,24 @@
           <!-- TODO: Add website links -->
           <div class="link-card">
             <h3>Curiosa</h3>
-            <p>Official deck builder and card database for Sorcery: Contested Realm.</p>
-            <a href="https://curiosa.io" target="_blank" rel="noopener noreferrer">
+            <p>
+              Official deck builder and card database for Sorcery: Contested
+              Realm.
+            </p>
+            <a
+              href="https://curiosa.io"
+              target="_blank"
+              rel="noopener noreferrer">
               Visit Site &rarr;
             </a>
           </div>
           <div class="link-card">
             <h3>Sorcery TCG</h3>
             <p>The official Sorcery: Contested Realm website.</p>
-            <a href="https://sorcerytcg.com" target="_blank" rel="noopener noreferrer">
+            <a
+              href="https://sorcerytcg.com"
+              target="_blank"
+              rel="noopener noreferrer">
               Visit Site &rarr;
             </a>
           </div>
@@ -168,11 +190,13 @@
           }
 
           if (container.children.length === 0) {
-            container.innerHTML = '<div class="link-card"><p>No channels available</p></div>';
+            container.innerHTML =
+              '<div class="link-card"><p>No channels available</p></div>';
           }
         } catch (error) {
           console.error("Error loading YouTube channels:", error);
-          container.innerHTML = '<div class="link-card"><p>Failed to load channels</p></div>';
+          container.innerHTML =
+            '<div class="link-card"><p>Failed to load channels</p></div>';
         }
       }
 

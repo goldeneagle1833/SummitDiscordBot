@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -7,19 +7,19 @@
     <!-- Tailwind CSS (load first) -->
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.output.css') }}" />
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/global.css') }}" />
+      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}" />
+      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/pages/deck_snapshot.css') }}" />
+      href="{{ url_for('static', filename='css/pages/deck_snapshot.css') }}?v={{ app_version }}" />
   </head>
   <body>
     {% include 'components/navbar.html' %}
@@ -74,7 +74,10 @@
           </div>
         </div>
 
-        <div class="error-message" id="error-message" style="display: none"></div>
+        <div
+          class="error-message"
+          id="error-message"
+          style="display: none"></div>
       </div>
     </main>
 

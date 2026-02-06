@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -6,16 +6,16 @@
     <title>Card Win Rates - Sorcerers Summit</title>
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.output.css') }}" />
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/global.css') }}" />
+      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}" />
+      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
   </head>
   <body>
     {% include 'components/navbar.html' %}
@@ -122,8 +122,8 @@
           <div class="avatar-stats-middle"></div>
           <div class="avatar-stats-bottom">
             <div class="avatar-stats-winrate" style="color: ${color};">${
-          card.win_rate
-        }%</div>
+              card.win_rate
+            }%</div>
             <div class="avatar-stats-record">
               <span class="match-win">${
                 card.wins
@@ -141,7 +141,7 @@
         const grid = document.getElementById("card-stats-grid");
         const endIdx = Math.min(
           renderedCount + CARDS_PER_PAGE,
-          filteredCards.length
+          filteredCards.length,
         );
 
         for (let i = renderedCount; i < endIdx; i++) {
@@ -192,7 +192,7 @@
           }
 
           // Sort by accuracy score (win_rate × total games)
-          data.sort((a, b) => (b.win_rate * b.total) - (a.win_rate * a.total));
+          data.sort((a, b) => b.win_rate * b.total - a.win_rate * a.total);
           allCards = data;
           filteredCards = data;
 

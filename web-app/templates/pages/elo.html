@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -7,16 +7,16 @@
     <!-- Tailwind CSS (load first) -->
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.output.css') }}" />
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/global.css') }}" />
+      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}" />
+      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
     <style>
       .distribution-section {
         max-width: 600px;
@@ -194,15 +194,23 @@
       </section>
 
       <!-- Lifetime Leaderboard Section -->
-      <section class="distribution-section" style="max-width: 800px;">
+      <section class="distribution-section" style="max-width: 800px">
         <h2 style="color: #fff; text-align: center; margin-bottom: 1rem">
           Lifetime ELO Leaderboard
         </h2>
-        <p style="color: rgba(255,255,255,0.6); text-align: center; margin-bottom: 1rem; font-size: 0.9rem;">
+        <p
+          style="
+            color: rgba(255, 255, 255, 0.6);
+            text-align: center;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+          ">
           Cumulative rankings across all events
         </p>
 
-        <div class="distribution-controls" style="justify-content: center; margin-bottom: 1rem;">
+        <div
+          class="distribution-controls"
+          style="justify-content: center; margin-bottom: 1rem">
           <label for="lifetime-count-select">Show:</label>
           <select id="lifetime-count-select">
             <option value="16" selected>Top 16</option>
@@ -217,10 +225,10 @@
           <table class="distribution-table">
             <thead>
               <tr>
-                <th style="width: 60px;">Rank</th>
+                <th style="width: 60px">Rank</th>
                 <th>Player</th>
-                <th style="text-align: right;">ELO</th>
-                <th style="text-align: right;">W/L</th>
+                <th style="text-align: right">ELO</th>
+                <th style="text-align: right">W/L</th>
               </tr>
             </thead>
             <tbody id="lifetime-leaderboard-body">
@@ -231,15 +239,26 @@
       </section>
 
       <!-- Event Leaderboard Section -->
-      <section class="distribution-section" style="max-width: 800px;">
-        <h2 style="color: #fff; text-align: center; margin-bottom: 0.5rem" id="event-title">
+      <section class="distribution-section" style="max-width: 800px">
+        <h2
+          style="color: #fff; text-align: center; margin-bottom: 0.5rem"
+          id="event-title">
           Current Event Leaderboard
         </h2>
-        <p style="color: rgba(255,255,255,0.6); text-align: center; margin-bottom: 1rem; font-size: 0.9rem;" id="event-subtitle">
+        <p
+          style="
+            color: rgba(255, 255, 255, 0.6);
+            text-align: center;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+          "
+          id="event-subtitle">
           Loading event info...
         </p>
 
-        <div class="distribution-controls" style="justify-content: center; margin-bottom: 1rem;">
+        <div
+          class="distribution-controls"
+          style="justify-content: center; margin-bottom: 1rem">
           <label for="event-count-select">Show:</label>
           <select id="event-count-select">
             <option value="16" selected>Top 16</option>
@@ -254,9 +273,9 @@
           <table class="distribution-table">
             <thead>
               <tr>
-                <th style="width: 60px;">Rank</th>
+                <th style="width: 60px">Rank</th>
                 <th>Player</th>
-                <th style="text-align: right;">Event ELO</th>
+                <th style="text-align: right">Event ELO</th>
               </tr>
             </thead>
             <tbody id="event-leaderboard-body">
@@ -265,7 +284,6 @@
           </table>
         </div>
       </section>
-
     </main>
 
     <script>
@@ -301,7 +319,7 @@
         ) {
           const upper = lower + bandSize - 1;
           const count = elos.filter(
-            (elo) => elo >= lower && elo <= upper
+            (elo) => elo >= lower && elo <= upper,
           ).length;
           const percentage = (count / total) * 100;
 
@@ -396,13 +414,17 @@
       let eventData = null;
 
       // Listen for count select changes
-      document.getElementById("lifetime-count-select").addEventListener("change", function() {
-        renderLifetimeLeaderboard(lifetimeData);
-      });
+      document
+        .getElementById("lifetime-count-select")
+        .addEventListener("change", function () {
+          renderLifetimeLeaderboard(lifetimeData);
+        });
 
-      document.getElementById("event-count-select").addEventListener("change", function() {
-        if (eventData) renderEventLeaderboard(eventData);
-      });
+      document
+        .getElementById("event-count-select")
+        .addEventListener("change", function () {
+          if (eventData) renderEventLeaderboard(eventData);
+        });
 
       // Fetch and render leaderboards
       async function fetchLeaderboards() {
@@ -435,14 +457,14 @@
         // Get display count from select
         const countSelect = document.getElementById("lifetime-count-select");
         const countValue = countSelect.value;
-        const displayCount = countValue === "all" ? players.length : parseInt(countValue);
+        const displayCount =
+          countValue === "all" ? players.length : parseInt(countValue);
 
         // Show players based on selected count
         players.slice(0, displayCount).forEach((player, index) => {
           const row = document.createElement("tr");
-          const rankDisplay = index < 3
-            ? ["🥇", "🥈", "🥉"][index]
-            : `#${index + 1}`;
+          const rankDisplay =
+            index < 3 ? ["🥇", "🥈", "🥉"][index] : `#${index + 1}`;
 
           row.innerHTML = `
             <td style="font-weight: 600;">${rankDisplay}</td>
@@ -450,13 +472,18 @@
             <td style="text-align: right; color: #4db8ff; font-weight: 600;">${player.elo}</td>
             <td style="text-align: right; color: rgba(255,255,255,0.7);">${player.wins}-${player.losses}</td>
           `;
-          row.querySelector("a").addEventListener("mouseover", function() { this.style.textDecoration = "underline"; });
-          row.querySelector("a").addEventListener("mouseout", function() { this.style.textDecoration = "none"; });
+          row.querySelector("a").addEventListener("mouseover", function () {
+            this.style.textDecoration = "underline";
+          });
+          row.querySelector("a").addEventListener("mouseout", function () {
+            this.style.textDecoration = "none";
+          });
           tbody.appendChild(row);
         });
 
         if (players.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: rgba(255,255,255,0.5);">No players yet</td></tr>';
+          tbody.innerHTML =
+            '<tr><td colspan="4" style="text-align: center; color: rgba(255,255,255,0.5);">No players yet</td></tr>';
         }
       }
 
@@ -468,7 +495,8 @@
         if (!eventData.info) {
           titleEl.textContent = "No Active Event";
           subtitleEl.textContent = "ELO tracking is paused between events";
-          tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: rgba(255,255,255,0.5);">No active event</td></tr>';
+          tbody.innerHTML =
+            '<tr><td colspan="3" style="text-align: center; color: rgba(255,255,255,0.5);">No active event</td></tr>';
           return;
         }
 
@@ -478,31 +506,40 @@
         tbody.innerHTML = "";
 
         if (eventData.leaderboard.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: rgba(255,255,255,0.5);">No matches played yet</td></tr>';
+          tbody.innerHTML =
+            '<tr><td colspan="3" style="text-align: center; color: rgba(255,255,255,0.5);">No matches played yet</td></tr>';
           return;
         }
 
         // Get display count from select
         const countSelect = document.getElementById("event-count-select");
         const countValue = countSelect.value;
-        const displayCount = countValue === "all" ? eventData.leaderboard.length : parseInt(countValue);
+        const displayCount =
+          countValue === "all"
+            ? eventData.leaderboard.length
+            : parseInt(countValue);
 
         // Show players based on selected count
-        eventData.leaderboard.slice(0, displayCount).forEach((player, index) => {
-          const row = document.createElement("tr");
-          const rankDisplay = index < 3
-            ? ["🥇", "🥈", "🥉"][index]
-            : `#${index + 1}`;
+        eventData.leaderboard
+          .slice(0, displayCount)
+          .forEach((player, index) => {
+            const row = document.createElement("tr");
+            const rankDisplay =
+              index < 3 ? ["🥇", "🥈", "🥉"][index] : `#${index + 1}`;
 
-          row.innerHTML = `
+            row.innerHTML = `
             <td style="font-weight: 600;">${rankDisplay}</td>
             <td><a href="/player/${player.id}" style="color: #fff; text-decoration: none;">${player.name}</a></td>
             <td style="text-align: right; color: #ffd700; font-weight: 600;">${player.event_elo}</td>
           `;
-          row.querySelector("a").addEventListener("mouseover", function() { this.style.textDecoration = "underline"; });
-          row.querySelector("a").addEventListener("mouseout", function() { this.style.textDecoration = "none"; });
-          tbody.appendChild(row);
-        });
+            row.querySelector("a").addEventListener("mouseover", function () {
+              this.style.textDecoration = "underline";
+            });
+            row.querySelector("a").addEventListener("mouseout", function () {
+              this.style.textDecoration = "none";
+            });
+            tbody.appendChild(row);
+          });
       }
 
       // Fetch leaderboards on load

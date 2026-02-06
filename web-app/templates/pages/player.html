@@ -7,25 +7,25 @@
     <!-- Tailwind CSS (load first) -->
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.output.css') }}" />
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/global.css') }}" />
+      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}" />
+      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/modals.css') }}" />
+      href="{{ url_for('static', filename='css/components/modals.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/forms.css') }}" />
+      href="{{ url_for('static', filename='css/components/forms.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/buttons.css') }}" />
+      href="{{ url_for('static', filename='css/components/buttons.css') }}?v={{ app_version }}" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
       /* Spinner animation for submit button */
@@ -119,12 +119,28 @@
             class="elo-chart-wrapper collapsible-content collapsed"
             id="elo-chart-container">
             <div class="elo-chart-controls">
-              <label for="elo-range-slider">Show last <span id="elo-range-value">50</span> matches</label>
-              <input type="range" id="elo-range-slider" min="10" max="100" value="50" step="5">
+              <label for="elo-range-slider"
+                >Show last <span id="elo-range-value">50</span> matches</label
+              >
+              <input
+                type="range"
+                id="elo-range-slider"
+                min="10"
+                max="100"
+                value="50"
+                step="5" />
             </div>
             <div class="elo-chart-controls">
-              <label for="elo-scale-slider">Y-axis range: ±<span id="elo-scale-value">200</span></label>
-              <input type="range" id="elo-scale-slider" min="50" max="500" value="200" step="25">
+              <label for="elo-scale-slider"
+                >Y-axis range: ±<span id="elo-scale-value">200</span></label
+              >
+              <input
+                type="range"
+                id="elo-scale-slider"
+                min="50"
+                max="500"
+                value="200"
+                step="25" />
             </div>
             <div class="elo-chart-container">
               <canvas id="elo-chart"></canvas>
@@ -249,7 +265,11 @@
 
               <!-- Opponent Avatar dropdown -->
               <div class="form-group">
-                <label class="form-label form-label--required" for="opponent-avatar">Opponent's Avatar</label>
+                <label
+                  class="form-label form-label--required"
+                  for="opponent-avatar"
+                  >Opponent's Avatar</label
+                >
                 <select class="form-select" id="opponent-avatar" required>
                   <option value="">Select opponent's avatar...</option>
                 </select>
@@ -350,7 +370,12 @@
       let currentMaxMatches = 50;
       let currentScale = 200;
 
-      function renderEloChart(currentElo, matches, maxMatches = 50, scale = 200) {
+      function renderEloChart(
+        currentElo,
+        matches,
+        maxMatches = 50,
+        scale = 200,
+      ) {
         // Destroy existing chart if it exists
         if (eloChartInstance) {
           eloChartInstance.destroy();
@@ -400,7 +425,8 @@
         });
 
         // Calculate average ELO of displayed data points, rounded to nearest 50 for tick alignment
-        const rawAvgElo = eloData.reduce((sum, elo) => sum + elo, 0) / eloData.length;
+        const rawAvgElo =
+          eloData.reduce((sum, elo) => sum + elo, 0) / eloData.length;
         const avgElo = Math.round(rawAvgElo / 50) * 50;
 
         // Calculate min/max based on scale parameter, centered around average ELO
@@ -540,18 +566,28 @@
           currentMaxMatches = parseInt(rangeSlider.value);
           rangeValue.textContent = rangeSlider.value;
 
-          rangeSlider.addEventListener("input", function() {
+          rangeSlider.addEventListener("input", function () {
             rangeValue.textContent = this.value;
             currentMaxMatches = parseInt(this.value);
-            renderEloChart(storedElo, storedMatches, currentMaxMatches, currentScale);
+            renderEloChart(
+              storedElo,
+              storedMatches,
+              currentMaxMatches,
+              currentScale,
+            );
           });
         }
 
         if (scaleSlider) {
-          scaleSlider.addEventListener("input", function() {
+          scaleSlider.addEventListener("input", function () {
             scaleValue.textContent = this.value;
             currentScale = parseInt(this.value);
-            renderEloChart(storedElo, storedMatches, currentMaxMatches, currentScale);
+            renderEloChart(
+              storedElo,
+              storedMatches,
+              currentMaxMatches,
+              currentScale,
+            );
           });
         }
       }
@@ -611,7 +647,12 @@
             storedMatches = data.matches;
             setupEloSliders();
             currentMaxMatches = Math.min(50, data.matches.length);
-            renderEloChart(data.elo, data.matches, currentMaxMatches, currentScale);
+            renderEloChart(
+              data.elo,
+              data.matches,
+              currentMaxMatches,
+              currentScale,
+            );
           }
 
           // Update avatar performance

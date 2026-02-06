@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -6,16 +6,16 @@
     <title>Live Popular Cards - Sorcerers Summit</title>
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.output.css') }}" />
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/global.css') }}" />
+      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}" />
+      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
     <style>
       .popular-cards-table {
         width: 100%;
@@ -90,15 +90,38 @@
         font-size: 0.75rem;
         font-weight: 600;
       }
-      .element-fire { background: rgba(231, 76, 60, 0.3); color: #e74c3c; }
-      .element-water { background: rgba(52, 152, 219, 0.3); color: #3498db; }
-      .element-earth { background: rgba(46, 204, 113, 0.3); color: #2ecc71; }
-      .element-air { background: rgba(155, 89, 182, 0.3); color: #9b59b6; }
-      .element-none { background: rgba(149, 165, 166, 0.3); color: #95a5a6; }
-      .rarity-unique { color: #f1c40f; }
-      .rarity-exceptional { color: #9b59b6; }
-      .rarity-elite { color: #3498db; }
-      .rarity-ordinary { color: #95a5a6; }
+      .element-fire {
+        background: rgba(231, 76, 60, 0.3);
+        color: #e74c3c;
+      }
+      .element-water {
+        background: rgba(52, 152, 219, 0.3);
+        color: #3498db;
+      }
+      .element-earth {
+        background: rgba(46, 204, 113, 0.3);
+        color: #2ecc71;
+      }
+      .element-air {
+        background: rgba(155, 89, 182, 0.3);
+        color: #9b59b6;
+      }
+      .element-none {
+        background: rgba(149, 165, 166, 0.3);
+        color: #95a5a6;
+      }
+      .rarity-unique {
+        color: #f1c40f;
+      }
+      .rarity-exceptional {
+        color: #9b59b6;
+      }
+      .rarity-elite {
+        color: #3498db;
+      }
+      .rarity-ordinary {
+        color: #95a5a6;
+      }
     </style>
   </head>
   <body>
@@ -108,7 +131,8 @@
       <section class="hero">
         <h1>Live Popular Cards</h1>
         <p>
-          Card popularity calculated from all matches with deck data in the database
+          Card popularity calculated from all matches with deck data in the
+          database
         </p>
       </section>
 
@@ -155,7 +179,7 @@
       </section>
 
       <!-- Stats Summary -->
-      <section class="stats-summary" id="stats-summary" style="display: none;">
+      <section class="stats-summary" id="stats-summary" style="display: none">
         <div class="stat">
           <div class="stat-value" id="total-decks">0</div>
           <div class="stat-label">Total Decks Analyzed</div>
@@ -176,7 +200,9 @@
                 <th data-sort="type">Type</th>
                 <th data-sort="element">Element</th>
                 <th data-sort="rarity">Rarity</th>
-                <th data-sort="percent_of_decks" class="sorted-desc">% of Decks</th>
+                <th data-sort="percent_of_decks" class="sorted-desc">
+                  % of Decks
+                </th>
                 <th data-sort="count">Total Count</th>
                 <th data-sort="average_played">Avg Played</th>
                 <th data-sort="decks_with_card">Decks With</th>
@@ -184,7 +210,7 @@
             </thead>
             <tbody id="cards-tbody">
               <tr>
-                <td colspan="8" style="text-align: center; padding: 2rem;">
+                <td colspan="8" style="text-align: center; padding: 2rem">
                   Loading card data...
                 </td>
               </tr>
@@ -231,7 +257,8 @@
         }
 
         tbody.innerHTML = filteredCards
-          .map((card) => `
+          .map(
+            (card) => `
             <tr>
               <td><strong>${card.name}</strong></td>
               <td>${card.type}</td>
@@ -245,10 +272,12 @@
               <td>${card.average_played}</td>
               <td>${card.decks_with_card}</td>
             </tr>
-          `)
+          `,
+          )
           .join("");
 
-        document.getElementById("visible-count").textContent = filteredCards.length;
+        document.getElementById("visible-count").textContent =
+          filteredCards.length;
       }
 
       function sortCards(field) {
@@ -256,7 +285,8 @@
         headers.forEach((h) => h.classList.remove("sorted-asc", "sorted-desc"));
 
         if (currentSort.field === field) {
-          currentSort.direction = currentSort.direction === "asc" ? "desc" : "asc";
+          currentSort.direction =
+            currentSort.direction === "asc" ? "desc" : "asc";
         } else {
           currentSort.field = field;
           currentSort.direction = "desc";
@@ -287,14 +317,25 @@
       }
 
       function applyFilters() {
-        const typeFilter = document.getElementById("type-filter").value.toLowerCase();
-        const elementFilter = document.getElementById("element-filter").value.toLowerCase();
-        const searchQuery = document.getElementById("card-search").value.trim().toLowerCase();
+        const typeFilter = document
+          .getElementById("type-filter")
+          .value.toLowerCase();
+        const elementFilter = document
+          .getElementById("element-filter")
+          .value.toLowerCase();
+        const searchQuery = document
+          .getElementById("card-search")
+          .value.trim()
+          .toLowerCase();
 
         filteredCards = allCards.filter((card) => {
-          const typeMatch = !typeFilter || (card.type || "").toLowerCase() === typeFilter;
-          const elementMatch = !elementFilter || (card.element || "").toLowerCase().includes(elementFilter);
-          const searchMatch = !searchQuery || card.name.toLowerCase().includes(searchQuery);
+          const typeMatch =
+            !typeFilter || (card.type || "").toLowerCase() === typeFilter;
+          const elementMatch =
+            !elementFilter ||
+            (card.element || "").toLowerCase().includes(elementFilter);
+          const searchMatch =
+            !searchQuery || card.name.toLowerCase().includes(searchQuery);
           return typeMatch && elementMatch && searchMatch;
         });
 
@@ -343,14 +384,22 @@
           document.getElementById("total-count").textContent = data.length;
 
           // Set up sorting
-          document.querySelectorAll(".popular-cards-table th[data-sort]").forEach((th) => {
-            th.addEventListener("click", () => sortCards(th.dataset.sort));
-          });
+          document
+            .querySelectorAll(".popular-cards-table th[data-sort]")
+            .forEach((th) => {
+              th.addEventListener("click", () => sortCards(th.dataset.sort));
+            });
 
           // Set up filters
-          document.getElementById("type-filter").addEventListener("change", applyFilters);
-          document.getElementById("element-filter").addEventListener("change", applyFilters);
-          document.getElementById("card-search").addEventListener("input", applyFilters);
+          document
+            .getElementById("type-filter")
+            .addEventListener("change", applyFilters);
+          document
+            .getElementById("element-filter")
+            .addEventListener("change", applyFilters);
+          document
+            .getElementById("card-search")
+            .addEventListener("input", applyFilters);
 
           // Initial render
           renderTable();

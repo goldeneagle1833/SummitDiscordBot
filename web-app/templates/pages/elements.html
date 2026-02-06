@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -6,16 +6,16 @@
     <title>Elemental Win Rates - Sorcerers Summit</title>
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.output.css') }}" />
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/global.css') }}" />
+      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}" />
+      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
     <style>
       .elements-chart-section {
         max-width: 900px;
@@ -269,7 +269,9 @@
       .element-multi .composition-bar {
         background: linear-gradient(90deg, #9b59b6, #8e44ad);
       }
-      .element-multi { color: #9b59b6; }
+      .element-multi {
+        color: #9b59b6;
+      }
     </style>
   </head>
   <body>
@@ -330,7 +332,8 @@
         <div class="elements-chart-container" id="dominant-container">
           <h2 class="chart-title">Dominant Element Win Rate</h2>
           <p class="chart-subtitle">
-            Only the element with the most cards in each deck is counted. Spellbook only, no sites.
+            Only the element with the most cards in each deck is counted.
+            Spellbook only, no sites.
           </p>
           <div id="dominant-bars" class="element-bars">
             <p class="loading-text">Loading dominant element data...</p>
@@ -338,10 +341,14 @@
         </div>
 
         <!-- Chart 4: Splash Element Win Rates (ADMINS only) -->
-        <div class="elements-chart-container" id="splash-container" style="display: none;">
+        <div
+          class="elements-chart-container"
+          id="splash-container"
+          style="display: none">
           <h2 class="chart-title">Splash Element Win Rate</h2>
           <p class="chart-subtitle">
-            Only the element with the least cards in each deck is counted. Multi-element decks only, spellbook only.
+            Only the element with the least cards in each deck is counted.
+            Multi-element decks only, spellbook only.
           </p>
           <div id="splash-bars" class="element-bars">
             <p class="loading-text">Loading splash element data...</p>
@@ -349,7 +356,10 @@
         </div>
 
         <!-- Chart 5: Element Combination Win Rates (ADMINS only) -->
-        <div class="elements-chart-container" id="combo-container" style="display: none;">
+        <div
+          class="elements-chart-container"
+          id="combo-container"
+          style="display: none">
           <h2 class="chart-title">Element Combination Win Rates</h2>
           <p class="chart-subtitle">
             Win rates for specific element pairings (minimum 3 games to show).
@@ -360,10 +370,14 @@
         </div>
 
         <!-- Chart 6: Deck Element Composition (ADMINS only) -->
-        <div class="elements-chart-container" id="deck-composition-container" style="display: none;">
+        <div
+          class="elements-chart-container"
+          id="deck-composition-container"
+          style="display: none">
           <h2 class="chart-title">Deck Element Composition</h2>
           <p class="chart-subtitle">
-            Element combinations across all decks in the database (spellbook only, excludes sites)
+            Element combinations across all decks in the database (spellbook
+            only, excludes sites)
           </p>
           <div id="composition-bars" class="composition-bars">
             <p class="loading-text">Loading deck composition...</p>
@@ -387,7 +401,8 @@
       function renderElementBars(data, containerId, sortByWinRate = true) {
         const container = document.getElementById(containerId);
         if (!data || data.length === 0) {
-          container.innerHTML = '<p class="loading-text">No data available.</p>';
+          container.innerHTML =
+            '<p class="loading-text">No data available.</p>';
           return;
         }
         const sorted = sortByWinRate
@@ -417,7 +432,8 @@
       function renderComboBars(combos, containerId) {
         const container = document.getElementById(containerId);
         if (!combos || combos.length === 0) {
-          container.innerHTML = '<p class="loading-text">No combination data available yet.</p>';
+          container.innerHTML =
+            '<p class="loading-text">No combination data available yet.</p>';
           return;
         }
 
@@ -430,7 +446,8 @@
           // Determine bar color class
           let barElementClass = "element-multi";
           if (elements.length === 1) {
-            barElementClass = getElementColorClass(elements[0]) || "element-multi";
+            barElementClass =
+              getElementColorClass(elements[0]) || "element-multi";
           }
 
           // Render element names with individual colors
@@ -487,7 +504,7 @@
 
           // Chart 2: Presence - sort by win presence descending
           const sortedByPresence = [...elements].sort(
-            (a, b) => b.win_presence - a.win_presence
+            (a, b) => b.win_presence - a.win_presence,
           );
           let presenceHtml = "";
           sortedByPresence.forEach((element) => {
@@ -523,7 +540,7 @@
                 </div>
                 <div class="presence-stats">
                   Δ ${(element.win_presence - element.loss_presence).toFixed(
-                    1
+                    1,
                   )}%
                 </div>
               </div>
@@ -545,7 +562,6 @@
             document.getElementById("combo-container").style.display = "block";
             renderComboBars(combinations, "combo-bars");
           }
-
         } catch (err) {
           console.error("Error fetching element stats", err);
           document.getElementById("element-bars").innerHTML =
@@ -566,7 +582,9 @@
           // Check if user has permission
           if (res.status === 403) {
             // Hide the section if no permission
-            document.getElementById("deck-composition-container").style.display = "none";
+            document.getElementById(
+              "deck-composition-container",
+            ).style.display = "none";
             return;
           }
 
@@ -582,12 +600,15 @@
           if (!data || !data.composition || data.composition.length === 0) {
             container.innerHTML =
               '<p class="loading-text">No deck data available yet.</p>';
-            document.getElementById("deck-composition-container").style.display = "block";
+            document.getElementById(
+              "deck-composition-container",
+            ).style.display = "block";
             return;
           }
 
           // Show the section
-          document.getElementById("deck-composition-container").style.display = "block";
+          document.getElementById("deck-composition-container").style.display =
+            "block";
 
           // Render composition bars
           let html = "";

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -7,16 +7,16 @@
     <!-- Tailwind CSS (load first) -->
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.output.css') }}" />
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/global.css') }}" />
+      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}" />
+      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/navbar.css') }}" />
+      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
     <style>
       .deck-composition-section {
         padding: 1.5rem 2rem;
@@ -71,10 +71,18 @@
         color: rgba(255, 255, 255, 0.7);
       }
       /* Element color classes */
-      .element-fire { color: #e74c3c; }
-      .element-water { color: #3498db; }
-      .element-earth { color: #8b4513; }
-      .element-air { color: #87ceeb; }
+      .element-fire {
+        color: #e74c3c;
+      }
+      .element-water {
+        color: #3498db;
+      }
+      .element-earth {
+        color: #8b4513;
+      }
+      .element-air {
+        color: #87ceeb;
+      }
       .element-fire .composition-bar {
         background: linear-gradient(90deg, #e74c3c, #c0392b);
       }
@@ -91,7 +99,9 @@
       .element-multi .composition-bar {
         background: linear-gradient(90deg, #9b59b6, #8e44ad);
       }
-      .element-multi { color: #9b59b6; }
+      .element-multi {
+        color: #9b59b6;
+      }
       .loading-text {
         text-align: center;
         padding: 1.5rem;
@@ -155,7 +165,10 @@
         </div>
 
         <!-- Deck Composition (ADMINS only) -->
-        <div class="deck-composition-section" id="deck-composition-section" style="display: none;">
+        <div
+          class="deck-composition-section"
+          id="deck-composition-section"
+          style="display: none">
           <h3 class="text-lg md:text-xl font-semibold mb-2">
             🎨 Deck Element Composition
           </h3>
@@ -239,7 +252,7 @@
       async function fetchAvatarData() {
         try {
           const res = await fetch(
-            `/api/avatar/${encodeURIComponent(avatarName)}`
+            `/api/avatar/${encodeURIComponent(avatarName)}`,
           );
           if (!res.ok) {
             document.getElementById("avatar-name").textContent =
@@ -250,17 +263,15 @@
 
           // Update avatar info
           document.getElementById("avatar-name").textContent = data.name;
-          document.getElementById(
-            "avatar-stats"
-          ).textContent = `${data.total_matches} matches played`;
+          document.getElementById("avatar-stats").textContent =
+            `${data.total_matches} matches played`;
           document.title = `${data.name} - Sorcerers Summit`;
 
           // Update overall stats
           document.getElementById("stat-wins").textContent = data.wins;
           document.getElementById("stat-losses").textContent = data.losses;
-          document.getElementById(
-            "stat-winrate"
-          ).textContent = `${data.win_rate}%`;
+          document.getElementById("stat-winrate").textContent =
+            `${data.win_rate}%`;
           document.getElementById("stat-matches").textContent =
             data.total_matches;
 
@@ -333,13 +344,14 @@
       async function fetchDeckComposition() {
         try {
           const res = await fetch(
-            `/api/avatar/${encodeURIComponent(avatarName)}/deck-composition`
+            `/api/avatar/${encodeURIComponent(avatarName)}/deck-composition`,
           );
 
           // Check if user has permission
           if (res.status === 403) {
             // Hide the section if no permission
-            document.getElementById("deck-composition-section").style.display = "none";
+            document.getElementById("deck-composition-section").style.display =
+              "none";
             return;
           }
 
@@ -355,12 +367,14 @@
           if (!data || !data.composition || data.composition.length === 0) {
             container.innerHTML =
               '<p class="loading-text">No deck data available for this avatar yet.</p>';
-            document.getElementById("deck-composition-section").style.display = "block";
+            document.getElementById("deck-composition-section").style.display =
+              "block";
             return;
           }
 
           // Show the section
-          document.getElementById("deck-composition-section").style.display = "block";
+          document.getElementById("deck-composition-section").style.display =
+            "block";
 
           // Helper function to get element color class
           function getElementColorClass(elementName) {
@@ -387,10 +401,12 @@
             }
 
             // Render element names with individual colors
-            let labelHtml = elements.map(el => {
-              const colorClass = getElementColorClass(el);
-              return `<span class="element-name ${colorClass}">${el}</span>`;
-            }).join(", ");
+            let labelHtml = elements
+              .map((el) => {
+                const colorClass = getElementColorClass(el);
+                return `<span class="element-name ${colorClass}">${el}</span>`;
+              })
+              .join(", ");
 
             html += `
               <div class="composition-row ${barElementClass}">
@@ -400,7 +416,7 @@
                   <span class="composition-bar-text">${item.percent}%</span>
                 </div>
                 <div class="composition-stats">
-                  ${item.count} deck${item.count !== 1 ? 's' : ''}
+                  ${item.count} deck${item.count !== 1 ? "s" : ""}
                 </div>
               </div>
             `;

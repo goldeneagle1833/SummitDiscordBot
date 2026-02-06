@@ -6,16 +6,9 @@
 <!-- Navbar Streaming Styles -->
 <style>
   .navbar-streamers {
-    display: none;
-    align-items: center;
-    gap: 8px;
     flex-shrink: 1;
     overflow: hidden;
     max-width: 50%;
-  }
-
-  .navbar-streamers.show {
-    display: flex;
   }
 
   .navbar-live-label {
@@ -103,127 +96,75 @@
     font-size: 11px;
   }
 
-  .navbar-right-links {
-    flex-shrink: 0;
-  }
 </style>
 
 <!-- Navbar -->
-<nav
-  class="fixed top-0 left-0 right-0 z-[1000] bg-bg-elevated h-16 flex items-center justify-between px-4 md:px-6 lg:px-8 shadow-md"
-  style="
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 1000;
-    background: #1a1a2e;
-    height: 64px;
-    display: flex;
-    align-items: center;
-    padding: 0 16px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-  ">
+<nav class="fixed top-0 inset-x-0 z-[1000] bg-bg-elevated h-16 flex items-center px-4 md:px-6 lg:px-8 shadow-md">
   <!-- Left side: Hamburger + Brand -->
-  <div
-    class="flex items-center gap-4"
-    style="display: flex; align-items: center; gap: 16px; flex: 1">
-    <!-- Hamburger button (mobile only) -->
+  <div class="flex items-center gap-4 flex-1">
+    <!-- Hamburger button -->
     <button
-      class="md:hidden w-10 h-10 flex items-center justify-center rounded hover:bg-white/10 transition-colors"
+      class="flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
       id="hamburger-toggle"
-      aria-label="Toggle menu"
-      style="display: none">
+      aria-label="Toggle menu">
       <span class="text-2xl font-bold leading-none">☰</span>
     </button>
 
     <a
       href="/"
-      class="text-lg md:text-xl font-bold text-secondary hover:text-text transition-colors"
-      id="brand-secret"
-      style="
-        font-size: 1.25rem;
-        font-weight: bold;
-        color: #4db8ff;
-        text-decoration: none;
-      ">
+      class="text-lg md:text-xl font-bold text-secondary hover:text-text transition-colors no-underline"
+      id="brand-secret">
       Sorcerers Summit
     </a>
   </div>
 
   <!-- Center: Live Streamers (shown when someone is live) - absolutely centered -->
   <div
-    class="navbar-streamers"
-    id="navbar-streamers"
-    style="
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      display: none;
-      align-items: center;
-      gap: 8px;
-    ">
+    class="navbar-streamers absolute left-1/2 -translate-x-1/2 hidden items-center gap-2"
+    id="navbar-streamers">
     <!-- Streamer chips will be inserted here by JavaScript -->
   </div>
 
   <!-- Desktop nav links -->
-  <div
-    class="navbar-right-links"
-    style="
-      display: flex;
-      align-items: center;
-      gap: 20px;
-      flex: 1;
-      justify-content: flex-end;
-    ">
-    <a href="/" style="color: #e0e0e0; text-decoration: none; font-weight: 500">
+  <div class="hidden md:flex items-center gap-5 flex-1 justify-end">
+    <a href="/" class="text-text hover:text-secondary no-underline font-medium transition-colors">
       Home
     </a>
     <a
       href="https://discord.gg/ZDqHSK9VGx"
       target="_blank"
       rel="noopener noreferrer"
-      style="color: #e0e0e0; text-decoration: none; font-weight: 500">
+      class="text-text hover:text-secondary no-underline font-medium transition-colors">
       Discord
     </a>
     <a
       href="https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink"
       target="_blank"
       rel="noopener noreferrer"
-      style="color: #e0e0e0; text-decoration: none; font-weight: 500">
+      class="text-text hover:text-secondary no-underline font-medium transition-colors">
       Patreon
     </a>
     <a
       href="/about"
-      style="color: #e0e0e0; text-decoration: none; font-weight: 500">
+      class="text-text hover:text-secondary no-underline font-medium transition-colors">
       About
     </a>
 
     {% if current_user %}
     <a
       href="/player/{{ current_user.id }}"
-      style="color: #4db8ff; text-decoration: none; font-weight: 600">
+      class="text-primary no-underline font-semibold">
       {{ current_user.username }}
     </a>
     <a
       href="/auth/logout"
-      style="color: #888; text-decoration: none; font-size: 0.875rem">
+      class="text-text-muted no-underline text-sm hover:text-accent-red transition-colors">
       Logout
     </a>
     {% else %}
     <a
       href="/auth/discord"
-      style="
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        padding: 8px 16px;
-        border-radius: 4px;
-        background: #5865f2;
-        color: white;
-        font-weight: 600;
-        text-decoration: none;
-      ">
+      class="inline-flex items-center justify-center px-4 py-2 rounded-md bg-[#5865f2] hover:bg-[#4752c4] text-white no-underline font-semibold transition-all hover:-translate-y-px">
       Login
     </a>
     {% endif %}

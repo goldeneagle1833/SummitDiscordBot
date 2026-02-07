@@ -153,3 +153,66 @@ class EloRepository:
         row = cur.fetchone()
         conn.close()
         return row[0] if row else None
+
+    def get_all_events(self) -> list[dict]:
+        """Get all events (past and active) for filtering."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        # Check if events table exists
+        cur.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='events'
+        """)
+        if not cur.fetchone():
+            conn.close()
+            return []
+
+        cur.execute("""
+            SELECT event_id, event_name, start_date, end_date, is_active
+            FROM events
+            ORDER BY start_date DESC
+        """)
+        rows = cur.fetchall()
+        conn.close()
+
+        return [
+            {
+                "event_id": row[0],
+                "event_name": row[1],
+                "start_date": row[2],
+                "end_date": row[3],
+                "is_active": bool(row[4]),
+            }
+            for row in rows
+        ]
+
+    def get_player_event_elo(self, user_id: int, event_id: int) -> dict | None:
+        """Get a player's ELO and rank for a specific past event."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        # Check if event_standings_archive table exists
+        cur.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='event_standings_archive'
+        """)
+        if not cur.fetchone():
+            conn.close()
+            return None
+
+        cur.execute("""
+            SELECT final_event_elo, final_rank, user_display_name
+            FROM event_standings_archive
+            WHERE event_id = ? AND user_id = ?
+        """, (event_id, user_id))
+        row = cur.fetchone()
+        conn.close()
+
+        if row:
+            return {
+                "elo": row[0],
+                "rank": row[1],
+                "display_name": row[2],
+            }
+        return None

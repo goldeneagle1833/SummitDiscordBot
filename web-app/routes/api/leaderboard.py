@@ -56,3 +56,35 @@ def get_elo_distribution():
     except Exception as e:
         logger.error(f"Error fetching ELO distribution: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@leaderboard_bp.route("/events")
+def get_events():
+    """Get all events for ELO filtering."""
+    try:
+        from repositories.elo import EloRepository
+        repo = EloRepository()
+        events = repo.get_all_events()
+        active_event = repo.get_active_event()
+        return jsonify({
+            "events": events,
+            "active_event": active_event,
+        })
+    except Exception as e:
+        logger.error(f"Error fetching events: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@leaderboard_bp.route("/player/<player_id>/event/<int:event_id>")
+def get_player_event_stats(player_id, event_id):
+    """Get a player's stats for a specific past event."""
+    try:
+        from repositories.elo import EloRepository
+        repo = EloRepository()
+        stats = repo.get_player_event_elo(int(player_id), event_id)
+        if stats:
+            return jsonify(stats)
+        return jsonify({"error": "No data found for this player in this event"}), 404
+    except Exception as e:
+        logger.error(f"Error fetching player event stats: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500

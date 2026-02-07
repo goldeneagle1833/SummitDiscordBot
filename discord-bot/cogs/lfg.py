@@ -1401,12 +1401,13 @@ class LFGReportButtons(discord.ui.View):
     async def won_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        # Only the reporter (player1) can use these buttons
-        if interaction.user.id != self.player1_id:
-            await interaction.response.send_message(
-                "Only the matched player can report the result.", ephemeral=True
-            )
-            return
+        # Only check user identity in the fallback channel
+        if interaction.channel and interaction.channel.id == DM_DISABLED_CHANNEL_ID:
+            if interaction.user.id != self.player1_id:
+                await interaction.response.send_message(
+                    "Only the matched player can report the result.", ephemeral=True
+                )
+                return
 
         # Check if reporter needs to provide a deck URL
         if not self.reporter_deck_url:
@@ -1626,12 +1627,13 @@ class LFGReportButtons(discord.ui.View):
     async def lost_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        # Only the reporter (player1) can use these buttons
-        if interaction.user.id != self.player1_id:
-            await interaction.response.send_message(
-                "Only the matched player can report the result.", ephemeral=True
-            )
-            return
+        # Only check user identity in the fallback channel
+        if interaction.channel and interaction.channel.id == DM_DISABLED_CHANNEL_ID:
+            if interaction.user.id != self.player1_id:
+                await interaction.response.send_message(
+                    "Only the matched player can report the result.", ephemeral=True
+                )
+                return
 
         # Check if reporter needs to provide a deck URL
         if not self.reporter_deck_url:

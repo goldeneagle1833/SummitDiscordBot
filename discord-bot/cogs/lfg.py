@@ -5,6 +5,7 @@ import logging
 import random
 from random import randrange
 import asyncio
+import re
 import sqlite3
 from openai import OpenAI
 
@@ -26,6 +27,14 @@ DM_DISABLED_CHANNEL_ID = 1456299008023728302
 
 # Milestone announcements channel
 MILESTONE_ANNOUNCEMENT_CHANNEL_ID = 1319121592499961886
+
+# URL pattern for scrubbing URLs from public fallback channel messages
+_URL_PATTERN = re.compile(r"https?://\S+")
+
+
+def scrub_urls(text: str) -> str:
+    """Remove URLs from a message to avoid leaking deck links in public channels."""
+    return _URL_PATTERN.sub("[link removed]", text)
 
 
 def generate_milestone_message(count: int) -> str:
@@ -402,7 +411,9 @@ class MatchConfirmationButtons(discord.ui.View):
             match_report_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
             if match_report_channel:
                 await match_report_channel.send(
-                    f"{reporter.mention} {self.opponent_global} has confirmed your match report! Match has been recorded."
+                    scrub_urls(
+                        f"{reporter.mention} {self.opponent_global} has confirmed your match report! Match has been recorded."
+                    )
                 )
         except Exception:
             pass
@@ -460,8 +471,10 @@ class MatchConfirmationButtons(discord.ui.View):
             match_report_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
             if match_report_channel:
                 await match_report_channel.send(
-                    f"{reporter.mention} {self.opponent_global} has disputed your match report. The dispute did not log an entry.\n\n"
-                    f"To submit a corrected report, use `!challenge @{self.opponent_global}` to trigger a new report."
+                    scrub_urls(
+                        f"{reporter.mention} {self.opponent_global} has disputed your match report. The dispute did not log an entry.\n\n"
+                        f"To submit a corrected report, use `!challenge @{self.opponent_global}` to trigger a new report."
+                    )
                 )
         except Exception:
             pass
@@ -589,7 +602,9 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 dm_channel = view.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                 if dm_channel:
                     await dm_channel.send(
-                        f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                        scrub_urls(
+                            f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                        ),
                         view=confirmation_view,
                     )
                     await interaction.response.send_message(
@@ -628,7 +643,9 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                                         member, read_messages=True, send_messages=True
                                     )
                             await dm_channel.send(
-                                f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                                scrub_urls(
+                                    f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                                ),
                                 view=confirmation_view,
                             )
                             await interaction.response.send_message(
@@ -759,7 +776,9 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 dm_channel = view.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                 if dm_channel:
                     await dm_channel.send(
-                        f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                        scrub_urls(
+                            f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                        ),
                         view=confirmation_view,
                     )
                     await interaction.response.send_message(
@@ -792,7 +811,9 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                         dm_channel = view.bot.get_channel(DM_DISABLED_CHANNEL_ID)
                         if dm_channel:
                             await dm_channel.send(
-                                f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                                scrub_urls(
+                                    f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                                ),
                                 view=confirmation_view,
                             )
                             await interaction.response.send_message(
@@ -972,7 +993,9 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             match_report_channel = view.bot.get_channel(DM_DISABLED_CHANNEL_ID)
             if match_report_channel:
                 await match_report_channel.send(
-                    f"<@{view.reporter_id}> {view.opponent_global} has confirmed your match report! Match has been recorded."
+                    scrub_urls(
+                        f"<@{view.reporter_id}> {view.opponent_global} has confirmed your match report! Match has been recorded."
+                    )
                 )
         except Exception:
             pass
@@ -1160,7 +1183,9 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
 
                         # Post without deck URL in public channel
                         await dm_channel.send(
-                            f"{reporter_user.mention} **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n**Did you go first?**",
+                            scrub_urls(
+                                f"{reporter_user.mention} **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n**Did you go first?**"
+                            ),
                             view=went_first_view,
                         )
                 except Exception as e:
@@ -1195,8 +1220,10 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
 
                         # Post without deck URL in public channel
                         await dm_channel.send(
-                            f"{other_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
-                            f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
+                            scrub_urls(
+                                f"{other_user.mention} **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
+                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
+                            )
                         )
                 except Exception as e:
                     logger.error(f"Failed to handle DM failure for other player: {e}")
@@ -1296,6 +1323,13 @@ class WentFirstView(discord.ui.View):
         self, interaction: discord.Interaction, first_player: str
     ):
         """Delete this message and send the actual report buttons."""
+        # Only the reporter (player1) can interact with these buttons
+        if interaction.user.id != self.player1_id:
+            await interaction.response.send_message(
+                "Only the matched player can use these buttons.", ephemeral=True
+            )
+            return
+
         # Delete the "Did you go first?" message
         try:
             await interaction.message.delete()
@@ -1367,6 +1401,13 @@ class LFGReportButtons(discord.ui.View):
     async def won_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        # Only the reporter (player1) can use these buttons
+        if interaction.user.id != self.player1_id:
+            await interaction.response.send_message(
+                "Only the matched player can report the result.", ephemeral=True
+            )
+            return
+
         # Check if reporter needs to provide a deck URL
         if not self.reporter_deck_url:
             # Show modal to collect deck URL before proceeding
@@ -1462,7 +1503,9 @@ class LFGReportButtons(discord.ui.View):
                 dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
                 if dm_channel:
                     await dm_channel.send(
-                        f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                        scrub_urls(
+                            f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                        ),
                         view=confirmation_view,
                     )
                     await interaction.response.send_message(
@@ -1516,7 +1559,9 @@ class LFGReportButtons(discord.ui.View):
                                     )
 
                             await dm_channel.send(
-                                f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                                scrub_urls(
+                                    f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                                ),
                                 view=confirmation_view,
                             )
                             await interaction.response.send_message(
@@ -1581,6 +1626,13 @@ class LFGReportButtons(discord.ui.View):
     async def lost_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        # Only the reporter (player1) can use these buttons
+        if interaction.user.id != self.player1_id:
+            await interaction.response.send_message(
+                "Only the matched player can report the result.", ephemeral=True
+            )
+            return
+
         # Check if reporter needs to provide a deck URL
         if not self.reporter_deck_url:
             # Show modal to collect deck URL before proceeding
@@ -1676,7 +1728,9 @@ class LFGReportButtons(discord.ui.View):
                 dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
                 if dm_channel:
                     await dm_channel.send(
-                        f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                        scrub_urls(
+                            f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                        ),
                         view=confirmation_view,
                     )
                     await interaction.response.send_message(
@@ -1719,7 +1773,9 @@ class LFGReportButtons(discord.ui.View):
                         )
                         if dm_channel:
                             await dm_channel.send(
-                                f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                                scrub_urls(
+                                    f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                                ),
                                 view=confirmation_view,
                             )
                             await interaction.response.send_message(
@@ -1786,6 +1842,13 @@ class LFGReportButtons(discord.ui.View):
     async def cancel_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        # Only the matched players can cancel
+        if interaction.user.id not in (self.player1_id, self.player2_id):
+            await interaction.response.send_message(
+                "Only the matched players can cancel this match.", ephemeral=True
+            )
+            return
+
         await interaction.response.send_message(
             f"{interaction.user.mention} clicked **cancel match**", ephemeral=True
         )
@@ -2030,7 +2093,9 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
                     dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\n**Did you go first?**",
+                            scrub_urls(
+                                f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\n**Did you go first?**"
+                            ),
                             view=went_first_view,
                         )
                 except Exception as e:
@@ -2059,8 +2124,10 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
                     dm_channel = interaction.client.get_channel(DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
                         await dm_channel.send(
-                            f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!{other_deck_text}\n\n"
-                            f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button."
+                            scrub_urls(
+                                f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!{other_deck_text}\n\n"
+                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button."
+                            )
                         )
                 except Exception as e:
                     logger.error(
@@ -2797,8 +2864,10 @@ class LFGCog(commands.Cog):
             dm_channel = self.bot.get_channel(DM_DISABLED_CHANNEL_ID)
             if dm_channel:
                 await dm_channel.send(
-                    f"{ctx.author.mention} **Ready to find a match?**\n\n"
-                    f"Head over to {channel_mention} and click the **Join Queue** button to enter your deck URL and join the matchmaking queue!"
+                    scrub_urls(
+                        f"{ctx.author.mention} **Ready to find a match?**\n\n"
+                        f"Head over to {channel_mention} and click the **Join Queue** button to enter your deck URL and join the matchmaking queue!"
+                    )
                 )
             return
 

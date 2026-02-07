@@ -28,8 +28,7 @@ class EloRepository:
         conn.close()
 
         return [
-            {"user_id": row[0], "display_name": row[1], "elo": row[2]}
-            for row in rows
+            {"user_id": row[0], "display_name": row[1], "elo": row[2]} for row in rows
         ]
 
     def get_all_standings_with_event(self) -> list[dict]:
@@ -53,7 +52,7 @@ class EloRepository:
                     "user_id": row[0],
                     "display_name": row[1],
                     "elo": row[2],
-                    "event_elo": row[3] if row[3] else 1500
+                    "event_elo": row[3] if row[3] else 1500,
                 }
                 for row in rows
             ]
@@ -71,7 +70,7 @@ class EloRepository:
                     "user_id": row[0],
                     "display_name": row[1],
                     "elo": row[2],
-                    "event_elo": 1500
+                    "event_elo": 1500,
                 }
                 for row in rows
             ]
@@ -126,11 +125,7 @@ class EloRepository:
         conn.close()
 
         if row:
-            return {
-                "event_id": row[0],
-                "event_name": row[1],
-                "start_date": row[2]
-            }
+            return {"event_id": row[0], "event_name": row[1], "start_date": row[2]}
         return None
 
     def get_all_elos(self) -> list[int]:
@@ -146,10 +141,7 @@ class EloRepository:
         """Get ELO for a specific user."""
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute(
-            "SELECT elo FROM overall_standings WHERE user_id = ?",
-            (user_id,)
-        )
+        cur.execute("SELECT elo FROM overall_standings WHERE user_id = ?", (user_id,))
         row = cur.fetchone()
         conn.close()
         return row[0] if row else None
@@ -201,11 +193,14 @@ class EloRepository:
             conn.close()
             return None
 
-        cur.execute("""
+        cur.execute(
+            """
             SELECT final_event_elo, final_rank, user_display_name
             FROM event_standings_archive
             WHERE event_id = ? AND user_id = ?
-        """, (event_id, user_id))
+        """,
+            (event_id, user_id),
+        )
         row = cur.fetchone()
         conn.close()
 

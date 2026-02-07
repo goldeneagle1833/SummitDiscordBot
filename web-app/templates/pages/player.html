@@ -65,14 +65,25 @@
       <a href="/" class="back-link">← Back to Leaderboard</a>
 
       <div class="player-profile" id="player-profile">
-        <div class="player-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+        <div
+          class="player-header"
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 1rem;
+          ">
           <div>
             <h1 class="player-name" id="player-name">Loading...</h1>
             <div class="player-elo" id="player-elo"></div>
             <div class="player-rank" id="player-rank"></div>
           </div>
-          <div style="display: flex; align-items: center; gap: 1rem;">
-            <select id="elo-filter" class="form-select" style="min-width: 180px;">
+          <div style="display: flex; align-items: center; gap: 1rem">
+            <select
+              id="elo-filter"
+              class="form-select"
+              style="min-width: 180px">
               <option value="lifetime">Lifetime</option>
               <option value="current">Current Event</option>
               <!-- Past events will be populated by JS -->
@@ -382,19 +393,19 @@
       // Fetch available events for the filter dropdown
       async function fetchEvents() {
         try {
-          const res = await fetch('/api/events');
+          const res = await fetch("/api/events");
           if (!res.ok) return;
           const data = await res.json();
           eventsData = data;
 
-          const select = document.getElementById('elo-filter');
+          const select = document.getElementById("elo-filter");
           if (!select) return;
 
           // Add past events to dropdown
           if (data.events && data.events.length > 0) {
-            data.events.forEach(event => {
+            data.events.forEach((event) => {
               if (!event.is_active) {
-                const option = document.createElement('option');
+                const option = document.createElement("option");
                 option.value = `event_${event.event_id}`;
                 option.textContent = event.event_name;
                 select.appendChild(option);
@@ -403,56 +414,68 @@
           }
 
           // Add change listener
-          select.addEventListener('change', handleFilterChange);
+          select.addEventListener("change", handleFilterChange);
         } catch (e) {
-          console.error('Error fetching events:', e);
+          console.error("Error fetching events:", e);
         }
       }
 
       // Handle filter dropdown change
       async function handleFilterChange(e) {
         const value = e.target.value;
-        const eloEl = document.getElementById('player-elo');
-        const rankEl = document.getElementById('player-rank');
+        const eloEl = document.getElementById("player-elo");
+        const rankEl = document.getElementById("player-rank");
 
         if (!storedPlayerData) return;
 
-        if (value === 'lifetime') {
+        if (value === "lifetime") {
           // Show lifetime ELO
           let eloText = `Lifetime ELO: ${storedPlayerData.elo}`;
-          if (storedPlayerData.event_elo && storedPlayerData.event_elo !== 1500) {
+          if (
+            storedPlayerData.event_elo &&
+            storedPlayerData.event_elo !== 1500
+          ) {
             eloText += ` | Event ELO: ${storedPlayerData.event_elo}`;
           }
           eloEl.textContent = eloText;
           rankEl.textContent = `Rank #${storedPlayerData.rank}`;
-        } else if (value === 'current') {
+        } else if (value === "current") {
           // Show current event ELO
-          if (storedPlayerData.event_elo && storedPlayerData.event_elo !== 1500) {
+          if (
+            storedPlayerData.event_elo &&
+            storedPlayerData.event_elo !== 1500
+          ) {
             eloEl.textContent = `Current Event ELO: ${storedPlayerData.event_elo}`;
             // Rank for current event would need to be fetched separately
-            rankEl.textContent = eventsData?.active_event ? `Event: ${eventsData.active_event.event_name}` : '';
+            rankEl.textContent = eventsData?.active_event
+              ? `Event: ${eventsData.active_event.event_name}`
+              : "";
           } else {
-            eloEl.textContent = 'No current event data';
-            rankEl.textContent = '';
+            eloEl.textContent = "No current event data";
+            rankEl.textContent = "";
           }
-        } else if (value.startsWith('event_')) {
+        } else if (value.startsWith("event_")) {
           // Show past event ELO
-          const eventId = parseInt(value.replace('event_', ''));
+          const eventId = parseInt(value.replace("event_", ""));
           try {
             const res = await fetch(`/api/player/${playerId}/event/${eventId}`);
             if (res.ok) {
               const data = await res.json();
-              const eventInfo = eventsData?.events?.find(e => e.event_id === eventId);
+              const eventInfo = eventsData?.events?.find(
+                (e) => e.event_id === eventId,
+              );
               eloEl.textContent = `Event ELO: ${data.elo}`;
-              rankEl.textContent = data.rank ? `#${data.rank} in ${eventInfo?.event_name || 'Event'}` : '';
+              rankEl.textContent = data.rank
+                ? `#${data.rank} in ${eventInfo?.event_name || "Event"}`
+                : "";
             } else {
-              eloEl.textContent = 'No data for this event';
-              rankEl.textContent = '';
+              eloEl.textContent = "No data for this event";
+              rankEl.textContent = "";
             }
           } catch (err) {
-            console.error('Error fetching event data:', err);
-            eloEl.textContent = 'Error loading event data';
-            rankEl.textContent = '';
+            console.error("Error fetching event data:", err);
+            eloEl.textContent = "Error loading event data";
+            rankEl.textContent = "";
           }
         }
       }

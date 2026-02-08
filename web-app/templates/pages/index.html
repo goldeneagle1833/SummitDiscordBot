@@ -207,8 +207,8 @@
           return;
         }
 
-        // Show top 25
-        eventData.leaderboard.slice(0, 25).forEach((player, index) => {
+        // Show all players
+        eventData.leaderboard.forEach((player, index) => {
           const row = document.createElement("tr");
           const rankDisplay =
             index < 3

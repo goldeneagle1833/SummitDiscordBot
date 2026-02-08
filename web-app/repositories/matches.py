@@ -33,7 +33,8 @@ class MatchRepository:
         """Get matches for a specific date."""
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             SELECT
                 rowid as match_id,
                 winner_display_name,
@@ -47,7 +48,9 @@ class MatchRepository:
             FROM match_records
             WHERE date(timestamp) = ?
             ORDER BY rowid DESC
-        """, (date,))
+        """,
+            (date,),
+        )
         rows = cur.fetchall()
         conn.close()
         return self._rows_to_match_dicts(rows)
@@ -65,7 +68,8 @@ class MatchRepository:
         # Use parameterized query - SQLite datetime modifier needs string concatenation
         # but we've validated hours is a safe integer above
         hours_modifier = f"-{hours} hours"
-        cur.execute("""
+        cur.execute(
+            """
             SELECT
                 rowid as match_id,
                 winner_display_name,
@@ -79,7 +83,9 @@ class MatchRepository:
             FROM match_records
             WHERE timestamp >= datetime('now', ?)
             ORDER BY rowid DESC
-        """, (hours_modifier,))
+        """,
+            (hours_modifier,),
+        )
         rows = cur.fetchall()
         conn.close()
         return self._rows_to_match_dicts(rows)
@@ -108,8 +114,7 @@ class MatchRepository:
 
         # Count from current match_records
         cur.execute(
-            "SELECT COUNT(*) FROM match_records WHERE winner_id = ?",
-            (user_id,)
+            "SELECT COUNT(*) FROM match_records WHERE winner_id = ?", (user_id,)
         )
         current_count = cur.fetchone()[0]
 
@@ -118,7 +123,7 @@ class MatchRepository:
         try:
             cur.execute(
                 "SELECT COUNT(*) FROM match_records_archive WHERE winner_id = ?",
-                (user_id,)
+                (user_id,),
             )
             archive_count = cur.fetchone()[0]
         except Exception:
@@ -134,8 +139,7 @@ class MatchRepository:
 
         # Count from current match_records
         cur.execute(
-            "SELECT COUNT(*) FROM match_records WHERE losser_id = ?",
-            (user_id,)
+            "SELECT COUNT(*) FROM match_records WHERE losser_id = ?", (user_id,)
         )
         current_count = cur.fetchone()[0]
 
@@ -144,7 +148,7 @@ class MatchRepository:
         try:
             cur.execute(
                 "SELECT COUNT(*) FROM match_records_archive WHERE losser_id = ?",
-                (user_id,)
+                (user_id,),
             )
             archive_count = cur.fetchone()[0]
         except Exception:
@@ -153,13 +157,56 @@ class MatchRepository:
         conn.close()
         return current_count + archive_count
 
+    def get_season_wins_count(self, user_id: int, event_start: str) -> int:
+        """Get number of wins for a user since the event started."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM match_records WHERE winner_id = ? AND timestamp >= ?",
+            (user_id, event_start),
+        )
+        count = cur.fetchone()[0]
+        conn.close()
+        return count
+
+    def get_season_losses_count(self, user_id: int, event_start: str) -> int:
+        """Get number of losses for a user since the event started."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM match_records WHERE losser_id = ? AND timestamp >= ?",
+            (user_id, event_start),
+        )
+        count = cur.fetchone()[0]
+        conn.close()
+        return count
+
+    def get_season_players(self, event_start: str) -> list[int]:
+        """Get all player IDs who have played since the event started."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT DISTINCT user_id FROM (
+                SELECT winner_id as user_id FROM match_records WHERE timestamp >= ?
+                UNION
+                SELECT losser_id as user_id FROM match_records WHERE timestamp >= ?
+            )
+        """,
+            (event_start, event_start),
+        )
+        players = [row[0] for row in cur.fetchall()]
+        conn.close()
+        return players
+
     def get_match_by_id(self, match_id: int) -> dict | None:
         """Get a single match by its ID."""
         conn = self._get_connection()
         cur = conn.cursor()
 
         try:
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT
                     winner_id,
                     losser_id,
@@ -171,11 +218,14 @@ class MatchRepository:
                     json_deck_data_loser
                 FROM match_records
                 WHERE rowid = ?
-            """, (match_id,))
+            """,
+                (match_id,),
+            )
             row = cur.fetchone()
             has_new_columns = True
         except sqlite3.OperationalError:
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT
                     winner_id,
                     losser_id,
@@ -185,7 +235,9 @@ class MatchRepository:
                     json_deck_data
                 FROM match_records
                 WHERE rowid = ?
-            """, (match_id,))
+            """,
+                (match_id,),
+            )
             row = cur.fetchone()
             has_new_columns = False
 
@@ -215,7 +267,7 @@ class MatchRepository:
         cur = conn.cursor()
         cur.execute(
             "SELECT winner_elo_change, loser_elo_change FROM match_records WHERE match_id = ?",
-            (match_id,)
+            (match_id,),
         )
         row = cur.fetchone()
         conn.close()
@@ -339,7 +391,8 @@ class MatchRepository:
         cur = conn.cursor()
 
         try:
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT
                     rowid as match_id,
                     winner_id,
@@ -359,9 +412,12 @@ class MatchRepository:
                 WHERE winner_id = ? OR losser_id = ?
                 ORDER BY timestamp DESC
                 LIMIT ?
-            """, (player_id, player_id, limit))
+            """,
+                (player_id, player_id, limit),
+            )
         except sqlite3.OperationalError:
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT
                     rowid as match_id,
                     winner_id,
@@ -379,7 +435,9 @@ class MatchRepository:
                 WHERE winner_id = ? OR losser_id = ?
                 ORDER BY timestamp DESC
                 LIMIT ?
-            """, (player_id, player_id, limit))
+            """,
+                (player_id, player_id, limit),
+            )
 
         rows = cur.fetchall()
         conn.close()

@@ -281,13 +281,6 @@ class MatchConfirmationButtons(discord.ui.View):
     async def confirm_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        # Only the opponent can confirm
-        if interaction.user.id != self.opponent_id:
-            await interaction.response.send_message(
-                "Only the opponent can confirm this report.", ephemeral=True
-            )
-            return
-
         # Check if confirmer needs to provide a deck URL
         # is_winner=True means confirmer won (their deck is winner_deck_url)
         # is_winner=False means confirmer lost (their deck is loser_deck_url)
@@ -439,13 +432,6 @@ class MatchConfirmationButtons(discord.ui.View):
     async def dispute_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        # Only the opponent can dispute
-        if interaction.user.id != self.opponent_id:
-            await interaction.response.send_message(
-                "Only the opponent can dispute this report.", ephemeral=True
-            )
-            return
-
         await interaction.response.send_message(
             f"You have disputed the match report. This dispute will not log an entry.\n\n"
             f"To submit a corrected report, use `!challenge @{self.reporter_global}` to trigger a new report.",
@@ -1323,13 +1309,6 @@ class WentFirstView(discord.ui.View):
         self, interaction: discord.Interaction, first_player: str
     ):
         """Delete this message and send the actual report buttons."""
-        # Only the reporter (player1) can interact with these buttons
-        if interaction.user.id != self.player1_id:
-            await interaction.response.send_message(
-                "Only the matched player can use these buttons.", ephemeral=True
-            )
-            return
-
         # Delete the "Did you go first?" message
         try:
             await interaction.message.delete()
@@ -1401,14 +1380,6 @@ class LFGReportButtons(discord.ui.View):
     async def won_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        # Only check user identity in the fallback channel
-        if interaction.channel and interaction.channel.id == DM_DISABLED_CHANNEL_ID:
-            if interaction.user.id != self.player1_id:
-                await interaction.response.send_message(
-                    "Only the matched player can report the result.", ephemeral=True
-                )
-                return
-
         # Check if reporter needs to provide a deck URL
         if not self.reporter_deck_url:
             # Show modal to collect deck URL before proceeding
@@ -1627,14 +1598,6 @@ class LFGReportButtons(discord.ui.View):
     async def lost_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        # Only check user identity in the fallback channel
-        if interaction.channel and interaction.channel.id == DM_DISABLED_CHANNEL_ID:
-            if interaction.user.id != self.player1_id:
-                await interaction.response.send_message(
-                    "Only the matched player can report the result.", ephemeral=True
-                )
-                return
-
         # Check if reporter needs to provide a deck URL
         if not self.reporter_deck_url:
             # Show modal to collect deck URL before proceeding
@@ -1866,11 +1829,6 @@ class ChallengeInitView(discord.ui.View):
         self.challenger_id = challenger_id or modal.challenger.id
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.challenger_id:
-            await interaction.response.send_message(
-                "This challenge is not for you!", ephemeral=True
-            )
-            return False
         return True
 
     @discord.ui.button(label="⚔️ Send Challenge", style=discord.ButtonStyle.primary)
@@ -3597,6 +3555,145 @@ class LFGCog(commands.Cog):
             )
 
         await ctx.send(embed=embed)
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def recalculate_event_elo(self, ctx):
+        """
+        Recalculate all event ELO from scratch based on match records.
+        This fixes any event_elo discrepancies by replaying all matches since event start.
+        Usage: !recalculate_event_elo
+        """
+        from utils.database import get_active_event, update_elo, calculate_event_k_value
+        import sqlite3
+
+        active_event = get_active_event()
+        if not active_event:
+            await ctx.send("No active event. Nothing to recalculate.")
+            return
+
+        event_start = active_event["start_date"]
+        event_start_str = event_start.isoformat()
+        event_name = active_event["event_name"]
+
+        await ctx.send(
+            f"🔄 Recalculating event ELO for **{event_name}**... This may take a moment."
+        )
+
+        try:
+            # Connect to databases
+            elo_conn = sqlite3.connect("elo.db")
+            elo_cur = elo_conn.cursor()
+
+            match_conn = sqlite3.connect("match_records.db")
+            match_cur = match_conn.cursor()
+
+            # Step 1: Reset all event_elo to 1500
+            elo_cur.execute("UPDATE overall_standings SET event_elo = 1500")
+            reset_count = elo_cur.rowcount
+            elo_conn.commit()
+
+            # Step 2: Get all matches since event started
+            match_cur.execute(
+                """
+                SELECT rowid, winner_id, winner_display_name, losser_id, losser_display_name, timestamp
+                FROM match_records
+                WHERE timestamp >= ?
+                ORDER BY timestamp ASC
+            """,
+                (event_start_str,),
+            )
+            matches = match_cur.fetchall()
+
+            # Step 3: Replay each match
+            player_elos = {}  # user_id -> event_elo
+
+            for match in matches:
+                _, winner_id, _, loser_id, _, _ = match
+                k_value = calculate_event_k_value(event_start)
+
+                winner_elo = player_elos.get(winner_id, 1500)
+                loser_elo = player_elos.get(loser_id, 1500)
+
+                new_winner_elo = update_elo(winner_elo, loser_elo, True, k=k_value)
+                new_loser_elo = update_elo(loser_elo, winner_elo, False, k=k_value)
+
+                player_elos[winner_id] = new_winner_elo
+                player_elos[loser_id] = new_loser_elo
+
+            # Step 4: Write updated event_elos to database
+            updates = 0
+            for user_id, event_elo in player_elos.items():
+                if event_elo != 1500:
+                    elo_cur.execute(
+                        "UPDATE overall_standings SET event_elo = ? WHERE user_id = ?",
+                        (event_elo, user_id),
+                    )
+                    updates += 1
+
+            elo_conn.commit()
+
+            # Get top players
+            elo_cur.execute("""
+                SELECT user_display_name, event_elo 
+                FROM overall_standings 
+                WHERE event_elo != 1500 
+                ORDER BY event_elo DESC 
+                LIMIT 5
+            """)
+            top_players = elo_cur.fetchall()
+
+            elo_conn.close()
+            match_conn.close()
+
+            # Build response
+            embed = discord.Embed(
+                title="Event ELO Recalculated",
+                description=f"Successfully recalculated ELO for **{event_name}**",
+                color=discord.Color.green(),
+            )
+
+            embed.add_field(
+                name="Summary",
+                value=(
+                    f"**Players Reset:** {reset_count}\n"
+                    f"**Matches Replayed:** {len(matches)}\n"
+                    f"**Players with Non-1500 ELO:** {updates}"
+                ),
+                inline=False,
+            )
+
+            if top_players:
+                top_str = "\n".join(
+                    [
+                        f"{i + 1}. {name} ({elo})"
+                        for i, (name, elo) in enumerate(top_players)
+                    ]
+                )
+                embed.add_field(
+                    name="Top 5 Players",
+                    value=top_str,
+                    inline=False,
+                )
+
+            embed.set_footer(text=f"Recalculated by {ctx.author.display_name}")
+            await ctx.send(embed=embed)
+
+            # Update leaderboard
+            await self.update_leaderboard()
+
+            logger.info(
+                f"Event ELO recalculated by {ctx.author} - {len(matches)} matches replayed"
+            )
+
+        except Exception as e:
+            await ctx.send(f"❌ Error recalculating ELO: {str(e)}")
+            logger.error(f"Failed to recalculate event ELO: {e}")
+
+    @recalculate_event_elo.error
+    async def recalculate_event_elo_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
 
     @commands.command()
     @commands.has_permissions(administrator=True)

@@ -38,32 +38,26 @@
       </section>
 
       <!-- Active Event Leaderboard Section -->
-      <section
-        class="leaderboard"
-        style="max-width: 900px; margin: 0 auto"
-        id="event-section">
-        <div class="leaderboard-content">
-          <h2
-            style="color: #fff; text-align: center; margin-bottom: 0.5rem"
-            id="event-title">
-            Current Event Leaderboard
-          </h2>
+      <section class="leaderboard" id="event-section">
+        <div class="leaderboard-header">
+          <h2 id="event-title">Current Event Leaderboard</h2>
           <p
             style="
               color: rgba(255, 255, 255, 0.6);
               text-align: center;
-              margin-bottom: 1rem;
               font-size: 0.9rem;
             "
             id="event-subtitle">
             Loading event info...
           </p>
-          <table id="event-leaderboard-table">
+        </div>
+        <div class="leaderboard-content">
+          <table id="leaderboard-table">
             <thead>
               <tr>
-                <th style="width: 60px">Rank</th>
+                <th>Rank</th>
                 <th>Player</th>
-                <th style="text-align: right">Event ELO</th>
+                <th>Event ELO</th>
               </tr>
             </thead>
             <tbody id="event-leaderboard-tbody">
@@ -210,15 +204,16 @@
         // Show all players
         eventData.leaderboard.forEach((player, index) => {
           const row = document.createElement("tr");
-          const rankDisplay =
-            index < 3
-              ? ["\u{1F947}", "\u{1F948}", "\u{1F949}"][index]
-              : `#${index + 1}`;
+          const rank = index + 1;
+          let rankDisplay = rank;
+          if (rank <= 3) {
+            rankDisplay = `<span class="rank-badge rank-${rank}">${rank}</span>`;
+          }
 
           row.innerHTML = `
-            <td style="font-weight: 600;">${rankDisplay}</td>
+            <td>${rankDisplay}</td>
             <td><a href="/player/${player.id}" class="player-link">${player.name}</a></td>
-            <td style="text-align: right; color: #ffd700; font-weight: 600;">${player.event_elo}</td>
+            <td>${player.event_elo}</td>
           `;
           tbody.appendChild(row);
         });

@@ -55,43 +55,37 @@ def deck_snapshot(match_id, player_id):
 
 @players_bp.route("/player/<player_id>")
 def player_api(player_id):
-    """Get comprehensive player stats and match history."""
+    """Get comprehensive player stats and match history.
+
+    Query parameters:
+    - event: Filter by event. Values: 'lifetime' (default), 'current', or event_id (int)
+    """
+    event_filter = request.args.get("event", "lifetime")
+
     conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
     cur = conn.cursor()
 
-    # Try new schema first, fallback to old
-    try:
-        cur.execute(
-            """
-            SELECT
-                CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
-                first_player,
-                json_deck_data,
-                match_time,
-                winner_display_name,
-                losser_display_name,
-                timestamp,
-                winner_elo_change,
-                loser_elo_change,
-                curiosa_url,
-                winner_id,
-                losser_id,
-                rowid as match_id,
-                json_deck_data_winner,
-                json_deck_data_loser,
-                curiosa_url_winner,
-                curiosa_url_loser,
-                winner_went_first,
-                loser_went_first
-            FROM match_records
-            WHERE winner_id = ? OR losser_id = ?
-            ORDER BY timestamp DESC
-        """,
-            (player_id, player_id, player_id),
-        )
-        rows = cur.fetchall()
-    except sqlite3.OperationalError:
-        # Fallback: try without new columns but with deck columns
+    # Determine which tables to query based on event filter
+    include_current_matches = True  # From match_records table
+    include_archived_matches = True  # From match_records_archive table
+    archive_event_id = None  # Specific event to filter in archive
+
+    if event_filter == "current":
+        # Only current event matches (from match_records table)
+        include_archived_matches = False
+    elif event_filter != "lifetime":
+        # Specific past event - only from archive with that event_id
+        try:
+            archive_event_id = int(event_filter)
+            include_current_matches = False
+        except (ValueError, TypeError):
+            pass  # Invalid event_id, fall back to lifetime
+
+    rows = []
+
+    # Query current matches if needed
+    if include_current_matches:
+        # Try new schema first, fallback to old
         try:
             cur.execute(
                 """
@@ -113,8 +107,8 @@ def player_api(player_id):
                     json_deck_data_loser,
                     curiosa_url_winner,
                     curiosa_url_loser,
-                    NULL as winner_went_first,
-                    NULL as loser_went_first
+                    winner_went_first,
+                    loser_went_first
                 FROM match_records
                 WHERE winner_id = ? OR losser_id = ?
                 ORDER BY timestamp DESC
@@ -123,74 +117,84 @@ def player_api(player_id):
             )
             rows = cur.fetchall()
         except sqlite3.OperationalError:
-            # Final fallback: minimal columns for very old schema
-            cur.execute(
-                """
-                SELECT
-                    CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
-                    first_player,
-                    json_deck_data,
-                    match_time,
-                    winner_display_name,
-                    losser_display_name,
-                    timestamp,
-                    winner_elo_change,
-                    loser_elo_change,
-                    curiosa_url,
-                    winner_id,
-                    losser_id,
-                    rowid as match_id,
-                    NULL as json_deck_data_winner,
-                    NULL as json_deck_data_loser,
-                    NULL as curiosa_url_winner,
-                    NULL as curiosa_url_loser,
-                    NULL as winner_went_first,
-                    NULL as loser_went_first
-                FROM match_records
-                WHERE winner_id = ? OR losser_id = ?
-                ORDER BY timestamp DESC
-            """,
-                (player_id, player_id, player_id),
-            )
+            # Fallback: try without new columns but with deck columns
+            try:
+                cur.execute(
+                    """
+                    SELECT
+                        CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                        first_player,
+                        json_deck_data,
+                        match_time,
+                        winner_display_name,
+                        losser_display_name,
+                        timestamp,
+                        winner_elo_change,
+                        loser_elo_change,
+                        curiosa_url,
+                        winner_id,
+                        losser_id,
+                        rowid as match_id,
+                        json_deck_data_winner,
+                        json_deck_data_loser,
+                        curiosa_url_winner,
+                        curiosa_url_loser,
+                        NULL as winner_went_first,
+                        NULL as loser_went_first
+                    FROM match_records
+                    WHERE winner_id = ? OR losser_id = ?
+                    ORDER BY timestamp DESC
+                """,
+                    (player_id, player_id, player_id),
+                )
+                rows = cur.fetchall()
+            except sqlite3.OperationalError:
+                # Final fallback: minimal columns for very old schema
+                cur.execute(
+                    """
+                    SELECT
+                        CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                        first_player,
+                        json_deck_data,
+                        match_time,
+                        winner_display_name,
+                        losser_display_name,
+                        timestamp,
+                        winner_elo_change,
+                        loser_elo_change,
+                        curiosa_url,
+                        winner_id,
+                        losser_id,
+                        rowid as match_id,
+                        NULL as json_deck_data_winner,
+                        NULL as json_deck_data_loser,
+                        NULL as curiosa_url_winner,
+                        NULL as curiosa_url_loser,
+                        NULL as winner_went_first,
+                        NULL as loser_went_first
+                    FROM match_records
+                    WHERE winner_id = ? OR losser_id = ?
+                    ORDER BY timestamp DESC
+                """,
+                    (player_id, player_id, player_id),
+                )
+                rows = cur.fetchall()
             rows = cur.fetchall()
 
-    # Also check archive table for historical matches
+    # Also check archive table for historical matches (if needed based on filter)
     archived_rows = []
-    try:
-        cur.execute(
-            """
-            SELECT
-                CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
-                first_player,
-                json_deck_data,
-                match_time,
-                winner_display_name,
-                losser_display_name,
-                timestamp,
-                winner_elo_change,
-                loser_elo_change,
-                curiosa_url,
-                winner_id,
-                losser_id,
-                original_match_id as match_id,
-                json_deck_data_winner,
-                json_deck_data_loser,
-                curiosa_url_winner,
-                curiosa_url_loser,
-                winner_went_first,
-                loser_went_first
-            FROM match_records_archive
-            WHERE winner_id = ? OR losser_id = ?
-            ORDER BY timestamp DESC
-        """,
-            (player_id, player_id, player_id),
-        )
-        archived_rows = cur.fetchall()
-    except sqlite3.OperationalError:
-        # Try without new columns
+    if include_archived_matches:
+        # Build the WHERE clause based on event filter
+        if archive_event_id is not None:
+            event_filter_clause = " AND event_id = ?"
+            query_params = (player_id, player_id, player_id, archive_event_id)
+        else:
+            event_filter_clause = ""
+            query_params = (player_id, player_id, player_id)
+
         try:
             cur.execute(
-                """
+                f"""
                 SELECT
                     CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
                     first_player,
@@ -209,17 +213,49 @@ def player_api(player_id):
                     json_deck_data_loser,
                     curiosa_url_winner,
                     curiosa_url_loser,
-                    NULL as winner_went_first,
-                    NULL as loser_went_first
+                    winner_went_first,
+                    loser_went_first
                 FROM match_records_archive
-                WHERE winner_id = ? OR losser_id = ?
+                WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
                 ORDER BY timestamp DESC
             """,
-                (player_id, player_id, player_id),
+                query_params,
             )
             archived_rows = cur.fetchall()
         except sqlite3.OperationalError:
-            pass  # Archive table may not exist
+            # Try without new columns
+            try:
+                cur.execute(
+                    f"""
+                    SELECT
+                        CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                        first_player,
+                        json_deck_data,
+                        match_time,
+                        winner_display_name,
+                        losser_display_name,
+                        timestamp,
+                        winner_elo_change,
+                        loser_elo_change,
+                        curiosa_url,
+                        winner_id,
+                        losser_id,
+                        original_match_id as match_id,
+                        json_deck_data_winner,
+                        json_deck_data_loser,
+                        curiosa_url_winner,
+                        curiosa_url_loser,
+                        NULL as winner_went_first,
+                        NULL as loser_went_first
+                    FROM match_records_archive
+                    WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
+                    ORDER BY timestamp DESC
+                """,
+                    query_params,
+                )
+                archived_rows = cur.fetchall()
+            except sqlite3.OperationalError:
+                pass  # Archive table may not exist
 
     conn.close()
 
@@ -277,6 +313,9 @@ def player_api(player_id):
     event_elo = 1500
     rank = 0
     player_name_from_elo = None
+    displayed_elo = 1500  # The ELO to display based on filter
+    displayed_rank = 0
+
     try:
         elo_conn = sqlite3.connect(str(ELO_DB_PATH))
         elo_cur = elo_conn.cursor()
@@ -293,6 +332,36 @@ def player_api(player_id):
                 "SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (player_elo,)
             )
             rank = elo_cur.fetchone()[0] + 1
+
+        # Determine displayed ELO/rank based on filter
+        if event_filter == "lifetime":
+            displayed_elo = player_elo
+            displayed_rank = rank
+        elif event_filter == "current":
+            displayed_elo = event_elo
+            # For current event, calculate rank among event participants
+            try:
+                elo_cur.execute(
+                    "SELECT COUNT(*) FROM overall_standings WHERE event_elo > ? AND event_elo != 1500",
+                    (event_elo,),
+                )
+                displayed_rank = elo_cur.fetchone()[0] + 1
+            except sqlite3.OperationalError:
+                displayed_rank = 0
+        elif archive_event_id is not None:
+            # Get ELO from archived event standings
+            try:
+                elo_cur.execute(
+                    "SELECT final_event_elo, final_rank FROM event_standings_archive WHERE event_id = ? AND user_id = ?",
+                    (archive_event_id, player_id),
+                )
+                archive_row = elo_cur.fetchone()
+                if archive_row:
+                    displayed_elo = archive_row[0]
+                    displayed_rank = archive_row[1]
+            except sqlite3.OperationalError:
+                pass  # Table may not exist
+
         elo_conn.close()
     except sqlite3.OperationalError:
         pass
@@ -721,7 +790,10 @@ def player_api(player_id):
             "name": player_name,
             "elo": player_elo,
             "event_elo": event_elo,
+            "displayed_elo": displayed_elo,
             "rank": rank,
+            "displayed_rank": displayed_rank,
+            "event_filter": event_filter,
             "wins": wins,
             "losses": losses,
             "win_rate": round(win_rate, 1),

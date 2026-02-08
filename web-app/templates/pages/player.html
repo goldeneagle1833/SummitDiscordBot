@@ -423,61 +423,19 @@
       // Handle filter dropdown change
       async function handleFilterChange(e) {
         const value = e.target.value;
-        const eloEl = document.getElementById("player-elo");
-        const rankEl = document.getElementById("player-rank");
 
-        if (!storedPlayerData) return;
-
+        // Convert filter value to API parameter
+        let eventParam = "lifetime";
         if (value === "lifetime") {
-          // Show lifetime ELO
-          let eloText = `Lifetime ELO: ${storedPlayerData.elo}`;
-          if (
-            storedPlayerData.event_elo &&
-            storedPlayerData.event_elo !== 1500
-          ) {
-            eloText += ` | Event ELO: ${storedPlayerData.event_elo}`;
-          }
-          eloEl.textContent = eloText;
-          rankEl.textContent = `Rank #${storedPlayerData.rank}`;
+          eventParam = "lifetime";
         } else if (value === "current") {
-          // Show current event ELO
-          if (
-            storedPlayerData.event_elo &&
-            storedPlayerData.event_elo !== 1500
-          ) {
-            eloEl.textContent = `Current Event ELO: ${storedPlayerData.event_elo}`;
-            // Rank for current event would need to be fetched separately
-            rankEl.textContent = eventsData?.active_event
-              ? `Event: ${eventsData.active_event.event_name}`
-              : "";
-          } else {
-            eloEl.textContent = "No current event data";
-            rankEl.textContent = "";
-          }
+          eventParam = "current";
         } else if (value.startsWith("event_")) {
-          // Show past event ELO
-          const eventId = parseInt(value.replace("event_", ""));
-          try {
-            const res = await fetch(`/api/player/${playerId}/event/${eventId}`);
-            if (res.ok) {
-              const data = await res.json();
-              const eventInfo = eventsData?.events?.find(
-                (e) => e.event_id === eventId,
-              );
-              eloEl.textContent = `Event ELO: ${data.elo}`;
-              rankEl.textContent = data.rank
-                ? `#${data.rank} in ${eventInfo?.event_name || "Event"}`
-                : "";
-            } else {
-              eloEl.textContent = "No data for this event";
-              rankEl.textContent = "";
-            }
-          } catch (err) {
-            console.error("Error fetching event data:", err);
-            eloEl.textContent = "Error loading event data";
-            rankEl.textContent = "";
-          }
+          eventParam = value.replace("event_", "");
         }
+
+        // Re-fetch all player data with the new filter
+        await fetchPlayerData(eventParam);
       }
 
       function renderEloChart(
@@ -702,9 +660,13 @@
         }
       }
 
-      async function fetchPlayerData() {
+      async function fetchPlayerData(eventFilter = "lifetime") {
         try {
-          const res = await fetch(`/api/player/${playerId}`);
+          const url =
+            eventFilter && eventFilter !== "lifetime"
+              ? `/api/player/${playerId}?event=${eventFilter}`
+              : `/api/player/${playerId}`;
+          const res = await fetch(url);
           if (!res.ok) {
             document.getElementById("player-name").textContent =
               "Player not found";
@@ -722,13 +684,45 @@
 
           // Update player info
           document.getElementById("player-name").textContent = data.name;
-          let eloText = `Lifetime ELO: ${data.elo}`;
-          if (data.event_elo && data.event_elo !== 1500) {
-            eloText += ` | Event ELO: ${data.event_elo}`;
+
+          // Build ELO text based on the current filter
+          let eloText = "";
+          let rankText = "";
+
+          if (eventFilter === "lifetime" || !eventFilter) {
+            eloText = `Lifetime ELO: ${data.elo}`;
+            if (data.event_elo && data.event_elo !== 1500) {
+              eloText += ` | Event ELO: ${data.event_elo}`;
+            }
+            rankText = `Rank #${data.rank}`;
+          } else if (eventFilter === "current") {
+            eloText =
+              data.displayed_elo !== 1500
+                ? `Current Event ELO: ${data.displayed_elo}`
+                : "No current event data";
+            rankText =
+              data.displayed_rank > 0
+                ? `Event Rank #${data.displayed_rank}`
+                : eventsData?.active_event
+                  ? `Event: ${eventsData.active_event.event_name}`
+                  : "";
+          } else {
+            // Past event
+            const eventInfo = eventsData?.events?.find(
+              (e) => e.event_id === parseInt(eventFilter),
+            );
+            eloText =
+              data.displayed_elo !== 1500
+                ? `Event ELO: ${data.displayed_elo}`
+                : "No data for this event";
+            rankText =
+              data.displayed_rank > 0
+                ? `#${data.displayed_rank} in ${eventInfo?.event_name || "Event"}`
+                : "";
           }
+
           document.getElementById("player-elo").textContent = eloText;
-          document.getElementById("player-rank").textContent =
-            `Rank #${data.rank}`;
+          document.getElementById("player-rank").textContent = rankText;
           document.title = `${data.name} - Sorcerers Summit`;
 
           // Update overall stats
@@ -748,6 +742,8 @@
           }
 
           // Render ELO history chart (only for profile owner or localhost)
+          // Use displayed_elo for the chart when filtering by event
+          const chartElo = data.displayed_elo || data.elo;
           if (
             (data.is_owner || isLocalServer) &&
             data.matches &&
@@ -756,16 +752,19 @@
             document.getElementById("elo-chart-section").style.display =
               "block";
             // Store data for sliders
-            storedElo = data.elo;
+            storedElo = chartElo;
             storedMatches = data.matches;
             setupEloSliders();
             currentMaxMatches = Math.min(50, data.matches.length);
             renderEloChart(
-              data.elo,
+              chartElo,
               data.matches,
               currentMaxMatches,
               currentScale,
             );
+          } else {
+            // Hide chart section if no matches for this filter
+            document.getElementById("elo-chart-section").style.display = "none";
           }
 
           // Update avatar performance
@@ -786,6 +785,8 @@
               `;
               avatarGrid.appendChild(card);
             });
+          } else {
+            document.getElementById("avatar-section").style.display = "none";
           }
 
           // Update performance against other avatars
@@ -807,6 +808,9 @@
               `;
               avatarGrid.appendChild(card);
             });
+          } else {
+            document.getElementById("avatar-matchup-section").style.display =
+              "none";
           }
 
           // Update recent decks (only show to profile owner or localhost)
@@ -834,6 +838,9 @@
               `;
               decksList.appendChild(deckItem);
             });
+          } else {
+            document.getElementById("recent-decks-section").style.display =
+              "none";
           }
 
           // Render match history table headers (conditionally include Deck column)

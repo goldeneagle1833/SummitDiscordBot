@@ -1,20 +1,22 @@
 name: Deploy Discord Bot
 
 on:
+  push:
+    branches: [main]
+    paths: ["discord-bot/**", "data/**"]
   pull_request:
-    types:
-      - closed
-    branches:
-      - main
-    paths:
-      - "discord-bot/**"
-      - "data/**"
-  workflow_dispatch: # Allow manual trigger
+    types: [closed]
+    branches: [main]
+    paths: ["discord-bot/**", "data/**"]
+  workflow_dispatch: {}
 
 jobs:
   deploy:
-    # Only run if PR was merged (not just closed)
-    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    # Run on push, or on a merged PR, or when manually dispatched
+    if: |
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to Linode
@@ -25,8 +27,21 @@ jobs:
           key: ${{ secrets.LINODE_SSH_KEY }}
           script: |
             cd /root/Summit/SummitDiscordBot
+
+            # Stash any local changes to avoid conflicts
+            git stash
+
+            # Pull latest changes
             git pull origin main
+
+            # Apply stashed changes if any (will merge automatically)
+            git stash pop || true
+
+            # Install/update dependencies in venv
             cd discord-bot
             source venv/bin/activate
             pip install -r requirements.txt
-            systemctl restart summit-bot
+            deactivate
+
+            # Restart the service
+            sudo systemctl restart summit-bot

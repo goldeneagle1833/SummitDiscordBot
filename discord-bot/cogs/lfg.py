@@ -3145,7 +3145,7 @@ class LFGCog(commands.Cog):
                 event_start_str = active_event["start_date"].isoformat()
                 event_name = active_event["event_name"]
 
-            # Fetch top 16 players from database with game counts
+            # Fetch all ranked players from database
             # Use event_elo when an active event exists, otherwise lifetime elo
             conn_elo = sqlite3.connect("elo.db")
             cursor_elo = conn_elo.cursor()
@@ -3154,17 +3154,15 @@ class LFGCog(commands.Cog):
                     SELECT user_id, user_display_name, event_elo 
                     FROM overall_standings 
                     WHERE event_elo != 1500
-                    ORDER BY event_elo DESC 
-                    LIMIT 16
+                    ORDER BY event_elo DESC
                 """)
             else:
                 cursor_elo.execute("""
                     SELECT user_id, user_display_name, elo 
                     FROM overall_standings 
-                    ORDER BY elo DESC 
-                    LIMIT 16
+                    ORDER BY elo DESC
                 """)
-            top_players = cursor_elo.fetchall()
+            all_players = cursor_elo.fetchall()
             conn_elo.close()
 
             # Connect to match records to get game counts
@@ -3188,13 +3186,13 @@ class LFGCog(commands.Cog):
                 color=discord.Color.gold(),
             )
 
-            if top_players:
+            if all_players:
                 # Get guild for role checking
                 guild = self.bot.get_guild(config.GUILD_ID)
 
                 # Build player data with resolved names and game counts
                 player_data = []
-                for user_id, display_name, elo in top_players:
+                for user_id, display_name, elo in all_players:
                     # Fetch current username from Discord if stored name is None or empty
                     if not display_name or display_name == "None":
                         try:
@@ -3255,9 +3253,9 @@ class LFGCog(commands.Cog):
 
                 conn_matches.close()
 
-                # Overall Rankings (all top 16)
+                # Overall Rankings (top 16 of all players)
                 overall_text = []
-                for idx, p in enumerate(player_data, 1):
+                for idx, p in enumerate(player_data[:16], 1):
                     overall_text.append(
                         f"**{idx}.** {p['display_name']} - **{p['elo']}** ELO ({p['games']} games)"
                     )
@@ -3269,25 +3267,7 @@ class LFGCog(commands.Cog):
                     inline=False,
                 )
 
-                # Top 16 section (by event ELO, eligible for ladder challenges)
-                from utils.database import get_top_16_user_ids
-
-                top_16_ids = get_top_16_user_ids()
-                top_16_players = [p for p in player_data if p["user_id"] in top_16_ids]
-                top_16_text = []
-                for idx, p in enumerate(top_16_players[:16], 1):
-                    top_16_text.append(
-                        f"**{idx}.** {p['display_name']} - **{p['elo']}** ELO ({p['games']} games)"
-                    )
-                embed.add_field(
-                    name="Top 16",
-                    value="\n".join(top_16_text)
-                    if top_16_text
-                    else "No Top 16 players yet.",
-                    inline=False,
-                )
-
-                # Ticket Holders section (top 16 from ticket holders)
+                # Ticket Holders section (top 16 players with the ticket holder role)
                 ticket_players = [p for p in player_data if p["has_ticket"]]
                 ticket_text = []
                 for idx, p in enumerate(ticket_players[:16], 1):

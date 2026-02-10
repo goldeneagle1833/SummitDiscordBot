@@ -3146,14 +3146,24 @@ class LFGCog(commands.Cog):
                 event_name = active_event["event_name"]
 
             # Fetch top 16 players from database with game counts
+            # Use event_elo when an active event exists, otherwise lifetime elo
             conn_elo = sqlite3.connect("elo.db")
             cursor_elo = conn_elo.cursor()
-            cursor_elo.execute("""
-                SELECT user_id, user_display_name, elo 
-                FROM overall_standings 
-                ORDER BY elo DESC 
-                LIMIT 16
-            """)
+            if active_event:
+                cursor_elo.execute("""
+                    SELECT user_id, user_display_name, event_elo 
+                    FROM overall_standings 
+                    WHERE event_elo != 1500
+                    ORDER BY event_elo DESC 
+                    LIMIT 16
+                """)
+            else:
+                cursor_elo.execute("""
+                    SELECT user_id, user_display_name, elo 
+                    FROM overall_standings 
+                    ORDER BY elo DESC 
+                    LIMIT 16
+                """)
             top_players = cursor_elo.fetchall()
             conn_elo.close()
 
@@ -3252,10 +3262,28 @@ class LFGCog(commands.Cog):
                         f"**{idx}.** {p['display_name']} - **{p['elo']}** ELO ({p['games']} games)"
                     )
                 embed.add_field(
-                    name="🏆 Overall Rankings",
+                    name="Overall Rankings",
                     value="\n".join(overall_text)
                     if overall_text
                     else "No players ranked yet.",
+                    inline=False,
+                )
+
+                # Top 16 section (by event ELO, eligible for ladder challenges)
+                from utils.database import get_top_16_user_ids
+
+                top_16_ids = get_top_16_user_ids()
+                top_16_players = [p for p in player_data if p["user_id"] in top_16_ids]
+                top_16_text = []
+                for idx, p in enumerate(top_16_players[:16], 1):
+                    top_16_text.append(
+                        f"**{idx}.** {p['display_name']} - **{p['elo']}** ELO ({p['games']} games)"
+                    )
+                embed.add_field(
+                    name="Top 16",
+                    value="\n".join(top_16_text)
+                    if top_16_text
+                    else "No Top 16 players yet.",
                     inline=False,
                 )
 
@@ -3267,7 +3295,7 @@ class LFGCog(commands.Cog):
                         f"**{idx}.** {p['display_name']} - **{p['elo']}** ELO ({p['games']} games)"
                     )
                 embed.add_field(
-                    name="🎟️ Ticket Holders",
+                    name="Ticket Holders",
                     value="\n".join(ticket_text)
                     if ticket_text
                     else "No ticket holders ranked yet.",
@@ -3282,7 +3310,7 @@ class LFGCog(commands.Cog):
                         f"**{idx}.** {p['display_name']} - **{p['elo']}** ELO ({p['games']} games)"
                     )
                 embed.add_field(
-                    name="🎮 Free Play",
+                    name="Free Play",
                     value="\n".join(free_text)
                     if free_text
                     else "No free play players ranked yet.",

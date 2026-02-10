@@ -803,6 +803,222 @@ async def losser_report(
     return (match_id, user_id, opponent_id, event_active)
 
 
+def get_top_16_user_ids():
+    """
+    Get the user IDs of the top 16 players by current event ELO.
+
+    Only counts players who have played at least one event match (event_elo != 1500).
+    Falls back to lifetime ELO if no active event.
+
+    Returns:
+        List of user_id integers for the top 16 players
+    """
+    ensure_event_elo_column()
+    active_event = get_active_event()
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+
+    if active_event:
+        cur.execute(
+            "SELECT user_id FROM overall_standings WHERE event_elo != 1500 ORDER BY event_elo DESC LIMIT 16"
+        )
+    else:
+        cur.execute("SELECT user_id FROM overall_standings ORDER BY elo DESC LIMIT 16")
+
+    rows = cur.fetchall()
+    conn.close()
+    return [row[0] for row in rows]
+
+
+def create_ladder_challenge_table():
+    """Create the ladder_challenges table if it doesn't exist."""
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS ladder_challenges
+                   (challenge_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    challenger_id INTEGER NOT NULL,
+                    selected_opponent_id INTEGER,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    winner_id INTEGER,
+                    match_id INTEGER
+                   )""")
+
+    conn.commit()
+    conn.close()
+
+
+def get_ladder_challenge_today(user_id: int) -> bool:
+    """
+    Check if a user has already issued a ladder challenge today.
+
+    Args:
+        user_id: The Discord user ID
+
+    Returns:
+        True if they already used their challenge today, False otherwise
+    """
+    create_ladder_challenge_table()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    cur.execute(
+        "SELECT COUNT(*) FROM ladder_challenges WHERE challenger_id = ? AND created_at LIKE ?",
+        (user_id, f"{today}%"),
+    )
+    count = cur.fetchone()[0]
+    conn.close()
+    return count > 0
+
+
+def save_ladder_challenge(challenger_id: int, selected_opponent_id: int = None) -> int:
+    """
+    Save a ladder challenge to the database.
+
+    Args:
+        challenger_id: ID of the Top 16 player who issued the challenge
+        selected_opponent_id: ID of the randomly selected opponent (if any)
+
+    Returns:
+        The challenge_id
+    """
+    create_ladder_challenge_table()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute(
+        """INSERT INTO ladder_challenges (challenger_id, selected_opponent_id, status, created_at)
+           VALUES (?, ?, 'open', ?)""",
+        (challenger_id, selected_opponent_id, datetime.datetime.now().isoformat()),
+    )
+
+    challenge_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return challenge_id
+
+
+def complete_ladder_challenge(challenge_id: int, winner_id: int, match_id: int = None):
+    """Mark a ladder challenge as completed."""
+    create_ladder_challenge_table()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute(
+        """UPDATE ladder_challenges SET status = 'completed', completed_at = ?, winner_id = ?, match_id = ?
+           WHERE challenge_id = ?""",
+        (datetime.datetime.now().isoformat(), winner_id, match_id, challenge_id),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def update_elo_db_ladder(
+    user_id, user_display_name, did_win, opponent_id, elo_multiplier=1.0
+):
+    """
+    Update the ELO database with ladder challenge match results.
+
+    Same as update_elo_db but applies an ELO multiplier to the change.
+    For ladder challenges:
+      - Non-Top16 player wins: 2x ELO gain
+      - Top16 player loses: 0.5x ELO loss
+      - If ELO difference < 100: normal (1x)
+
+    Returns:
+        Tuple of (new_lifetime_elo, lifetime_change, new_event_elo, event_change, event_active)
+    """
+    ensure_event_elo_column()
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS overall_standings
+                   (user_id INTEGER PRIMARY KEY,
+                    user_display_name TEXT,
+                    elo INTEGER DEFAULT 1500,
+                    event_elo INTEGER DEFAULT 1500
+                   )""")
+
+    # Check for active event
+    active_event = get_active_event()
+
+    # Get player's current ELOs (or insert if new)
+    cur.execute(
+        "SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (user_id,)
+    )
+    player_row = cur.fetchone()
+
+    if player_row:
+        player_lifetime_elo = player_row[0]
+        player_event_elo = player_row[1] if player_row[1] else 1500
+    else:
+        player_lifetime_elo = 1500
+        player_event_elo = 1500
+        cur.execute(
+            """INSERT OR IGNORE INTO overall_standings
+               (user_id, user_display_name, elo, event_elo) VALUES (?, ?, ?, ?)""",
+            (user_id, user_display_name, player_lifetime_elo, player_event_elo),
+        )
+
+    # Get opponent's ELOs
+    cur.execute(
+        "SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (opponent_id,)
+    )
+    opponent_row = cur.fetchone()
+
+    if opponent_row:
+        opponent_lifetime_elo = opponent_row[0]
+        opponent_event_elo = opponent_row[1] if opponent_row[1] else 1500
+    else:
+        opponent_lifetime_elo = 1500
+        opponent_event_elo = 1500
+
+    # If no active event, don't update ELO
+    if not active_event:
+        conn.close()
+        return (player_lifetime_elo, 0, player_event_elo, 0, False)
+
+    # Calculate base ELO changes
+    new_lifetime_elo_base = update_elo(
+        player_lifetime_elo, opponent_lifetime_elo, did_win, k=32
+    )
+    base_lifetime_change = new_lifetime_elo_base - player_lifetime_elo
+
+    event_k = calculate_event_k_value(active_event["start_date"])
+    new_event_elo_base = update_elo(
+        player_event_elo, opponent_event_elo, did_win, k=event_k
+    )
+    base_event_change = new_event_elo_base - player_event_elo
+
+    # Apply multiplier
+    lifetime_change = round(base_lifetime_change * elo_multiplier)
+    event_change = round(base_event_change * elo_multiplier)
+
+    new_lifetime_elo = player_lifetime_elo + lifetime_change
+    new_event_elo = player_event_elo + event_change
+
+    logger.info(
+        f"Ladder ELO update for {user_id}: multiplier={elo_multiplier}, "
+        f"lifetime {player_lifetime_elo} -> {new_lifetime_elo} ({lifetime_change:+d}), "
+        f"event {player_event_elo} -> {new_event_elo} ({event_change:+d})"
+    )
+
+    # Update player's ELOs
+    cur.execute(
+        "UPDATE overall_standings SET elo = ?, event_elo = ? WHERE user_id = ?",
+        (new_lifetime_elo, new_event_elo, user_id),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return (new_lifetime_elo, lifetime_change, new_event_elo, event_change, True)
+
+
 def get_total_match_count():
     """Get the total number of matches recorded in the database."""
     conn = sqlite3.connect("match_records.db")

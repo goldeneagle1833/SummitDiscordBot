@@ -154,6 +154,26 @@ class SlashCommandsCog(commands.Cog):
 
         await elo_cog.masters_bracket(ctx)
 
+    # ==================== LADDER CHALLENGE ====================
+
+    @app_commands.command(
+        name="issue-challenge",
+        description="Issue a ladder challenge (Top 16 event players only, once per day)",
+    )
+    async def issue_challenge_slash(self, interaction: discord.Interaction):
+        """Ladder challenge - Top 16 event players can challenge the field with special ELO stakes"""
+        await interaction.response.defer(ephemeral=True)
+        ctx = FakeContext(self.bot, interaction)
+
+        lfg_cog = self.bot.get_cog("LFGCog")
+        if not lfg_cog:
+            await interaction.followup.send(
+                "LFG system is not available.", ephemeral=True
+            )
+            return
+
+        await lfg_cog.issue_challenge(ctx)
+
     # ==================== UTILITY COMMANDS ====================
 
     @app_commands.command(

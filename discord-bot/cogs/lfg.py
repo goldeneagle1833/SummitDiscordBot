@@ -3134,7 +3134,7 @@ class LFGCog(commands.Cog):
             logger.warning(f"Leaderboard channel {leaderboard_channel_id} not found")
             return
 
-        TICKET_HOLDER_ROLE_ID = 1468583538642128947
+        TICKET_HOLDER_ROLE_IDS = {1468583538642128947, 1455669646370799667}
 
         try:
             # Get active event info for filtering matches
@@ -3237,7 +3237,7 @@ class LFGCog(commands.Cog):
                         member = guild.get_member(user_id)
                         if member:
                             has_ticket = any(
-                                role.id == TICKET_HOLDER_ROLE_ID
+                                role.id in TICKET_HOLDER_ROLE_IDS
                                 for role in member.roles
                             )
 

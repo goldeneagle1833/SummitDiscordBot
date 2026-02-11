@@ -204,12 +204,8 @@ footer {
   transform: translateX(0);
 }
 
-/* On desktop (768px+), sidebar is always visible */
-@media (min-width: 768px) {
-  #sidebar {
-    transform: translateX(0);
-  }
-}
+/* On desktop (768px+), sidebar starts open via JS adding .open class */
+/* Toggling is handled by hamburger button on all screen sizes */
 
 #sidebar nav {
   position: static;

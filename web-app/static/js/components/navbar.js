@@ -83,7 +83,7 @@ document.addEventListener("DOMContentLoaded", function () {
         link.addEventListener("click", function (ev) {
           console.log(
             "[navbar] sidebar link clicked",
-            link.href || link.textContent
+            link.href || link.textContent,
           );
           if (sidebar.classList.contains("open")) {
             toggleSidebar();
@@ -92,7 +92,7 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     } else {
       console.warn(
-        "[navbar] sidebar element not found; cannot attach link handlers"
+        "[navbar] sidebar element not found; cannot attach link handlers",
       );
     }
 
@@ -109,7 +109,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (clickCount === 3) {
           e.preventDefault();
           console.log(
-            "[navbar] triple-click detected, navigating to secret leaderboard"
+            "[navbar] triple-click detected, navigating to secret leaderboard",
           );
           window.location.href = "/secret-fart-leaderboard";
           clickCount = 0;

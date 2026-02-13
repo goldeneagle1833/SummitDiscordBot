@@ -851,6 +851,7 @@ class LFGCog(commands.Cog):
             opponent=opponent,
             lfg_channel=lfg_channel,
             bot=self.bot,
+            guild_id=ctx.guild.id if ctx.guild else None,
         )
 
         # Create a temporary interaction to send the modal

@@ -165,6 +165,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 opponent_deck_url=other_deck_url,
                 opponent_user=other_user,
                 reporter_deck_text=reporter_deck_text,
+                guild_id=interaction.guild.id,
             )
 
             # Send "Did you go first?" question to the selected reporter

@@ -7,6 +7,7 @@ import config
 from cogs.lfg.state import lfg_queue
 from cogs.lfg.helpers import scrub_urls
 from cogs.lfg.match_reporting import WentFirstView
+from utils.database import save_pairing
 
 logger = logging.getLogger("discord_bot")
 
@@ -47,12 +48,13 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
         max_length=200,
     )
 
-    def __init__(self, challenger, opponent, lfg_channel, bot):
+    def __init__(self, challenger, opponent, lfg_channel, bot, guild_id=None):
         super().__init__()
         self.challenger = challenger
         self.opponent = opponent
         self.lfg_channel = lfg_channel
         self.bot = bot
+        self.guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -66,6 +68,7 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
             challenger_global,
             self.lfg_channel,
             challenger_deck_url=url,
+            guild_id=self.guild_id,
         )
 
         try:
@@ -140,12 +143,14 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         challenger_global: str,
         channel=None,
         challenger_deck_url: str = None,
+        guild_id: int = None,
     ):
         super().__init__()
         self.challenger_id = challenger_id
         self.challenger_global = challenger_global
         self.channel = channel
         self.challenger_deck_url = challenger_deck_url
+        self.guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -168,6 +173,16 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
 
         # Record match start time when challenge is accepted
         match_start_time = datetime.datetime.now()
+
+        # Save pairing to database for validation during match reporting
+        if self.guild_id:
+            save_pairing(
+                guild_id=self.guild_id,
+                player1_id=self.challenger_id,
+                player2_id=interaction.user.id,
+                player1_deck_url=self.challenger_deck_url,
+                player2_deck_url=accepter_deck_url,
+            )
 
         # Randomly select which player gets the report buttons
         # Both challenger and accepter can have deck URLs
@@ -219,6 +234,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
             opponent_deck_url=other_deck_url,
             opponent_user=other_user,
             reporter_deck_text=reporter_deck_text,
+            guild_id=self.guild_id,
         )
 
         # Send "Did you go first?" question to the selected reporter
@@ -299,12 +315,14 @@ class ChallengeButtons(discord.ui.View):
         challenger_global: str,
         channel=None,
         challenger_deck_url: str = None,
+        guild_id: int = None,
     ):
         super().__init__(timeout=300)  # 5 minute timeout
         self.challenger_id = challenger_id
         self.challenger_global = challenger_global
         self.channel = channel
         self.challenger_deck_url = challenger_deck_url
+        self.guild_id = guild_id
 
     @discord.ui.button(label="Accept Challenge", style=discord.ButtonStyle.success)
     async def accept_button(
@@ -316,6 +334,7 @@ class ChallengeButtons(discord.ui.View):
             challenger_global=self.challenger_global,
             channel=self.channel,
             challenger_deck_url=self.challenger_deck_url,
+            guild_id=self.guild_id,
         )
         await interaction.response.send_modal(modal)
         await interaction.message.edit(view=None)

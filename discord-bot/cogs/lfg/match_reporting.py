@@ -423,18 +423,15 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         except Exception:
             pass
 
-        # Get guild_id for pairing validation
-        guild_id = original_interaction.guild.id if original_interaction.guild else None
-
         # Get opponent from database pairing
-        if not guild_id:
+        if not view.guild_id:
             await interaction.response.send_message(
-                "This command must be used in a server.",
+                "Guild ID not available. Please try again.",
                 ephemeral=True,
             )
             return
 
-        opponent_id = get_opponent_from_pairing(guild_id, original_interaction.user.id)
+        opponent_id = get_opponent_from_pairing(view.guild_id, original_interaction.user.id)
         if not opponent_id:
             await interaction.response.send_message(
                 "No active pairing found. You can only report matches against your paired opponent.",
@@ -481,7 +478,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             "reporter_deck_url": view.reporter_deck_url,
             "opponent_deck_url": view.opponent_deck_url,
             "first_player": view.first_player,
-            "guild_id": guild_id,
+            "guild_id": view.guild_id,
         }
 
         # Send confirmation to opponent
@@ -510,7 +507,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
 
             # Check if opponent has DM-disabled role
             opponent_has_dm_issue = False
-            guild = original_interaction.guild
+            guild = view.bot.get_guild(view.guild_id) if view.guild_id else None
             if guild:
                 role = guild.get_role(config.DM_DISABLED_ROLE_ID)
                 member = guild.get_member(opponent_id)
@@ -618,18 +615,15 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         except Exception:
             pass
 
-        # Get guild_id for pairing validation
-        guild_id = original_interaction.guild.id if original_interaction.guild else None
-
         # Get opponent from database pairing
-        if not guild_id:
+        if not view.guild_id:
             await interaction.response.send_message(
-                "This command must be used in a server.",
+                "Guild ID not available. Please try again.",
                 ephemeral=True,
             )
             return
 
-        opponent_id = get_opponent_from_pairing(guild_id, original_interaction.user.id)
+        opponent_id = get_opponent_from_pairing(view.guild_id, original_interaction.user.id)
         if not opponent_id:
             await interaction.response.send_message(
                 "No active pairing found. You can only report matches against your paired opponent.",
@@ -676,7 +670,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             "reporter_deck_url": view.reporter_deck_url,
             "opponent_deck_url": view.opponent_deck_url,
             "first_player": view.first_player,
-            "guild_id": guild_id,
+            "guild_id": view.guild_id,
         }
 
         # Send confirmation to opponent
@@ -705,7 +699,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
 
             # Check if opponent has DM-disabled role
             opponent_has_dm_issue = False
-            guild = original_interaction.guild
+            guild = view.bot.get_guild(view.guild_id) if view.guild_id else None
             if guild:
                 role = guild.get_role(config.DM_DISABLED_ROLE_ID)
                 member = guild.get_member(opponent_id)
@@ -977,6 +971,7 @@ class WentFirstView(discord.ui.View):
         opponent_deck_url=None,
         opponent_user=None,
         reporter_deck_text: str = "",
+        guild_id: int = None,
     ):
         super().__init__(timeout=None)
         self.match_id = match_id
@@ -991,6 +986,7 @@ class WentFirstView(discord.ui.View):
         self.opponent_deck_url = opponent_deck_url
         self.opponent_user = opponent_user
         self.reporter_deck_text = reporter_deck_text
+        self.guild_id = guild_id
 
     @discord.ui.button(
         label="Yes, I went first",
@@ -1035,6 +1031,7 @@ class WentFirstView(discord.ui.View):
             reporter_deck_url=self.reporter_deck_url,
             opponent_deck_url=self.opponent_deck_url,
             first_player=first_player,
+            guild_id=self.guild_id,
         )
 
         # Send the report buttons
@@ -1066,6 +1063,7 @@ class LFGReportButtons(discord.ui.View):
         reporter_deck_url=None,
         opponent_deck_url=None,
         first_player: str = "n",
+        guild_id: int = None,
     ):
         super().__init__(timeout=None)
         self.match_id = match_id
@@ -1078,6 +1076,7 @@ class LFGReportButtons(discord.ui.View):
         self.bot = bot
         self.channel = channel
         self.first_player = first_player
+        self.guild_id = guild_id
         # Track when the match started for automatic match time calculation
         self.match_start_time = match_start_time or datetime.datetime.now()
 
@@ -1102,18 +1101,15 @@ class LFGReportButtons(discord.ui.View):
         except Exception:
             pass
 
-        # Get guild_id for pairing validation
-        guild_id = interaction.guild.id if interaction.guild else None
-
         # Get opponent from database pairing
-        if not guild_id:
+        if not self.guild_id:
             await interaction.response.send_message(
-                "This command must be used in a server.",
+                "Guild ID not available. Please try again.",
                 ephemeral=True,
             )
             return
 
-        opponent_id = get_opponent_from_pairing(guild_id, interaction.user.id)
+        opponent_id = get_opponent_from_pairing(self.guild_id, interaction.user.id)
         if not opponent_id:
             await interaction.response.send_message(
                 "No active pairing found. You can only report matches against your paired opponent.",
@@ -1160,7 +1156,7 @@ class LFGReportButtons(discord.ui.View):
             "reporter_deck_url": self.reporter_deck_url,  # Reporter's deck URL
             "opponent_deck_url": self.opponent_deck_url,  # Opponent's deck URL
             "first_player": self.first_player,  # Did reporter go first
-            "guild_id": guild_id,  # Store guild_id for later use
+            "guild_id": self.guild_id,  # Store guild_id for later use
         }
 
         # Send confirmation to opponent
@@ -1341,18 +1337,15 @@ class LFGReportButtons(discord.ui.View):
         except Exception:
             pass
 
-        # Get guild_id for pairing validation
-        guild_id = interaction.guild.id if interaction.guild else None
-
         # Get opponent from database pairing
-        if not guild_id:
+        if not self.guild_id:
             await interaction.response.send_message(
-                "This command must be used in a server.",
+                "Guild ID not available. Please try again.",
                 ephemeral=True,
             )
             return
 
-        opponent_id = get_opponent_from_pairing(guild_id, interaction.user.id)
+        opponent_id = get_opponent_from_pairing(self.guild_id, interaction.user.id)
         if not opponent_id:
             await interaction.response.send_message(
                 "No active pairing found. You can only report matches against your paired opponent.",
@@ -1399,7 +1392,7 @@ class LFGReportButtons(discord.ui.View):
             "reporter_deck_url": self.reporter_deck_url,  # Reporter's deck URL
             "opponent_deck_url": self.opponent_deck_url,  # Opponent's deck URL
             "first_player": self.first_player,  # Did reporter go first
-            "guild_id": guild_id,  # Store guild_id for later use
+            "guild_id": self.guild_id,  # Store guild_id for later use
         }
 
         # Send confirmation to opponent

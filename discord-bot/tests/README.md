@@ -1,45 +1,91 @@
-# Tests Directory
+# LFG System Tests
 
-This directory contains test scripts for the Summit Discord Bot.
+Comprehensive test suite for the Looking For Game (LFG) queue and matching system.
+
+## Running Tests
+
+### All tests
+```bash
+pytest tests/ -v
+```
+
+### Specific test file
+```bash
+pytest tests/test_lfg_queue.py -v
+pytest tests/test_lfg_helpers.py -v
+pytest tests/test_lfg_flow.py -v
+pytest tests/test_match_reports.py -v
+```
+
+### Specific test class
+```bash
+pytest tests/test_lfg_queue.py::TestLFGQueueBasics -v
+```
+
+### With coverage
+```bash
+pytest tests/ --cov=cogs.lfg --cov=utils --cov-report=html
+```
 
 ## Test Files
 
-### `test_match_reports.py`
+### conftest.py
+Shared pytest fixtures:
+- `mock_user`, `mock_user_2` - Mock Discord Users
+- `mock_guild`, `mock_channel` - Mock Discord objects
+- `mock_interaction`, `mock_bot`, `mock_ctx` - Mock Discord contexts
+- `setup_test_databases` - Auto database setup/cleanup
 
-Tests for the match reporting system. These tests run in the GitHub Actions pipeline and will **block deployment** if they fail.
+### test_lfg_queue.py (25+ tests)
+Queue operations and matching:
+- TestLFGQueueBasics - Add/remove users, duplicates, deck URLs
+- TestQueueExpiration - Expire entries, validate timeframes (5-120 min)
+- TestMatchingLogic - Two-user matching, empty queue handling
+- TestConcurrentAccess - Thread-safe operations with locks
+- TestQueueState - Pending reports, processed matches tracking
 
-**What it tests:**
+### test_lfg_helpers.py (23+ tests)
+URL scrubbing utilities:
+- TestURLScrubbing - Scrub HTTP/HTTPS URLs, preserve formatting
+- TestURLPattern - URL regex patterns
+- TestScrubIntegration - Integration with Discord messages
+- TestHelperEdgeCases - Long messages, unicode, special chars
 
-- `winner_report` function - correct parameters and database insertion
-- `losser_report` function - correct parameters and database insertion
-- `solo_match_report` function - correct parameters and database insertion
-- Database schema integrity
-- Function signatures (parameter count validation)
+### test_lfg_flow.py (20+ tests)
+End-to-end flows:
+- TestLFGMatchFlow - Queue → Match → Report
+- TestQueueCleanupFlow - Expiration and cleanup
+- TestURLHandlingInFlow - URL preservation and scrubbing
+- TestReportingFlow - Reporter selection, confirmation
+- TestStateReset - State isolation between tests
 
-**Running locally:**
+### test_match_reports.py
+Match reporting database tests (existing):
+- Winner/loser reports
+- Database schema validation
+- ELO updates
+
+## Summary
+
+Total tests: 70+
+
+Coverage areas:
+- Queue operations (15 tests)
+- Matching logic (4 tests)
+- URL handling (23 tests)
+- Integration flows (20 tests)
+- State management (12 tests)
+- Database operations (existing)
+
+## Running
 
 ```bash
-cd discord-bot
-pip install pytest pytest-asyncio
-python -m pytest tests/test_match_reports.py -v
+# All tests
+pytest tests/ -v
+
+# With coverage
+pytest tests/ --cov=cogs.lfg --cov=utils
+
+# Stop on first failure
+pytest tests/ -x
 ```
-
-## CI/CD Integration
-
-Tests run automatically on every push to `main` branch via GitHub Actions.
-
-- ✅ Tests pass → Deployment proceeds
-- ❌ Tests fail → Deployment blocked
-
-## Adding New Tests
-
-1. Create a new test file in this directory (e.g., `test_feature.py`)
-2. Use pytest conventions (`test_` prefix for functions)
-3. Add the test file to the GitHub Actions workflow if needed
-
-## Notes
-
-- Tests use mock data and don't require a live bot connection
-- Database connections use temporary test databases
-- Tests are standalone and can be run independently
-- No Discord API credentials needed for these tests

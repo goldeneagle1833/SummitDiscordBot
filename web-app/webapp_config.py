@@ -21,6 +21,7 @@ ALL_CARDS_PATH = BASE_DIR / "curiosa-io-tools" / "All_Cards_Array.json"
 ELO_DB_PATH = BOT_DIR / "elo.db"
 MATCH_RECORDS_DB_PATH = BOT_DIR / "match_records.db"
 FART_SCORES_DB_PATH = BOT_DIR / "fart_scores.db"
+COMMUNITY_DB_PATH = BOT_DIR / "community.db"
 
 # Flask configuration
 # SECURITY: SECRET_KEY must be set in production via environment variable

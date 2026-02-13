@@ -77,6 +77,46 @@
         border-radius: 8px;
         margin-bottom: 1rem;
       }
+      .state-badge {
+        display: inline-block;
+        background: rgba(255, 215, 0, 0.15);
+        color: #ffd700;
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 0.2rem 0.6rem;
+        border-radius: 9999px;
+        margin-bottom: 0.5rem;
+      }
+      .filter-input {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 8px;
+        color: #fff;
+        padding: 0.6rem 1rem;
+        font-size: 0.95rem;
+        width: 100%;
+        max-width: 300px;
+        margin-bottom: 1.5rem;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      .filter-input:focus {
+        border-color: rgba(255, 215, 0, 0.5);
+      }
+      .filter-input::placeholder {
+        color: rgba(255, 255, 255, 0.4);
+      }
+      .no-results {
+        color: rgba(255, 255, 255, 0.5);
+        font-style: italic;
+        padding: 1rem;
+      }
+      .empty-state {
+        color: rgba(255, 255, 255, 0.4);
+        font-style: italic;
+        padding: 1.5rem;
+        text-align: center;
+      }
     </style>
   </head>
   <body>
@@ -94,7 +134,6 @@
         <!-- YouTube Channels Section -->
         <h2 class="section-title">YouTube Channels</h2>
         <div class="cards-grid" id="youtube-channels">
-          <!-- Populated by JS -->
           <div class="link-card youtube-card">
             <h3>Loading...</h3>
             <p>Fetching YouTube channels...</p>
@@ -103,56 +142,59 @@
 
         <!-- Discord Servers Section -->
         <h2 class="section-title">Discord Servers</h2>
+        {% if discord_servers %}
+        <input
+          type="text"
+          class="filter-input"
+          id="state-filter"
+          placeholder="Filter by state..."
+          autocomplete="off" />
         <div class="cards-grid" id="discord-servers">
-          <!-- TODO: Add Discord server invites -->
-          <div class="link-card">
-            <h3>Sorcerers Summit</h3>
-            <p>
-              The official Summit Discord for competitive play and community
-              events.
-            </p>
-            <a href="#" target="_blank" rel="noopener noreferrer">
+          {% for server in discord_servers %}
+          <div class="link-card discord-card" data-state="{{ server.state }}">
+            <span class="state-badge">{{ server.state }}</span>
+            <h3>{{ server.name }}</h3>
+            {% if server.description %}
+            <p>{{ server.description }}</p>
+            {% endif %}
+            <a
+              href="{{ server.invite_url }}"
+              target="_blank"
+              rel="noopener noreferrer">
               Join Server &rarr;
             </a>
           </div>
-          <div class="link-card">
-            <h3>Coming Soon</h3>
-            <p>More Discord communities will be added here.</p>
-          </div>
+          {% endfor %}
         </div>
+        <p class="no-results" id="discord-no-results" style="display: none">
+          No servers match your filter.
+        </p>
+        {% else %}
+        <p class="empty-state">No Discord servers added yet.</p>
+        {% endif %}
 
         <!-- Websites Section -->
-        <h2 class="section-title">Websites & Resources</h2>
+        <h2 class="section-title">Websites &amp; Resources</h2>
+        {% if websites %}
         <div class="cards-grid" id="websites">
-          <!-- TODO: Add website links -->
+          {% for site in websites %}
           <div class="link-card">
-            <h3>Curiosa</h3>
-            <p>
-              Official deck builder and card database for Sorcery: Contested
-              Realm.
-            </p>
+            <h3>{{ site.name }}</h3>
+            {% if site.description %}
+            <p>{{ site.description }}</p>
+            {% endif %}
             <a
-              href="https://curiosa.io"
+              href="{{ site.url }}"
               target="_blank"
               rel="noopener noreferrer">
               Visit Site &rarr;
             </a>
           </div>
-          <div class="link-card">
-            <h3>Sorcery TCG</h3>
-            <p>The official Sorcery: Contested Realm website.</p>
-            <a
-              href="https://sorcerytcg.com"
-              target="_blank"
-              rel="noopener noreferrer">
-              Visit Site &rarr;
-            </a>
-          </div>
-          <div class="link-card">
-            <h3>Coming Soon</h3>
-            <p>More community resources will be added here.</p>
-          </div>
+          {% endfor %}
         </div>
+        {% else %}
+        <p class="empty-state">No websites added yet.</p>
+        {% endif %}
       </div>
     </main>
 
@@ -167,8 +209,7 @@
 
           container.innerHTML = "";
 
-          const channelOrder = ["goldeneagle", "cj"];
-          for (const key of channelOrder) {
+          for (const key of Object.keys(videos)) {
             const video = videos[key];
             if (!video) continue;
 
@@ -201,6 +242,29 @@
       }
 
       loadYouTubeChannels();
+
+      // State filter for Discord servers
+      const stateFilter = document.getElementById("state-filter");
+      if (stateFilter) {
+        stateFilter.addEventListener("input", function () {
+          const query = this.value.toLowerCase().trim();
+          const cards = document.querySelectorAll(".discord-card");
+          const noResults = document.getElementById("discord-no-results");
+          let visible = 0;
+
+          cards.forEach(function (card) {
+            const state = card.getAttribute("data-state").toLowerCase();
+            if (!query || state.includes(query)) {
+              card.style.display = "";
+              visible++;
+            } else {
+              card.style.display = "none";
+            }
+          });
+
+          noResults.style.display = visible === 0 ? "" : "none";
+        });
+      }
     </script>
 
     <footer>

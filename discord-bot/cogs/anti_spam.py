@@ -165,9 +165,9 @@ class AntiSpamCog(commands.Cog):
             
             # Get owner ID from config
             try:
-                from utils.config import LFGConfig
-                owner_id = LFGConfig.OWNER_ID
-            except:
+                import config
+                owner_id = config.OWNER_ID
+            except Exception:
                 owner_id = None
             
             # Send alert to channel with owner tag

@@ -6,7 +6,9 @@ import json
 import logging
 import random
 
+import config
 from cogs.lfg import LFGReportButtons
+from utils.text import find_best_command_match
 
 logger = logging.getLogger("discord_bot")
 
@@ -14,26 +16,6 @@ logger = logging.getLogger("discord_bot")
 class EloCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
-    def levenshtein_distance(self, s1, s2):
-        """Calculate the Levenshtein distance between two strings"""
-        if len(s1) < len(s2):
-            return self.levenshtein_distance(s2, s1)
-
-        if len(s2) == 0:
-            return len(s1)
-
-        previous_row = range(len(s2) + 1)
-        for i, c1 in enumerate(s1):
-            current_row = [i + 1]
-            for j, c2 in enumerate(s2):
-                insertions = previous_row[j + 1] + 1
-                deletions = current_row[j] + 1
-                substitutions = previous_row[j] + (c1 != c2)
-                current_row.append(min(insertions, deletions, substitutions))
-            previous_row = current_row
-
-        return previous_row[-1]
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -138,20 +120,6 @@ class EloCog(commands.Cog):
             "season": "!event_status",
         }
 
-        # Check for exact matches
-        if failed_command in command_suggestions:
-            suggestion = command_suggestions[failed_command]
-            await ctx.send(f"{ctx.author.mention}, did you mean `{suggestion}`?")
-            return
-
-        # Check for partial matches (fuzzy matching)
-        for key, suggestion in command_suggestions.items():
-            if key in failed_command or failed_command in key:
-                await ctx.send(f"{ctx.author.mention}, did you mean `{suggestion}`?")
-                return
-
-        # Check for spelling mistakes using Levenshtein distance
-        # Get all actual command names
         actual_commands = {
             "rank": "!rank",
             "leaderboard": "!leaderboard",
@@ -162,21 +130,9 @@ class EloCog(commands.Cog):
             "event_status": "!event_status",
         }
 
-        # Find closest match based on edit distance
-        best_match = None
-        min_distance = float("inf")
-
-        for command_name in actual_commands.keys():
-            distance = self.levenshtein_distance(failed_command, command_name)
-            # Consider it a typo if distance is 3 or less and length is similar
-            if distance <= 3 and distance < min_distance:
-                # Also check if the length difference isn't too large
-                if abs(len(failed_command) - len(command_name)) <= 3:
-                    min_distance = distance
-                    best_match = actual_commands[command_name]
-
-        if best_match and min_distance <= 3:
-            await ctx.send(f"{ctx.author.mention}, did you mean `{best_match}`?")
+        suggestion = find_best_command_match(failed_command, command_suggestions, actual_commands)
+        if suggestion:
+            await ctx.send(f"{ctx.author.mention}, did you mean `{suggestion}`?")
             return
 
     @commands.command()
@@ -292,7 +248,7 @@ class EloCog(commands.Cog):
     async def masters_bracket(self, ctx):
         """Check the top 16 Elo rankings for masters bracket members only."""
         # Role IDs to filter by
-        masters_role_ids = [1455669646370799667, 1445433610609102990]
+        masters_role_ids = config.MASTERS_ROLE_IDS
 
         conn = sqlite3.connect("elo.db")
         cur = conn.cursor()

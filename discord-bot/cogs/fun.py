@@ -8,6 +8,7 @@ from random import randrange
 from openai import OpenAI
 
 import config
+from utils.text import find_best_command_match
 
 # EST timezone for daily action resets
 EST = ZoneInfo("America/New_York")
@@ -103,27 +104,7 @@ class FunCog(commands.Cog):
         self.fart_channel_id = config.FART_CHANNEL_ID
         self.guild_id = config.GUILD_ID
         self.leader_role_id = config.LEADER_ROLE_ID
-        self.fun_channel_id = 1402265039951368273
-
-    def levenshtein_distance(self, s1, s2):
-        """Calculate the Levenshtein distance between two strings"""
-        if len(s1) < len(s2):
-            return self.levenshtein_distance(s2, s1)
-
-        if len(s2) == 0:
-            return len(s1)
-
-        previous_row = range(len(s2) + 1)
-        for i, c1 in enumerate(s1):
-            current_row = [i + 1]
-            for j, c2 in enumerate(s2):
-                insertions = previous_row[j + 1] + 1
-                deletions = current_row[j] + 1
-                substitutions = previous_row[j] + (c1 != c2)
-                current_row.append(min(insertions, deletions, substitutions))
-            previous_row = current_row
-
-        return previous_row[-1]
+        self.fun_channel_id = config.FART_CHANNEL_ID
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -272,24 +253,6 @@ class FunCog(commands.Cog):
             "riches": "!wealth",
         }
 
-        # Check for exact matches
-        if failed_command in command_suggestions:
-            suggestion = command_suggestions[failed_command]
-            await ctx.send(
-                f"{ctx.author.mention}, did you mean `{suggestion}`? Type `!helpfart` to see all available commands."
-            )
-            return
-
-        # Check for partial matches (fuzzy matching)
-        for key, suggestion in command_suggestions.items():
-            if key in failed_command or failed_command in key:
-                await ctx.send(
-                    f"{ctx.author.mention}, did you mean `{suggestion}`? Type `!helpfart` to see all available commands."
-                )
-                return
-
-        # Check for spelling mistakes using Levenshtein distance
-        # Get all actual command names (the values from command_suggestions)
         actual_commands = {
             "fart": "!fart",
             "helpfart": "!helpfart",
@@ -305,22 +268,10 @@ class FunCog(commands.Cog):
             "wealth": "!wealth",
         }
 
-        # Find closest match based on edit distance
-        best_match = None
-        min_distance = float("inf")
-
-        for command_name in actual_commands.keys():
-            distance = self.levenshtein_distance(failed_command, command_name)
-            # Consider it a typo if distance is 3 or less and length is similar
-            if distance <= 3 and distance < min_distance:
-                # Also check if the length difference isn't too large
-                if abs(len(failed_command) - len(command_name)) <= 3:
-                    min_distance = distance
-                    best_match = actual_commands[command_name]
-
-        if best_match and min_distance <= 3:
+        suggestion = find_best_command_match(failed_command, command_suggestions, actual_commands)
+        if suggestion:
             await ctx.send(
-                f"{ctx.author.mention}, did you mean `{best_match}`? Type `!helpfart` to see all available commands."
+                f"{ctx.author.mention}, did you mean `{suggestion}`? Type `!helpfart` to see all available commands."
             )
             return
 

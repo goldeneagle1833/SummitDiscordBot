@@ -5,8 +5,10 @@ from datetime import datetime, timedelta
 from typing import Optional
 import requests
 
-# YouTube channel configuration
-YOUTUBE_CHANNELS = {
+from repositories.community import CommunityRepository
+
+# Hardcoded fallback channels (used when DB is empty or unavailable)
+_FALLBACK_CHANNELS = {
     "goldeneagle": {
         "name": "GoldenEagle",
         "channel_id": "UCzWglR4ytbyq0aAfWrNaMHw",
@@ -23,6 +25,26 @@ YOUTUBE_CHANNELS = {
 _video_cache: dict = {}
 _cache_expiry: Optional[datetime] = None
 CACHE_DURATION_MINUTES = 30
+
+
+def _load_channels() -> dict:
+    """Load YouTube channels from the database, falling back to hardcoded defaults."""
+    try:
+        repo = CommunityRepository()
+        db_channels = repo.get_youtube_channels()
+        if db_channels:
+            # Convert DB rows to the same dict format, keyed by lowercased name
+            return {
+                ch["name"].lower().replace(" ", ""): {
+                    "name": ch["name"],
+                    "channel_id": ch["channel_id"],
+                    "channel_url": ch["channel_url"],
+                }
+                for ch in db_channels
+            }
+    except Exception:
+        pass
+    return _FALLBACK_CHANNELS
 
 
 def get_youtube_rss_url(channel_id: str) -> str:
@@ -78,12 +100,12 @@ def parse_youtube_rss(xml_content: str) -> dict | None:
         return None
 
 
-def fetch_latest_video(channel_key: str) -> dict | None:
+def fetch_latest_video(channel_key: str, channels: dict) -> dict | None:
     """Fetch the latest video from a YouTube channel."""
-    if channel_key not in YOUTUBE_CHANNELS:
+    if channel_key not in channels:
         return None
 
-    channel = YOUTUBE_CHANNELS[channel_key]
+    channel = channels[channel_key]
     rss_url = get_youtube_rss_url(channel["channel_id"])
 
     try:
@@ -110,10 +132,13 @@ def get_latest_videos() -> dict:
     if _cache_expiry and now < _cache_expiry and _video_cache:
         return _video_cache
 
+    # Load channels from DB (or fallback)
+    channels = _load_channels()
+
     # Fetch fresh data
     videos = {}
-    for channel_key in YOUTUBE_CHANNELS:
-        video = fetch_latest_video(channel_key)
+    for channel_key in channels:
+        video = fetch_latest_video(channel_key, channels)
         if video:
             videos[channel_key] = video
 

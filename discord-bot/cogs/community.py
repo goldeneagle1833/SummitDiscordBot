@@ -1,0 +1,147 @@
+"""Community management cog - admin commands to manage Discord servers, YouTube channels, and websites."""
+
+import discord
+from discord.ext import commands
+import logging
+
+from repositories.community_repo import (
+    create_community_tables,
+    add_discord_server,
+    add_youtube_channel,
+    add_website,
+    remove_entry,
+    get_all_discord_servers,
+    get_all_youtube_channels,
+    get_all_websites,
+)
+
+logger = logging.getLogger("discord_bot")
+
+
+class CommunityCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        create_community_tables()
+        logger.info("CommunityCog initialized")
+
+    @commands.command(name="add_discord")
+    @commands.has_permissions(administrator=True)
+    async def add_discord_cmd(self, ctx, *, args: str):
+        """[ADMIN] Add a Discord server. Usage: !add_discord Name | invite_url | state | description"""
+        parts = [p.strip() for p in args.split("|")]
+        if len(parts) < 3:
+            await ctx.send(
+                "Usage: `!add_discord Name | invite_url | state | description`\n"
+                "Example: `!add_discord SoCal Sorcery | https://discord.gg/abc123 | CA | Southern California community`"
+            )
+            return
+
+        name = parts[0]
+        invite_url = parts[1]
+        state = parts[2]
+        description = parts[3] if len(parts) > 3 else ""
+
+        entry_id = add_discord_server(name, invite_url, state, description, added_by=ctx.author.id)
+        await ctx.send(f"Added Discord server **{name}** (ID: {entry_id}, State: {state})")
+
+    @commands.command(name="add_youtube")
+    @commands.has_permissions(administrator=True)
+    async def add_youtube_cmd(self, ctx, *, args: str):
+        """[ADMIN] Add a YouTube channel. Usage: !add_youtube Name | channel_id | channel_url"""
+        parts = [p.strip() for p in args.split("|")]
+        if len(parts) < 3:
+            await ctx.send(
+                "Usage: `!add_youtube Name | channel_id | channel_url`\n"
+                "Example: `!add_youtube GoldenEagle | UCzWglR4ytbyq0aAfWrNaMHw | https://www.youtube.com/channel/UCzWglR4ytbyq0aAfWrNaMHw`"
+            )
+            return
+
+        name = parts[0]
+        channel_id = parts[1]
+        channel_url = parts[2]
+
+        entry_id = add_youtube_channel(name, channel_id, channel_url, added_by=ctx.author.id)
+        await ctx.send(f"Added YouTube channel **{name}** (ID: {entry_id})")
+
+    @commands.command(name="add_website")
+    @commands.has_permissions(administrator=True)
+    async def add_website_cmd(self, ctx, *, args: str):
+        """[ADMIN] Add a website. Usage: !add_website Name | url | description"""
+        parts = [p.strip() for p in args.split("|")]
+        if len(parts) < 2:
+            await ctx.send(
+                "Usage: `!add_website Name | url | description`\n"
+                "Example: `!add_website Curiosa | https://curiosa.io | Official deck builder`"
+            )
+            return
+
+        name = parts[0]
+        url = parts[1]
+        description = parts[2] if len(parts) > 2 else ""
+
+        entry_id = add_website(name, url, description, added_by=ctx.author.id)
+        await ctx.send(f"Added website **{name}** (ID: {entry_id})")
+
+    @commands.command(name="remove_community")
+    @commands.has_permissions(administrator=True)
+    async def remove_community_cmd(self, ctx, table: str, entry_id: int):
+        """[ADMIN] Remove a community entry. Usage: !remove_community discord|youtube|website <id>"""
+        table_map = {
+            "discord": "discord_servers",
+            "youtube": "youtube_channels",
+            "website": "websites",
+        }
+
+        table_name = table_map.get(table.lower())
+        if not table_name:
+            await ctx.send("Invalid type. Use: `discord`, `youtube`, or `website`")
+            return
+
+        try:
+            deleted = remove_entry(table_name, entry_id)
+        except ValueError as e:
+            await ctx.send(str(e))
+            return
+
+        if deleted:
+            await ctx.send(f"Removed {table} entry with ID {entry_id}.")
+        else:
+            await ctx.send(f"No {table} entry found with ID {entry_id}.")
+
+    @commands.command(name="list_community")
+    @commands.has_permissions(administrator=True)
+    async def list_community_cmd(self, ctx):
+        """[ADMIN] List all community entries with IDs."""
+        servers = get_all_discord_servers()
+        channels = get_all_youtube_channels()
+        sites = get_all_websites()
+
+        embed = discord.Embed(title="Community Entries", color=discord.Color.gold())
+
+        # Discord servers
+        if servers:
+            lines = [f"**{s['id']}** - {s['name']} ({s['state']})" for s in servers]
+            embed.add_field(name="Discord Servers", value="\n".join(lines), inline=False)
+        else:
+            embed.add_field(name="Discord Servers", value="None", inline=False)
+
+        # YouTube channels
+        if channels:
+            lines = [f"**{c['id']}** - {c['name']}" for c in channels]
+            embed.add_field(name="YouTube Channels", value="\n".join(lines), inline=False)
+        else:
+            embed.add_field(name="YouTube Channels", value="None", inline=False)
+
+        # Websites
+        if sites:
+            lines = [f"**{s['id']}** - {s['name']}" for s in sites]
+            embed.add_field(name="Websites", value="\n".join(lines), inline=False)
+        else:
+            embed.add_field(name="Websites", value="None", inline=False)
+
+        embed.set_footer(text="Use !remove_community <discord|youtube|website> <id> to remove")
+        await ctx.send(embed=embed)
+
+
+async def setup(bot):
+    await bot.add_cog(CommunityCog(bot))

@@ -14,6 +14,9 @@ from cogs.anti_spam import AntiSpamCog
 from cogs.purchase_tracking import PurchaseTrackingCog
 from cogs.rules_assistant import RulesAssistantCog
 from cogs.streaming import StreamingCog
+from cogs.community import CommunityCog
+
+import config
 
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
@@ -68,8 +71,7 @@ async def on_ready():
 
 @bot.event
 async def on_member_join(member):
-    welcome_channel_id = 1319120228650844202
-    channel = bot.get_channel(welcome_channel_id)
+    channel = bot.get_channel(config.WELCOME_CHANNEL_ID)
     if channel:
         embed = discord.Embed(
             title="👋 Welcome to Summit Discord!",
@@ -138,6 +140,7 @@ async def setup_cogs():
     await bot.add_cog(PurchaseTrackingCog(bot))
     await bot.add_cog(RulesAssistantCog(bot))  # SorceryAI rules assistant
     await bot.add_cog(StreamingCog(bot))  # Streaming detection for website banner
+    await bot.add_cog(CommunityCog(bot))  # Community page management
 
 
 async def main():

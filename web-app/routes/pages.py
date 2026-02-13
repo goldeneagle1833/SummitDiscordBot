@@ -8,6 +8,7 @@ from utils.auth import is_admin
 from utils.formatting import format_event_name
 from repositories.fart import FartRepository
 from repositories.events import EventRepository
+from repositories.community import CommunityRepository
 
 pages_bp = Blueprint("pages", __name__)
 
@@ -27,7 +28,12 @@ def about():
 @pages_bp.route("/community")
 def community():
     """Community links page."""
-    return render_template("pages/community.html")
+    repo = CommunityRepository()
+    return render_template(
+        "pages/community.html",
+        discord_servers=repo.get_discord_servers(),
+        websites=repo.get_websites(),
+    )
 
 
 @pages_bp.route("/help")

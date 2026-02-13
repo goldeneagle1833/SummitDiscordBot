@@ -1,0 +1,1533 @@
+import discord
+from discord.ext import commands
+import datetime
+import logging
+
+import config
+from cogs.lfg.state import pending_match_reports, processed_matches
+from cogs.lfg.helpers import scrub_urls, send_milestone_announcement
+from utils.database import (
+    winner_report,
+    losser_report,
+    update_elo_db,
+    validate_pairing,
+    mark_pairing_reported,
+)
+
+logger = logging.getLogger("discord_bot")
+
+
+class MatchReportModal(discord.ui.Modal, title="Match Report"):
+    curiosa_url = discord.ui.TextInput(
+        label="Curiosa Deck URL",
+        placeholder="Enter Your Curiosa Deck URL",
+        required=False,
+    )
+
+    first_player = discord.ui.TextInput(
+        label="Did you go first? (y/n)",
+        placeholder="Enter YES or NO",
+        required=False,
+        max_length=3,
+    )
+
+    match_time = discord.ui.TextInput(
+        label="Match time",
+        placeholder="Estimate match time in minutes (eg. 30)",
+        required=False,
+        max_length=3,
+        min_length=1,
+    )
+
+    match_comment = discord.ui.TextInput(
+        label="Notes",
+        placeholder="Anything else about the match?",
+        style=discord.TextStyle.paragraph,
+        required=False,
+    )
+
+    def __init__(
+        self, winner_id, winner_global, loser_id, loser_global, is_winner, bot
+    ):
+        super().__init__()
+        self.winner_id = winner_id
+        self.winner_global = winner_global
+        self.loser_id = loser_id
+        self.loser_global = loser_global
+        self.is_winner = is_winner
+        self.bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        interaction_user_id = interaction.user.id
+        interaction_global = (
+            interaction.user.global_name or interaction.user.display_name
+        )
+
+        curiosa_link = (
+            self.curiosa_url.value if self.curiosa_url.value else "No URL provided"
+        )
+        match_comment = self.match_comment.value if self.match_comment.value else ""
+        first_player = self.first_player.value if self.first_player.value else "n"
+        match_time = (
+            int(self.match_time.value) if self.match_time.value.isdigit() else 0
+        )
+
+        # Determine winner_went_first and loser_went_first
+        # first_player is what the reporter answered about whether THEY went first
+        reporter_went_first = "y" in str(first_player).lower()
+
+        if self.is_winner:
+            # Reporter is the winner
+            winner_went_first = "y" if reporter_went_first else "n"
+            loser_went_first = "n" if reporter_went_first else "y"
+            match_id, _, _, event_active = await winner_report(
+                interaction_user_id,
+                self.winner_id,
+                self.winner_global,
+                True,
+                self.loser_id,
+                self.loser_global,
+                first_player,
+                match_time,
+                curiosa_link,
+                match_comment,
+                interaction_user_id,
+                interaction_global,
+                winner_deck_url=curiosa_link,
+                loser_deck_url=None,
+                winner_went_first=winner_went_first,
+                loser_went_first=loser_went_first,
+            )
+        else:
+            # Reporter is the loser
+            winner_went_first = "n" if reporter_went_first else "y"
+            loser_went_first = "y" if reporter_went_first else "n"
+            match_id, _, _, event_active = await losser_report(
+                interaction_user_id,
+                self.winner_id,
+                self.winner_global,
+                False,
+                self.loser_id,
+                self.loser_global,
+                first_player,
+                match_time,
+                curiosa_link,
+                match_comment,
+                interaction_user_id,
+                interaction_global,
+                winner_deck_url=None,
+                loser_deck_url=curiosa_link,
+                winner_went_first=winner_went_first,
+                loser_went_first=loser_went_first,
+            )
+
+        elo_msg = "" if event_active else "\n*(No active event - ELO not affected)*"
+        await interaction.followup.send(
+            f"Match report submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}{elo_msg}",
+            ephemeral=True,
+        )
+
+        # Check for milestone and send announcement if needed
+        if self.bot:
+            await send_milestone_announcement(
+                self.bot, self.winner_id, self.loser_id, match_id
+            )
+
+
+class MatchConfirmationButtons(discord.ui.View):
+    """Buttons for confirming a match report from opponent"""
+
+    def __init__(
+        self,
+        reporter_id: int,
+        opponent_id: int,
+        winner_id: int,
+        winner_global: str,
+        loser_id: int,
+        loser_global: str,
+        is_winner: bool,
+        bot=None,
+        channel=None,
+        match_start_time=None,
+        curiosa_link: str = "No URL provided",
+        first_player: str = "n",
+        match_time: int = 0,
+        match_comment: str = "",
+        reporter_global: str = None,
+        opponent_global: str = None,
+        winner_deck_url: str = None,
+        loser_deck_url: str = None,
+    ):
+        super().__init__(timeout=86400)  # 24 hour timeout - plenty of time to confirm
+        self.reporter_id = reporter_id
+        self.reporter_global = reporter_global
+        self.opponent_id = opponent_id
+        self.opponent_global = opponent_global
+        self.winner_id = winner_id
+        self.winner_global = winner_global
+        self.loser_id = loser_id
+        self.loser_global = loser_global
+        self.is_winner = is_winner
+        self.bot = bot
+        self.channel = channel
+        self.match_start_time = match_start_time
+        self.curiosa_link = curiosa_link
+        self.first_player = first_player
+        self.match_time = match_time
+        self.match_comment = match_comment
+        self.winner_deck_url = winner_deck_url
+        self.loser_deck_url = loser_deck_url
+
+    @discord.ui.button(
+        label="Confirm",
+        style=discord.ButtonStyle.success,
+        custom_id="confirm_match_report",
+    )
+    async def confirm_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        # Check if confirmer needs to provide a deck URL
+        # is_winner=True means confirmer won (their deck is winner_deck_url)
+        # is_winner=False means confirmer lost (their deck is loser_deck_url)
+        confirmer_deck_url = (
+            self.winner_deck_url if self.is_winner else self.loser_deck_url
+        )
+        if not confirmer_deck_url:
+            # Show modal to collect deck URL before proceeding
+            modal = ConfirmerDeckURLModal(self, interaction)
+            await interaction.response.send_modal(modal)
+            return
+
+        # Disable button immediately to prevent double-clicks
+        button.disabled = True
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
+        # Check for duplicate match (already processed between these two players recently)
+        match_key = frozenset({self.winner_id, self.loser_id})
+        now = datetime.datetime.now()
+        if match_key in processed_matches:
+            last_report_time = processed_matches[match_key]
+            # If a match between these players was reported in the last 5 minutes, reject
+            if (now - last_report_time).total_seconds() < 300:
+                await interaction.response.send_message(
+                    "This match has already been recorded. Duplicate report prevented.",
+                    ephemeral=True,
+                )
+                await interaction.message.edit(
+                    content="Match already recorded (duplicate prevented).",
+                    view=None,
+                )
+                return
+
+        # Mark this match as processed
+        processed_matches[match_key] = now
+
+        await interaction.response.defer()
+
+        # Use provided match_time, or calculate from start to confirmation if not provided
+        match_time = self.match_time
+        if match_time == 0 and self.match_start_time:
+            time_diff = datetime.datetime.now() - self.match_start_time
+            match_time = int(time_diff.total_seconds() / 60)  # Convert to minutes
+
+        # Use winner and loser deck URLs properly
+        winner_deck = self.winner_deck_url or "No URL provided"
+        loser_deck = self.loser_deck_url or "No URL provided"
+        combined_comment = f"Winner deck: {winner_deck} | Loser deck: {loser_deck}"
+        if self.match_comment:
+            combined_comment = f"{self.match_comment} | {combined_comment}"
+
+        # Determine winner_went_first and loser_went_first based on reporter
+        # first_player indicates if the REPORTER went first
+        # We need to translate this to winner/loser perspective
+        reporter_went_first = (
+            self.first_player and "y" in str(self.first_player).lower()
+        )
+        reporter_is_winner = self.reporter_id == self.winner_id
+
+        if reporter_is_winner:
+            # Reporter is winner
+            winner_went_first = "y" if reporter_went_first else "n"
+            loser_went_first = "n" if reporter_went_first else "y"
+        else:
+            # Reporter is loser
+            winner_went_first = "n" if reporter_went_first else "y"
+            loser_went_first = "y" if reporter_went_first else "n"
+
+        # Submit match report only ONCE (not twice)
+        # This will insert one record and update ELO for the winner
+        match_id, _, _, event_active = await winner_report(
+            self.reporter_id,  # reporter_id (who originally reported)
+            self.winner_id,
+            self.winner_global,
+            True,
+            self.loser_id,
+            self.loser_global,
+            self.first_player,
+            match_time,
+            winner_deck,  # Use winner's deck URL as primary (backward compatibility)
+            combined_comment,  # Include both decks in comment
+            self.winner_id,  # interaction_user_id
+            self.winner_global,  # interaction_global
+            winner_deck_url=self.winner_deck_url,
+            loser_deck_url=self.loser_deck_url,
+            winner_went_first=winner_went_first,
+            loser_went_first=loser_went_first,
+        )
+
+        # Update ELO for the loser as well
+        update_elo_db(self.loser_id, self.loser_global, False, self.winner_id)
+
+        elo_msg = "" if event_active else " *(No active event - ELO not affected)*"
+        # Remove the confirmation message
+        await interaction.message.edit(
+            content=f"Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.{elo_msg}",
+            view=None,
+        )
+
+        # Send confirmation to confirming user
+        await interaction.followup.send(
+            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}{elo_msg}",
+            ephemeral=True,
+        )
+
+        # Notify the reporter
+        try:
+            reporter = await self.bot.fetch_user(self.reporter_id)
+            await reporter.send(
+                f"{self.opponent_global} has confirmed your match report! Match has been recorded."
+            )
+        except discord.Forbidden:
+            # If DM fails, send to match-report channel
+            match_report_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+            if match_report_channel:
+                await match_report_channel.send(
+                    scrub_urls(
+                        f"{reporter.mention} {self.opponent_global} has confirmed your match report! Match has been recorded."
+                    )
+                )
+        except Exception:
+            pass
+
+        # Get guild_id from pending report before removing
+        pending_report = pending_match_reports.get((self.reporter_id, self.opponent_id), {})
+        guild_id = pending_report.get("guild_id")
+
+        # Remove from pending
+        pending_match_reports.pop((self.reporter_id, self.opponent_id), None)
+
+        # Mark pairing as reported in database
+        if guild_id:
+            mark_pairing_reported(guild_id, self.winner_id, self.loser_id)
+
+        # Update leaderboard in designated channel
+        lfg_cog = self.bot.get_cog("LFGCog")
+        if lfg_cog:
+            await lfg_cog.update_leaderboard()
+
+        # Check for milestone and send announcement if needed
+        await send_milestone_announcement(
+            self.bot, self.winner_id, self.loser_id, match_id
+        )
+
+    @discord.ui.button(
+        label="Dispute",
+        style=discord.ButtonStyle.danger,
+        custom_id="dispute_match_report",
+    )
+    async def dispute_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await interaction.response.send_message(
+            f"You have disputed the match report. This dispute will not log an entry.\n\n"
+            f"To submit a corrected report, use `!challenge @{self.reporter_global}` to trigger a new report.",
+            ephemeral=True,
+        )
+
+        # Remove the confirmation message
+        await interaction.message.edit(
+            content=f"Match report disputed by {self.opponent_global}. No entry was logged.\n\n"
+            f"To submit a corrected report, use `!challenge @opponent` to trigger a new report.",
+            view=None,
+        )
+
+        # Notify the reporter
+        try:
+            reporter = await self.bot.fetch_user(self.reporter_id)
+            await reporter.send(
+                f"{self.opponent_global} has disputed your match report. The dispute did not log an entry.\n\n"
+                f"To submit a corrected report, use `!challenge @{self.opponent_global}` to trigger a new report."
+            )
+        except discord.Forbidden:
+            # If DM fails, send to match-report channel
+            match_report_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+            if match_report_channel:
+                await match_report_channel.send(
+                    scrub_urls(
+                        f"{reporter.mention} {self.opponent_global} has disputed your match report. The dispute did not log an entry.\n\n"
+                        f"To submit a corrected report, use `!challenge @{self.opponent_global}` to trigger a new report."
+                    )
+                )
+        except Exception:
+            pass
+
+        # Remove from pending
+        pending_match_reports.pop((self.reporter_id, self.opponent_id), None)
+
+
+class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
+    """Modal for capturing deck URL when reporter didn't provide one at queue join"""
+
+    deck_url = discord.ui.TextInput(
+        label="Curiosa Deck URL (Optional)",
+        placeholder="Enter your deck URL or leave blank",
+        required=False,
+    )
+
+    def __init__(
+        self, view: "LFGReportButtons", interaction: discord.Interaction, is_win: bool
+    ):
+        super().__init__()
+        self.view = view
+        self.original_interaction = interaction
+        self.is_win = is_win
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # Update the reporter's deck URL
+        self.view.reporter_deck_url = (
+            self.deck_url.value.strip() if self.deck_url.value else None
+        )
+
+        # Continue with the original flow
+        if self.is_win:
+            await self._process_win_report(interaction)
+        else:
+            await self._process_loss_report(interaction)
+
+    async def _process_win_report(self, interaction: discord.Interaction):
+        """Process win report after collecting deck URL"""
+        view = self.view
+        original_interaction = self.original_interaction
+
+        # Disable buttons immediately to prevent double-clicks
+        for item in view.children:
+            item.disabled = True
+        try:
+            await original_interaction.message.edit(view=view)
+        except Exception:
+            pass
+
+        opponent_id = (
+            view.player2_id
+            if original_interaction.user.id == view.player1_id
+            else view.player1_id
+        )
+        opponent_global = (
+            view.player2_global
+            if original_interaction.user.id == view.player1_id
+            else view.player1_global
+        )
+
+        # Get guild_id for pairing validation
+        guild_id = original_interaction.guild.id if original_interaction.guild else None
+
+        # Validate that this user has an active pairing with this opponent
+        if not guild_id or not validate_pairing(guild_id, original_interaction.user.id, opponent_id):
+            await interaction.response.send_message(
+                "No active pairing found. You can only report matches against your paired opponent.",
+                ephemeral=True,
+            )
+            return
+
+        # Check if a report is already pending for this match
+        if (original_interaction.user.id, opponent_id) in pending_match_reports or (
+            opponent_id,
+            original_interaction.user.id,
+        ) in pending_match_reports:
+            await interaction.response.send_message(
+                "A report for this match is already pending confirmation.",
+                ephemeral=True,
+            )
+            return
+
+        # Store pending report with deck URLs
+        pending_match_reports[(original_interaction.user.id, opponent_id)] = {
+            "winner_id": original_interaction.user.id,
+            "winner_global": original_interaction.user.global_name
+            or original_interaction.user.display_name,
+            "loser_id": opponent_id,
+            "loser_global": opponent_global,
+            "reporter_id": original_interaction.user.id,
+            "reporter_global": original_interaction.user.global_name
+            or original_interaction.user.display_name,
+            "is_winner": True,
+            "opponent_message": None,
+            "match_start_time": view.match_start_time,
+            "reporter_deck_url": view.reporter_deck_url,
+            "opponent_deck_url": view.opponent_deck_url,
+            "first_player": view.first_player,
+            "guild_id": guild_id,
+        }
+
+        # Send confirmation to opponent
+        try:
+            opponent = await view.bot.fetch_user(opponent_id)
+
+            confirmation_view = MatchConfirmationButtons(
+                reporter_id=original_interaction.user.id,
+                reporter_global=original_interaction.user.global_name
+                or original_interaction.user.display_name,
+                opponent_id=opponent_id,
+                opponent_global=opponent_global,
+                winner_id=original_interaction.user.id,
+                winner_global=original_interaction.user.global_name
+                or original_interaction.user.display_name,
+                loser_id=opponent_id,
+                loser_global=opponent_global,
+                is_winner=False,
+                bot=view.bot,
+                channel=view.channel,
+                match_start_time=view.match_start_time,
+                first_player=view.first_player,
+                winner_deck_url=view.reporter_deck_url,
+                loser_deck_url=view.opponent_deck_url,
+            )
+
+            # Check if opponent has DM-disabled role
+            opponent_has_dm_issue = False
+            guild = original_interaction.guild
+            if guild:
+                role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+                member = guild.get_member(opponent_id)
+                if role and member and role in member.roles:
+                    opponent_has_dm_issue = True
+
+            if opponent_has_dm_issue:
+                dm_channel = view.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+                if dm_channel:
+                    await dm_channel.send(
+                        scrub_urls(
+                            f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                        ),
+                        view=confirmation_view,
+                    )
+                    await interaction.response.send_message(
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"Could not send confirmation to {opponent_global}.",
+                        ephemeral=True,
+                    )
+            else:
+                try:
+                    await opponent.send(
+                        f"**Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                        view=confirmation_view,
+                    )
+                    await interaction.response.send_message(
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                except discord.Forbidden:
+                    try:
+                        if guild:
+                            role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+                            member = guild.get_member(opponent_id)
+                            if role and member:
+                                await member.add_roles(role)
+
+                        dm_channel = view.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+                        if dm_channel:
+                            if guild:
+                                member = guild.get_member(opponent_id)
+                                if member:
+                                    await dm_channel.set_permissions(
+                                        member, read_messages=True, send_messages=True
+                                    )
+                            await dm_channel.send(
+                                scrub_urls(
+                                    f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                                ),
+                                view=confirmation_view,
+                            )
+                            await interaction.response.send_message(
+                                "Match report sent. Waiting for confirmation...",
+                                ephemeral=True,
+                            )
+                        else:
+                            await interaction.response.send_message(
+                                f"Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+                    except Exception as e:
+                        logger.error(f"Failed to handle DM failure for opponent: {e}")
+                        if not interaction.response.is_done():
+                            await interaction.response.send_message(
+                                f"Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+
+            # Remove buttons from original message
+            if original_interaction.message:
+                try:
+                    await original_interaction.message.edit(view=None)
+                except Exception:
+                    pass
+
+        except discord.Forbidden:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    ephemeral=True,
+                )
+        except Exception as e:
+            logger.error(f"Error in ReporterDeckURLModal win report: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "An error occurred while processing your match report.",
+                    ephemeral=True,
+                )
+
+    async def _process_loss_report(self, interaction: discord.Interaction):
+        """Process loss report after collecting deck URL"""
+        view = self.view
+        original_interaction = self.original_interaction
+
+        # Disable buttons immediately to prevent double-clicks
+        for item in view.children:
+            item.disabled = True
+        try:
+            await original_interaction.message.edit(view=view)
+        except Exception:
+            pass
+
+        opponent_id = (
+            view.player2_id
+            if original_interaction.user.id == view.player1_id
+            else view.player1_id
+        )
+        opponent_global = (
+            view.player2_global
+            if original_interaction.user.id == view.player1_id
+            else view.player1_global
+        )
+
+        # Get guild_id for pairing validation
+        guild_id = original_interaction.guild.id if original_interaction.guild else None
+
+        # Validate that this user has an active pairing with this opponent
+        if not guild_id or not validate_pairing(guild_id, original_interaction.user.id, opponent_id):
+            await interaction.response.send_message(
+                "No active pairing found. You can only report matches against your paired opponent.",
+                ephemeral=True,
+            )
+            return
+
+        # Check if a report is already pending for this match
+        if (original_interaction.user.id, opponent_id) in pending_match_reports or (
+            opponent_id,
+            original_interaction.user.id,
+        ) in pending_match_reports:
+            await interaction.response.send_message(
+                "A report for this match is already pending confirmation.",
+                ephemeral=True,
+            )
+            return
+
+        # Store pending report with deck URLs
+        pending_match_reports[(original_interaction.user.id, opponent_id)] = {
+            "winner_id": opponent_id,
+            "winner_global": opponent_global,
+            "loser_id": original_interaction.user.id,
+            "loser_global": original_interaction.user.global_name
+            or original_interaction.user.display_name,
+            "reporter_id": original_interaction.user.id,
+            "reporter_global": original_interaction.user.global_name
+            or original_interaction.user.display_name,
+            "is_winner": False,
+            "opponent_message": None,
+            "match_start_time": view.match_start_time,
+            "reporter_deck_url": view.reporter_deck_url,
+            "opponent_deck_url": view.opponent_deck_url,
+            "first_player": view.first_player,
+            "guild_id": guild_id,
+        }
+
+        # Send confirmation to opponent
+        try:
+            opponent = await view.bot.fetch_user(opponent_id)
+
+            confirmation_view = MatchConfirmationButtons(
+                reporter_id=original_interaction.user.id,
+                reporter_global=original_interaction.user.global_name
+                or original_interaction.user.display_name,
+                opponent_id=opponent_id,
+                opponent_global=opponent_global,
+                winner_id=opponent_id,
+                winner_global=opponent_global,
+                loser_id=original_interaction.user.id,
+                loser_global=original_interaction.user.global_name
+                or original_interaction.user.display_name,
+                is_winner=True,
+                bot=view.bot,
+                channel=view.channel,
+                match_start_time=view.match_start_time,
+                first_player=view.first_player,
+                winner_deck_url=view.opponent_deck_url,
+                loser_deck_url=view.reporter_deck_url,
+            )
+
+            # Check if opponent has DM-disabled role
+            opponent_has_dm_issue = False
+            guild = original_interaction.guild
+            if guild:
+                role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+                member = guild.get_member(opponent_id)
+                if role and member and role in member.roles:
+                    opponent_has_dm_issue = True
+
+            if opponent_has_dm_issue:
+                dm_channel = view.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+                if dm_channel:
+                    await dm_channel.send(
+                        scrub_urls(
+                            f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                        ),
+                        view=confirmation_view,
+                    )
+                    await interaction.response.send_message(
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"Could not send confirmation to {opponent_global}.",
+                        ephemeral=True,
+                    )
+            else:
+                try:
+                    await opponent.send(
+                        f"**Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                        view=confirmation_view,
+                    )
+                    await interaction.response.send_message(
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                except discord.Forbidden:
+                    try:
+                        if guild:
+                            role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+                            member = guild.get_member(opponent_id)
+                            if role and member:
+                                await member.add_roles(role)
+
+                        dm_channel = view.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+                        if dm_channel:
+                            await dm_channel.send(
+                                scrub_urls(
+                                    f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                                ),
+                                view=confirmation_view,
+                            )
+                            await interaction.response.send_message(
+                                "Match report sent. Waiting for confirmation...",
+                                ephemeral=True,
+                            )
+                        else:
+                            await interaction.response.send_message(
+                                f"Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+                    except Exception as e:
+                        logger.error(f"Failed to handle DM failure for opponent: {e}")
+                        if not interaction.response.is_done():
+                            await interaction.response.send_message(
+                                f"Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+
+            # Remove buttons from original message
+            if original_interaction.message:
+                try:
+                    await original_interaction.message.edit(view=None)
+                except Exception:
+                    pass
+
+        except discord.Forbidden:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    ephemeral=True,
+                )
+        except Exception as e:
+            logger.error(f"Error in ReporterDeckURLModal loss report: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "An error occurred while processing your match report.",
+                    ephemeral=True,
+                )
+
+
+class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
+    """Modal for capturing deck URL when confirmer didn't provide one at queue join"""
+
+    deck_url = discord.ui.TextInput(
+        label="Curiosa Deck URL (Optional)",
+        placeholder="Enter your deck URL or leave blank",
+        required=False,
+    )
+
+    def __init__(
+        self, view: "MatchConfirmationButtons", interaction: discord.Interaction
+    ):
+        super().__init__()
+        self.view = view
+        self.original_interaction = interaction
+
+    async def on_submit(self, interaction: discord.Interaction):
+        deck_url = self.deck_url.value.strip() if self.deck_url.value else None
+
+        # Update the confirmer's deck URL based on whether they won or lost
+        if self.view.is_winner:
+            # Confirmer won, so their deck is winner_deck_url
+            self.view.winner_deck_url = deck_url
+        else:
+            # Confirmer lost, so their deck is loser_deck_url
+            self.view.loser_deck_url = deck_url
+
+        # Continue with the confirmation process
+        await self._process_confirmation(interaction)
+
+    async def _process_confirmation(self, interaction: discord.Interaction):
+        """Process confirmation after collecting deck URL"""
+        view = self.view
+        original_interaction = self.original_interaction
+
+        # Disable buttons immediately to prevent double-clicks
+        for item in view.children:
+            item.disabled = True
+        try:
+            await original_interaction.message.edit(view=view)
+        except Exception:
+            pass
+
+        # Check for duplicate match
+        match_key = frozenset({view.winner_id, view.loser_id})
+        now = datetime.datetime.now()
+        if match_key in processed_matches:
+            last_report_time = processed_matches[match_key]
+            if (now - last_report_time).total_seconds() < 300:
+                await interaction.response.send_message(
+                    "This match has already been recorded. Duplicate report prevented.",
+                    ephemeral=True,
+                )
+                await original_interaction.message.edit(
+                    content="Match already recorded (duplicate prevented).",
+                    view=None,
+                )
+                return
+
+        # Mark this match as processed
+        processed_matches[match_key] = now
+
+        await interaction.response.defer()
+
+        # Calculate match time
+        match_time = view.match_time
+        if match_time == 0 and view.match_start_time:
+            time_diff = datetime.datetime.now() - view.match_start_time
+            match_time = int(time_diff.total_seconds() / 60)
+
+        # Use winner and loser deck URLs properly
+        winner_deck = view.winner_deck_url or "No URL provided"
+        loser_deck = view.loser_deck_url or "No URL provided"
+        combined_comment = f"Winner deck: {winner_deck} | Loser deck: {loser_deck}"
+        if view.match_comment:
+            combined_comment = f"{view.match_comment} | {combined_comment}"
+
+        # Determine winner_went_first and loser_went_first based on reporter
+        reporter_went_first = (
+            view.first_player and "y" in str(view.first_player).lower()
+        )
+        reporter_is_winner = view.reporter_id == view.winner_id
+
+        if reporter_is_winner:
+            winner_went_first = "y" if reporter_went_first else "n"
+            loser_went_first = "n" if reporter_went_first else "y"
+        else:
+            winner_went_first = "n" if reporter_went_first else "y"
+            loser_went_first = "y" if reporter_went_first else "n"
+
+        # Submit match report
+        match_id, _, _, event_active = await winner_report(
+            view.reporter_id,
+            view.winner_id,
+            view.winner_global,
+            True,
+            view.loser_id,
+            view.loser_global,
+            view.first_player,
+            match_time,
+            winner_deck,
+            combined_comment,
+            view.winner_id,
+            view.winner_global,
+            winner_deck_url=view.winner_deck_url,
+            loser_deck_url=view.loser_deck_url,
+            winner_went_first=winner_went_first,
+            loser_went_first=loser_went_first,
+        )
+
+        # Update ELO for the loser
+        update_elo_db(view.loser_id, view.loser_global, False, view.winner_id)
+
+        elo_msg = "" if event_active else " *(No active event - ELO not affected)*"
+        # Update the confirmation message
+        await original_interaction.message.edit(
+            content=f"Match confirmed! **Match ID: #{match_id}** - {view.winner_global} won against {view.loser_global}.{elo_msg}",
+            view=None,
+        )
+
+        # Send confirmation to confirming user
+        await interaction.followup.send(
+            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {view.winner_global}\n**Loser:** {view.loser_global}{elo_msg}",
+            ephemeral=True,
+        )
+
+        # Notify the reporter
+        try:
+            reporter = await view.bot.fetch_user(view.reporter_id)
+            await reporter.send(
+                f"{view.opponent_global} has confirmed your match report! Match has been recorded."
+            )
+        except discord.Forbidden:
+            match_report_channel = view.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+            if match_report_channel:
+                await match_report_channel.send(
+                    scrub_urls(
+                        f"<@{view.reporter_id}> {view.opponent_global} has confirmed your match report! Match has been recorded."
+                    )
+                )
+        except Exception:
+            pass
+
+        # Get guild_id from pending report before removing
+        pending_report = pending_match_reports.get((view.reporter_id, view.opponent_id), {})
+        guild_id = pending_report.get("guild_id")
+
+        # Remove from pending
+        pending_match_reports.pop((view.reporter_id, view.opponent_id), None)
+
+        # Mark pairing as reported in database
+        if guild_id:
+            mark_pairing_reported(guild_id, view.winner_id, view.loser_id)
+
+        # Update leaderboard
+        lfg_cog = view.bot.get_cog("LFGCog")
+        if lfg_cog:
+            await lfg_cog.update_leaderboard()
+
+        # Check for milestone
+        await send_milestone_announcement(
+            view.bot, view.winner_id, view.loser_id, match_id
+        )
+
+
+class WentFirstView(discord.ui.View):
+    """View that asks the reporter if they went first before showing win/lose buttons."""
+
+    def __init__(
+        self,
+        match_id: int,
+        player1_id: int,
+        player1_global: str,
+        player2_id: int,
+        player2_global: str,
+        bot=None,
+        channel=None,
+        match_start_time=None,
+        reporter_deck_url=None,
+        opponent_deck_url=None,
+        opponent_user=None,
+        reporter_deck_text: str = "",
+    ):
+        super().__init__(timeout=None)
+        self.match_id = match_id
+        self.player1_id = player1_id
+        self.player1_global = player1_global
+        self.player2_id = player2_id
+        self.player2_global = player2_global
+        self.bot = bot
+        self.channel = channel
+        self.match_start_time = match_start_time or datetime.datetime.now()
+        self.reporter_deck_url = reporter_deck_url
+        self.opponent_deck_url = opponent_deck_url
+        self.opponent_user = opponent_user
+        self.reporter_deck_text = reporter_deck_text
+
+    @discord.ui.button(
+        label="Yes, I went first",
+        style=discord.ButtonStyle.primary,
+        custom_id="went_first_yes",
+    )
+    async def yes_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await self._send_report_buttons(interaction, first_player="y")
+
+    @discord.ui.button(
+        label="No, opponent went first",
+        style=discord.ButtonStyle.secondary,
+        custom_id="went_first_no",
+    )
+    async def no_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await self._send_report_buttons(interaction, first_player="n")
+
+    async def _send_report_buttons(
+        self, interaction: discord.Interaction, first_player: str
+    ):
+        """Delete this message and send the actual report buttons."""
+        # Delete the "Did you go first?" message
+        try:
+            await interaction.message.delete()
+        except Exception as e:
+            logger.warning(f"Could not delete went first message: {e}")
+
+        # Create report buttons with the first_player info
+        view_reporter = LFGReportButtons(
+            self.match_id,
+            self.player1_id,
+            self.player1_global,
+            self.player2_id,
+            self.player2_global,
+            self.bot,
+            self.channel,
+            match_start_time=self.match_start_time,
+            reporter_deck_url=self.reporter_deck_url,
+            opponent_deck_url=self.opponent_deck_url,
+            first_player=first_player,
+        )
+
+        # Send the report buttons
+        try:
+            await interaction.response.send_message(
+                f"**Match Found!** You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\nReport the match result below:",
+                view=view_reporter,
+            )
+        except Exception as e:
+            logger.error(f"Error sending report buttons after went first: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "An error occurred. Please try again.",
+                    ephemeral=True,
+                )
+
+
+class LFGReportButtons(discord.ui.View):
+    def __init__(
+        self,
+        match_id: int,
+        player1_id: int,
+        player1_global: str,
+        player2_id: int,
+        player2_global: str,
+        bot=None,
+        channel=None,
+        match_start_time=None,
+        reporter_deck_url=None,
+        opponent_deck_url=None,
+        first_player: str = "n",
+    ):
+        super().__init__(timeout=None)
+        self.match_id = match_id
+        self.player1_id = player1_id
+        self.player2_id = player2_id
+        self.player1_global = player1_global
+        self.reporter_deck_url = reporter_deck_url
+        self.opponent_deck_url = opponent_deck_url
+        self.player2_global = player2_global
+        self.bot = bot
+        self.channel = channel
+        self.first_player = first_player
+        # Track when the match started for automatic match time calculation
+        self.match_start_time = match_start_time or datetime.datetime.now()
+
+    @discord.ui.button(
+        label="I Won!", style=discord.ButtonStyle.success, custom_id="win_button"
+    )
+    async def won_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        # Check if reporter needs to provide a deck URL
+        if not self.reporter_deck_url:
+            # Show modal to collect deck URL before proceeding
+            modal = ReporterDeckURLModal(self, interaction, is_win=True)
+            await interaction.response.send_modal(modal)
+            return
+
+        # Disable buttons immediately to prevent double-clicks
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
+        opponent_id = (
+            self.player2_id
+            if interaction.user.id == self.player1_id
+            else self.player1_id
+        )
+        opponent_global = (
+            self.player2_global
+            if interaction.user.id == self.player1_id
+            else self.player1_global
+        )
+
+        # Get guild_id for pairing validation
+        guild_id = interaction.guild.id if interaction.guild else None
+
+        # Validate that this user has an active pairing with this opponent
+        if not guild_id or not validate_pairing(guild_id, interaction.user.id, opponent_id):
+            await interaction.response.send_message(
+                "No active pairing found. You can only report matches against your paired opponent.",
+                ephemeral=True,
+            )
+            return
+
+        # Check if a report is already pending for this match
+        if (interaction.user.id, opponent_id) in pending_match_reports or (
+            opponent_id,
+            interaction.user.id,
+        ) in pending_match_reports:
+            await interaction.response.send_message(
+                "A report for this match is already pending confirmation.",
+                ephemeral=True,
+            )
+            return
+
+        # Store pending report with deck URLs
+        pending_match_reports[(interaction.user.id, opponent_id)] = {
+            "winner_id": interaction.user.id,
+            "winner_global": interaction.user.global_name
+            or interaction.user.display_name,
+            "loser_id": opponent_id,
+            "loser_global": opponent_global,
+            "reporter_id": interaction.user.id,
+            "reporter_global": interaction.user.global_name
+            or interaction.user.display_name,
+            "is_winner": True,
+            "opponent_message": None,  # Will be set after fetching opponent's DM
+            "match_start_time": self.match_start_time,  # Track when match started
+            "reporter_deck_url": self.reporter_deck_url,  # Reporter's deck URL
+            "opponent_deck_url": self.opponent_deck_url,  # Opponent's deck URL
+            "first_player": self.first_player,  # Did reporter go first
+            "guild_id": guild_id,  # Store guild_id for later use
+        }
+
+        # Send confirmation to opponent
+        try:
+            opponent = await self.bot.fetch_user(opponent_id)
+
+            # Reporter won, so reporter's deck is winner's deck, opponent's deck is loser's deck
+            confirmation_view = MatchConfirmationButtons(
+                reporter_id=interaction.user.id,
+                reporter_global=interaction.user.global_name
+                or interaction.user.display_name,
+                opponent_id=opponent_id,
+                opponent_global=opponent_global,
+                winner_id=interaction.user.id,
+                winner_global=interaction.user.global_name
+                or interaction.user.display_name,
+                loser_id=opponent_id,
+                loser_global=opponent_global,
+                is_winner=False,  # For opponent, they lost
+                bot=self.bot,
+                channel=self.channel,
+                match_start_time=self.match_start_time,
+                first_player=self.first_player,
+                winner_deck_url=self.reporter_deck_url,  # Reporter won, so their deck is winner's
+                loser_deck_url=self.opponent_deck_url,  # Opponent lost, so their deck is loser's
+            )
+
+            # Check if opponent has DM-disabled role
+            opponent_has_dm_issue = False
+            guild = interaction.guild
+            if guild:
+                role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+                member = guild.get_member(opponent_id)
+                if role and member and role in member.roles:
+                    opponent_has_dm_issue = True
+
+            # Try to send via DM first (unless they have the DM-disabled role)
+            if opponent_has_dm_issue:
+                # Send to designated channel instead
+                dm_channel = interaction.client.get_channel(config.DM_DISABLED_CHANNEL_ID)
+                if dm_channel:
+                    await dm_channel.send(
+                        scrub_urls(
+                            f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                        ),
+                        view=confirmation_view,
+                    )
+                    await interaction.response.send_message(
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                    logger.info(
+                        f"Posted confirmation in DM-disabled channel for {opponent_global}"
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"Could not send confirmation to {opponent_global}.",
+                        ephemeral=True,
+                    )
+            else:
+                try:
+                    await opponent.send(
+                        f"**Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                        view=confirmation_view,
+                    )
+
+                    await interaction.response.send_message(
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                except discord.Forbidden:
+                    # DM failed - add role, grant channel access, and post in designated channel
+                    try:
+                        if guild:
+                            role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+                            member = guild.get_member(opponent_id)
+                            if role and member:
+                                await member.add_roles(role)
+                                logger.info(
+                                    f"Added DM-disabled role to {opponent_global}"
+                                )
+
+                        dm_channel = interaction.client.get_channel(
+                            config.DM_DISABLED_CHANNEL_ID
+                        )
+                        if dm_channel:
+                            # Grant channel access
+                            if guild:
+                                member = guild.get_member(opponent_id)
+                                if member:
+                                    await dm_channel.set_permissions(
+                                        member, read_messages=True, send_messages=True
+                                    )
+                                    logger.info(
+                                        f"Granted channel access to {opponent_global}"
+                                    )
+
+                            await dm_channel.send(
+                                scrub_urls(
+                                    f"{opponent.mention} **Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                                ),
+                                view=confirmation_view,
+                            )
+                            await interaction.response.send_message(
+                                "Match report sent. Waiting for confirmation...",
+                                ephemeral=True,
+                            )
+                            logger.info(
+                                f"Posted confirmation in DM-disabled channel for {opponent_global}"
+                            )
+                        else:
+                            await interaction.response.send_message(
+                                f"Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+                    except Exception as e:
+                        logger.error(f"Failed to handle DM failure for opponent: {e}")
+                        if not interaction.response.is_done():
+                            await interaction.response.send_message(
+                                f"Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+                        else:
+                            await interaction.followup.send(
+                                f"Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+
+            # Remove buttons from this user's message
+            if interaction.message:
+                try:
+                    await interaction.message.edit(view=None)
+                except Exception:
+                    pass
+
+        except discord.Forbidden:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    ephemeral=True,
+                )
+        except Exception as e:
+            logger.error(f"Error in won_button: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "An error occurred while processing your match report.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    "An error occurred while processing your match report.",
+                    ephemeral=True,
+                )
+
+    @discord.ui.button(
+        label="I Lost", style=discord.ButtonStyle.danger, custom_id="lose_button"
+    )
+    async def lost_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        # Check if reporter needs to provide a deck URL
+        if not self.reporter_deck_url:
+            # Show modal to collect deck URL before proceeding
+            modal = ReporterDeckURLModal(self, interaction, is_win=False)
+            await interaction.response.send_modal(modal)
+            return
+
+        # Disable buttons immediately to prevent double-clicks
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
+        opponent_id = (
+            self.player2_id
+            if interaction.user.id == self.player1_id
+            else self.player1_id
+        )
+        opponent_global = (
+            self.player2_global
+            if interaction.user.id == self.player1_id
+            else self.player1_global
+        )
+
+        # Get guild_id for pairing validation
+        guild_id = interaction.guild.id if interaction.guild else None
+
+        # Validate that this user has an active pairing with this opponent
+        if not guild_id or not validate_pairing(guild_id, interaction.user.id, opponent_id):
+            await interaction.response.send_message(
+                "No active pairing found. You can only report matches against your paired opponent.",
+                ephemeral=True,
+            )
+            return
+
+        # Check if a report is already pending for this match
+        if (interaction.user.id, opponent_id) in pending_match_reports or (
+            opponent_id,
+            interaction.user.id,
+        ) in pending_match_reports:
+            await interaction.response.send_message(
+                "A report for this match is already pending confirmation.",
+                ephemeral=True,
+            )
+            return
+
+        # Store pending report with deck URLs
+        pending_match_reports[(interaction.user.id, opponent_id)] = {
+            "winner_id": opponent_id,
+            "winner_global": opponent_global,
+            "loser_id": interaction.user.id,
+            "loser_global": interaction.user.global_name
+            or interaction.user.display_name,
+            "reporter_id": interaction.user.id,
+            "reporter_global": interaction.user.global_name
+            or interaction.user.display_name,
+            "is_winner": False,
+            "opponent_message": None,  # Will be set after fetching opponent's DM
+            "match_start_time": self.match_start_time,  # Track when match started
+            "reporter_deck_url": self.reporter_deck_url,  # Reporter's deck URL
+            "opponent_deck_url": self.opponent_deck_url,  # Opponent's deck URL
+            "first_player": self.first_player,  # Did reporter go first
+            "guild_id": guild_id,  # Store guild_id for later use
+        }
+
+        # Send confirmation to opponent
+        try:
+            opponent = await self.bot.fetch_user(opponent_id)
+
+            # Reporter lost, so opponent's deck is winner's deck, reporter's deck is loser's deck
+            confirmation_view = MatchConfirmationButtons(
+                reporter_id=interaction.user.id,
+                reporter_global=interaction.user.global_name
+                or interaction.user.display_name,
+                opponent_id=opponent_id,
+                opponent_global=opponent_global,
+                winner_id=opponent_id,
+                winner_global=opponent_global,
+                loser_id=interaction.user.id,
+                loser_global=interaction.user.global_name
+                or interaction.user.display_name,
+                is_winner=True,  # For opponent, they won
+                bot=self.bot,
+                channel=self.channel,
+                match_start_time=self.match_start_time,
+                first_player=self.first_player,
+                winner_deck_url=self.opponent_deck_url,  # Opponent won, so their deck is winner's
+                loser_deck_url=self.reporter_deck_url,  # Reporter lost, so their deck is loser's
+            )
+
+            # Check if opponent has DM-disabled role
+            opponent_has_dm_issue = False
+            guild = interaction.guild
+            if guild:
+                role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+                member = guild.get_member(opponent_id)
+                if role and member and role in member.roles:
+                    opponent_has_dm_issue = True
+
+            # Try to send via DM first (unless they have the DM-disabled role)
+            if opponent_has_dm_issue:
+                # Send to designated channel instead
+                dm_channel = interaction.client.get_channel(config.DM_DISABLED_CHANNEL_ID)
+                if dm_channel:
+                    await dm_channel.send(
+                        scrub_urls(
+                            f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                        ),
+                        view=confirmation_view,
+                    )
+                    await interaction.response.send_message(
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                    logger.info(
+                        f"Posted confirmation in DM-disabled channel for {opponent_global}"
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"Could not send confirmation to {opponent_global}.",
+                        ephemeral=True,
+                    )
+            else:
+                try:
+                    await opponent.send(
+                        f"**Match Report Confirmation**\n\nYou **WON** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:",
+                        view=confirmation_view,
+                    )
+
+                    await interaction.response.send_message(
+                        f"Match report sent to {opponent_global}. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                except discord.Forbidden:
+                    # DM failed - add role and post in designated channel
+                    try:
+                        if guild:
+                            role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+                            member = guild.get_member(opponent_id)
+                            if role and member:
+                                await member.add_roles(role)
+                                logger.info(
+                                    f"Added DM-disabled role to {opponent_global}"
+                                )
+
+                        dm_channel = interaction.client.get_channel(
+                            config.DM_DISABLED_CHANNEL_ID
+                        )
+                        if dm_channel:
+                            await dm_channel.send(
+                                scrub_urls(
+                                    f"{opponent.mention} **Match Report Confirmation**\n\nYou **WON** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                                ),
+                                view=confirmation_view,
+                            )
+                            await interaction.response.send_message(
+                                "Match report sent. Waiting for confirmation...",
+                                ephemeral=True,
+                            )
+                            logger.info(
+                                f"Posted confirmation in DM-disabled channel for {opponent_global}"
+                            )
+                        else:
+                            await interaction.response.send_message(
+                                f"Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+                    except Exception as e:
+                        logger.error(f"Failed to handle DM failure for opponent: {e}")
+                        if not interaction.response.is_done():
+                            await interaction.response.send_message(
+                                f"Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+                        else:
+                            await interaction.followup.send(
+                                f"Could not send confirmation to {opponent_global}.",
+                                ephemeral=True,
+                            )
+
+            # Remove buttons from this user's message
+            if interaction.message:
+                try:
+                    await interaction.message.edit(view=None)
+                except Exception:
+                    pass
+
+        except discord.Forbidden:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    ephemeral=True,
+                )
+        except Exception as e:
+            logger.error(f"Error in lost_button: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "An error occurred while processing your match report.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    "An error occurred while processing your match report.",
+                    ephemeral=True,
+                )
+
+    @discord.ui.button(
+        label="Cancel match",
+        style=discord.ButtonStyle.secondary,
+        custom_id="cancel_match",
+    )
+    async def cancel_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        # Only the matched players can cancel
+        if interaction.user.id not in (self.player1_id, self.player2_id):
+            await interaction.response.send_message(
+                "Only the matched players can cancel this match.", ephemeral=True
+            )
+            return
+
+        await interaction.response.send_message(
+            f"{interaction.user.mention} clicked **cancel match**", ephemeral=True
+        )
+        await interaction.message.edit(view=None)

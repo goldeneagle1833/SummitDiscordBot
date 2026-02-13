@@ -7,13 +7,11 @@ import random
 from openai import OpenAI
 
 import config
+from utils.text import find_best_command_match
 
 logger = logging.getLogger("discord_bot")
 
 openai = OpenAI(api_key=config.OPENAI_API_KEY)
-
-# Track active syphons: {leader_id: [syphoner_id1, syphoner_id2, ...]}
-active_syphons = {}
 
 
 class ShopCog(commands.Cog):
@@ -22,7 +20,7 @@ class ShopCog(commands.Cog):
         self.fart_channel_id = config.FART_CHANNEL_ID
         self.guild_id = config.GUILD_ID
         self.leader_role_id = config.LEADER_ROLE_ID
-        self.giga_target_role_id = 1445222741686095994  # Role for double damage target
+        self.giga_target_role_id = config.DM_DISABLED_ROLE_ID  # Role for double damage target
         self.item_costs = {
             "blue": 7,  # Blue Shell (was 14)
             "red": 5,  # Red Shell (was 10)
@@ -36,26 +34,6 @@ class ShopCog(commands.Cog):
         }
         logger.info("ShopCog initialized")
         self.setup_purchase_database()
-
-    def levenshtein_distance(self, s1, s2):
-        """Calculate the Levenshtein distance between two strings"""
-        if len(s1) < len(s2):
-            return self.levenshtein_distance(s2, s1)
-
-        if len(s2) == 0:
-            return len(s1)
-
-        previous_row = range(len(s2) + 1)
-        for i, c1 in enumerate(s1):
-            current_row = [i + 1]
-            for j, c2 in enumerate(s2):
-                insertions = previous_row[j + 1] + 1
-                deletions = current_row[j] + 1
-                substitutions = previous_row[j] + (c1 != c2)
-                current_row.append(min(insertions, deletions, substitutions))
-            previous_row = current_row
-
-        return previous_row[-1]
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -162,24 +140,6 @@ class ShopCog(commands.Cog):
             "darkstar": "!evil_star",
         }
 
-        # Check for exact matches
-        if failed_command in command_suggestions:
-            suggestion = command_suggestions[failed_command]
-            await ctx.send(
-                f"{ctx.author.mention}, did you mean `{suggestion}`? Type `!fart_shop` to see all available items."
-            )
-            return
-
-        # Check for partial matches (fuzzy matching)
-        for key, suggestion in command_suggestions.items():
-            if key in failed_command or failed_command in key:
-                await ctx.send(
-                    f"{ctx.author.mention}, did you mean `{suggestion}`? Type `!fart_shop` to see all available items."
-                )
-                return
-
-        # Check for spelling mistakes using Levenshtein distance
-        # Get all actual command names
         actual_commands = {
             "blue_shell": "!blue_shell",
             "blueshell": "!blue_shell",
@@ -202,26 +162,12 @@ class ShopCog(commands.Cog):
             "evilstar": "!evil_star",
         }
 
-        # Find closest match based on edit distance
-        best_match = None
-        min_distance = float("inf")
-
-        for command_name in actual_commands.keys():
-            distance = self.levenshtein_distance(failed_command, command_name)
-            # Consider it a typo if distance is 3 or less and length is similar
-            if distance <= 3 and distance < min_distance:
-                # Also check if the length difference isn't too large
-                if abs(len(failed_command) - len(command_name)) <= 3:
-                    min_distance = distance
-                    best_match = actual_commands[command_name]
-
-        if best_match and min_distance <= 3:
+        suggestion = find_best_command_match(failed_command, command_suggestions, actual_commands)
+        if suggestion:
             await ctx.send(
-                f"{ctx.author.mention}, did you mean `{best_match}`? Type `!fart_shop` to see all available items."
+                f"{ctx.author.mention}, did you mean `{suggestion}`? Type `!fart_shop` to see all available items."
             )
             return
-
-        # Don't respond if no match found - let other cogs handle it or show nothing
 
     def setup_purchase_database(self):
         """Create table to track Discord monetization purchases"""

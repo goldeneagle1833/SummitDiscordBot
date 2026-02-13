@@ -10,8 +10,8 @@ from utils.database import (
     winner_report,
     losser_report,
     update_elo_db,
-    validate_pairing,
     mark_pairing_reported,
+    get_opponent_from_pairing,
 )
 
 logger = logging.getLogger("discord_bot")
@@ -423,24 +423,33 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         except Exception:
             pass
 
-        opponent_id = (
-            view.player2_id
-            if original_interaction.user.id == view.player1_id
-            else view.player1_id
-        )
-        opponent_global = (
-            view.player2_global
-            if original_interaction.user.id == view.player1_id
-            else view.player1_global
-        )
-
         # Get guild_id for pairing validation
         guild_id = original_interaction.guild.id if original_interaction.guild else None
 
-        # Validate that this user has an active pairing with this opponent
-        if not guild_id or not validate_pairing(guild_id, original_interaction.user.id, opponent_id):
+        # Get opponent from database pairing
+        if not guild_id:
+            await interaction.response.send_message(
+                "This command must be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        opponent_id = get_opponent_from_pairing(guild_id, original_interaction.user.id)
+        if not opponent_id:
             await interaction.response.send_message(
                 "No active pairing found. You can only report matches against your paired opponent.",
+                ephemeral=True,
+            )
+            return
+
+        # Fetch opponent to get their global name
+        try:
+            opponent = await view.bot.fetch_user(opponent_id)
+            opponent_global = opponent.global_name or opponent.display_name
+        except Exception as e:
+            logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
+            await interaction.response.send_message(
+                "Failed to fetch opponent information.",
                 ephemeral=True,
             )
             return
@@ -609,24 +618,33 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         except Exception:
             pass
 
-        opponent_id = (
-            view.player2_id
-            if original_interaction.user.id == view.player1_id
-            else view.player1_id
-        )
-        opponent_global = (
-            view.player2_global
-            if original_interaction.user.id == view.player1_id
-            else view.player1_global
-        )
-
         # Get guild_id for pairing validation
         guild_id = original_interaction.guild.id if original_interaction.guild else None
 
-        # Validate that this user has an active pairing with this opponent
-        if not guild_id or not validate_pairing(guild_id, original_interaction.user.id, opponent_id):
+        # Get opponent from database pairing
+        if not guild_id:
+            await interaction.response.send_message(
+                "This command must be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        opponent_id = get_opponent_from_pairing(guild_id, original_interaction.user.id)
+        if not opponent_id:
             await interaction.response.send_message(
                 "No active pairing found. You can only report matches against your paired opponent.",
+                ephemeral=True,
+            )
+            return
+
+        # Fetch opponent to get their global name
+        try:
+            opponent = await view.bot.fetch_user(opponent_id)
+            opponent_global = opponent.global_name or opponent.display_name
+        except Exception as e:
+            logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
+            await interaction.response.send_message(
+                "Failed to fetch opponent information.",
                 ephemeral=True,
             )
             return
@@ -1084,24 +1102,33 @@ class LFGReportButtons(discord.ui.View):
         except Exception:
             pass
 
-        opponent_id = (
-            self.player2_id
-            if interaction.user.id == self.player1_id
-            else self.player1_id
-        )
-        opponent_global = (
-            self.player2_global
-            if interaction.user.id == self.player1_id
-            else self.player1_global
-        )
-
         # Get guild_id for pairing validation
         guild_id = interaction.guild.id if interaction.guild else None
 
-        # Validate that this user has an active pairing with this opponent
-        if not guild_id or not validate_pairing(guild_id, interaction.user.id, opponent_id):
+        # Get opponent from database pairing
+        if not guild_id:
+            await interaction.response.send_message(
+                "This command must be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        opponent_id = get_opponent_from_pairing(guild_id, interaction.user.id)
+        if not opponent_id:
             await interaction.response.send_message(
                 "No active pairing found. You can only report matches against your paired opponent.",
+                ephemeral=True,
+            )
+            return
+
+        # Fetch opponent to get their global name
+        try:
+            opponent = await self.bot.fetch_user(opponent_id)
+            opponent_global = opponent.global_name or opponent.display_name
+        except Exception as e:
+            logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
+            await interaction.response.send_message(
+                "Failed to fetch opponent information.",
                 ephemeral=True,
             )
             return
@@ -1314,24 +1341,33 @@ class LFGReportButtons(discord.ui.View):
         except Exception:
             pass
 
-        opponent_id = (
-            self.player2_id
-            if interaction.user.id == self.player1_id
-            else self.player1_id
-        )
-        opponent_global = (
-            self.player2_global
-            if interaction.user.id == self.player1_id
-            else self.player1_global
-        )
-
         # Get guild_id for pairing validation
         guild_id = interaction.guild.id if interaction.guild else None
 
-        # Validate that this user has an active pairing with this opponent
-        if not guild_id or not validate_pairing(guild_id, interaction.user.id, opponent_id):
+        # Get opponent from database pairing
+        if not guild_id:
+            await interaction.response.send_message(
+                "This command must be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        opponent_id = get_opponent_from_pairing(guild_id, interaction.user.id)
+        if not opponent_id:
             await interaction.response.send_message(
                 "No active pairing found. You can only report matches against your paired opponent.",
+                ephemeral=True,
+            )
+            return
+
+        # Fetch opponent to get their global name
+        try:
+            opponent = await self.bot.fetch_user(opponent_id)
+            opponent_global = opponent.global_name or opponent.display_name
+        except Exception as e:
+            logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
+            await interaction.response.send_message(
+                "Failed to fetch opponent information.",
                 ephemeral=True,
             )
             return

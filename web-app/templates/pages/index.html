@@ -35,6 +35,42 @@
           The menu (top left) should work now after a browser refresh
           (Ctrl+Shift+R) or you might need to clear your cache test.
         </p>
+        <!-- Community Tab Promo Banner -->
+        <div
+          id="community-promo-banner"
+          style="
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 215, 0, 0.4);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 1.5rem auto;
+            max-width: 800px;
+            text-align: center;
+          ">
+          <h2 style="color: #ffd700; font-size: 1.3rem; margin-bottom: 0.5rem; font-weight: 600;">
+            New Community Tab is Live!
+          </h2>
+          <p style="color: rgba(255, 255, 255, 0.9); font-size: 1rem; margin-bottom: 1rem;">
+            Discover Discord servers, YouTube channels, and Sorcery resources all in one place!
+          </p>
+          <a
+            href="/community"
+            style="
+              display: inline-block;
+              background: transparent;
+              border: 2px solid #ffd700;
+              color: #ffd700;
+              padding: 0.7rem 1.5rem;
+              border-radius: 8px;
+              text-decoration: none;
+              font-weight: 600;
+              transition: all 0.2s;
+            "
+            onmouseover="this.style.background='rgba(255, 215, 0, 0.1)'; this.style.transform='translateY(-2px)'"
+            onmouseout="this.style.background='transparent'; this.style.transform='translateY(0)'">
+            Explore Community Tab →
+          </a>
+        </div>
       </section>
 
       <!-- Active Event Leaderboard Section -->
@@ -124,6 +160,17 @@
         }
       })();
 
+      // Hide community promo banner after 1 week (expires Feb 20, 2026)
+      (function () {
+        const banner = document.getElementById("community-promo-banner");
+        if (banner) {
+          const expiryDate = new Date("2026-02-20T23:59:59Z");
+          if (new Date() > expiryDate) {
+            banner.style.display = "none";
+          }
+        }
+      })();
+
       // Render YouTube videos
       function renderYouTubeVideos(videos) {
         const container = document.getElementById("youtube-videos");
@@ -131,8 +178,8 @@
 
         container.innerHTML = "";
 
-        const channelOrder = ["goldeneagle", "cj"];
-        for (const key of channelOrder) {
+        // Display all videos from the API response (no hardcoded filter)
+        for (const key of Object.keys(videos)) {
           const video = videos[key];
           if (!video) continue;
 

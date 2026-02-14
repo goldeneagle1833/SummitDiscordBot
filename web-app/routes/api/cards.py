@@ -712,6 +712,15 @@ def get_card_popularity(card_name):
 
     card_name = unquote(card_name)
 
+    # Check if database exists
+    if not MATCH_RECORDS_DB_PATH.exists():
+        logger.warning(f"Database not found at {MATCH_RECORDS_DB_PATH}")
+        return jsonify({
+            "card_name": card_name,
+            "timeline": [],
+            "total_days": 0,
+        })
+
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
@@ -719,41 +728,63 @@ def get_card_popularity(card_name):
         all_rows = []
         use_new_columns = True
 
-        # Query current match_records with dates
+        # Query current match_records with timestamps
         try:
             cur.execute("""
-                SELECT json_deck_data_winner, json_deck_data_loser, date
+                SELECT json_deck_data_winner, json_deck_data_loser, timestamp
                 FROM match_records
                 WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
                    OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
             """)
             all_rows.extend(cur.fetchall())
-        except sqlite3.OperationalError:
-            cur.execute("""
-                SELECT json_deck_data, '', date
-                FROM match_records
-                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
-            """)
-            all_rows.extend(cur.fetchall())
-            use_new_columns = False
+        except sqlite3.OperationalError as e:
+            logger.warning(f"Failed to query new columns format: {e}")
+            try:
+                cur.execute("""
+                    SELECT json_deck_data, '', timestamp
+                    FROM match_records
+                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                """)
+                all_rows.extend(cur.fetchall())
+                use_new_columns = False
+            except sqlite3.OperationalError as e2:
+                logger.error(f"Failed to query match_records: {e2}")
+                conn.close()
+                return jsonify({
+                    "card_name": card_name,
+                    "timeline": [],
+                    "total_days": 0,
+                })
 
         # Also query match_records_archive for historical data
         if use_new_columns:
             try:
                 cur.execute("""
-                    SELECT json_deck_data_winner, json_deck_data_loser, date
+                    SELECT json_deck_data_winner, json_deck_data_loser, timestamp
                     FROM match_records_archive
                     WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' and json_deck_data_loser != '{}')
                 """)
                 all_rows.extend(cur.fetchall())
             except sqlite3.OperationalError:
-                pass  # Archive table may not exist
+                logger.info("Archive table not found or error querying - continuing without archive data")
 
         rows = all_rows
         conn.close()
-    except sqlite3.OperationalError:
-        return jsonify({"error": "Database not found"}), 404
+    except sqlite3.OperationalError as e:
+        logger.error(f"Database error: {e}")
+        return jsonify({
+            "card_name": card_name,
+            "timeline": [],
+            "total_days": 0,
+        })
+    except Exception as e:
+        logger.error(f"Unexpected error in get_card_popularity: {e}")
+        return jsonify({
+            "card_name": card_name,
+            "timeline": [],
+            "total_days": 0,
+        })
 
     # Count card appearances by date
     daily_counts = defaultdict(int)

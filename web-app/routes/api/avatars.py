@@ -23,6 +23,11 @@ def get_all_avatars():
 
     Includes both current event matches and archived matches for lifetime stats.
     """
+    # Check if database exists
+    if not MATCH_RECORDS_DB_PATH.exists():
+        logger.warning(f"Database not found at {MATCH_RECORDS_DB_PATH}")
+        return jsonify([])
+
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
@@ -41,16 +46,22 @@ def get_all_avatars():
                    OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
             """)
             all_rows.extend(cur.fetchall())
-        except sqlite3.OperationalError:
-            cur.execute("""
-                SELECT
-                    CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
-                    json_deck_data
-                FROM match_records
-                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
-            """)
-            all_rows.extend(cur.fetchall())
-            use_new_columns = False
+        except sqlite3.OperationalError as e:
+            logger.warning(f"Failed to query new columns format: {e}")
+            try:
+                cur.execute("""
+                    SELECT
+                        CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
+                        json_deck_data
+                    FROM match_records
+                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                """)
+                all_rows.extend(cur.fetchall())
+                use_new_columns = False
+            except sqlite3.OperationalError as e2:
+                logger.error(f"Failed to query match_records: {e2}")
+                conn.close()
+                return jsonify([])
 
         # Also query match_records_archive for lifetime stats
         if use_new_columns:
@@ -65,11 +76,15 @@ def get_all_avatars():
                 """)
                 all_rows.extend(cur.fetchall())
             except sqlite3.OperationalError:
-                pass  # Archive table may not exist
+                logger.info("Archive table not found or error querying - continuing without archive data")
 
         rows = all_rows
         conn.close()
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError as e:
+        logger.error(f"Database error: {e}")
+        return jsonify([])
+    except Exception as e:
+        logger.error(f"Unexpected error in get_all_avatars: {e}")
         return jsonify([])
 
     avatar_stats = {}

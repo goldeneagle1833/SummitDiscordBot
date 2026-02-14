@@ -18,10 +18,11 @@ AVATAR_IMAGES_DIR = BASE_DIR / "templates" / "avatar_imgs"
 ALL_CARDS_PATH = BASE_DIR / "curiosa-io-tools" / "All_Cards_Array.json"
 
 # Database paths
-ELO_DB_PATH = BOT_DIR / "elo.db"
-MATCH_RECORDS_DB_PATH = BOT_DIR / "match_records.db"
-FART_SCORES_DB_PATH = BOT_DIR / "fart_scores.db"
-COMMUNITY_DB_PATH = BOT_DIR / "community.db"
+# Can be overridden via environment variables in production
+ELO_DB_PATH = Path(os.environ.get("ELO_DB_PATH", BOT_DIR / "elo.db"))
+MATCH_RECORDS_DB_PATH = Path(os.environ.get("MATCH_RECORDS_DB_PATH", BOT_DIR / "match_records.db"))
+FART_SCORES_DB_PATH = Path(os.environ.get("FART_SCORES_DB_PATH", BOT_DIR / "fart_scores.db"))
+COMMUNITY_DB_PATH = Path(os.environ.get("COMMUNITY_DB_PATH", BOT_DIR / "community.db"))
 
 # Flask configuration
 # SECURITY: SECRET_KEY must be set in production via environment variable

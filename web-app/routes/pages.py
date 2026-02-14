@@ -204,6 +204,22 @@ def avatar_profile(avatar_name):
     return render_template("pages/avatar.html", avatar_name=avatar_name)
 
 
+@pages_bp.route("/card/<card_name>")
+def card_profile(card_name):
+    """Card profile page - restricted to allowed Discord users."""
+    from urllib.parse import unquote
+    card_name = unquote(card_name)
+
+    if not is_admin():
+        if session.get("user_id") is None:
+            return redirect(url_for("auth.discord_login"))
+        return render_template(
+            "pages/error.html", error="You don't have permission to view this page."
+        ), 403
+
+    return render_template("pages/card.html", card_name=card_name)
+
+
 @pages_bp.route("/deck-snapshot/<int:match_id>/<player_id>")
 def deck_snapshot(match_id, player_id):
     """Deck snapshot page."""

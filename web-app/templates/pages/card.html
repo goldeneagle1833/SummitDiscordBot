@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Card Stats - Sorcerers Summit</title>
+    <!-- Tailwind CSS (load first) -->
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      .card-image-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 2rem;
+        background: var(--color-bg-elevated, rgba(255, 255, 255, 0.05));
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+      }
+      .card-image-container img {
+        max-width: 100%;
+        max-height: 400px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+      .card-image-container.site-card img {
+        transform: rotate(90deg);
+        max-width: 300px;
+      }
+      .loading-text {
+        text-align: center;
+        padding: 1.5rem;
+        color: rgba(255, 255, 255, 0.6);
+      }
+      .stats-placeholder {
+        text-align: center;
+        padding: 3rem;
+        color: rgba(255, 255, 255, 0.5);
+        font-style: italic;
+        background: var(--color-bg-elevated, rgba(255, 255, 255, 0.05));
+        border-radius: 8px;
+        margin: 1.5rem 0;
+      }
+      .popularity-chart-section {
+        padding: 0;
+      }
+      .popularity-chart-wrapper {
+        padding: 1.5rem;
+        background: var(--color-bg-elevated, rgba(255, 255, 255, 0.05));
+        border-radius: 8px;
+      }
+      .popularity-chart-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+      }
+      .popularity-chart-controls label {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.8);
+      }
+      .popularity-chart-controls input[type="range"] {
+        flex: 1;
+        max-width: 300px;
+      }
+      .popularity-chart-controls span {
+        font-weight: bold;
+        color: var(--primary, #2ecc71);
+        min-width: 50px;
+      }
+      .popularity-chart-container {
+        position: relative;
+        height: 300px;
+        margin-top: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main class="mt-16 mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-8">
+      <a
+        href="/cards"
+        class="inline-flex items-center gap-2 mb-6 text-primary hover:underline font-medium">
+        ← Back to Card Win Rates
+      </a>
+
+      <div
+        class="bg-bg-surface border border-border rounded-soft overflow-hidden"
+        id="card-profile">
+        <div class="p-6 md:p-8 border-b border-border">
+          <h1
+            class="text-2xl sm:text-3xl md:text-4xl font-semibold mb-2"
+            id="card-name">
+            Loading...
+          </h1>
+          <div
+            class="text-base sm:text-lg text-text-muted"
+            id="card-type"></div>
+        </div>
+
+        <!-- Card Image -->
+        <div class="p-6 md:p-8 border-b border-border">
+          <div class="card-image-container" id="card-image-container">
+            <p class="loading-text">Loading card image...</p>
+          </div>
+        </div>
+
+        <!-- Overall Stats -->
+        <div class="p-6 md:p-8">
+          <h3 class="text-lg md:text-xl font-semibold mb-4">
+            📊 Overall Stats
+          </h3>
+          <div class="player-stats" id="card-stats-grid">
+            <div class="stat-card">
+              <div class="stat-value" id="stat-wins">-</div>
+              <div class="stat-label">Wins</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-losses">-</div>
+              <div class="stat-label">Losses</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-winrate">-</div>
+              <div class="stat-label">Win Rate</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-matches">-</div>
+              <div class="stat-label">Total Matches</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Popularity Over Time Graph -->
+        <div class="p-6 md:p-8 border-t border-border popularity-chart-section">
+          <h3 class="text-lg md:text-xl font-semibold mb-4">
+            📈 Popularity Over Time
+          </h3>
+          <div class="popularity-chart-wrapper">
+            <div class="popularity-chart-controls">
+              <label for="days-slider">
+                Time range: Last <span id="days-value">30</span> days
+                <input
+                  type="range"
+                  id="days-slider"
+                  min="7"
+                  max="180"
+                  value="30"
+                  step="1" />
+              </label>
+              <label for="scale-slider">
+                Y-axis scale: <span id="scale-value">Auto</span>
+                <input
+                  type="range"
+                  id="scale-slider"
+                  min="0"
+                  max="100"
+                  value="0"
+                  step="5" />
+              </label>
+            </div>
+            <div class="popularity-chart-container">
+              <canvas id="popularity-chart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Placeholder for future stats -->
+        <div class="p-6 md:p-8 border-t border-border">
+          <div class="stats-placeholder">
+            <h3 class="text-lg font-semibold mb-2">📊 More detailed stats coming soon!</h3>
+            <p>Card-specific analytics, matchup data, and performance trends will be added here.</p>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const cardName = "{{ card_name }}";
+      let popularityChartInstance = null;
+      let popularityData = null;
+      let currentDays = 30;
+      let currentScale = 0; // 0 = auto
+
+      async function fetchCardData() {
+        try {
+          const res = await fetch(
+            `/api/card/${encodeURIComponent(cardName)}`,
+          );
+          if (!res.ok) {
+            document.getElementById("card-name").textContent =
+              "Card not found";
+            document.getElementById("card-image-container").innerHTML =
+              '<p class="loading-text">Card not found in database</p>';
+            return;
+          }
+          const data = await res.json();
+
+          // Update card info
+          document.getElementById("card-name").textContent = data.name;
+          document.getElementById("card-type").textContent = data.type || "Unknown Type";
+          document.title = `${data.name} - Sorcerers Summit`;
+
+          // Update overall stats
+          document.getElementById("stat-wins").textContent = data.wins;
+          document.getElementById("stat-losses").textContent = data.losses;
+          document.getElementById("stat-winrate").textContent =
+            `${data.win_rate}%`;
+          document.getElementById("stat-matches").textContent =
+            data.total_matches;
+
+          // Display card image
+          const imageContainer = document.getElementById("card-image-container");
+          if (data.image) {
+            const isSite = (data.type || "").toLowerCase() === "site";
+            if (isSite) {
+              imageContainer.className = "card-image-container site-card";
+            }
+            imageContainer.innerHTML = `
+              <img
+                src="/card-images/${data.image}"
+                alt="${data.name}"
+                onerror="this.parentElement.innerHTML = '<p class=\\'loading-text\\'>Image not available</p>';"
+              />
+            `;
+          } else {
+            imageContainer.innerHTML =
+              '<p class="loading-text">No image available for this card</p>';
+          }
+        } catch (error) {
+          document.getElementById("card-name").textContent =
+            "Error loading card";
+          document.getElementById("card-image-container").innerHTML =
+            '<p class="loading-text">Error loading card data</p>';
+          console.error(error);
+        }
+      }
+
+      async function fetchPopularityData() {
+        try {
+          const res = await fetch(
+            `/api/card/${encodeURIComponent(cardName)}/popularity`,
+          );
+          if (!res.ok) {
+            console.error("Failed to fetch popularity data");
+            return;
+          }
+          popularityData = await res.json();
+          renderPopularityChart(popularityData, currentDays, currentScale);
+          setupPopularitySliders();
+        } catch (error) {
+          console.error("Error fetching popularity data:", error);
+        }
+      }
+
+      function renderPopularityChart(data, days, scale) {
+        // Destroy existing chart if it exists
+        if (popularityChartInstance) {
+          popularityChartInstance.destroy();
+          popularityChartInstance = null;
+        }
+
+        if (!data || !data.timeline || data.timeline.length === 0) {
+          const canvas = document.getElementById("popularity-chart");
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+          ctx.font = "14px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(
+            "No popularity data available",
+            canvas.width / 2,
+            canvas.height / 2,
+          );
+          return;
+        }
+
+        // Filter data to last N days
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - days);
+        const filteredTimeline = data.timeline.filter((point) => {
+          const pointDate = new Date(point.date);
+          return pointDate >= cutoffDate;
+        });
+
+        if (filteredTimeline.length === 0) {
+          const canvas = document.getElementById("popularity-chart");
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+          ctx.font = "14px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(
+            "No data in selected time range",
+            canvas.width / 2,
+            canvas.height / 2,
+          );
+          return;
+        }
+
+        const labels = filteredTimeline.map((point) => {
+          const date = new Date(point.date);
+          return date.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          });
+        });
+        const counts = filteredTimeline.map((point) => point.count);
+
+        // Calculate Y-axis range
+        let yMin = 0;
+        let yMax;
+        if (scale === 0) {
+          // Auto scale
+          yMax = Math.max(...counts) * 1.1;
+        } else {
+          // Manual scale
+          yMax = scale;
+        }
+
+        const ctx = document.getElementById("popularity-chart").getContext("2d");
+        popularityChartInstance = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: "Decks Played",
+                data: counts,
+                borderColor: "rgba(46, 204, 113, 1)",
+                backgroundColor: "rgba(46, 204, 113, 0.1)",
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: true,
+                labels: {
+                  color: "rgba(255, 255, 255, 0.8)",
+                },
+              },
+              tooltip: {
+                mode: "index",
+                intersect: false,
+                callbacks: {
+                  label: function (context) {
+                    return `Decks: ${context.parsed.y}`;
+                  },
+                },
+              },
+            },
+            scales: {
+              x: {
+                ticks: {
+                  color: "rgba(255, 255, 255, 0.6)",
+                  maxRotation: 45,
+                  minRotation: 45,
+                },
+                grid: {
+                  color: "rgba(255, 255, 255, 0.1)",
+                },
+              },
+              y: {
+                min: yMin,
+                max: yMax,
+                ticks: {
+                  color: "rgba(255, 255, 255, 0.6)",
+                  stepSize: Math.ceil(yMax / 10),
+                },
+                grid: {
+                  color: "rgba(255, 255, 255, 0.1)",
+                },
+              },
+            },
+          },
+        });
+      }
+
+      function setupPopularitySliders() {
+        const daysSlider = document.getElementById("days-slider");
+        const scaleSlider = document.getElementById("scale-slider");
+        const daysValue = document.getElementById("days-value");
+        const scaleValue = document.getElementById("scale-value");
+
+        daysSlider.addEventListener("input", function () {
+          daysValue.textContent = this.value;
+          currentDays = parseInt(this.value);
+          renderPopularityChart(popularityData, currentDays, currentScale);
+        });
+
+        scaleSlider.addEventListener("input", function () {
+          const value = parseInt(this.value);
+          if (value === 0) {
+            scaleValue.textContent = "Auto";
+          } else {
+            scaleValue.textContent = value;
+          }
+          currentScale = value;
+          renderPopularityChart(popularityData, currentDays, currentScale);
+        });
+      }
+
+      fetchCardData();
+      fetchPopularityData();
+    </script>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+  </body>
+</html>

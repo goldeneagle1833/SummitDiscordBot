@@ -94,10 +94,14 @@
 
       function createCardTile(card, idx) {
         const color = getWinRateColor(card.win_rate);
-        const cardTile = document.createElement("div");
+        const cardTile = document.createElement("a");
+        cardTile.href = `/card/${encodeURIComponent(card.name)}`;
         cardTile.className = "avatar-stats-card";
         cardTile.setAttribute("data-type", card.type || "Unknown");
         cardTile.setAttribute("data-name", card.name.toLowerCase());
+        cardTile.style.textDecoration = "none";
+        cardTile.style.color = "inherit";
+        cardTile.style.cursor = "pointer";
 
         const isSite = (card.type || "").toLowerCase() === "site";
         const bgImageHtml = card.image

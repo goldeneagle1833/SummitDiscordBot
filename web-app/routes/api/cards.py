@@ -580,6 +580,268 @@ def get_elements():
     return jsonify(response)
 
 
+@cards_bp.route("/card/<card_name>")
+def get_card_stats(card_name):
+    """API endpoint for individual card stats.
+
+    Returns stats for a specific card including wins, losses, win rate, type, and image.
+    """
+    if not is_admin():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    from urllib.parse import unquote
+    card_name = unquote(card_name)
+
+    card_image_lookup = _build_card_image_lookup()
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        all_rows = []
+        use_new_columns = True
+
+        # Query current match_records
+        try:
+            cur.execute("""
+                SELECT json_deck_data_winner, json_deck_data_loser
+                FROM match_records
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+            """)
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError:
+            cur.execute("""
+                SELECT
+                    CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
+                    json_deck_data
+                FROM match_records
+                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+            """)
+            all_rows.extend(cur.fetchall())
+            use_new_columns = False
+
+        # Also query match_records_archive for lifetime stats
+        if use_new_columns:
+            try:
+                cur.execute("""
+                    SELECT json_deck_data_winner, json_deck_data_loser
+                    FROM match_records_archive
+                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                """)
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass  # Archive table may not exist
+
+        rows = all_rows
+        conn.close()
+    except sqlite3.OperationalError:
+        return jsonify({"error": "Database not found"}), 404
+
+    card_stats = {"wins": 0, "losses": 0, "type": None}
+    sections = ["spellbook", "atlas", "sideboard"]
+
+    def process_deck(deck_str, is_winner):
+        if not deck_str or deck_str in ("", "{}"):
+            return
+        try:
+            deck_data = json.loads(deck_str)
+            deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+            card_found = False
+            for sec in sections:
+                for card in deck.get(sec, []) or []:
+                    name = card.get("name")
+                    if name and name == card_name:
+                        card_found = True
+                        ctype = card.get("type") or "Unknown"
+                        if not card_stats["type"]:
+                            card_stats["type"] = ctype
+                        break
+                if card_found:
+                    break
+
+            if card_found:
+                if is_winner:
+                    card_stats["wins"] += 1
+                else:
+                    card_stats["losses"] += 1
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            pass
+
+    if use_new_columns:
+        for row in rows:
+            process_deck(row[0], is_winner=True)
+            process_deck(row[1], is_winner=False)
+    else:
+        for row in rows:
+            reporter_won = row[0]
+            process_deck(row[1], is_winner=reporter_won)
+
+    total = card_stats["wins"] + card_stats["losses"]
+
+    if total == 0:
+        return jsonify({"error": "Card not found in any matches"}), 404
+
+    win_rate = (card_stats["wins"] / total * 100) if total > 0 else 0
+    image = _find_card_image(card_name, card_image_lookup)
+
+    return jsonify({
+        "name": card_name,
+        "wins": card_stats["wins"],
+        "losses": card_stats["losses"],
+        "total_matches": total,
+        "win_rate": round(win_rate, 1),
+        "type": card_stats.get("type", "Unknown"),
+        "image": image,
+    })
+
+
+@cards_bp.route("/card/<card_name>/popularity")
+def get_card_popularity(card_name):
+    """API endpoint for card popularity over time.
+
+    Returns daily counts of how many decks played this card.
+    """
+    if not is_admin():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    from urllib.parse import unquote
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+
+    card_name = unquote(card_name)
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        all_rows = []
+        use_new_columns = True
+
+        # Query current match_records with dates
+        try:
+            cur.execute("""
+                SELECT json_deck_data_winner, json_deck_data_loser, date
+                FROM match_records
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+            """)
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError:
+            cur.execute("""
+                SELECT json_deck_data, '', date
+                FROM match_records
+                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+            """)
+            all_rows.extend(cur.fetchall())
+            use_new_columns = False
+
+        # Also query match_records_archive for historical data
+        if use_new_columns:
+            try:
+                cur.execute("""
+                    SELECT json_deck_data_winner, json_deck_data_loser, date
+                    FROM match_records_archive
+                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                """)
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass  # Archive table may not exist
+
+        rows = all_rows
+        conn.close()
+    except sqlite3.OperationalError:
+        return jsonify({"error": "Database not found"}), 404
+
+    # Count card appearances by date
+    daily_counts = defaultdict(int)
+    sections = ["spellbook", "atlas", "sideboard"]
+
+    def check_card_in_deck(deck_str):
+        """Check if card is in deck."""
+        if not deck_str or deck_str in ("", "{}"):
+            return False
+        try:
+            deck_data = json.loads(deck_str)
+            deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+            for sec in sections:
+                for card in deck.get(sec, []) or []:
+                    name = card.get("name")
+                    if name and name == card_name:
+                        return True
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            pass
+        return False
+
+    for row in rows:
+        match_date = row[2] if len(row) > 2 else None
+        if not match_date:
+            continue
+
+        # Parse date (handle various formats)
+        try:
+            # Try ISO format first
+            date_obj = datetime.fromisoformat(match_date.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            try:
+                # Try common formats
+                date_obj = datetime.strptime(match_date, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                try:
+                    date_obj = datetime.strptime(match_date, "%Y-%m-%d")
+                except ValueError:
+                    continue
+
+        # Get just the date (no time)
+        date_key = date_obj.strftime("%Y-%m-%d")
+
+        # Check both decks if using new columns
+        if use_new_columns:
+            if check_card_in_deck(row[0]):
+                daily_counts[date_key] += 1
+            if check_card_in_deck(row[1]):
+                daily_counts[date_key] += 1
+        else:
+            if check_card_in_deck(row[0]):
+                daily_counts[date_key] += 1
+
+    # Convert to timeline format (sorted by date)
+    timeline = []
+    for date_str, count in sorted(daily_counts.items()):
+        timeline.append({
+            "date": date_str,
+            "count": count,
+        })
+
+    # Fill in missing dates with 0 counts (for better visualization)
+    if timeline:
+        start_date = datetime.strptime(timeline[0]["date"], "%Y-%m-%d")
+        end_date = datetime.strptime(timeline[-1]["date"], "%Y-%m-%d")
+
+        # Create a complete timeline
+        complete_timeline = []
+        current_date = start_date
+        date_counts = {item["date"]: item["count"] for item in timeline}
+
+        while current_date <= end_date:
+            date_str = current_date.strftime("%Y-%m-%d")
+            complete_timeline.append({
+                "date": date_str,
+                "count": date_counts.get(date_str, 0),
+            })
+            current_date += timedelta(days=1)
+
+        timeline = complete_timeline
+
+    return jsonify({
+        "card_name": card_name,
+        "timeline": timeline,
+        "total_days": len(timeline),
+    })
+
+
 @cards_bp.route("/deck-composition")
 def get_deck_composition():
     """API endpoint for deck element composition across all decks.

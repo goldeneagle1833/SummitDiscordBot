@@ -246,6 +246,13 @@ def get_avatar(avatar_name):
     total_wins = 0
     total_losses = 0
 
+    # Stats for play/draw win rates (from 2/7/2026 onward)
+    cutoff_date = "2026-02-07"
+    play_wins = 0
+    play_losses = 0
+    draw_wins = 0
+    draw_losses = 0
+
     if use_new_columns:
         for row in rows:
             winner_json = row[9]
@@ -290,9 +297,27 @@ def get_avatar(avatar_name):
                 total_wins += 1
                 wins_matches.append(match_obj.copy())
 
+                # Track play/draw stats from cutoff date onward
+                if row[4] >= cutoff_date:
+                    # Avatar won on the play if first_player is "y" (winner went first)
+                    # Avatar won on the draw if first_player is not "y" (winner went second)
+                    if row[7] and "y" in str(row[7]).lower():
+                        play_wins += 1
+                    else:
+                        draw_wins += 1
+
             if avatar_in_loser:
                 total_losses += 1
                 losses_matches.append(match_obj.copy())
+
+                # Track play/draw stats from cutoff date onward
+                if row[4] >= cutoff_date:
+                    # Avatar lost on the play if first_player is not "y" (winner went second, loser went first)
+                    # Avatar lost on the draw if first_player is "y" (winner went first, loser went second)
+                    if row[7] and "y" in str(row[7]).lower():
+                        draw_losses += 1
+                    else:
+                        play_losses += 1
     else:
         for row in rows:
             deck_json = row[9]
@@ -319,11 +344,24 @@ def get_avatar(avatar_name):
                             "loser_deck_url": None,
                         }
                         wins_matches.append(match_obj)
+
+                        # Track play/draw stats from cutoff date onward
+                        if row[4] >= cutoff_date:
+                            if row[7] and "y" in str(row[7]).lower():
+                                play_wins += 1
+                            else:
+                                draw_wins += 1
             except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                 continue
 
     total_matches = total_wins + total_losses
     win_rate = (total_wins / total_matches * 100) if total_matches > 0 else 0
+
+    # Calculate play/draw win rates (from 2/7/2026 onward)
+    play_total = play_wins + play_losses
+    draw_total = draw_wins + draw_losses
+    play_win_rate = (play_wins / play_total * 100) if play_total > 0 else 0
+    draw_win_rate = (draw_wins / draw_total * 100) if draw_total > 0 else 0
 
     return jsonify({
         "name": avatar_name,
@@ -333,6 +371,18 @@ def get_avatar(avatar_name):
         "win_rate": round(win_rate, 1),
         "wins_matches": wins_matches[:100],
         "losses_matches": losses_matches[:100],
+        "play_stats": {
+            "wins": play_wins,
+            "losses": play_losses,
+            "total": play_total,
+            "win_rate": round(play_win_rate, 1)
+        },
+        "draw_stats": {
+            "wins": draw_wins,
+            "losses": draw_losses,
+            "total": draw_total,
+            "win_rate": round(draw_win_rate, 1)
+        }
     })
 
 

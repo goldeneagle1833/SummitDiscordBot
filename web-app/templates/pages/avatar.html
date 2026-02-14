@@ -164,6 +164,28 @@
           </div>
         </div>
 
+        <!-- Play vs Draw Stats -->
+        <div class="p-6 md:p-8 border-t border-border">
+          <h3 class="text-lg md:text-xl font-semibold mb-2">
+            🎲 On the Play vs On the Draw
+          </h3>
+          <p class="text-sm text-text-muted mb-4">
+            Statistics from February 7, 2026 onward
+          </p>
+          <div class="player-stats">
+            <div class="stat-card">
+              <div class="stat-value" id="stat-play-winrate">-</div>
+              <div class="stat-label">Win Rate on the Play</div>
+              <div class="text-xs text-text-muted mt-1" id="stat-play-record">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-draw-winrate">-</div>
+              <div class="stat-label">Win Rate on the Draw</div>
+              <div class="text-xs text-text-muted mt-1" id="stat-draw-record">-</div>
+            </div>
+          </div>
+        </div>
+
         <!-- Deck Composition (ADMINS only) -->
         <div
           class="deck-composition-section"
@@ -274,6 +296,24 @@
             `${data.win_rate}%`;
           document.getElementById("stat-matches").textContent =
             data.total_matches;
+
+          // Update play/draw stats
+          if (data.play_stats && data.draw_stats) {
+            document.getElementById("stat-play-winrate").textContent =
+              `${data.play_stats.win_rate}%`;
+            document.getElementById("stat-play-record").textContent =
+              `${data.play_stats.wins}-${data.play_stats.losses} (${data.play_stats.total} matches)`;
+
+            document.getElementById("stat-draw-winrate").textContent =
+              `${data.draw_stats.win_rate}%`;
+            document.getElementById("stat-draw-record").textContent =
+              `${data.draw_stats.wins}-${data.draw_stats.losses} (${data.draw_stats.total} matches)`;
+          } else {
+            document.getElementById("stat-play-winrate").textContent = "N/A";
+            document.getElementById("stat-play-record").textContent = "No data";
+            document.getElementById("stat-draw-winrate").textContent = "N/A";
+            document.getElementById("stat-draw-record").textContent = "No data";
+          }
 
           // Render wins history
           const winsTbody = document.getElementById("wins-history-tbody");

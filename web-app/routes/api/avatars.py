@@ -467,6 +467,10 @@ def get_avatar_popularity(avatar_name):
         return jsonify({"avatar_name": avatar_name, "timeline": [], "total_days": 0})
 
     daily_counts = defaultdict(int)
+    daily_deck_totals = defaultdict(int)
+
+    def has_deck_data(deck_str):
+        return deck_str and deck_str not in ("", "{}")
 
     def check_avatar_in_deck(deck_str):
         """Check if avatar matches in deck data."""
@@ -500,13 +504,19 @@ def get_avatar_popularity(avatar_name):
         date_key = date_obj.strftime("%Y-%m-%d")
 
         if use_new_columns:
-            if check_avatar_in_deck(row[0]):
-                daily_counts[date_key] += 1
-            if check_avatar_in_deck(row[1]):
-                daily_counts[date_key] += 1
+            if has_deck_data(row[0]):
+                daily_deck_totals[date_key] += 1
+                if check_avatar_in_deck(row[0]):
+                    daily_counts[date_key] += 1
+            if has_deck_data(row[1]):
+                daily_deck_totals[date_key] += 1
+                if check_avatar_in_deck(row[1]):
+                    daily_counts[date_key] += 1
         else:
-            if check_avatar_in_deck(row[0]):
-                daily_counts[date_key] += 1
+            if has_deck_data(row[0]):
+                daily_deck_totals[date_key] += 1
+                if check_avatar_in_deck(row[0]):
+                    daily_counts[date_key] += 1
 
     timeline = []
     for date_str, count in sorted(daily_counts.items()):
@@ -524,7 +534,13 @@ def get_avatar_popularity(avatar_name):
             current_date += timedelta(days=1)
         timeline = complete_timeline
 
-    return jsonify({"avatar_name": avatar_name, "timeline": timeline, "total_days": len(timeline)})
+    # Build daily totals for normalization
+    if timeline:
+        daily_totals_list = [daily_deck_totals.get(item["date"], 0) for item in timeline]
+    else:
+        daily_totals_list = []
+
+    return jsonify({"avatar_name": avatar_name, "timeline": timeline, "total_days": len(timeline), "daily_totals": daily_totals_list})
 
 
 @avatars_bp.route("/avatars/popularity")
@@ -589,6 +605,8 @@ def get_all_avatars_popularity():
 
     # {avatar_name: {date_str: count}}
     avatar_daily_counts = defaultdict(lambda: defaultdict(int))
+    # {date_str: total_decks} for normalization
+    daily_deck_totals = defaultdict(int)
 
     def extract_avatar_name(deck_str):
         if not deck_str or deck_str in ("", "{}"):
@@ -601,6 +619,9 @@ def get_all_avatars_popularity():
             return name if name else None
         except (json.JSONDecodeError, KeyError, IndexError, TypeError):
             return None
+
+    def has_deck_data(deck_str):
+        return deck_str and deck_str not in ("", "{}")
 
     for row in all_rows:
         match_date = row[2] if len(row) > 2 else None
@@ -621,16 +642,22 @@ def get_all_avatars_popularity():
         date_key = date_obj.strftime("%Y-%m-%d")
 
         if use_new_columns:
-            name = extract_avatar_name(row[0])
-            if name:
-                avatar_daily_counts[name][date_key] += 1
-            name = extract_avatar_name(row[1])
-            if name:
-                avatar_daily_counts[name][date_key] += 1
+            if has_deck_data(row[0]):
+                daily_deck_totals[date_key] += 1
+                name = extract_avatar_name(row[0])
+                if name:
+                    avatar_daily_counts[name][date_key] += 1
+            if has_deck_data(row[1]):
+                daily_deck_totals[date_key] += 1
+                name = extract_avatar_name(row[1])
+                if name:
+                    avatar_daily_counts[name][date_key] += 1
         else:
-            name = extract_avatar_name(row[0])
-            if name:
-                avatar_daily_counts[name][date_key] += 1
+            if has_deck_data(row[0]):
+                daily_deck_totals[date_key] += 1
+                name = extract_avatar_name(row[0])
+                if name:
+                    avatar_daily_counts[name][date_key] += 1
 
     # Find global date range
     all_dates = set()
@@ -657,7 +684,10 @@ def get_all_avatars_popularity():
         timeline = [{"date": d, "count": daily.get(d, 0)} for d in complete_dates]
         result[avatar_name] = timeline
 
-    return jsonify({"avatars": result, "dates": complete_dates})
+    # Build daily totals for normalization
+    totals = [daily_deck_totals.get(d, 0) for d in complete_dates]
+
+    return jsonify({"avatars": result, "dates": complete_dates, "daily_totals": totals})
 
 
 @avatars_bp.route("/avatar/<avatar_name>/deck-composition")

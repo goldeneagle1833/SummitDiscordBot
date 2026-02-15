@@ -275,6 +275,20 @@
         text-align: center;
         margin-top: 0.5rem;
       }
+      .normalize-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.8);
+        cursor: pointer;
+        user-select: none;
+      }
+      .normalize-toggle input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
@@ -385,6 +399,10 @@
             <label for="pop-bucket-slider">
               Group by: <span id="pop-bucket-value">7 days</span>
               <input type="range" id="pop-bucket-slider" min="1" max="30" value="7" step="1" />
+            </label>
+            <label class="normalize-toggle">
+              <input type="checkbox" id="pop-normalize" checked />
+              Normalize (% of decks per day) — removes effect of varying daily game counts
             </label>
           </div>
 
@@ -636,6 +654,7 @@
       let popChartInstance = null;
       let popDays = 365;
       let popBucket = 7;
+      let popNormalize = true;
 
       const hoverHighlightPlugin = {
         id: "hoverHighlight",
@@ -751,6 +770,13 @@
           }
         }
 
+        // Build daily totals index for normalization
+        const dailyTotals = popularityData.daily_totals || [];
+        // Map full dates to their index in the complete dates array
+        const fullDates = popularityData.dates || [];
+        const dateToTotalIdx = {};
+        fullDates.forEach((d, i) => { dateToTotalIdx[d] = i; });
+
         // Build datasets using shared date axis
         const datasets = [];
         chartSelectedCards.forEach((cardName, idx) => {
@@ -763,11 +789,27 @@
 
           // Bucket the counts using shared indices
           const bucketedCounts = bucketIndices.map(([start, end]) => {
-            let total = 0;
-            for (let j = start; j < end; j++) {
-              total += dateCounts[allDates[j]] || 0;
+            if (popNormalize) {
+              // Calculate average % of decks across days in this bucket
+              let totalPct = 0;
+              let daysWithData = 0;
+              for (let j = start; j < end; j++) {
+                const totalIdx = dateToTotalIdx[allDates[j]];
+                const dayTotal = totalIdx !== undefined ? dailyTotals[totalIdx] : 0;
+                const cardCount = dateCounts[allDates[j]] || 0;
+                if (dayTotal > 0) {
+                  totalPct += (cardCount / dayTotal) * 100;
+                  daysWithData++;
+                }
+              }
+              return daysWithData > 0 ? Math.round(totalPct / daysWithData * 10) / 10 : 0;
+            } else {
+              let total = 0;
+              for (let j = start; j < end; j++) {
+                total += dateCounts[allDates[j]] || 0;
+              }
+              return total;
             }
-            return total;
           });
 
           const color = CHART_COLORS[idx % CHART_COLORS.length];
@@ -810,7 +852,10 @@
                 intersect: false,
                 callbacks: {
                   label: function(context) {
-                    return `${context.dataset.label}: ${context.parsed.y}`;
+                    const val = context.parsed.y;
+                    return popNormalize
+                      ? `${context.dataset.label}: ${val}%`
+                      : `${context.dataset.label}: ${val}`;
                   },
                 },
               },
@@ -822,8 +867,18 @@
               },
               y: {
                 beginAtZero: true,
-                ticks: { color: "rgba(255, 255, 255, 0.6)" },
+                ticks: {
+                  color: "rgba(255, 255, 255, 0.6)",
+                  callback: function(value) {
+                    return popNormalize ? value + "%" : value;
+                  },
+                },
                 grid: { color: "rgba(255, 255, 255, 0.1)" },
+                title: {
+                  display: true,
+                  text: popNormalize ? "% of Decks" : "Deck Count",
+                  color: "rgba(255, 255, 255, 0.6)",
+                },
               },
             },
           },
@@ -877,6 +932,11 @@
       document.getElementById("pop-bucket-slider").addEventListener("input", function() {
         popBucket = parseInt(this.value);
         document.getElementById("pop-bucket-value").textContent = popBucket === 1 ? "1 day" : popBucket + " days";
+        renderPopChart();
+      });
+
+      document.getElementById("pop-normalize").addEventListener("change", function() {
+        popNormalize = this.checked;
         renderPopChart();
       });
 

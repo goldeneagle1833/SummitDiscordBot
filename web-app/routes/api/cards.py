@@ -788,7 +788,11 @@ def get_card_popularity(card_name):
 
     # Count card appearances by date
     daily_counts = defaultdict(int)
+    daily_deck_totals = defaultdict(int)
     sections = ["spellbook", "atlas", "sideboard"]
+
+    def has_deck_data(deck_str):
+        return deck_str and deck_str not in ("", "{}")
 
     def check_card_in_deck(deck_str):
         """Check if card is in deck."""
@@ -830,13 +834,19 @@ def get_card_popularity(card_name):
 
         # Check both decks if using new columns
         if use_new_columns:
-            if check_card_in_deck(row[0]):
-                daily_counts[date_key] += 1
-            if check_card_in_deck(row[1]):
-                daily_counts[date_key] += 1
+            if has_deck_data(row[0]):
+                daily_deck_totals[date_key] += 1
+                if check_card_in_deck(row[0]):
+                    daily_counts[date_key] += 1
+            if has_deck_data(row[1]):
+                daily_deck_totals[date_key] += 1
+                if check_card_in_deck(row[1]):
+                    daily_counts[date_key] += 1
         else:
-            if check_card_in_deck(row[0]):
-                daily_counts[date_key] += 1
+            if has_deck_data(row[0]):
+                daily_deck_totals[date_key] += 1
+                if check_card_in_deck(row[0]):
+                    daily_counts[date_key] += 1
 
     # Convert to timeline format (sorted by date)
     timeline = []
@@ -866,10 +876,17 @@ def get_card_popularity(card_name):
 
         timeline = complete_timeline
 
+    # Build daily totals for normalization
+    if timeline:
+        daily_totals_list = [daily_deck_totals.get(item["date"], 0) for item in timeline]
+    else:
+        daily_totals_list = []
+
     return jsonify({
         "card_name": card_name,
         "timeline": timeline,
         "total_days": len(timeline),
+        "daily_totals": daily_totals_list,
     })
 
 
@@ -935,6 +952,8 @@ def get_all_cards_popularity():
 
     # {card_name: {date_str: count}}
     card_daily_counts = defaultdict(lambda: defaultdict(int))
+    # {date_str: total_decks} for normalization
+    daily_deck_totals = defaultdict(int)
     sections = ["spellbook", "atlas", "sideboard"]
 
     def extract_card_names(deck_str):
@@ -953,6 +972,10 @@ def get_all_cards_popularity():
             return names
         except (json.JSONDecodeError, KeyError, IndexError, TypeError):
             return set()
+
+    def has_deck_data(deck_str):
+        """Check if a deck string contains valid data."""
+        return deck_str and deck_str not in ("", "{}")
 
     for row in all_rows:
         match_date = row[2] if len(row) > 2 else None
@@ -973,13 +996,19 @@ def get_all_cards_popularity():
         date_key = date_obj.strftime("%Y-%m-%d")
 
         if use_new_columns:
-            for name in extract_card_names(row[0]):
-                card_daily_counts[name][date_key] += 1
-            for name in extract_card_names(row[1]):
-                card_daily_counts[name][date_key] += 1
+            if has_deck_data(row[0]):
+                daily_deck_totals[date_key] += 1
+                for name in extract_card_names(row[0]):
+                    card_daily_counts[name][date_key] += 1
+            if has_deck_data(row[1]):
+                daily_deck_totals[date_key] += 1
+                for name in extract_card_names(row[1]):
+                    card_daily_counts[name][date_key] += 1
         else:
-            for name in extract_card_names(row[0]):
-                card_daily_counts[name][date_key] += 1
+            if has_deck_data(row[0]):
+                daily_deck_totals[date_key] += 1
+                for name in extract_card_names(row[0]):
+                    card_daily_counts[name][date_key] += 1
 
     # Find global date range
     all_dates = set()
@@ -1005,7 +1034,10 @@ def get_all_cards_popularity():
         timeline = [{"date": d, "count": daily.get(d, 0)} for d in complete_dates]
         result[card_name] = timeline
 
-    return jsonify({"cards": result, "dates": complete_dates})
+    # Build daily totals for normalization
+    totals = [daily_deck_totals.get(d, 0) for d in complete_dates]
+
+    return jsonify({"cards": result, "dates": complete_dates, "daily_totals": totals})
 
 
 @cards_bp.route("/deck-composition")

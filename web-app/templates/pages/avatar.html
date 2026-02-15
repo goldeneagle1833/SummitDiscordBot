@@ -149,6 +149,20 @@
         color: rgba(255, 255, 255, 0.5);
         font-style: italic;
       }
+      .normalize-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.8);
+        cursor: pointer;
+        user-select: none;
+      }
+      .normalize-toggle input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
@@ -276,6 +290,10 @@
                   max="100"
                   value="0"
                   step="5" />
+              </label>
+              <label class="normalize-toggle">
+                <input type="checkbox" id="pop-normalize" checked />
+                Normalize (% of decks per day)
               </label>
             </div>
             <div class="popularity-chart-container">
@@ -559,6 +577,7 @@
       let currentDays = 365;
       let currentScale = 0;
       let currentBucket = 1;
+      let popNormalize = true;
 
       async function fetchPopularityData() {
         try {
@@ -619,6 +638,9 @@
           return;
         }
 
+        // Build daily totals for normalization
+        const dailyTotals = data.daily_totals || [];
+
         let labels, counts;
         if (currentBucket <= 1) {
           labels = filteredTimeline.map((point) => {
@@ -627,7 +649,16 @@
               day: "numeric",
             });
           });
-          counts = filteredTimeline.map((point) => point.count);
+          if (popNormalize) {
+            counts = filteredTimeline.map((point, idx) => {
+              // Find the index in the full timeline for daily_totals alignment
+              const fullIdx = data.timeline.findIndex(p => p.date === point.date);
+              const dayTotal = fullIdx >= 0 && fullIdx < dailyTotals.length ? dailyTotals[fullIdx] : 0;
+              return dayTotal > 0 ? Math.round((point.count / dayTotal) * 1000) / 10 : 0;
+            });
+          } else {
+            counts = filteredTimeline.map((point) => point.count);
+          }
         } else {
           labels = [];
           counts = [];
@@ -636,7 +667,21 @@
               i,
               Math.min(i + currentBucket, filteredTimeline.length),
             );
-            counts.push(chunk.reduce((sum, p) => sum + p.count, 0));
+            if (popNormalize) {
+              let totalPct = 0;
+              let daysWithData = 0;
+              chunk.forEach((point) => {
+                const fullIdx = data.timeline.findIndex(p => p.date === point.date);
+                const dayTotal = fullIdx >= 0 && fullIdx < dailyTotals.length ? dailyTotals[fullIdx] : 0;
+                if (dayTotal > 0) {
+                  totalPct += (point.count / dayTotal) * 100;
+                  daysWithData++;
+                }
+              });
+              counts.push(daysWithData > 0 ? Math.round(totalPct / daysWithData * 10) / 10 : 0);
+            } else {
+              counts.push(chunk.reduce((sum, p) => sum + p.count, 0));
+            }
             const startDate = new Date(chunk[0].date);
             const endDate = new Date(chunk[chunk.length - 1].date);
             const fmt = { month: "short", day: "numeric" };
@@ -669,7 +714,7 @@
             labels: labels,
             datasets: [
               {
-                label: "Matches Played",
+                label: popNormalize ? "% of Decks" : "Matches Played",
                 data: counts,
                 borderColor: "rgba(46, 204, 113, 1)",
                 backgroundColor: "rgba(46, 204, 113, 0.1)",
@@ -694,7 +739,8 @@
                 intersect: false,
                 callbacks: {
                   label: function (context) {
-                    return `Matches: ${context.parsed.y}`;
+                    const val = context.parsed.y;
+                    return popNormalize ? `% of Decks: ${val}%` : `Matches: ${val}`;
                   },
                 },
               },
@@ -710,12 +756,20 @@
               },
               y: {
                 min: yMin,
-                max: yMax,
+                max: popNormalize ? undefined : yMax,
                 ticks: {
                   color: "rgba(255, 255, 255, 0.6)",
-                  stepSize: Math.ceil(yMax / 10),
+                  stepSize: popNormalize ? undefined : Math.ceil(yMax / 10),
+                  callback: function(value) {
+                    return popNormalize ? value + "%" : value;
+                  },
                 },
                 grid: { color: "rgba(255, 255, 255, 0.1)" },
+                title: {
+                  display: true,
+                  text: popNormalize ? "% of Decks" : "Match Count",
+                  color: "rgba(255, 255, 255, 0.6)",
+                },
               },
             },
           },
@@ -748,6 +802,11 @@
           const value = parseInt(this.value);
           scaleValue.textContent = value === 0 ? "Auto" : value;
           currentScale = value;
+          renderPopularityChart(popularityData, currentDays, currentScale);
+        });
+
+        document.getElementById("pop-normalize").addEventListener("change", function () {
+          popNormalize = this.checked;
           renderPopularityChart(popularityData, currentDays, currentScale);
         });
       }

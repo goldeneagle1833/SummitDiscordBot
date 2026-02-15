@@ -102,6 +102,20 @@
       .avatar-toggle-btns button:hover {
         background: rgba(255, 255, 255, 0.15);
       }
+      .normalize-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.8);
+        cursor: pointer;
+        user-select: none;
+      }
+      .normalize-toggle input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
@@ -199,6 +213,10 @@
             <label for="all-pop-bucket-slider">
               Group by: <span id="all-pop-bucket-value">7 days</span>
               <input type="range" id="all-pop-bucket-slider" min="1" max="30" value="7" step="1" />
+            </label>
+            <label class="normalize-toggle">
+              <input type="checkbox" id="all-pop-normalize" checked />
+              Normalize (% of decks per day)
             </label>
           </div>
           <div class="avatar-toggle-btns">
@@ -499,6 +517,7 @@
       let allPopChart = null;
       let allPopDays = 365;
       let allPopBucket = 7;
+      let allPopNormalize = true;
       let avatarEnabled = {};
 
       function getAvatarColor(index) {
@@ -599,6 +618,12 @@
           }
         }
 
+        // Build daily totals index for normalization
+        const dailyTotals = allPopData.daily_totals || [];
+        const fullDates = allPopData.dates || [];
+        const dateToTotalIdx = {};
+        fullDates.forEach((d, i) => { dateToTotalIdx[d] = i; });
+
         const avatarNames = Object.keys(allPopData.avatars).sort();
         const datasets = [];
 
@@ -612,11 +637,26 @@
 
           // Bucket the counts
           const bucketedCounts = bucketIndices.map(([start, end]) => {
-            let total = 0;
-            for (let j = start; j < end; j++) {
-              total += dateCounts[filteredDates[j]] || 0;
+            if (allPopNormalize) {
+              let totalPct = 0;
+              let daysWithData = 0;
+              for (let j = start; j < end; j++) {
+                const totalIdx = dateToTotalIdx[filteredDates[j]];
+                const dayTotal = totalIdx !== undefined ? dailyTotals[totalIdx] : 0;
+                const avatarCount = dateCounts[filteredDates[j]] || 0;
+                if (dayTotal > 0) {
+                  totalPct += (avatarCount / dayTotal) * 100;
+                  daysWithData++;
+                }
+              }
+              return daysWithData > 0 ? Math.round(totalPct / daysWithData * 10) / 10 : 0;
+            } else {
+              let total = 0;
+              for (let j = start; j < end; j++) {
+                total += dateCounts[filteredDates[j]] || 0;
+              }
+              return total;
             }
-            return total;
           });
 
           datasets.push({
@@ -679,6 +719,14 @@
               tooltip: {
                 mode: "nearest",
                 intersect: false,
+                callbacks: {
+                  label: function(context) {
+                    const val = context.parsed.y;
+                    return allPopNormalize
+                      ? `${context.dataset.label}: ${val}%`
+                      : `${context.dataset.label}: ${val}`;
+                  },
+                },
               },
             },
             scales: {
@@ -688,8 +736,18 @@
               },
               y: {
                 min: 0,
-                ticks: { color: "rgba(255,255,255,0.6)" },
+                ticks: {
+                  color: "rgba(255,255,255,0.6)",
+                  callback: function(value) {
+                    return allPopNormalize ? value + "%" : value;
+                  },
+                },
                 grid: { color: "rgba(255,255,255,0.1)" },
+                title: {
+                  display: true,
+                  text: allPopNormalize ? "% of Decks" : "Deck Count",
+                  color: "rgba(255,255,255,0.6)",
+                },
               },
             },
           },
@@ -710,6 +768,11 @@
           allPopBucket = parseInt(this.value);
           const v = parseInt(this.value);
           document.getElementById("all-pop-bucket-value").textContent = v === 1 ? "1 day" : v + " days";
+          renderAllPopChart();
+        });
+
+        document.getElementById("all-pop-normalize").addEventListener("change", function () {
+          allPopNormalize = this.checked;
           renderAllPopChart();
         });
       }

@@ -873,6 +873,141 @@ def get_card_popularity(card_name):
     })
 
 
+@cards_bp.route("/cards/popularity")
+def get_all_cards_popularity():
+    """API endpoint for all cards' popularity over time.
+
+    Returns daily counts for every card in a single response.
+    Admin only.
+    """
+    if not is_admin():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+
+    if not MATCH_RECORDS_DB_PATH.exists():
+        return jsonify({"cards": {}})
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        all_rows = []
+        use_new_columns = True
+
+        try:
+            cur.execute("""
+                SELECT json_deck_data_winner, json_deck_data_loser, timestamp
+                FROM match_records
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+            """)
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError:
+            try:
+                cur.execute("""
+                    SELECT json_deck_data, '', timestamp
+                    FROM match_records
+                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                """)
+                all_rows.extend(cur.fetchall())
+                use_new_columns = False
+            except sqlite3.OperationalError:
+                conn.close()
+                return jsonify({"cards": {}})
+
+        if use_new_columns:
+            try:
+                cur.execute("""
+                    SELECT json_deck_data_winner, json_deck_data_loser, timestamp
+                    FROM match_records_archive
+                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                """)
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass
+
+        conn.close()
+    except sqlite3.OperationalError:
+        return jsonify({"cards": {}})
+
+    # {card_name: {date_str: count}}
+    card_daily_counts = defaultdict(lambda: defaultdict(int))
+    sections = ["spellbook", "atlas", "sideboard"]
+
+    def extract_card_names(deck_str):
+        """Extract all unique card names from a deck."""
+        if not deck_str or deck_str in ("", "{}"):
+            return set()
+        try:
+            deck_data = json.loads(deck_str)
+            deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+            names = set()
+            for sec in sections:
+                for card in deck.get(sec, []) or []:
+                    name = card.get("name")
+                    if name:
+                        names.add(name)
+            return names
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            return set()
+
+    for row in all_rows:
+        match_date = row[2] if len(row) > 2 else None
+        if not match_date:
+            continue
+
+        try:
+            date_obj = datetime.fromisoformat(match_date.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            try:
+                date_obj = datetime.strptime(match_date, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                try:
+                    date_obj = datetime.strptime(match_date, "%Y-%m-%d")
+                except ValueError:
+                    continue
+
+        date_key = date_obj.strftime("%Y-%m-%d")
+
+        if use_new_columns:
+            for name in extract_card_names(row[0]):
+                card_daily_counts[name][date_key] += 1
+            for name in extract_card_names(row[1]):
+                card_daily_counts[name][date_key] += 1
+        else:
+            for name in extract_card_names(row[0]):
+                card_daily_counts[name][date_key] += 1
+
+    # Find global date range
+    all_dates = set()
+    for counts in card_daily_counts.values():
+        all_dates.update(counts.keys())
+
+    if not all_dates:
+        return jsonify({"cards": {}})
+
+    sorted_dates = sorted(all_dates)
+    start_date = datetime.strptime(sorted_dates[0], "%Y-%m-%d")
+    end_date = datetime.strptime(sorted_dates[-1], "%Y-%m-%d")
+
+    complete_dates = []
+    current_date = start_date
+    while current_date <= end_date:
+        complete_dates.append(current_date.strftime("%Y-%m-%d"))
+        current_date += timedelta(days=1)
+
+    # Build response per card
+    result = {}
+    for card_name, daily in card_daily_counts.items():
+        timeline = [{"date": d, "count": daily.get(d, 0)} for d in complete_dates]
+        result[card_name] = timeline
+
+    return jsonify({"cards": result, "dates": complete_dates})
+
+
 @cards_bp.route("/deck-composition")
 def get_deck_composition():
     """API endpoint for deck element composition across all decks.

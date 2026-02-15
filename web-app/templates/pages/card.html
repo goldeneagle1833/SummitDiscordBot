@@ -153,13 +153,23 @@
           <div class="popularity-chart-wrapper">
             <div class="popularity-chart-controls">
               <label for="days-slider">
-                Time range: Last <span id="days-value">30</span> days
+                Time range: Last <span id="days-value">365</span> days
                 <input
                   type="range"
                   id="days-slider"
                   min="7"
-                  max="180"
-                  value="30"
+                  max="365"
+                  value="365"
+                  step="1" />
+              </label>
+              <label for="bucket-slider">
+                Group by: <span id="bucket-value">1 day</span>
+                <input
+                  type="range"
+                  id="bucket-slider"
+                  min="1"
+                  max="30"
+                  value="1"
                   step="1" />
               </label>
               <label for="scale-slider">
@@ -193,8 +203,9 @@
       const cardName = "{{ card_name }}";
       let popularityChartInstance = null;
       let popularityData = null;
-      let currentDays = 30;
+      let currentDays = 365;
       let currentScale = 0; // 0 = auto
+      let currentBucket = 1; // days per bucket
 
       async function fetchCardData() {
         try {
@@ -312,14 +323,43 @@
           return;
         }
 
-        const labels = filteredTimeline.map((point) => {
-          const date = new Date(point.date);
-          return date.toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
+        // Bucket the data by grouping N days together
+        let labels, counts;
+        if (currentBucket <= 1) {
+          labels = filteredTimeline.map((point) => {
+            const date = new Date(point.date);
+            return date.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+            });
           });
-        });
-        const counts = filteredTimeline.map((point) => point.count);
+          counts = filteredTimeline.map((point) => point.count);
+        } else {
+          labels = [];
+          counts = [];
+          for (let i = 0; i < filteredTimeline.length; i += currentBucket) {
+            const chunk = filteredTimeline.slice(
+              i,
+              Math.min(i + currentBucket, filteredTimeline.length),
+            );
+            const total = chunk.reduce((sum, p) => sum + p.count, 0);
+            counts.push(total);
+
+            // Label: show date range for the bucket
+            const startDate = new Date(chunk[0].date);
+            const endDate = new Date(chunk[chunk.length - 1].date);
+            const fmt = { month: "short", day: "numeric" };
+            if (chunk.length === 1) {
+              labels.push(startDate.toLocaleDateString("en-US", fmt));
+            } else {
+              labels.push(
+                startDate.toLocaleDateString("en-US", fmt) +
+                  " - " +
+                  endDate.toLocaleDateString("en-US", fmt),
+              );
+            }
+          }
+        }
 
         // Calculate Y-axis range
         let yMin = 0;
@@ -400,13 +440,23 @@
 
       function setupPopularitySliders() {
         const daysSlider = document.getElementById("days-slider");
+        const bucketSlider = document.getElementById("bucket-slider");
         const scaleSlider = document.getElementById("scale-slider");
         const daysValue = document.getElementById("days-value");
+        const bucketValue = document.getElementById("bucket-value");
         const scaleValue = document.getElementById("scale-value");
 
         daysSlider.addEventListener("input", function () {
           daysValue.textContent = this.value;
           currentDays = parseInt(this.value);
+          renderPopularityChart(popularityData, currentDays, currentScale);
+        });
+
+        bucketSlider.addEventListener("input", function () {
+          const value = parseInt(this.value);
+          currentBucket = value;
+          bucketValue.textContent =
+            value === 1 ? "1 day" : value + " days";
           renderPopularityChart(popularityData, currentDays, currentScale);
         });
 

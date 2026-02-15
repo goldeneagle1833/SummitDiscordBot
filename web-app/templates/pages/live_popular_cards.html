@@ -16,6 +16,7 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
       .popular-cards-table {
         width: 100%;
@@ -122,6 +123,158 @@
       .rarity-ordinary {
         color: #95a5a6;
       }
+
+      /* Popularity Chart Styles */
+      .popularity-section {
+        max-width: 1400px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      .popularity-section h2 {
+        text-align: center;
+        margin-bottom: 1.5rem;
+        font-size: 1.5rem;
+        font-weight: 700;
+      }
+      .popularity-chart-wrapper {
+        padding: 1.5rem;
+        background: var(--color-bg-elevated);
+        border-radius: 8px;
+      }
+      .popularity-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+      }
+      .popularity-controls label {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.8);
+      }
+      .popularity-controls input[type="range"] {
+        flex: 1;
+        max-width: 300px;
+      }
+      .popularity-controls span {
+        font-weight: bold;
+        color: var(--color-secondary);
+        min-width: 50px;
+      }
+      .chart-card-selector {
+        display: flex;
+        gap: 1.5rem;
+        margin-bottom: 1.5rem;
+        flex-wrap: wrap;
+      }
+      .chart-search-box {
+        flex: 1;
+        min-width: 250px;
+        position: relative;
+      }
+      .chart-search-box input {
+        width: 100%;
+        padding: 0.6rem 1rem;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.05);
+        color: #fff;
+        font-size: 0.9rem;
+      }
+      .chart-search-box input:focus {
+        outline: none;
+        border-color: var(--color-secondary);
+      }
+      .chart-search-results {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: #1a1a2e;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        max-height: 200px;
+        overflow-y: auto;
+        z-index: 100;
+        display: none;
+      }
+      .chart-search-results .search-result-item {
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+        font-size: 0.85rem;
+        color: rgba(255, 255, 255, 0.8);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      }
+      .chart-search-results .search-result-item:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+      .chart-search-results .search-result-item .result-type {
+        font-size: 0.75rem;
+        color: rgba(255, 255, 255, 0.4);
+        margin-left: 0.5rem;
+      }
+      .chart-active-cards {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      .chart-active-card {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.3rem 0.6rem;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #fff;
+      }
+      .chart-active-card .remove-card {
+        cursor: pointer;
+        font-size: 1rem;
+        line-height: 1;
+        opacity: 0.7;
+      }
+      .chart-active-card .remove-card:hover {
+        opacity: 1;
+      }
+      .chart-type-presets {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+      }
+      .chart-type-presets button {
+        padding: 0.4rem 0.8rem;
+        border-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.05);
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 0.8rem;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .chart-type-presets button:hover {
+        background: rgba(255, 255, 255, 0.15);
+      }
+      .chart-type-presets button.active {
+        background: var(--color-secondary);
+        color: #fff;
+        border-color: var(--color-secondary);
+      }
+      .popularity-chart-container {
+        position: relative;
+        height: 350px;
+        margin-top: 1rem;
+      }
+      .chart-max-notice {
+        font-size: 0.8rem;
+        color: rgba(255, 255, 255, 0.4);
+        text-align: center;
+        margin-top: 0.5rem;
+      }
     </style>
   </head>
   <body>
@@ -218,6 +371,50 @@
           </table>
         </div>
       </section>
+
+      <!-- Card Popularity Over Time Chart -->
+      <section class="popularity-section">
+        <h2>Card Popularity Over Time</h2>
+        <div class="popularity-chart-wrapper">
+          <!-- Sliders -->
+          <div class="popularity-controls">
+            <label for="pop-days-slider">
+              Time range: Last <span id="pop-days-value">365</span> days
+              <input type="range" id="pop-days-slider" min="7" max="365" value="365" step="1" />
+            </label>
+            <label for="pop-bucket-slider">
+              Group by: <span id="pop-bucket-value">7 days</span>
+              <input type="range" id="pop-bucket-slider" min="1" max="30" value="7" step="1" />
+            </label>
+          </div>
+
+          <!-- Type Preset Buttons -->
+          <div class="chart-type-presets">
+            <button onclick="loadTypePreset('All')">Top 8 Overall</button>
+            <button onclick="loadTypePreset('Minion')">Top 8 Minion</button>
+            <button onclick="loadTypePreset('Magic')">Top 8 Magic</button>
+            <button onclick="loadTypePreset('Artifact')">Top 8 Artifact</button>
+            <button onclick="loadTypePreset('Site')">Top 8 Site</button>
+            <button onclick="loadTypePreset('Aura')">Top 8 Aura</button>
+            <button onclick="loadTypePreset('Avatar')">Top 8 Avatar</button>
+          </div>
+
+          <!-- Search + Active Cards -->
+          <div class="chart-card-selector">
+            <div class="chart-search-box">
+              <input type="text" id="chart-card-search" placeholder="Search to add a card to the chart..." autocomplete="off" />
+              <div class="chart-search-results" id="chart-search-results"></div>
+            </div>
+          </div>
+          <div class="chart-active-cards" id="chart-active-cards"></div>
+
+          <!-- Chart -->
+          <div class="popularity-chart-container">
+            <canvas id="popularity-chart"></canvas>
+          </div>
+          <div class="chart-max-notice">Maximum 8 cards shown at once</div>
+        </div>
+      </section>
     </main>
 
     <script>
@@ -260,7 +457,7 @@
           .map(
             (card) => `
             <tr>
-              <td><strong>${card.name}</strong></td>
+              <td><strong><a href="/card/${encodeURIComponent(card.name)}" style="color: inherit; text-decoration: underline;">${card.name}</a></strong></td>
               <td>${card.type}</td>
               <td><span class="element-badge ${getElementClass(card.element)}">${card.element}</span></td>
               <td class="${getRarityClass(card.rarity)}">${card.rarity}</td>
@@ -403,6 +600,17 @@
 
           // Initial render
           renderTable();
+
+          // If popularity data already loaded, auto-load top 8 chart
+          if (popularityData && chartSelectedCards.length === 0) {
+            const top8 = [...allCards]
+              .sort((a, b) => b.percent_of_decks - a.percent_of_decks)
+              .slice(0, MAX_CHART_CARDS)
+              .map(c => c.name);
+            chartSelectedCards = top8;
+            renderActiveCards();
+            renderPopChart();
+          }
         } catch (err) {
           console.error("Error fetching card stats", err);
           document.getElementById("cards-tbody").innerHTML = `
@@ -416,6 +624,285 @@
       }
 
       fetchCardStats();
+
+      // ===== Card Popularity Chart =====
+      const CHART_COLORS = [
+        "#2ecc71", "#3498db", "#e74c3c", "#f1c40f",
+        "#9b59b6", "#e67e22", "#1abc9c", "#e84393"
+      ];
+      const MAX_CHART_CARDS = 8;
+      let popularityData = null;
+      let chartSelectedCards = [];
+      let popChartInstance = null;
+      let popDays = 365;
+      let popBucket = 7;
+
+      const hoverHighlightPlugin = {
+        id: "hoverHighlight",
+        beforeDraw(chart) {
+          const active = chart.getActiveElements();
+          if (active.length === 0) {
+            chart.data.datasets.forEach((ds) => {
+              ds.borderColor = ds._originalColor || ds.borderColor;
+              ds.borderWidth = 2;
+            });
+            return;
+          }
+          const hoveredIdx = active[0].datasetIndex;
+          chart.data.datasets.forEach((ds, i) => {
+            if (!ds._originalColor) ds._originalColor = ds.borderColor;
+            if (i === hoveredIdx) {
+              ds.borderColor = ds._originalColor;
+              ds.borderWidth = 4;
+            } else {
+              const c = ds._originalColor;
+              ds.borderColor = c.length === 7 ? c + "30" : c;
+              ds.borderWidth = 1;
+            }
+          });
+        },
+      };
+
+      function renderActiveCards() {
+        const container = document.getElementById("chart-active-cards");
+        container.innerHTML = chartSelectedCards.map((name, i) => {
+          const color = CHART_COLORS[i % CHART_COLORS.length];
+          return `<span class="chart-active-card" style="background: ${color}33; border: 1px solid ${color};">
+            ${name}
+            <span class="remove-card" onclick="removeChartCard('${name.replace(/'/g, "\\'")}')">&times;</span>
+          </span>`;
+        }).join("");
+      }
+
+      function addChartCard(name) {
+        if (chartSelectedCards.includes(name)) return;
+        if (chartSelectedCards.length >= MAX_CHART_CARDS) {
+          chartSelectedCards.shift();
+        }
+        chartSelectedCards.push(name);
+        renderActiveCards();
+        renderPopChart();
+      }
+
+      function removeChartCard(name) {
+        chartSelectedCards = chartSelectedCards.filter(n => n !== name);
+        renderActiveCards();
+        renderPopChart();
+      }
+
+      function loadTypePreset(type) {
+        // Clear preset button active states
+        document.querySelectorAll(".chart-type-presets button").forEach(b => b.classList.remove("active"));
+        event.target.classList.add("active");
+
+        // Get top 8 cards of this type (sorted by percent_of_decks from allCards)
+        let candidates;
+        if (type === "All") {
+          candidates = [...allCards];
+        } else {
+          candidates = allCards.filter(c => (c.type || "").toLowerCase() === type.toLowerCase());
+        }
+        candidates.sort((a, b) => b.percent_of_decks - a.percent_of_decks);
+        chartSelectedCards = candidates.slice(0, MAX_CHART_CARDS).map(c => c.name);
+        renderActiveCards();
+        renderPopChart();
+      }
+
+      function renderPopChart() {
+        if (popChartInstance) {
+          popChartInstance.destroy();
+          popChartInstance = null;
+        }
+
+        if (!popularityData || !popularityData.cards || chartSelectedCards.length === 0) {
+          const canvas = document.getElementById("popularity-chart");
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+          ctx.font = "14px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(
+            chartSelectedCards.length === 0 ? "Add cards using the search box or preset buttons above" : "No popularity data available",
+            canvas.width / 2,
+            canvas.height / 2
+          );
+          return;
+        }
+
+        // Filter dates by time range
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - popDays);
+        const allDates = (popularityData.dates || []).filter(d => new Date(d) >= cutoffDate);
+        if (allDates.length === 0) return;
+
+        // Bucket dates
+        let bucketLabels = [];
+        let bucketIndices = [];
+        for (let i = 0; i < allDates.length; i += popBucket) {
+          const end = Math.min(i + popBucket, allDates.length);
+          bucketIndices.push([i, end]);
+          const startD = new Date(allDates[i]);
+          const endD = new Date(allDates[end - 1]);
+          const fmt = { month: "short", day: "numeric" };
+          if (end - i === 1) {
+            bucketLabels.push(startD.toLocaleDateString("en-US", fmt));
+          } else {
+            bucketLabels.push(startD.toLocaleDateString("en-US", fmt) + " - " + endD.toLocaleDateString("en-US", fmt));
+          }
+        }
+
+        // Build datasets using shared date axis
+        const datasets = [];
+        chartSelectedCards.forEach((cardName, idx) => {
+          const timeline = popularityData.cards[cardName];
+          if (!timeline) return;
+
+          // Build date->count lookup
+          const dateCounts = {};
+          timeline.forEach(p => { dateCounts[p.date] = p.count; });
+
+          // Bucket the counts using shared indices
+          const bucketedCounts = bucketIndices.map(([start, end]) => {
+            let total = 0;
+            for (let j = start; j < end; j++) {
+              total += dateCounts[allDates[j]] || 0;
+            }
+            return total;
+          });
+
+          const color = CHART_COLORS[idx % CHART_COLORS.length];
+          datasets.push({
+            label: cardName,
+            data: bucketedCounts,
+            borderColor: color,
+            _originalColor: color,
+            backgroundColor: color + "15",
+            borderWidth: 2,
+            fill: false,
+            tension: 0.3,
+            pointRadius: 2,
+            pointHoverRadius: 6,
+            hoverBorderWidth: 4,
+          });
+        });
+
+        if (datasets.length === 0) return;
+
+        const ctx = document.getElementById("popularity-chart").getContext("2d");
+        popChartInstance = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: bucketLabels,
+            datasets: datasets,
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "nearest", intersect: false },
+            hover: { mode: "dataset", intersect: false },
+            plugins: {
+              legend: {
+                display: true,
+                labels: { color: "rgba(255, 255, 255, 0.8)" },
+              },
+              tooltip: {
+                mode: "nearest",
+                intersect: false,
+                callbacks: {
+                  label: function(context) {
+                    return `${context.dataset.label}: ${context.parsed.y}`;
+                  },
+                },
+              },
+            },
+            scales: {
+              x: {
+                ticks: { color: "rgba(255, 255, 255, 0.6)", maxRotation: 45, minRotation: 45 },
+                grid: { color: "rgba(255, 255, 255, 0.1)" },
+              },
+              y: {
+                beginAtZero: true,
+                ticks: { color: "rgba(255, 255, 255, 0.6)" },
+                grid: { color: "rgba(255, 255, 255, 0.1)" },
+              },
+            },
+          },
+          plugins: [hoverHighlightPlugin],
+        });
+      }
+
+      // Search box functionality
+      const chartSearchInput = document.getElementById("chart-card-search");
+      const chartSearchResults = document.getElementById("chart-search-results");
+
+      chartSearchInput.addEventListener("input", function() {
+        const query = this.value.trim().toLowerCase();
+        if (query.length < 2) {
+          chartSearchResults.style.display = "none";
+          return;
+        }
+
+        // Search from allCards (already loaded from /api/live-popular-cards)
+        const matches = allCards
+          .filter(c => c.name.toLowerCase().includes(query) && !chartSelectedCards.includes(c.name))
+          .slice(0, 10);
+
+        if (matches.length === 0) {
+          chartSearchResults.style.display = "none";
+          return;
+        }
+
+        chartSearchResults.innerHTML = matches.map(c =>
+          `<div class="search-result-item" onclick="addChartCard('${c.name.replace(/'/g, "\\'")}'); chartSearchInput.value = ''; chartSearchResults.style.display = 'none';">
+            ${c.name}<span class="result-type">${c.type}</span>
+          </div>`
+        ).join("");
+        chartSearchResults.style.display = "block";
+      });
+
+      // Hide search results when clicking outside
+      document.addEventListener("click", function(e) {
+        if (!e.target.closest(".chart-search-box")) {
+          chartSearchResults.style.display = "none";
+        }
+      });
+
+      // Sliders
+      document.getElementById("pop-days-slider").addEventListener("input", function() {
+        popDays = parseInt(this.value);
+        document.getElementById("pop-days-value").textContent = popDays;
+        renderPopChart();
+      });
+
+      document.getElementById("pop-bucket-slider").addEventListener("input", function() {
+        popBucket = parseInt(this.value);
+        document.getElementById("pop-bucket-value").textContent = popBucket === 1 ? "1 day" : popBucket + " days";
+        renderPopChart();
+      });
+
+      // Fetch popularity data
+      async function fetchPopularityData() {
+        try {
+          const res = await fetch("/api/cards/popularity");
+          if (!res.ok) return;
+          popularityData = await res.json();
+
+          // Auto-load top 8 overall once data and allCards are ready
+          if (allCards.length > 0 && chartSelectedCards.length === 0) {
+            const top8 = [...allCards]
+              .sort((a, b) => b.percent_of_decks - a.percent_of_decks)
+              .slice(0, MAX_CHART_CARDS)
+              .map(c => c.name);
+            chartSelectedCards = top8;
+            renderActiveCards();
+            renderPopChart();
+          }
+        } catch (err) {
+          console.error("Error fetching popularity data:", err);
+        }
+      }
+
+      fetchPopularityData();
     </script>
 
     <footer>

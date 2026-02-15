@@ -69,7 +69,7 @@ def avatars():
             f for f in os.listdir(AVATAR_IMAGES_DIR)
             if f.lower().endswith((".png", ".jpg", ".jpeg"))
         ]
-    return render_template("pages/avatars.html", avatar_image_files=avatar_image_files)
+    return render_template("pages/avatars.html", avatar_image_files=avatar_image_files, user_is_admin=is_admin())
 
 
 @pages_bp.route("/cards")

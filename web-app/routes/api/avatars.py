@@ -401,6 +401,265 @@ def get_avatar(avatar_name):
     })
 
 
+@avatars_bp.route("/avatar/<avatar_name>/popularity")
+def get_avatar_popularity(avatar_name):
+    """API endpoint for avatar popularity over time.
+
+    Returns daily counts of how many matches used this avatar.
+    """
+    if not is_admin():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+
+    avatar_name = unquote(avatar_name)
+
+    if not MATCH_RECORDS_DB_PATH.exists():
+        logger.warning(f"Database not found at {MATCH_RECORDS_DB_PATH}")
+        return jsonify({"avatar_name": avatar_name, "timeline": [], "total_days": 0})
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        all_rows = []
+        use_new_columns = True
+
+        try:
+            cur.execute("""
+                SELECT json_deck_data_winner, json_deck_data_loser, timestamp
+                FROM match_records
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+            """)
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError as e:
+            logger.warning(f"Failed to query new columns format: {e}")
+            try:
+                cur.execute("""
+                    SELECT json_deck_data, '', timestamp
+                    FROM match_records
+                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                """)
+                all_rows.extend(cur.fetchall())
+                use_new_columns = False
+            except sqlite3.OperationalError as e2:
+                logger.error(f"Failed to query match_records: {e2}")
+                conn.close()
+                return jsonify({"avatar_name": avatar_name, "timeline": [], "total_days": 0})
+
+        if use_new_columns:
+            try:
+                cur.execute("""
+                    SELECT json_deck_data_winner, json_deck_data_loser, timestamp
+                    FROM match_records_archive
+                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                """)
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass
+
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.error(f"Database error: {e}")
+        return jsonify({"avatar_name": avatar_name, "timeline": [], "total_days": 0})
+
+    daily_counts = defaultdict(int)
+
+    def check_avatar_in_deck(deck_str):
+        """Check if avatar matches in deck data."""
+        if not deck_str or deck_str in ("", "{}"):
+            return False
+        try:
+            deck_data = json.loads(deck_str)
+            deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+            avatar = deck.get("avatar", [{}])
+            name = avatar[0].get("name", "") if avatar else ""
+            return name.lower() == avatar_name.lower()
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            return False
+
+    for row in all_rows:
+        match_date = row[2] if len(row) > 2 else None
+        if not match_date:
+            continue
+
+        try:
+            date_obj = datetime.fromisoformat(match_date.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            try:
+                date_obj = datetime.strptime(match_date, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                try:
+                    date_obj = datetime.strptime(match_date, "%Y-%m-%d")
+                except ValueError:
+                    continue
+
+        date_key = date_obj.strftime("%Y-%m-%d")
+
+        if use_new_columns:
+            if check_avatar_in_deck(row[0]):
+                daily_counts[date_key] += 1
+            if check_avatar_in_deck(row[1]):
+                daily_counts[date_key] += 1
+        else:
+            if check_avatar_in_deck(row[0]):
+                daily_counts[date_key] += 1
+
+    timeline = []
+    for date_str, count in sorted(daily_counts.items()):
+        timeline.append({"date": date_str, "count": count})
+
+    if timeline:
+        start_date = datetime.strptime(timeline[0]["date"], "%Y-%m-%d")
+        end_date = datetime.strptime(timeline[-1]["date"], "%Y-%m-%d")
+        complete_timeline = []
+        current_date = start_date
+        date_counts = {item["date"]: item["count"] for item in timeline}
+        while current_date <= end_date:
+            date_str = current_date.strftime("%Y-%m-%d")
+            complete_timeline.append({"date": date_str, "count": date_counts.get(date_str, 0)})
+            current_date += timedelta(days=1)
+        timeline = complete_timeline
+
+    return jsonify({"avatar_name": avatar_name, "timeline": timeline, "total_days": len(timeline)})
+
+
+@avatars_bp.route("/avatars/popularity")
+def get_all_avatars_popularity():
+    """API endpoint for all avatars' popularity over time.
+
+    Returns daily counts for every avatar in a single response.
+    Admin only.
+    """
+    if not is_admin():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+
+    if not MATCH_RECORDS_DB_PATH.exists():
+        return jsonify({"avatars": {}})
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        all_rows = []
+        use_new_columns = True
+
+        try:
+            cur.execute("""
+                SELECT json_deck_data_winner, json_deck_data_loser, timestamp
+                FROM match_records
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+            """)
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError:
+            try:
+                cur.execute("""
+                    SELECT json_deck_data, '', timestamp
+                    FROM match_records
+                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                """)
+                all_rows.extend(cur.fetchall())
+                use_new_columns = False
+            except sqlite3.OperationalError:
+                conn.close()
+                return jsonify({"avatars": {}})
+
+        if use_new_columns:
+            try:
+                cur.execute("""
+                    SELECT json_deck_data_winner, json_deck_data_loser, timestamp
+                    FROM match_records_archive
+                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                """)
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass
+
+        conn.close()
+    except sqlite3.OperationalError:
+        return jsonify({"avatars": {}})
+
+    # {avatar_name: {date_str: count}}
+    avatar_daily_counts = defaultdict(lambda: defaultdict(int))
+
+    def extract_avatar_name(deck_str):
+        if not deck_str or deck_str in ("", "{}"):
+            return None
+        try:
+            deck_data = json.loads(deck_str)
+            deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+            avatar = deck.get("avatar", [{}])
+            name = avatar[0].get("name", "") if avatar else ""
+            return name if name else None
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            return None
+
+    for row in all_rows:
+        match_date = row[2] if len(row) > 2 else None
+        if not match_date:
+            continue
+
+        try:
+            date_obj = datetime.fromisoformat(match_date.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            try:
+                date_obj = datetime.strptime(match_date, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                try:
+                    date_obj = datetime.strptime(match_date, "%Y-%m-%d")
+                except ValueError:
+                    continue
+
+        date_key = date_obj.strftime("%Y-%m-%d")
+
+        if use_new_columns:
+            name = extract_avatar_name(row[0])
+            if name:
+                avatar_daily_counts[name][date_key] += 1
+            name = extract_avatar_name(row[1])
+            if name:
+                avatar_daily_counts[name][date_key] += 1
+        else:
+            name = extract_avatar_name(row[0])
+            if name:
+                avatar_daily_counts[name][date_key] += 1
+
+    # Find global date range
+    all_dates = set()
+    for counts in avatar_daily_counts.values():
+        all_dates.update(counts.keys())
+
+    if not all_dates:
+        return jsonify({"avatars": {}})
+
+    sorted_dates = sorted(all_dates)
+    start_date = datetime.strptime(sorted_dates[0], "%Y-%m-%d")
+    end_date = datetime.strptime(sorted_dates[-1], "%Y-%m-%d")
+
+    # Build complete date list
+    complete_dates = []
+    current_date = start_date
+    while current_date <= end_date:
+        complete_dates.append(current_date.strftime("%Y-%m-%d"))
+        current_date += timedelta(days=1)
+
+    # Build response per avatar
+    result = {}
+    for avatar_name, daily in avatar_daily_counts.items():
+        timeline = [{"date": d, "count": daily.get(d, 0)} for d in complete_dates]
+        result[avatar_name] = timeline
+
+    return jsonify({"avatars": result, "dates": complete_dates})
+
+
 @avatars_bp.route("/avatar/<avatar_name>/deck-composition")
 def get_avatar_deck_composition(avatar_name):
     """API endpoint for deck element composition for a specific avatar."""

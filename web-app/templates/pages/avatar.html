@@ -17,7 +17,43 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
+      .popularity-chart-section {
+        padding: 0;
+      }
+      .popularity-chart-wrapper {
+        padding: 1.5rem;
+        background: var(--color-bg-elevated, rgba(255, 255, 255, 0.05));
+        border-radius: 8px;
+      }
+      .popularity-chart-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+      }
+      .popularity-chart-controls label {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.8);
+      }
+      .popularity-chart-controls input[type="range"] {
+        flex: 1;
+        max-width: 300px;
+      }
+      .popularity-chart-controls span {
+        font-weight: bold;
+        color: var(--primary, #2ecc71);
+        min-width: 50px;
+      }
+      .popularity-chart-container {
+        position: relative;
+        height: 300px;
+        margin-top: 1rem;
+      }
       .deck-composition-section {
         padding: 1.5rem 2rem;
         border-top: 1px solid var(--border);
@@ -200,6 +236,50 @@
           <div class="composition-chart-container">
             <div id="composition-bars" class="composition-bars">
               <p class="loading-text">Loading deck composition...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Popularity Over Time Graph -->
+        <div class="p-6 md:p-8 border-t border-border popularity-chart-section">
+          <h3 class="text-lg md:text-xl font-semibold mb-4">
+            📈 Popularity Over Time
+          </h3>
+          <div class="popularity-chart-wrapper">
+            <div class="popularity-chart-controls">
+              <label for="days-slider">
+                Time range: Last <span id="days-value">365</span> days
+                <input
+                  type="range"
+                  id="days-slider"
+                  min="7"
+                  max="365"
+                  value="365"
+                  step="1" />
+              </label>
+              <label for="bucket-slider">
+                Group by: <span id="bucket-value">1 day</span>
+                <input
+                  type="range"
+                  id="bucket-slider"
+                  min="1"
+                  max="30"
+                  value="1"
+                  step="1" />
+              </label>
+              <label for="scale-slider">
+                Y-axis scale: <span id="scale-value">Auto</span>
+                <input
+                  type="range"
+                  id="scale-slider"
+                  min="0"
+                  max="100"
+                  value="0"
+                  step="5" />
+              </label>
+            </div>
+            <div class="popularity-chart-container">
+              <canvas id="popularity-chart"></canvas>
             </div>
           </div>
         </div>
@@ -472,6 +552,207 @@
 
       // Fetch deck composition data
       fetchDeckComposition();
+
+      // Popularity over time chart
+      let popularityChartInstance = null;
+      let popularityData = null;
+      let currentDays = 365;
+      let currentScale = 0;
+      let currentBucket = 1;
+
+      async function fetchPopularityData() {
+        try {
+          const res = await fetch(
+            `/api/avatar/${encodeURIComponent(avatarName)}/popularity`,
+          );
+          if (!res.ok) {
+            console.error("Failed to fetch popularity data");
+            return;
+          }
+          popularityData = await res.json();
+          renderPopularityChart(popularityData, currentDays, currentScale);
+          setupPopularitySliders();
+        } catch (error) {
+          console.error("Error fetching popularity data:", error);
+        }
+      }
+
+      function renderPopularityChart(data, days, scale) {
+        if (popularityChartInstance) {
+          popularityChartInstance.destroy();
+          popularityChartInstance = null;
+        }
+
+        if (!data || !data.timeline || data.timeline.length === 0) {
+          const canvas = document.getElementById("popularity-chart");
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+          ctx.font = "14px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(
+            "No popularity data available",
+            canvas.width / 2,
+            canvas.height / 2,
+          );
+          return;
+        }
+
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - days);
+        const filteredTimeline = data.timeline.filter((point) => {
+          return new Date(point.date) >= cutoffDate;
+        });
+
+        if (filteredTimeline.length === 0) {
+          const canvas = document.getElementById("popularity-chart");
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+          ctx.font = "14px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(
+            "No data in selected time range",
+            canvas.width / 2,
+            canvas.height / 2,
+          );
+          return;
+        }
+
+        let labels, counts;
+        if (currentBucket <= 1) {
+          labels = filteredTimeline.map((point) => {
+            return new Date(point.date).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+            });
+          });
+          counts = filteredTimeline.map((point) => point.count);
+        } else {
+          labels = [];
+          counts = [];
+          for (let i = 0; i < filteredTimeline.length; i += currentBucket) {
+            const chunk = filteredTimeline.slice(
+              i,
+              Math.min(i + currentBucket, filteredTimeline.length),
+            );
+            counts.push(chunk.reduce((sum, p) => sum + p.count, 0));
+            const startDate = new Date(chunk[0].date);
+            const endDate = new Date(chunk[chunk.length - 1].date);
+            const fmt = { month: "short", day: "numeric" };
+            if (chunk.length === 1) {
+              labels.push(startDate.toLocaleDateString("en-US", fmt));
+            } else {
+              labels.push(
+                startDate.toLocaleDateString("en-US", fmt) +
+                  " - " +
+                  endDate.toLocaleDateString("en-US", fmt),
+              );
+            }
+          }
+        }
+
+        let yMin = 0;
+        let yMax;
+        if (scale === 0) {
+          yMax = Math.max(...counts) * 1.1;
+        } else {
+          yMax = scale;
+        }
+
+        const ctx = document
+          .getElementById("popularity-chart")
+          .getContext("2d");
+        popularityChartInstance = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: "Matches Played",
+                data: counts,
+                borderColor: "rgba(46, 204, 113, 1)",
+                backgroundColor: "rgba(46, 204, 113, 0.1)",
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: true,
+                labels: { color: "rgba(255, 255, 255, 0.8)" },
+              },
+              tooltip: {
+                mode: "index",
+                intersect: false,
+                callbacks: {
+                  label: function (context) {
+                    return `Matches: ${context.parsed.y}`;
+                  },
+                },
+              },
+            },
+            scales: {
+              x: {
+                ticks: {
+                  color: "rgba(255, 255, 255, 0.6)",
+                  maxRotation: 45,
+                  minRotation: 45,
+                },
+                grid: { color: "rgba(255, 255, 255, 0.1)" },
+              },
+              y: {
+                min: yMin,
+                max: yMax,
+                ticks: {
+                  color: "rgba(255, 255, 255, 0.6)",
+                  stepSize: Math.ceil(yMax / 10),
+                },
+                grid: { color: "rgba(255, 255, 255, 0.1)" },
+              },
+            },
+          },
+        });
+      }
+
+      function setupPopularitySliders() {
+        const daysSlider = document.getElementById("days-slider");
+        const bucketSlider = document.getElementById("bucket-slider");
+        const scaleSlider = document.getElementById("scale-slider");
+        const daysValue = document.getElementById("days-value");
+        const bucketValue = document.getElementById("bucket-value");
+        const scaleValue = document.getElementById("scale-value");
+
+        daysSlider.addEventListener("input", function () {
+          daysValue.textContent = this.value;
+          currentDays = parseInt(this.value);
+          renderPopularityChart(popularityData, currentDays, currentScale);
+        });
+
+        bucketSlider.addEventListener("input", function () {
+          const value = parseInt(this.value);
+          currentBucket = value;
+          bucketValue.textContent =
+            value === 1 ? "1 day" : value + " days";
+          renderPopularityChart(popularityData, currentDays, currentScale);
+        });
+
+        scaleSlider.addEventListener("input", function () {
+          const value = parseInt(this.value);
+          scaleValue.textContent = value === 0 ? "Auto" : value;
+          currentScale = value;
+          renderPopularityChart(popularityData, currentDays, currentScale);
+        });
+      }
+
+      fetchPopularityData();
     </script>
 
     <footer>

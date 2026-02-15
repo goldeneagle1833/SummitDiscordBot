@@ -1737,8 +1737,9 @@ class LFGCog(commands.Cog):
     @commands.command()
     @commands.has_permissions(administrator=True)
     async def spot_elo_reset(self, ctx, user: discord.Member = None, elo: int = None):
-        """Admin command to set a specific user's ELO. Usage: !spot_elo_reset @user 1500"""
+        """Admin command to set a specific user's event ELO. Usage: !spot_elo_reset @user 1500"""
         import sqlite3
+        from utils.database import get_active_event
 
         # Validate arguments
         if user is None:
@@ -1759,6 +1760,12 @@ class LFGCog(commands.Cog):
             await ctx.send("Cannot set ELO for bots!")
             return
 
+        # Require an active event
+        active_event = get_active_event()
+        if not active_event:
+            await ctx.send("No active event. Start an event first before updating ELO.")
+            return
+
         try:
             # Get display name with fallback
             user_name = user.global_name or user.display_name
@@ -1769,22 +1776,22 @@ class LFGCog(commands.Cog):
 
             # Check if user exists in database
             cursor.execute(
-                "SELECT elo FROM overall_standings WHERE user_id = ?", (user.id,)
+                "SELECT event_elo FROM overall_standings WHERE user_id = ?", (user.id,)
             )
             result = cursor.fetchone()
 
             old_elo = result[0] if result else None
 
             if result:
-                # Update existing user
+                # Update existing user's event ELO
                 cursor.execute(
-                    "UPDATE overall_standings SET elo = ?, user_display_name = ? WHERE user_id = ?",
+                    "UPDATE overall_standings SET event_elo = ?, user_display_name = ? WHERE user_id = ?",
                     (elo, user_name, user.id),
                 )
             else:
-                # Insert new user
+                # Insert new user with event ELO
                 cursor.execute(
-                    "INSERT INTO overall_standings (user_id, user_display_name, elo) VALUES (?, ?, ?)",
+                    "INSERT INTO overall_standings (user_id, user_display_name, elo, event_elo) VALUES (?, ?, 1500, ?)",
                     (user.id, user_name, elo),
                 )
 
@@ -1797,14 +1804,14 @@ class LFGCog(commands.Cog):
             # Send confirmation
             if old_elo is not None:
                 success_embed = discord.Embed(
-                    title="ELO Updated",
-                    description=f"**User:** {user.mention} ({user_name})\n**Old ELO:** {old_elo}\n**New ELO:** {elo}",
+                    title="Event ELO Updated",
+                    description=f"**User:** {user.mention} ({user_name})\n**Event:** {active_event['event_name']}\n**Old Event ELO:** {old_elo}\n**New Event ELO:** {elo}",
                     color=discord.Color.blue(),
                 )
             else:
                 success_embed = discord.Embed(
-                    title="ELO Set",
-                    description=f"**User:** {user.mention} ({user_name})\n**ELO:** {elo}\n\n*User was not in database, created new entry.*",
+                    title="Event ELO Set",
+                    description=f"**User:** {user.mention} ({user_name})\n**Event:** {active_event['event_name']}\n**Event ELO:** {elo}\n\n*User was not in database, created new entry.*",
                     color=discord.Color.green(),
                 )
 
@@ -1812,7 +1819,7 @@ class LFGCog(commands.Cog):
             await ctx.send(embed=success_embed)
 
             logger.info(
-                f"Admin {ctx.author} (ID: {ctx.author.id}) set ELO for {user_name} (ID: {user.id}) to {elo} (was: {old_elo})"
+                f"Admin {ctx.author} (ID: {ctx.author.id}) set event ELO for {user_name} (ID: {user.id}) to {elo} (was: {old_elo}) during event '{active_event['event_name']}'"
             )
 
         except Exception as e:

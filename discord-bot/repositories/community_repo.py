@@ -34,7 +34,7 @@ def create_community_tables():
             name TEXT NOT NULL,
             description TEXT,
             invite_url TEXT NOT NULL,
-            state TEXT NOT NULL,
+            state TEXT NOT NULL,  -- NOTE: "state" represents location (city, state, country, region)
             added_by INTEGER,
             added_at TEXT
         )""")
@@ -62,7 +62,15 @@ def create_community_tables():
 
 
 def add_discord_server(name, invite_url, state, description="", added_by=None):
-    """Add a Discord server entry. Returns the new row ID."""
+    """Add a Discord server entry. Returns the new row ID.
+
+    Args:
+        name: Server name
+        invite_url: Discord invite URL
+        state: Location (city, state, country, region, etc.)
+        description: Optional description
+        added_by: Discord user ID who added this entry
+    """
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute(

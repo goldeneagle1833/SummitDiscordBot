@@ -34,6 +34,7 @@ from repositories.elo_repo import (  # noqa: F401
     save_pairing,
     get_active_pairing_for_user,
     get_opponent_from_pairing,
+    get_pairing_between_players,
     validate_pairing,
     mark_pairing_reported,
     cancel_pairing,

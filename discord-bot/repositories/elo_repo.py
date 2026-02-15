@@ -628,6 +628,50 @@ def get_opponent_from_pairing(guild_id: int, user_id: int) -> int | None:
     return None
 
 
+def get_pairing_between_players(guild_id: int, user_id: int, opponent_id: int) -> dict | None:
+    """
+    Get the most recent active pairing between two specific players.
+
+    Searches by both player IDs to find the exact pairing, ordered by
+    most recent first. This handles cases where old pairings were never reported.
+
+    Args:
+        guild_id: Discord guild/server ID
+        user_id: Discord ID of one player
+        opponent_id: Discord ID of the other player
+
+    Returns:
+        Dict with pairing info or None if no active pairing between these players
+    """
+    create_active_pairings_table()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute(
+        """SELECT pairing_id, guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at
+           FROM active_pairings
+           WHERE guild_id = ? AND status = 'active'
+           AND ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))
+           ORDER BY created_at DESC
+           LIMIT 1""",
+        (guild_id, user_id, opponent_id, opponent_id, user_id),
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            "pairing_id": row[0],
+            "guild_id": row[1],
+            "player1_id": row[2],
+            "player2_id": row[3],
+            "player1_deck_url": row[4],
+            "player2_deck_url": row[5],
+            "created_at": row[6],
+        }
+    return None
+
+
 def validate_pairing(guild_id: int, user_id: int, opponent_id: int) -> bool:
     """
     Validate that a user has an active pairing with a specific opponent in a guild.

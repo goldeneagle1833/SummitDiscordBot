@@ -24,25 +24,34 @@ class CommunityCog(commands.Cog):
         create_community_tables()
         logger.info("CommunityCog initialized")
 
+    async def _add_discord_server(self, ctx, name: str, invite_url: str, location: str, description: str = ""):
+        """Internal method to add a Discord server."""
+        entry_id = add_discord_server(name, invite_url, location, description, added_by=ctx.author.id)
+        await ctx.send(f"✅ Added Discord server **{name}** (ID: {entry_id}, Location: {location})")
+
     @commands.command(name="add_discord")
     @commands.has_permissions(administrator=True)
     async def add_discord_cmd(self, ctx, *, args: str):
-        """[ADMIN] Add a Discord server. Usage: !add_discord Name | invite_url | state | description"""
+        """[ADMIN] Add a Discord server. Usage: !add_discord Name | invite_url | location | description"""
         parts = [p.strip() for p in args.split("|")]
         if len(parts) < 3:
             await ctx.send(
-                "Usage: `!add_discord Name | invite_url | state | description`\n"
+                "Usage: `!add_discord Name | invite_url | location | description`\n"
                 "Example: `!add_discord SoCal Sorcery | https://discord.gg/abc123 | CA | Southern California community`"
             )
             return
 
         name = parts[0]
         invite_url = parts[1]
-        state = parts[2]
+        location = parts[2]
         description = parts[3] if len(parts) > 3 else ""
 
-        entry_id = add_discord_server(name, invite_url, state, description, added_by=ctx.author.id)
-        await ctx.send(f"Added Discord server **{name}** (ID: {entry_id}, State: {state})")
+        await self._add_discord_server(ctx, name, invite_url, location, description)
+
+    async def _add_youtube_channel(self, ctx, name: str, channel_id: str, channel_url: str):
+        """Internal method to add a YouTube channel."""
+        entry_id = add_youtube_channel(name, channel_id, channel_url, added_by=ctx.author.id)
+        await ctx.send(f"✅ Added YouTube channel **{name}** (ID: {entry_id})")
 
     @commands.command(name="add_youtube")
     @commands.has_permissions(administrator=True)
@@ -60,8 +69,12 @@ class CommunityCog(commands.Cog):
         channel_id = parts[1]
         channel_url = parts[2]
 
-        entry_id = add_youtube_channel(name, channel_id, channel_url, added_by=ctx.author.id)
-        await ctx.send(f"Added YouTube channel **{name}** (ID: {entry_id})")
+        await self._add_youtube_channel(ctx, name, channel_id, channel_url)
+
+    async def _add_website(self, ctx, name: str, url: str, description: str = ""):
+        """Internal method to add a website."""
+        entry_id = add_website(name, url, description, added_by=ctx.author.id)
+        await ctx.send(f"✅ Added website **{name}** (ID: {entry_id})")
 
     @commands.command(name="add_website")
     @commands.has_permissions(administrator=True)
@@ -79,34 +92,37 @@ class CommunityCog(commands.Cog):
         url = parts[1]
         description = parts[2] if len(parts) > 2 else ""
 
-        entry_id = add_website(name, url, description, added_by=ctx.author.id)
-        await ctx.send(f"Added website **{name}** (ID: {entry_id})")
+        await self._add_website(ctx, name, url, description)
 
-    @commands.command(name="remove_community")
-    @commands.has_permissions(administrator=True)
-    async def remove_community_cmd(self, ctx, table: str, entry_id: int):
-        """[ADMIN] Remove a community entry. Usage: !remove_community discord|youtube|website <id>"""
+    async def _remove_community_entry(self, ctx, table_type: str, entry_id: int):
+        """Internal method to remove a community entry."""
         table_map = {
             "discord": "discord_servers",
             "youtube": "youtube_channels",
             "website": "websites",
         }
 
-        table_name = table_map.get(table.lower())
+        table_name = table_map.get(table_type.lower())
         if not table_name:
-            await ctx.send("Invalid type. Use: `discord`, `youtube`, or `website`")
+            await ctx.send("❌ Invalid type. Use: `discord`, `youtube`, or `website`")
             return
 
         try:
             deleted = remove_entry(table_name, entry_id)
         except ValueError as e:
-            await ctx.send(str(e))
+            await ctx.send(f"❌ {str(e)}")
             return
 
         if deleted:
-            await ctx.send(f"Removed {table} entry with ID {entry_id}.")
+            await ctx.send(f"✅ Removed {table_type} entry with ID {entry_id}.")
         else:
-            await ctx.send(f"No {table} entry found with ID {entry_id}.")
+            await ctx.send(f"❌ No {table_type} entry found with ID {entry_id}.")
+
+    @commands.command(name="remove_community")
+    @commands.has_permissions(administrator=True)
+    async def remove_community_cmd(self, ctx, table: str, entry_id: int):
+        """[ADMIN] Remove a community entry. Usage: !remove_community discord|youtube|website <id>"""
+        await self._remove_community_entry(ctx, table, entry_id)
 
     @commands.command(name="list_community")
     @commands.has_permissions(administrator=True)
@@ -121,9 +137,9 @@ class CommunityCog(commands.Cog):
         # Discord servers
         if servers:
             lines = [f"**{s['id']}** - {s['name']} ({s['state']})" for s in servers]
-            embed.add_field(name="Discord Servers", value="\n".join(lines), inline=False)
+            embed.add_field(name="Discord Servers (by Location)", value="\n".join(lines), inline=False)
         else:
-            embed.add_field(name="Discord Servers", value="None", inline=False)
+            embed.add_field(name="Discord Servers (by Location)", value="None", inline=False)
 
         # YouTube channels
         if channels:

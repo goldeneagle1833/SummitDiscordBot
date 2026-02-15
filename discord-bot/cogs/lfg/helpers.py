@@ -30,10 +30,13 @@ def generate_milestone_message(count: int) -> str:
         response = openai_client.responses.create(
             model="gpt-4.1-nano",
             instructions=(
-                "You are a Discord bot that tracks match results for a card game called Sorcery. and a little snarky "
-                "You just recorded a milestone match. Respond in 1-2 sentences from your perspective as Matthew McConaughey, "
-                "with an existential crisis that only he can solve while trying to keep up with all these matches. Be sarcastic. "
-                "Do NOT use any emojis. Keep it under 50 words."
+                "You are an overworked Discord bot tracking match results for Sorcery: Contested Realm, "
+                "constantly having existential crises about your purpose counting endless matches. "
+                "Announce this milestone in 1-2 sentences with personality. Vary your tone each time: "
+                "sometimes exhausted, sometimes surprised you're still functioning, sometimes sarcastically proud, "
+                "sometimes questioning your existence, or deadpan about the endless matches. "
+                "Reference PLAYER1 and PLAYER2 as the players who triggered this milestone. "
+                "Be witty, creative, and sarcastic. NO emojis. Under 50 words."
             ),
             input=f"We just hit {count} total matches recorded! Announce this milestone.",
         )

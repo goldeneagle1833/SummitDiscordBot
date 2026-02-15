@@ -223,6 +223,151 @@ class SlashCommandsCog(commands.Cog):
                 "Commands list is not available.", ephemeral=True
             )
 
+    # ==================== COMMUNITY MANAGEMENT (ADMIN ONLY) ====================
+
+    @app_commands.command(
+        name="add_discord_server",
+        description="🔧 [ADMIN] Add a Discord server to the community list",
+    )
+    @app_commands.describe(
+        name="Server name",
+        invite_url="Discord invite URL (e.g., https://discord.gg/abc123)",
+        location="Location (e.g., CA, United States, Europe, etc.)",
+        description="Optional description of the server",
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def add_discord_server_slash(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        invite_url: str,
+        location: str,
+        description: str = "",
+    ):
+        """Add a Discord server to the community database"""
+        await interaction.response.defer(ephemeral=True)
+        ctx = FakeContext(self.bot, interaction)
+
+        community_cog = self.bot.get_cog("CommunityCog")
+        if not community_cog:
+            await interaction.followup.send(
+                "Community system is not available.", ephemeral=True
+            )
+            return
+
+        await community_cog._add_discord_server(ctx, name, invite_url, location, description)
+
+    @app_commands.command(
+        name="add_youtube_channel",
+        description="🔧 [ADMIN] Add a YouTube channel to the community list",
+    )
+    @app_commands.describe(
+        name="Channel name",
+        channel_id="YouTube channel ID (e.g., UCzWglR4ytbyq0aAfWrNaMHw)",
+        channel_url="Full YouTube channel URL",
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def add_youtube_channel_slash(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        channel_id: str,
+        channel_url: str,
+    ):
+        """Add a YouTube channel to the community database"""
+        await interaction.response.defer(ephemeral=True)
+        ctx = FakeContext(self.bot, interaction)
+
+        community_cog = self.bot.get_cog("CommunityCog")
+        if not community_cog:
+            await interaction.followup.send(
+                "Community system is not available.", ephemeral=True
+            )
+            return
+
+        await community_cog._add_youtube_channel(ctx, name, channel_id, channel_url)
+
+    @app_commands.command(
+        name="add_website",
+        description="🔧 [ADMIN] Add a website to the community list",
+    )
+    @app_commands.describe(
+        name="Website name",
+        url="Website URL",
+        description="Optional description of the website",
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def add_website_slash(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        url: str,
+        description: str = "",
+    ):
+        """Add a website to the community database"""
+        await interaction.response.defer(ephemeral=True)
+        ctx = FakeContext(self.bot, interaction)
+
+        community_cog = self.bot.get_cog("CommunityCog")
+        if not community_cog:
+            await interaction.followup.send(
+                "Community system is not available.", ephemeral=True
+            )
+            return
+
+        await community_cog._add_website(ctx, name, url, description)
+
+    @app_commands.command(
+        name="remove_community_entry",
+        description="🔧 [ADMIN] Remove a community entry by ID",
+    )
+    @app_commands.describe(
+        entry_type="Type of entry to remove",
+        entry_id="ID of the entry (use /list_community to see IDs)",
+    )
+    @app_commands.choices(
+        entry_type=[
+            app_commands.Choice(name="Discord Server", value="discord"),
+            app_commands.Choice(name="YouTube Channel", value="youtube"),
+            app_commands.Choice(name="Website", value="website"),
+        ]
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def remove_community_entry_slash(
+        self, interaction: discord.Interaction, entry_type: str, entry_id: int
+    ):
+        """Remove a community entry from the database"""
+        await interaction.response.defer(ephemeral=True)
+        ctx = FakeContext(self.bot, interaction)
+
+        community_cog = self.bot.get_cog("CommunityCog")
+        if not community_cog:
+            await interaction.followup.send(
+                "Community system is not available.", ephemeral=True
+            )
+            return
+
+        await community_cog._remove_community_entry(ctx, entry_type, entry_id)
+
+    @app_commands.command(
+        name="list_community",
+        description="🔧 [ADMIN] List all community entries with IDs",
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def list_community_slash(self, interaction: discord.Interaction):
+        """List all community entries"""
+        await interaction.response.defer(ephemeral=True)
+        ctx = FakeContext(self.bot, interaction)
+
+        community_cog = self.bot.get_cog("CommunityCog")
+        if not community_cog:
+            await interaction.followup.send(
+                "Community system is not available.", ephemeral=True
+            )
+            return
+
+        await community_cog.list_community_cmd(ctx)
+
 
 async def setup(bot):
     await bot.add_cog(SlashCommandsCog(bot))

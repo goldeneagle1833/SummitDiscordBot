@@ -11,7 +11,7 @@ from utils.database import (
     losser_report,
     update_elo_db,
     mark_pairing_reported,
-    get_opponent_from_pairing,
+    get_pairing_between_players,
 )
 
 logger = logging.getLogger("discord_bot")
@@ -423,16 +423,15 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         except Exception:
             pass
 
-        # Get opponent from database pairing
-        if not view.guild_id:
-            await interaction.response.send_message(
-                "Guild ID not available. Please try again.",
-                ephemeral=True,
-            )
-            return
+        # Get opponent from view player IDs
+        opponent_id = (
+            view.player2_id
+            if original_interaction.user.id == view.player1_id
+            else view.player1_id
+        )
 
-        opponent_id = get_opponent_from_pairing(view.guild_id, original_interaction.user.id)
-        if not opponent_id:
+        # Validate pairing exists in DB using both player IDs (most recent active)
+        if not view.guild_id or not get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id):
             await interaction.response.send_message(
                 "No active pairing found. You can only report matches against your paired opponent.",
                 ephemeral=True,
@@ -615,16 +614,15 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         except Exception:
             pass
 
-        # Get opponent from database pairing
-        if not view.guild_id:
-            await interaction.response.send_message(
-                "Guild ID not available. Please try again.",
-                ephemeral=True,
-            )
-            return
+        # Get opponent from view player IDs
+        opponent_id = (
+            view.player2_id
+            if original_interaction.user.id == view.player1_id
+            else view.player1_id
+        )
 
-        opponent_id = get_opponent_from_pairing(view.guild_id, original_interaction.user.id)
-        if not opponent_id:
+        # Validate pairing exists in DB using both player IDs (most recent active)
+        if not view.guild_id or not get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id):
             await interaction.response.send_message(
                 "No active pairing found. You can only report matches against your paired opponent.",
                 ephemeral=True,
@@ -1101,16 +1099,15 @@ class LFGReportButtons(discord.ui.View):
         except Exception:
             pass
 
-        # Get opponent from database pairing
-        if not self.guild_id:
-            await interaction.response.send_message(
-                "Guild ID not available. Please try again.",
-                ephemeral=True,
-            )
-            return
+        # Get opponent from view player IDs
+        opponent_id = (
+            self.player2_id
+            if interaction.user.id == self.player1_id
+            else self.player1_id
+        )
 
-        opponent_id = get_opponent_from_pairing(self.guild_id, interaction.user.id)
-        if not opponent_id:
+        # Validate pairing exists in DB using both player IDs (most recent active)
+        if not self.guild_id or not get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id):
             await interaction.response.send_message(
                 "No active pairing found. You can only report matches against your paired opponent.",
                 ephemeral=True,
@@ -1151,12 +1148,12 @@ class LFGReportButtons(discord.ui.View):
             "reporter_global": interaction.user.global_name
             or interaction.user.display_name,
             "is_winner": True,
-            "opponent_message": None,  # Will be set after fetching opponent's DM
-            "match_start_time": self.match_start_time,  # Track when match started
-            "reporter_deck_url": self.reporter_deck_url,  # Reporter's deck URL
-            "opponent_deck_url": self.opponent_deck_url,  # Opponent's deck URL
-            "first_player": self.first_player,  # Did reporter go first
-            "guild_id": self.guild_id,  # Store guild_id for later use
+            "opponent_message": None,
+            "match_start_time": self.match_start_time,
+            "reporter_deck_url": self.reporter_deck_url,
+            "opponent_deck_url": self.opponent_deck_url,
+            "first_player": self.first_player,
+            "guild_id": self.guild_id,
         }
 
         # Send confirmation to opponent
@@ -1337,16 +1334,15 @@ class LFGReportButtons(discord.ui.View):
         except Exception:
             pass
 
-        # Get opponent from database pairing
-        if not self.guild_id:
-            await interaction.response.send_message(
-                "Guild ID not available. Please try again.",
-                ephemeral=True,
-            )
-            return
+        # Get opponent from view player IDs
+        opponent_id = (
+            self.player2_id
+            if interaction.user.id == self.player1_id
+            else self.player1_id
+        )
 
-        opponent_id = get_opponent_from_pairing(self.guild_id, interaction.user.id)
-        if not opponent_id:
+        # Validate pairing exists in DB using both player IDs (most recent active)
+        if not self.guild_id or not get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id):
             await interaction.response.send_message(
                 "No active pairing found. You can only report matches against your paired opponent.",
                 ephemeral=True,
@@ -1387,12 +1383,12 @@ class LFGReportButtons(discord.ui.View):
             "reporter_global": interaction.user.global_name
             or interaction.user.display_name,
             "is_winner": False,
-            "opponent_message": None,  # Will be set after fetching opponent's DM
-            "match_start_time": self.match_start_time,  # Track when match started
-            "reporter_deck_url": self.reporter_deck_url,  # Reporter's deck URL
-            "opponent_deck_url": self.opponent_deck_url,  # Opponent's deck URL
-            "first_player": self.first_player,  # Did reporter go first
-            "guild_id": self.guild_id,  # Store guild_id for later use
+            "opponent_message": None,
+            "match_start_time": self.match_start_time,
+            "reporter_deck_url": self.reporter_deck_url,
+            "opponent_deck_url": self.opponent_deck_url,
+            "first_player": self.first_player,
+            "guild_id": self.guild_id,
         }
 
         # Send confirmation to opponent

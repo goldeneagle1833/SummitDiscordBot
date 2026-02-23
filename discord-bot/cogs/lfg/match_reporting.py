@@ -10,11 +10,90 @@ from utils.database import (
     winner_report,
     losser_report,
     update_elo_db,
+    update_elo_db_ladder,
+    complete_ladder_challenge,
     mark_pairing_reported,
     get_pairing_between_players,
 )
 
 logger = logging.getLogger("discord_bot")
+
+LADDER_WINNER_ROLE_ID = 1472382884550803658
+
+
+async def _apply_ladder_elo(bot, ladder_info, winner_id, winner_global, loser_id, loser_global, match_id, event_active):
+    """Apply ladder challenge ELO modifications, complete challenge, and assign role if non-top-16 won."""
+    import sqlite3 as _sqlite3
+
+    challenger_id = ladder_info["challenger_id"]
+
+    # Determine multipliers based on who won
+    if winner_id == challenger_id:
+        # Top 16 player won - normal ELO for both
+        winner_mult = 1.0
+        loser_mult = 1.0
+    else:
+        # Non-Top16 player won - they get boosted, Top16 gets reduced loss
+        winner_mult = ladder_info["elo_multiplier_winner"]
+        loser_mult = ladder_info["elo_multiplier_loser"]
+
+    # Adjust winner ELO if multiplier != 1.0
+    # winner_report already applied a normal ELO update for the winner
+    if winner_mult != 1.0 and event_active:
+        conn_match = _sqlite3.connect("match_records.db")
+        cur_match = conn_match.cursor()
+        cur_match.execute(
+            "SELECT winner_elo_change FROM match_records WHERE match_id=?",
+            (match_id,),
+        )
+        elo_row = cur_match.fetchone()
+        conn_match.close()
+
+        if elo_row and elo_row[0]:
+            normal_change = elo_row[0]
+            extra_change = round(normal_change * (winner_mult - 1.0))
+            conn_fix = _sqlite3.connect("elo.db")
+            cur_fix = conn_fix.cursor()
+            cur_fix.execute(
+                "UPDATE overall_standings SET elo = elo + ?, event_elo = event_elo + ? WHERE user_id = ?",
+                (extra_change, extra_change, winner_id),
+            )
+            cur_fix.commit()
+            conn_fix.close()
+            logger.info(
+                f"Ladder bonus: Winner {winner_id} gets extra {extra_change:+d} ELO (mult={winner_mult})"
+            )
+
+    # Update loser ELO with multiplier
+    if loser_mult != 1.0:
+        update_elo_db_ladder(
+            loser_id, loser_global, False, winner_id, elo_multiplier=loser_mult
+        )
+    else:
+        update_elo_db(loser_id, loser_global, False, winner_id)
+
+    # Complete the ladder challenge record
+    if ladder_info.get("challenge_id"):
+        complete_ladder_challenge(ladder_info["challenge_id"], winner_id, match_id)
+
+    # If non-top-16 player won, assign role
+    stakes_msg = ""
+    if winner_id != challenger_id:
+        try:
+            guild = bot.get_guild(ladder_info.get("guild_id"))
+            if guild:
+                member = guild.get_member(winner_id)
+                role = guild.get_role(LADDER_WINNER_ROLE_ID)
+                if member and role:
+                    await member.add_roles(role)
+                    logger.info(f"Assigned ladder winner role to {winner_id}")
+        except Exception as e:
+            logger.error(f"Failed to assign ladder winner role: {e}")
+
+        if winner_mult != 1.0:
+            stakes_msg = "\n**Ladder Bonus:** Winner gained 2x ELO! Top 16 player lost only 0.5x ELO."
+
+    return stakes_msg
 
 
 class MatchReportModal(discord.ui.Modal, title="Match Report"):
@@ -158,6 +237,7 @@ class MatchConfirmationButtons(discord.ui.View):
         opponent_global: str = None,
         winner_deck_url: str = None,
         loser_deck_url: str = None,
+        ladder_info: dict = None,
     ):
         super().__init__(timeout=86400)  # 24 hour timeout - plenty of time to confirm
         self.reporter_id = reporter_id
@@ -178,6 +258,7 @@ class MatchConfirmationButtons(discord.ui.View):
         self.match_comment = match_comment
         self.winner_deck_url = winner_deck_url
         self.loser_deck_url = loser_deck_url
+        self.ladder_info = ladder_info
 
     @discord.ui.button(
         label="Confirm",
@@ -281,19 +362,28 @@ class MatchConfirmationButtons(discord.ui.View):
             loser_went_first=loser_went_first,
         )
 
-        # Update ELO for the loser as well
-        update_elo_db(self.loser_id, self.loser_global, False, self.winner_id)
+        # Update ELO for the loser (with ladder multipliers if applicable)
+        stakes_msg = ""
+        if self.ladder_info:
+            stakes_msg = await _apply_ladder_elo(
+                self.bot, self.ladder_info,
+                self.winner_id, self.winner_global,
+                self.loser_id, self.loser_global,
+                match_id, event_active,
+            )
+        else:
+            update_elo_db(self.loser_id, self.loser_global, False, self.winner_id)
 
         elo_msg = "" if event_active else " *(No active event - ELO not affected)*"
         # Remove the confirmation message
         await interaction.message.edit(
-            content=f"Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.{elo_msg}",
+            content=f"Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.{elo_msg}{stakes_msg}",
             view=None,
         )
 
         # Send confirmation to confirming user
         await interaction.followup.send(
-            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}{elo_msg}",
+            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}{elo_msg}{stakes_msg}",
             ephemeral=True,
         )
 
@@ -301,7 +391,7 @@ class MatchConfirmationButtons(discord.ui.View):
         try:
             reporter = await self.bot.fetch_user(self.reporter_id)
             await reporter.send(
-                f"{self.opponent_global} has confirmed your match report! Match has been recorded."
+                f"{self.opponent_global} has confirmed your match report! Match has been recorded.{stakes_msg}"
             )
         except discord.Forbidden:
             # If DM fails, send to match-report channel
@@ -309,7 +399,7 @@ class MatchConfirmationButtons(discord.ui.View):
             if match_report_channel:
                 await match_report_channel.send(
                     scrub_urls(
-                        f"{reporter.mention} {self.opponent_global} has confirmed your match report! Match has been recorded."
+                        f"{reporter.mention} {self.opponent_global} has confirmed your match report! Match has been recorded.{stakes_msg}"
                     )
                 )
         except Exception:
@@ -322,8 +412,8 @@ class MatchConfirmationButtons(discord.ui.View):
         # Remove from pending
         pending_match_reports.pop((self.reporter_id, self.opponent_id), None)
 
-        # Mark pairing as reported in database
-        if guild_id:
+        # Mark pairing as reported in database (skip for ladder matches)
+        if guild_id and not self.ladder_info:
             mark_pairing_reported(guild_id, self.winner_id, self.loser_id)
 
         # Update leaderboard in designated channel
@@ -431,12 +521,13 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         )
 
         # Validate pairing exists in DB using both player IDs (most recent active)
-        if not view.guild_id or not get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id):
-            await interaction.response.send_message(
-                "No active pairing found. You can only report matches against your paired opponent.",
-                ephemeral=True,
-            )
-            return
+        if not view.ladder_info:
+            if not view.guild_id or not get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id):
+                await interaction.response.send_message(
+                    "No active pairing found. You can only report matches against your paired opponent.",
+                    ephemeral=True,
+                )
+                return
 
         # Fetch opponent to get their global name
         try:
@@ -478,6 +569,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             "opponent_deck_url": view.opponent_deck_url,
             "first_player": view.first_player,
             "guild_id": view.guild_id,
+            "ladder_info": view.ladder_info,
         }
 
         # Send confirmation to opponent
@@ -502,6 +594,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 first_player=view.first_player,
                 winner_deck_url=view.reporter_deck_url,
                 loser_deck_url=view.opponent_deck_url,
+                ladder_info=view.ladder_info,
             )
 
             # Check if opponent has DM-disabled role
@@ -622,12 +715,13 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         )
 
         # Validate pairing exists in DB using both player IDs (most recent active)
-        if not view.guild_id or not get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id):
-            await interaction.response.send_message(
-                "No active pairing found. You can only report matches against your paired opponent.",
-                ephemeral=True,
-            )
-            return
+        if not view.ladder_info:
+            if not view.guild_id or not get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id):
+                await interaction.response.send_message(
+                    "No active pairing found. You can only report matches against your paired opponent.",
+                    ephemeral=True,
+                )
+                return
 
         # Fetch opponent to get their global name
         try:
@@ -669,6 +763,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             "opponent_deck_url": view.opponent_deck_url,
             "first_player": view.first_player,
             "guild_id": view.guild_id,
+            "ladder_info": view.ladder_info,
         }
 
         # Send confirmation to opponent
@@ -693,6 +788,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 first_player=view.first_player,
                 winner_deck_url=view.opponent_deck_url,
                 loser_deck_url=view.reporter_deck_url,
+                ladder_info=view.ladder_info,
             )
 
             # Check if opponent has DM-disabled role
@@ -897,19 +993,28 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             loser_went_first=loser_went_first,
         )
 
-        # Update ELO for the loser
-        update_elo_db(view.loser_id, view.loser_global, False, view.winner_id)
+        # Update ELO for the loser (with ladder multipliers if applicable)
+        stakes_msg = ""
+        if view.ladder_info:
+            stakes_msg = await _apply_ladder_elo(
+                view.bot, view.ladder_info,
+                view.winner_id, view.winner_global,
+                view.loser_id, view.loser_global,
+                match_id, event_active,
+            )
+        else:
+            update_elo_db(view.loser_id, view.loser_global, False, view.winner_id)
 
         elo_msg = "" if event_active else " *(No active event - ELO not affected)*"
         # Update the confirmation message
         await original_interaction.message.edit(
-            content=f"Match confirmed! **Match ID: #{match_id}** - {view.winner_global} won against {view.loser_global}.{elo_msg}",
+            content=f"Match confirmed! **Match ID: #{match_id}** - {view.winner_global} won against {view.loser_global}.{elo_msg}{stakes_msg}",
             view=None,
         )
 
         # Send confirmation to confirming user
         await interaction.followup.send(
-            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {view.winner_global}\n**Loser:** {view.loser_global}{elo_msg}",
+            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {view.winner_global}\n**Loser:** {view.loser_global}{elo_msg}{stakes_msg}",
             ephemeral=True,
         )
 
@@ -917,14 +1022,14 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         try:
             reporter = await view.bot.fetch_user(view.reporter_id)
             await reporter.send(
-                f"{view.opponent_global} has confirmed your match report! Match has been recorded."
+                f"{view.opponent_global} has confirmed your match report! Match has been recorded.{stakes_msg}"
             )
         except discord.Forbidden:
             match_report_channel = view.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
             if match_report_channel:
                 await match_report_channel.send(
                     scrub_urls(
-                        f"<@{view.reporter_id}> {view.opponent_global} has confirmed your match report! Match has been recorded."
+                        f"<@{view.reporter_id}> {view.opponent_global} has confirmed your match report! Match has been recorded.{stakes_msg}"
                     )
                 )
         except Exception:
@@ -937,8 +1042,8 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         # Remove from pending
         pending_match_reports.pop((view.reporter_id, view.opponent_id), None)
 
-        # Mark pairing as reported in database
-        if guild_id:
+        # Mark pairing as reported in database (skip for ladder matches)
+        if guild_id and not view.ladder_info:
             mark_pairing_reported(guild_id, view.winner_id, view.loser_id)
 
         # Update leaderboard
@@ -1062,6 +1167,7 @@ class LFGReportButtons(discord.ui.View):
         opponent_deck_url=None,
         first_player: str = "n",
         guild_id: int = None,
+        ladder_info: dict = None,
     ):
         super().__init__(timeout=None)
         self.match_id = match_id
@@ -1075,6 +1181,7 @@ class LFGReportButtons(discord.ui.View):
         self.channel = channel
         self.first_player = first_player
         self.guild_id = guild_id
+        self.ladder_info = ladder_info
         # Track when the match started for automatic match time calculation
         self.match_start_time = match_start_time or datetime.datetime.now()
 
@@ -1107,12 +1214,13 @@ class LFGReportButtons(discord.ui.View):
         )
 
         # Validate pairing exists in DB using both player IDs (most recent active)
-        if not self.guild_id or not get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id):
-            await interaction.response.send_message(
-                "No active pairing found. You can only report matches against your paired opponent.",
-                ephemeral=True,
-            )
-            return
+        if not self.ladder_info:
+            if not self.guild_id or not get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id):
+                await interaction.response.send_message(
+                    "No active pairing found. You can only report matches against your paired opponent.",
+                    ephemeral=True,
+                )
+                return
 
         # Fetch opponent to get their global name
         try:
@@ -1154,6 +1262,7 @@ class LFGReportButtons(discord.ui.View):
             "opponent_deck_url": self.opponent_deck_url,
             "first_player": self.first_player,
             "guild_id": self.guild_id,
+            "ladder_info": self.ladder_info,
         }
 
         # Send confirmation to opponent
@@ -1179,6 +1288,7 @@ class LFGReportButtons(discord.ui.View):
                 first_player=self.first_player,
                 winner_deck_url=self.reporter_deck_url,  # Reporter won, so their deck is winner's
                 loser_deck_url=self.opponent_deck_url,  # Opponent lost, so their deck is loser's
+                ladder_info=self.ladder_info,
             )
 
             # Check if opponent has DM-disabled role
@@ -1342,12 +1452,13 @@ class LFGReportButtons(discord.ui.View):
         )
 
         # Validate pairing exists in DB using both player IDs (most recent active)
-        if not self.guild_id or not get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id):
-            await interaction.response.send_message(
-                "No active pairing found. You can only report matches against your paired opponent.",
-                ephemeral=True,
-            )
-            return
+        if not self.ladder_info:
+            if not self.guild_id or not get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id):
+                await interaction.response.send_message(
+                    "No active pairing found. You can only report matches against your paired opponent.",
+                    ephemeral=True,
+                )
+                return
 
         # Fetch opponent to get their global name
         try:
@@ -1389,6 +1500,7 @@ class LFGReportButtons(discord.ui.View):
             "opponent_deck_url": self.opponent_deck_url,
             "first_player": self.first_player,
             "guild_id": self.guild_id,
+            "ladder_info": self.ladder_info,
         }
 
         # Send confirmation to opponent
@@ -1414,6 +1526,7 @@ class LFGReportButtons(discord.ui.View):
                 first_player=self.first_player,
                 winner_deck_url=self.opponent_deck_url,  # Opponent won, so their deck is winner's
                 loser_deck_url=self.reporter_deck_url,  # Reporter lost, so their deck is loser's
+                ladder_info=self.ladder_info,
             )
 
             # Check if opponent has DM-disabled role

@@ -29,6 +29,7 @@ from repositories.elo_repo import (  # noqa: F401
     get_ladder_challenge_today,
     save_ladder_challenge,
     complete_ladder_challenge,
+    delete_ladder_challenge,
     save_challenge_match,
     # Pairing functions
     save_pairing,

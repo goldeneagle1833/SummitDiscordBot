@@ -16,12 +16,14 @@ from cogs.lfg.state import (
     processed_matches,
 )
 from cogs.lfg.helpers import scrub_urls, send_milestone_announcement
+from cogs.lfg.match_reporting import LFGReportButtons
 from utils.database import (
     winner_report,
     losser_report,
     update_elo_db,
     update_elo_db_ladder,
     complete_ladder_challenge,
+    delete_ladder_challenge,
     get_user_elo,
     create_ladder_challenge_table,
 )
@@ -30,7 +32,7 @@ logger = logging.getLogger("discord_bot")
 
 
 class LadderChallengeJoinButton(discord.ui.View):
-    """Button for joining a ladder challenge queue"""
+    """Buttons for joining/leaving a ladder challenge queue and cancelling"""
 
     def __init__(self, bot, challenger_id: int):
         super().__init__(timeout=None)
@@ -52,7 +54,8 @@ class LadderChallengeJoinButton(discord.ui.View):
         # Can't join your own challenge
         if user_id == self.challenger_id:
             await interaction.response.send_message(
-                "You can't join your own challenge!", ephemeral=True
+                "You can't join your own challenge! Use the Cancel button to cancel it.",
+                ephemeral=True,
             )
             return
 
@@ -90,7 +93,7 @@ class LadderChallengeJoinButton(discord.ui.View):
                 msg = challenge_data.get("message")
                 if msg:
                     if joiner_count >= LADDER_CHALLENGE_MAX_JOINERS:
-                        # Queue full - disable button
+                        # Queue full - disable all buttons
                         for item in self.children:
                             item.disabled = True
                         await msg.edit(embed=embed, view=self)
@@ -111,6 +114,123 @@ class LadderChallengeJoinButton(discord.ui.View):
             if task and not task.done():
                 task.cancel()
             await _resolve_ladder_challenge(self.bot, self.challenger_id)
+
+    @discord.ui.button(
+        label="Leave Queue",
+        style=discord.ButtonStyle.secondary,
+        custom_id="leave_ladder_challenge",
+    )
+    async def leave_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        """Handle a player leaving the ladder challenge queue"""
+        user_id = interaction.user.id
+
+        # Challenger can't use this button
+        if user_id == self.challenger_id:
+            await interaction.response.send_message(
+                "Use the Cancel button to cancel your challenge.", ephemeral=True
+            )
+            return
+
+        async with ladder_challenge_lock:
+            challenge_data = active_ladder_challenges.get(self.challenger_id)
+            if not challenge_data:
+                await interaction.response.send_message(
+                    "This ladder challenge is no longer active.", ephemeral=True
+                )
+                return
+
+            # Check if they're actually in the queue
+            joiner_idx = next(
+                (i for i, j in enumerate(challenge_data["joiners"]) if j["user_id"] == user_id),
+                None,
+            )
+            if joiner_idx is None:
+                await interaction.response.send_message(
+                    "You haven't joined this challenge.", ephemeral=True
+                )
+                return
+
+            # Remove the joiner
+            challenge_data["joiners"].pop(joiner_idx)
+            joiner_count = len(challenge_data["joiners"])
+
+            # Update the embed
+            challenger_global = challenge_data["challenger_global"]
+            embed = _build_ladder_challenge_embed(
+                challenger_global, challenge_data["joiners"], self.challenger_id
+            )
+
+            try:
+                msg = challenge_data.get("message")
+                if msg:
+                    # Re-enable buttons in case they were disabled at max
+                    for item in self.children:
+                        item.disabled = False
+                    await msg.edit(embed=embed, view=self)
+            except Exception as e:
+                logger.error(f"Error updating ladder challenge message: {e}")
+
+        await interaction.response.send_message(
+            "You've left the ladder challenge queue.", ephemeral=True
+        )
+
+    @discord.ui.button(
+        label="Cancel Challenge",
+        style=discord.ButtonStyle.danger,
+        custom_id="cancel_ladder_challenge",
+    )
+    async def cancel_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        """Handle the challenger cancelling their ladder challenge"""
+        user_id = interaction.user.id
+
+        # Only the challenger can cancel
+        if user_id != self.challenger_id:
+            await interaction.response.send_message(
+                "Only the challenger can cancel this challenge.", ephemeral=True
+            )
+            return
+
+        async with ladder_challenge_lock:
+            challenge_data = active_ladder_challenges.pop(self.challenger_id, None)
+
+        if not challenge_data:
+            await interaction.response.send_message(
+                "This ladder challenge is no longer active.", ephemeral=True
+            )
+            return
+
+        # Cancel the timeout task
+        task = challenge_data.get("task")
+        if task and not task.done():
+            task.cancel()
+
+        # Delete the DB record so it doesn't count as daily use
+        challenge_id = challenge_data.get("challenge_id")
+        if challenge_id:
+            delete_ladder_challenge(challenge_id)
+
+        # Update the message
+        challenger_global = challenge_data["challenger_global"]
+        try:
+            msg = challenge_data.get("message")
+            if msg:
+                embed = discord.Embed(
+                    title="Ladder Challenge Cancelled",
+                    description=f"**{challenger_global}** cancelled their ladder challenge.",
+                    color=discord.Color.red(),
+                )
+                await msg.edit(embed=embed, view=None)
+        except Exception as e:
+            logger.error(f"Error updating cancelled ladder challenge message: {e}")
+
+        await interaction.response.send_message(
+            "Your ladder challenge has been cancelled. It does not count as your daily challenge.",
+            ephemeral=True,
+        )
 
 
 class LadderChallengeReportButtons(discord.ui.View):
@@ -692,7 +812,10 @@ async def _resolve_ladder_challenge(bot, challenger_id):
     msg = challenge_data.get("message")
 
     if not joiners:
-        # No one joined
+        # No one joined — delete the DB record so it doesn't count as daily use
+        if challenge_id:
+            delete_ladder_challenge(challenge_id)
+
         try:
             if msg:
                 embed = discord.Embed(
@@ -709,7 +832,7 @@ async def _resolve_ladder_challenge(bot, challenger_id):
         try:
             challenger = await bot.fetch_user(challenger_id)
             await challenger.send(
-                "Your ladder challenge expired with no challengers. You can try again tomorrow."
+                "Your ladder challenge expired with no challengers. It does not count as your daily challenge — you can try again!"
             )
         except Exception:
             pass
@@ -771,39 +894,37 @@ async def _resolve_ladder_challenge(bot, challenger_id):
     except Exception as e:
         logger.error(f"Error updating ladder challenge result message: {e}")
 
-    # Send report buttons to BOTH players
-    report_view_challenger = LadderChallengeReportButtons(
+    # Build ladder_info for the normal report flow with modified ELO
+    guild_id = channel.guild.id if channel and channel.guild else None
+    ladder_info = {
+        "challenger_id": challenger_id,
+        "challenge_id": challenge_id,
+        "elo_multiplier_winner": winner_mult,
+        "elo_multiplier_loser": loser_mult,
+        "guild_id": guild_id,
+    }
+
+    # Send report buttons only to the Top 16 player (challenger)
+    report_view = LFGReportButtons(
+        match_id=0,
+        player1_id=challenger_id,
+        player1_global=challenger_global,
+        player2_id=selected_id,
+        player2_global=selected_global,
         bot=bot,
-        challenger_id=challenger_id,
-        challenger_global=challenger_global,
-        opponent_id=selected_id,
-        opponent_global=selected_global,
-        challenge_id=challenge_id,
-        elo_multiplier_winner=winner_mult,
-        elo_multiplier_loser=loser_mult,
         channel=channel,
+        ladder_info=ladder_info,
+        guild_id=guild_id,
     )
 
-    report_view_opponent = LadderChallengeReportButtons(
-        bot=bot,
-        challenger_id=challenger_id,
-        challenger_global=challenger_global,
-        opponent_id=selected_id,
-        opponent_global=selected_global,
-        challenge_id=challenge_id,
-        elo_multiplier_winner=winner_mult,
-        elo_multiplier_loser=loser_mult,
-        channel=channel,
-    )
-
-    # DM the challenger
+    # DM the challenger with report buttons
     try:
         challenger_user = await bot.fetch_user(challenger_id)
         await challenger_user.send(
             f"**Ladder Challenge Match!** Your opponent is **{selected_global}**!\n\n"
             f"{stakes_text}\n\n"
             f"Report the match result below:",
-            view=report_view_challenger,
+            view=report_view,
         )
     except discord.Forbidden:
         dm_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
@@ -813,20 +934,19 @@ async def _resolve_ladder_challenge(bot, challenger_id):
                     f"<@{challenger_id}> **Ladder Challenge Match!** Your opponent is **{selected_global}**!\n\n"
                     f"{stakes_text}\n\nReport the match result below:"
                 ),
-                view=report_view_challenger,
+                view=report_view,
             )
     except Exception as e:
         logger.error(f"Error DMing challenger for ladder match: {e}")
 
-    # DM the selected opponent
+    # DM the selected opponent (notification only, no report buttons)
     try:
         opponent_user = await bot.fetch_user(selected_id)
         await opponent_user.send(
             f"**You've been selected for a Ladder Challenge!**\n\n"
             f"You're playing against **{challenger_global}** (Top 16)!\n\n"
             f"{stakes_text}\n\n"
-            f"Report the match result below:",
-            view=report_view_opponent,
+            f"**{challenger_global}** will report the match result. You'll be asked to confirm.",
         )
     except discord.Forbidden:
         dm_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
@@ -835,9 +955,8 @@ async def _resolve_ladder_challenge(bot, challenger_id):
                 scrub_urls(
                     f"<@{selected_id}> **You've been selected for a Ladder Challenge!**\n\n"
                     f"You're playing against **{challenger_global}** (Top 16)!\n\n"
-                    f"{stakes_text}\n\nReport the match result below:"
+                    f"{stakes_text}\n\n**{challenger_global}** will report the match result. You'll be asked to confirm."
                 ),
-                view=report_view_opponent,
             )
     except Exception as e:
         logger.error(f"Error DMing opponent for ladder match: {e}")

@@ -475,6 +475,16 @@ def save_ladder_challenge(challenger_id: int, selected_opponent_id: int = None) 
     return challenge_id
 
 
+def delete_ladder_challenge(challenge_id: int):
+    """Delete a ladder challenge record (used when no one joins so it doesn't count as daily use)."""
+    create_ladder_challenge_table()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute("DELETE FROM ladder_challenges WHERE challenge_id = ?", (challenge_id,))
+    conn.commit()
+    conn.close()
+
+
 def complete_ladder_challenge(challenge_id: int, winner_id: int, match_id: int = None):
     """Mark a ladder challenge as completed."""
     create_ladder_challenge_table()

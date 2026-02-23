@@ -20,8 +20,12 @@ ALL_CARDS_PATH = BASE_DIR / "curiosa-io-tools" / "All_Cards_Array.json"
 # Database paths
 # Can be overridden via environment variables in production
 ELO_DB_PATH = Path(os.environ.get("ELO_DB_PATH", BOT_DIR / "elo.db"))
-MATCH_RECORDS_DB_PATH = Path(os.environ.get("MATCH_RECORDS_DB_PATH", BOT_DIR / "match_records.db"))
-FART_SCORES_DB_PATH = Path(os.environ.get("FART_SCORES_DB_PATH", BOT_DIR / "fart_scores.db"))
+MATCH_RECORDS_DB_PATH = Path(
+    os.environ.get("MATCH_RECORDS_DB_PATH", BOT_DIR / "match_records.db")
+)
+FART_SCORES_DB_PATH = Path(
+    os.environ.get("FART_SCORES_DB_PATH", BOT_DIR / "fart_scores.db")
+)
 COMMUNITY_DB_PATH = Path(os.environ.get("COMMUNITY_DB_PATH", BOT_DIR / "community.db"))
 
 # Flask configuration
@@ -60,6 +64,7 @@ ADMINS = [
     "128690099432062976",  # ember
     "212395045125357568",  # IRA
     "292113529585008640",  # CJ
+    "845209838111031306",  # Kyle
 ]
 
 # API Key configuration for external integrations
@@ -83,8 +88,13 @@ EVENT_RATINGS = {
     "SCG Con Portland 2026": 1,
     "SCG Con Vegas 2025 Crossroads": 3,
     "SORCERY CON": 3,
+    "Sorcery Con 2024": 3,
+    "SorceryCon 2024 stats": 3,
     "Sorcery Con Constructed 2026": 3,
     "Sorcery Con Limited 2026": 3,
+    "Every one at Sorcery Con Constructed 2026": 3,
+    "Top 32 Sorcery Con Constructed 2026": 3,
+    "Top 64 Sorcery Con Constructed 2026": 3,
     "SS2": 1,
     "Season6TTSLeage": 1,
     "SorcerersSummit": 2,

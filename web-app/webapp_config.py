@@ -65,6 +65,7 @@ ADMINS = [
     "212395045125357568",  # IRA
     "292113529585008640",  # CJ
     "845209838111031306",  # Kyle
+    "275995453957472257",  # Geoffrey
 ]
 
 # API Key configuration for external integrations

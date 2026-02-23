@@ -276,6 +276,7 @@ async def winner_report(
     loser_deck_url=None,
     winner_went_first=None,
     loser_went_first=None,
+    match_type="ranked",
 ):
     """
     Log a win in the database.
@@ -284,7 +285,7 @@ async def winner_report(
         Tuple of (match_id, winner_id, loser_id, event_active)
         event_active is True if ELO was updated, False if no active event
     """
-    logger.info(f"Logging win for user {interaction_global}")
+    logger.info(f"Logging win for user {interaction_global} (match_type={match_type})")
     create_db()
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
@@ -303,14 +304,20 @@ async def winner_report(
     if loser_deck_url:
         json_deck_data_loser = scrape_Curosa(loser_deck_url, "deck_data_test.json")
 
-    # Update ELO and get the change values
-    new_lifetime_elo, lifetime_change, new_event_elo, event_change, event_active = (
-        update_elo_db(interaction_user_id, interaction_global, did_win, opponent_id)
-    )
-    winner_elo_change = event_change if event_active else 0
-    loser_elo_change = (
-        -event_change if event_active else 0
-    )  # Approximate: loser loses roughly what winner gains
+    # Skip ELO updates for testing matches
+    if match_type == "testing":
+        winner_elo_change = 0
+        loser_elo_change = 0
+        event_active = False
+    else:
+        # Update ELO and get the change values
+        new_lifetime_elo, lifetime_change, new_event_elo, event_change, event_active = (
+            update_elo_db(interaction_user_id, interaction_global, did_win, opponent_id)
+        )
+        winner_elo_change = event_change if event_active else 0
+        loser_elo_change = (
+            -event_change if event_active else 0
+        )  # Approximate: loser loses roughly what winner gains
 
     cur.execute(
         "INSERT INTO match_records (reporter_id, winner_id, winner_display_name, "

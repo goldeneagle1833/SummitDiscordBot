@@ -6,7 +6,8 @@ by any submodule without circular dependencies.
 
 import asyncio
 
-# In-memory LFG queue (user_id: {timestamp, timeframe, deck_url})
+# In-memory LFG queue (user_id: {timestamp, timeframe, deck_url, queue_type})
+# queue_type: "ranked", "testing", or "both"
 lfg_queue = {}
 
 # Lock to prevent race conditions when accessing the queue

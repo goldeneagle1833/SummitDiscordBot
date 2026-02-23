@@ -28,7 +28,7 @@ from cogs.lfg.ladder import (
     _resolve_ladder_challenge,
     _ladder_challenge_timeout,
 )
-from cogs.lfg.queue import DeckURLModal, JoinQueueButton
+from cogs.lfg.queue import DeckURLModal, JoinQueueButtons
 from utils.database import (
     winner_report,
     losser_report,
@@ -380,7 +380,7 @@ class LFGCog(commands.Cog):
             # RED - Empty queue
             embed = discord.Embed(
                 title="\U0001f534 LFG Queue Status",
-                description="**Queue is empty**\n\nClick the **Join Queue** button below to find a match!\nUse `!cancel` to leave the queue.",
+                description="**Queue is empty**\n\nClick a button below to find a match!\nUse `!cancel` to leave the queue.",
                 color=discord.Color.red(),
             )
             embed.set_footer(text="Status updates automatically")
@@ -388,34 +388,66 @@ class LFGCog(commands.Cog):
             # GREEN - Active queue
             embed = discord.Embed(
                 title="\U0001f7e2 LFG Queue Status",
-                description=f"**{len(lfg_queue)} player(s) looking for a game!!**\n\nClick **Join Queue** button below to get matched!\nUse `!cancel` to leave the queue.",
+                description=f"**{len(lfg_queue)} player(s) looking for a game!!**\n\nClick a button below to get matched!\nUse `!cancel` to leave the queue.",
                 color=discord.Color.green(),
             )
 
-            # Add details for each player in queue
             now = datetime.datetime.now()
-            queue_details = []
-            for user_id, info in lfg_queue.items():
-                time_elapsed = (now - info["timestamp"]).total_seconds() / 60
-                time_remaining = info["timeframe"] - time_elapsed
 
-                # Use a random funny placeholder instead of actual name
-                placeholder = SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]
-                queue_details.append(
-                    f"\u2022 **{placeholder}** - {int(time_remaining)} min remaining"
+            # Build ranked queue details (ranked + both players)
+            ranked_details = []
+            for user_id, info in lfg_queue.items():
+                qt = info.get("queue_type", "ranked")
+                if qt in ("ranked", "both"):
+                    time_elapsed = (now - info["timestamp"]).total_seconds() / 60
+                    time_remaining = info["timeframe"] - time_elapsed
+                    placeholder = SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]
+                    ranked_details.append(
+                        f"\u2022 **{placeholder}** - {int(time_remaining)} min remaining"
+                    )
+
+            # Build testing queue details (testing + both players)
+            testing_details = []
+            for user_id, info in lfg_queue.items():
+                qt = info.get("queue_type", "ranked")
+                if qt in ("testing", "both"):
+                    time_elapsed = (now - info["timestamp"]).total_seconds() / 60
+                    time_remaining = info["timeframe"] - time_elapsed
+                    placeholder = SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]
+                    testing_details.append(
+                        f"\u2022 **{placeholder}** - {int(time_remaining)} min remaining"
+                    )
+
+            if ranked_details:
+                embed.add_field(
+                    name=f"\u2694\ufe0f Ranked Queue ({len(ranked_details)}):",
+                    value="\n".join(ranked_details),
+                    inline=False,
+                )
+            else:
+                embed.add_field(
+                    name="\u2694\ufe0f Ranked Queue:",
+                    value="No players in ranked queue",
+                    inline=False,
                 )
 
-            if queue_details:
+            if testing_details:
                 embed.add_field(
-                    name="Players in Queue:",
-                    value="\n".join(queue_details),
+                    name=f"\U0001f9ea Testing Queue ({len(testing_details)}):",
+                    value="\n".join(testing_details),
+                    inline=False,
+                )
+            else:
+                embed.add_field(
+                    name="\U0001f9ea Testing Queue:",
+                    value="No players in testing queue",
                     inline=False,
                 )
 
             embed.set_footer(text="Status updates automatically")
 
         # Create the Join Queue button view
-        view = JoinQueueButton(self.bot)
+        view = JoinQueueButtons(self.bot)
 
         # Delete old message and send new one
         try:
@@ -615,8 +647,30 @@ class LFGCog(commands.Cog):
         finally:
             conn.close()
 
-    def check_if_someone_is_lfg(self, ctx):
-        """Find oldest player in queue who didn't play against ctx.author recently.
+    @staticmethod
+    def are_queue_types_compatible(type_a, type_b):
+        """Check if two queue types can match together.
+        ranked <-> ranked, both
+        testing <-> testing, both
+        both <-> ranked, testing, both
+        """
+        if type_a == "both" or type_b == "both":
+            return True
+        return type_a == type_b
+
+    @staticmethod
+    def resolve_match_type(type_a, type_b):
+        """Determine the match type when two players are matched.
+        If either player explicitly chose 'testing', it's testing.
+        Otherwise it's ranked (including both vs both).
+        """
+        if type_a == "testing" or type_b == "testing":
+            return "testing"
+        return "ranked"
+
+    def check_if_someone_is_lfg(self, ctx, queue_type="ranked"):
+        """Find oldest player in queue who didn't play against ctx.author recently
+        and is compatible with the given queue_type.
         Returns None if no valid match found.
         """
         now = datetime.datetime.now()
@@ -634,6 +688,11 @@ class LFGCog(commands.Cog):
             if (now - timestamp).total_seconds() >= timeframe * 60:
                 continue
 
+            # Check queue type compatibility
+            their_type = info.get("queue_type", "ranked")
+            if not self.are_queue_types_compatible(queue_type, their_type):
+                continue
+
             # Check if they played each other recently
             if self.check_last_match_opponent(ctx.author.id, user_id):
                 logger.info(
@@ -648,11 +707,12 @@ class LFGCog(commands.Cog):
 
         return oldest_valid_match
 
-    def add_to_lfg_queue(self, ctx, timeframe, deck_url=None):
+    def add_to_lfg_queue(self, ctx, timeframe, deck_url=None, queue_type="ranked"):
         lfg_queue[ctx.author.id] = {
             "timestamp": datetime.datetime.now(),
             "timeframe": int(timeframe),
             "deck_url": deck_url,
+            "queue_type": queue_type,
         }
 
     def pair_players(self, ctx):

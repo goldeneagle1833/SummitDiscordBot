@@ -238,6 +238,7 @@ class MatchConfirmationButtons(discord.ui.View):
         winner_deck_url: str = None,
         loser_deck_url: str = None,
         ladder_info: dict = None,
+        match_type: str = "ranked",
     ):
         super().__init__(timeout=86400)  # 24 hour timeout - plenty of time to confirm
         self.reporter_id = reporter_id
@@ -259,6 +260,7 @@ class MatchConfirmationButtons(discord.ui.View):
         self.winner_deck_url = winner_deck_url
         self.loser_deck_url = loser_deck_url
         self.ladder_info = ladder_info
+        self.match_type = match_type
 
     @discord.ui.button(
         label="Confirm",
@@ -360,11 +362,15 @@ class MatchConfirmationButtons(discord.ui.View):
             loser_deck_url=self.loser_deck_url,
             winner_went_first=winner_went_first,
             loser_went_first=loser_went_first,
+            match_type=self.match_type,
         )
 
         # Update ELO for the loser (with ladder multipliers if applicable)
+        # Skip ELO updates entirely for testing matches
         stakes_msg = ""
-        if self.ladder_info:
+        if self.match_type == "testing":
+            pass  # No ELO updates for testing matches
+        elif self.ladder_info:
             stakes_msg = await _apply_ladder_elo(
                 self.bot, self.ladder_info,
                 self.winner_id, self.winner_global,
@@ -374,7 +380,12 @@ class MatchConfirmationButtons(discord.ui.View):
         else:
             update_elo_db(self.loser_id, self.loser_global, False, self.winner_id)
 
-        elo_msg = "" if event_active else " *(No active event - ELO not affected)*"
+        if self.match_type == "testing":
+            elo_msg = " *(\U0001f9ea Testing match - ELO not affected)*"
+        elif not event_active:
+            elo_msg = " *(No active event - ELO not affected)*"
+        else:
+            elo_msg = ""
         # Remove the confirmation message
         await interaction.message.edit(
             content=f"Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.{elo_msg}{stakes_msg}",
@@ -570,6 +581,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             "first_player": view.first_player,
             "guild_id": view.guild_id,
             "ladder_info": view.ladder_info,
+            "match_type": view.match_type,
         }
 
         # Send confirmation to opponent
@@ -595,6 +607,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 winner_deck_url=view.reporter_deck_url,
                 loser_deck_url=view.opponent_deck_url,
                 ladder_info=view.ladder_info,
+                match_type=view.match_type,
             )
 
             # Check if opponent has DM-disabled role
@@ -764,6 +777,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             "first_player": view.first_player,
             "guild_id": view.guild_id,
             "ladder_info": view.ladder_info,
+            "match_type": view.match_type,
         }
 
         # Send confirmation to opponent
@@ -789,6 +803,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 winner_deck_url=view.opponent_deck_url,
                 loser_deck_url=view.reporter_deck_url,
                 ladder_info=view.ladder_info,
+                match_type=view.match_type,
             )
 
             # Check if opponent has DM-disabled role
@@ -991,11 +1006,15 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             loser_deck_url=view.loser_deck_url,
             winner_went_first=winner_went_first,
             loser_went_first=loser_went_first,
+            match_type=view.match_type,
         )
 
         # Update ELO for the loser (with ladder multipliers if applicable)
+        # Skip ELO updates entirely for testing matches
         stakes_msg = ""
-        if view.ladder_info:
+        if view.match_type == "testing":
+            pass  # No ELO updates for testing matches
+        elif view.ladder_info:
             stakes_msg = await _apply_ladder_elo(
                 view.bot, view.ladder_info,
                 view.winner_id, view.winner_global,
@@ -1005,7 +1024,12 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         else:
             update_elo_db(view.loser_id, view.loser_global, False, view.winner_id)
 
-        elo_msg = "" if event_active else " *(No active event - ELO not affected)*"
+        if view.match_type == "testing":
+            elo_msg = " *(\U0001f9ea Testing match - ELO not affected)*"
+        elif not event_active:
+            elo_msg = " *(No active event - ELO not affected)*"
+        else:
+            elo_msg = ""
         # Update the confirmation message
         await original_interaction.message.edit(
             content=f"Match confirmed! **Match ID: #{match_id}** - {view.winner_global} won against {view.loser_global}.{elo_msg}{stakes_msg}",
@@ -1075,6 +1099,7 @@ class WentFirstView(discord.ui.View):
         opponent_user=None,
         reporter_deck_text: str = "",
         guild_id: int = None,
+        match_type: str = "ranked",
     ):
         super().__init__(timeout=None)
         self.match_id = match_id
@@ -1090,6 +1115,7 @@ class WentFirstView(discord.ui.View):
         self.opponent_user = opponent_user
         self.reporter_deck_text = reporter_deck_text
         self.guild_id = guild_id
+        self.match_type = match_type
 
     @discord.ui.button(
         label="Yes, I went first",
@@ -1135,12 +1161,17 @@ class WentFirstView(discord.ui.View):
             opponent_deck_url=self.opponent_deck_url,
             first_player=first_player,
             guild_id=self.guild_id,
+            match_type=self.match_type,
         )
+
+        # Build match type label for message
+        match_type_emoji = "\u2694\ufe0f" if self.match_type == "ranked" else "\U0001f9ea"
+        match_type_label = "Ranked" if self.match_type == "ranked" else "Testing"
 
         # Send the report buttons
         try:
             await interaction.response.send_message(
-                f"**Match Found!** You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\nReport the match result below:",
+                f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\nReport the match result below:",
                 view=view_reporter,
             )
         except Exception as e:
@@ -1168,6 +1199,7 @@ class LFGReportButtons(discord.ui.View):
         first_player: str = "n",
         guild_id: int = None,
         ladder_info: dict = None,
+        match_type: str = "ranked",
     ):
         super().__init__(timeout=None)
         self.match_id = match_id
@@ -1182,6 +1214,7 @@ class LFGReportButtons(discord.ui.View):
         self.first_player = first_player
         self.guild_id = guild_id
         self.ladder_info = ladder_info
+        self.match_type = match_type
         # Track when the match started for automatic match time calculation
         self.match_start_time = match_start_time or datetime.datetime.now()
 
@@ -1263,6 +1296,7 @@ class LFGReportButtons(discord.ui.View):
             "first_player": self.first_player,
             "guild_id": self.guild_id,
             "ladder_info": self.ladder_info,
+            "match_type": self.match_type,
         }
 
         # Send confirmation to opponent
@@ -1289,6 +1323,7 @@ class LFGReportButtons(discord.ui.View):
                 winner_deck_url=self.reporter_deck_url,  # Reporter won, so their deck is winner's
                 loser_deck_url=self.opponent_deck_url,  # Opponent lost, so their deck is loser's
                 ladder_info=self.ladder_info,
+                match_type=self.match_type,
             )
 
             # Check if opponent has DM-disabled role
@@ -1501,6 +1536,7 @@ class LFGReportButtons(discord.ui.View):
             "first_player": self.first_player,
             "guild_id": self.guild_id,
             "ladder_info": self.ladder_info,
+            "match_type": self.match_type,
         }
 
         # Send confirmation to opponent
@@ -1527,6 +1563,7 @@ class LFGReportButtons(discord.ui.View):
                 winner_deck_url=self.opponent_deck_url,  # Opponent won, so their deck is winner's
                 loser_deck_url=self.reporter_deck_url,  # Reporter lost, so their deck is loser's
                 ladder_info=self.ladder_info,
+                match_type=self.match_type,
             )
 
             # Check if opponent has DM-disabled role

@@ -181,12 +181,15 @@ def stats_event(event_folder):
     if stats is None:
         return "Event not found", 404
 
+    element_stats = repo.get_event_element_stats(event_folder)
+
     return render_template(
         "pages/stats_event.html",
         event_name=format_event_name(event_folder),
         event_folder=event_folder,
         element_data=stats["element_data"],
         card_data=stats["card_data"],
+        element_stats=element_stats,
     )
 
 

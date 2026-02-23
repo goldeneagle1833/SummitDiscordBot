@@ -188,6 +188,88 @@ class EventRepository:
             "all_decks": all_decks,
         }
 
+    def _load_all_decks(self, event_folder: str) -> list[dict] | None:
+        """Load all deck JSON data for an event (full list preferred, falls back to top8)."""
+        event_path = self._validate_event_folder(event_folder)
+        if event_path is None or not event_path.exists():
+            return None
+
+        json_files = list(event_path.glob("*.json"))
+        full_json = None
+        top8_json = None
+
+        for json_file in json_files:
+            if "top8" in json_file.name.lower() or "top 8" in json_file.name.lower():
+                top8_json = json_file
+            elif json_file.name.lower().startswith(event_folder.lower()):
+                full_json = json_file
+
+        json_path = full_json or top8_json
+        if not json_path:
+            return None
+
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
+
+    def get_event_element_stats(self, event_folder: str) -> dict | None:
+        """Compute element presence and dominant element distribution from event deck data."""
+        decks = self._load_all_decks(event_folder)
+        if not decks:
+            return None
+
+        elements_order = ["Fire", "Water", "Earth", "Air"]
+        presence_counts = {e: 0 for e in elements_order}
+        dominant_counts = {e: 0 for e in elements_order}
+        total_decks = len(decks)
+
+        for deck in decks:
+            spellbook = deck.get("spellbook", [])
+            if not spellbook:
+                continue
+
+            # Track which elements appear and their total card quantity
+            element_quantities = {e: 0 for e in elements_order}
+
+            for card in spellbook:
+                card_elements = card.get("elements", "None")
+                quantity = card.get("quantity", 1)
+                for el in card_elements.split(", "):
+                    el = el.strip()
+                    if el in element_quantities:
+                        element_quantities[el] += quantity
+
+            # Element presence: does this deck contain at least one card of each element?
+            for el in elements_order:
+                if element_quantities[el] > 0:
+                    presence_counts[el] += 1
+
+            # Dominant element: which element has the most cards?
+            max_qty = max(element_quantities.values())
+            if max_qty > 0:
+                dominant = max(elements_order, key=lambda e: element_quantities[e])
+                dominant_counts[dominant] += 1
+
+        element_presence = []
+        for el in elements_order:
+            count = presence_counts[el]
+            percent = round(count / total_decks * 100, 1) if total_decks else 0
+            element_presence.append({"name": el, "count": count, "percent": percent})
+
+        dominant_element = []
+        for el in elements_order:
+            count = dominant_counts[el]
+            percent = round(count / total_decks * 100, 1) if total_decks else 0
+            dominant_element.append({"name": el, "count": count, "percent": percent})
+
+        return {
+            "total_decks": total_decks,
+            "element_presence": element_presence,
+            "dominant_element": dominant_element,
+        }
+
     def get_event_stats(self, event_folder: str) -> dict:
         """Get statistics data for a specific event."""
         event_path = self._validate_event_folder(event_folder)

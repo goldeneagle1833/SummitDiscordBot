@@ -83,6 +83,8 @@ EVENT_RATINGS = {
     "SCG Con Portland 2026": 1,
     "SCG Con Vegas 2025 Crossroads": 3,
     "SORCERY CON": 3,
+    "Sorcery Con Constructed 2026": 3,
+    "Sorcery Con Limited 2026": 3,
     "SS2": 1,
     "Season6TTSLeage": 1,
     "SorcerersSummit": 2,

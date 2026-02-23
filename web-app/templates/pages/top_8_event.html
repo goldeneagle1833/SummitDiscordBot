@@ -308,6 +308,103 @@
         color: #4db8ff;
       }
 
+      /* Element chart styles */
+      .charts-row {
+        display: flex;
+        gap: 2rem;
+        margin-bottom: 2rem;
+      }
+
+      .elements-chart-container {
+        flex: 1;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+        padding: 1.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .chart-title {
+        text-align: center;
+        font-size: 1.2rem;
+        margin-bottom: 0.3rem;
+        color: #fff;
+      }
+
+      .chart-subtitle {
+        text-align: center;
+        font-size: 0.8rem;
+        margin-bottom: 1.5rem;
+        color: rgba(255, 255, 255, 0.5);
+      }
+
+      .element-bars {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .element-row {
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+      }
+
+      .element-label {
+        width: 60px;
+        font-weight: bold;
+        font-size: 0.95rem;
+        text-shadow: 0 0 10px currentColor;
+      }
+
+      .element-bar-container {
+        flex: 1;
+        height: 32px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .element-bar {
+        height: 100%;
+        border-radius: 6px;
+        transition: width 0.8s ease-out;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        padding-right: 8px;
+        min-width: 50px;
+      }
+
+      .element-bar-text {
+        font-weight: bold;
+        font-size: 0.85rem;
+        color: #fff;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+      }
+
+      .element-stats {
+        width: 100px;
+        text-align: right;
+        font-size: 0.8rem;
+        color: rgba(255, 255, 255, 0.7);
+      }
+
+      .element-fire .element-label { color: #e74c3c; }
+      .element-fire .element-bar { background: linear-gradient(90deg, #e74c3c, #c0392b); }
+      .element-water .element-label { color: #3498db; }
+      .element-water .element-bar { background: linear-gradient(90deg, #3498db, #2980b9); }
+      .element-earth .element-label { color: #8b4513; }
+      .element-earth .element-bar { background: linear-gradient(90deg, #8b4513, #654321); }
+      .element-air .element-label { color: #87ceeb; }
+      .element-air .element-bar { background: linear-gradient(90deg, #87ceeb, #5dade2); }
+
+      @media (max-width: 900px) {
+        .charts-row {
+          flex-direction: column;
+        }
+      }
+
       /* Mobile Responsive Styles for Stats */
       @media (max-width: 768px) {
         .stats-table {
@@ -339,6 +436,22 @@
         <div class="event-header">
           <h1>{{ event_name }}</h1>
         </div>
+
+        <!-- Element Charts -->
+        {% if element_stats %}
+        <div class="charts-row">
+          <div class="elements-chart-container">
+            <h2 class="chart-title">Dominant Element</h2>
+            <p class="chart-subtitle">Element with the most cards in each deck's spellbook</p>
+            <div id="dominant-bars" class="element-bars"></div>
+          </div>
+          <div class="elements-chart-container">
+            <h2 class="chart-title">Element Presence</h2>
+            <p class="chart-subtitle">% of decks containing at least one card of each element</p>
+            <div id="presence-bars" class="element-bars"></div>
+          </div>
+        </div>
+        {% endif %}
 
         <!-- Top 8 Section -->
         {% if top8_decks %}
@@ -522,6 +635,41 @@
       <p>&copy; 2026 Summit. All rights reserved.</p>
     </footer>
     <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+
+    {% if element_stats %}
+    <script>
+      function renderEventElementBars(data, containerId, totalDecks) {
+        const container = document.getElementById(containerId);
+        if (!container || !data || data.length === 0) return;
+
+        const sorted = [...data].sort((a, b) => b.percent - a.percent);
+        let html = "";
+        sorted.forEach((el) => {
+          const elementClass = `element-${el.name.toLowerCase()}`;
+          html += `
+            <div class="element-row ${elementClass}">
+              <div class="element-label">${el.name}</div>
+              <div class="element-bar-container">
+                <div class="element-bar" style="width: ${el.percent}%;">
+                  <span class="element-bar-text">${el.percent}%</span>
+                </div>
+              </div>
+              <div class="element-stats">
+                ${el.count} / ${totalDecks} decks
+              </div>
+            </div>
+          `;
+        });
+        container.innerHTML = html;
+      }
+
+      (function() {
+        const stats = {{ element_stats | tojson }};
+        renderEventElementBars(stats.dominant_element, "dominant-bars", stats.total_decks);
+        renderEventElementBars(stats.element_presence, "presence-bars", stats.total_decks);
+      })();
+    </script>
+    {% endif %}
 
     {% if card_data %}
     <script>

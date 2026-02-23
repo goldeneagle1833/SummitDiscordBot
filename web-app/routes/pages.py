@@ -152,6 +152,7 @@ def top_8_event(event_folder):
         return "Event not found", 404
 
     stats = repo.get_event_stats(event_folder)
+    element_stats = repo.get_event_element_stats(event_folder)
 
     return render_template(
         "pages/top_8_event.html",
@@ -161,6 +162,7 @@ def top_8_event(event_folder):
         all_decks=decks["all_decks"],
         card_data=stats["card_data"] if stats else [],
         element_data=stats["element_data"] if stats else [],
+        element_stats=element_stats,
     )
 
 

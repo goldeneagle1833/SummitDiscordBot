@@ -475,9 +475,9 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
     """Modal for capturing deck URL when reporter didn't provide one at queue join"""
 
     deck_url = discord.ui.TextInput(
-        label="Curiosa Deck URL (Optional)",
-        placeholder="Enter your deck URL or leave blank",
-        required=False,
+        label="Curiosa Deck URL",
+        placeholder="https://curiosa.io/decks/...",
+        required=True,
     )
 
     def __init__(
@@ -887,9 +887,9 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
     """Modal for capturing deck URL when confirmer didn't provide one at queue join"""
 
     deck_url = discord.ui.TextInput(
-        label="Curiosa Deck URL (Optional)",
-        placeholder="Enter your deck URL or leave blank",
-        required=False,
+        label="Curiosa Deck URL",
+        placeholder="https://curiosa.io/decks/...",
+        required=True,
     )
 
     def __init__(

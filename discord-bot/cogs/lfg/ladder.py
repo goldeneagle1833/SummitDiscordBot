@@ -24,7 +24,7 @@ from utils.database import (
     update_elo_db_ladder,
     complete_ladder_challenge,
     delete_ladder_challenge,
-    get_user_elo,
+    get_user_event_elo,
     create_ladder_challenge_table,
 )
 
@@ -843,9 +843,9 @@ async def _resolve_ladder_challenge(bot, challenger_id):
     selected_id = selected["user_id"]
     selected_global = selected["global_name"]
 
-    # Determine ELO multipliers
-    challenger_elo = get_user_elo(challenger_id)
-    opponent_elo = get_user_elo(selected_id)
+    # Determine ELO multipliers based on event ELO
+    challenger_elo = get_user_event_elo(challenger_id)
+    opponent_elo = get_user_event_elo(selected_id)
     elo_diff = abs(challenger_elo - opponent_elo)
 
     if elo_diff < 100:

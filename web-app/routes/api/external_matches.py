@@ -21,7 +21,7 @@ def report_external_match():
     Requires API key authentication.
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if not data:
             return jsonify({"error": "Request body must be JSON", "success": False}), 400
 

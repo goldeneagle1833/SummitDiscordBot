@@ -113,6 +113,11 @@ def create_db():
     conn.commit()
     conn.close()
 
+    # Create external match reporting tables
+    create_external_match_reports_table()
+    create_source_elo_table()
+    create_user_links_table()
+
 
 def create_challenge_db():
     """Create the challenge_matches table if it doesn't exist."""
@@ -256,6 +261,68 @@ def ensure_event_elo_column():
         )
     except sqlite3.OperationalError:
         pass  # Column already exists
+
+    conn.commit()
+    conn.close()
+
+
+def create_external_match_reports_table():
+    """Create the external_match_reports table if it doesn't exist."""
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS external_match_reports
+                   (report_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    winner_id TEXT NOT NULL,
+                    loser_id TEXT NOT NULL,
+                    winner_display_name TEXT,
+                    loser_display_name TEXT,
+                    winner_deck_url TEXT,
+                    loser_deck_url TEXT,
+                    json_deck_data_winner TEXT,
+                    json_deck_data_loser TEXT,
+                    winner_went_first TEXT,
+                    match_time INTEGER,
+                    match_comment TEXT,
+                    source TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    winner_elo_change INTEGER,
+                    loser_elo_change INTEGER
+                   )""")
+
+    conn.commit()
+    conn.close()
+
+
+def create_source_elo_table():
+    """Create the source_elo table for per-source ELO tracking."""
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS source_elo
+                   (user_id TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    user_display_name TEXT,
+                    elo INTEGER DEFAULT 1500,
+                    PRIMARY KEY (user_id, source)
+                   )""")
+
+    conn.commit()
+    conn.close()
+
+
+def create_user_links_table():
+    """Create the user_links table for cross-source account linking."""
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS user_links
+                   (discord_user_id INTEGER NOT NULL,
+                    source TEXT NOT NULL,
+                    source_user_id TEXT NOT NULL,
+                    linked_at TEXT NOT NULL,
+                    PRIMARY KEY (source, source_user_id)
+                   )""")
 
     conn.commit()
     conn.close()

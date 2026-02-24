@@ -276,8 +276,8 @@ class MatchConfirmationButtons(discord.ui.View):
         confirmer_deck_url = (
             self.winner_deck_url if self.is_winner else self.loser_deck_url
         )
-        if not confirmer_deck_url:
-            # Show modal to collect deck URL before proceeding
+        if not confirmer_deck_url and self.match_type != "testing":
+            # Show modal to collect deck URL before proceeding (skip for testing matches)
             modal = ConfirmerDeckURLModal(self, interaction)
             await interaction.response.send_modal(modal)
             return
@@ -1224,8 +1224,8 @@ class LFGReportButtons(discord.ui.View):
     async def won_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        # Check if reporter needs to provide a deck URL
-        if not self.reporter_deck_url:
+        # Check if reporter needs to provide a deck URL (skip for testing matches)
+        if not self.reporter_deck_url and self.match_type != "testing":
             # Show modal to collect deck URL before proceeding
             modal = ReporterDeckURLModal(self, interaction, is_win=True)
             await interaction.response.send_modal(modal)
@@ -1464,8 +1464,8 @@ class LFGReportButtons(discord.ui.View):
     async def lost_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        # Check if reporter needs to provide a deck URL
-        if not self.reporter_deck_url:
+        # Check if reporter needs to provide a deck URL (skip for testing matches)
+        if not self.reporter_deck_url and self.match_type != "testing":
             # Show modal to collect deck URL before proceeding
             modal = ReporterDeckURLModal(self, interaction, is_win=False)
             await interaction.response.send_modal(modal)

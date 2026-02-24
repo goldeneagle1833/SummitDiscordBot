@@ -2,6 +2,7 @@
 
 from repositories.elo import EloRepository
 from repositories.matches import MatchRepository
+from repositories.external_matches import ExternalMatchRepository
 
 
 class LeaderboardService:
@@ -144,6 +145,24 @@ class LeaderboardService:
             "lifetime": lifetime_data,
             "event": {"info": active_event, "leaderboard": event_data},
         }
+
+    def get_source_leaderboard(self, source: str) -> list[dict]:
+        """Get leaderboard for a specific external source with win/loss records."""
+        ext_repo = ExternalMatchRepository()
+        standings = ext_repo.get_source_elo_standings(source)
+
+        leaderboard_data = []
+        for standing in standings:
+            user_id = standing["user_id"]
+            counts = ext_repo.get_match_count_by_source(user_id, source)
+            leaderboard_data.append({
+                "id": user_id,
+                "name": standing["display_name"],
+                "elo": standing["elo"],
+                "wins": counts["wins"],
+                "losses": counts["losses"],
+            })
+        return leaderboard_data
 
     def get_elo_distribution(self) -> dict:
         """Get ELO distribution across bands."""

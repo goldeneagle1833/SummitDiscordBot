@@ -1999,25 +1999,25 @@ class LFGCog(commands.Cog):
 
                 if w_elo_change:
                     elo_cursor.execute(
-                        "UPDATE overall_standings SET elo = elo - ? WHERE user_id = ?",
-                        (w_elo_change, w_id),
+                        "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ? WHERE user_id = ?",
+                        (w_elo_change, w_elo_change, w_id),
                     )
                 if l_elo_change:
                     elo_cursor.execute(
-                        "UPDATE overall_standings SET elo = elo - ? WHERE user_id = ?",
-                        (l_elo_change, l_id),
+                        "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ? WHERE user_id = ?",
+                        (l_elo_change, l_elo_change, l_id),
                     )
 
             # Then revert the target match
             if target_winner_elo_change:
                 elo_cursor.execute(
-                    "UPDATE overall_standings SET elo = elo - ? WHERE user_id = ?",
-                    (target_winner_elo_change, original_winner_id),
+                    "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ? WHERE user_id = ?",
+                    (target_winner_elo_change, target_winner_elo_change, original_winner_id),
                 )
             if target_loser_elo_change:
                 elo_cursor.execute(
-                    "UPDATE overall_standings SET elo = elo - ? WHERE user_id = ?",
-                    (target_loser_elo_change, original_loser_id),
+                    "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ? WHERE user_id = ?",
+                    (target_loser_elo_change, target_loser_elo_change, original_loser_id),
                 )
 
             elo_conn.commit()
@@ -2034,18 +2034,20 @@ class LFGCog(commands.Cog):
             # Step 3: Recalculate ELO for the corrected match
             # Get current ELO for both players
             elo_cursor.execute(
-                "SELECT elo FROM overall_standings WHERE user_id = ?", (new_winner_id,)
+                "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?", (new_winner_id,)
             )
             row = elo_cursor.fetchone()
             new_winner_elo_before = row[0] if row else 1500
+            new_winner_event_elo_before = row[1] if row and row[1] else 1500
 
             elo_cursor.execute(
-                "SELECT elo FROM overall_standings WHERE user_id = ?", (new_loser_id,)
+                "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?", (new_loser_id,)
             )
             row = elo_cursor.fetchone()
             new_loser_elo_before = row[0] if row else 1500
+            new_loser_event_elo_before = row[1] if row and row[1] else 1500
 
-            # Calculate new ELO changes
+            # Calculate new ELO changes (lifetime K=32)
             new_winner_elo_after = update_elo(
                 new_winner_elo_before, new_loser_elo_before, True
             )
@@ -2053,17 +2055,25 @@ class LFGCog(commands.Cog):
                 new_loser_elo_before, new_winner_elo_before, False
             )
 
+            # Calculate new event ELO changes
+            new_winner_event_elo_after = update_elo(
+                new_winner_event_elo_before, new_loser_event_elo_before, True
+            )
+            new_loser_event_elo_after = update_elo(
+                new_loser_event_elo_before, new_winner_event_elo_before, False
+            )
+
             new_winner_elo_change = new_winner_elo_after - new_winner_elo_before
             new_loser_elo_change = new_loser_elo_after - new_loser_elo_before
 
-            # Update ELO in database
+            # Update both lifetime and event ELO in database
             elo_cursor.execute(
-                "UPDATE overall_standings SET elo = ? WHERE user_id = ?",
-                (new_winner_elo_after, new_winner_id),
+                "UPDATE overall_standings SET elo = ?, event_elo = ? WHERE user_id = ?",
+                (new_winner_elo_after, new_winner_event_elo_after, new_winner_id),
             )
             elo_cursor.execute(
-                "UPDATE overall_standings SET elo = ? WHERE user_id = ?",
-                (new_loser_elo_after, new_loser_id),
+                "UPDATE overall_standings SET elo = ?, event_elo = ? WHERE user_id = ?",
+                (new_loser_elo_after, new_loser_event_elo_after, new_loser_id),
             )
 
             # Update the match record with flipped outcome
@@ -2109,32 +2119,38 @@ class LFGCog(commands.Cog):
 
                 # Get current ELO for both players
                 elo_cursor.execute(
-                    "SELECT elo FROM overall_standings WHERE user_id = ?", (w_id,)
+                    "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?", (w_id,)
                 )
                 row = elo_cursor.fetchone()
                 winner_elo_before = row[0] if row else 1500
+                winner_event_elo_before = row[1] if row and row[1] else 1500
 
                 elo_cursor.execute(
-                    "SELECT elo FROM overall_standings WHERE user_id = ?", (l_id,)
+                    "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?", (l_id,)
                 )
                 row = elo_cursor.fetchone()
                 loser_elo_before = row[0] if row else 1500
+                loser_event_elo_before = row[1] if row and row[1] else 1500
 
-                # Calculate new ELO
+                # Calculate new lifetime ELO
                 winner_elo_after = update_elo(winner_elo_before, loser_elo_before, True)
                 loser_elo_after = update_elo(loser_elo_before, winner_elo_before, False)
+
+                # Calculate new event ELO
+                winner_event_elo_after = update_elo(winner_event_elo_before, loser_event_elo_before, True)
+                loser_event_elo_after = update_elo(loser_event_elo_before, winner_event_elo_before, False)
 
                 w_elo_change = winner_elo_after - winner_elo_before
                 l_elo_change = loser_elo_after - loser_elo_before
 
-                # Update ELO in database
+                # Update both lifetime and event ELO in database
                 elo_cursor.execute(
-                    "UPDATE overall_standings SET elo = ? WHERE user_id = ?",
-                    (winner_elo_after, w_id),
+                    "UPDATE overall_standings SET elo = ?, event_elo = ? WHERE user_id = ?",
+                    (winner_elo_after, winner_event_elo_after, w_id),
                 )
                 elo_cursor.execute(
-                    "UPDATE overall_standings SET elo = ? WHERE user_id = ?",
-                    (loser_elo_after, l_id),
+                    "UPDATE overall_standings SET elo = ?, event_elo = ? WHERE user_id = ?",
+                    (loser_elo_after, loser_event_elo_after, l_id),
                 )
 
                 # Update the match record with new ELO changes
@@ -2267,22 +2283,22 @@ class LFGCog(commands.Cog):
                 timestamp,
             ) = match
 
-            # Revert ELO changes
+            # Revert ELO changes (stored values are event ELO changes)
             reverted_info = []
 
             if winner_elo_change:
-                # Winner gained ELO, so subtract it
+                # Winner gained ELO, so subtract it from both lifetime and event
                 elo_cursor.execute(
-                    "UPDATE overall_standings SET elo = elo - ? WHERE user_id = ?",
-                    (winner_elo_change, winner_id),
+                    "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ? WHERE user_id = ?",
+                    (winner_elo_change, winner_elo_change, winner_id),
                 )
                 reverted_info.append(f"**{winner_name}**: -{winner_elo_change} ELO")
 
             if loser_elo_change:
                 # Loser lost ELO (negative value), so add it back (subtract the negative)
                 elo_cursor.execute(
-                    "UPDATE overall_standings SET elo = elo - ? WHERE user_id = ?",
-                    (loser_elo_change, loser_id),
+                    "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ? WHERE user_id = ?",
+                    (loser_elo_change, loser_elo_change, loser_id),
                 )
                 reverted_info.append(
                     f"**{loser_name}**: {-loser_elo_change if loser_elo_change else 0} ELO"
@@ -2530,13 +2546,13 @@ class LFGCog(commands.Cog):
                             name,
                         )
 
-            # Apply ELO adjustments to opponents
+            # Apply ELO adjustments to opponents (both lifetime and event)
             adjustments_made = []
             for opponent_id, (adjustment, opponent_name) in elo_adjustments.items():
                 if adjustment != 0:
                     elo_cursor.execute(
-                        "UPDATE overall_standings SET elo = elo + ? WHERE user_id = ?",
-                        (adjustment, opponent_id),
+                        "UPDATE overall_standings SET elo = elo + ?, event_elo = event_elo + ? WHERE user_id = ?",
+                        (adjustment, adjustment, opponent_id),
                     )
                     adjustments_made.append(f"{opponent_name}: {adjustment:+d}")
 

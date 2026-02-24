@@ -58,6 +58,32 @@ def get_elo_distribution():
         return jsonify({"error": str(e)}), 500
 
 
+@leaderboard_bp.route("/leaderboard/sources")
+def get_leaderboard_sources():
+    """Get all available external match sources."""
+    try:
+        from repositories.external_matches import ExternalMatchRepository
+
+        repo = ExternalMatchRepository()
+        sources = repo.get_all_sources()
+        return jsonify(sources)
+    except Exception as e:
+        logger.error(f"Error fetching leaderboard sources: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@leaderboard_bp.route("/leaderboard/source/<source>")
+def get_source_leaderboard(source):
+    """Get ELO leaderboard for a specific external source."""
+    try:
+        service = LeaderboardService()
+        leaderboard_data = service.get_source_leaderboard(source)
+        return jsonify(leaderboard_data)
+    except Exception as e:
+        logger.error(f"Error fetching source leaderboard: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @leaderboard_bp.route("/events")
 def get_events():
     """Get all events for ELO filtering."""

@@ -349,7 +349,10 @@
 
         <!-- Matchup matrix -->
         <div class="chart-container" id="archetype-matrix-container" style="display: none">
-          <h3>Archetype Matchup Matrix <span id="archetype-match-count" style="font-size: 0.8rem; color: var(--color-text-muted); font-weight: 400;"></span></h3>
+          <h3 style="display: flex; align-items: center; justify-content: space-between;">
+            <span>Archetype Matchup Matrix <span id="archetype-match-count" style="font-size: 0.8rem; color: var(--color-text-muted); font-weight: 400;"></span></span>
+            <button class="solve-btn" style="padding: 0.4rem 1rem; font-size: 0.8rem;" onclick="exportCsv()">Export CSV</button>
+          </h3>
           <div class="matchup-table-container">
             <table class="matchup-table" id="archetype-matrix"></table>
           </div>
@@ -564,6 +567,11 @@
           tbody.appendChild(tr);
         });
         table.appendChild(tbody);
+      }
+
+      function exportCsv() {
+        const minGames = document.getElementById("min-games").value || 3;
+        window.location.href = `/api/metagame/matchups/csv?min_games=${minGames}`;
       }
 
       // Load on page load

@@ -1,8 +1,9 @@
 """Metagame analysis API routes."""
 
+import io
 import logging
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 from utils.auth import is_admin
 
@@ -60,3 +61,34 @@ def archetype_matchups():
     except Exception as e:
         logger.error(f"Archetype matchup error: {e}")
         return jsonify({"error": f"Failed to build matchups: {str(e)}"}), 500
+
+
+@metagame_bp.route("/metagame/matchups/csv")
+def archetype_matchups_csv():
+    """Export the archetype matchup win-rate matrix as a CSV download."""
+    if not is_admin():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    try:
+        from services.metagame import build_archetype_matchup_matrix
+
+        min_games = request.args.get("min_games", 3, type=int)
+        data = build_archetype_matchup_matrix(min_games=min_games)
+
+        archetypes = data["archetypes"]
+        wr = data["win_rates"]
+
+        buf = io.StringIO()
+        buf.write("archetype," + ",".join(archetypes) + "\n")
+        for i, name in enumerate(archetypes):
+            row_vals = ",".join(str(v) for v in wr[i])
+            buf.write(f"{name},{row_vals}\n")
+
+        return Response(
+            buf.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=archetype_matchups.csv"},
+        )
+    except Exception as e:
+        logger.error(f"Archetype CSV export error: {e}")
+        return jsonify({"error": f"Failed to export: {str(e)}"}), 500

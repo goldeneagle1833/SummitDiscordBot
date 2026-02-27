@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Metagame Analysis - Sorcerers Summit</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      .upload-zone {
+        border: 2px dashed rgba(255, 255, 255, 0.2);
+        border-radius: 12px;
+        padding: 2rem;
+        text-align: center;
+        transition:
+          border-color 0.2s,
+          background 0.2s;
+        cursor: pointer;
+      }
+      .upload-zone:hover,
+      .upload-zone.dragover {
+        border-color: var(--color-secondary);
+        background: rgba(147, 51, 234, 0.05);
+      }
+      .upload-zone input[type="file"] {
+        display: none;
+      }
+      .upload-zone .upload-icon {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+      }
+      .upload-zone .upload-text {
+        color: var(--color-text-muted);
+        font-size: 0.9rem;
+      }
+      .upload-zone .file-name {
+        color: var(--color-secondary);
+        font-weight: 600;
+        margin-top: 0.5rem;
+      }
+
+      .solve-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 2rem;
+        background: var(--color-secondary);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          background 0.2s,
+          transform 0.1s;
+      }
+      .solve-btn:hover:not(:disabled) {
+        background: #7c3aed;
+        transform: translateY(-1px);
+      }
+      .solve-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .params-row {
+        display: flex;
+        gap: 1.5rem;
+        align-items: end;
+        flex-wrap: wrap;
+        margin-top: 1rem;
+      }
+      .param-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+      .param-group label {
+        font-size: 0.75rem;
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+      .param-group input,
+      .param-group select {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 6px;
+        padding: 0.5rem 0.75rem;
+        color: var(--color-text);
+        font-size: 0.9rem;
+        width: 100px;
+      }
+
+      .results-section {
+        display: none;
+        margin-top: 2rem;
+      }
+      .results-section.visible {
+        display: block;
+      }
+
+      .game-value-card {
+        background: var(--color-bg-elevated);
+        border-radius: 12px;
+        padding: 1.5rem;
+        text-align: center;
+        margin-bottom: 1.5rem;
+      }
+      .game-value-card .value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--color-secondary);
+      }
+      .game-value-card .label {
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+        margin-top: 0.25rem;
+      }
+
+      .strategy-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 2rem;
+      }
+      .strategy-table th,
+      .strategy-table td {
+        padding: 0.75rem 1rem;
+        text-align: left;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .strategy-table th {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+        font-weight: 600;
+      }
+      .strategy-table td:nth-child(2) {
+        font-family: monospace;
+        font-size: 0.95rem;
+      }
+      .strategy-table .prob-bar {
+        height: 6px;
+        border-radius: 3px;
+        background: var(--color-secondary);
+        transition: width 0.5s ease;
+      }
+      .strategy-table .prob-bar-bg {
+        width: 100%;
+        height: 6px;
+        border-radius: 3px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .chart-container {
+        background: var(--color-bg-elevated);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+      }
+      .chart-container h3 {
+        margin: 0 0 1rem 0;
+        font-size: 1.1rem;
+        color: var(--color-text);
+      }
+
+      .matchup-table-container {
+        overflow-x: auto;
+        margin-bottom: 2rem;
+      }
+      .matchup-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+      }
+      .matchup-table th,
+      .matchup-table td {
+        padding: 0.5rem 0.75rem;
+        text-align: center;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        white-space: nowrap;
+      }
+      .matchup-table th {
+        background: rgba(255, 255, 255, 0.05);
+        font-weight: 600;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+      }
+      .matchup-table td.row-header {
+        text-align: left;
+        font-weight: 600;
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .error-msg {
+        color: #ef4444;
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-top: 1rem;
+      }
+
+      .loading-spinner {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <section class="hero">
+        <h1>Metagame Analysis</h1>
+        <p>
+          Upload a matchup win rate matrix (CSV) to compute Nash equilibrium
+          strategies and viable meta ranges
+        </p>
+      </section>
+
+      <!-- Upload Section -->
+      <section style="max-width: 600px; margin: 0 auto 2rem">
+        <div class="upload-zone" id="upload-zone">
+          <input type="file" id="csv-file" accept=".csv" />
+          <div class="upload-icon">&#128202;</div>
+          <div class="upload-text">
+            Drop a matchup CSV here or <strong>click to browse</strong>
+          </div>
+          <div class="file-name" id="file-name" style="display: none"></div>
+        </div>
+
+        <div class="params-row">
+          <div class="param-group">
+            <label for="divisions">Divisions</label>
+            <input type="number" id="divisions" value="10" min="2" max="50" />
+          </div>
+          <div class="param-group">
+            <label for="threshold">Threshold</label>
+            <input type="number" id="threshold" value="-0.02" step="0.01" />
+          </div>
+          <button class="solve-btn" id="solve-btn" disabled>Solve</button>
+        </div>
+
+        <div id="error-container"></div>
+      </section>
+
+      <!-- Results Section -->
+      <section class="results-section" id="results-section">
+        <!-- Game Value -->
+        <div class="game-value-card">
+          <div class="value" id="game-value">--</div>
+          <div class="label">Game Value (Expected Payoff)</div>
+        </div>
+
+        <!-- Two-column layout for strategy table + intervals chart -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem">
+          <!-- Optimal Strategy Table -->
+          <div class="chart-container">
+            <h3>Optimal Mixed Strategy</h3>
+            <table class="strategy-table">
+              <thead>
+                <tr>
+                  <th>Strategy</th>
+                  <th>Probability</th>
+                  <th style="width: 40%">Distribution</th>
+                </tr>
+              </thead>
+              <tbody id="strategy-tbody"></tbody>
+            </table>
+          </div>
+
+          <!-- Intervals Chart -->
+          <div class="chart-container">
+            <h3>Viable Probability Ranges</h3>
+            <div id="intervals-chart-wrapper" style="position: relative">
+              <canvas id="intervals-chart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Matchup Matrix Display -->
+        <div class="chart-container">
+          <h3>Input Matchup Matrix</h3>
+          <div class="matchup-table-container">
+            <table class="matchup-table" id="matchup-table"></table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+
+    <script>
+      const uploadZone = document.getElementById("upload-zone");
+      const fileInput = document.getElementById("csv-file");
+      const fileNameEl = document.getElementById("file-name");
+      const solveBtn = document.getElementById("solve-btn");
+      const errorContainer = document.getElementById("error-container");
+      const resultsSection = document.getElementById("results-section");
+
+      let selectedFile = null;
+      let intervalsChart = null;
+
+      // Upload zone interactions
+      uploadZone.addEventListener("click", () => fileInput.click());
+      uploadZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        uploadZone.classList.add("dragover");
+      });
+      uploadZone.addEventListener("dragleave", () => {
+        uploadZone.classList.remove("dragover");
+      });
+      uploadZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        uploadZone.classList.remove("dragover");
+        if (e.dataTransfer.files.length > 0) {
+          handleFile(e.dataTransfer.files[0]);
+        }
+      });
+      fileInput.addEventListener("change", () => {
+        if (fileInput.files.length > 0) {
+          handleFile(fileInput.files[0]);
+        }
+      });
+
+      function handleFile(file) {
+        if (!file.name.endsWith(".csv")) {
+          showError("Please upload a CSV file.");
+          return;
+        }
+        selectedFile = file;
+        fileNameEl.textContent = file.name;
+        fileNameEl.style.display = "block";
+        solveBtn.disabled = false;
+        errorContainer.innerHTML = "";
+      }
+
+      function showError(msg) {
+        errorContainer.innerHTML = `<div class="error-msg">${msg}</div>`;
+      }
+
+      // Solve button
+      solveBtn.addEventListener("click", async () => {
+        if (!selectedFile) return;
+
+        solveBtn.disabled = true;
+        solveBtn.innerHTML = '<span class="loading-spinner"></span> Solving...';
+        errorContainer.innerHTML = "";
+        resultsSection.classList.remove("visible");
+
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        formData.append(
+          "divisions",
+          document.getElementById("divisions").value,
+        );
+        formData.append(
+          "threshold",
+          document.getElementById("threshold").value,
+        );
+
+        try {
+          const res = await fetch("/api/metagame/solve", {
+            method: "POST",
+            body: formData,
+          });
+          const data = await res.json();
+
+          if (!res.ok) {
+            showError(data.error || "Unknown error");
+            return;
+          }
+
+          renderResults(data);
+          resultsSection.classList.add("visible");
+        } catch (err) {
+          showError("Request failed: " + err.message);
+        } finally {
+          solveBtn.disabled = false;
+          solveBtn.innerHTML = "Solve";
+        }
+      });
+
+      function getMatchupColor(value) {
+        // Color from red (0) -> white (0.5) -> green (1)
+        const p = Math.max(0, Math.min(1, value));
+        if (p <= 0.5) {
+          const ratio = p / 0.5;
+          const r = Math.round(220 + (255 - 220) * ratio);
+          const g = Math.round(60 + (255 - 60) * ratio);
+          const b = Math.round(60 + (255 - 60) * ratio);
+          return `rgb(${r}, ${g}, ${b})`;
+        } else {
+          const ratio = (p - 0.5) / 0.5;
+          const r = Math.round(255 - (255 - 46) * ratio);
+          const g = Math.round(255 - (255 - 204) * ratio);
+          const b = Math.round(255 - (255 - 113) * ratio);
+          return `rgb(${r}, ${g}, ${b})`;
+        }
+      }
+
+      function renderResults(data) {
+        // Game value
+        document.getElementById("game-value").textContent =
+          data.game_value >= 0
+            ? "+" + data.game_value.toFixed(4)
+            : data.game_value.toFixed(4);
+
+        // Strategy table
+        const tbody = document.getElementById("strategy-tbody");
+        tbody.innerHTML = "";
+        const maxProb = Math.max(...data.strategies.map((s) => s.probability));
+
+        data.strategies.forEach((s) => {
+          const pct = (s.probability * 100).toFixed(1);
+          const barWidth = maxProb > 0 ? (s.probability / maxProb) * 100 : 0;
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${s.name}</td>
+            <td>${pct}%</td>
+            <td>
+              <div class="prob-bar-bg">
+                <div class="prob-bar" style="width: ${barWidth}%;"></div>
+              </div>
+            </td>
+          `;
+          tbody.appendChild(row);
+        });
+
+        // Intervals chart
+        renderIntervalsChart(data.intervals);
+
+        // Matchup matrix
+        renderMatchupTable(data.matchups);
+      }
+
+      function renderIntervalsChart(intervals) {
+        if (intervalsChart) {
+          intervalsChart.destroy();
+        }
+
+        // Reverse so highest max is at top
+        const sorted = [...intervals].reverse();
+
+        // Lock wrapper height BEFORE creating chart to prevent growth loop
+        const wrapper = document.getElementById("intervals-chart-wrapper");
+        wrapper.style.height = Math.max(120, sorted.length * 28) + "px";
+
+        const ctx = document.getElementById("intervals-chart").getContext("2d");
+        const labels = sorted.map((i) => i.name);
+        const mins = sorted.map((i) => i.min * 100);
+        const ranges = sorted.map((i) => (i.max - i.min) * 100);
+        const tails = sorted.map((i) => (1 - i.max) * 100);
+
+        intervalsChart = new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: "Below viable",
+                data: mins,
+                backgroundColor: "transparent",
+                borderWidth: 0,
+              },
+              {
+                label: "Viable range",
+                data: ranges,
+                backgroundColor: "rgba(34, 197, 94, 0.7)",
+                borderColor: "rgba(34, 197, 94, 1)",
+                borderWidth: 1,
+              },
+              {
+                label: "Above viable",
+                data: tails,
+                backgroundColor: "transparent",
+                borderWidth: 0,
+              },
+            ],
+          },
+          options: {
+            indexAxis: "y",
+            responsive: true,
+            maintainAspectRatio: false,
+            barThickness: 14,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: function (context) {
+                    if (context.datasetIndex !== 1) return null;
+                    const idx = context.dataIndex;
+                    const item = sorted[idx];
+                    return `Viable: ${(item.min * 100).toFixed(1)}% - ${(item.max * 100).toFixed(1)}%`;
+                  },
+                },
+                filter: function (item) {
+                  return item.datasetIndex === 1;
+                },
+              },
+            },
+            scales: {
+              x: {
+                stacked: true,
+                min: 0,
+                max: 100,
+                ticks: {
+                  callback: (v) => v + "%",
+                  color: "rgba(255,255,255,0.6)",
+                },
+                grid: { color: "rgba(255,255,255,0.06)" },
+              },
+              y: {
+                stacked: true,
+                ticks: { color: "rgba(255,255,255,0.8)" },
+                grid: { display: false },
+              },
+            },
+          },
+        });
+      }
+
+      function renderMatchupTable(matchups) {
+        const table = document.getElementById("matchup-table");
+        table.innerHTML = "";
+
+        // Header row
+        const thead = document.createElement("thead");
+        const headerRow = document.createElement("tr");
+        headerRow.innerHTML = "<th></th>";
+        matchups.cols.forEach((col) => {
+          headerRow.innerHTML += `<th>${col}</th>`;
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        // Data rows
+        const tbody = document.createElement("tbody");
+        matchups.rows.forEach((rowName, ri) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td class="row-header">${rowName}</td>`;
+          matchups.values[ri].forEach((val) => {
+            const color = getMatchupColor(val);
+            const textColor = val > 0.3 && val < 0.7 ? "#111" : "#fff";
+            tr.innerHTML += `<td style="background: ${color}; color: ${textColor}; font-weight: 500;">${(val * 100).toFixed(0)}%</td>`;
+          });
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+      }
+    </script>
+  </body>
+</html>

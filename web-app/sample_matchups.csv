@@ -1,0 +1,6 @@
+strategy,Aggro,Control,Midrange,Combo,Tempo
+Aggro,0.50,0.35,0.65,0.55,0.45
+Control,0.65,0.50,0.40,0.60,0.55
+Midrange,0.35,0.60,0.50,0.45,0.60
+Combo,0.45,0.40,0.55,0.50,0.35
+Tempo,0.55,0.45,0.40,0.65,0.50

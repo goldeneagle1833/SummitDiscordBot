@@ -1,11 +1,16 @@
 """Metagame solver service using linear programming for Nash equilibrium."""
 
 import io
+import json
 import logging
+import sqlite3
+from collections import Counter
 
 import numpy as np
 import pandas as pd
 from pulp import PULP_CBC_CMD, LpMaximize, LpProblem, LpVariable, lpSum, value
+
+from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH
 
 # Suppress CBC solver output
 _SOLVER = PULP_CBC_CMD(msg=0)
@@ -171,4 +176,217 @@ def analyze_matchups(file_stream, divisions=10, threshold=-0.02):
         "strategies": strategies,
         "intervals": intervals,
         "matchups": matchup_data,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Archetype classification & matchup matrix from match history
+# ---------------------------------------------------------------------------
+
+# Friendly labels for element combinations
+_ARCHETYPE_LABELS = {
+    frozenset(["Air"]): "Mono Air",
+    frozenset(["Earth"]): "Mono Earth",
+    frozenset(["Fire"]): "Mono Fire",
+    frozenset(["Water"]): "Mono Water",
+    frozenset(["Air", "Earth"]): "Air/Earth",
+    frozenset(["Air", "Fire"]): "Air/Fire",
+    frozenset(["Air", "Water"]): "Air/Water",
+    frozenset(["Earth", "Fire"]): "Earth/Fire",
+    frozenset(["Earth", "Water"]): "Earth/Water",
+    frozenset(["Fire", "Water"]): "Fire/Water",
+    frozenset(["Air", "Earth", "Fire"]): "Air/Earth/Fire",
+    frozenset(["Air", "Earth", "Water"]): "Air/Earth/Water",
+    frozenset(["Air", "Fire", "Water"]): "Air/Fire/Water",
+    frozenset(["Earth", "Fire", "Water"]): "Earth/Fire/Water",
+    frozenset(["Air", "Earth", "Fire", "Water"]): "4-Element",
+}
+
+
+def _load_card_elements():
+    """Load card name -> set of elements from All_Cards_Array.json."""
+    card_elements = {}
+    try:
+        with open(ALL_CARDS_PATH, "r", encoding="utf-8") as f:
+            for card in json.load(f):
+                name = card.get("name", "")
+                elements_str = card.get("elements", "None")
+                if name and elements_str and elements_str != "None":
+                    card_elements[name.lower()] = set(
+                        e.strip() for e in elements_str.split(",") if e.strip()
+                    )
+    except Exception as e:
+        logger.error(f"Failed to load card elements: {e}")
+    return card_elements
+
+
+def _classify_deck(deck_json, card_elements):
+    """Classify a deck JSON string into an archetype label.
+
+    Uses spellbook cards only (no sites) to determine the element combination,
+    then maps to a friendly label.  Returns None if the deck can't be parsed.
+    """
+    if not deck_json or deck_json in ("", "{}"):
+        return None
+    try:
+        deck_data = json.loads(deck_json)
+        deck = deck_data[0] if isinstance(deck_data, list) else deck_data
+    except (json.JSONDecodeError, TypeError, IndexError):
+        return None
+
+    element_counts = Counter()
+    for card in deck.get("spellbook", []) or []:
+        card_name = (card.get("name") or "").lower()
+        if card_name in card_elements:
+            qty = card.get("quantity", 1) or 1
+            for el in card_elements[card_name]:
+                element_counts[el] += qty
+
+    if not element_counts:
+        return None
+
+    elements = frozenset(element_counts.keys())
+    return _ARCHETYPE_LABELS.get(elements, "/".join(sorted(elements)))
+
+
+def _fetch_match_rows():
+    """Fetch all match rows with both winner and loser deck data.
+
+    Returns list of (winner_deck_json, loser_deck_json) tuples.
+    """
+    rows = []
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        for table in ("match_records", "match_records_archive"):
+            try:
+                cur.execute(f"""
+                    SELECT json_deck_data_winner, json_deck_data_loser
+                    FROM {table}
+                    WHERE json_deck_data_winner IS NOT NULL
+                      AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}'
+                      AND json_deck_data_loser IS NOT NULL
+                      AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'
+                """)
+                rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                continue
+
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.error(f"DB error fetching match rows: {e}")
+    return rows
+
+
+def build_archetype_matchup_matrix(min_games=3):
+    """Build an archetype-vs-archetype matchup matrix from match history.
+
+    Only includes matches where *both* players submitted deck data so we can
+    classify both sides.  Archetypes with fewer than ``min_games`` total
+    appearances are folded into an "Other" bucket.
+
+    Returns a dict ready for JSON serialization::
+
+        {
+            "archetypes": ["Mono Fire", "Mono Water", ...],
+            "matrix": [[wins, ...], ...],       # raw win counts (row beat col)
+            "win_rates": [[0.55, ...], ...],     # win rate as 0-1 float
+            "totals": {"Mono Fire": {"wins": N, "losses": N, "total": N}, ...},
+            "match_count": N,                    # total matches used
+        }
+    """
+    card_elements = _load_card_elements()
+    match_rows = _fetch_match_rows()
+
+    # --- classify each match --------------------------------------------------
+    # matchups[winner_arch][loser_arch] = count of wins
+    matchups = {}
+    archetype_games = Counter()  # total appearances per archetype
+
+    for winner_deck, loser_deck in match_rows:
+        w_arch = _classify_deck(winner_deck, card_elements)
+        l_arch = _classify_deck(loser_deck, card_elements)
+        if w_arch is None or l_arch is None:
+            continue
+
+        archetype_games[w_arch] += 1
+        archetype_games[l_arch] += 1
+
+        matchups.setdefault(w_arch, Counter())[l_arch] += 1
+
+    # --- bucket rare archetypes into "Other" ----------------------------------
+    valid_archetypes = {a for a, n in archetype_games.items() if n >= min_games}
+    has_other = False
+
+    def _resolve(arch):
+        nonlocal has_other
+        if arch in valid_archetypes:
+            return arch
+        has_other = True
+        return "Other"
+
+    resolved_matchups = {}
+    for w_arch, opponents in matchups.items():
+        rw = _resolve(w_arch)
+        for l_arch, count in opponents.items():
+            rl = _resolve(l_arch)
+            resolved_matchups.setdefault(rw, Counter())[rl] += count
+
+    # --- build ordered archetype list -----------------------------------------
+    all_archetypes = set()
+    for w, opponents in resolved_matchups.items():
+        all_archetypes.add(w)
+        all_archetypes.update(opponents.keys())
+
+    # Sort: mono first (alpha), then dual (alpha), then triple+, Other last
+    def _sort_key(name):
+        if name == "Other":
+            return (4, name)
+        parts = name.replace("Mono ", "").split("/")
+        return (len(parts), name)
+
+    archetype_list = sorted(all_archetypes, key=_sort_key)
+
+    n = len(archetype_list)
+    idx = {name: i for i, name in enumerate(archetype_list)}
+
+    # --- fill matrices --------------------------------------------------------
+    win_matrix = [[0] * n for _ in range(n)]  # win_matrix[i][j] = times i beat j
+    for w_arch, opponents in resolved_matchups.items():
+        for l_arch, count in opponents.items():
+            win_matrix[idx[w_arch]][idx[l_arch]] += count
+
+    # Win rate matrix
+    wr_matrix = [[0.0] * n for _ in range(n)]
+    for i in range(n):
+        for j in range(n):
+            total = win_matrix[i][j] + win_matrix[j][i]
+            if total > 0:
+                wr_matrix[i][j] = round(win_matrix[i][j] / total, 4)
+            elif i == j:
+                wr_matrix[i][j] = 0.5  # mirror match
+
+    # Per-archetype totals
+    totals = {}
+    for a in archetype_list:
+        i = idx[a]
+        wins = sum(win_matrix[i])
+        losses = sum(win_matrix[j][i] for j in range(n))
+        total = wins + losses
+        totals[a] = {
+            "wins": wins,
+            "losses": losses,
+            "total": total,
+            "win_rate": round(wins / total * 100, 1) if total > 0 else 0.0,
+        }
+
+    match_count = sum(sum(row) for row in win_matrix)
+
+    return {
+        "archetypes": archetype_list,
+        "matrix": win_matrix,
+        "win_rates": wr_matrix,
+        "totals": totals,
+        "match_count": match_count,
     }

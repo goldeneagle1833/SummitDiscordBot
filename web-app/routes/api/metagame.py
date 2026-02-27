@@ -39,3 +39,24 @@ def solve_metagame():
     except Exception as e:
         logger.error(f"Metagame solve error: {e}")
         return jsonify({"error": f"Failed to solve: {str(e)}"}), 500
+
+
+@metagame_bp.route("/metagame/matchups")
+def archetype_matchups():
+    """Auto-generated archetype matchup matrix from match history.
+
+    Query params:
+        min_games - minimum games for an archetype to be listed (default 3)
+    """
+    if not is_admin():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    try:
+        from services.metagame import build_archetype_matchup_matrix
+
+        min_games = request.args.get("min_games", 3, type=int)
+        result = build_archetype_matchup_matrix(min_games=min_games)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Archetype matchup error: {e}")
+        return jsonify({"error": f"Failed to build matchups: {str(e)}"}), 500

@@ -18,6 +18,118 @@
       href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
+      /* ---- Archetype matchup section ---- */
+      .archetype-section {
+        margin-bottom: 3rem;
+      }
+      .archetype-section .loading-msg {
+        text-align: center;
+        color: var(--color-text-muted);
+        padding: 2rem;
+      }
+      .archetype-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 1.5rem;
+      }
+      .archetype-card {
+        background: var(--color-bg-elevated);
+        border-radius: 10px;
+        padding: 1rem;
+        text-align: center;
+      }
+      .archetype-card .arch-name {
+        font-weight: 600;
+        font-size: 0.95rem;
+        margin-bottom: 0.25rem;
+      }
+      .archetype-card .arch-wr {
+        font-size: 1.5rem;
+        font-weight: 700;
+      }
+      .archetype-card .arch-record {
+        font-size: 0.75rem;
+        color: var(--color-text-muted);
+        margin-top: 0.15rem;
+      }
+      .min-games-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+      }
+      .min-games-row label {
+        font-size: 0.75rem;
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+      .min-games-row input {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 6px;
+        padding: 0.4rem 0.6rem;
+        color: var(--color-text);
+        font-size: 0.9rem;
+        width: 70px;
+      }
+      .min-games-row button {
+        padding: 0.4rem 1rem;
+        background: var(--color-secondary);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .min-games-row button:hover {
+        background: #7c3aed;
+      }
+
+      /* ---- Shared table styles ---- */
+      .matchup-table-container {
+        overflow-x: auto;
+        margin-bottom: 2rem;
+      }
+      .matchup-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+      }
+      .matchup-table th,
+      .matchup-table td {
+        padding: 0.5rem 0.75rem;
+        text-align: center;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        white-space: nowrap;
+      }
+      .matchup-table th {
+        background: rgba(255, 255, 255, 0.05);
+        font-weight: 600;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+      }
+      .matchup-table td.row-header {
+        text-align: left;
+        font-weight: 600;
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .matchup-table td.mirror {
+        background: rgba(255, 255, 255, 0.04) !important;
+        color: var(--color-text-muted) !important;
+        font-style: italic;
+      }
+      .sample-size {
+        display: block;
+        font-size: 0.6rem;
+        color: rgba(255, 255, 255, 0.45);
+        font-weight: 400;
+      }
+
+      /* ---- Upload / Nash solver section ---- */
       .upload-zone {
         border: 2px dashed rgba(255, 255, 255, 0.2);
         border-radius: 12px;
@@ -176,35 +288,6 @@
         color: var(--color-text);
       }
 
-      .matchup-table-container {
-        overflow-x: auto;
-        margin-bottom: 2rem;
-      }
-      .matchup-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.85rem;
-      }
-      .matchup-table th,
-      .matchup-table td {
-        padding: 0.5rem 0.75rem;
-        text-align: center;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        white-space: nowrap;
-      }
-      .matchup-table th {
-        background: rgba(255, 255, 255, 0.05);
-        font-weight: 600;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        color: var(--color-text-muted);
-      }
-      .matchup-table td.row-header {
-        text-align: left;
-        font-weight: 600;
-        background: rgba(255, 255, 255, 0.03);
-      }
-
       .error-msg {
         color: #ef4444;
         background: rgba(239, 68, 68, 0.1);
@@ -228,6 +311,12 @@
           transform: rotate(360deg);
         }
       }
+
+      .section-divider {
+        border: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        margin: 3rem 0;
+      }
     </style>
   </head>
   <body>
@@ -237,12 +326,46 @@
       <section class="hero">
         <h1>Metagame Analysis</h1>
         <p>
-          Upload a matchup win rate matrix (CSV) to compute Nash equilibrium
-          strategies and viable meta ranges
+          Archetype matchup data generated from submitted match reports
         </p>
       </section>
 
-      <!-- Upload Section -->
+      <!-- ===================== Auto-generated Archetype Matchups ===================== -->
+      <section class="archetype-section">
+        <div class="min-games-row">
+          <label for="min-games">Min Games</label>
+          <input type="number" id="min-games" value="3" min="1" max="100" />
+          <button id="reload-btn" onclick="loadArchetypeMatchups()">Reload</button>
+        </div>
+
+        <div id="archetype-loading" class="loading-msg">
+          <span class="loading-spinner"></span> Loading archetype data&hellip;
+        </div>
+
+        <div id="archetype-error"></div>
+
+        <!-- Summary cards -->
+        <div class="archetype-summary" id="archetype-summary" style="display: none"></div>
+
+        <!-- Matchup matrix -->
+        <div class="chart-container" id="archetype-matrix-container" style="display: none">
+          <h3>Archetype Matchup Matrix <span id="archetype-match-count" style="font-size: 0.8rem; color: var(--color-text-muted); font-weight: 400;"></span></h3>
+          <div class="matchup-table-container">
+            <table class="matchup-table" id="archetype-matrix"></table>
+          </div>
+        </div>
+      </section>
+
+      <hr class="section-divider" />
+
+      <!-- ===================== Manual CSV Nash Solver ===================== -->
+      <section>
+        <h2 style="text-align: center; margin-bottom: 0.5rem;">Nash Equilibrium Solver</h2>
+        <p style="text-align: center; color: var(--color-text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">
+          Upload a matchup win rate matrix (CSV) to compute Nash equilibrium strategies
+        </p>
+      </section>
+
       <section style="max-width: 600px; margin: 0 auto 2rem">
         <div class="upload-zone" id="upload-zone">
           <input type="file" id="csv-file" accept=".csv" />
@@ -268,17 +391,14 @@
         <div id="error-container"></div>
       </section>
 
-      <!-- Results Section -->
+      <!-- Nash Results Section -->
       <section class="results-section" id="results-section">
-        <!-- Game Value -->
         <div class="game-value-card">
           <div class="value" id="game-value">--</div>
           <div class="label">Game Value (Expected Payoff)</div>
         </div>
 
-        <!-- Two-column layout for strategy table + intervals chart -->
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem">
-          <!-- Optimal Strategy Table -->
           <div class="chart-container">
             <h3>Optimal Mixed Strategy</h3>
             <table class="strategy-table">
@@ -293,7 +413,6 @@
             </table>
           </div>
 
-          <!-- Intervals Chart -->
           <div class="chart-container">
             <h3>Viable Probability Ranges</h3>
             <div id="intervals-chart-wrapper" style="position: relative">
@@ -302,7 +421,6 @@
           </div>
         </div>
 
-        <!-- Matchup Matrix Display -->
         <div class="chart-container">
           <h3>Input Matchup Matrix</h3>
           <div class="matchup-table-container">
@@ -318,6 +436,162 @@
     <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
 
     <script>
+      /* ================================================================
+       *  Archetype Matchup Matrix (auto-generated from match history)
+       * ================================================================ */
+      async function loadArchetypeMatchups() {
+        const loading = document.getElementById("archetype-loading");
+        const errorEl = document.getElementById("archetype-error");
+        const summary = document.getElementById("archetype-summary");
+        const matrixContainer = document.getElementById("archetype-matrix-container");
+
+        loading.style.display = "block";
+        errorEl.innerHTML = "";
+        summary.style.display = "none";
+        matrixContainer.style.display = "none";
+
+        const minGames = document.getElementById("min-games").value || 3;
+
+        try {
+          const res = await fetch(`/api/metagame/matchups?min_games=${minGames}`);
+          const data = await res.json();
+
+          if (!res.ok) {
+            errorEl.innerHTML = `<div class="error-msg">${data.error || "Unknown error"}</div>`;
+            return;
+          }
+
+          if (!data.archetypes || data.archetypes.length === 0) {
+            errorEl.innerHTML = `<div class="error-msg">No archetype data found. Make sure matches have deck data submitted.</div>`;
+            return;
+          }
+
+          renderArchetypeSummary(data);
+          renderArchetypeMatrix(data);
+
+          summary.style.display = "grid";
+          matrixContainer.style.display = "block";
+        } catch (err) {
+          errorEl.innerHTML = `<div class="error-msg">Failed to load: ${err.message}</div>`;
+        } finally {
+          loading.style.display = "none";
+        }
+      }
+
+      function renderArchetypeSummary(data) {
+        const container = document.getElementById("archetype-summary");
+        container.innerHTML = "";
+
+        // Sort by total games descending
+        const sorted = data.archetypes
+          .map((name) => ({ name, ...data.totals[name] }))
+          .sort((a, b) => b.total - a.total);
+
+        sorted.forEach((arch) => {
+          const wrColor = arch.win_rate >= 55
+            ? "rgba(34, 197, 94, 1)"
+            : arch.win_rate <= 45
+              ? "rgba(239, 68, 68, 1)"
+              : "var(--color-text)";
+
+          const card = document.createElement("div");
+          card.className = "archetype-card";
+          card.innerHTML = `
+            <div class="arch-name">${arch.name}</div>
+            <div class="arch-wr" style="color: ${wrColor}">${arch.win_rate.toFixed(1)}%</div>
+            <div class="arch-record">${arch.wins}W - ${arch.losses}L (${arch.total} games)</div>
+          `;
+          container.appendChild(card);
+        });
+      }
+
+      function renderArchetypeMatrix(data) {
+        const table = document.getElementById("archetype-matrix");
+        table.innerHTML = "";
+
+        document.getElementById("archetype-match-count").textContent =
+          `(${data.match_count} matches analyzed)`;
+
+        const archetypes = data.archetypes;
+        const winRates = data.win_rates;
+        const rawMatrix = data.matrix;
+
+        // Header row
+        const thead = document.createElement("thead");
+        const headerRow = document.createElement("tr");
+        headerRow.innerHTML = "<th></th>";
+        archetypes.forEach((name) => {
+          headerRow.innerHTML += `<th>${name}</th>`;
+        });
+        // Overall column
+        headerRow.innerHTML += `<th>Overall</th>`;
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        // Data rows
+        const tbody = document.createElement("tbody");
+        archetypes.forEach((rowName, ri) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td class="row-header">${rowName}</td>`;
+
+          archetypes.forEach((colName, ci) => {
+            const wr = winRates[ri][ci];
+            const games = rawMatrix[ri][ci] + rawMatrix[ci][ri];
+
+            if (ri === ci) {
+              tr.innerHTML += `<td class="mirror">-</td>`;
+            } else if (games === 0) {
+              tr.innerHTML += `<td style="color: var(--color-text-muted);">-</td>`;
+            } else {
+              const color = getMatchupColor(wr);
+              const textColor = wr > 0.3 && wr < 0.7 ? "#111" : "#fff";
+              tr.innerHTML += `<td style="background: ${color}; color: ${textColor}; font-weight: 500;">
+                ${(wr * 100).toFixed(0)}%
+                <span class="sample-size">${games}g</span>
+              </td>`;
+            }
+          });
+
+          // Overall win rate column
+          const overall = data.totals[rowName];
+          const owrColor = overall.win_rate >= 55
+            ? "rgba(34, 197, 94, 0.25)"
+            : overall.win_rate <= 45
+              ? "rgba(239, 68, 68, 0.25)"
+              : "rgba(255, 255, 255, 0.05)";
+          tr.innerHTML += `<td style="background: ${owrColor}; font-weight: 600;">${overall.win_rate.toFixed(1)}%</td>`;
+
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+      }
+
+      // Load on page load
+      document.addEventListener("DOMContentLoaded", loadArchetypeMatchups);
+
+      /* ================================================================
+       *  Shared color helper
+       * ================================================================ */
+      function getMatchupColor(value) {
+        const p = Math.max(0, Math.min(1, value));
+        if (p <= 0.5) {
+          const ratio = p / 0.5;
+          const r = Math.round(220 + (255 - 220) * ratio);
+          const g = Math.round(60 + (255 - 60) * ratio);
+          const b = Math.round(60 + (255 - 60) * ratio);
+          return `rgb(${r}, ${g}, ${b})`;
+        } else {
+          const ratio = (p - 0.5) / 0.5;
+          const r = Math.round(255 - (255 - 46) * ratio);
+          const g = Math.round(255 - (255 - 204) * ratio);
+          const b = Math.round(255 - (255 - 113) * ratio);
+          return `rgb(${r}, ${g}, ${b})`;
+        }
+      }
+
+      /* ================================================================
+       *  Nash Equilibrium CSV Solver (existing functionality)
+       * ================================================================ */
       const uploadZone = document.getElementById("upload-zone");
       const fileInput = document.getElementById("csv-file");
       const fileNameEl = document.getElementById("file-name");
@@ -328,7 +602,6 @@
       let selectedFile = null;
       let intervalsChart = null;
 
-      // Upload zone interactions
       uploadZone.addEventListener("click", () => fileInput.click());
       uploadZone.addEventListener("dragover", (e) => {
         e.preventDefault();
@@ -366,7 +639,6 @@
         errorContainer.innerHTML = `<div class="error-msg">${msg}</div>`;
       }
 
-      // Solve button
       solveBtn.addEventListener("click", async () => {
         if (!selectedFile) return;
 
@@ -377,14 +649,8 @@
 
         const formData = new FormData();
         formData.append("file", selectedFile);
-        formData.append(
-          "divisions",
-          document.getElementById("divisions").value,
-        );
-        formData.append(
-          "threshold",
-          document.getElementById("threshold").value,
-        );
+        formData.append("divisions", document.getElementById("divisions").value);
+        formData.append("threshold", document.getElementById("threshold").value);
 
         try {
           const res = await fetch("/api/metagame/solve", {
@@ -408,32 +674,12 @@
         }
       });
 
-      function getMatchupColor(value) {
-        // Color from red (0) -> white (0.5) -> green (1)
-        const p = Math.max(0, Math.min(1, value));
-        if (p <= 0.5) {
-          const ratio = p / 0.5;
-          const r = Math.round(220 + (255 - 220) * ratio);
-          const g = Math.round(60 + (255 - 60) * ratio);
-          const b = Math.round(60 + (255 - 60) * ratio);
-          return `rgb(${r}, ${g}, ${b})`;
-        } else {
-          const ratio = (p - 0.5) / 0.5;
-          const r = Math.round(255 - (255 - 46) * ratio);
-          const g = Math.round(255 - (255 - 204) * ratio);
-          const b = Math.round(255 - (255 - 113) * ratio);
-          return `rgb(${r}, ${g}, ${b})`;
-        }
-      }
-
       function renderResults(data) {
-        // Game value
         document.getElementById("game-value").textContent =
           data.game_value >= 0
             ? "+" + data.game_value.toFixed(4)
             : data.game_value.toFixed(4);
 
-        // Strategy table
         const tbody = document.getElementById("strategy-tbody");
         tbody.innerHTML = "";
         const maxProb = Math.max(...data.strategies.map((s) => s.probability));
@@ -454,11 +700,8 @@
           tbody.appendChild(row);
         });
 
-        // Intervals chart
         renderIntervalsChart(data.intervals);
-
-        // Matchup matrix
-        renderMatchupTable(data.matchups);
+        renderNashMatchupTable(data.matchups);
       }
 
       function renderIntervalsChart(intervals) {
@@ -466,10 +709,7 @@
           intervalsChart.destroy();
         }
 
-        // Reverse so highest max is at top
         const sorted = [...intervals].reverse();
-
-        // Lock wrapper height BEFORE creating chart to prevent growth loop
         const wrapper = document.getElementById("intervals-chart-wrapper");
         wrapper.style.height = Math.max(120, sorted.length * 28) + "px";
 
@@ -547,11 +787,10 @@
         });
       }
 
-      function renderMatchupTable(matchups) {
+      function renderNashMatchupTable(matchups) {
         const table = document.getElementById("matchup-table");
         table.innerHTML = "";
 
-        // Header row
         const thead = document.createElement("thead");
         const headerRow = document.createElement("tr");
         headerRow.innerHTML = "<th></th>";
@@ -561,7 +800,6 @@
         thead.appendChild(headerRow);
         table.appendChild(thead);
 
-        // Data rows
         const tbody = document.createElement("tbody");
         matchups.rows.forEach((rowName, ri) => {
           const tr = document.createElement("tr");

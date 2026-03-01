@@ -245,7 +245,10 @@ def _cosine_distance_matrix(vectors):
 
 
 def _agglomerative_cluster(dist_matrix, n_clusters):
-    """Average-linkage agglomerative clustering.
+    """Average-linkage agglomerative clustering (UPGMA).
+
+    Uses Lance-Williams matrix updates so each merge is O(n) instead of
+    recomputing all pairwise member distances.  Total runtime is O(n^2).
 
     Returns a list of lists, where each inner list contains the indices of
     items belonging to that cluster.
@@ -254,37 +257,44 @@ def _agglomerative_cluster(dist_matrix, n_clusters):
     if n <= n_clusters:
         return [[i] for i in range(n)]
 
-    # Start with each item as its own cluster
-    clusters = {i: [i] for i in range(n)}
-
-    # Pre-compute pairwise distances in a mutable copy
-    dists = dist_matrix.copy()
+    # Working copy — inactive rows/cols are set to inf
+    dists = dist_matrix.astype(np.float64).copy()
     np.fill_diagonal(dists, np.inf)
 
-    while len(clusters) > n_clusters:
-        # Find the two closest clusters (average linkage)
-        best_dist = np.inf
-        merge_a, merge_b = None, None
-        cluster_ids = list(clusters.keys())
+    clusters = {i: [i] for i in range(n)}
+    sizes = np.ones(n, dtype=np.float64)
+    active = set(range(n))
 
-        for idx_i in range(len(cluster_ids)):
-            for idx_j in range(idx_i + 1, len(cluster_ids)):
-                ci, cj = cluster_ids[idx_i], cluster_ids[idx_j]
-                pair_dists = [
-                    dist_matrix[a, b]
-                    for a in clusters[ci]
-                    for b in clusters[cj]
-                ]
-                avg = sum(pair_dists) / len(pair_dists)
-                if avg < best_dist:
-                    best_dist = avg
-                    merge_a, merge_b = ci, cj
+    while len(active) > n_clusters:
+        # Find closest pair (numpy vectorised argmin)
+        flat_idx = np.argmin(dists)
+        i, j = divmod(int(flat_idx), n)
 
-        # Merge b into a
-        clusters[merge_a].extend(clusters[merge_b])
-        del clusters[merge_b]
+        # Ensure i < j for consistency
+        if i > j:
+            i, j = j, i
 
-    return list(clusters.values())
+        # Lance-Williams update for UPGMA (average linkage):
+        # d(i∪j, k) = (n_i * d(i,k) + n_j * d(j,k)) / (n_i + n_j)
+        ni, nj = sizes[i], sizes[j]
+        for k in active:
+            if k == i or k == j:
+                continue
+            new_d = (ni * dists[i, k] + nj * dists[j, k]) / (ni + nj)
+            dists[i, k] = new_d
+            dists[k, i] = new_d
+
+        # Merge j into i
+        clusters[i].extend(clusters[j])
+        sizes[i] = ni + nj
+        del clusters[j]
+        active.remove(j)
+
+        # Deactivate row/col j
+        dists[j, :] = np.inf
+        dists[:, j] = np.inf
+
+    return [clusters[k] for k in active]
 
 
 def _name_clusters(clusters, card_maps):

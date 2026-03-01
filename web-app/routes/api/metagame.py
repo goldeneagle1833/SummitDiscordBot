@@ -56,7 +56,11 @@ def archetype_matchups():
         from services.metagame import build_archetype_matchup_matrix
 
         min_games = request.args.get("min_games", 3, type=int)
-        result = build_archetype_matchup_matrix(min_games=min_games)
+        n_clusters = request.args.get("n_clusters", 5, type=int)
+        n_clusters = max(2, min(8, n_clusters))
+        result = build_archetype_matchup_matrix(
+            min_games=min_games, n_clusters=n_clusters
+        )
         return jsonify(result)
     except Exception as e:
         logger.error(f"Archetype matchup error: {e}")
@@ -73,7 +77,11 @@ def archetype_matchups_csv():
         from services.metagame import build_archetype_matchup_matrix
 
         min_games = request.args.get("min_games", 3, type=int)
-        data = build_archetype_matchup_matrix(min_games=min_games)
+        n_clusters = request.args.get("n_clusters", 5, type=int)
+        n_clusters = max(2, min(8, n_clusters))
+        data = build_archetype_matchup_matrix(
+            min_games=min_games, n_clusters=n_clusters
+        )
 
         archetypes = data["archetypes"]
         wr = data["win_rates"]

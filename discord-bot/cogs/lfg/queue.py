@@ -94,7 +94,9 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 matched_user_deck_url = matched_user_info.get("deck_url")
                 matched_queue_type = matched_user_info.get("queue_type", "ranked")
                 # Determine match type based on both players' queue types
-                match_type = lfg_cog.resolve_match_type(self.queue_type, matched_queue_type)
+                match_type = lfg_cog.resolve_match_type(
+                    self.queue_type, matched_queue_type
+                )
                 # Remove matched user from queue
                 lfg_queue.pop(matched_user_id, None)
                 logger.info(
@@ -157,7 +159,9 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
 
             # Determine match type label for messages
             match_type_label = "Ranked" if match_type == "ranked" else "Testing"
-            match_type_emoji = "\u2694\ufe0f" if match_type == "ranked" else "\U0001f9ea"
+            match_type_emoji = (
+                "\u2694\ufe0f" if match_type == "ranked" else "\U0001f9ea"
+            )
 
             # Create "Did you go first?" view (step before win/lose buttons)
             went_first_view = WentFirstView(
@@ -267,7 +271,9 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                     )
                     return
 
-                lfg_cog.add_to_lfg_queue(ctx, timeframe_value, deck_url, self.queue_type)
+                lfg_cog.add_to_lfg_queue(
+                    ctx, timeframe_value, deck_url, self.queue_type
+                )
 
             queue_label = self.queue_type.capitalize()
             deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
@@ -304,7 +310,9 @@ class JoinQueueButtons(discord.ui.View):
         await interaction.response.send_modal(modal)
 
     @discord.ui.button(
-        label="Join Ranked", style=discord.ButtonStyle.green, custom_id="join_lfg_ranked"
+        label="Join Ranked",
+        style=discord.ButtonStyle.green,
+        custom_id="join_lfg_ranked",
     )
     async def join_ranked_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
@@ -312,7 +320,9 @@ class JoinQueueButtons(discord.ui.View):
         await self._handle_join(interaction, "ranked")
 
     @discord.ui.button(
-        label="Join Testing", style=discord.ButtonStyle.primary, custom_id="join_lfg_testing"
+        label="Join Casual",
+        style=discord.ButtonStyle.primary,
+        custom_id="join_lfg_testing",
     )
     async def join_testing_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
@@ -320,7 +330,9 @@ class JoinQueueButtons(discord.ui.View):
         await self._handle_join(interaction, "testing")
 
     @discord.ui.button(
-        label="Join Both", style=discord.ButtonStyle.secondary, custom_id="join_lfg_both"
+        label="Join Both",
+        style=discord.ButtonStyle.secondary,
+        custom_id="join_lfg_both",
     )
     async def join_both_button(
         self, interaction: discord.Interaction, button: discord.ui.Button

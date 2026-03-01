@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from pulp import PULP_CBC_CMD, LpMaximize, LpProblem, LpVariable, lpSum, value
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH
+from webapp_config import MATCH_RECORDS_DB_PATH
 
 # Suppress CBC solver output
 _SOLVER = PULP_CBC_CMD(msg=0)
@@ -180,51 +180,14 @@ def analyze_matchups(file_stream, divisions=10, threshold=-0.02):
 
 
 # ---------------------------------------------------------------------------
-# Archetype classification & matchup matrix from match history
+# Card-similarity clustering & matchup matrix from match history
 # ---------------------------------------------------------------------------
 
-# Friendly labels for element combinations
-_ARCHETYPE_LABELS = {
-    frozenset(["Air"]): "Mono Air",
-    frozenset(["Earth"]): "Mono Earth",
-    frozenset(["Fire"]): "Mono Fire",
-    frozenset(["Water"]): "Mono Water",
-    frozenset(["Air", "Earth"]): "Air/Earth",
-    frozenset(["Air", "Fire"]): "Air/Fire",
-    frozenset(["Air", "Water"]): "Air/Water",
-    frozenset(["Earth", "Fire"]): "Earth/Fire",
-    frozenset(["Earth", "Water"]): "Earth/Water",
-    frozenset(["Fire", "Water"]): "Fire/Water",
-    frozenset(["Air", "Earth", "Fire"]): "Air/Earth/Fire",
-    frozenset(["Air", "Earth", "Water"]): "Air/Earth/Water",
-    frozenset(["Air", "Fire", "Water"]): "Air/Fire/Water",
-    frozenset(["Earth", "Fire", "Water"]): "Earth/Fire/Water",
-    frozenset(["Air", "Earth", "Fire", "Water"]): "4-Element",
-}
 
+def _deck_to_card_map(deck_json):
+    """Extract {card_name: quantity} from a deck JSON string (spellbook only).
 
-def _load_card_elements():
-    """Load card name -> set of elements from All_Cards_Array.json."""
-    card_elements = {}
-    try:
-        with open(ALL_CARDS_PATH, "r", encoding="utf-8") as f:
-            for card in json.load(f):
-                name = card.get("name", "")
-                elements_str = card.get("elements", "None")
-                if name and elements_str and elements_str != "None":
-                    card_elements[name.lower()] = set(
-                        e.strip() for e in elements_str.split(",") if e.strip()
-                    )
-    except Exception as e:
-        logger.error(f"Failed to load card elements: {e}")
-    return card_elements
-
-
-def _classify_deck(deck_json, card_elements):
-    """Classify a deck JSON string into an archetype label.
-
-    Uses spellbook cards only (no sites) to determine the element combination,
-    then maps to a friendly label.  Returns None if the deck can't be parsed.
+    Returns None if the deck can't be parsed or has no spellbook cards.
     """
     if not deck_json or deck_json in ("", "{}"):
         return None
@@ -234,19 +197,133 @@ def _classify_deck(deck_json, card_elements):
     except (json.JSONDecodeError, TypeError, IndexError):
         return None
 
-    element_counts = Counter()
+    card_map = {}
     for card in deck.get("spellbook", []) or []:
-        card_name = (card.get("name") or "").lower()
-        if card_name in card_elements:
-            qty = card.get("quantity", 1) or 1
-            for el in card_elements[card_name]:
-                element_counts[el] += qty
+        name = card.get("name")
+        if not name:
+            continue
+        qty = card.get("quantity", 1) or 1
+        card_map[name] = card_map.get(name, 0) + qty
 
-    if not element_counts:
-        return None
+    return card_map if card_map else None
 
-    elements = frozenset(element_counts.keys())
-    return _ARCHETYPE_LABELS.get(elements, "/".join(sorted(elements)))
+
+def _card_map_fingerprint(card_map):
+    """Create a hashable fingerprint from a card map for de-duplication."""
+    return tuple(sorted(card_map.items()))
+
+
+def _build_card_vectors(card_maps):
+    """Convert a list of card maps into a numpy matrix.
+
+    Returns (matrix, card_index) where matrix rows are decks and columns are
+    unique card names, values are quantities normalised by L2 norm.
+    """
+    all_cards = sorted({card for cm in card_maps for card in cm})
+    card_idx = {name: i for i, name in enumerate(all_cards)}
+    n_decks = len(card_maps)
+    n_cards = len(all_cards)
+
+    matrix = np.zeros((n_decks, n_cards))
+    for i, cm in enumerate(card_maps):
+        for card, qty in cm.items():
+            matrix[i, card_idx[card]] = qty
+
+    # L2-normalise each row for cosine similarity
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    norms[norms == 0] = 1  # avoid division by zero
+    matrix = matrix / norms
+
+    return matrix, all_cards
+
+
+def _cosine_distance_matrix(vectors):
+    """Compute pairwise cosine distance (1 - cosine_similarity)."""
+    sim = vectors @ vectors.T
+    # Clamp to [0, 2] to handle floating-point drift
+    return np.clip(1.0 - sim, 0.0, 2.0)
+
+
+def _agglomerative_cluster(dist_matrix, n_clusters):
+    """Average-linkage agglomerative clustering.
+
+    Returns a list of lists, where each inner list contains the indices of
+    items belonging to that cluster.
+    """
+    n = dist_matrix.shape[0]
+    if n <= n_clusters:
+        return [[i] for i in range(n)]
+
+    # Start with each item as its own cluster
+    clusters = {i: [i] for i in range(n)}
+
+    # Pre-compute pairwise distances in a mutable copy
+    dists = dist_matrix.copy()
+    np.fill_diagonal(dists, np.inf)
+
+    while len(clusters) > n_clusters:
+        # Find the two closest clusters (average linkage)
+        best_dist = np.inf
+        merge_a, merge_b = None, None
+        cluster_ids = list(clusters.keys())
+
+        for idx_i in range(len(cluster_ids)):
+            for idx_j in range(idx_i + 1, len(cluster_ids)):
+                ci, cj = cluster_ids[idx_i], cluster_ids[idx_j]
+                pair_dists = [
+                    dist_matrix[a, b]
+                    for a in clusters[ci]
+                    for b in clusters[cj]
+                ]
+                avg = sum(pair_dists) / len(pair_dists)
+                if avg < best_dist:
+                    best_dist = avg
+                    merge_a, merge_b = ci, cj
+
+        # Merge b into a
+        clusters[merge_a].extend(clusters[merge_b])
+        del clusters[merge_b]
+
+    return list(clusters.values())
+
+
+def _name_clusters(clusters, card_maps):
+    """Name each cluster using its most distinctive cards.
+
+    Uses a TF-IDF-like score: for each card in a cluster, the score is
+    (proportion of cluster decks containing the card) /
+    (proportion of ALL decks containing the card).
+    The top 2 scoring cards become the cluster name.
+    """
+    all_deck_count = sum(len(c) for c in clusters)
+
+    # Global frequency: proportion of all decks containing each card
+    global_freq = Counter()
+    for cluster in clusters:
+        for deck_idx in cluster:
+            for card in card_maps[deck_idx]:
+                global_freq[card] += 1
+
+    names = []
+    for cluster in clusters:
+        cluster_size = len(cluster)
+        # Count how many decks in this cluster have each card
+        cluster_freq = Counter()
+        for deck_idx in cluster:
+            for card in card_maps[deck_idx]:
+                cluster_freq[card] += 1
+
+        # TF-IDF-like score
+        scores = {}
+        for card, count in cluster_freq.items():
+            tf = count / cluster_size  # proportion in cluster
+            idf = all_deck_count / max(global_freq[card], 1)  # inverse doc freq
+            scores[card] = tf * idf
+
+        top_cards = sorted(scores, key=scores.get, reverse=True)[:2]
+        names.append(" / ".join(top_cards) if top_cards else "Unknown")
+
+    return names
 
 
 def _fetch_match_rows():
@@ -279,83 +356,87 @@ def _fetch_match_rows():
     return rows
 
 
-def build_archetype_matchup_matrix(min_games=3):
-    """Build an archetype-vs-archetype matchup matrix from match history.
+def build_archetype_matchup_matrix(min_games=3, n_clusters=5):
+    """Build a cluster-vs-cluster matchup matrix from match history.
 
-    Only includes matches where *both* players submitted deck data so we can
-    classify both sides.  Archetypes with fewer than ``min_games`` total
-    appearances are folded into an "Other" bucket.
+    Decks are grouped by card similarity using agglomerative clustering
+    rather than element combinations.  Only includes matches where *both*
+    players submitted deck data.
+
+    Args:
+        min_games: Unused (kept for API compatibility).
+        n_clusters: Number of deck groups to produce (2-8, default 5).
 
     Returns a dict ready for JSON serialization::
 
         {
-            "archetypes": ["Mono Fire", "Mono Water", ...],
+            "archetypes": ["Card A / Card B", ...],
             "matrix": [[wins, ...], ...],       # raw win counts (row beat col)
             "win_rates": [[0.55, ...], ...],     # win rate as 0-1 float
-            "totals": {"Mono Fire": {"wins": N, "losses": N, "total": N}, ...},
-            "match_count": N,                    # total matches used
+            "totals": {"Card A / Card B": {"wins": N, ...}, ...},
+            "match_count": N,
         }
     """
-    card_elements = _load_card_elements()
     match_rows = _fetch_match_rows()
 
-    # --- classify each match --------------------------------------------------
-    # matchups[winner_arch][loser_arch] = count of wins
-    matchups = {}
-    archetype_games = Counter()  # total appearances per archetype
+    # --- parse every deck into a card map ------------------------------------
+    # Each match produces two card maps (winner, loser).  We also keep the
+    # raw JSON index so we can map matches back to cluster labels later.
+    all_card_maps = []         # index → card_map
+    match_deck_indices = []    # [(winner_idx, loser_idx), ...]
 
-    for winner_deck, loser_deck in match_rows:
-        w_arch = _classify_deck(winner_deck, card_elements)
-        l_arch = _classify_deck(loser_deck, card_elements)
-        if w_arch is None or l_arch is None:
-            continue
+    fingerprint_to_idx = {}    # de-dup identical decks
 
-        archetype_games[w_arch] += 1
-        archetype_games[l_arch] += 1
+    def _get_or_add(deck_json):
+        cm = _deck_to_card_map(deck_json)
+        if cm is None:
+            return None
+        fp = _card_map_fingerprint(cm)
+        if fp in fingerprint_to_idx:
+            return fingerprint_to_idx[fp]
+        idx = len(all_card_maps)
+        all_card_maps.append(cm)
+        fingerprint_to_idx[fp] = idx
+        return idx
 
-        matchups.setdefault(w_arch, Counter())[l_arch] += 1
+    for winner_json, loser_json in match_rows:
+        w_idx = _get_or_add(winner_json)
+        l_idx = _get_or_add(loser_json)
+        if w_idx is not None and l_idx is not None:
+            match_deck_indices.append((w_idx, l_idx))
 
-    # --- bucket rare archetypes into "Other" ----------------------------------
-    valid_archetypes = {a for a, n in archetype_games.items() if n >= min_games}
-    has_other = False
+    if not all_card_maps:
+        return {
+            "archetypes": [],
+            "matrix": [],
+            "win_rates": [],
+            "totals": {},
+            "match_count": 0,
+        }
 
-    def _resolve(arch):
-        nonlocal has_other
-        if arch in valid_archetypes:
-            return arch
-        has_other = True
-        return "Other"
+    # --- cluster decks by card similarity ------------------------------------
+    actual_clusters = min(n_clusters, len(all_card_maps))
+    vectors, _ = _build_card_vectors(all_card_maps)
+    dist_matrix = _cosine_distance_matrix(vectors)
+    clusters = _agglomerative_cluster(dist_matrix, actual_clusters)
 
-    resolved_matchups = {}
-    for w_arch, opponents in matchups.items():
-        rw = _resolve(w_arch)
-        for l_arch, count in opponents.items():
-            rl = _resolve(l_arch)
-            resolved_matchups.setdefault(rw, Counter())[rl] += count
+    # Map deck index → cluster index
+    deck_to_cluster = {}
+    for ci, members in enumerate(clusters):
+        for deck_idx in members:
+            deck_to_cluster[deck_idx] = ci
 
-    # --- build ordered archetype list -----------------------------------------
-    all_archetypes = set()
-    for w, opponents in resolved_matchups.items():
-        all_archetypes.add(w)
-        all_archetypes.update(opponents.keys())
+    # Name each cluster
+    cluster_names = _name_clusters(clusters, all_card_maps)
 
-    # Sort: mono first (alpha), then dual (alpha), then triple+, Other last
-    def _sort_key(name):
-        if name == "Other":
-            return (4, name)
-        parts = name.replace("Mono ", "").split("/")
-        return (len(parts), name)
+    # --- build matchup data from matches -------------------------------------
+    n = len(clusters)
+    win_matrix = [[0] * n for _ in range(n)]
 
-    archetype_list = sorted(all_archetypes, key=_sort_key)
-
-    n = len(archetype_list)
-    idx = {name: i for i, name in enumerate(archetype_list)}
-
-    # --- fill matrices --------------------------------------------------------
-    win_matrix = [[0] * n for _ in range(n)]  # win_matrix[i][j] = times i beat j
-    for w_arch, opponents in resolved_matchups.items():
-        for l_arch, count in opponents.items():
-            win_matrix[idx[w_arch]][idx[l_arch]] += count
+    for w_idx, l_idx in match_deck_indices:
+        wc = deck_to_cluster[w_idx]
+        lc = deck_to_cluster[l_idx]
+        win_matrix[wc][lc] += 1
 
     # Win rate matrix
     wr_matrix = [[0.0] * n for _ in range(n)]
@@ -365,16 +446,15 @@ def build_archetype_matchup_matrix(min_games=3):
             if total > 0:
                 wr_matrix[i][j] = round(win_matrix[i][j] / total, 4)
             elif i == j:
-                wr_matrix[i][j] = 0.5  # mirror match
+                wr_matrix[i][j] = 0.5
 
-    # Per-archetype totals
+    # Per-cluster totals
     totals = {}
-    for a in archetype_list:
-        i = idx[a]
-        wins = sum(win_matrix[i])
-        losses = sum(win_matrix[j][i] for j in range(n))
+    for ci, name in enumerate(cluster_names):
+        wins = sum(win_matrix[ci])
+        losses = sum(win_matrix[j][ci] for j in range(n))
         total = wins + losses
-        totals[a] = {
+        totals[name] = {
             "wins": wins,
             "losses": losses,
             "total": total,
@@ -384,7 +464,7 @@ def build_archetype_matchup_matrix(min_games=3):
     match_count = sum(sum(row) for row in win_matrix)
 
     return {
-        "archetypes": archetype_list,
+        "archetypes": cluster_names,
         "matrix": win_matrix,
         "win_rates": wr_matrix,
         "totals": totals,

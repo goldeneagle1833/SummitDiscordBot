@@ -335,6 +335,8 @@
         <div class="min-games-row">
           <label for="min-games">Min Games</label>
           <input type="number" id="min-games" value="3" min="1" max="100" />
+          <label for="n-clusters">Clusters</label>
+          <input type="number" id="n-clusters" value="5" min="2" max="8" />
           <button id="reload-btn" onclick="loadArchetypeMatchups()">Reload</button>
         </div>
 
@@ -454,9 +456,10 @@
         matrixContainer.style.display = "none";
 
         const minGames = document.getElementById("min-games").value || 3;
+        const nClusters = document.getElementById("n-clusters").value || 5;
 
         try {
-          const res = await fetch(`/api/metagame/matchups?min_games=${minGames}`);
+          const res = await fetch(`/api/metagame/matchups?min_games=${minGames}&n_clusters=${nClusters}`);
           const data = await res.json();
 
           if (!res.ok) {
@@ -571,7 +574,8 @@
 
       function exportCsv() {
         const minGames = document.getElementById("min-games").value || 3;
-        window.location.href = `/api/metagame/matchups/csv?min_games=${minGames}`;
+        const nClusters = document.getElementById("n-clusters").value || 5;
+        window.location.href = `/api/metagame/matchups/csv?min_games=${minGames}&n_clusters=${nClusters}`;
       }
 
       // Load on page load

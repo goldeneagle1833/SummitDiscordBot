@@ -1,3 +1,4 @@
+import datetime
 import discord
 from discord.ext import commands
 import requests
@@ -274,46 +275,39 @@ class UtilityCog(commands.Cog):
 
     @commands.command()
     @commands.has_permissions(administrator=True)
-    async def giveaway(self, ctx, limit: int = 1000):
+    async def giveaway(self, ctx, hours: float = 24):
         """
-        Admin-only: Pick a random winner from users who posted curiosa.io links.
-        Usage: !giveaway [limit] - limit is the number of recent messages to check (default 1000)
+        Admin-only: Pick a random winner from users who posted in this channel.
+        Usage: !giveaway [hours] - hours to look back (default 24)
         """
-        await ctx.send("🎉 Searching for participants... This may take a moment.")
+        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours)
+        await ctx.send(f"🎉 Searching for participants from the last {hours} hour(s)... This may take a moment.")
 
         # Dictionary to store unique users with their display names
         participants = {}
 
         try:
-            # Search through channel history
-            async for message in ctx.channel.history(limit=limit):
-                # Check if message contains "curiosa.io"
-                if "curiosa.io" in message.content.lower():
-                    # Store user_id and display_name
-                    if message.author.id not in participants:
-                        participants[message.author.id] = message.author.display_name
-
-            # Remove bots if any
-            participants = {
-                user_id: name
-                for user_id, name in participants.items()
-                if user_id != self.bot.user.id
-            }
+            # Search through channel history within the time window
+            async for message in ctx.channel.history(after=cutoff, limit=None):
+                # Skip bots
+                if message.author.bot:
+                    continue
+                if message.author.id not in participants:
+                    participants[message.author.id] = message.author.display_name
 
             if not participants:
                 await ctx.send(
-                    "❌ No participants found! No messages with 'curiosa.io' links were detected."
+                    f"❌ No participants found! No one posted in this channel in the last {hours} hour(s)."
                 )
                 logger.info(f"Giveaway by {ctx.author} found no participants")
                 return
 
-            # Convert to list format as requested
+            # Convert to list format
             participant_list = [
                 {"user_id": user_id, "display_name": display_name}
                 for user_id, display_name in participants.items()
             ]
 
-            # Get total number of participants
             total_participants = len(participant_list)
 
             # Randomly pick a winner
@@ -337,6 +331,12 @@ class UtilityCog(commands.Cog):
             )
 
             embed.add_field(
+                name="Time Window",
+                value=f"Last {hours} hour(s)",
+                inline=False,
+            )
+
+            embed.add_field(
                 name="Next Steps",
                 value=f"<@{winner_id}>, please message <@{ctx.author.id}> to claim your prize!",
                 inline=False,
@@ -347,7 +347,7 @@ class UtilityCog(commands.Cog):
             await ctx.send(embed=embed)
             logger.info(
                 f"Giveaway by {ctx.author}: Winner {winner_name} ({winner_id}) "
-                f"from {total_participants} participants"
+                f"from {total_participants} participants (last {hours}h)"
             )
 
         except discord.Forbidden:

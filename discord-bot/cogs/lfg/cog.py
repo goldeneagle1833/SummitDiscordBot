@@ -401,7 +401,9 @@ class LFGCog(commands.Cog):
                 if qt in ("ranked", "both"):
                     time_elapsed = (now - info["timestamp"]).total_seconds() / 60
                     time_remaining = info["timeframe"] - time_elapsed
-                    placeholder = SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]
+                    placeholder = SORCERY_NICKNAMES[
+                        randrange(0, len(SORCERY_NICKNAMES))
+                    ]
                     ranked_details.append(
                         f"\u2022 **{placeholder}** - {int(time_remaining)} min remaining"
                     )
@@ -413,7 +415,9 @@ class LFGCog(commands.Cog):
                 if qt in ("testing", "both"):
                     time_elapsed = (now - info["timestamp"]).total_seconds() / 60
                     time_remaining = info["timeframe"] - time_elapsed
-                    placeholder = SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]
+                    placeholder = SORCERY_NICKNAMES[
+                        randrange(0, len(SORCERY_NICKNAMES))
+                    ]
                     testing_details.append(
                         f"\u2022 **{placeholder}** - {int(time_remaining)} min remaining"
                     )
@@ -433,14 +437,14 @@ class LFGCog(commands.Cog):
 
             if testing_details:
                 embed.add_field(
-                    name=f"\U0001f9ea Testing Queue ({len(testing_details)}):",
+                    name=f"\U0001f9ea Casual Queue ({len(testing_details)}):",
                     value="\n".join(testing_details),
                     inline=False,
                 )
             else:
                 embed.add_field(
-                    name="\U0001f9ea Testing Queue:",
-                    value="No players in testing queue",
+                    name="\U0001f9ea Casual Queue:",
+                    value="No players in Casual queue",
                     inline=False,
                 )
 
@@ -453,7 +457,9 @@ class LFGCog(commands.Cog):
         try:
             if lfg_state.lfg_status_message_id:
                 try:
-                    old_message = await lfg_channel.fetch_message(lfg_state.lfg_status_message_id)
+                    old_message = await lfg_channel.fetch_message(
+                        lfg_state.lfg_status_message_id
+                    )
                     await old_message.delete()
                 except discord.NotFound:
                     # Message was already deleted, no problem
@@ -592,7 +598,9 @@ class LFGCog(commands.Cog):
             "lfghelp": "!lfg_help",
         }
 
-        suggestion = find_best_command_match(failed_command, command_suggestions, actual_commands)
+        suggestion = find_best_command_match(
+            failed_command, command_suggestions, actual_commands
+        )
         if suggestion:
             await ctx.send(
                 f"{ctx.author.mention}, did you mean `{suggestion}`? Type `!lfg_help` to see all available commands."
@@ -2012,12 +2020,20 @@ class LFGCog(commands.Cog):
             if target_winner_elo_change:
                 elo_cursor.execute(
                     "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ? WHERE user_id = ?",
-                    (target_winner_elo_change, target_winner_elo_change, original_winner_id),
+                    (
+                        target_winner_elo_change,
+                        target_winner_elo_change,
+                        original_winner_id,
+                    ),
                 )
             if target_loser_elo_change:
                 elo_cursor.execute(
                     "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ? WHERE user_id = ?",
-                    (target_loser_elo_change, target_loser_elo_change, original_loser_id),
+                    (
+                        target_loser_elo_change,
+                        target_loser_elo_change,
+                        original_loser_id,
+                    ),
                 )
 
             elo_conn.commit()
@@ -2034,14 +2050,16 @@ class LFGCog(commands.Cog):
             # Step 3: Recalculate ELO for the corrected match
             # Get current ELO for both players
             elo_cursor.execute(
-                "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?", (new_winner_id,)
+                "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?",
+                (new_winner_id,),
             )
             row = elo_cursor.fetchone()
             new_winner_elo_before = row[0] if row else 1500
             new_winner_event_elo_before = row[1] if row and row[1] else 1500
 
             elo_cursor.execute(
-                "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?", (new_loser_id,)
+                "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?",
+                (new_loser_id,),
             )
             row = elo_cursor.fetchone()
             new_loser_elo_before = row[0] if row else 1500
@@ -2119,14 +2137,16 @@ class LFGCog(commands.Cog):
 
                 # Get current ELO for both players
                 elo_cursor.execute(
-                    "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?", (w_id,)
+                    "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?",
+                    (w_id,),
                 )
                 row = elo_cursor.fetchone()
                 winner_elo_before = row[0] if row else 1500
                 winner_event_elo_before = row[1] if row and row[1] else 1500
 
                 elo_cursor.execute(
-                    "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?", (l_id,)
+                    "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?",
+                    (l_id,),
                 )
                 row = elo_cursor.fetchone()
                 loser_elo_before = row[0] if row else 1500
@@ -2137,8 +2157,12 @@ class LFGCog(commands.Cog):
                 loser_elo_after = update_elo(loser_elo_before, winner_elo_before, False)
 
                 # Calculate new event ELO
-                winner_event_elo_after = update_elo(winner_event_elo_before, loser_event_elo_before, True)
-                loser_event_elo_after = update_elo(loser_event_elo_before, winner_event_elo_before, False)
+                winner_event_elo_after = update_elo(
+                    winner_event_elo_before, loser_event_elo_before, True
+                )
+                loser_event_elo_after = update_elo(
+                    loser_event_elo_before, winner_event_elo_before, False
+                )
 
                 w_elo_change = winner_elo_after - winner_elo_before
                 l_elo_change = loser_elo_after - loser_elo_before

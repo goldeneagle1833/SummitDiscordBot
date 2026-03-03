@@ -19,6 +19,46 @@
       href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
+      .avatar-filters {
+        max-width: 1200px;
+        margin: 0 auto 1.5rem;
+        padding: 0 var(--spacing-md);
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .avatar-filter-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .avatar-filter-group label {
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.7);
+        white-space: nowrap;
+      }
+      .avatar-filter-group select {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        padding: 0.4rem 0.8rem;
+        font-size: 0.9rem;
+        cursor: pointer;
+        min-width: 160px;
+      }
+      .avatar-filter-group select:hover {
+        border-color: rgba(255, 255, 255, 0.4);
+      }
+      .avatar-filter-group select:focus {
+        outline: none;
+        border-color: var(--primary, #2ecc71);
+      }
+      .avatar-filter-group select option {
+        background: #1a1a2e;
+        color: #fff;
+      }
       .all-popularity-section {
         max-width: 1200px;
         margin: 2rem auto;
@@ -124,10 +164,27 @@
     <main>
       <section class="hero">
         <h1>Avatar Win Rates</h1>
-        <p>
+        <p id="hero-subtitle">
           Global statistics from all matches reported with decklists, sorted by
-          accuracy score (win rate × games played)
+          accuracy score (win rate &times; games played)
         </p>
+      </section>
+
+      <section class="avatar-filters" id="avatar-filters">
+        <div class="avatar-filter-group">
+          <label for="event-filter">Event:</label>
+          <select id="event-filter">
+            <option value="all">All Events</option>
+            <!-- Populated by JS -->
+          </select>
+        </div>
+        <div class="avatar-filter-group">
+          <label for="source-filter">Source:</label>
+          <select id="source-filter">
+            <option value="all">All Sources</option>
+            <!-- Populated by JS -->
+          </select>
+        </div>
       </section>
 
       <section class="avatar-stats-section">
@@ -201,18 +258,35 @@
 
       {% if user_is_admin %}
       <section class="all-popularity-section" id="all-popularity-section">
-        <h2 style="text-align: center; margin-bottom: var(--spacing-sm); font-size: 1.4rem;">
+        <h2
+          style="
+            text-align: center;
+            margin-bottom: var(--spacing-sm);
+            font-size: 1.4rem;
+          ">
           All Avatars Popularity Over Time
         </h2>
         <div class="all-popularity-wrapper">
           <div class="all-popularity-controls">
             <label for="all-pop-days-slider">
               Time range: Last <span id="all-pop-days-value">365</span> days
-              <input type="range" id="all-pop-days-slider" min="7" max="365" value="365" step="1" />
+              <input
+                type="range"
+                id="all-pop-days-slider"
+                min="7"
+                max="365"
+                value="365"
+                step="1" />
             </label>
             <label for="all-pop-bucket-slider">
               Group by: <span id="all-pop-bucket-value">7 days</span>
-              <input type="range" id="all-pop-bucket-slider" min="1" max="30" value="7" step="1" />
+              <input
+                type="range"
+                id="all-pop-bucket-slider"
+                min="1"
+                max="30"
+                value="7"
+                step="1" />
             </label>
             <label class="normalize-toggle">
               <input type="checkbox" id="all-pop-normalize" checked />
@@ -399,9 +473,76 @@
         return null;
       }
 
+      // ---- Filter logic ----
+      let currentEventFilter = "all";
+      let currentSourceFilter = "all";
+
+      function formatEventDate(dateStr) {
+        if (!dateStr) return null;
+        const d = new Date(dateStr + "T00:00:00");
+        return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      }
+
+      async function loadFilters() {
+        try {
+          const res = await fetch("/api/avatars/filters");
+          const data = await res.json();
+
+          const eventSelect = document.getElementById("event-filter");
+          if (data.events && data.events.length > 0) {
+            data.events.forEach(evt => {
+              const opt = document.createElement("option");
+              const startFmt = formatEventDate(evt.start_date);
+              const endFmt = formatEventDate(evt.end_date);
+              if (evt.is_active) {
+                opt.value = "current";
+                opt.textContent = `${evt.event_name} (${startFmt} - Present)`;
+              } else {
+                opt.value = String(evt.event_id);
+                opt.textContent = `${evt.event_name} (${startFmt} - ${endFmt || "?"})`;
+              }
+              eventSelect.appendChild(opt);
+            });
+          }
+
+          const sourceSelect = document.getElementById("source-filter");
+          // Always include "Discord" as the bot-reported matches source
+          const discordOpt = document.createElement("option");
+          discordOpt.value = "discord";
+          discordOpt.textContent = "Discord";
+          sourceSelect.appendChild(discordOpt);
+
+          if (data.sources && data.sources.length > 0) {
+            data.sources.forEach(src => {
+              const opt = document.createElement("option");
+              opt.value = src;
+              opt.textContent = src;
+              sourceSelect.appendChild(opt);
+            });
+          }
+
+          eventSelect.addEventListener("change", () => {
+            currentEventFilter = eventSelect.value;
+            fetchAvatarStats();
+          });
+          sourceSelect.addEventListener("change", () => {
+            currentSourceFilter = sourceSelect.value;
+            fetchAvatarStats();
+          });
+        } catch (e) {
+          console.error("Error loading filters:", e);
+        }
+      }
+
+      loadFilters();
+
       async function fetchAvatarStats() {
         try {
-          const res = await fetch("/api/avatars");
+          const params = new URLSearchParams();
+          if (currentEventFilter !== "all") params.set("event", currentEventFilter);
+          if (currentSourceFilter !== "all") params.set("source", currentSourceFilter);
+          const qs = params.toString();
+          const res = await fetch("/api/avatars" + (qs ? "?" + qs : ""));
           const data = await res.json();
           const grid = document.getElementById("avatar-stats-grid");
           grid.innerHTML = "";

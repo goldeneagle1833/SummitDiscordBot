@@ -6,9 +6,9 @@ import sqlite3
 from collections import Counter
 from urllib.parse import unquote
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH
+from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH, ELO_DB_PATH
 from utils.formatting import generate_pseudonym
 from utils.auth import is_admin
 
@@ -17,30 +17,110 @@ logger = logging.getLogger(__name__)
 avatars_bp = Blueprint("avatars", __name__)
 
 
-@avatars_bp.route("/avatars")
-def get_all_avatars():
-    """API endpoint for global avatar stats from all matches with deck data.
+@avatars_bp.route("/avatars/filters")
+def get_avatar_filters():
+    """Return available events and sources for avatar page filtering."""
+    events = []
+    sources = []
 
-    Includes both current event matches and archived matches for lifetime stats.
-    """
-    # Check if database exists
-    if not MATCH_RECORDS_DB_PATH.exists():
-        logger.warning(f"Database not found at {MATCH_RECORDS_DB_PATH}")
-        return jsonify([])
+    # Get events from elo.db
+    try:
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='events'
+        """)
+        if cur.fetchone():
+            cur.execute("""
+                SELECT event_id, event_name, start_date, end_date, is_active
+                FROM events
+                ORDER BY start_date DESC
+            """)
+            for row in cur.fetchall():
+                events.append({
+                    "event_id": row[0],
+                    "event_name": row[1],
+                    "start_date": row[2],
+                    "end_date": row[3],
+                    "is_active": bool(row[4]),
+                })
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not query events: {e}")
 
+    # Get external sources from match_records.db
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
+        cur.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='external_match_reports'
+        """)
+        if cur.fetchone():
+            cur.execute("SELECT DISTINCT source FROM external_match_reports ORDER BY source")
+            sources = [row[0] for row in cur.fetchall()]
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not query sources: {e}")
 
-        all_rows = []
-        use_new_columns = True
+    return jsonify({"events": events, "sources": sources})
 
+
+def _get_event_date_range(event_id):
+    """Get start/end dates for an event. Returns (start_date, end_date) or (None, None)."""
+    try:
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='events'
+        """)
+        if not cur.fetchone():
+            conn.close()
+            return None, None
+
+        if event_id == "current":
+            cur.execute("SELECT start_date, end_date FROM events WHERE is_active = 1 LIMIT 1")
+        else:
+            cur.execute("SELECT start_date, end_date FROM events WHERE event_id = ?", (int(event_id),))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            return row[0], row[1]
+    except (sqlite3.OperationalError, ValueError) as e:
+        logger.warning(f"Could not get event date range: {e}")
+    return None, None
+
+
+def _extract_avatar_from_deck(deck_str):
+    """Extract avatar name from JSON deck data string."""
+    if not deck_str or deck_str in ("", "{}"):
+        return None
+    try:
+        deck_data = json.loads(deck_str)
+        avatar = deck_data.get("avatar", [{}])
+        name = avatar[0].get("name", "Unknown") if avatar else "Unknown"
+        return name if name and name != "Unknown" else None
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+        return None
+
+
+def _collect_discord_rows(cur, event_filter):
+    """Collect deck data rows from Discord match tables based on event filter.
+
+    Returns (rows, use_new_columns) where rows are tuples of
+    (winner_deck_json, loser_deck_json) for new columns or
+    (reporter_won, deck_json) for legacy format.
+    """
+    all_rows = []
+    use_new_columns = True
+
+    if event_filter in ("all", "current"):
         # Query current match_records
         try:
             cur.execute("""
-                SELECT
-                    json_deck_data_winner,
-                    json_deck_data_loser
+                SELECT json_deck_data_winner, json_deck_data_loser
                 FROM match_records
                 WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
                    OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
@@ -60,25 +140,166 @@ def get_all_avatars():
                 use_new_columns = False
             except sqlite3.OperationalError as e2:
                 logger.error(f"Failed to query match_records: {e2}")
-                conn.close()
-                return jsonify([])
 
-        # Also query match_records_archive for lifetime stats
-        if use_new_columns:
+    # Query archive for "all" or specific past event
+    if event_filter == "all" and use_new_columns:
+        try:
+            cur.execute("""
+                SELECT json_deck_data_winner, json_deck_data_loser
+                FROM match_records_archive
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+            """)
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError:
+            logger.info("Archive table not found - continuing without archive data")
+    elif event_filter not in ("all", "current") and use_new_columns:
+        # Specific past event - query archive by event_id
+        try:
+            cur.execute("""
+                SELECT json_deck_data_winner, json_deck_data_loser
+                FROM match_records_archive
+                WHERE event_id = ?
+                  AND ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                    OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))
+            """, (int(event_filter),))
+            all_rows.extend(cur.fetchall())
+        except (sqlite3.OperationalError, ValueError):
+            pass
+
+    return all_rows, use_new_columns
+
+
+def _collect_external_rows(cur, source_filter, event_start=None, event_end=None):
+    """Collect deck data rows from external_match_reports.
+
+    Returns rows as tuples of (winner_deck_json, loser_deck_json).
+    """
+    rows = []
+    try:
+        cur.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='external_match_reports'
+        """)
+        if not cur.fetchone():
+            return rows
+
+        params = []
+        where_parts = [
+            "((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
+            " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))"
+        ]
+
+        if source_filter != "all":
+            where_parts.append("source = ?")
+            params.append(source_filter)
+
+        if event_start:
+            where_parts.append("timestamp >= ?")
+            params.append(event_start)
+        if event_end:
+            where_parts.append("timestamp <= ?")
+            params.append(event_end)
+
+        query = f"SELECT json_deck_data_winner, json_deck_data_loser FROM external_match_reports WHERE {' AND '.join(where_parts)}"
+        cur.execute(query, params)
+        rows = cur.fetchall()
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not query external_match_reports: {e}")
+
+    return rows
+
+
+def _tally_avatar_stats(rows, use_new_columns=True):
+    """Process deck data rows into avatar win/loss stats dict."""
+    avatar_stats = {}
+
+    if use_new_columns:
+        for row in rows:
+            winner_deck_str = row[0]
+            loser_deck_str = row[1]
+
+            name = _extract_avatar_from_deck(winner_deck_str)
+            if name:
+                if name not in avatar_stats:
+                    avatar_stats[name] = {"wins": 0, "losses": 0}
+                avatar_stats[name]["wins"] += 1
+
+            name = _extract_avatar_from_deck(loser_deck_str)
+            if name:
+                if name not in avatar_stats:
+                    avatar_stats[name] = {"wins": 0, "losses": 0}
+                avatar_stats[name]["losses"] += 1
+    else:
+        for row in rows:
+            reporter_won = row[0]
+            deck_data_str = row[1]
+            if not deck_data_str:
+                continue
             try:
-                cur.execute("""
-                    SELECT
-                        json_deck_data_winner,
-                        json_deck_data_loser
-                    FROM match_records_archive
-                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
-                """)
-                all_rows.extend(cur.fetchall())
-            except sqlite3.OperationalError:
-                logger.info("Archive table not found or error querying - continuing without archive data")
+                deck_data = json.loads(deck_data_str)
+                avatar = deck_data.get("avatar", [{}])
+                avatar_name = avatar[0].get("name", "Unknown") if avatar else "Unknown"
+                if not avatar_name or avatar_name == "Unknown":
+                    continue
+                if avatar_name not in avatar_stats:
+                    avatar_stats[avatar_name] = {"wins": 0, "losses": 0}
+                if reporter_won:
+                    avatar_stats[avatar_name]["wins"] += 1
+                else:
+                    avatar_stats[avatar_name]["losses"] += 1
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                continue
 
-        rows = all_rows
+    return avatar_stats
+
+
+@avatars_bp.route("/avatars")
+def get_all_avatars():
+    """API endpoint for global avatar stats from all matches with deck data.
+
+    Supports optional query params:
+      ?event=all (default) | current | <event_id>
+      ?source=all (default) | discord | <source_name>
+    """
+    event_filter = request.args.get("event", "all")
+    source_filter = request.args.get("source", "all")
+
+    if not MATCH_RECORDS_DB_PATH.exists():
+        logger.warning(f"Database not found at {MATCH_RECORDS_DB_PATH}")
+        return jsonify([])
+
+    # Determine event date range for external match filtering
+    event_start, event_end = None, None
+    if event_filter not in ("all",):
+        event_start, event_end = _get_event_date_range(event_filter)
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        avatar_stats = {}
+
+        # Collect Discord bot matches (unless source is a specific external source)
+        if source_filter in ("all", "discord"):
+            discord_rows, use_new_columns = _collect_discord_rows(cur, event_filter)
+            discord_stats = _tally_avatar_stats(discord_rows, use_new_columns)
+            for name, stats in discord_stats.items():
+                if name not in avatar_stats:
+                    avatar_stats[name] = {"wins": 0, "losses": 0}
+                avatar_stats[name]["wins"] += stats["wins"]
+                avatar_stats[name]["losses"] += stats["losses"]
+
+        # Collect external source matches (unless source is "discord")
+        if source_filter != "discord":
+            ext_rows = _collect_external_rows(cur, source_filter, event_start, event_end)
+            ext_stats = _tally_avatar_stats(ext_rows, use_new_columns=True)
+            for name, stats in ext_stats.items():
+                if name not in avatar_stats:
+                    avatar_stats[name] = {"wins": 0, "losses": 0}
+                avatar_stats[name]["wins"] += stats["wins"]
+                avatar_stats[name]["losses"] += stats["losses"]
+
         conn.close()
     except sqlite3.OperationalError as e:
         logger.error(f"Database error: {e}")
@@ -86,66 +307,6 @@ def get_all_avatars():
     except Exception as e:
         logger.error(f"Unexpected error in get_all_avatars: {e}")
         return jsonify([])
-
-    avatar_stats = {}
-
-    if use_new_columns:
-        for row in rows:
-            winner_deck_data_str = row[0]
-            loser_deck_data_str = row[1]
-
-            # Process winner's deck
-            if winner_deck_data_str and winner_deck_data_str not in ("", "{}"):
-                try:
-                    deck_data = json.loads(winner_deck_data_str)
-                    avatar = deck_data.get("avatar", [{}])
-                    avatar_name = avatar[0].get("name", "Unknown") if avatar else "Unknown"
-
-                    if avatar_name and avatar_name != "Unknown":
-                        if avatar_name not in avatar_stats:
-                            avatar_stats[avatar_name] = {"wins": 0, "losses": 0}
-                        avatar_stats[avatar_name]["wins"] += 1
-                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-                    pass
-
-            # Process loser's deck
-            if loser_deck_data_str and loser_deck_data_str not in ("", "{}"):
-                try:
-                    deck_data = json.loads(loser_deck_data_str)
-                    avatar = deck_data.get("avatar", [{}])
-                    avatar_name = avatar[0].get("name", "Unknown") if avatar else "Unknown"
-
-                    if avatar_name and avatar_name != "Unknown":
-                        if avatar_name not in avatar_stats:
-                            avatar_stats[avatar_name] = {"wins": 0, "losses": 0}
-                        avatar_stats[avatar_name]["losses"] += 1
-                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-                    pass
-    else:
-        for row in rows:
-            reporter_won = row[0]
-            deck_data_str = row[1]
-
-            if not deck_data_str:
-                continue
-
-            try:
-                deck_data = json.loads(deck_data_str)
-                avatar = deck_data.get("avatar", [{}])
-                avatar_name = avatar[0].get("name", "Unknown") if avatar else "Unknown"
-
-                if avatar_name == "Unknown" or not avatar_name:
-                    continue
-
-                if avatar_name not in avatar_stats:
-                    avatar_stats[avatar_name] = {"wins": 0, "losses": 0}
-
-                if reporter_won:
-                    avatar_stats[avatar_name]["wins"] += 1
-                else:
-                    avatar_stats[avatar_name]["losses"] += 1
-            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-                continue
 
     avatar_list = []
     for name, stats in avatar_stats.items():

@@ -6,8 +6,8 @@
     <title>{% block title %}Sorcerers Summit{% endblock %}</title>
 
     <!-- Favicon -->
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
-    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}?v={{ app_version }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png') }}?v={{ app_version }}">
 
     <!-- Tailwind CSS (load first) -->
     <link

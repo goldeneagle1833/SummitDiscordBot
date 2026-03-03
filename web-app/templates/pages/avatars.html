@@ -479,7 +479,12 @@
 
       function formatEventDate(dateStr) {
         if (!dateStr) return null;
-        const d = new Date(dateStr + "T00:00:00");
+        // Handle various DB formats: "YYYY-MM-DD", "YYYY-MM-DD HH:MM:SS", etc.
+        const dateOnly = dateStr.split(" ")[0]; // strip any time portion
+        const parts = dateOnly.split("-");
+        if (parts.length !== 3) return dateStr; // fallback to raw string
+        const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        if (isNaN(d.getTime())) return dateStr;
         return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
       }
 

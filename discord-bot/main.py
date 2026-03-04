@@ -15,6 +15,7 @@ from cogs.purchase_tracking import PurchaseTrackingCog
 from cogs.rules_assistant import RulesAssistantCog
 from cogs.streaming import StreamingCog
 from cogs.community import CommunityCog
+from cogs.reaction_roles import ReactionRolesCog
 
 import config
 
@@ -141,6 +142,7 @@ async def setup_cogs():
     await bot.add_cog(RulesAssistantCog(bot))  # SorceryAI rules assistant
     await bot.add_cog(StreamingCog(bot))  # Streaming detection for website banner
     await bot.add_cog(CommunityCog(bot))  # Community page management
+    await bot.add_cog(ReactionRolesCog(bot))  # Reaction-based role assignment
 
 
 async def main():

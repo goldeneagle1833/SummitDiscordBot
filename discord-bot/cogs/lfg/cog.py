@@ -380,18 +380,12 @@ class LFGCog(commands.Cog):
             # RED - Empty queue
             embed = discord.Embed(
                 title="\U0001f534 LFG Queue Status",
-                description="**Queue is empty**\n\nClick a button below to find a match!\nUse `!cancel` to leave the queue.",
+                description="**Queue is empty**\n\nClick a button below to find a match!",
                 color=discord.Color.red(),
             )
             embed.set_footer(text="Status updates automatically")
         else:
             # GREEN - Active queue
-            embed = discord.Embed(
-                title="\U0001f7e2 LFG Queue Status",
-                description=f"**{len(lfg_queue)} player(s) looking for a game!!**\n\nClick a button below to get matched!\nUse `!cancel` to leave the queue.",
-                color=discord.Color.green(),
-            )
-
             now = datetime.datetime.now()
 
             # Build ranked queue details (ranked + both players)
@@ -405,7 +399,7 @@ class LFGCog(commands.Cog):
                         randrange(0, len(SORCERY_NICKNAMES))
                     ]
                     ranked_details.append(
-                        f"\u2022 **{placeholder}** - {int(time_remaining)} min remaining"
+                        f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`"
                     )
 
             # Build testing queue details (testing + both players)
@@ -419,32 +413,47 @@ class LFGCog(commands.Cog):
                         randrange(0, len(SORCERY_NICKNAMES))
                     ]
                     testing_details.append(
-                        f"\u2022 **{placeholder}** - {int(time_remaining)} min remaining"
+                        f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`"
                     )
 
+            embed = discord.Embed(
+                title="\U0001f7e2 LFG Queue Status",
+                description=f"**{len(lfg_queue)} player(s) looking for a game!!**\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+                color=discord.Color.green(),
+            )
+
+            # Ranked queue section
             if ranked_details:
                 embed.add_field(
-                    name=f"\u2694\ufe0f Ranked Queue ({len(ranked_details)}):",
+                    name="\u2694\ufe0f Ranked Queue",
                     value="\n".join(ranked_details),
                     inline=False,
                 )
             else:
                 embed.add_field(
-                    name="\u2694\ufe0f Ranked Queue:",
-                    value="No players in ranked queue",
+                    name="\u2694\ufe0f Ranked Queue",
+                    value="`Empty`",
                     inline=False,
                 )
 
+            # Separator
+            embed.add_field(
+                name="\u200b",
+                value="",
+                inline=False,
+            )
+
+            # Casual queue section
             if testing_details:
                 embed.add_field(
-                    name=f"\U0001f9ea Casual Queue ({len(testing_details)}):",
+                    name="\U0001f9ea Casual Queue",
                     value="\n".join(testing_details),
                     inline=False,
                 )
             else:
                 embed.add_field(
-                    name="\U0001f9ea Casual Queue:",
-                    value="No players in Casual queue",
+                    name="\U0001f9ea Casual Queue",
+                    value="`Empty`",
                     inline=False,
                 )
 

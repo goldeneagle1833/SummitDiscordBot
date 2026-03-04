@@ -158,10 +158,8 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             )
 
             # Determine match type label for messages
-            match_type_label = "Ranked" if match_type == "ranked" else "Testing"
-            match_type_emoji = (
-                "\u2694\ufe0f" if match_type == "ranked" else "\U0001f9ea"
-            )
+            match_type_label = "Ranked" if match_type == "ranked" else "Casual"
+            match_type_emoji = "\u2694\ufe0f" if match_type == "ranked" else "\u2b50"
 
             # Create "Did you go first?" view (step before win/lose buttons)
             went_first_view = WentFirstView(
@@ -338,3 +336,33 @@ class JoinQueueButtons(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         await self._handle_join(interaction, "both")
+
+    @discord.ui.button(
+        label="Leave Queue",
+        style=discord.ButtonStyle.danger,
+        custom_id="leave_lfg_queue",
+    )
+    async def leave_queue_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        """Remove user from the LFG queue (reuses !cancel logic)"""
+        async with lfg_queue_lock:
+            was_in_queue = interaction.user.id in lfg_queue
+            if was_in_queue:
+                lfg_queue.pop(interaction.user.id)
+
+        if was_in_queue:
+            # Send ephemeral confirmation
+            await interaction.response.send_message(
+                "You have been removed from the LFG queue.", ephemeral=True
+            )
+
+            # Update status message after leaving queue
+            cog = self.bot.get_cog("LFG")
+            if cog:
+                await cog.update_lfg_status()
+        else:
+            # User not in queue
+            await interaction.response.send_message(
+                "You are not currently in the LFG queue.", ephemeral=True
+            )

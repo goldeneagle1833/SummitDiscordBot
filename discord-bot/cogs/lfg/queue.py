@@ -361,8 +361,8 @@ class ActiveQueueButtons(JoinQueueButtons):
                 "You have been removed from the LFG queue.", ephemeral=True
             )
 
-            # Update status message after leaving queue
-            cog = self.bot.get_cog("LFG")
+            # Update status message after leaving queue (same as !cancel)
+            cog = self.bot.get_cog("LFGCog")
             if cog:
                 await cog.update_lfg_status()
         else:

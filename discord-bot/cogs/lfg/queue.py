@@ -291,7 +291,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
 
 
 class JoinQueueButtons(discord.ui.View):
-    """Buttons for joining the LFG queue (Ranked, Testing, or Both)"""
+    """Buttons for joining the LFG queue (Ranked, Testing, or Both) - for empty queue"""
 
     def __init__(self, bot):
         super().__init__(timeout=None)
@@ -336,6 +336,10 @@ class JoinQueueButtons(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         await self._handle_join(interaction, "both")
+
+
+class ActiveQueueButtons(JoinQueueButtons):
+    """Buttons for active queue (includes Leave Queue button)"""
 
     @discord.ui.button(
         label="Leave Queue",

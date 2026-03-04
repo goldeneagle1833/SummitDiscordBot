@@ -28,7 +28,7 @@ from cogs.lfg.ladder import (
     _resolve_ladder_challenge,
     _ladder_challenge_timeout,
 )
-from cogs.lfg.queue import DeckURLModal, JoinQueueButtons
+from cogs.lfg.queue import DeckURLModal, JoinQueueButtons, ActiveQueueButtons
 from utils.database import (
     winner_report,
     losser_report,
@@ -450,8 +450,13 @@ class LFGCog(commands.Cog):
 
             embed.set_footer(text="Status updates automatically")
 
-        # Create the Join Queue button view
-        view = JoinQueueButtons(self.bot)
+        # Create the appropriate button view based on queue status
+        if len(lfg_queue) == 0:
+            # Empty queue (red) - no leave button
+            view = JoinQueueButtons(self.bot)
+        else:
+            # Active queue (green) - includes leave button
+            view = ActiveQueueButtons(self.bot)
 
         # Delete old message and send new one
         try:

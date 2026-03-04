@@ -186,6 +186,17 @@
             <!-- Populated by JS -->
           </select>
         </div>
+        <div class="avatar-filter-group">
+          <label for="sort-filter">Sort by:</label>
+          <select id="sort-filter">
+            <option value="accuracy">Accuracy Score</option>
+            <option value="winrate">Win Rate</option>
+            <option value="alphabetical">Alphabetical</option>
+            <option value="most-played">Most Played</option>
+            <option value="most-wins">Most Wins</option>
+            <option value="best-record">Best Record (+/-)</option>
+          </select>
+        </div>
       </section>
 
       <section class="avatar-stats-section">
@@ -474,9 +485,37 @@
         return null;
       }
 
-      // ---- Filter logic ----
+      // ---- Filter & sort logic ----
       let currentEventFilter = "all";
       let currentSourceFilter = "all";
+      let currentSort = "accuracy";
+
+      const SORT_LABELS = {
+        accuracy: "accuracy score (win rate \u00d7 games played)",
+        winrate: "win rate",
+        alphabetical: "name (A\u2013Z)",
+        "most-played": "most games played",
+        "most-wins": "most wins",
+        "best-record": "best record (wins \u2212 losses)",
+      };
+
+      function sortAvatarData(data, sortKey) {
+        switch (sortKey) {
+          case "winrate":
+            return data.sort((a, b) => b.win_rate - a.win_rate || b.total - a.total);
+          case "alphabetical":
+            return data.sort((a, b) => a.name.localeCompare(b.name));
+          case "most-played":
+            return data.sort((a, b) => b.total - a.total || b.win_rate - a.win_rate);
+          case "most-wins":
+            return data.sort((a, b) => b.wins - a.wins || b.win_rate - a.win_rate);
+          case "best-record":
+            return data.sort((a, b) => (b.wins - b.losses) - (a.wins - a.losses) || b.total - a.total);
+          case "accuracy":
+          default:
+            return data.sort((a, b) => b.accuracy - a.accuracy);
+        }
+      }
 
       function formatEventDate(dateStr) {
         if (!dateStr) return null;
@@ -535,6 +574,11 @@
             currentSourceFilter = sourceSelect.value;
             fetchAvatarStats();
           });
+
+          document.getElementById("sort-filter").addEventListener("change", (e) => {
+            currentSort = e.target.value;
+            fetchAvatarStats();
+          });
         } catch (e) {
           console.error("Error loading filters:", e);
         }
@@ -562,11 +606,15 @@
             return;
           }
 
-          // Calculate accuracy stat (win rate × total games) and sort by it (descending)
+          // Calculate accuracy stat (win rate × total games) for accuracy sort
           data.forEach(avatar => {
             avatar.accuracy = avatar.win_rate * avatar.total;
           });
-          data.sort((a, b) => b.accuracy - a.accuracy);
+          sortAvatarData(data, currentSort);
+
+          // Update subtitle to reflect current sort
+          document.getElementById("hero-subtitle").textContent =
+            `Global statistics from all matches reported with decklists, sorted by ${SORT_LABELS[currentSort] || SORT_LABELS.accuracy}`;
 
           // Calculate total games across all avatars
           const totalGames = data.reduce((sum, avatar) => sum + avatar.total, 0);

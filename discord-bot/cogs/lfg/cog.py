@@ -436,13 +436,6 @@ class LFGCog(commands.Cog):
                     inline=False,
                 )
 
-            # Separator
-            embed.add_field(
-                name="\u200b",
-                value="",
-                inline=False,
-            )
-
             # Casual queue section
             if testing_details:
                 embed.add_field(

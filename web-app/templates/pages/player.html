@@ -116,7 +116,7 @@
                     Remove Match
                 </button>
                 <button class="btn btn--secondary" id="admin-reset-elo" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
-                    Reset ELO
+                    Set ELO
                 </button>
                 <button class="btn btn--secondary" id="admin-rename-player" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
                     Rename Player
@@ -427,6 +427,29 @@
           <div class="modal__footer">
             <button type="button" class="btn btn--secondary" id="remove-match-cancel">Cancel</button>
             <button type="button" class="btn btn--danger" id="remove-match-confirm">Delete Match</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reset ELO Modal -->
+      <div class="modal" id="reset-elo-modal">
+        <div class="modal__backdrop" id="reset-elo-backdrop"></div>
+        <div class="modal__content" style="max-width: 480px;">
+          <div class="modal__header">
+            <h2 class="modal__title">Set ELO</h2>
+            <button class="modal__close" id="reset-elo-close">&times;</button>
+          </div>
+          <div class="modal__body">
+            <div class="form-group">
+              <label class="form-label form-label--required" for="admin-new-elo">New ELO Value</label>
+              <input type="number" class="form-input" id="admin-new-elo"
+                     value="1500" min="0" max="5000" required />
+              <span class="form-help">Enter the new ELO rating (0-5000). Default is 1500.</span>
+            </div>
+          </div>
+          <div class="modal__footer">
+            <button type="button" class="btn btn--secondary" id="reset-elo-cancel">Cancel</button>
+            <button type="button" class="btn btn--primary" id="reset-elo-confirm">Set ELO</button>
           </div>
         </div>
       </div>
@@ -1382,21 +1405,42 @@
         }
       });
 
-      // Reset ELO
-      document.getElementById("admin-reset-elo")?.addEventListener("click", async () => {
+      // Reset ELO - modal
+      function showResetEloModal() {
+        document.getElementById("reset-elo-modal").classList.add("modal--active");
+        document.getElementById("admin-new-elo").value = "1500";
+      }
+      function hideResetEloModal() {
+        document.getElementById("reset-elo-modal").classList.remove("modal--active");
+      }
+      document.getElementById("admin-reset-elo")?.addEventListener("click", showResetEloModal);
+      document.getElementById("reset-elo-backdrop")?.addEventListener("click", hideResetEloModal);
+      document.getElementById("reset-elo-close")?.addEventListener("click", hideResetEloModal);
+      document.getElementById("reset-elo-cancel")?.addEventListener("click", hideResetEloModal);
+
+      document.getElementById("reset-elo-confirm")?.addEventListener("click", async () => {
+        const newElo = document.getElementById("admin-new-elo").value.trim();
+        if (!newElo) { alert("Please enter an ELO value."); return; }
+        const eloNum = parseInt(newElo, 10);
+        if (isNaN(eloNum) || eloNum < 0 || eloNum > 5000) { alert("ELO must be between 0 and 5000."); return; }
         const playerName = document.getElementById("player-name").textContent;
-        if (!confirm(`Reset "${playerName}"'s ELO to 1500?`)) return;
+        if (!confirm(`Set "${playerName}"'s ELO to ${eloNum}?`)) return;
         try {
-          const res = await fetch(`/api/admin/reset-elo/${playerId}`, { method: "POST" });
+          const res = await fetch(`/api/admin/reset-elo/${playerId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ new_elo: eloNum }),
+          });
           const data = await res.json();
           if (data.success) {
+            hideResetEloModal();
             alert(data.message);
             fetchPlayerData();
           } else {
-            alert("Error: " + (data.error || "Failed to reset ELO"));
+            alert("Error: " + (data.error || "Failed to set ELO"));
           }
         } catch (err) {
-          alert("Failed to reset ELO.");
+          alert("Failed to set ELO.");
         }
       });
 
@@ -1439,6 +1483,7 @@
       document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
           hideRemoveMatchModal();
+          hideResetEloModal();
           hideRenameModal();
         }
       });

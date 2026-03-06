@@ -78,20 +78,20 @@ class AdminService:
             }
         return {"success": False, "error": "Failed to delete match record"}
 
-    def reset_player_elo(self, user_id: int) -> dict:
-        """Reset a player's ELO to 1500."""
+    def reset_player_elo(self, user_id: int, new_elo: int = 1500) -> dict:
+        """Set a player's ELO to a specified value."""
         current_elo = self._elo_repo.get_user_elo(user_id)
         if current_elo is None:
             return {"success": False, "error": "Player not found in standings"}
 
-        reset = self._elo_repo.reset_player_elo(user_id)
+        reset = self._elo_repo.reset_player_elo(user_id, new_elo)
         if reset:
-            logger.info(f"Admin reset ELO for {user_id}: {current_elo} -> 1500")
+            logger.info(f"Admin set ELO for {user_id}: {current_elo} -> {new_elo}")
             return {
                 "success": True,
-                "message": f"ELO reset: {current_elo} -> 1500",
+                "message": f"ELO updated: {current_elo} -> {new_elo}",
             }
-        return {"success": False, "error": "Failed to reset ELO"}
+        return {"success": False, "error": "Failed to update ELO"}
 
     def rename_player(self, user_id: int, new_name: str) -> dict:
         """Rename a player's display name."""

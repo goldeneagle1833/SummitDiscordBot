@@ -35,9 +35,19 @@ def remove_match(match_id):
 @admin_bp.route("/admin/reset-elo/<int:user_id>", methods=["POST"])
 @require_admin
 def reset_elo(user_id):
-    """Reset a player's ELO to 1500 (admin only)."""
+    """Reset a player's ELO to a specified value (admin only)."""
+    data = request.get_json(silent=True)
+    new_elo = 1500
+    if data and data.get("new_elo") is not None:
+        try:
+            new_elo = int(data["new_elo"])
+        except (ValueError, TypeError):
+            return jsonify({"success": False, "error": "new_elo must be a number"}), 400
+        if new_elo < 0 or new_elo > 5000:
+            return jsonify({"success": False, "error": "ELO must be between 0 and 5000"}), 400
+
     service = AdminService()
-    result = service.reset_player_elo(user_id)
+    result = service.reset_player_elo(user_id, new_elo)
     status = 200 if result.get("success") else 404
     return jsonify(result), status
 

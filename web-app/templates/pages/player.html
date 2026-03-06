@@ -98,6 +98,33 @@
           </div>
         </div>
 
+        {% if is_admin %}
+        <!-- Admin Controls Panel -->
+        <div id="admin-panel" style="
+            background: rgba(248, 81, 73, 0.08);
+            border: 1px solid rgba(248, 81, 73, 0.3);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1.5rem;
+        ">
+            <h3 style="color: #f85149; margin: 0 0 0.75rem 0; font-size: 0.95rem;">Admin Controls</h3>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                <button class="btn btn--danger" id="admin-remove-player" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
+                    Remove Player
+                </button>
+                <button class="btn btn--danger" id="admin-remove-match" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
+                    Remove Match
+                </button>
+                <button class="btn btn--secondary" id="admin-reset-elo" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
+                    Reset ELO
+                </button>
+                <button class="btn btn--secondary" id="admin-rename-player" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
+                    Rename Player
+                </button>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Overall Stats -->
         <h3>📊 Overall Stats</h3>
         <div class="player-stats" id="player-stats">
@@ -379,6 +406,53 @@
           </div>
         </div>
       </div>
+
+      {% if is_admin %}
+      <!-- Remove Match Modal -->
+      <div class="modal" id="remove-match-modal">
+        <div class="modal__backdrop" id="remove-match-backdrop"></div>
+        <div class="modal__content" style="max-width: 480px;">
+          <div class="modal__header">
+            <h2 class="modal__title">Remove Match</h2>
+            <button class="modal__close" id="remove-match-close">&times;</button>
+          </div>
+          <div class="modal__body">
+            <div class="form-group">
+              <label class="form-label form-label--required" for="admin-match-id">Match ID</label>
+              <input type="number" class="form-input" id="admin-match-id"
+                     placeholder="Enter match ID (e.g. 1234)" required min="1" />
+              <span class="form-help">The match row ID. ELO changes will be reversed for both players.</span>
+            </div>
+          </div>
+          <div class="modal__footer">
+            <button type="button" class="btn btn--secondary" id="remove-match-cancel">Cancel</button>
+            <button type="button" class="btn btn--danger" id="remove-match-confirm">Delete Match</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rename Player Modal -->
+      <div class="modal" id="rename-player-modal">
+        <div class="modal__backdrop" id="rename-player-backdrop"></div>
+        <div class="modal__content" style="max-width: 480px;">
+          <div class="modal__header">
+            <h2 class="modal__title">Rename Player</h2>
+            <button class="modal__close" id="rename-player-close">&times;</button>
+          </div>
+          <div class="modal__body">
+            <div class="form-group">
+              <label class="form-label form-label--required" for="admin-new-name">New Display Name</label>
+              <input type="text" class="form-input" id="admin-new-name"
+                     placeholder="Enter new display name" required maxlength="100" />
+            </div>
+          </div>
+          <div class="modal__footer">
+            <button type="button" class="btn btn--secondary" id="rename-player-cancel">Cancel</button>
+            <button type="button" class="btn btn--primary" id="rename-player-confirm">Save Name</button>
+          </div>
+        </div>
+      </div>
+      {% endif %}
     </main>
 
     <script>
@@ -1254,6 +1328,121 @@
           if (e.key === "Escape") hideRecordGameModal();
         });
       });
+
+      {% if is_admin %}
+      // ===== Admin Controls =====
+
+      // Remove Player
+      document.getElementById("admin-remove-player")?.addEventListener("click", async () => {
+        const playerName = document.getElementById("player-name").textContent;
+        if (!confirm(`Remove "${playerName}" from the leaderboard?\n\nThis removes them from standings but keeps match history.`)) return;
+        try {
+          const res = await fetch(`/api/admin/remove-player/${playerId}`, { method: "DELETE" });
+          const data = await res.json();
+          if (data.success) {
+            alert(data.message);
+            window.location.href = "/";
+          } else {
+            alert("Error: " + (data.error || "Failed to remove player"));
+          }
+        } catch (err) {
+          alert("Failed to remove player.");
+        }
+      });
+
+      // Remove Match - modal
+      function showRemoveMatchModal() {
+        document.getElementById("remove-match-modal").classList.add("modal--active");
+        document.getElementById("admin-match-id").value = "";
+      }
+      function hideRemoveMatchModal() {
+        document.getElementById("remove-match-modal").classList.remove("modal--active");
+      }
+      document.getElementById("admin-remove-match")?.addEventListener("click", showRemoveMatchModal);
+      document.getElementById("remove-match-backdrop")?.addEventListener("click", hideRemoveMatchModal);
+      document.getElementById("remove-match-close")?.addEventListener("click", hideRemoveMatchModal);
+      document.getElementById("remove-match-cancel")?.addEventListener("click", hideRemoveMatchModal);
+
+      document.getElementById("remove-match-confirm")?.addEventListener("click", async () => {
+        const matchId = document.getElementById("admin-match-id").value.trim();
+        if (!matchId) { alert("Please enter a match ID."); return; }
+        if (!confirm(`Delete match #${matchId}?\n\nELO changes will be reversed for both players.`)) return;
+        try {
+          const res = await fetch(`/api/admin/remove-match/${matchId}`, { method: "DELETE" });
+          const data = await res.json();
+          if (data.success) {
+            hideRemoveMatchModal();
+            alert(data.message);
+            fetchPlayerData();
+          } else {
+            alert("Error: " + (data.error || "Failed to remove match"));
+          }
+        } catch (err) {
+          alert("Failed to remove match.");
+        }
+      });
+
+      // Reset ELO
+      document.getElementById("admin-reset-elo")?.addEventListener("click", async () => {
+        const playerName = document.getElementById("player-name").textContent;
+        if (!confirm(`Reset "${playerName}"'s ELO to 1500?`)) return;
+        try {
+          const res = await fetch(`/api/admin/reset-elo/${playerId}`, { method: "POST" });
+          const data = await res.json();
+          if (data.success) {
+            alert(data.message);
+            fetchPlayerData();
+          } else {
+            alert("Error: " + (data.error || "Failed to reset ELO"));
+          }
+        } catch (err) {
+          alert("Failed to reset ELO.");
+        }
+      });
+
+      // Rename Player - modal
+      function showRenameModal() {
+        document.getElementById("rename-player-modal").classList.add("modal--active");
+        document.getElementById("admin-new-name").value = document.getElementById("player-name").textContent;
+      }
+      function hideRenameModal() {
+        document.getElementById("rename-player-modal").classList.remove("modal--active");
+      }
+      document.getElementById("admin-rename-player")?.addEventListener("click", showRenameModal);
+      document.getElementById("rename-player-backdrop")?.addEventListener("click", hideRenameModal);
+      document.getElementById("rename-player-close")?.addEventListener("click", hideRenameModal);
+      document.getElementById("rename-player-cancel")?.addEventListener("click", hideRenameModal);
+
+      document.getElementById("rename-player-confirm")?.addEventListener("click", async () => {
+        const newName = document.getElementById("admin-new-name").value.trim();
+        if (!newName) { alert("Please enter a name."); return; }
+        try {
+          const res = await fetch(`/api/admin/rename-player/${playerId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ new_name: newName }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            hideRenameModal();
+            alert(data.message);
+            fetchPlayerData();
+          } else {
+            alert("Error: " + (data.error || "Failed to rename player"));
+          }
+        } catch (err) {
+          alert("Failed to rename player.");
+        }
+      });
+
+      // Close admin modals on Escape
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          hideRemoveMatchModal();
+          hideRenameModal();
+        }
+      });
+      {% endif %}
 
       fetchPlayerData();
     </script>

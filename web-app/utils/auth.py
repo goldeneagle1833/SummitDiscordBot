@@ -98,6 +98,19 @@ def is_admin() -> bool:
     ]
 
 
+def require_admin(f):
+    """Decorator requiring admin access (session admin, localhost, or API key)."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_admin():
+            logger.warning(
+                f"Non-admin access attempt to {request.path} from {request.remote_addr}"
+            )
+            return jsonify({"error": "Admin access required"}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 def get_current_user() -> dict | None:
     """Get the currently logged in user from session, or None."""
     if "user_id" in session:

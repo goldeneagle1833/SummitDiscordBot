@@ -225,3 +225,48 @@ class EloRepository:
                 "display_name": row[2],
             }
         return None
+
+    def delete_player(self, user_id: int) -> bool:
+        """Delete a player from overall_standings. Returns True if deleted."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM overall_standings WHERE user_id = ?", (user_id,))
+        deleted = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return deleted
+
+    def reset_player_elo(self, user_id: int, default_elo: int = 1500) -> bool:
+        """Reset a player's ELO to default. Returns True if updated."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        # Check if event_elo column exists
+        cur.execute("PRAGMA table_info(overall_standings)")
+        columns = [col[1] for col in cur.fetchall()]
+        if "event_elo" in columns:
+            cur.execute(
+                "UPDATE overall_standings SET elo = ?, event_elo = ? WHERE user_id = ?",
+                (default_elo, default_elo, user_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE overall_standings SET elo = ? WHERE user_id = ?",
+                (default_elo, user_id),
+            )
+        updated = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return updated
+
+    def rename_player(self, user_id: int, new_name: str) -> bool:
+        """Update a player's display name. Returns True if updated."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE overall_standings SET user_display_name = ? WHERE user_id = ?",
+            (new_name, user_id),
+        )
+        updated = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return updated

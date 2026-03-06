@@ -20,6 +20,13 @@ class MatchRepository:
         """Add source and match_type columns if they don't exist yet."""
         conn = self._get_connection()
         cur = conn.cursor()
+        # Check if match_records table exists at all
+        cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='match_records'"
+        )
+        if not cur.fetchone():
+            conn.close()
+            return
         for col, default in [("source", "Discord"), ("match_type", "ranked")]:
             try:
                 cur.execute(
@@ -518,6 +525,41 @@ class MatchRepository:
         conn.commit()
         conn.close()
         return rowid
+
+    def get_match_full_details(self, match_id: int) -> dict | None:
+        """Get full match details including ELO changes for admin operations."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT rowid, winner_id, losser_id, winner_display_name,
+                      losser_display_name, winner_elo_change, loser_elo_change, timestamp
+               FROM match_records WHERE rowid = ?""",
+            (match_id,),
+        )
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return {
+            "match_id": row[0],
+            "winner_id": row[1],
+            "loser_id": row[2],
+            "winner_name": row[3],
+            "loser_name": row[4],
+            "winner_elo_change": row[5] or 0,
+            "loser_elo_change": row[6] or 0,
+            "timestamp": row[7],
+        }
+
+    def delete_match(self, match_id: int) -> bool:
+        """Delete a match record by rowid. Returns True if deleted."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM match_records WHERE rowid = ?", (match_id,))
+        deleted = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return deleted
 
     def get_distinct_sources(self) -> list[str]:
         """Get all distinct source names from match_records."""

@@ -16,6 +16,7 @@ from routes.api.misc import misc_bp
 from routes.api.streamers import streamers_bp
 from routes.api.external_matches import external_matches_bp
 from routes.api.metagame import metagame_bp
+from routes.api.admin import admin_bp
 
 api_bp.register_blueprint(leaderboard_bp)
 api_bp.register_blueprint(matches_bp)
@@ -28,3 +29,4 @@ api_bp.register_blueprint(misc_bp)
 api_bp.register_blueprint(streamers_bp)
 api_bp.register_blueprint(external_matches_bp)
 api_bp.register_blueprint(metagame_bp)
+api_bp.register_blueprint(admin_bp)

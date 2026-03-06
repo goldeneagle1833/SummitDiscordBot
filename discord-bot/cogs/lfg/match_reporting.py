@@ -282,6 +282,9 @@ class MatchConfirmationButtons(discord.ui.View):
             await interaction.response.send_modal(modal)
             return
 
+        # Acknowledge interaction immediately to prevent 3-second timeout
+        await interaction.response.defer()
+
         # Disable button immediately to prevent double-clicks
         button.disabled = True
         for item in self.children:
@@ -298,7 +301,7 @@ class MatchConfirmationButtons(discord.ui.View):
             last_report_time = processed_matches[match_key]
             # If a match between these players was reported in the last 5 minutes, reject
             if (now - last_report_time).total_seconds() < 300:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "This match has already been recorded. Duplicate report prevented.",
                     ephemeral=True,
                 )
@@ -310,8 +313,6 @@ class MatchConfirmationButtons(discord.ui.View):
 
         # Mark this match as processed
         processed_matches[match_key] = now
-
-        await interaction.response.defer()
 
         # Use provided match_time, or calculate from start to confirmation if not provided
         match_time = self.match_time
@@ -516,6 +517,9 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         view = self.view
         original_interaction = self.original_interaction
 
+        # Acknowledge interaction immediately to prevent 3-second timeout
+        await interaction.response.defer(ephemeral=True)
+
         # Disable buttons immediately to prevent double-clicks
         for item in view.children:
             item.disabled = True
@@ -534,7 +538,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         # Validate pairing exists in DB using both player IDs (most recent active)
         if not view.ladder_info:
             if not view.guild_id or not get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id):
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "No active pairing found. You can only report matches against your paired opponent.",
                     ephemeral=True,
                 )
@@ -546,7 +550,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             opponent_global = opponent.global_name or opponent.display_name
         except Exception as e:
             logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Failed to fetch opponent information.",
                 ephemeral=True,
             )
@@ -557,7 +561,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             opponent_id,
             original_interaction.user.id,
         ) in pending_match_reports:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "A report for this match is already pending confirmation.",
                 ephemeral=True,
             )
@@ -628,12 +632,12 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                         ),
                         view=confirmation_view,
                     )
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"Match report sent to {opponent_global}. Waiting for confirmation...",
                         ephemeral=True,
                     )
                 else:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"Could not send confirmation to {opponent_global}.",
                         ephemeral=True,
                     )
@@ -643,7 +647,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                         f"**Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:",
                         view=confirmation_view,
                     )
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"Match report sent to {opponent_global}. Waiting for confirmation...",
                         ephemeral=True,
                     )
@@ -669,22 +673,21 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                                 ),
                                 view=confirmation_view,
                             )
-                            await interaction.response.send_message(
+                            await interaction.followup.send(
                                 "Match report sent. Waiting for confirmation...",
                                 ephemeral=True,
                             )
                         else:
-                            await interaction.response.send_message(
+                            await interaction.followup.send(
                                 f"Could not send confirmation to {opponent_global}.",
                                 ephemeral=True,
                             )
                     except Exception as e:
                         logger.error(f"Failed to handle DM failure for opponent: {e}")
-                        if not interaction.response.is_done():
-                            await interaction.response.send_message(
-                                f"Could not send confirmation to {opponent_global}.",
-                                ephemeral=True,
-                            )
+                        await interaction.followup.send(
+                            f"Could not send confirmation to {opponent_global}.",
+                            ephemeral=True,
+                        )
 
             # Remove buttons from original message
             if original_interaction.message:
@@ -694,23 +697,24 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                     pass
 
         except discord.Forbidden:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
-                    ephemeral=True,
-                )
+            await interaction.followup.send(
+                f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                ephemeral=True,
+            )
         except Exception as e:
             logger.error(f"Error in ReporterDeckURLModal win report: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "An error occurred while processing your match report.",
-                    ephemeral=True,
-                )
+            await interaction.followup.send(
+                "An error occurred while processing your match report.",
+                ephemeral=True,
+            )
 
     async def _process_loss_report(self, interaction: discord.Interaction):
         """Process loss report after collecting deck URL"""
         view = self.view
         original_interaction = self.original_interaction
+
+        # Acknowledge interaction immediately to prevent 3-second timeout
+        await interaction.response.defer(ephemeral=True)
 
         # Disable buttons immediately to prevent double-clicks
         for item in view.children:
@@ -730,7 +734,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         # Validate pairing exists in DB using both player IDs (most recent active)
         if not view.ladder_info:
             if not view.guild_id or not get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id):
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "No active pairing found. You can only report matches against your paired opponent.",
                     ephemeral=True,
                 )
@@ -742,7 +746,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             opponent_global = opponent.global_name or opponent.display_name
         except Exception as e:
             logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Failed to fetch opponent information.",
                 ephemeral=True,
             )
@@ -753,7 +757,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             opponent_id,
             original_interaction.user.id,
         ) in pending_match_reports:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "A report for this match is already pending confirmation.",
                 ephemeral=True,
             )
@@ -824,12 +828,12 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                         ),
                         view=confirmation_view,
                     )
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"Match report sent to {opponent_global}. Waiting for confirmation...",
                         ephemeral=True,
                     )
                 else:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"Could not send confirmation to {opponent_global}.",
                         ephemeral=True,
                     )
@@ -839,7 +843,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                         f"**Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:",
                         view=confirmation_view,
                     )
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"Match report sent to {opponent_global}. Waiting for confirmation...",
                         ephemeral=True,
                     )
@@ -859,22 +863,21 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                                 ),
                                 view=confirmation_view,
                             )
-                            await interaction.response.send_message(
+                            await interaction.followup.send(
                                 "Match report sent. Waiting for confirmation...",
                                 ephemeral=True,
                             )
                         else:
-                            await interaction.response.send_message(
+                            await interaction.followup.send(
                                 f"Could not send confirmation to {opponent_global}.",
                                 ephemeral=True,
                             )
                     except Exception as e:
                         logger.error(f"Failed to handle DM failure for opponent: {e}")
-                        if not interaction.response.is_done():
-                            await interaction.response.send_message(
-                                f"Could not send confirmation to {opponent_global}.",
-                                ephemeral=True,
-                            )
+                        await interaction.followup.send(
+                            f"Could not send confirmation to {opponent_global}.",
+                            ephemeral=True,
+                        )
 
             # Remove buttons from original message
             if original_interaction.message:
@@ -884,18 +887,16 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                     pass
 
         except discord.Forbidden:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
-                    ephemeral=True,
-                )
+            await interaction.followup.send(
+                f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                ephemeral=True,
+            )
         except Exception as e:
             logger.error(f"Error in ReporterDeckURLModal loss report: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "An error occurred while processing your match report.",
-                    ephemeral=True,
-                )
+            await interaction.followup.send(
+                "An error occurred while processing your match report.",
+                ephemeral=True,
+            )
 
 
 class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
@@ -933,6 +934,9 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         view = self.view
         original_interaction = self.original_interaction
 
+        # Acknowledge interaction immediately to prevent 3-second timeout
+        await interaction.response.defer()
+
         # Disable buttons immediately to prevent double-clicks
         for item in view.children:
             item.disabled = True
@@ -947,7 +951,7 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         if match_key in processed_matches:
             last_report_time = processed_matches[match_key]
             if (now - last_report_time).total_seconds() < 300:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "This match has already been recorded. Duplicate report prevented.",
                     ephemeral=True,
                 )
@@ -959,8 +963,6 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
 
         # Mark this match as processed
         processed_matches[match_key] = now
-
-        await interaction.response.defer()
 
         # Calculate match time
         match_time = view.match_time
@@ -1231,6 +1233,9 @@ class LFGReportButtons(discord.ui.View):
             await interaction.response.send_modal(modal)
             return
 
+        # Acknowledge interaction immediately to prevent 3-second timeout
+        await interaction.response.defer(ephemeral=True)
+
         # Disable buttons immediately to prevent double-clicks
         for item in self.children:
             item.disabled = True
@@ -1249,7 +1254,7 @@ class LFGReportButtons(discord.ui.View):
         # Validate pairing exists in DB using both player IDs (most recent active)
         if not self.ladder_info:
             if not self.guild_id or not get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id):
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "No active pairing found. You can only report matches against your paired opponent.",
                     ephemeral=True,
                 )
@@ -1261,7 +1266,7 @@ class LFGReportButtons(discord.ui.View):
             opponent_global = opponent.global_name or opponent.display_name
         except Exception as e:
             logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Failed to fetch opponent information.",
                 ephemeral=True,
             )
@@ -1272,7 +1277,7 @@ class LFGReportButtons(discord.ui.View):
             opponent_id,
             interaction.user.id,
         ) in pending_match_reports:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "A report for this match is already pending confirmation.",
                 ephemeral=True,
             )
@@ -1346,7 +1351,7 @@ class LFGReportButtons(discord.ui.View):
                         ),
                         view=confirmation_view,
                     )
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"Match report sent to {opponent_global}. Waiting for confirmation...",
                         ephemeral=True,
                     )
@@ -1354,7 +1359,7 @@ class LFGReportButtons(discord.ui.View):
                         f"Posted confirmation in DM-disabled channel for {opponent_global}"
                     )
                 else:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"Could not send confirmation to {opponent_global}.",
                         ephemeral=True,
                     )
@@ -1365,7 +1370,7 @@ class LFGReportButtons(discord.ui.View):
                         view=confirmation_view,
                     )
 
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"Match report sent to {opponent_global}. Waiting for confirmation...",
                         ephemeral=True,
                     )
@@ -1402,7 +1407,7 @@ class LFGReportButtons(discord.ui.View):
                                 ),
                                 view=confirmation_view,
                             )
-                            await interaction.response.send_message(
+                            await interaction.followup.send(
                                 "Match report sent. Waiting for confirmation...",
                                 ephemeral=True,
                             )
@@ -1410,22 +1415,16 @@ class LFGReportButtons(discord.ui.View):
                                 f"Posted confirmation in DM-disabled channel for {opponent_global}"
                             )
                         else:
-                            await interaction.response.send_message(
+                            await interaction.followup.send(
                                 f"Could not send confirmation to {opponent_global}.",
                                 ephemeral=True,
                             )
                     except Exception as e:
                         logger.error(f"Failed to handle DM failure for opponent: {e}")
-                        if not interaction.response.is_done():
-                            await interaction.response.send_message(
-                                f"Could not send confirmation to {opponent_global}.",
-                                ephemeral=True,
-                            )
-                        else:
-                            await interaction.followup.send(
-                                f"Could not send confirmation to {opponent_global}.",
-                                ephemeral=True,
-                            )
+                        await interaction.followup.send(
+                            f"Could not send confirmation to {opponent_global}.",
+                            ephemeral=True,
+                        )
 
             # Remove buttons from this user's message
             if interaction.message:
@@ -1435,28 +1434,16 @@ class LFGReportButtons(discord.ui.View):
                     pass
 
         except discord.Forbidden:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
-                    ephemeral=True,
-                )
-            else:
-                await interaction.followup.send(
-                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
-                    ephemeral=True,
-                )
+            await interaction.followup.send(
+                f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                ephemeral=True,
+            )
         except Exception as e:
             logger.error(f"Error in won_button: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "An error occurred while processing your match report.",
-                    ephemeral=True,
-                )
-            else:
-                await interaction.followup.send(
-                    "An error occurred while processing your match report.",
-                    ephemeral=True,
-                )
+            await interaction.followup.send(
+                "An error occurred while processing your match report.",
+                ephemeral=True,
+            )
 
     @discord.ui.button(
         label="I Lost", style=discord.ButtonStyle.danger, custom_id="lose_button"
@@ -1470,6 +1457,9 @@ class LFGReportButtons(discord.ui.View):
             modal = ReporterDeckURLModal(self, interaction, is_win=False)
             await interaction.response.send_modal(modal)
             return
+
+        # Acknowledge interaction immediately to prevent 3-second timeout
+        await interaction.response.defer(ephemeral=True)
 
         # Disable buttons immediately to prevent double-clicks
         for item in self.children:
@@ -1489,7 +1479,7 @@ class LFGReportButtons(discord.ui.View):
         # Validate pairing exists in DB using both player IDs (most recent active)
         if not self.ladder_info:
             if not self.guild_id or not get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id):
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "No active pairing found. You can only report matches against your paired opponent.",
                     ephemeral=True,
                 )
@@ -1501,7 +1491,7 @@ class LFGReportButtons(discord.ui.View):
             opponent_global = opponent.global_name or opponent.display_name
         except Exception as e:
             logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "Failed to fetch opponent information.",
                 ephemeral=True,
             )
@@ -1512,7 +1502,7 @@ class LFGReportButtons(discord.ui.View):
             opponent_id,
             interaction.user.id,
         ) in pending_match_reports:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "A report for this match is already pending confirmation.",
                 ephemeral=True,
             )
@@ -1586,7 +1576,7 @@ class LFGReportButtons(discord.ui.View):
                         ),
                         view=confirmation_view,
                     )
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"Match report sent to {opponent_global}. Waiting for confirmation...",
                         ephemeral=True,
                     )
@@ -1594,7 +1584,7 @@ class LFGReportButtons(discord.ui.View):
                         f"Posted confirmation in DM-disabled channel for {opponent_global}"
                     )
                 else:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"Could not send confirmation to {opponent_global}.",
                         ephemeral=True,
                     )
@@ -1605,7 +1595,7 @@ class LFGReportButtons(discord.ui.View):
                         view=confirmation_view,
                     )
 
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"Match report sent to {opponent_global}. Waiting for confirmation...",
                         ephemeral=True,
                     )
@@ -1631,7 +1621,7 @@ class LFGReportButtons(discord.ui.View):
                                 ),
                                 view=confirmation_view,
                             )
-                            await interaction.response.send_message(
+                            await interaction.followup.send(
                                 "Match report sent. Waiting for confirmation...",
                                 ephemeral=True,
                             )
@@ -1639,22 +1629,16 @@ class LFGReportButtons(discord.ui.View):
                                 f"Posted confirmation in DM-disabled channel for {opponent_global}"
                             )
                         else:
-                            await interaction.response.send_message(
+                            await interaction.followup.send(
                                 f"Could not send confirmation to {opponent_global}.",
                                 ephemeral=True,
                             )
                     except Exception as e:
                         logger.error(f"Failed to handle DM failure for opponent: {e}")
-                        if not interaction.response.is_done():
-                            await interaction.response.send_message(
-                                f"Could not send confirmation to {opponent_global}.",
-                                ephemeral=True,
-                            )
-                        else:
-                            await interaction.followup.send(
-                                f"Could not send confirmation to {opponent_global}.",
-                                ephemeral=True,
-                            )
+                        await interaction.followup.send(
+                            f"Could not send confirmation to {opponent_global}.",
+                            ephemeral=True,
+                        )
 
             # Remove buttons from this user's message
             if interaction.message:
@@ -1664,28 +1648,16 @@ class LFGReportButtons(discord.ui.View):
                     pass
 
         except discord.Forbidden:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
-                    ephemeral=True,
-                )
-            else:
-                await interaction.followup.send(
-                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
-                    ephemeral=True,
-                )
+            await interaction.followup.send(
+                f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                ephemeral=True,
+            )
         except Exception as e:
             logger.error(f"Error in lost_button: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "An error occurred while processing your match report.",
-                    ephemeral=True,
-                )
-            else:
-                await interaction.followup.send(
-                    "An error occurred while processing your match report.",
-                    ephemeral=True,
-                )
+            await interaction.followup.send(
+                "An error occurred while processing your match report.",
+                ephemeral=True,
+            )
 
     @discord.ui.button(
         label="Cancel match",

@@ -11,9 +11,27 @@ class MatchRepository:
 
     def __init__(self, db_path: Path | str | None = None):
         self._db_path = str(db_path or MATCH_RECORDS_DB_PATH)
+        self._ensure_columns()
 
     def _get_connection(self) -> sqlite3.Connection:
         return sqlite3.connect(self._db_path)
+
+    def _ensure_columns(self):
+        """Add source and match_type columns if they don't exist yet."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        for col, default in [("source", "Discord"), ("match_type", "ranked")]:
+            try:
+                cur.execute(
+                    f"ALTER TABLE match_records ADD COLUMN {col} TEXT DEFAULT '{default}'"
+                )
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            cur.execute(
+                f"UPDATE match_records SET {col} = '{default}' WHERE {col} IS NULL"
+            )
+        conn.commit()
+        conn.close()
 
     def get_available_dates(self) -> list[str]:
         """Get all unique dates that have match data."""
@@ -442,3 +460,138 @@ class MatchRepository:
         rows = cur.fetchall()
         conn.close()
         return rows
+
+    def insert_external_match(
+        self,
+        winner_id: str,
+        loser_id: str,
+        winner_name: str | None,
+        loser_name: str | None,
+        winner_deck_url: str | None,
+        loser_deck_url: str | None,
+        json_deck_data_winner: str | None,
+        json_deck_data_loser: str | None,
+        winner_went_first: str | None,
+        match_time: int | None,
+        match_comment: str | None,
+        source: str,
+        timestamp: str,
+        winner_elo_change: int,
+        loser_elo_change: int,
+    ) -> int:
+        """Insert an external match into match_records. Returns the rowid."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO match_records
+               (reporter_id, winner_id, winner_display_name,
+                losser_id, losser_display_name, did_win,
+                timestamp, first_player, match_time, match_comment,
+                curiosa_url_winner, curiosa_url_loser,
+                json_deck_data_winner, json_deck_data_loser,
+                winner_elo_change, loser_elo_change,
+                winner_went_first, source, match_type)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                None,  # reporter_id
+                winner_id,
+                winner_name,
+                loser_id,  # maps to losser_id column
+                loser_name,  # maps to losser_display_name column
+                1,  # did_win (winner perspective)
+                timestamp,
+                winner_went_first,
+                match_time,
+                match_comment,
+                winner_deck_url,
+                loser_deck_url,
+                json_deck_data_winner,
+                json_deck_data_loser,
+                winner_elo_change,
+                loser_elo_change,
+                winner_went_first,
+                source,
+                "ranked",
+            ),
+        )
+        rowid = cur.lastrowid
+        conn.commit()
+        conn.close()
+        return rowid
+
+    def get_distinct_sources(self) -> list[str]:
+        """Get all distinct source names from match_records."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT DISTINCT source FROM match_records WHERE source IS NOT NULL ORDER BY source"
+        )
+        sources = [row[0] for row in cur.fetchall()]
+        conn.close()
+        return sources
+
+    def get_source_win_loss(self, user_id: str, source: str) -> dict:
+        """Get win/loss counts for a user from a specific source."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM match_records WHERE winner_id = ? AND source = ?",
+            (user_id, source),
+        )
+        wins = cur.fetchone()[0]
+        cur.execute(
+            "SELECT COUNT(*) FROM match_records WHERE losser_id = ? AND source = ?",
+            (user_id, source),
+        )
+        losses = cur.fetchone()[0]
+        conn.close()
+        return {"wins": wins, "losses": losses}
+
+    def get_player_source_breakdown(self, player_id: str) -> list[dict]:
+        """Get win/loss breakdown by source for a player."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT source,
+                      SUM(CASE WHEN winner_id = ? THEN 1 ELSE 0 END) as wins,
+                      SUM(CASE WHEN losser_id = ? THEN 1 ELSE 0 END) as losses
+               FROM match_records
+               WHERE (winner_id = ? OR losser_id = ?) AND source IS NOT NULL
+               GROUP BY source""",
+            (player_id, player_id, player_id, player_id),
+        )
+        rows = cur.fetchall()
+        conn.close()
+        return [
+            {"source": row[0], "wins": row[1], "losses": row[2]}
+            for row in rows
+        ]
+
+    def get_source_player_stats(self, source: str) -> list[dict]:
+        """Get all players and their win/loss for a given source."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT player_id, display_name,
+                      SUM(wins) as wins, SUM(losses) as losses
+               FROM (
+                   SELECT winner_id as player_id,
+                          winner_display_name as display_name,
+                          1 as wins, 0 as losses
+                   FROM match_records WHERE source = ?
+                   UNION ALL
+                   SELECT losser_id as player_id,
+                          losser_display_name as display_name,
+                          0 as wins, 1 as losses
+                   FROM match_records WHERE source = ?
+               )
+               GROUP BY player_id
+               ORDER BY wins DESC""",
+            (source, source),
+        )
+        rows = cur.fetchall()
+        conn.close()
+        return [
+            {"user_id": str(row[0]), "display_name": row[1], "wins": row[2], "losses": row[3]}
+            for row in rows
+        ]

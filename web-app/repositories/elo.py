@@ -146,6 +146,20 @@ class EloRepository:
         conn.close()
         return row[0] if row else None
 
+    def upsert_user_elo(self, user_id: int, display_name: str, new_elo: int):
+        """Insert or update a user's lifetime ELO in overall_standings."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO overall_standings (user_id, user_display_name, elo)
+               VALUES (?, ?, ?)
+               ON CONFLICT(user_id)
+               DO UPDATE SET elo = ?, user_display_name = ?""",
+            (user_id, display_name, new_elo, new_elo, display_name),
+        )
+        conn.commit()
+        conn.close()
+
     def get_all_events(self) -> list[dict]:
         """Get all events (past and active) for filtering."""
         conn = self._get_connection()

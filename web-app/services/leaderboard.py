@@ -2,7 +2,6 @@
 
 from repositories.elo import EloRepository
 from repositories.matches import MatchRepository
-from repositories.external_matches import ExternalMatchRepository
 
 
 class LeaderboardService:
@@ -17,15 +16,13 @@ class LeaderboardService:
         self._match_repo = match_repo or MatchRepository()
 
     def get_leaderboard(self) -> list[dict]:
-        """Get full lifetime leaderboard with win/loss records."""
+        """Get unified leaderboard from overall_standings."""
         standings = self._elo_repo.get_all_standings()
-
         leaderboard_data = []
         for standing in standings:
             user_id = standing["user_id"]
             wins = self._match_repo.get_wins_count(user_id)
             losses = self._match_repo.get_losses_count(user_id)
-
             leaderboard_data.append(
                 {
                     "id": str(user_id),
@@ -57,11 +54,13 @@ class LeaderboardService:
         return {"event": active_event, "leaderboard": leaderboard_data}
 
     def get_combined_leaderboard(self) -> dict:
-        """Get both lifetime and event leaderboards."""
+        """Get unified lifetime and event leaderboards."""
         active_event = self._elo_repo.get_active_event()
         standings = self._elo_repo.get_all_standings_with_event()
 
-        lifetime_data = []
+        # Lifetime section: unified (all sources)
+        lifetime_data = self.get_leaderboard()
+
         event_data = []
         event_player_ids = set()
 
@@ -72,18 +71,6 @@ class LeaderboardService:
 
         for standing in standings:
             user_id = standing["user_id"]
-            wins = self._match_repo.get_wins_count(user_id)
-            losses = self._match_repo.get_losses_count(user_id)
-
-            lifetime_data.append(
-                {
-                    "id": str(user_id),
-                    "name": standing["display_name"],
-                    "elo": standing["elo"],
-                    "wins": wins,
-                    "losses": losses,
-                }
-            )
 
             # Include in event if they have non-default ELO
             if standing["event_elo"] != 1500:
@@ -147,21 +134,22 @@ class LeaderboardService:
         }
 
     def get_source_leaderboard(self, source: str) -> list[dict]:
-        """Get leaderboard for a specific external source with win/loss records."""
-        ext_repo = ExternalMatchRepository()
-        standings = ext_repo.get_source_elo_standings(source)
+        """Get leaderboard for a specific source with win/loss records.
 
+        Uses match_records for win/loss and overall_standings for ELO.
+        """
+        player_stats = self._match_repo.get_source_player_stats(source)
         leaderboard_data = []
-        for standing in standings:
-            user_id = standing["user_id"]
-            counts = ext_repo.get_match_count_by_source(user_id, source)
+        for stat in player_stats:
+            elo = self._elo_repo.get_user_elo(int(stat["user_id"])) or 1500
             leaderboard_data.append({
-                "id": user_id,
-                "name": standing["display_name"],
-                "elo": standing["elo"],
-                "wins": counts["wins"],
-                "losses": counts["losses"],
+                "id": stat["user_id"],
+                "name": stat["display_name"],
+                "elo": elo,
+                "wins": stat["wins"],
+                "losses": stat["losses"],
             })
+        leaderboard_data.sort(key=lambda x: x["elo"], reverse=True)
         return leaderboard_data
 
     def get_elo_distribution(self) -> dict:

@@ -108,7 +108,8 @@ def player_api(player_id):
                     curiosa_url_winner,
                     curiosa_url_loser,
                     winner_went_first,
-                    loser_went_first
+                    loser_went_first,
+                    match_type
                 FROM match_records
                 WHERE winner_id = ? OR losser_id = ?
                 ORDER BY timestamp DESC
@@ -140,7 +141,8 @@ def player_api(player_id):
                         curiosa_url_winner,
                         curiosa_url_loser,
                         NULL as winner_went_first,
-                        NULL as loser_went_first
+                        NULL as loser_went_first,
+                        NULL as match_type
                     FROM match_records
                     WHERE winner_id = ? OR losser_id = ?
                     ORDER BY timestamp DESC
@@ -171,7 +173,8 @@ def player_api(player_id):
                         NULL as curiosa_url_winner,
                         NULL as curiosa_url_loser,
                         NULL as winner_went_first,
-                        NULL as loser_went_first
+                        NULL as loser_went_first,
+                        NULL as match_type
                     FROM match_records
                     WHERE winner_id = ? OR losser_id = ?
                     ORDER BY timestamp DESC
@@ -214,7 +217,8 @@ def player_api(player_id):
                     curiosa_url_winner,
                     curiosa_url_loser,
                     winner_went_first,
-                    loser_went_first
+                    loser_went_first,
+                    NULL as match_type
                 FROM match_records_archive
                 WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
                 ORDER BY timestamp DESC
@@ -246,7 +250,8 @@ def player_api(player_id):
                         curiosa_url_winner,
                         curiosa_url_loser,
                         NULL as winner_went_first,
-                        NULL as loser_went_first
+                        NULL as loser_went_first,
+                        NULL as match_type
                     FROM match_records_archive
                     WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
                     ORDER BY timestamp DESC
@@ -707,6 +712,7 @@ def player_api(player_id):
                 "opponent_deck_url": opponent_deck_url,
                 "has_deck": has_deck,
                 "has_deck_json": has_deck_json,
+                "match_type": row[19] if len(row) > 19 and row[19] else "ranked",
             }
         )
 

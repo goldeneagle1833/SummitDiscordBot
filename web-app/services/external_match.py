@@ -1,9 +1,10 @@
-"""Service for external match reporting and per-source ELO calculation."""
+"""Service for external match reporting with unified ELO."""
 
 import logging
 from datetime import datetime
 
-from repositories.external_matches import ExternalMatchRepository
+from repositories.elo import EloRepository
+from repositories.matches import MatchRepository
 from services.curiosa import CuriosaService
 
 logger = logging.getLogger(__name__)
@@ -22,14 +23,16 @@ def calculate_elo(player_elo: int, opponent_elo: int, did_win: bool, k: int = 32
 
 
 class ExternalMatchService:
-    """Business logic for external match reporting with per-source ELO."""
+    """Business logic for external match reporting with unified ELO."""
 
     def __init__(
         self,
-        repo: ExternalMatchRepository | None = None,
+        elo_repo: EloRepository | None = None,
+        match_repo: MatchRepository | None = None,
         curiosa: CuriosaService | None = None,
     ):
-        self._repo = repo or ExternalMatchRepository()
+        self._elo_repo = elo_repo or EloRepository()
+        self._match_repo = match_repo or MatchRepository()
         self._curiosa = curiosa or CuriosaService()
 
     def report_match(
@@ -48,8 +51,8 @@ class ExternalMatchService:
         """
         Process an external match report:
         1. Fetch deck data from Curiosa
-        2. Calculate per-source ELO changes
-        3. Update source_elo for both players
+        2. Calculate ELO changes against unified overall_standings
+        3. Update overall_standings for both players
         4. Insert the match record
 
         Returns dict with report details.
@@ -58,26 +61,28 @@ class ExternalMatchService:
         json_deck_data_winner = self._curiosa.fetch_deck_data(winner_deck_url)
         json_deck_data_loser = self._curiosa.fetch_deck_data(loser_deck_url)
 
-        # Get current source ELOs
-        winner_elo = self._repo.get_source_elo(winner_id, source)
-        loser_elo = self._repo.get_source_elo(loser_id, source)
+        # Get current ELOs from overall_standings
+        winner_uid = int(winner_id)
+        loser_uid = int(loser_id)
+        winner_elo = self._elo_repo.get_user_elo(winner_uid) or 1500
+        loser_elo = self._elo_repo.get_user_elo(loser_uid) or 1500
 
-        # Calculate new ELOs (K=32, always updates — no event dependency)
+        # Calculate new ELOs (K=32)
         new_winner_elo = calculate_elo(winner_elo, loser_elo, True, k=32)
         new_loser_elo = calculate_elo(loser_elo, winner_elo, False, k=32)
 
         winner_elo_change = new_winner_elo - winner_elo
         loser_elo_change = new_loser_elo - loser_elo
 
-        # Update source ELOs
+        # Update unified ELO in overall_standings
         winner_display = winner_name or f"User#{winner_id}"
         loser_display = loser_name or f"User#{loser_id}"
-        self._repo.update_source_elo(winner_id, source, winner_display, new_winner_elo)
-        self._repo.update_source_elo(loser_id, source, loser_display, new_loser_elo)
+        self._elo_repo.upsert_user_elo(winner_uid, winner_display, new_winner_elo)
+        self._elo_repo.upsert_user_elo(loser_uid, loser_display, new_loser_elo)
 
-        # Insert external match report
+        # Insert match record
         timestamp = datetime.now().isoformat()
-        report_id = self._repo.insert_report(
+        report_id = self._match_repo.insert_external_match(
             winner_id=winner_id,
             loser_id=loser_id,
             winner_name=winner_name,

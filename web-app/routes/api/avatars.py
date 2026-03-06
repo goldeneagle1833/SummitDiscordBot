@@ -49,17 +49,14 @@ def get_avatar_filters():
     except sqlite3.OperationalError as e:
         logger.warning(f"Could not query events: {e}")
 
-    # Get external sources from match_records.db
+    # Get sources from match_records (unified table)
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
-        cur.execute("""
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name='external_match_reports'
-        """)
-        if cur.fetchone():
-            cur.execute("SELECT DISTINCT source FROM external_match_reports ORDER BY source")
-            sources = [row[0] for row in cur.fetchall()]
+        cur.execute(
+            "SELECT DISTINCT source FROM match_records WHERE source IS NOT NULL ORDER BY source"
+        )
+        sources = [row[0] for row in cur.fetchall()]
         conn.close()
     except sqlite3.OperationalError as e:
         logger.warning(f"Could not query sources: {e}")
@@ -117,13 +114,14 @@ def _collect_discord_rows(cur, event_filter):
     use_new_columns = True
 
     if event_filter in ("all", "current"):
-        # Query current match_records
+        # Query current match_records (Discord-only to avoid double-counting with external)
         try:
             cur.execute("""
                 SELECT json_deck_data_winner, json_deck_data_loser
                 FROM match_records
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))
+                  AND (source = 'Discord' OR source IS NULL)
             """)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError as e:
@@ -171,26 +169,21 @@ def _collect_discord_rows(cur, event_filter):
 
 
 def _collect_external_rows(cur, source_filter, event_start=None, event_end=None):
-    """Collect deck data rows from external_match_reports.
+    """Collect deck data rows from match_records for non-Discord sources.
 
     Returns rows as tuples of (winner_deck_json, loser_deck_json).
     """
     rows = []
     try:
-        cur.execute("""
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name='external_match_reports'
-        """)
-        if not cur.fetchone():
-            return rows
-
         params = []
         where_parts = [
             "((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
-            " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))"
+            " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))",
+            "source != 'Discord'",
+            "source IS NOT NULL",
         ]
 
-        if source_filter != "all":
+        if source_filter not in ("all", "discord"):
             where_parts.append("source = ?")
             params.append(source_filter)
 
@@ -201,11 +194,11 @@ def _collect_external_rows(cur, source_filter, event_start=None, event_end=None)
             where_parts.append("timestamp <= ?")
             params.append(event_end)
 
-        query = f"SELECT json_deck_data_winner, json_deck_data_loser FROM external_match_reports WHERE {' AND '.join(where_parts)}"
+        query = f"SELECT json_deck_data_winner, json_deck_data_loser FROM match_records WHERE {' AND '.join(where_parts)}"
         cur.execute(query, params)
         rows = cur.fetchall()
     except sqlite3.OperationalError as e:
-        logger.warning(f"Could not query external_match_reports: {e}")
+        logger.warning(f"Could not query match_records for external sources: {e}")
 
     return rows
 

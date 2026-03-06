@@ -324,8 +324,8 @@ async def winner_report(
         "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
         "curiosa_url, curiosa_url_winner, curiosa_url_loser, match_comment, "
         "json_deck_data, json_deck_data_winner, json_deck_data_loser, winner_elo_change, loser_elo_change, "
-        "winner_went_first, loser_went_first) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "winner_went_first, loser_went_first, match_type) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             reporter_id,
             user_id,
@@ -347,6 +347,7 @@ async def winner_report(
             loser_elo_change,
             winner_went_first,
             loser_went_first,
+            match_type,
         ),
     )
 
@@ -374,6 +375,7 @@ async def losser_report(
     loser_deck_url=None,
     winner_went_first=None,
     loser_went_first=None,
+    match_type="ranked",
 ):
     """
     Log a loss in the database.
@@ -415,8 +417,8 @@ async def losser_report(
         "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
         "curiosa_url, curiosa_url_winner, curiosa_url_loser, match_comment, "
         "json_deck_data, json_deck_data_winner, json_deck_data_loser, winner_elo_change, loser_elo_change, "
-        "winner_went_first, loser_went_first) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "winner_went_first, loser_went_first, match_type) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             reporter_id,
             user_id,
@@ -438,6 +440,7 @@ async def losser_report(
             loser_elo_change,
             winner_went_first,
             loser_went_first,
+            match_type,
         ),
     )
 

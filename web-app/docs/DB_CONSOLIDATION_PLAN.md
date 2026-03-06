@@ -1,13 +1,15 @@
 # Plan: Consolidate Match Tables — Unified `match_records` + Remove `source_elo`
 
+**STATUS: COMPLETE** — `external_match_reports` and `source_elo` tables are fully deprecated. All matches write to `match_records` with a `source` column. All ELO is unified in `overall_standings`.
+
 ## Context
-The current setup has too many tables across two DBs:
+The current setup had too many tables across two DBs:
 - `match_records` (match_records.db) — Discord matches only
 - `external_match_reports` (match_records.db) — External API matches (separate table)
 - `overall_standings` (elo.db) — Unified ELO, one row per user
 - `source_elo` (elo.db) — Per-source ELO tracking
 
-This is confusing and causes gaps (external-only players missing from leaderboards). The fix: add a `source` column to `match_records` so ALL matches live in one table, remove per-source ELO (`source_elo`), and keep one unified ELO in `overall_standings`.
+The fix: added a `source` column to `match_records` so ALL matches live in one table. `external_match_reports` is no longer read or written.
 
 ## Key Decisions
 - **Existing `external_match_reports` data** is test data — no migration needed

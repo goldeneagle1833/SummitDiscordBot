@@ -17,7 +17,7 @@ external_matches_bp = Blueprint("external_matches", __name__)
 def report_external_match():
     """
     API endpoint for external applications to report match results.
-    Each source gets its own ELO tracking in the source_elo table.
+    Updates unified ELO in overall_standings and writes to match_records.
     Requires API key authentication.
     """
     try:

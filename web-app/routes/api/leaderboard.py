@@ -60,12 +60,12 @@ def get_elo_distribution():
 
 @leaderboard_bp.route("/leaderboard/sources")
 def get_leaderboard_sources():
-    """Get all available external match sources."""
+    """Get all available match sources (Discord, external platforms, etc.)."""
     try:
-        from repositories.external_matches import ExternalMatchRepository
+        from repositories.matches import MatchRepository
 
-        repo = ExternalMatchRepository()
-        sources = repo.get_all_sources()
+        repo = MatchRepository()
+        sources = repo.get_distinct_sources()
         return jsonify(sources)
     except Exception as e:
         logger.error(f"Error fetching leaderboard sources: {e}", exc_info=True)

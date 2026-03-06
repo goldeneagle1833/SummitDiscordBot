@@ -25,13 +25,13 @@ The project uses **6 SQLite database files**. The discord-bot creates and owns a
 | `overall_standings` | Yes | Yes | Yes | Yes (external matches) |
 | `events` | Yes | Yes | Yes | No |
 | `event_standings_archive` | Yes | Yes | Yes | No |
-| `source_elo` | No | No | Yes | Yes |
+| `source_elo` | No | No | No | No (deprecated) |
 | `user_links` | No | No | No | No |
 | **match_records.db** | | | | |
 | `match_records` | Yes | Yes | Yes | No |
 | `match_records_archive` | No | Yes | Yes | No |
 | `solo_match_reports` | Yes | Yes | Yes | No |
-| `external_match_reports` | No | No | Yes | Yes |
+| `external_match_reports` | No | No | No | No (deprecated) |
 | `challenge_matches` | No | No | No | No |
 | `active_pairings` | Yes | Yes | No | No |
 | `ladder_challenges` | Yes | Yes | No | No |
@@ -133,29 +133,9 @@ CREATE TABLE event_standings_archive (
 
 ---
 
-### source_elo
+### source_elo (DEPRECATED)
 
-Per-source ELO tracking for cross-platform integration (e.g., external tournament platforms).
-
-```sql
-CREATE TABLE source_elo (
-    user_id TEXT NOT NULL,
-    source TEXT NOT NULL,
-    user_display_name TEXT,
-    elo INTEGER DEFAULT 1500,
-    PRIMARY KEY (user_id, source)
-);
-```
-
-| Column | Type | Notes |
-|---|---|---|
-| `user_id` | TEXT | Source-specific user ID (not necessarily Discord ID) |
-| `source` | TEXT | Platform name (e.g., "spellslingers") |
-| `elo` | INTEGER | ELO for this specific source |
-
-**Read by:** `web-app/repositories/external_matches.py` (`get_source_elo`, `get_source_elo_standings`, `get_all_source_elo_players`)
-
-**Written by:** `web-app/repositories/external_matches.py` (`update_source_elo`)
+**This table is no longer used.** External matches now update the unified ELO in `overall_standings` directly. The table may still exist in the database but receives no new reads or writes.
 
 ---
 
@@ -183,7 +163,7 @@ CREATE TABLE user_links (
 
 ### match_records
 
-Primary match history with ELO changes and deck data. Cleared when an event ends (archived to `match_records_archive`).
+Primary match history with ELO changes and deck data. Stores **all** matches (Discord and external). Cleared when an event ends (archived to `match_records_archive`).
 
 ```sql
 CREATE TABLE match_records (
@@ -207,7 +187,9 @@ CREATE TABLE match_records (
     json_deck_data_winner TEXT,
     json_deck_data_loser TEXT,
     winner_went_first TEXT,
-    loser_went_first TEXT
+    loser_went_first TEXT,
+    source TEXT DEFAULT 'Discord',
+    match_type TEXT DEFAULT 'ranked'
 );
 ```
 
@@ -224,10 +206,12 @@ CREATE TABLE match_records (
 | `json_deck_data`/`_winner`/`_loser` | TEXT | JSON deck card data from Curiosa API |
 | `winner_elo_change`/`loser_elo_change` | INTEGER | ELO delta for this match |
 | `winner_went_first`/`loser_went_first` | TEXT | "Yes"/"No" per player |
+| `source` | TEXT | "Discord" for bot matches, platform name for external (e.g., "spellslingers") |
+| `match_type` | TEXT | "ranked" or "testing" |
 
 **Read by:** `cogs/elo.py` (`mystats`, `mygames`, `replay`), `repositories/elo_repo.py` (`get_total_match_count`), `web-app/repositories/matches.py`, `web-app/services/metagame.py`, `web-app/routes/api/players.py`
 
-**Written by:** `services/elo_service.py` (`winner_report`, `losser_report`)
+**Written by:** `services/elo_service.py` (`winner_report`, `losser_report`), `web-app/repositories/matches.py` (`insert_external_match`)
 
 ---
 
@@ -298,42 +282,9 @@ CREATE TABLE solo_match_reports (
 
 ---
 
-### external_match_reports
+### external_match_reports (DEPRECATED)
 
-Matches imported from external sources (tournament platforms, etc.). Written primarily by the web-app.
-
-```sql
-CREATE TABLE external_match_reports (
-    report_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    winner_id TEXT NOT NULL,
-    loser_id TEXT NOT NULL,
-    winner_display_name TEXT,
-    loser_display_name TEXT,
-    winner_deck_url TEXT,
-    loser_deck_url TEXT,
-    json_deck_data_winner TEXT,
-    json_deck_data_loser TEXT,
-    winner_went_first TEXT,
-    match_time INTEGER,
-    match_comment TEXT,
-    source TEXT NOT NULL,
-    timestamp TEXT NOT NULL,
-    winner_elo_change INTEGER,
-    loser_elo_change INTEGER,
-    winner_main_elo_change INTEGER,
-    loser_main_elo_change INTEGER
-);
-```
-
-| Column | Type | Notes |
-|---|---|---|
-| `winner_id`/`loser_id` | TEXT | Source-specific user IDs (not necessarily Discord IDs) |
-| `source` | TEXT | Platform name matching `source_elo.source` |
-| `winner_main_elo_change`/`loser_main_elo_change` | INTEGER | Added by migration — tracks main ELO impact |
-
-**Read by:** `web-app/repositories/external_matches.py`, `web-app/repositories/matches.py` (win/loss counts)
-
-**Written by:** `web-app/repositories/external_matches.py` (`insert_report`)
+**This table is no longer used.** External matches are now written to the unified `match_records` table with a `source` column to distinguish them from Discord matches. The table may still exist in the database but receives no new reads or writes.
 
 ---
 

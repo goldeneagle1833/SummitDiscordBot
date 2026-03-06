@@ -95,6 +95,20 @@ def create_db():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Add source column (Discord vs external sources)
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN source TEXT DEFAULT 'Discord'")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    cur.execute("UPDATE match_records SET source = 'Discord' WHERE source IS NULL")
+
+    # Add match_type column (ranked vs testing/casual)
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN match_type TEXT DEFAULT 'ranked'")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    cur.execute("UPDATE match_records SET match_type = 'ranked' WHERE match_type IS NULL")
+
     # Create solo_match_reports table with auto-increment report_id
     cur.execute("""CREATE TABLE IF NOT EXISTS solo_match_reports
                    (report_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,9 +127,7 @@ def create_db():
     conn.commit()
     conn.close()
 
-    # Create external match reporting tables
-    create_external_match_reports_table()
-    create_source_elo_table()
+    # Create user_links table
     create_user_links_table()
 
 
@@ -265,50 +277,6 @@ def ensure_event_elo_column():
     conn.commit()
     conn.close()
 
-
-def create_external_match_reports_table():
-    """Create the external_match_reports table if it doesn't exist."""
-    conn = sqlite3.connect("match_records.db")
-    cur = conn.cursor()
-
-    cur.execute("""CREATE TABLE IF NOT EXISTS external_match_reports
-                   (report_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    winner_id TEXT NOT NULL,
-                    loser_id TEXT NOT NULL,
-                    winner_display_name TEXT,
-                    loser_display_name TEXT,
-                    winner_deck_url TEXT,
-                    loser_deck_url TEXT,
-                    json_deck_data_winner TEXT,
-                    json_deck_data_loser TEXT,
-                    winner_went_first TEXT,
-                    match_time INTEGER,
-                    match_comment TEXT,
-                    source TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    winner_elo_change INTEGER,
-                    loser_elo_change INTEGER
-                   )""")
-
-    conn.commit()
-    conn.close()
-
-
-def create_source_elo_table():
-    """Create the source_elo table for per-source ELO tracking."""
-    conn = sqlite3.connect("elo.db")
-    cur = conn.cursor()
-
-    cur.execute("""CREATE TABLE IF NOT EXISTS source_elo
-                   (user_id TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    user_display_name TEXT,
-                    elo INTEGER DEFAULT 1500,
-                    PRIMARY KEY (user_id, source)
-                   )""")
-
-    conn.commit()
-    conn.close()
 
 
 def create_user_links_table():

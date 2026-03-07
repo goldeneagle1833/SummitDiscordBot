@@ -57,6 +57,32 @@
         opacity: 0.7;
         cursor: not-allowed;
       }
+
+      /* Responsive match history table */
+      .match-history-table th,
+      .match-history-table td {
+        white-space: nowrap;
+      }
+      .match-history-table .element-icons {
+        display: flex;
+        gap: 2px;
+        align-items: center;
+      }
+      .match-history-table .element-icons img {
+        width: 20px;
+        height: 20px;
+      }
+      @media (max-width: 768px) {
+        .match-history-table th,
+        .match-history-table td {
+          padding: 0.35rem 0.5rem;
+          font-size: 0.75rem;
+        }
+        .match-history-table .element-icons img {
+          width: 16px;
+          height: 16px;
+        }
+      }
     </style>
   </head>
   <body>
@@ -240,14 +266,16 @@
         <!-- Match History -->
         <div class="match-history">
           <h3>📜 Match History</h3>
-          <table class="match-history-table">
-            <thead id="match-history-thead">
-              <!-- Table headers will be inserted by JS based on is_owner -->
-            </thead>
-            <tbody id="match-history-tbody">
-              <!-- Match history rows will be inserted here by JS -->
-            </tbody>
-          </table>
+          <div class="overflow-x-auto">
+            <table class="match-history-table" style="width: 100%; min-width: 600px;">
+              <thead id="match-history-thead">
+                <!-- Table headers will be inserted by JS based on is_owner -->
+              </thead>
+              <tbody id="match-history-tbody">
+                <!-- Match history rows will be inserted here by JS -->
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <!-- Self-Reported Games (only shown to profile owner) -->
@@ -265,23 +293,25 @@
             Games you've recorded for personal tracking. These do not affect
             your ELO rating.
           </p>
-          <table class="match-history-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Result</th>
-                <th>Opponent Avatar</th>
-                <th>Deck Link</th>
-                <th>Play/Draw</th>
-                <th>Time</th>
-                <th>Date</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="recorded-games-tbody">
-              <!-- Recorded games rows will be inserted here by JS -->
-            </tbody>
-          </table>
+          <div class="overflow-x-auto">
+            <table class="match-history-table" style="width: 100%; min-width: 500px;">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Result</th>
+                  <th>Opponent Avatar</th>
+                  <th>Deck Link</th>
+                  <th>Play/Draw</th>
+                  <th>Time</th>
+                  <th>Date</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="recorded-games-tbody">
+                <!-- Recorded games rows will be inserted here by JS -->
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -949,6 +979,8 @@
                 <th>ID</th>
                 <th>Result</th>
                 <th>Opponent</th>
+                <th>Your Avatar</th>
+                <th>Deck Elements</th>
                 <th>Deck Link</th>
                 <th>Snapshot</th>
                 <th>Deck Submitted</th>
@@ -977,10 +1009,28 @@
           const tbody = document.getElementById("match-history-tbody");
           tbody.innerHTML = "";
 
-          const colspanCount = data.is_owner || isLocalServer ? 10 : 8;
+          const colspanCount = data.is_owner || isLocalServer ? 12 : 8;
           if (data.matches.length === 0) {
             tbody.innerHTML = `<tr><td colspan="${colspanCount}" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>`;
             return;
+          }
+
+          // Map element names to image filenames
+          const elementImageMap = {
+            "Earth": "earth.png",
+            "Fire": "fire.png",
+            "Water": "water.png",
+            "Air": "wind.png",
+          };
+
+          function renderElementIcons(elements) {
+            if (!elements || elements.length === 0) return "-";
+            const icons = elements.map(el => {
+              const img = elementImageMap[el];
+              if (!img) return el;
+              return `<img src="/avatar-images/${img}" alt="${el}" title="${el}">`;
+            }).join("");
+            return `<span class="element-icons">${icons}</span>`;
           }
 
           data.matches.forEach((match) => {
@@ -994,6 +1044,8 @@
               : "-";
             const matchId = match.match_id ? `#${match.match_id}` : "-";
             const deckSubmitted = match.has_deck ? "✅" : "❌";
+            const avatarName = match.player_avatar || "-";
+            const elementsHtml = renderElementIcons(match.deck_elements);
 
             // Build row HTML conditionally based on is_owner or localhost
             if (data.is_owner || isLocalServer) {
@@ -1019,6 +1071,8 @@
                 <td><a href="/player/${
                   match.opponent_id
                 }" class="opponent-link">${match.opponent}</a></td>
+                <td>${avatarName}</td>
+                <td>${elementsHtml}</td>
                 <td>${deckLink}</td>
                 <td>${snapshotLink}</td>
                 <td>${deckSubmitted}</td>

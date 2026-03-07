@@ -660,6 +660,36 @@ def player_api(player_id):
             has_deck = True
             has_deck_json = True
 
+        # Extract avatar name and deck elements from player's deck JSON
+        player_avatar_name = None
+        deck_elements = []
+        if player_deck_json and player_deck_json not in ("{}", "", None):
+            try:
+                deck_data = json.loads(player_deck_json)
+                # Get avatar name
+                avatar_list = deck_data.get("avatar", [])
+                if avatar_list:
+                    for av in avatar_list:
+                        if av and av.get("type") == "Avatar" and av.get("name"):
+                            player_avatar_name = av.get("name")
+                            break
+                    if not player_avatar_name and avatar_list[0] and avatar_list[0].get("name"):
+                        player_avatar_name = avatar_list[0].get("name")
+
+                # Get unique elements from all cards in spellbook + atlas
+                elements_set = set()
+                for section in ["spellbook", "atlas"]:
+                    for card in deck_data.get(section, []) or []:
+                        card_elements = card.get("elements", "")
+                        if card_elements and card_elements != "None":
+                            for el in card_elements.split(","):
+                                el = el.strip()
+                                if el in ("Earth", "Fire", "Water", "Air"):
+                                    elements_set.add(el)
+                deck_elements = sorted(elements_set)
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                pass
+
         if is_owner:
             player_deck_url = winner_deck_url if did_win else loser_deck_url
             opponent_deck_url = loser_deck_url if did_win else winner_deck_url
@@ -713,6 +743,8 @@ def player_api(player_id):
                 "has_deck": has_deck,
                 "has_deck_json": has_deck_json,
                 "match_type": row[19] if len(row) > 19 and row[19] else "ranked",
+                "player_avatar": player_avatar_name,
+                "deck_elements": deck_elements,
             }
         )
 

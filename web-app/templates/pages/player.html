@@ -174,6 +174,14 @@
             <div class="stat-value" id="stat-avg-time">-</div>
             <div class="stat-label">Avg Match Time</div>
           </div>
+          <div class="stat-card" id="stat-play-card" style="display: none;">
+            <div class="stat-value" id="stat-play-wr">-</div>
+            <div class="stat-label">On the Play</div>
+          </div>
+          <div class="stat-card" id="stat-draw-card" style="display: none;">
+            <div class="stat-value" id="stat-draw-wr">-</div>
+            <div class="stat-label">On the Draw</div>
+          </div>
         </div>
 
         <!-- ELO History Graph -->
@@ -267,7 +275,7 @@
         <div class="match-history">
           <h3>📜 Match History</h3>
           <div class="overflow-x-auto">
-            <table class="match-history-table" style="width: 100%; min-width: 600px;">
+            <table class="match-history-table" style="width: 100%; min-width: 900px;">
               <thead id="match-history-thead">
                 <!-- Table headers will be inserted by JS based on is_owner -->
               </thead>
@@ -862,6 +870,26 @@
             data.wins + data.losses;
           document.getElementById("stat-avg-time").textContent =
             data.avg_match_time > 0 ? `${data.avg_match_time} min` : "-";
+
+          // Show play/draw winrate stats for owner
+          if (data.is_owner || isLocalServer) {
+            const playCard = document.getElementById("stat-play-card");
+            const drawCard = document.getElementById("stat-draw-card");
+            if (playCard && data.on_play_matches > 0) {
+              playCard.style.display = "";
+              document.getElementById("stat-play-wr").textContent =
+                `${data.on_play_win_rate}%`;
+              playCard.querySelector(".stat-label").textContent =
+                `On the Play (${data.on_play_wins}-${data.on_play_matches - data.on_play_wins})`;
+            }
+            if (drawCard && data.on_draw_matches > 0) {
+              drawCard.style.display = "";
+              document.getElementById("stat-draw-wr").textContent =
+                `${data.on_draw_win_rate}%`;
+              drawCard.querySelector(".stat-label").textContent =
+                `On the Draw (${data.on_draw_wins}-${data.on_draw_matches - data.on_draw_wins})`;
+            }
+          }
 
           // Show Record Game button for profile owner or localhost
           if (data.is_owner || isLocalServer) {

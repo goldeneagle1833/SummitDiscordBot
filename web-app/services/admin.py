@@ -94,13 +94,17 @@ class AdminService:
         return {"success": False, "error": "Failed to update ELO"}
 
     def rename_player(self, user_id: int, new_name: str) -> dict:
-        """Rename a player's display name."""
+        """Rename a player's display name in standings and match history."""
         current_elo = self._elo_repo.get_user_elo(user_id)
         if current_elo is None:
             return {"success": False, "error": "Player not found in standings"}
 
         renamed = self._elo_repo.rename_player(user_id, new_name)
         if renamed:
-            logger.info(f"Admin renamed player {user_id} to '{new_name}'")
+            matches_updated = self._match_repo.rename_player_in_matches(user_id, new_name)
+            logger.info(
+                f"Admin renamed player {user_id} to '{new_name}' "
+                f"(standings + {matches_updated} match records)"
+            )
             return {"success": True, "message": f"Player renamed to '{new_name}'"}
         return {"success": False, "error": "Failed to rename player"}

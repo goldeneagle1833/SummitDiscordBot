@@ -561,6 +561,24 @@ class MatchRepository:
         conn.close()
         return deleted
 
+    def rename_player_in_matches(self, user_id: int, new_name: str) -> int:
+        """Update a player's display name in all match records. Returns rows updated."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE match_records SET winner_display_name = ? WHERE winner_id = ?",
+            (new_name, user_id),
+        )
+        winner_rows = cur.rowcount
+        cur.execute(
+            "UPDATE match_records SET losser_display_name = ? WHERE losser_id = ?",
+            (new_name, user_id),
+        )
+        loser_rows = cur.rowcount
+        conn.commit()
+        conn.close()
+        return winner_rows + loser_rows
+
     def get_distinct_sources(self) -> list[str]:
         """Get all distinct source names from match_records."""
         conn = self._get_connection()

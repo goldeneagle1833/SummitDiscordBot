@@ -13,9 +13,28 @@ class AuditRepository:
 
     def __init__(self, db_path: Path | str | None = None):
         self._db_path = str(db_path or MATCH_RECORDS_DB_PATH)
+        self._ensure_table()
 
     def _get_connection(self) -> sqlite3.Connection:
         return sqlite3.connect(self._db_path)
+
+    def _ensure_table(self):
+        """Create the audit log table if it doesn't exist."""
+        conn = self._get_connection()
+        conn.cursor().execute("""CREATE TABLE IF NOT EXISTS admin_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            admin_id INTEGER NOT NULL,
+            admin_name TEXT NOT NULL,
+            action TEXT NOT NULL,
+            target_id TEXT,
+            target_name TEXT,
+            previous_state TEXT,
+            new_state TEXT,
+            details TEXT
+        )""")
+        conn.commit()
+        conn.close()
 
     def get_logs(self, limit: int = 50, offset: int = 0) -> list[dict]:
         """Fetch audit log entries, newest first."""

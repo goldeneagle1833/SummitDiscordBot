@@ -980,12 +980,11 @@
                 <th>Result</th>
                 <th>Your Avatar</th>
                 <th>Your Elements</th>
+                <th>Deck Link</th>
+                <th>Snapshot</th>
                 <th>Opponent</th>
                 <th>Opp Avatar</th>
                 <th>Opp Elements</th>
-                <th>Deck Link</th>
-                <th>Snapshot</th>
-                <th>Deck Submitted</th>
                 <th>ELO</th>
                 <th>Play/Draw</th>
                 <th>Time</th>
@@ -998,7 +997,6 @@
                 <th>ID</th>
                 <th>Result</th>
                 <th>Opponent</th>
-                <th>Deck Submitted</th>
                 <th>ELO</th>
                 <th>Play/Draw</th>
                 <th>Time</th>
@@ -1011,7 +1009,7 @@
           const tbody = document.getElementById("match-history-tbody");
           tbody.innerHTML = "";
 
-          const colspanCount = data.is_owner || isLocalServer ? 14 : 8;
+          const colspanCount = data.is_owner || isLocalServer ? 13 : 7;
           if (data.matches.length === 0) {
             tbody.innerHTML = `<tr><td colspan="${colspanCount}" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>`;
             return;
@@ -1045,7 +1043,6 @@
               ? `${match.match_time} min`
               : "-";
             const matchId = match.match_id ? `#${match.match_id}` : "-";
-            const deckSubmitted = match.has_deck ? "✅" : "❌";
             const avatarName = match.player_avatar || "-";
             const elementsHtml = renderElementIcons(match.deck_elements);
             const oppAvatarName = match.opponent_avatar || "-";
@@ -1074,12 +1071,11 @@
                 <td class="${resultClass}">${match.result}</td>
                 <td>${avatarName}</td>
                 <td>${elementsHtml}</td>
+                <td>${deckLink}</td>
+                <td>${snapshotLink}</td>
                 <td><a href="/player/${match.opponent_id}" class="opponent-link">${match.opponent}</a></td>
                 <td>${oppAvatarName}</td>
                 <td>${oppElementsHtml}</td>
-                <td>${deckLink}</td>
-                <td>${snapshotLink}</td>
-                <td>${deckSubmitted}</td>
                 <td class="${resultClass}">${eloSign}${match.elo_change}</td>
                 <td>${match.first_player || "-"}</td>
                 <td>${matchTime}</td>
@@ -1091,7 +1087,6 @@
                 <td class="match-id">${matchId}</td>
                 <td class="${resultClass}">${match.result}</td>
                 <td><a href="/player/${match.opponent_id}" class="opponent-link">${match.opponent}</a></td>
-                <td>${deckSubmitted}</td>
                 <td class="${resultClass}">${eloSign}${match.elo_change}</td>
                 <td>${match.first_player || "-"}</td>
                 <td>${matchTime}</td>

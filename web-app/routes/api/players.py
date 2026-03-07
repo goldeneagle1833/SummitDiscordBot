@@ -32,7 +32,7 @@ def _extract_deck_info(deck_json):
             if not avatar_name and avatar_list[0] and avatar_list[0].get("name"):
                 avatar_name = avatar_list[0].get("name")
         elements_set = set()
-        for section in ["spellbook", "atlas"]:
+        for section in ["spellbook", "sideboard"]:
             for card in deck_data.get(section, []) or []:
                 card_elements = card.get("elements", "")
                 if card_elements and card_elements != "None":

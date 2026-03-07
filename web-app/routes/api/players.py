@@ -15,6 +15,37 @@ logger = logging.getLogger(__name__)
 players_bp = Blueprint("players", __name__)
 
 
+def _extract_deck_info(deck_json):
+    """Extract avatar name and element list from a deck JSON string."""
+    avatar_name = None
+    elements = []
+    if not deck_json or deck_json in ("{}", ""):
+        return avatar_name, elements
+    try:
+        deck_data = json.loads(deck_json)
+        avatar_list = deck_data.get("avatar", [])
+        if avatar_list:
+            for av in avatar_list:
+                if av and av.get("type") == "Avatar" and av.get("name"):
+                    avatar_name = av.get("name")
+                    break
+            if not avatar_name and avatar_list[0] and avatar_list[0].get("name"):
+                avatar_name = avatar_list[0].get("name")
+        elements_set = set()
+        for section in ["spellbook", "atlas"]:
+            for card in deck_data.get(section, []) or []:
+                card_elements = card.get("elements", "")
+                if card_elements and card_elements != "None":
+                    for el in card_elements.split(","):
+                        el = el.strip()
+                        if el in ("Earth", "Fire", "Water", "Air"):
+                            elements_set.add(el)
+        elements = sorted(elements_set)
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+        pass
+    return avatar_name, elements
+
+
 @players_bp.route("/deck-snapshot/<int:match_id>/<player_id>")
 def deck_snapshot(match_id, player_id):
     """Get deck snapshot for a specific player in a match."""
@@ -660,35 +691,11 @@ def player_api(player_id):
             has_deck = True
             has_deck_json = True
 
-        # Extract avatar name and deck elements from player's deck JSON
-        player_avatar_name = None
-        deck_elements = []
-        if player_deck_json and player_deck_json not in ("{}", "", None):
-            try:
-                deck_data = json.loads(player_deck_json)
-                # Get avatar name
-                avatar_list = deck_data.get("avatar", [])
-                if avatar_list:
-                    for av in avatar_list:
-                        if av and av.get("type") == "Avatar" and av.get("name"):
-                            player_avatar_name = av.get("name")
-                            break
-                    if not player_avatar_name and avatar_list[0] and avatar_list[0].get("name"):
-                        player_avatar_name = avatar_list[0].get("name")
+        # Extract avatar name and deck elements from deck JSON
+        player_avatar_name, deck_elements = _extract_deck_info(player_deck_json)
 
-                # Get unique elements from all cards in spellbook + atlas
-                elements_set = set()
-                for section in ["spellbook", "atlas"]:
-                    for card in deck_data.get(section, []) or []:
-                        card_elements = card.get("elements", "")
-                        if card_elements and card_elements != "None":
-                            for el in card_elements.split(","):
-                                el = el.strip()
-                                if el in ("Earth", "Fire", "Water", "Air"):
-                                    elements_set.add(el)
-                deck_elements = sorted(elements_set)
-            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-                pass
+        opponent_deck_json = loser_json if did_win else winner_json
+        opponent_avatar_name, opponent_elements = _extract_deck_info(opponent_deck_json)
 
         if is_owner:
             player_deck_url = winner_deck_url if did_win else loser_deck_url
@@ -745,6 +752,8 @@ def player_api(player_id):
                 "match_type": row[19] if len(row) > 19 and row[19] else "ranked",
                 "player_avatar": player_avatar_name,
                 "deck_elements": deck_elements,
+                "opponent_avatar": opponent_avatar_name,
+                "opponent_elements": opponent_elements,
             }
         )
 

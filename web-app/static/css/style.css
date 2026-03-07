@@ -346,6 +346,7 @@ a.feature-card {
   border-radius: var(--radius-soft);
   padding: var(--spacing-xl);
   margin: var(--spacing-lg) 0;
+  overflow-x: auto;
 }
 
 .player-profile::before {

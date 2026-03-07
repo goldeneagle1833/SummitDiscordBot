@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Audit Log - Sorcerers Summit</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
+    <style>
+      .audit-section {
+        max-width: 1400px;
+        margin: 2rem auto;
+        padding: 0 2rem;
+      }
+
+      .audit-section h3 {
+        font-family: "Inter", sans-serif;
+        color: var(--color-text);
+        margin-bottom: var(--spacing-md);
+        font-size: 1.125rem;
+        font-weight: 600;
+      }
+
+      .audit-table-container {
+        overflow-x: auto;
+      }
+
+      .audit-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+      }
+
+      .audit-table th {
+        background: rgba(255, 255, 255, 0.05);
+        padding: 0.75rem 1rem;
+        text-align: left;
+        font-weight: 600;
+        color: var(--color-text);
+        border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+        white-space: nowrap;
+      }
+
+      .audit-table td {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        color: var(--color-text-muted);
+        vertical-align: top;
+      }
+
+      .audit-table tr:hover td {
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .action-badge {
+        display: inline-block;
+        padding: 0.2rem 0.6rem;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .action-badge.destructive {
+        background: rgba(248, 81, 73, 0.2);
+        color: #f85149;
+      }
+
+      .action-badge.modify {
+        background: rgba(77, 184, 255, 0.2);
+        color: #4db8ff;
+      }
+
+      .action-badge.create {
+        background: rgba(63, 185, 80, 0.2);
+        color: #3fb950;
+      }
+
+      .state-json {
+        font-family: monospace;
+        font-size: 0.75rem;
+        background: rgba(255, 255, 255, 0.05);
+        padding: 0.4rem 0.6rem;
+        border-radius: 4px;
+        max-width: 250px;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 2rem;
+        padding-bottom: 2rem;
+      }
+
+      .pagination a, .pagination span {
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        font-weight: 500;
+        text-decoration: none;
+        transition: all 0.2s;
+      }
+
+      .pagination a {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--color-text);
+      }
+
+      .pagination a:hover {
+        background: rgba(77, 184, 255, 0.3);
+      }
+
+      .pagination .current {
+        color: var(--color-text-muted);
+      }
+
+      .pagination .disabled {
+        opacity: 0.3;
+        pointer-events: none;
+      }
+
+      .total-count {
+        color: var(--color-text-muted);
+        font-size: 0.875rem;
+        margin-bottom: 1rem;
+      }
+
+      @media (max-width: 768px) {
+        .audit-section {
+          padding: 0 1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <section class="hero">
+        <h1>Admin Audit Log</h1>
+        <p>History of all administrative actions</p>
+      </section>
+
+      <section class="audit-section">
+        <p class="total-count">{{ total }} total entries</p>
+
+        <div class="audit-table-container">
+          <table class="audit-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Time</th>
+                <th>Admin</th>
+                <th>Action</th>
+                <th>Target</th>
+                <th>Previous State</th>
+                <th>New State</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if logs %}
+                {% for log in logs %}
+                <tr>
+                  <td>{{ log.id }}</td>
+                  <td style="white-space: nowrap;">{{ log.timestamp[:19].replace('T', ' ') }}</td>
+                  <td style="white-space: nowrap;">{{ log.admin_name }}</td>
+                  <td>
+                    {% set action = log.action %}
+                    {% if action in ['reset_elo', 'remove_match', 'remove_player', 'remove_community'] %}
+                      <span class="action-badge destructive">{{ action }}</span>
+                    {% elif action in ['correct_match', 'spot_elo_reset', 'recalculate_event_elo', 'start_event', 'end_event', 'refresh_streamers'] %}
+                      <span class="action-badge modify">{{ action }}</span>
+                    {% else %}
+                      <span class="action-badge create">{{ action }}</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if log.target_name %}
+                      {{ log.target_name }}
+                      {% if log.target_id %}<br><small style="opacity:0.6">ID: {{ log.target_id }}</small>{% endif %}
+                    {% elif log.target_id %}
+                      {{ log.target_id }}
+                    {% else %}
+                      <span style="opacity:0.4">-</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if log.previous_state %}
+                      <div class="state-json">{{ log.previous_state }}</div>
+                    {% else %}
+                      <span style="opacity:0.4">-</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if log.new_state %}
+                      <div class="state-json">{{ log.new_state }}</div>
+                    {% else %}
+                      <span style="opacity:0.4">-</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ log.details or '-' }}</td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="8" style="text-align: center; opacity: 0.6; padding: 2rem;">
+                    No audit log entries yet.
+                  </td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+
+        {% if total_pages > 1 %}
+        <div class="pagination">
+          {% if page > 1 %}
+            <a href="?page={{ page - 1 }}">Previous</a>
+          {% else %}
+            <a class="disabled">Previous</a>
+          {% endif %}
+
+          <span class="current">Page {{ page }} of {{ total_pages }}</span>
+
+          {% if page < total_pages %}
+            <a href="?page={{ page + 1 }}">Next</a>
+          {% else %}
+            <a class="disabled">Next</a>
+          {% endif %}
+        </div>
+        {% endif %}
+      </section>
+    </main>
+
+    <footer>
+      <p>&copy; 2026 Summit. All rights reserved.</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+  </body>
+</html>

@@ -9,6 +9,7 @@ from utils.formatting import format_event_name
 from repositories.fart import FartRepository
 from repositories.events import EventRepository
 from repositories.community import CommunityRepository
+from repositories.audit import AuditRepository
 
 pages_bp = Blueprint("pages", __name__)
 
@@ -251,4 +252,37 @@ def deck_snapshot(match_id, player_id):
 
     return render_template(
         "pages/deck_snapshot.html", match_id=match_id, player_id=player_id
+    )
+
+
+@pages_bp.route("/admin/audit-log")
+def admin_audit_log():
+    """Admin audit log page - shows all admin actions."""
+    if not is_admin():
+        if session.get("user_id") is None:
+            return redirect(url_for("auth.discord_login"))
+        return render_template(
+            "pages/error.html", error="You don't have permission to view this page."
+        ), 403
+
+    page = request.args.get("page", 1, type=int)
+    per_page = 50
+    offset = (page - 1) * per_page
+
+    try:
+        repo = AuditRepository()
+        logs = repo.get_logs(limit=per_page, offset=offset)
+        total = repo.get_log_count()
+    except Exception:
+        logs = []
+        total = 0
+
+    total_pages = max(1, (total + per_page - 1) // per_page)
+
+    return render_template(
+        "pages/admin_audit_log.html",
+        logs=logs,
+        page=page,
+        total_pages=total_pages,
+        total=total,
     )

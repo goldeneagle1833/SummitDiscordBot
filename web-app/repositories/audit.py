@@ -1,5 +1,6 @@
 """Repository for admin audit log access."""
 
+import datetime
 import json
 import sqlite3
 from pathlib import Path
@@ -58,3 +59,29 @@ class AuditRepository:
         count = cur.fetchone()[0]
         conn.close()
         return count
+
+    def log_action(self, admin_id, admin_name, action, target_id=None,
+                   target_name=None, previous_state=None, new_state=None,
+                   details=None):
+        """Write an audit log entry (used by web app admin routes)."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO admin_audit_log
+               (timestamp, admin_id, admin_name, action, target_id,
+                target_name, previous_state, new_state, details)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                datetime.datetime.now().isoformat(),
+                admin_id,
+                admin_name,
+                action,
+                str(target_id) if target_id is not None else None,
+                target_name,
+                json.dumps(previous_state) if previous_state else None,
+                json.dumps(new_state) if new_state else None,
+                details,
+            ),
+        )
+        conn.commit()
+        conn.close()

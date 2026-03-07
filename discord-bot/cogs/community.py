@@ -14,6 +14,7 @@ from repositories.community_repo import (
     get_all_youtube_channels,
     get_all_websites,
 )
+from repositories.audit_repo import log_admin_action
 
 logger = logging.getLogger("discord_bot")
 
@@ -27,6 +28,12 @@ class CommunityCog(commands.Cog):
     async def _add_discord_server(self, ctx, name: str, invite_url: str, location: str, description: str = ""):
         """Internal method to add a Discord server."""
         entry_id = add_discord_server(name, invite_url, location, description, added_by=ctx.author.id)
+        log_admin_action(
+            ctx.author.id, ctx.author.display_name, "add_community_discord",
+            target_id=entry_id, target_name=name,
+            new_state={"name": name, "invite_url": invite_url, "location": location},
+            details=f"Added Discord server '{name}' ({location})",
+        )
         await ctx.send(f"✅ Added Discord server **{name}** (ID: {entry_id}, Location: {location})")
 
     @commands.command(name="add_discord")
@@ -51,6 +58,12 @@ class CommunityCog(commands.Cog):
     async def _add_youtube_channel(self, ctx, name: str, channel_id: str, channel_url: str):
         """Internal method to add a YouTube channel."""
         entry_id = add_youtube_channel(name, channel_id, channel_url, added_by=ctx.author.id)
+        log_admin_action(
+            ctx.author.id, ctx.author.display_name, "add_community_youtube",
+            target_id=entry_id, target_name=name,
+            new_state={"name": name, "channel_id": channel_id, "channel_url": channel_url},
+            details=f"Added YouTube channel '{name}'",
+        )
         await ctx.send(f"✅ Added YouTube channel **{name}** (ID: {entry_id})")
 
     @commands.command(name="add_youtube")
@@ -74,6 +87,12 @@ class CommunityCog(commands.Cog):
     async def _add_website(self, ctx, name: str, url: str, description: str = ""):
         """Internal method to add a website."""
         entry_id = add_website(name, url, description, added_by=ctx.author.id)
+        log_admin_action(
+            ctx.author.id, ctx.author.display_name, "add_community_website",
+            target_id=entry_id, target_name=name,
+            new_state={"name": name, "url": url, "description": description},
+            details=f"Added website '{name}'",
+        )
         await ctx.send(f"✅ Added website **{name}** (ID: {entry_id})")
 
     @commands.command(name="add_website")
@@ -114,6 +133,13 @@ class CommunityCog(commands.Cog):
             return
 
         if deleted:
+            log_admin_action(
+                ctx.author.id, ctx.author.display_name, "remove_community",
+                target_id=entry_id,
+                previous_state={"type": table_type, "entry_id": entry_id},
+                new_state={"result": "entry deleted"},
+                details=f"Removed {table_type} entry ID {entry_id}",
+            )
             await ctx.send(f"✅ Removed {table_type} entry with ID {entry_id}.")
         else:
             await ctx.send(f"❌ No {table_type} entry found with ID {entry_id}.")

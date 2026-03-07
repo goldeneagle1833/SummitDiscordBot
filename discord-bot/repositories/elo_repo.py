@@ -127,6 +127,10 @@ def create_db():
     conn.commit()
     conn.close()
 
+    # Create admin audit log table
+    from repositories.audit_repo import create_audit_table
+    create_audit_table()
+
     # Create user_links table
     create_user_links_table()
 

@@ -12,6 +12,8 @@ import datetime
 import logging
 from pathlib import Path
 
+from repositories.audit_repo import log_admin_action
+
 logger = logging.getLogger("discord_bot")
 
 # Database path - shared location for web app access
@@ -339,6 +341,11 @@ class StreamingCog(commands.Cog):
                         voice_count += 1
 
         total = stream_count + voice_count
+        log_admin_action(
+            ctx.author.id, ctx.author.display_name, "refresh_streamers",
+            new_state={"stream_count": stream_count, "voice_count": voice_count, "total": total},
+            details=f"Refreshed streamers: {total} found ({stream_count} Twitch/YouTube, {voice_count} Go Live)",
+        )
         await ctx.send(
             f"✅ Found **{total}** active streamer(s)! ({stream_count} Twitch/YouTube, {voice_count} Discord Go Live)"
         )

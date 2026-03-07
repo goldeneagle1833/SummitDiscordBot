@@ -56,6 +56,9 @@ from services.elo_service import (  # noqa: F401
     solo_match_report,
 )
 
+# Audit logging
+from repositories.audit_repo import log_admin_action  # noqa: F401
+
 # Community data access functions
 from repositories.community_repo import (  # noqa: F401
     create_community_tables,

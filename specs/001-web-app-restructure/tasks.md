@@ -27,14 +27,14 @@ This is a web application refactoring:
 
 **Purpose**: Prepare the codebase for refactoring - create directory structure and audit existing code
 
-- [ ] T001 Create new CSS directory structure: `web-app/static/css/base/`, `web-app/static/css/utilities/`, `web-app/static/css/vendor/`
-- [ ] T002 Create new JavaScript directory structure: `web-app/static/js/pages/`, `web-app/static/js/utils/`
-- [ ] T003 [P] Create documentation directory structure: `web-app/docs/`
-- [ ] T004 [P] Audit all inline styles: Create inventory spreadsheet of inline `style=` attributes grouped by page in `docs/refactor/inline-styles-audit.md`
-- [ ] T005 [P] Audit all inline JavaScript: Create inventory of inline event handlers grouped by page in `docs/refactor/inline-js-audit.md`
-- [ ] T006 [P] Audit existing CSS files: Document purpose of `global.css`, `style.css`, `utilities.css` in `docs/refactor/css-consolidation-plan.md`
-- [ ] T007 Create validation scripts: Add `scripts/validate-no-inline-styles.sh` to check for zero inline styles/JS
-- [ ] T008 Create screenshot directory for visual regression testing: `docs/refactor/screenshots/before/` and `docs/refactor/screenshots/after/`
+- [X] T001 Create new CSS directory structure: `web-app/static/css/base/`, `web-app/static/css/utilities/`, `web-app/static/css/vendor/`
+- [X] T002 Create new JavaScript directory structure: `web-app/static/js/pages/`, `web-app/static/js/utils/`
+- [X] T003 [P] Create documentation directory structure: `web-app/docs/`
+- [X] T004 [P] Audit all inline styles: Create inventory spreadsheet of inline `style=` attributes grouped by page in `docs/refactor/inline-styles-audit.md`
+- [X] T005 [P] Audit all inline JavaScript: Create inventory of inline event handlers grouped by page in `docs/refactor/inline-js-audit.md`
+- [X] T006 [P] Audit existing CSS files: Document purpose of `global.css`, `style.css`, `utilities.css` in `docs/refactor/css-consolidation-plan.md`
+- [X] T007 Create validation scripts: Add `scripts/validate-no-inline-styles.sh` to check for zero inline styles/JS
+- [X] T008 Create screenshot directory for visual regression testing: `docs/refactor/screenshots/before/` and `docs/refactor/screenshots/after/`
 
 ---
 

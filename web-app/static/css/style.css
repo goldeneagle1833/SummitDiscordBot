@@ -248,7 +248,8 @@ a.feature-card {
   background: var(--color-bg-surface);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-soft);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 #leaderboard-table {

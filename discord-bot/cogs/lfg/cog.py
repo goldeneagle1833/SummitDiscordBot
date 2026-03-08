@@ -201,7 +201,7 @@ class LFGCog(commands.Cog):
             # Create leaderboard embed with event name and game count
             embed = discord.Embed(
                 title=f"{event_name} Leaderboard ({total_games_played} games played)",
-                description="Current ELO Rankings",
+                description="Current ELO Rankings | Started: 2/7/2026 | End: 3/14/2026",
                 color=discord.Color.gold(),
             )
 
@@ -1334,8 +1334,13 @@ class LFGCog(commands.Cog):
             conn_matches.close()
 
             log_admin_action(
-                ctx.author.id, ctx.author.display_name, "reset_elo",
-                previous_state={"total_players": _total_players, "total_matches": _total_matches},
+                ctx.author.id,
+                ctx.author.display_name,
+                "reset_elo",
+                previous_state={
+                    "total_players": _total_players,
+                    "total_matches": _total_matches,
+                },
                 new_state={"result": "all data wiped"},
                 details=f"Full database reset: {_total_players} players, {_total_matches} matches deleted",
             )
@@ -1433,8 +1438,11 @@ class LFGCog(commands.Cog):
             await ctx.send(embed=success_embed)
 
             log_admin_action(
-                ctx.author.id, ctx.author.display_name, "admin_report",
-                target_id=winner.id, target_name=winner_name,
+                ctx.author.id,
+                ctx.author.display_name,
+                "admin_report",
+                target_id=winner.id,
+                target_name=winner_name,
                 previous_state={"winner_id": winner.id, "loser_id": loser.id},
                 new_state={"match_id": match_id, "elo_status": elo_status},
                 details=f"Admin reported match #{match_id}: {winner_name} beat {loser_name}",
@@ -1531,10 +1539,15 @@ class LFGCog(commands.Cog):
 
             _prev_event = result.get("previous_event")
             log_admin_action(
-                ctx.author.id, ctx.author.display_name, "start_event",
-                previous_state={"previous_event": _prev_event["event_name"] if _prev_event else None},
+                ctx.author.id,
+                ctx.author.display_name,
+                "start_event",
+                previous_state={
+                    "previous_event": _prev_event["event_name"] if _prev_event else None
+                },
                 new_state={"event_name": event_name, "event_id": result["event_id"]},
-                details=f"Started event '{event_name}'" + (f" (archived '{_prev_event['event_name']}')" if _prev_event else ""),
+                details=f"Started event '{event_name}'"
+                + (f" (archived '{_prev_event['event_name']}')" if _prev_event else ""),
             )
 
             logger.info(
@@ -1622,8 +1635,14 @@ class LFGCog(commands.Cog):
             await self.update_leaderboard()
 
             log_admin_action(
-                ctx.author.id, ctx.author.display_name, "end_event",
-                previous_state={"event_name": summary["event_name"], "total_matches": summary["total_matches"], "total_players": summary["total_players"]},
+                ctx.author.id,
+                ctx.author.display_name,
+                "end_event",
+                previous_state={
+                    "event_name": summary["event_name"],
+                    "total_matches": summary["total_matches"],
+                    "total_players": summary["total_players"],
+                },
                 new_state={"result": "event archived"},
                 details=f"Ended event '{summary['event_name']}' ({summary['total_matches']} matches, {summary['total_players']} players archived)",
             )
@@ -1840,9 +1859,14 @@ class LFGCog(commands.Cog):
             await self.update_leaderboard()
 
             log_admin_action(
-                ctx.author.id, ctx.author.display_name, "recalculate_event_elo",
+                ctx.author.id,
+                ctx.author.display_name,
+                "recalculate_event_elo",
                 previous_state={"players_reset": reset_count},
-                new_state={"matches_replayed": len(matches), "players_updated": updates},
+                new_state={
+                    "matches_replayed": len(matches),
+                    "players_updated": updates,
+                },
                 details=f"Recalculated event ELO for '{event_name}': {len(matches)} matches replayed, {updates} players updated",
             )
 
@@ -1944,8 +1968,11 @@ class LFGCog(commands.Cog):
             await ctx.send(embed=success_embed)
 
             log_admin_action(
-                ctx.author.id, ctx.author.display_name, "spot_elo_reset",
-                target_id=user.id, target_name=user_name,
+                ctx.author.id,
+                ctx.author.display_name,
+                "spot_elo_reset",
+                target_id=user.id,
+                target_name=user_name,
                 previous_state={"event_elo": old_elo},
                 new_state={"event_elo": elo},
                 details=f"Set {user_name}'s event ELO from {old_elo} to {elo} during '{active_event['event_name']}'",
@@ -2286,10 +2313,23 @@ class LFGCog(commands.Cog):
             await status_msg.edit(content=None, embed=success_embed)
 
             log_admin_action(
-                ctx.author.id, ctx.author.display_name, "correct_match",
+                ctx.author.id,
+                ctx.author.display_name,
+                "correct_match",
                 target_id=match_id,
-                previous_state={"winner_id": original_winner_id, "winner_name": original_winner_name, "loser_id": original_loser_id, "loser_name": original_loser_name},
-                new_state={"winner_id": new_winner_id, "winner_name": new_winner_name, "loser_id": new_loser_id, "loser_name": new_loser_name, "recalculated_matches": recalculated_count},
+                previous_state={
+                    "winner_id": original_winner_id,
+                    "winner_name": original_winner_name,
+                    "loser_id": original_loser_id,
+                    "loser_name": original_loser_name,
+                },
+                new_state={
+                    "winner_id": new_winner_id,
+                    "winner_name": new_winner_name,
+                    "loser_id": new_loser_id,
+                    "loser_name": new_loser_name,
+                    "recalculated_matches": recalculated_count,
+                },
                 details=f"Corrected match #{match_id}: winner flipped from {original_winner_name} to {new_winner_name}, {recalculated_count} subsequent matches recalculated",
             )
 
@@ -2430,9 +2470,18 @@ class LFGCog(commands.Cog):
             await ctx.send(embed=success_embed)
 
             log_admin_action(
-                ctx.author.id, ctx.author.display_name, "remove_match",
+                ctx.author.id,
+                ctx.author.display_name,
+                "remove_match",
                 target_id=match_id,
-                previous_state={"match_id": match_id, "winner_id": winner_id, "winner_name": winner_name, "loser_id": loser_id, "loser_name": loser_name, "timestamp": timestamp},
+                previous_state={
+                    "match_id": match_id,
+                    "winner_id": winner_id,
+                    "winner_name": winner_name,
+                    "loser_id": loser_id,
+                    "loser_name": loser_name,
+                    "timestamp": timestamp,
+                },
                 new_state={"result": "match deleted"},
                 details=f"Removed match #{match_id}: {winner_name} vs {loser_name} ({timestamp})",
             )
@@ -2719,9 +2768,15 @@ class LFGCog(commands.Cog):
             await ctx.send(embed=embed)
 
             log_admin_action(
-                ctx.author.id, ctx.author.display_name, "remove_player",
-                target_id=user.id, target_name=user_name,
-                previous_state={"matches": matches_deleted, "opponents_adjusted": len(adjustments_made)},
+                ctx.author.id,
+                ctx.author.display_name,
+                "remove_player",
+                target_id=user.id,
+                target_name=user_name,
+                previous_state={
+                    "matches": matches_deleted,
+                    "opponents_adjusted": len(adjustments_made),
+                },
                 new_state={"result": "player removed"},
                 details=f"Removed player {user_name}: {matches_deleted} matches deleted, {len(adjustments_made)} opponents adjusted",
             )

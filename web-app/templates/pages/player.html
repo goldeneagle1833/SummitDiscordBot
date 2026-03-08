@@ -83,6 +83,34 @@
           height: 16px;
         }
       }
+
+      /* Pagination styles */
+      .pagination-btn {
+        background-color: var(--color-bg-secondary, #2a2a3e);
+        color: var(--color-text, #ffffff);
+        border: 1px solid var(--color-border, #3a3a4e);
+        border-radius: 6px;
+        padding: 8px 12px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 14px;
+      }
+
+      .pagination-btn:hover:not(:disabled) {
+        background-color: var(--color-bg-hover, #3a3a4e);
+        border-color: var(--color-primary, #a855f7);
+        transform: translateY(-1px);
+      }
+
+      .pagination-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        background-color: var(--color-bg-secondary, #2a2a3e);
+      }
+
+      #pagination-controls {
+        user-select: none;
+      }
     </style>
   </head>
   <body>
@@ -283,6 +311,30 @@
                 <!-- Match history rows will be inserted here by JS -->
               </tbody>
             </table>
+          </div>
+
+          <!-- Pagination Controls -->
+          <div id="pagination-controls" style="display: none; margin-top: 20px; text-align: center;">
+            <div style="display: inline-flex; gap: 10px; align-items: center;">
+              <button id="pagination-first" class="pagination-btn" style="padding: 8px 12px; cursor: pointer;">
+                ⏮ First
+              </button>
+              <button id="pagination-prev" class="pagination-btn" style="padding: 8px 12px; cursor: pointer;">
+                ← Previous
+              </button>
+              <span id="pagination-info" style="padding: 0 15px; font-weight: bold;">
+                Page 1 of 1
+              </span>
+              <button id="pagination-next" class="pagination-btn" style="padding: 8px 12px; cursor: pointer;">
+                Next →
+              </button>
+              <button id="pagination-last" class="pagination-btn" style="padding: 8px 12px; cursor: pointer;">
+                Last ⏭
+              </button>
+            </div>
+            <div style="margin-top: 10px; font-size: 14px; color: var(--color-text-muted);">
+              <span id="pagination-summary">Showing 0-0 of 0 matches</span>
+            </div>
           </div>
         </div>
 
@@ -570,8 +622,8 @@
           eventParam = value.replace("event_", "");
         }
 
-        // Re-fetch all player data with the new filter
-        await fetchPlayerData(eventParam);
+        // Re-fetch all player data with the new filter (reset to page 1)
+        await fetchPlayerData(eventParam, 1);
       }
 
       function renderEloChart(
@@ -796,12 +848,17 @@
         }
       }
 
-      async function fetchPlayerData(eventFilter = "lifetime") {
+      // Pagination state
+      let currentPage = 1;
+      const perPage = 50;
+
+      async function fetchPlayerData(eventFilter = "lifetime", page = 1) {
         try {
-          const url =
-            eventFilter && eventFilter !== "lifetime"
-              ? `/api/player/${playerId}?event=${eventFilter}`
-              : `/api/player/${playerId}`;
+          currentPage = page;
+          let url = `/api/player/${playerId}?page=${page}&per_page=${perPage}`;
+          if (eventFilter && eventFilter !== "lifetime") {
+            url += `&event=${eventFilter}`;
+          }
           const res = await fetch(url);
           if (!res.ok) {
             document.getElementById("player-name").textContent =
@@ -1173,12 +1230,65 @@
             .forEach((btn) => {
               btn.addEventListener("click", deleteRecordedGame);
             });
+
+          // Update pagination controls
+          updatePaginationControls(data.pagination);
         } catch (error) {
           document.getElementById("player-name").textContent =
             "Error loading player";
           console.error(error);
         }
       }
+
+      // Update pagination controls based on API response
+      function updatePaginationControls(pagination) {
+        if (!pagination || pagination.total_pages <= 1) {
+          document.getElementById("pagination-controls").style.display = "none";
+          return;
+        }
+
+        document.getElementById("pagination-controls").style.display = "block";
+
+        const firstBtn = document.getElementById("pagination-first");
+        const prevBtn = document.getElementById("pagination-prev");
+        const nextBtn = document.getElementById("pagination-next");
+        const lastBtn = document.getElementById("pagination-last");
+        const info = document.getElementById("pagination-info");
+        const summary = document.getElementById("pagination-summary");
+
+        // Update buttons state
+        firstBtn.disabled = !pagination.has_previous;
+        prevBtn.disabled = !pagination.has_previous;
+        nextBtn.disabled = !pagination.has_next;
+        lastBtn.disabled = !pagination.has_next;
+
+        // Update info text
+        info.textContent = `Page ${pagination.current_page} of ${pagination.total_pages}`;
+
+        // Calculate range
+        const start = (pagination.current_page - 1) * pagination.per_page + 1;
+        const end = Math.min(pagination.current_page * pagination.per_page, pagination.total_matches);
+        summary.textContent = `Showing ${start}-${end} of ${pagination.total_matches} matches`;
+      }
+
+      // Pagination button handlers
+      function goToPage(page) {
+        const eventFilter = document.getElementById("event-filter")?.value || "lifetime";
+        fetchPlayerData(eventFilter, page);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+
+      // Add pagination event listeners
+      document.addEventListener("DOMContentLoaded", function() {
+        document.getElementById("pagination-first").addEventListener("click", () => goToPage(1));
+        document.getElementById("pagination-prev").addEventListener("click", () => goToPage(currentPage - 1));
+        document.getElementById("pagination-next").addEventListener("click", () => goToPage(currentPage + 1));
+        document.getElementById("pagination-last").addEventListener("click", () => {
+          // We'll get total pages from the last pagination update
+          const totalPages = parseInt(document.getElementById("pagination-info").textContent.split("of ")[1]) || 1;
+          goToPage(totalPages);
+        });
+      });
 
       // Delete a recorded game
       async function deleteRecordedGame(e) {
@@ -1195,7 +1305,8 @@
           const data = await res.json();
 
           if (res.ok && data.success) {
-            fetchPlayerData(); // Refresh the page data
+            const eventFilter = document.getElementById("event-filter")?.value || "lifetime";
+            fetchPlayerData(eventFilter, currentPage); // Refresh the page data
             alert("Recorded game deleted successfully!");
           } else {
             alert("Error: " + (data.error || "Failed to delete game"));
@@ -1329,7 +1440,8 @@
 
           if (res.ok && data.success) {
             hideRecordGameModal();
-            fetchPlayerData(); // Refresh the page data
+            const eventFilter = document.getElementById("event-filter")?.value || "lifetime";
+            fetchPlayerData(eventFilter, currentPage); // Refresh the page data
             alert("Game recorded successfully!");
           } else {
             alert("Error: " + (data.error || "Failed to record game"));
@@ -1475,7 +1587,8 @@
           if (data.success) {
             hideRemoveMatchModal();
             alert(data.message);
-            fetchPlayerData();
+            const eventFilter = document.getElementById("event-filter")?.value || "lifetime";
+            fetchPlayerData(eventFilter, currentPage);
           } else {
             alert("Error: " + (data.error || "Failed to remove match"));
           }
@@ -1514,7 +1627,8 @@
           if (data.success) {
             hideResetEloModal();
             alert(data.message);
-            fetchPlayerData();
+            const eventFilter = document.getElementById("event-filter")?.value || "lifetime";
+            fetchPlayerData(eventFilter, currentPage);
           } else {
             alert("Error: " + (data.error || "Failed to set ELO"));
           }
@@ -1549,7 +1663,8 @@
           if (data.success) {
             hideRenameModal();
             alert(data.message);
-            fetchPlayerData();
+            const eventFilter = document.getElementById("event-filter")?.value || "lifetime";
+            fetchPlayerData(eventFilter, currentPage);
           } else {
             alert("Error: " + (data.error || "Failed to rename player"));
           }
@@ -1568,7 +1683,8 @@
       });
       {% endif %}
 
-      fetchPlayerData();
+      // Initial load - start at page 1
+      fetchPlayerData("lifetime", 1);
     </script>
 
     <footer>

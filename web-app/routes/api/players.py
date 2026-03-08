@@ -423,8 +423,16 @@ def player_api(player_id):
     win_rate = (wins / total_matches * 100) if total_matches > 0 else 0
 
     # First player stats (on the play)
+    # Only count matches from 2/6/2026 onward (when play/draw tracking became reliable)
     # New columns: winner_went_first (index 17), loser_went_first (index 18)
     # did_win (index 0): 1 if viewed player is winner, 0 if loser
+    # timestamp is at index 6
+    play_draw_cutoff = "2026-02-06"
+    play_draw_rows = [
+        row for row in all_rows
+        if row[6] and str(row[6]) >= play_draw_cutoff
+    ]
+
     def player_was_on_play(row):
         did_win = row[0]
         # Try new columns first (indices 17 and 18)
@@ -452,8 +460,8 @@ def player_api(player_id):
             # Loser went first
             return not did_win  # Player was on play only if they lost
 
-    first_player_matches = sum(1 for row in all_rows if player_was_on_play(row))
-    first_player_wins = sum(1 for row in all_rows if row[0] and player_was_on_play(row))
+    first_player_matches = sum(1 for row in play_draw_rows if player_was_on_play(row))
+    first_player_wins = sum(1 for row in play_draw_rows if row[0] and player_was_on_play(row))
     first_player_win_rate = (
         (first_player_wins / first_player_matches * 100)
         if first_player_matches > 0
@@ -488,8 +496,8 @@ def player_api(player_id):
             # Loser went first
             return did_win  # Player was on draw only if they won
 
-    draw_matches = sum(1 for row in all_rows if player_was_on_draw(row))
-    draw_wins = sum(1 for row in all_rows if row[0] and player_was_on_draw(row))
+    draw_matches = sum(1 for row in play_draw_rows if player_was_on_draw(row))
+    draw_wins = sum(1 for row in play_draw_rows if row[0] and player_was_on_draw(row))
     draw_win_rate = (draw_wins / draw_matches * 100) if draw_matches > 0 else 0
 
     # Average match time
@@ -650,10 +658,28 @@ def player_api(player_id):
     if is_admin():
         is_owner = True
 
-    # Build match history
+    # Build match history with pagination
     match_history = []
     sorted_rows = sorted(rows, key=lambda x: x[6] if x[6] else "", reverse=True)
-    for row in sorted_rows[:50]:
+
+    # Get pagination parameters
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+
+    # Validate pagination parameters
+    page = max(1, page)  # Ensure page is at least 1
+    per_page = min(max(10, per_page), 100)  # Limit per_page between 10 and 100
+
+    # Calculate pagination
+    total_matches = len(sorted_rows)
+    total_pages = (total_matches + per_page - 1) // per_page if total_matches > 0 else 1
+    page = min(page, total_pages)  # Ensure page doesn't exceed total pages
+
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paginated_rows = sorted_rows[start_idx:end_idx]
+
+    for row in paginated_rows:
         did_win = row[0]
         opponent_name = row[5] if did_win else row[4]
         opponent_id = str(row[11]) if did_win else str(row[10])
@@ -857,5 +883,13 @@ def player_api(player_id):
             "matches": match_history,
             "recorded_games": recorded_games if is_owner else [],
             "is_owner": is_owner,
+            "pagination": {
+                "current_page": page,
+                "per_page": per_page,
+                "total_matches": total_matches,
+                "total_pages": total_pages,
+                "has_previous": page > 1,
+                "has_next": page < total_pages,
+            },
         }
     )

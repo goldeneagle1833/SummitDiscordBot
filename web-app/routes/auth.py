@@ -7,6 +7,7 @@ import requests
 from flask import Blueprint, redirect, url_for, session, request
 
 from webapp_config import DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI
+from repositories.user_profiles import UserProfileRepository
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,17 @@ def discord_callback():
     session["user_id"] = int(user_data["id"])
     session["username"] = user_data["username"]
     session["avatar"] = user_data.get("avatar")
+
+    # Save user profile to database (non-blocking)
+    try:
+        profile_repo = UserProfileRepository()
+        profile_repo.upsert_profile(
+            user_id=str(session["user_id"]),
+            display_name=session["username"],
+            avatar=session["avatar"],
+        )
+    except Exception as e:
+        logger.error(f"Failed to save user profile: {e}")
 
     logger.info(f"User {user_data['username']} (ID: {user_data['id']}) logged in")
 

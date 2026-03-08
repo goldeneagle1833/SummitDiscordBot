@@ -44,18 +44,18 @@ This is a web application refactoring:
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T009 Create CSS reset and base styles in `web-app/static/css/base/reset.css`
-- [ ] T010 [P] Create CSS custom properties (variables) in `web-app/static/css/base/variables.css`
-- [ ] T011 [P] Create typography base styles in `web-app/static/css/base/typography.css`
-- [ ] T012 [P] Create layout base styles in `web-app/static/css/base/layout.css`
-- [ ] T013 Move Tailwind CSS to vendor directory: `web-app/static/css/tailwind.output.css` → `web-app/static/css/vendor/tailwind.output.css`
-- [ ] T014 Consolidate spacing utilities from `utilities.css` into `web-app/static/css/utilities/spacing.css`
-- [ ] T015 [P] Create color utilities in `web-app/static/css/utilities/colors.css`
-- [ ] T016 [P] Create flexbox utilities in `web-app/static/css/utilities/flexbox.css`
-- [ ] T017 [P] Create visibility utilities in `web-app/static/css/utilities/visibility.css`
-- [ ] T018 Update `base.html` to load new CSS file structure (vendor → base → utilities → components → page blocks)
-- [ ] T019 Move existing `main.js` to `web-app/static/js/core/main.js`
-- [ ] T020 Update `base.html` to load JS from new structure (`core/main.js`, component blocks, page blocks)
+- [X] T009 Create CSS reset and base styles in `web-app/static/css/base/reset.css`
+- [X] T010 [P] Create CSS custom properties (variables) in `web-app/static/css/base/variables.css`
+- [X] T011 [P] Create typography base styles in `web-app/static/css/base/typography.css`
+- [X] T012 [P] Create layout base styles in `web-app/static/css/base/layout.css`
+- [X] T013 Move Tailwind CSS to vendor directory: `web-app/static/css/tailwind.output.css` → `web-app/static/css/vendor/tailwind.output.css`
+- [X] T014 Consolidate spacing utilities from `utilities.css` into `web-app/static/css/utilities/spacing.css`
+- [X] T015 [P] Create color utilities in `web-app/static/css/utilities/colors.css`
+- [X] T016 [P] Create flexbox utilities in `web-app/static/css/utilities/flexbox.css`
+- [X] T017 [P] Create visibility utilities in `web-app/static/css/utilities/visibility.css`
+- [X] T018 Update `base.html` to load new CSS file structure (vendor → base → utilities → components → page blocks)
+- [X] T019 Move existing `main.js` to `web-app/static/js/core/main.js`
+- [X] T020 Update `base.html` to load JS from new structure (`core/main.js`, component blocks, page blocks)
 
 **Checkpoint**: Foundation ready - CSS/JS directory structure established, base.html updated
 

@@ -1,0 +1,128 @@
+/*
+ * Base CSS - Typography Styles
+ * Purpose: Define heading styles, text utilities, and font treatments
+ * Extracted from: global.css
+ */
+
+/* Base typography */
+body {
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+  color: var(--color-text);
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-md);
+}
+
+h1 {
+  font-size: var(--font-size-4xl);
+}
+
+h2 {
+  font-size: var(--font-size-3xl);
+}
+
+h3 {
+  font-size: var(--font-size-2xl);
+}
+
+h4 {
+  font-size: var(--font-size-xl);
+}
+
+h5 {
+  font-size: var(--font-size-lg);
+}
+
+h6 {
+  font-size: var(--font-size-base);
+}
+
+/* Paragraph */
+p {
+  margin-bottom: var(--spacing-md);
+  color: var(--color-text-secondary);
+}
+
+/* Links */
+a {
+  color: var(--color-primary);
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--color-primary-light);
+}
+
+/* Strong and emphasis */
+strong, b {
+  font-weight: var(--font-weight-bold);
+}
+
+em, i {
+  font-style: italic;
+}
+
+/* Code */
+code {
+  font-family: var(--font-family-mono);
+  font-size: 0.9em;
+  background: var(--color-surface);
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--border-radius-sm);
+  color: var(--color-primary);
+}
+
+pre {
+  font-family: var(--font-family-mono);
+  background: var(--color-surface);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius-md);
+  overflow-x: auto;
+  margin-bottom: var(--spacing-md);
+}
+
+pre code {
+  background: none;
+  padding: 0;
+}
+
+/* Lists */
+ul, ol {
+  margin-bottom: var(--spacing-md);
+  padding-left: var(--spacing-lg);
+}
+
+li {
+  margin-bottom: var(--spacing-sm);
+  color: var(--color-text-secondary);
+}
+
+/* Blockquote */
+blockquote {
+  border-left: 4px solid var(--color-primary);
+  padding-left: var(--spacing-md);
+  margin: var(--spacing-lg) 0;
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+/* Small text */
+small {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+/* Horizontal rule */
+hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: var(--spacing-xl) 0;
+}

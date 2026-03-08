@@ -9,23 +9,47 @@
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}?v={{ app_version }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png') }}?v={{ app_version }}">
 
-    <!-- Tailwind CSS (load first) -->
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
+    <!-- CSS Load Order: vendor → base → utilities → components → page-specific -->
 
-    <!-- Custom CSS (load after for overrides) -->
+    <!-- 1. Vendor CSS (external libraries) -->
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
+      href="{{ url_for('static', filename='css/vendor/tailwind.output.css') }}?v={{ app_version }}" />
+
+    <!-- 2. Base CSS (foundation) -->
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/utilities.css') }}?v={{ app_version }}" />
+      href="{{ url_for('static', filename='css/base/reset.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/base/variables.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/base/typography.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/base/layout.css') }}?v={{ app_version }}" />
+
+    <!-- 3. Utilities CSS (helper classes) -->
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/utilities/spacing.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/utilities/colors.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/utilities/flexbox.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/utilities/visibility.css') }}?v={{ app_version }}" />
+
+    <!-- 4. Component CSS (global components) -->
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
 
-    <!-- Page-specific CSS -->
+    <!-- 5. Page-specific CSS (loaded in child templates) -->
     {% block styles %}{% endblock %}
   </head>
   <body class="min-h-screen bg-bg-dark text-text font-sans md:ml-48">
@@ -37,13 +61,17 @@
 
     {% include 'components/footer.html' %}
 
-    <!-- Global JS -->
-    <script src="{{ url_for('static', filename='js/main.js') }}?v={{ app_version }}"></script>
+    <!-- JS Load Order: core → components → page-specific -->
+
+    <!-- 1. Core JS (global scripts) -->
+    <script src="{{ url_for('static', filename='js/core/main.js') }}?v={{ app_version }}" defer></script>
+
+    <!-- 2. Component JS (global components) -->
     <script
       src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"
       defer></script>
 
-    <!-- Page-specific JS -->
+    <!-- 3. Page-specific JS (loaded in child templates) -->
     {% block scripts %}{% endblock %}
   </body>
 </html>

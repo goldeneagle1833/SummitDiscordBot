@@ -415,8 +415,8 @@ def get_avatar(avatar_name):
     total_wins = 0
     total_losses = 0
 
-    # Stats for play/draw win rates (from 2/7/2026 onward)
-    cutoff_date = "2026-02-07"
+    # Stats for play/draw win rates (from 1/25/2026 onward)
+    cutoff_date = "2026-01-25"
     play_wins = 0
     play_losses = 0
     draw_wins = 0
@@ -981,6 +981,133 @@ def get_avatar_deck_composition(avatar_name):
         })
 
     return jsonify({"total_decks": total_decks, "composition": composition_data})
+
+
+@avatars_bp.route("/avatars/play-draw-stats")
+def get_play_draw_stats():
+    """API endpoint for overall on-the-play vs on-the-draw win rates.
+
+    Returns aggregate stats from all matches from 1/25/2026 onward.
+    """
+    cutoff_date = "2026-01-25"
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        all_rows = []
+        use_new_columns = True
+
+        # Query current match_records with date filter
+        try:
+            cur.execute("""
+                SELECT
+                    winner_went_first,
+                    loser_went_first,
+                    first_player,
+                    timestamp
+                FROM match_records
+                WHERE timestamp >= ?
+            """, (cutoff_date,))
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError:
+            # Fallback to old schema
+            try:
+                cur.execute("""
+                    SELECT
+                        first_player,
+                        NULL as loser_went_first,
+                        first_player,
+                        timestamp
+                    FROM match_records
+                    WHERE timestamp >= ?
+                """, (cutoff_date,))
+                all_rows.extend(cur.fetchall())
+                use_new_columns = False
+            except sqlite3.OperationalError as e:
+                logger.error(f"Failed to query match_records: {e}")
+                conn.close()
+                return jsonify({"error": "Database error"}), 500
+
+        # Query archive table with date filter
+        if use_new_columns:
+            try:
+                cur.execute("""
+                    SELECT
+                        winner_went_first,
+                        loser_went_first,
+                        first_player,
+                        timestamp
+                    FROM match_records_archive
+                    WHERE timestamp >= ?
+                """, (cutoff_date,))
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass  # Archive may not exist
+
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.error(f"Database error: {e}")
+        return jsonify({"error": "Database error"}), 500
+
+    # Count play/draw wins and losses
+    play_wins = 0
+    play_losses = 0
+    draw_wins = 0
+    draw_losses = 0
+
+    for row in all_rows:
+        winner_went_first = row[0] if len(row) > 0 else None
+        loser_went_first = row[1] if len(row) > 1 else None
+        first_player = row[2] if len(row) > 2 else None
+
+        # Use new columns if available
+        if winner_went_first is not None or loser_went_first is not None:
+            # Winner on play
+            if winner_went_first and "y" in str(winner_went_first).lower():
+                play_wins += 1
+            # Winner on draw
+            elif winner_went_first and "n" in str(winner_went_first).lower():
+                draw_wins += 1
+
+            # Loser on play
+            if loser_went_first and "y" in str(loser_went_first).lower():
+                play_losses += 1
+            # Loser on draw
+            elif loser_went_first and "n" in str(loser_went_first).lower():
+                draw_losses += 1
+        # Fallback to old first_player column
+        elif first_player:
+            fp_lower = str(first_player).lower()
+            if "y" in fp_lower:
+                # Winner went first
+                play_wins += 1
+                draw_losses += 1
+            else:
+                # Loser went first
+                play_losses += 1
+                draw_wins += 1
+
+    play_total = play_wins + play_losses
+    draw_total = draw_wins + draw_losses
+    play_win_rate = (play_wins / play_total * 100) if play_total > 0 else 0
+    draw_win_rate = (draw_wins / draw_total * 100) if draw_total > 0 else 0
+
+    return jsonify({
+        "cutoff_date": cutoff_date,
+        "play_stats": {
+            "wins": play_wins,
+            "losses": play_losses,
+            "total": play_total,
+            "win_rate": round(play_win_rate, 1)
+        },
+        "draw_stats": {
+            "wins": draw_wins,
+            "losses": draw_losses,
+            "total": draw_total,
+            "win_rate": round(draw_win_rate, 1)
+        }
+    })
 
 
 @avatars_bp.route("/list-all-avatars")

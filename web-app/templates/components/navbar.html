@@ -140,10 +140,14 @@
       id="life-counter-icon"
       aria-label="Life Counter"
       title="Life Counter">
-      <img
-        src="{{ url_for('static', filename='images/icons/life-counter.svg') }}"
-        alt="Life Counter"
-        class="w-6 h-6">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-6 h-6">
+        <!-- Left person -->
+        <circle cx="7" cy="6" r="2.5" fill="white"/>
+        <path d="M7 10C4.5 10 2.5 11.5 2.5 13.5V17H11.5V13.5C11.5 11.5 9.5 10 7 10Z" fill="white"/>
+        <!-- Right person -->
+        <circle cx="17" cy="6" r="2.5" fill="white"/>
+        <path d="M17 10C14.5 10 12.5 11.5 12.5 13.5V17H21.5V13.5C21.5 11.5 19.5 10 17 10Z" fill="white"/>
+      </svg>
     </a>
   </div>
 

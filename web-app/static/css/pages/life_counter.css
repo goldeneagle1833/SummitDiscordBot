@@ -13,7 +13,7 @@
   flex-direction: column;
   gap: 0.25rem;
   padding-top: 3.5rem; /* Space for header bar */
-  padding-bottom: 0.25rem;
+  padding-bottom: calc(0.25rem + env(safe-area-inset-bottom)); /* Space for mobile nav buttons */
   overflow: hidden; /* Prevent scrolling */
   box-sizing: border-box;
 }

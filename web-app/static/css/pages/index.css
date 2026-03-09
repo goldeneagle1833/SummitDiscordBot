@@ -1,0 +1,160 @@
+/*
+ * Page: Home / Landing Page
+ * Template: templates/pages/index.html
+ * Description: Styles for landing page with event leaderboard and community promo
+ */
+
+/* Temporary notice */
+.temp-notice {
+  font-size: 0.9rem;
+  color: #a0a0a0;
+  margin-top: 0.5rem;
+  text-align: center;
+}
+
+/* Community promo banner */
+.community-promo-banner {
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 215, 0, 0.4);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin: 1.5rem auto;
+  max-width: 800px;
+  text-align: center;
+}
+
+.community-promo-title {
+  color: #ffd700;
+  font-size: 1.3rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.community-promo-text {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1rem;
+  margin-bottom: 1rem;
+}
+
+.community-promo-link {
+  display: inline-block;
+  background: transparent;
+  border: 2px solid #ffd700;
+  color: #ffd700;
+  padding: 0.7rem 1.5rem;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.community-promo-link:hover {
+  background: rgba(255, 215, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+/* Event subtitle */
+.event-subtitle {
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+/* No active event section */
+.no-event-section {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.no-event-container {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+}
+
+.no-event-title {
+  color: #fff;
+  margin-bottom: 1rem;
+}
+
+.no-event-message {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.1rem;
+  margin-bottom: 1.5rem;
+}
+
+.no-event-links {
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 2rem;
+}
+
+.no-event-links a {
+  color: #ffd700;
+  text-decoration: underline;
+}
+
+/* YouTube videos grid */
+.youtube-videos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+/* YouTube video card */
+.youtube-video-card {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+  text-align: left;
+}
+
+.youtube-video-card a {
+  display: block;
+}
+
+.youtube-video-thumbnail {
+  width: 100%;
+  aspect-ratio: 16/9;
+  object-fit: cover;
+}
+
+.youtube-video-content {
+  padding: 1rem;
+}
+
+.youtube-video-channel {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.youtube-video-channel a {
+  color: #ffd700;
+  text-decoration: none;
+}
+
+.youtube-video-title {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 500;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Empty state for leaderboard */
+.leaderboard-empty-state {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Easter egg hint */
+.hero-secret {
+  cursor: default;
+  user-select: none;
+}

@@ -1,28 +1,8 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>About - Sorcerers Summit</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
-    <!-- Tailwind CSS (load first) -->
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
-  </head>
-  <body>
-    {% include 'components/navbar.html' %}
+{% extends "base.html" %}
 
-    <main>
+{% block title %}About - Sorcerers Summit{% endblock %}
+
+{% block content %}
       <section class="content">
         <h1>About Sorcerers Summit</h1>
         <p>
@@ -58,11 +38,4 @@
           <li>Coming soon: Paper reports</li>
         </ul>
       </section>
-    </main>
-
-    <footer>
-      <p>&copy; 2026 Summit. All rights reserved.</p>
-    </footer>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
-  </body>
-</html>
+{% endblock %}

@@ -4,8 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Match History - Sorcerers Summit</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
-    <!-- Tailwind CSS (load first) -->
+    <link
+      rel="icon"
+      type="image/png"
+      href="{{ url_for('static', filename='images/favicon.png') }}" />
+    <!-- CSS Load Order -->
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
@@ -18,87 +21,9 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
-    <style>
-      .match-history-section {
-        max-width: 1200px;
-        margin: 2rem auto;
-        padding: 0 2rem;
-      }
-
-      .match-history-section h3 {
-        font-family: "Inter", sans-serif;
-        color: var(--color-text);
-        margin-bottom: var(--spacing-md);
-        font-size: 1.125rem;
-        font-weight: 600;
-      }
-
-      .match-table-container {
-        overflow-x: auto;
-      }
-
-      .match-id {
-        color: var(--color-text-muted);
-        font-size: 0.875rem;
-      }
-
-      .elo-positive {
-        color: #3fb950;
-        font-weight: 600;
-      }
-
-      .elo-negative {
-        color: #f85149;
-        font-weight: 600;
-      }
-
-      .date-picker-container {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        margin-bottom: 1.5rem;
-        flex-wrap: wrap;
-      }
-
-      .date-picker-container label {
-        color: var(--color-text);
-        font-weight: 500;
-      }
-
-      .date-picker-container input[type="date"] {
-        padding: 0.5rem 1rem;
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 6px;
-        color: #fff;
-        font-size: 0.95rem;
-      }
-
-      .date-picker-container input[type="date"]:focus {
-        outline: none;
-        border-color: #4db8ff;
-      }
-
-      .date-picker-container button {
-        padding: 0.5rem 1rem;
-        background: #4db8ff;
-        border: none;
-        border-radius: 6px;
-        color: #000;
-        cursor: pointer;
-        font-weight: 500;
-      }
-
-      .date-picker-container button:hover {
-        background: #3da3e0;
-      }
-
-      @media (max-width: 768px) {
-        .match-history-section {
-          padding: 0 1rem;
-        }
-      }
-    </style>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/pages/match_history.css') }}?v={{ app_version }}" />
   </head>
   <body>
     {% include 'components/navbar.html' %}
@@ -115,7 +40,7 @@
         <div class="date-picker-container">
           <label for="date-picker">Select Date:</label>
           <input type="date" id="date-picker" />
-          <button onclick="clearDateFilter()">Show Last 24 Hours</button>
+          <button>Show Last 24 Hours</button>
         </div>
 
         <div class="match-table-container">
@@ -132,11 +57,8 @@
               </tr>
             </thead>
             <tbody id="match-history-tbody">
-              <!-- Match history will be populated by JavaScript -->
               <tr>
-                <td colspan="7" style="text-align: center; opacity: 0.6">
-                  Loading...
-                </td>
+                <td colspan="7" class="centered-message">Loading...</td>
               </tr>
             </tbody>
           </table>
@@ -148,134 +70,7 @@
       <p>&copy; 2026 Summit. All rights reserved.</p>
     </footer>
 
-    <script>
-      let availableDates = [];
-
-      async function loadAvailableDates() {
-        try {
-          const response = await fetch("/api/match-history/available-dates");
-          if (!response.ok) {
-            throw new Error("Failed to fetch available dates");
-          }
-
-          availableDates = await response.json();
-          setupDatePicker();
-        } catch (error) {
-          console.error("Error loading available dates:", error);
-        }
-      }
-
-      function setupDatePicker() {
-        const datePicker = document.getElementById("date-picker");
-
-        if (availableDates.length > 0) {
-          // Set min and max dates
-          const minDate = availableDates[availableDates.length - 1];
-          const maxDate = availableDates[0];
-          datePicker.min = minDate;
-          datePicker.max = maxDate;
-        }
-
-        // Listen for date changes
-        datePicker.addEventListener("change", function () {
-          const selectedDate = this.value;
-          if (selectedDate && availableDates.includes(selectedDate)) {
-            loadMatchHistory(selectedDate);
-          } else if (selectedDate) {
-            // Date has no data, reset
-            alert("No match data available for this date");
-            this.value = "";
-          }
-        });
-
-        // Validate on input (for manual typing)
-        datePicker.addEventListener("input", function () {
-          const selectedDate = this.value;
-          if (selectedDate && !availableDates.includes(selectedDate)) {
-            this.setCustomValidity("No matches on this date");
-          } else {
-            this.setCustomValidity("");
-          }
-        });
-      }
-
-      async function loadMatchHistory(date = null) {
-        try {
-          const url = date
-            ? `/api/match-history?date=${date}`
-            : "/api/match-history";
-          const response = await fetch(url);
-          if (!response.ok) {
-            throw new Error("Failed to fetch match history");
-          }
-
-          const matches = await response.json();
-          const tbody = document.getElementById("match-history-tbody");
-          const sectionTitle = document.getElementById("section-title");
-          tbody.innerHTML = "";
-
-          // Update section title
-          if (date) {
-            const dateObj = new Date(date + "T00:00:00");
-            sectionTitle.textContent = `📜 Matches on ${dateObj.toLocaleDateString()}`;
-          } else {
-            sectionTitle.textContent = "📜 Last 24 Hours";
-          }
-
-          if (matches.length === 0) {
-            tbody.innerHTML = `
-              <tr>
-                <td colspan="7" style="text-align: center; opacity: 0.6;">
-                  No matches recorded
-                </td>
-              </tr>
-            `;
-            return;
-          }
-
-          matches.forEach((match) => {
-            const row = document.createElement("tr");
-            const date = new Date(match.timestamp).toLocaleDateString();
-            const matchTime = match.match_time
-              ? `${match.match_time} min`
-              : "-";
-            const matchId = match.match_id ? `#${match.match_id}` : "-";
-            const winnerEloSign = match.winner_elo_change >= 0 ? "+" : "";
-            const loserEloSign = match.loser_elo_change >= 0 ? "+" : "";
-
-            row.innerHTML = `
-              <td class="match-id">${matchId}</td>
-              <td><a href="/player/${match.winner_id}" class="opponent-link">${match.winner}</a></td>
-              <td class="elo-positive">${winnerEloSign}${match.winner_elo_change}</td>
-              <td><a href="/player/${match.loser_id}" class="opponent-link">${match.loser}</a></td>
-              <td class="elo-negative">${loserEloSign}${match.loser_elo_change}</td>
-              <td>${matchTime}</td>
-              <td>${date}</td>
-            `;
-            tbody.appendChild(row);
-          });
-        } catch (error) {
-          console.error("Error loading match history:", error);
-          const tbody = document.getElementById("match-history-tbody");
-          tbody.innerHTML = `
-            <tr>
-              <td colspan="7" style="text-align: center; opacity: 0.6; color: var(--color-danger);">
-                Error loading match history
-              </td>
-            </tr>
-          `;
-        }
-      }
-
-      function clearDateFilter() {
-        document.getElementById("date-picker").value = "";
-        loadMatchHistory();
-      }
-
-      // Load available dates and match history when page loads
-      loadAvailableDates();
-      loadMatchHistory();
-    </script>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"></script>
+    <script src="{{ url_for('static', filename='js/pages/match_history.js') }}?v={{ app_version }}" defer></script>
   </body>
 </html>

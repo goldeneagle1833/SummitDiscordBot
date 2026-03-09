@@ -4,8 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Help - Sorcerers Summit</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
-    <!-- Tailwind CSS (load first) -->
+    <link
+      rel="icon"
+      type="image/png"
+      href="{{ url_for('static', filename='images/favicon.png') }}" />
+    <!-- CSS Load Order -->
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
@@ -18,6 +21,9 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/pages/help.css') }}?v={{ app_version }}" />
   </head>
   <body>
     {% include 'components/navbar.html' %}
@@ -76,6 +82,7 @@
     <footer>
       <p>&copy; 2026 Summit. All rights reserved.</p>
     </footer>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"></script>
   </body>
 </html>

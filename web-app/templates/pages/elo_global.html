@@ -1,28 +1,8 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Global ELO - Sorcerers Summit</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
-    <!-- Tailwind CSS (load first) -->
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
-  </head>
-  <body>
-    {% include 'components/navbar.html' %}
+{% extends "base.html" %}
 
-    <main>
+{% block title %}Global ELO - Sorcerers Summit{% endblock %}
+
+{% block content %}
       <section class="hero">
         <h1>Global ELO Leaderboard</h1>
         <p>Combined rankings from all servers</p>
@@ -45,39 +25,8 @@
           </table>
         </div>
       </section>
-    </main>
+{% endblock %}
 
-    <script>
-      // Fetch and render leaderboard from ELO DB
-      async function fetchLeaderboard() {
-        const res = await fetch("/api/leaderboard");
-        const data = await res.json();
-        const tbody = document.getElementById("leaderboard-tbody");
-        tbody.innerHTML = "";
-        data.forEach((player, i) => {
-          const rank = i + 1;
-          let rankDisplay = rank;
-          if (rank <= 3) {
-            rankDisplay = `<span class="rank-badge rank-${rank}">${rank}</span>`;
-          }
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td>${rankDisplay}</td>
-            <td><a href="/player/${player.id}" class="player-link">${player.name}</a></td>
-            <td><span class="match-win">${player.wins}</span> / <span class="match-loss">${player.losses}</span></td>
-            <td>${player.elo}</td>
-          `;
-          tbody.appendChild(row);
-        });
-      }
-      fetchLeaderboard();
-      // Auto-refresh every 30 seconds
-      setInterval(fetchLeaderboard, 30000);
-    </script>
-
-    <footer>
-      <p>&copy; 2026 Summit. All rights reserved.</p>
-    </footer>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
-  </body>
-</html>
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/pages/elo_global.js') }}?v={{ app_version }}" defer></script>
+{% endblock %}

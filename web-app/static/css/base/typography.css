@@ -51,15 +51,16 @@ p {
   color: var(--color-text-secondary);
 }
 
-/* Links */
-a {
+/* Links - Removed global styles to allow Tailwind utility classes to work */
+/* Use utility classes like text-primary, text-secondary instead */
+/* a {
   color: var(--color-primary);
   transition: color var(--transition-fast);
 }
 
 a:hover {
   color: var(--color-primary-light);
-}
+} */
 
 /* Strong and emphasis */
 strong, b {

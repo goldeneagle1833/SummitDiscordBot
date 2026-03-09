@@ -1,0 +1,159 @@
+/*
+ * Page: Admin Audit Log
+ * Template: templates/pages/admin_audit_log.html
+ * Description: Styles for administrative action audit log with pagination
+ */
+
+/* === Audit Section === */
+.audit-section {
+  max-width: 1400px;
+  margin: 2rem auto;
+  padding: 0 2rem;
+}
+
+.audit-section h3 {
+  font-family: "Inter", sans-serif;
+  color: var(--color-text);
+  margin-bottom: var(--spacing-md);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+/* === Audit Table === */
+.audit-table-container {
+  overflow-x: auto;
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.audit-table th {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+}
+
+.audit-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--color-text-muted);
+  vertical-align: top;
+}
+
+.audit-table tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* === Action Badges === */
+.action-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.action-badge.destructive {
+  background: rgba(248, 81, 73, 0.2);
+  color: #f85149;
+}
+
+.action-badge.modify {
+  background: rgba(77, 184, 255, 0.2);
+  color: #4db8ff;
+}
+
+.action-badge.create {
+  background: rgba(63, 185, 80, 0.2);
+  color: #3fb950;
+}
+
+/* === State JSON Display === */
+.state-json {
+  font-family: monospace;
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  max-width: 250px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* === Pagination === */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding-bottom: 2rem;
+}
+
+.pagination a,
+.pagination span {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.pagination a {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text);
+}
+
+.pagination a:hover {
+  background: rgba(77, 184, 255, 0.3);
+}
+
+.pagination .current {
+  color: var(--color-text-muted);
+}
+
+.pagination .disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* === Utility Classes === */
+.total-count {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.opacity-60 {
+  opacity: 0.6;
+}
+
+.opacity-40 {
+  opacity: 0.4;
+}
+
+.empty-state-cell {
+  text-align: center;
+  opacity: 0.6;
+  padding: 2rem;
+}
+
+/* === Responsive === */
+@media (max-width: 768px) {
+  .audit-section {
+    padding: 0 1rem;
+  }
+}

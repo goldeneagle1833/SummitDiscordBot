@@ -1,28 +1,12 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Server ELO - Sorcerers Summit</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
-    <!-- Tailwind CSS (load first) -->
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
-  </head>
-  <body>
-    {% include 'components/navbar.html' %}
+{% extends "base.html" %}
 
-    <main>
+{% block title %}Server ELO - Sorcerers Summit{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/pages/elo_server.css') }}?v={{ app_version }}">
+{% endblock %}
+
+{% block content %}
       <section class="hero">
         <h1>{{ server_name }} ELO Leaderboard</h1>
         <p>Server-specific rankings</p>
@@ -31,20 +15,8 @@
 
       <section class="leaderboard">
         <div class="leaderboard-content">
-          <div
-            style="
-              background: var(--color-bg-elevated);
-              padding: var(--spacing-md);
-              border-radius: var(--radius-soft);
-              margin-bottom: var(--spacing-lg);
-              border: 1px solid var(--color-border);
-            ">
-            <p
-              style="
-                margin: 0;
-                color: var(--color-text-muted);
-                font-size: 0.9rem;
-              ">
+          <div class="server-notice">
+            <p>
               <strong>Note:</strong> Currently showing global data.
               Server-specific ELO tracking coming soon.
             </p>
@@ -65,39 +37,8 @@
           </table>
         </div>
       </section>
-    </main>
+{% endblock %}
 
-    <script>
-      // Fetch and render leaderboard (currently global data)
-      async function fetchLeaderboard() {
-        const res = await fetch("/api/leaderboard");
-        const data = await res.json();
-        const tbody = document.getElementById("leaderboard-tbody");
-        tbody.innerHTML = "";
-        data.forEach((player, i) => {
-          const rank = i + 1;
-          let rankDisplay = rank;
-          if (rank <= 3) {
-            rankDisplay = `<span class="rank-badge rank-${rank}">${rank}</span>`;
-          }
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td>${rankDisplay}</td>
-            <td><a href="/player/${player.id}" class="player-link">${player.name}</a></td>
-            <td><span class="match-win">${player.wins}</span> / <span class="match-loss">${player.losses}</span></td>
-            <td>${player.elo}</td>
-          `;
-          tbody.appendChild(row);
-        });
-      }
-      fetchLeaderboard();
-      // Auto-refresh every 30 seconds
-      setInterval(fetchLeaderboard, 30000);
-    </script>
-
-    <footer>
-      <p>&copy; 2026 Summit. All rights reserved.</p>
-    </footer>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
-  </body>
-</html>
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/pages/elo_server.js') }}?v={{ app_version }}" defer></script>
+{% endblock %}

@@ -4,8 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sorcerers Summit</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
-    <!-- Tailwind CSS (load first) -->
+    <link
+      rel="icon"
+      type="image/png"
+      href="{{ url_for('static', filename='images/favicon.png') }}" />
+    <!-- CSS Load Order -->
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
@@ -18,75 +21,28 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/pages/index.css') }}?v={{ app_version }}" />
   </head>
   <body>
     {% include 'components/navbar.html' %}
 
     <main>
       <section class="hero">
-        <h1 id="hero-secret">Welcome to the Sorcery Community Leaderboard</h1>
-        <p
-          id="temp-notice"
-          style="
-            font-size: 0.9rem;
-            color: #a0a0a0;
-            margin-top: 0.5rem;
-            text-align: center;
-          ">
+        <h1 id="hero-secret" class="hero-secret">Welcome to the Sorcery Community Leaderboard</h1>
+        <p id="temp-notice" class="temp-notice">
           The menu (top left) should work now after a browser refresh
           (Ctrl+Shift+R) or you might need to clear your cache test.
         </p>
         <!-- Community Tab Promo Banner -->
-        <div
-          id="community-promo-banner"
-          style="
-            background: rgba(255, 255, 255, 0.05);
-            border: 2px solid rgba(255, 215, 0, 0.4);
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin: 1.5rem auto;
-            max-width: 800px;
-            text-align: center;
-          ">
-          <h2
-            style="
-              color: #ffd700;
-              font-size: 1.3rem;
-              margin-bottom: 0.5rem;
-              font-weight: 600;
-            ">
-            New Community Tab is Live!
-          </h2>
-          <p
-            style="
-              color: rgba(255, 255, 255, 0.9);
-              font-size: 1rem;
-              margin-bottom: 1rem;
-            ">
+        <div id="community-promo-banner" class="community-promo-banner">
+          <h2 class="community-promo-title">New Community Tab is Live!</h2>
+          <p class="community-promo-text">
             Discover Discord servers, YouTube channels, and Sorcery resources
             all in one place!
           </p>
-          <a
-            href="/community"
-            style="
-              display: inline-block;
-              background: transparent;
-              border: 2px solid #ffd700;
-              color: #ffd700;
-              padding: 0.7rem 1.5rem;
-              border-radius: 8px;
-              text-decoration: none;
-              font-weight: 600;
-              transition: all 0.2s;
-            "
-            onmouseover="
-              this.style.background = 'rgba(255, 215, 0, 0.1)';
-              this.style.transform = 'translateY(-2px)';
-            "
-            onmouseout="
-              this.style.background = 'transparent';
-              this.style.transform = 'translateY(0)';
-            ">
+          <a href="/community" class="community-promo-link">
             Explore Community Tab →
           </a>
         </div>
@@ -96,13 +52,7 @@
       <section class="leaderboard" id="event-section">
         <div class="leaderboard-header">
           <h2 id="event-title">Current Event Leaderboard</h2>
-          <p
-            style="
-              color: rgba(255, 255, 255, 0.6);
-              text-align: center;
-              font-size: 0.9rem;
-            "
-            id="event-subtitle">
+          <p id="event-subtitle" class="event-subtitle">
             Loading event info...
           </p>
         </div>
@@ -123,219 +73,31 @@
       </section>
 
       <!-- No Active Event Section (hidden by default) -->
-      <section
-        id="no-event-section"
-        style="display: none; max-width: 900px; margin: 0 auto; padding: 2rem">
-        <div
-          style="
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
-            padding: 2rem;
-            text-align: center;
-          ">
-          <h2 style="color: #fff; margin-bottom: 1rem">No Active Event</h2>
-          <p
-            style="
-              color: rgba(255, 255, 255, 0.7);
-              font-size: 1.1rem;
-              margin-bottom: 1.5rem;
-            ">
+      <section id="no-event-section" class="no-event-section hidden">
+        <div class="no-event-container">
+          <h2 class="no-event-title">No Active Event</h2>
+          <p class="no-event-message">
             Check back soon for the next event leaderboard!
           </p>
-          <p style="color: rgba(255, 255, 255, 0.6); margin-bottom: 2rem">
+          <p class="no-event-links">
             In the meantime, check out the
-            <a
-              href="/avatars"
-              style="color: #ffd700; text-decoration: underline"
-              >Avatar Win Rates</a
-            >
+            <a href="/avatars">Avatar Win Rates</a>
             or catch up on some Sorcery content from the community:
           </p>
 
           <!-- YouTube Videos Grid -->
-          <div
-            id="youtube-videos"
-            style="
-              display: grid;
-              grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-              gap: 1.5rem;
-              margin-top: 1.5rem;
-            ">
+          <div id="youtube-videos" class="youtube-videos-grid">
             <!-- Videos will be inserted here by JS -->
           </div>
         </div>
       </section>
     </main>
 
-    <script>
-      // Hide temporary notice after 48 hours (expires Jan 26, 2026 at 21:37 UTC)
-      (function () {
-        const notice = document.getElementById("temp-notice");
-        if (notice) {
-          const expiryDate = new Date("2026-01-26T21:37:00Z");
-          if (new Date() > expiryDate) {
-            notice.style.display = "none";
-          }
-        }
-      })();
-
-      // Hide community promo banner after 1 week (expires Feb 20, 2026)
-      (function () {
-        const banner = document.getElementById("community-promo-banner");
-        if (banner) {
-          const expiryDate = new Date("2026-02-20T23:59:59Z");
-          if (new Date() > expiryDate) {
-            banner.style.display = "none";
-          }
-        }
-      })();
-
-      // Render YouTube videos
-      function renderYouTubeVideos(videos) {
-        const container = document.getElementById("youtube-videos");
-        if (!container) return;
-
-        container.innerHTML = "";
-
-        // Display all videos from the API response (no hardcoded filter)
-        for (const key of Object.keys(videos)) {
-          const video = videos[key];
-          if (!video) continue;
-
-          const card = document.createElement("div");
-          card.style.cssText =
-            "background: rgba(0,0,0,0.3); border-radius: 8px; overflow: hidden; text-align: left;";
-          card.innerHTML = `
-            <a href="${video.url}" target="_blank" rel="noopener noreferrer" style="display: block;">
-              <img src="${video.thumbnail}" alt="${video.title}" style="width: 100%; aspect-ratio: 16/9; object-fit: cover;">
-            </a>
-            <div style="padding: 1rem;">
-              <p style="color: rgba(255,255,255,0.6); font-size: 0.85rem; margin-bottom: 0.5rem;">
-                <a href="${video.channel_url}" target="_blank" rel="noopener noreferrer" style="color: #ffd700; text-decoration: none;">
-                  ${video.channel_display_name}
-                </a>
-              </p>
-              <a href="${video.url}" target="_blank" rel="noopener noreferrer" style="color: #fff; text-decoration: none; font-weight: 500; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
-                ${video.title}
-              </a>
-            </div>
-          `;
-          container.appendChild(card);
-        }
-      }
-
-      // Fetch YouTube videos
-      async function fetchYouTubeVideos() {
-        try {
-          const res = await fetch("/api/youtube-videos");
-          if (!res.ok) return;
-          const data = await res.json();
-          renderYouTubeVideos(data);
-        } catch (error) {
-          console.error("Error fetching YouTube videos:", error);
-        }
-      }
-
-      // Render event leaderboard
-      function renderEventLeaderboard(eventData) {
-        const titleEl = document.getElementById("event-title");
-        const subtitleEl = document.getElementById("event-subtitle");
-        const tbody = document.getElementById("event-leaderboard-tbody");
-        const eventSection = document.getElementById("event-section");
-        const noEventSection = document.getElementById("no-event-section");
-
-        if (!eventData.event) {
-          // Hide event leaderboard, show no-event content
-          eventSection.style.display = "none";
-          noEventSection.style.display = "block";
-          fetchYouTubeVideos();
-          return;
-        }
-
-        // Show event leaderboard, hide no-event content
-        eventSection.style.display = "block";
-        noEventSection.style.display = "none";
-
-        titleEl.textContent = eventData.event.event_name;
-        subtitleEl.textContent = `Started: ${new Date(eventData.event.start_date).toLocaleDateString()} | End: 3/14/2026`;
-
-        tbody.innerHTML = "";
-
-        if (eventData.leaderboard.length === 0) {
-          tbody.innerHTML =
-            '<tr><td colspan="3" style="text-align: center; color: rgba(255,255,255,0.5);">No matches played yet</td></tr>';
-          return;
-        }
-
-        // Show all players
-        eventData.leaderboard.forEach((player, index) => {
-          const row = document.createElement("tr");
-          const rank = index + 1;
-          let rankDisplay = rank;
-          if (rank <= 3) {
-            rankDisplay = `<span class="rank-badge rank-${rank}">${rank}</span>`;
-          }
-
-          row.innerHTML = `
-            <td>${rankDisplay}</td>
-            <td><a href="/player/${player.id}" class="player-link">${player.name}</a></td>
-            <td>${player.event_elo}</td>
-          `;
-          tbody.appendChild(row);
-        });
-      }
-
-      // Fetch and render event leaderboard
-      async function fetchEventLeaderboard() {
-        try {
-          const res = await fetch("/api/leaderboard/event");
-          if (!res.ok) {
-            console.error("Failed to fetch event leaderboard:", res.status);
-            return;
-          }
-          const data = await res.json();
-          renderEventLeaderboard(data);
-        } catch (error) {
-          console.error("Error fetching event leaderboard:", error);
-        }
-      }
-
-      fetchEventLeaderboard();
-      // Auto-refresh every 30 seconds
-      setInterval(fetchEventLeaderboard, 30000);
-
-      // Secret easter egg: Triple-click the hero title
-      const heroTitle = document.getElementById("hero-secret");
-      if (heroTitle) {
-        let clickCount = 0;
-        let clickTimer;
-
-        heroTitle.addEventListener("click", function (e) {
-          clickCount++;
-
-          if (clickCount === 3) {
-            window.location.href = "/secret-fart-leaderboard";
-            clickCount = 0;
-            clearTimeout(clickTimer);
-            return;
-          }
-
-          // Reset click count after 600ms if not triple-clicked
-          clearTimeout(clickTimer);
-          clickTimer = setTimeout(() => {
-            clickCount = 0;
-          }, 600);
-        });
-
-        // Add subtle cursor hint
-        heroTitle.style.cursor = "default";
-        heroTitle.style.userSelect = "none";
-      }
-    </script>
-
     <footer>
       <p>&copy; 2026 Summit. All rights reserved.</p>
     </footer>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"></script>
+    <script src="{{ url_for('static', filename='js/pages/index.js') }}?v={{ app_version }}" defer></script>
   </body>
 </html>

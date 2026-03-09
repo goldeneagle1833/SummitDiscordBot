@@ -1,0 +1,196 @@
+/*
+ * Page: ELO Leaderboards
+ * Template: templates/pages/elo.html
+ * Description: Styles for ELO distribution, lifetime leaderboard, and event leaderboard
+ */
+
+/* Page sections */
+.distribution-section {
+  max-width: 600px;
+  margin: 2rem auto;
+  padding: 0 2rem;
+}
+
+.distribution-section.wide {
+  max-width: 800px;
+}
+
+/* Section headings */
+.section-title {
+  color: #fff;
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.section-title.compact {
+  margin-bottom: 0.5rem;
+}
+
+.section-subtitle {
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+/* Distribution controls */
+.distribution-controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.distribution-controls.centered {
+  justify-content: center;
+}
+
+.distribution-controls label {
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+}
+
+.distribution-controls select,
+.distribution-controls input {
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.distribution-controls select:focus,
+.distribution-controls input:focus {
+  outline: none;
+  border-color: #4db8ff;
+}
+
+.distribution-controls select option {
+  background: #1a1a2e;
+  color: #fff;
+}
+
+/* Custom inputs for grouping */
+.custom-inputs {
+  display: none;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.custom-inputs.visible {
+  display: flex;
+}
+
+.custom-inputs input {
+  width: 80px;
+}
+
+.custom-inputs input#custom-start {
+  width: 100px;
+}
+
+/* Apply button for custom inputs */
+.btn-apply {
+  padding: 0.5rem 1rem;
+  background: #4db8ff;
+  border: none;
+  border-radius: 6px;
+  color: #000;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.btn-apply:hover {
+  background: #3da8ef;
+}
+
+/* Table container */
+.distribution-table-container {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+/* Distribution table */
+.distribution-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.distribution-table th {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.75rem;
+  text-align: left;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.distribution-table td {
+  padding: 0.75rem;
+  color: rgba(255, 255, 255, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.distribution-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.distribution-table th:last-child,
+.distribution-table td:last-child {
+  text-align: right;
+}
+
+/* Column widths */
+.col-rank {
+  width: 60px;
+}
+
+.col-align-right {
+  text-align: right;
+}
+
+/* Special cell styles */
+.elo-range {
+  font-weight: 600;
+  color: #4db8ff;
+}
+
+.player-count {
+  color: #ffd700;
+}
+
+.rank-display {
+  font-weight: 600;
+}
+
+.player-link {
+  color: #fff;
+  text-decoration: none;
+}
+
+.player-link:hover {
+  text-decoration: underline;
+}
+
+.lifetime-elo {
+  color: #4db8ff;
+  font-weight: 600;
+}
+
+.event-elo {
+  color: #ffd700;
+  font-weight: 600;
+}
+
+.win-loss {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.empty-state {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+}

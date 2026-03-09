@@ -4,7 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Community Links - Sorcerers Summit</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
+    <link
+      rel="icon"
+      type="image/png"
+      href="{{ url_for('static', filename='images/favicon.png') }}" />
+    <!-- CSS Load Order -->
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
@@ -17,108 +21,9 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
-    <style>
-      .community-section {
-        max-width: 1000px;
-        margin: 0 auto;
-        padding: 2rem 1rem;
-      }
-      .section-title {
-        color: #fff;
-        font-size: 1.5rem;
-        font-weight: 600;
-        margin-bottom: 1.5rem;
-        padding-bottom: 0.5rem;
-        border-bottom: 2px solid rgba(255, 215, 0, 0.3);
-      }
-      .cards-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-        gap: 1.5rem;
-        margin-bottom: 3rem;
-      }
-      .link-card {
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 12px;
-        padding: 1.5rem;
-        transition:
-          transform 0.2s,
-          background 0.2s;
-      }
-      .link-card:hover {
-        background: rgba(255, 255, 255, 0.08);
-        transform: translateY(-2px);
-      }
-      .link-card h3 {
-        color: #ffd700;
-        font-size: 1.1rem;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-      }
-      .link-card p {
-        color: rgba(255, 255, 255, 0.6);
-        font-size: 0.9rem;
-        margin-bottom: 1rem;
-      }
-      .link-card a {
-        color: #fff;
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        font-weight: 500;
-      }
-      .link-card a:hover {
-        color: #ffd700;
-      }
-      .youtube-card .thumbnail {
-        width: 100%;
-        aspect-ratio: 16/9;
-        object-fit: cover;
-        border-radius: 8px;
-        margin-bottom: 1rem;
-      }
-      .state-badge {
-        display: inline-block;
-        background: rgba(255, 215, 0, 0.15);
-        color: #ffd700;
-        font-size: 0.75rem;
-        font-weight: 600;
-        padding: 0.2rem 0.6rem;
-        border-radius: 9999px;
-        margin-bottom: 0.5rem;
-      }
-      .filter-input {
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        border-radius: 8px;
-        color: #fff;
-        padding: 0.6rem 1rem;
-        font-size: 0.95rem;
-        width: 100%;
-        max-width: 300px;
-        margin-bottom: 1.5rem;
-        outline: none;
-        transition: border-color 0.2s;
-      }
-      .filter-input:focus {
-        border-color: rgba(255, 215, 0, 0.5);
-      }
-      .filter-input::placeholder {
-        color: rgba(255, 255, 255, 0.4);
-      }
-      .no-results {
-        color: rgba(255, 255, 255, 0.5);
-        font-style: italic;
-        padding: 1rem;
-      }
-      .empty-state {
-        color: rgba(255, 255, 255, 0.4);
-        font-style: italic;
-        padding: 1.5rem;
-        text-align: center;
-      }
-    </style>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/pages/community.css') }}?v={{ app_version }}" />
   </head>
   <body>
     {% include 'components/navbar.html' %}
@@ -126,7 +31,7 @@
     <main>
       <section class="hero">
         <h1>Community Links</h1>
-        <p style="color: rgba(255, 255, 255, 0.7); margin-top: 0.5rem">
+        <p class="hero-subtitle">
           Connect with the Sorcery community
         </p>
       </section>
@@ -167,7 +72,7 @@
           </div>
           {% endfor %}
         </div>
-        <p class="no-results" id="discord-no-results" style="display: none">
+        <p class="no-results hidden" id="discord-no-results">
           No servers match your filter.
         </p>
         {% else %}
@@ -199,78 +104,11 @@
       </div>
     </main>
 
-    <script>
-      // Fetch and render YouTube channels
-      async function loadYouTubeChannels() {
-        const container = document.getElementById("youtube-channels");
-        try {
-          const res = await fetch("/api/youtube-videos");
-          if (!res.ok) throw new Error("Failed to fetch");
-          const videos = await res.json();
-
-          container.innerHTML = "";
-
-          for (const key of Object.keys(videos)) {
-            const video = videos[key];
-            if (!video) continue;
-
-            const card = document.createElement("div");
-            card.className = "link-card youtube-card";
-            card.innerHTML = `
-              <a href="${video.url}" target="_blank" rel="noopener noreferrer">
-                <img src="${video.thumbnail}" alt="${video.title}" class="thumbnail">
-              </a>
-              <h3>${video.channel_display_name}</h3>
-              <p style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
-                Latest: ${video.title}
-              </p>
-              <a href="${video.channel_url}" target="_blank" rel="noopener noreferrer">
-                Visit Channel &rarr;
-              </a>
-            `;
-            container.appendChild(card);
-          }
-
-          if (container.children.length === 0) {
-            container.innerHTML =
-              '<div class="link-card"><p>No channels available</p></div>';
-          }
-        } catch (error) {
-          console.error("Error loading YouTube channels:", error);
-          container.innerHTML =
-            '<div class="link-card"><p>Failed to load channels</p></div>';
-        }
-      }
-
-      loadYouTubeChannels();
-
-      // State filter for Discord servers
-      const stateFilter = document.getElementById("state-filter");
-      if (stateFilter) {
-        stateFilter.addEventListener("input", function () {
-          const query = this.value.toLowerCase().trim();
-          const cards = document.querySelectorAll(".discord-card");
-          const noResults = document.getElementById("discord-no-results");
-          let visible = 0;
-
-          cards.forEach(function (card) {
-            const state = card.getAttribute("data-state").toLowerCase();
-            if (!query || state.includes(query)) {
-              card.style.display = "";
-              visible++;
-            } else {
-              card.style.display = "none";
-            }
-          });
-
-          noResults.style.display = visible === 0 ? "" : "none";
-        });
-      }
-    </script>
-
     <footer>
       <p>&copy; 2026 Summit. All rights reserved.</p>
     </footer>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"></script>
+    <script src="{{ url_for('static', filename='js/pages/community.js') }}?v={{ app_version }}" defer></script>
   </body>
 </html>

@@ -4,8 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Deck Help - Sorcerers Summit</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
-    <!-- Tailwind CSS (load first) -->
+    <link
+      rel="icon"
+      type="image/png"
+      href="{{ url_for('static', filename='images/favicon.png') }}" />
+    <!-- CSS Load Order -->
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
@@ -21,6 +24,9 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/chat.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/pages/deck_help.css') }}?v={{ app_version }}" />
   </head>
   <body>
     {% include 'components/navbar.html' %}
@@ -98,7 +104,7 @@
               maxlength="500" />
             <button id="sendButton" class="chat-send-btn">Send</button>
           </div>
-          <div class="chat-loading" id="chatLoading" style="display: none">
+          <div class="chat-loading hidden" id="chatLoading">
             <span class="loading-spinner"></span> Thinking...
           </div>
         </div>
@@ -108,7 +114,8 @@
     <footer>
       <p>&copy; 2026 Summit. All rights reserved.</p>
     </footer>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/components/chat.js') }}"></script>
+
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"></script>
+    <script src="{{ url_for('static', filename='js/components/chat.js') }}?v={{ app_version }}" defer></script>
   </body>
 </html>

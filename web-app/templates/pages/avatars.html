@@ -4,7 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Avatar Stats - Sorcerers Summit</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
+    <link
+      rel="icon"
+      type="image/png"
+      href="{{ url_for('static', filename='images/favicon.png') }}" />
     <!-- Tailwind CSS (load first) -->
     <link
       rel="stylesheet"
@@ -169,7 +172,13 @@
           Global statistics from all matches reported with decklists, sorted by
           accuracy score (win rate &times; games played)
         </p>
-        <p id="play-draw-stats" style="font-size: 0.9rem; color: rgba(255, 255, 255, 0.7); margin-top: 0.5rem;">
+        <p
+          id="play-draw-stats"
+          style="
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin-top: 0.5rem;
+          ">
           <!-- Overall play/draw stats will be inserted here by JS -->
         </p>
       </section>

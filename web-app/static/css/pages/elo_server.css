@@ -1,0 +1,20 @@
+/*
+ * Page: Server ELO Leaderboard
+ * Template: templates/pages/elo_server.html
+ * Description: Styles for server-specific ELO leaderboard and temporary notice
+ */
+
+/* === Server Notice === */
+.server-notice {
+  background: var(--color-bg-elevated);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-soft);
+  margin-bottom: var(--spacing-lg);
+  border: 1px solid var(--color-border);
+}
+
+.server-notice p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}

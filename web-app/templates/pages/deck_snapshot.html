@@ -1,31 +1,12 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Deck Snapshot - Sorcerers Summit</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
-    <!-- Tailwind CSS (load first) -->
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/pages/deck_snapshot.css') }}?v={{ app_version }}" />
-  </head>
-  <body>
-    {% include 'components/navbar.html' %}
+{% extends "base.html" %}
 
-    <main>
+{% block title %}Deck Snapshot - Sorcerers Summit{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/pages/deck_snapshot.css') }}?v={{ app_version }}">
+{% endblock %}
+
+{% block content %}
       <a href="/player/{{ player_id }}" class="back-link">← Back to Profile</a>
 
       <div class="deck-snapshot-container" id="deck-snapshot">
@@ -35,7 +16,7 @@
           <div class="match-info" id="match-info"></div>
         </div>
 
-        <div class="deck-content" id="deck-content" style="display: none">
+        <div class="deck-content hidden" id="deck-content">
           <div class="deck-sections">
             <!-- Minions Section -->
             <div class="deck-section-tile" id="minions-section">
@@ -75,131 +56,15 @@
           </div>
         </div>
 
-        <div
-          class="error-message"
-          id="error-message"
-          style="display: none"></div>
+        <div class="error-message hidden" id="error-message"></div>
       </div>
-    </main>
+{% endblock %}
 
-    <script>
-      const matchId = {{ match_id }};
-      const playerId = "{{ player_id }}";
-
-      function getManaCost(card) {
-        // Try different possible field names for mana cost
-        return card.threshold || card.cost || card.mana || card.mana_cost || 0;
-      }
-
-      function getCardType(card) {
-        // Normalize card type
-        const type = (card.type || '').toLowerCase();
-        if (type.includes('minion')) return 'Minion';
-        if (type.includes('magic')) return 'Magic';
-        if (type.includes('artifact')) return 'Artifact';
-        if (type.includes('aura')) return 'Aura';
-        if (type.includes('site')) return 'Site';
-        return 'Other';
-      }
-
-      function renderCardList(cards, listId, sectionId) {
-        const list = document.getElementById(listId);
-        const section = document.getElementById(sectionId);
-
-        if (!cards || cards.length === 0) {
-          section.style.display = 'none';
-          return;
-        }
-
-        list.innerHTML = '';
-
-        // Sort cards by mana cost (lowest first)
-        const sortedCards = [...cards].sort((a, b) => {
-          return getManaCost(a) - getManaCost(b);
-        });
-
-        // Render each card with its quantity
-        sortedCards.forEach(card => {
-          const li = document.createElement('li');
-          li.className = 'card-list-item';
-          const cost = getManaCost(card);
-          const quantity = card.quantity || 1;
-          const costDisplay = cost > 0 ? `<span class="card-cost">${cost}</span>` : '';
-          li.innerHTML = `<span class="card-count">${quantity}x</span> <span class="card-name">${card.name}</span>${costDisplay}`;
-          list.appendChild(li);
-        });
-
-        section.style.display = 'block';
-      }
-
-      function filterByType(cards, type) {
-        if (!cards) return [];
-        return cards.filter(card => getCardType(card) === type);
-      }
-
-      async function fetchDeckData() {
-        try {
-          const res = await fetch(`/api/deck-snapshot/${matchId}/${playerId}`);
-
-          if (!res.ok) {
-            const data = await res.json();
-            throw new Error(data.error || 'Failed to load deck data');
-          }
-
-          const data = await res.json();
-
-          // Update header
-          const deckName = data.deck.name || 'Unnamed Deck';
-          document.getElementById('deck-title').textContent = deckName;
-          document.title = `${deckName} - Deck Snapshot - Sorcerers Summit`;
-
-          // Update avatar (compact display)
-          if (data.deck.avatar && data.deck.avatar.length > 0) {
-            const avatarName = data.deck.avatar[0].name || 'Unknown Avatar';
-            document.getElementById('deck-avatar').textContent = avatarName;
-          }
-
-          // Update match info
-          const date = new Date(data.date).toLocaleDateString();
-          const resultClass = data.result === 'Win' ? 'match-win' : 'match-loss';
-          document.getElementById('match-info').innerHTML = `
-            <span class="${resultClass}">${data.result}</span> vs ${data.opponent_name} on ${date}
-          `;
-
-          // Split spellbook by card type
-          const spellbook = data.deck.spellbook || [];
-          const minions = filterByType(spellbook, 'Minion');
-          const magic = filterByType(spellbook, 'Magic');
-          const artifacts = filterByType(spellbook, 'Artifact');
-          const auras = filterByType(spellbook, 'Aura');
-
-          // Render spellbook sections
-          renderCardList(minions, 'minions-list', 'minions-section');
-          renderCardList(magic, 'magic-list', 'magic-section');
-          renderCardList(artifacts, 'artifacts-list', 'artifacts-section');
-          renderCardList(auras, 'auras-list', 'auras-section');
-
-          // Render other sections
-          renderCardList(data.deck.atlas, 'sites-list', 'sites-section');
-          renderCardList(data.deck.sideboard, 'collection-list', 'collection-section');
-
-          // Show content
-          document.getElementById('deck-content').style.display = 'block';
-
-        } catch (error) {
-          document.getElementById('deck-title').textContent = 'Error';
-          document.getElementById('error-message').textContent = error.message;
-          document.getElementById('error-message').style.display = 'block';
-          console.error(error);
-        }
-      }
-
-      fetchDeckData();
-    </script>
-
-    <footer>
-      <p>&copy; 2026 Summit. All rights reserved.</p>
-    </footer>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
-  </body>
-</html>
+{% block scripts %}
+<script>
+  // Pass template variables to JavaScript
+  window.MATCH_ID = {{ match_id }};
+  window.PLAYER_ID = "{{ player_id }}";
+</script>
+<script src="{{ url_for('static', filename='js/pages/deck_snapshot.js') }}?v={{ app_version }}" defer></script>
+{% endblock %}

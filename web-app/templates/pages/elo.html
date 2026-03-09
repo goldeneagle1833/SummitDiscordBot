@@ -4,139 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ELO Leaderboards - Sorcerers Summit</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
-    <!-- Tailwind CSS (load first) -->
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
-    <style>
-      .distribution-section {
-        max-width: 600px;
-        margin: 2rem auto;
-        padding: 0 2rem;
-      }
-
-      .distribution-controls {
-        display: flex;
-        gap: 1rem;
-        align-items: center;
-        margin-bottom: 1rem;
-        flex-wrap: wrap;
-      }
-
-      .distribution-controls label {
-        color: rgba(255, 255, 255, 0.8);
-        font-weight: 500;
-      }
-
-      .distribution-controls select,
-      .distribution-controls input {
-        padding: 0.5rem 1rem;
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 6px;
-        color: #fff;
-        font-size: 0.95rem;
-      }
-
-      .distribution-controls select:focus,
-      .distribution-controls input:focus {
-        outline: none;
-        border-color: #4db8ff;
-      }
-
-      .distribution-controls select option {
-        background: #1a1a2e;
-        color: #fff;
-      }
-
-      .distribution-table-container {
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 8px;
-        padding: 1.5rem;
-      }
-
-      .distribution-table {
-        width: 100%;
-        border-collapse: collapse;
-      }
-
-      .distribution-table th {
-        background: rgba(255, 255, 255, 0.1);
-        padding: 0.75rem;
-        text-align: left;
-        color: rgba(255, 255, 255, 0.9);
-        font-weight: 600;
-        border-bottom: 2px solid rgba(255, 255, 255, 0.2);
-      }
-
-      .distribution-table td {
-        padding: 0.75rem;
-        color: rgba(255, 255, 255, 0.8);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-      }
-
-      .distribution-table tbody tr:hover {
-        background: rgba(255, 255, 255, 0.05);
-      }
-
-      .distribution-table th:last-child,
-      .distribution-table td:last-child {
-        text-align: right;
-      }
-
-      .elo-range {
-        font-weight: 600;
-        color: #4db8ff;
-      }
-
-      .player-count {
-        color: #ffd700;
-      }
-
-      .custom-inputs {
-        display: none;
-        gap: 0.5rem;
-        align-items: center;
-      }
-
-      .custom-inputs.visible {
-        display: flex;
-      }
-
-      .custom-inputs input {
-        width: 80px;
-      }
-
-      .custom-inputs input#custom-start {
-        width: 100px;
-      }
-    </style>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/pages/elo.css') }}?v={{ app_version }}" />
   </head>
   <body>
     {% include 'components/navbar.html' %}
-
     <main>
-      <section class="hero">
-        <h1>ELO Leaderboards</h1>
-        <p>Track player rankings across events</p>
-      </section>
 
-      <!-- ELO Distribution Section -->
-      <section class="distribution-section">
-        <h2 style="color: #fff; text-align: center; margin-bottom: 1rem">
-          ELO Distribution
-        </h2>
+  <section class="hero">
+    <h1>ELO Leaderboards</h1>
+    <p>Track player rankings across events</p>
+  </section>
+
+  <!-- ELO Distribution Section -->
+  <section class="distribution-section">
+    <h2 class="section-title">ELO Distribution</h2>
 
         <div class="distribution-controls">
           <label for="grouping-select">Grouping:</label>
@@ -163,16 +49,7 @@
               step="25"
               min="25"
               max="500" />
-            <button
-              onclick="fetchDistribution()"
-              style="
-                padding: 0.5rem 1rem;
-                background: #4db8ff;
-                border: none;
-                border-radius: 6px;
-                color: #000;
-                cursor: pointer;
-              ">
+            <button data-action="apply-custom-grouping" class="btn-apply">
               Apply
             </button>
           </div>
@@ -194,24 +71,12 @@
         </div>
       </section>
 
-      <!-- Lifetime Leaderboard Section -->
-      <section class="distribution-section" style="max-width: 800px">
-        <h2 style="color: #fff; text-align: center; margin-bottom: 1rem">
-          Lifetime ELO Leaderboard
-        </h2>
-        <p
-          style="
-            color: rgba(255, 255, 255, 0.6);
-            text-align: center;
-            margin-bottom: 1rem;
-            font-size: 0.9rem;
-          ">
-          Cumulative rankings across all events
-        </p>
+  <!-- Lifetime Leaderboard Section -->
+  <section class="distribution-section wide">
+    <h2 class="section-title">Lifetime ELO Leaderboard</h2>
+    <p class="section-subtitle">Cumulative rankings across all events</p>
 
-        <div
-          class="distribution-controls"
-          style="justify-content: center; margin-bottom: 1rem">
+    <div class="distribution-controls centered">
           <label for="lifetime-count-select">Show:</label>
           <select id="lifetime-count-select">
             <option value="16" selected>Top 16</option>
@@ -222,16 +87,16 @@
           </select>
         </div>
 
-        <div class="distribution-table-container">
-          <table class="distribution-table">
-            <thead>
-              <tr>
-                <th style="width: 60px">Rank</th>
-                <th>Player</th>
-                <th style="text-align: right">ELO</th>
-                <th style="text-align: right">W/L</th>
-              </tr>
-            </thead>
+    <div class="distribution-table-container">
+      <table class="distribution-table">
+        <thead>
+          <tr>
+            <th class="col-rank">Rank</th>
+            <th>Player</th>
+            <th class="col-align-right">ELO</th>
+            <th class="col-align-right">W/L</th>
+          </tr>
+        </thead>
             <tbody id="lifetime-leaderboard-body">
               <!-- Rows will be inserted by JS -->
             </tbody>
@@ -239,27 +104,16 @@
         </div>
       </section>
 
-      <!-- Event Leaderboard Section -->
-      <section class="distribution-section" style="max-width: 800px">
-        <h2
-          style="color: #fff; text-align: center; margin-bottom: 0.5rem"
-          id="event-title">
-          Current Event Leaderboard
-        </h2>
-        <p
-          style="
-            color: rgba(255, 255, 255, 0.6);
-            text-align: center;
-            margin-bottom: 1rem;
-            font-size: 0.9rem;
-          "
-          id="event-subtitle">
-          Loading event info...
-        </p>
+  <!-- Event Leaderboard Section -->
+  <section class="distribution-section wide">
+    <h2 class="section-title compact" id="event-title">
+      Current Event Leaderboard
+    </h2>
+    <p class="section-subtitle" id="event-subtitle">
+      Loading event info...
+    </p>
 
-        <div
-          class="distribution-controls"
-          style="justify-content: center; margin-bottom: 1rem">
+    <div class="distribution-controls centered">
           <label for="event-count-select">Show:</label>
           <select id="event-count-select">
             <option value="16" selected>Top 16</option>
@@ -270,289 +124,25 @@
           </select>
         </div>
 
-        <div class="distribution-table-container">
-          <table class="distribution-table">
-            <thead>
-              <tr>
-                <th style="width: 60px">Rank</th>
-                <th>Player</th>
-                <th style="text-align: right">Event ELO</th>
-              </tr>
-            </thead>
-            <tbody id="event-leaderboard-body">
-              <!-- Rows will be inserted by JS -->
-            </tbody>
-          </table>
-        </div>
-      </section>
+    <div class="distribution-table-container">
+      <table class="distribution-table">
+        <thead>
+          <tr>
+            <th class="col-rank">Rank</th>
+            <th>Player</th>
+            <th class="col-align-right">Event ELO</th>
+          </tr>
+        </thead>
+        <tbody id="event-leaderboard-body">
+          <!-- Rows will be inserted by JS -->
+        </tbody>
+      </table>
+    </div>
+  </section>
+
     </main>
-
-    <script>
-      let allElos = [];
-
-      // Show/hide custom inputs based on selection
-      document
-        .getElementById("grouping-select")
-        .addEventListener("change", function () {
-          const customInputs = document.getElementById("custom-inputs");
-          if (this.value === "custom") {
-            customInputs.classList.add("visible");
-          } else {
-            customInputs.classList.remove("visible");
-            fetchDistribution();
-          }
-        });
-
-      // Calculate distribution based on grouping settings
-      function calculateDistribution(elos, startValue, bandSize) {
-        const total = elos.length;
-        if (total === 0) return [];
-
-        const bands = [];
-        const minElo = Math.min(...elos);
-        const maxElo = Math.max(...elos);
-
-        // Create bands from start value up to max ELO
-        for (
-          let lower = startValue;
-          lower <= maxElo + bandSize;
-          lower += bandSize
-        ) {
-          const upper = lower + bandSize - 1;
-          const count = elos.filter(
-            (elo) => elo >= lower && elo <= upper,
-          ).length;
-          const percentage = (count / total) * 100;
-
-          bands.push({
-            range: `${lower}-${upper}`,
-            count: count,
-            percentage: percentage.toFixed(2),
-          });
-        }
-
-        // Add top bucket if there are any above the highest band
-        const highestBandStart =
-          Math.floor(maxElo / bandSize) * bandSize + (startValue % bandSize);
-
-        return bands
-          .filter((b) => b.count > 0 || parseInt(b.range.split("-")[0]) <= 1600)
-          .reverse();
-      }
-
-      // Render the distribution table
-      function renderDistribution(bands, totalPlayers) {
-        document.getElementById("total-players").textContent = totalPlayers;
-
-        const tbody = document.getElementById("distribution-body");
-        tbody.innerHTML = "";
-
-        bands.forEach((band) => {
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td class="elo-range">${band.range}</td>
-            <td class="player-count">${band.count}</td>
-            <td>${band.percentage}%</td>
-          `;
-          tbody.appendChild(row);
-        });
-      }
-
-      // Fetch ELO data and render with current settings
-      async function fetchDistribution() {
-        try {
-          const res = await fetch("/api/leaderboard");
-          if (!res.ok) {
-            console.error("Failed to fetch leaderboard:", res.status);
-            return;
-          }
-          const data = await res.json();
-          allElos = data.map((p) => p.elo);
-
-          // Get grouping settings
-          const grouping = document.getElementById("grouping-select").value;
-          let startValue, bandSize;
-
-          switch (grouping) {
-            case "100-standard":
-              startValue = 1100;
-              bandSize = 100;
-              break;
-            case "100-offset":
-              startValue = 1050;
-              bandSize = 100;
-              break;
-            case "50-standard":
-              startValue = 1100;
-              bandSize = 50;
-              break;
-            case "custom":
-              startValue =
-                parseInt(document.getElementById("custom-start").value) || 1100;
-              bandSize =
-                parseInt(document.getElementById("custom-size").value) || 100;
-              break;
-            default:
-              startValue = 1100;
-              bandSize = 100;
-          }
-
-          const bands = calculateDistribution(allElos, startValue, bandSize);
-          renderDistribution(bands, allElos.length);
-        } catch (error) {
-          console.error("Error fetching distribution:", error);
-        }
-      }
-
-      // Initial fetch
-      fetchDistribution();
-
-      // Auto-refresh every 30 seconds
-      setInterval(fetchDistribution, 30000);
-
-      // Store leaderboard data for re-rendering with different counts
-      let lifetimeData = [];
-      let eventData = null;
-
-      // Listen for count select changes
-      document
-        .getElementById("lifetime-count-select")
-        .addEventListener("change", function () {
-          renderLifetimeLeaderboard(lifetimeData);
-        });
-
-      document
-        .getElementById("event-count-select")
-        .addEventListener("change", function () {
-          if (eventData) renderEventLeaderboard(eventData);
-        });
-
-      // Fetch and render leaderboards
-      async function fetchLeaderboards() {
-        try {
-          const res = await fetch("/api/leaderboard/combined");
-          if (!res.ok) {
-            console.error("Failed to fetch leaderboards:", res.status);
-            return;
-          }
-          const data = await res.json();
-
-          // Store data for re-rendering
-          lifetimeData = data.lifetime;
-          eventData = data.event;
-
-          // Render lifetime leaderboard
-          renderLifetimeLeaderboard(lifetimeData);
-
-          // Render event leaderboard
-          renderEventLeaderboard(eventData);
-        } catch (error) {
-          console.error("Error fetching leaderboards:", error);
-        }
-      }
-
-      function renderLifetimeLeaderboard(players) {
-        const tbody = document.getElementById("lifetime-leaderboard-body");
-        tbody.innerHTML = "";
-
-        // Get display count from select
-        const countSelect = document.getElementById("lifetime-count-select");
-        const countValue = countSelect.value;
-        const displayCount =
-          countValue === "all" ? players.length : parseInt(countValue);
-
-        // Show players based on selected count
-        players.slice(0, displayCount).forEach((player, index) => {
-          const row = document.createElement("tr");
-          const rankDisplay =
-            index < 3 ? ["🥇", "🥈", "🥉"][index] : `#${index + 1}`;
-
-          row.innerHTML = `
-            <td style="font-weight: 600;">${rankDisplay}</td>
-            <td><a href="/player/${player.id}" style="color: #fff; text-decoration: none;">${player.name}</a></td>
-            <td style="text-align: right; color: #4db8ff; font-weight: 600;">${player.elo}</td>
-            <td style="text-align: right; color: rgba(255,255,255,0.7);">${player.wins}-${player.losses}</td>
-          `;
-          row.querySelector("a").addEventListener("mouseover", function () {
-            this.style.textDecoration = "underline";
-          });
-          row.querySelector("a").addEventListener("mouseout", function () {
-            this.style.textDecoration = "none";
-          });
-          tbody.appendChild(row);
-        });
-
-        if (players.length === 0) {
-          tbody.innerHTML =
-            '<tr><td colspan="4" style="text-align: center; color: rgba(255,255,255,0.5);">No players yet</td></tr>';
-        }
-      }
-
-      function renderEventLeaderboard(eventData) {
-        const titleEl = document.getElementById("event-title");
-        const subtitleEl = document.getElementById("event-subtitle");
-        const tbody = document.getElementById("event-leaderboard-body");
-
-        if (!eventData.info) {
-          titleEl.textContent = "No Active Event";
-          subtitleEl.textContent = "ELO tracking is paused between events";
-          tbody.innerHTML =
-            '<tr><td colspan="3" style="text-align: center; color: rgba(255,255,255,0.5);">No active event</td></tr>';
-          return;
-        }
-
-        titleEl.textContent = eventData.info.event_name;
-        subtitleEl.textContent = `Started: ${new Date(eventData.info.start_date).toLocaleDateString()}`;
-
-        tbody.innerHTML = "";
-
-        if (eventData.leaderboard.length === 0) {
-          tbody.innerHTML =
-            '<tr><td colspan="3" style="text-align: center; color: rgba(255,255,255,0.5);">No matches played yet</td></tr>';
-          return;
-        }
-
-        // Get display count from select
-        const countSelect = document.getElementById("event-count-select");
-        const countValue = countSelect.value;
-        const displayCount =
-          countValue === "all"
-            ? eventData.leaderboard.length
-            : parseInt(countValue);
-
-        // Show players based on selected count
-        eventData.leaderboard
-          .slice(0, displayCount)
-          .forEach((player, index) => {
-            const row = document.createElement("tr");
-            const rankDisplay =
-              index < 3 ? ["🥇", "🥈", "🥉"][index] : `#${index + 1}`;
-
-            row.innerHTML = `
-            <td style="font-weight: 600;">${rankDisplay}</td>
-            <td><a href="/player/${player.id}" style="color: #fff; text-decoration: none;">${player.name}</a></td>
-            <td style="text-align: right; color: #ffd700; font-weight: 600;">${player.event_elo}</td>
-          `;
-            row.querySelector("a").addEventListener("mouseover", function () {
-              this.style.textDecoration = "underline";
-            });
-            row.querySelector("a").addEventListener("mouseout", function () {
-              this.style.textDecoration = "none";
-            });
-            tbody.appendChild(row);
-          });
-      }
-
-      // Fetch leaderboards on load
-      fetchLeaderboards();
-
-      // Refresh leaderboards every 30 seconds
-      setInterval(fetchLeaderboards, 30000);
-    </script>
-
-    <footer>
-      <p>&copy; 2026 Summit. All rights reserved.</p>
-    </footer>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+    <footer><p>&copy; 2026 Summit. All rights reserved.</p></footer>
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"></script>
+    <script src="{{ url_for('static', filename='js/pages/elo.js') }}?v={{ app_version }}" defer></script>
   </body>
 </html>

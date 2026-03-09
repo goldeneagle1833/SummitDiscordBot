@@ -1,0 +1,20 @@
+/*
+ * Page: Card Win Rates
+ * Template: templates/pages/cards.html
+ * Description: Styles for card statistics page with filtering and lazy loading
+ */
+
+/* === Card Link Styling === */
+.avatar-stats-card {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* === Card Type Badge === */
+.card-type-badge {
+  position: absolute;
+  right: var(--spacing-sm);
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.6);
+}

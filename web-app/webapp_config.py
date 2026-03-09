@@ -106,6 +106,7 @@ EVENT_RATINGS = {
     "TTSLeagueS7topCut": 1,
     "UnlandCup25": 1,
     "Sorcerers Summit 'Bottom' 5 avatars": 1,
+    "Summit Gothic Season 1 2026": 3,
 }
 
 # Event name display mappings

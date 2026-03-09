@@ -52,66 +52,92 @@
 }
 
 .threshold-element {
+  position: relative;
   display: flex !important;
-  flex-direction: column !important;
   align-items: center;
   justify-content: center;
-  gap: 0.125rem;
-  padding: 0.25rem;
   background-color: var(--bg-base, #1a1a1a);
   border-radius: 6px;
   min-width: 0;
+  min-height: 80px;
+  overflow: hidden;
 }
 
 .element-display {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.125rem;
-  flex: 1;
+  gap: 0.25rem;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  z-index: 5;
+  pointer-events: none;
+  justify-content: center;
+  padding: 0.5rem;
 }
 
 .element-icon {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   object-fit: contain;
 }
 
 .element-counter-value {
-  font-size: 1rem;
+  font-size: 1.5rem;
   font-weight: 700;
   color: var(--text-color, #ffffff);
   text-align: center;
+  user-select: none;
 }
 
 .element-decrement,
 .element-increment {
-  min-width: 28px;
-  min-height: 28px;
+  position: absolute;
+  width: 100%;
+  height: 50%;
   font-size: 1rem;
   font-weight: 700;
-  background-color: var(--bg-elevated, #2a2a2a);
-  color: var(--text-color, #ffffff);
-  border: 1px solid var(--border-color, #444);
-  border-radius: 4px;
+  background-color: transparent;
+  color: rgba(255, 255, 255, 0.25);
+  border: none;
   cursor: pointer;
   transition: all 0.15s ease;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  flex-shrink: 0;
+  z-index: 10;
+  touch-action: manipulation;
+}
+
+.element-increment {
+  top: 0;
+  align-items: flex-start;
+  padding-top: 0.25rem;
+  color: rgba(74, 222, 128, 0.3);
+}
+
+.element-decrement {
+  bottom: 0;
+  align-items: flex-end;
+  padding-bottom: 0.25rem;
+  color: rgba(239, 68, 68, 0.3);
 }
 
 .element-decrement:hover,
 .element-increment:hover {
-  background-color: var(--bg-hover, #333);
+  background-color: rgba(147, 51, 234, 0.1);
 }
 
-.element-decrement:active,
 .element-increment:active {
-  transform: scale(0.95);
-  background-color: var(--secondary, #9333ea);
+  background-color: rgba(74, 222, 128, 0.15);
+  color: rgba(74, 222, 128, 0.6);
+}
+
+.element-decrement:active {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: rgba(239, 68, 68, 0.6);
 }
 
 /* Life Sections */
@@ -131,74 +157,85 @@
   transform: rotate(180deg);
 }
 
-/* Life Display - Core Counter */
+/* Life Display - Core Counter with Transparent Overlay Buttons */
 .life-display {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
   width: 100%;
   height: 100%;
+  overflow: hidden;
 }
 
 .life-btn {
-  min-width: 44px;
-  min-height: 44px;
-  font-size: 1.125rem;
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+  min-height: 50%;
+  font-size: 1.5rem;
   font-weight: 700;
-  background-color: var(--bg-base, #1a1a1a);
-  color: var(--text-color, #ffffff);
-  border: 2px solid var(--border-color, #444);
-  border-radius: 50%;
+  background-color: transparent;
+  color: rgba(255, 255, 255, 0.3);
+  border: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   display: flex;
   align-items: center;
   justify-content: center;
   touch-action: manipulation;
-}
-
-.life-btn.large {
-  min-width: 56px;
-  min-height: 56px;
-  font-size: 1.5rem;
-}
-
-.life-btn:hover {
-  background-color: var(--bg-hover, #333);
-  border-color: var(--secondary, #9333ea);
-}
-
-.life-btn:active {
-  transform: scale(0.95);
-  background-color: var(--secondary, #9333ea);
+  z-index: 10;
 }
 
 .life-btn.increment {
-  color: #4ade80; /* Green */
-  border-color: #4ade80;
+  top: 0;
+  align-items: flex-start;
+  padding-top: 1rem;
+  color: rgba(74, 222, 128, 0.4); /* Green with transparency */
 }
 
 .life-btn.decrement {
-  color: #ef4444; /* Red */
-  border-color: #ef4444;
+  bottom: 0;
+  align-items: flex-end;
+  padding-bottom: 1rem;
+  color: rgba(239, 68, 68, 0.4); /* Red with transparency */
+}
+
+.life-btn:hover,
+.life-btn:active {
+  background-color: rgba(147, 51, 234, 0.1);
+}
+
+.life-btn.increment:active {
+  background-color: rgba(74, 222, 128, 0.15);
+  color: rgba(74, 222, 128, 0.7);
+}
+
+.life-btn.decrement:active {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: rgba(239, 68, 68, 0.7);
 }
 
 .life-value-container {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  z-index: 5;
+  pointer-events: none; /* Allow clicks to pass through to buttons */
 }
 
 .life-value {
-  font-size: 3rem;
+  font-size: 6rem;
   font-weight: 700;
   color: var(--text-color, #ffffff);
   transition: all 0.2s ease;
   text-align: center;
   line-height: 1;
+  user-select: none;
 }
 
 /* Life value color based on amount */
@@ -424,7 +461,11 @@
 /* Responsive adjustments */
 @media (max-width: 375px) {
   .life-value {
-    font-size: 3rem;
+    font-size: 5rem;
+  }
+
+  .life-btn {
+    font-size: 1.25rem;
   }
 
   .threshold-elements {
@@ -432,8 +473,7 @@
   }
 
   .threshold-element {
-    padding: 0.25rem;
-    gap: 0.125rem;
+    min-height: 70px;
   }
 
   .element-icon {
@@ -442,18 +482,12 @@
   }
 
   .element-counter-value {
-    font-size: 1rem;
+    font-size: 1.25rem;
   }
 
   .element-decrement,
   .element-increment {
-    min-width: 28px;
-    min-height: 28px;
-    font-size: 1rem;
-  }
-
-  .life-display {
-    gap: 0.5rem;
+    font-size: 0.875rem;
   }
 }
 
@@ -464,11 +498,22 @@
   }
 
   .life-value {
-    font-size: 3rem;
+    font-size: 5rem;
   }
 
   .threshold-section {
     padding: 0.5rem;
+  }
+}
+
+/* Larger screens can show even bigger life values */
+@media (min-width: 376px) and (max-width: 768px) {
+  .life-value {
+    font-size: 8rem;
+  }
+
+  .life-btn {
+    font-size: 1.75rem;
   }
 }
 

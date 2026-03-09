@@ -69,6 +69,7 @@ const LifeCounterState = {
           },
         },
       },
+      lifeHistory: [], // Track life changes over time
       matchStartedAt: Date.now(),
       lastModified: Date.now(),
     };
@@ -94,7 +95,30 @@ function debouncedSave(state) {
 let currentState = LifeCounterState.load();
 
 function updateLife(player, amount) {
+  const oldLife = currentState.players[player].life;
   currentState.players[player].life += amount;
+
+  // Don't allow life to go below 0
+  if (currentState.players[player].life < 0) {
+    currentState.players[player].life = 0;
+  }
+
+  const newLife = currentState.players[player].life;
+
+  // Record life change in history (only if life actually changed)
+  if (oldLife !== newLife) {
+    if (!currentState.lifeHistory) {
+      currentState.lifeHistory = [];
+    }
+    currentState.lifeHistory.push({
+      timestamp: Date.now(),
+      player: player,
+      oldLife: oldLife,
+      newLife: newLife,
+      change: amount
+    });
+  }
+
   currentState.lastModified = Date.now();
   debouncedSave(currentState);
   renderUI(currentState);
@@ -152,11 +176,17 @@ function renderUI(state) {
     );
     if (lifeValueEl) {
       const life = state.players[player].life;
-      lifeValueEl.textContent = life;
+
+      // Show "DD" when life is 0, otherwise show the number
+      if (life === 0) {
+        lifeValueEl.textContent = "DD";
+      } else {
+        lifeValueEl.textContent = life;
+      }
 
       // Apply color classes based on life total
       lifeValueEl.classList.remove("critical", "low", "high");
-      if (life <= 0) {
+      if (life === 0) {
         lifeValueEl.classList.add("critical");
       } else if (life <= 5) {
         lifeValueEl.classList.add("low");
@@ -165,13 +195,14 @@ function renderUI(state) {
       }
     }
 
-    // Render threshold element counters
+    // Render threshold element counters - just show the number
     ["water", "fire", "earth", "air"].forEach((element) => {
       const elementCounterEl = document.querySelector(
         `.element-counter-value[data-player="${player}"][data-element="${element}"]`
       );
       if (elementCounterEl) {
-        elementCounterEl.textContent = state.players[player].threshold[element];
+        const value = state.players[player].threshold[element];
+        elementCounterEl.textContent = value;
       }
     });
   });

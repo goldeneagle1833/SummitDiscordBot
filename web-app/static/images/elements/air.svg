@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="#87CEEB" stroke-width="2.5">
+  <!-- Air swirls -->
+  <path d="M12 20 Q20 16, 28 20 T44 20" stroke-linecap="round"/>
+  <path d="M16 28 Q24 24, 32 28 T48 28" stroke-linecap="round"/>
+  <path d="M12 36 Q20 32, 28 36 T44 36" stroke-linecap="round"/>
+  <path d="M16 44 Q24 40, 32 44 T48 44" stroke-linecap="round" stroke-width="2"/>
+  <circle cx="52" cy="20" r="2" fill="#87CEEB" opacity="0.5"/>
+  <circle cx="48" cy="28" r="2" fill="#87CEEB" opacity="0.5"/>
+  <circle cx="52" cy="36" r="2" fill="#87CEEB" opacity="0.5"/>
+</svg>

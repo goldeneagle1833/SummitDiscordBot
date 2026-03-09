@@ -132,6 +132,21 @@
     <!-- Streamer chips will be inserted here by JavaScript -->
   </div>
 
+  <!-- Right side: Mobile-only life counter icon -->
+  <div class="flex md:hidden items-center gap-2 flex-1 justify-end">
+    <a
+      href="/life-counter"
+      class="flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
+      id="life-counter-icon"
+      aria-label="Life Counter"
+      title="Life Counter">
+      <img
+        src="{{ url_for('static', filename='images/icons/life-counter.svg') }}"
+        alt="Life Counter"
+        class="w-6 h-6">
+    </a>
+  </div>
+
   <!-- Nav links (hidden on mobile, shown on md+) -->
   <div class="hidden md:flex items-center gap-5 flex-1 justify-end">
     <a

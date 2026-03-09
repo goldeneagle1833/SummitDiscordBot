@@ -43,6 +43,12 @@ def help_page():
     return render_template("pages/help.html")
 
 
+@pages_bp.route("/life-counter")
+def life_counter():
+    """Life counter page for tracking game life totals."""
+    return render_template("pages/life_counter.html")
+
+
 @pages_bp.route("/privacy")
 def privacy():
     """Privacy policy page."""

@@ -96,6 +96,13 @@ document.addEventListener("DOMContentLoaded", function () {
       );
     }
 
+    // Set active state for life counter icon when on life counter page
+    const lifeCounterIcon = document.getElementById("life-counter-icon");
+    if (lifeCounterIcon && window.location.pathname === "/life-counter") {
+      lifeCounterIcon.classList.add("active");
+      console.log("[navbar] life counter icon set to active");
+    }
+
     // Secret easter egg: Triple-click the brand name to access secret fart leaderboard
     const brandLink = document.getElementById("brand-secret");
     if (brandLink) {

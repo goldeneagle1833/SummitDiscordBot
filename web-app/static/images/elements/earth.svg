@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Earth/mountain -->
+  <path d="M8 48 L20 32 L28 40 L40 20 L52 36 L56 48 Z" fill="#8B4513" opacity="0.6"/>
+  <path d="M12 48 L24 36 L32 44 L44 28 L52 40 L56 48 Z" fill="#A0522D" opacity="0.8"/>
+  <rect x="8" y="48" width="48" height="8" fill="#654321"/>
+</svg>

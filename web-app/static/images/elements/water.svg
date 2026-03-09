@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="#4A90E2" stroke-width="3">
+  <!-- Water droplet -->
+  <path d="M32 8 C32 8, 16 24, 16 36 C16 44.84, 23.16 52, 32 52 C40.84 52, 48 44.84, 48 36 C48 24, 32 8, 32 8 Z" fill="#4A90E2" opacity="0.3"/>
+  <circle cx="28" cy="32" r="3" fill="#FFFFFF" opacity="0.6"/>
+</svg>

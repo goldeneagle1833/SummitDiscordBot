@@ -1,0 +1,490 @@
+/* Life Counter Page Styles - Mobile First (320px-768px) - Mirrored Layout */
+
+/* Prevent bounce scrolling and enable touch optimization */
+.life-counter-container {
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: manipulation; /* Disable 300ms tap delay */
+  padding: 0.25rem;
+  max-width: 600px;
+  margin: 0 auto;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-top: 3.5rem; /* Space for header bar */
+  padding-bottom: 0.25rem;
+  overflow: hidden; /* Prevent scrolling */
+  box-sizing: border-box;
+}
+
+/* Threshold Sections (Mirrored Layout) */
+.threshold-section {
+  padding: 0.5rem;
+  background-color: var(--bg-elevated, #2a2a2a);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+/* Opponent's threshold rotated 180° for mirrored view */
+.opponent-threshold {
+  transform: rotate(180deg);
+}
+
+.threshold-label {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--text-muted, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-align: center;
+  line-height: 1;
+}
+
+.threshold-elements {
+  display: grid !important;
+  grid-template-columns: repeat(4, 1fr) !important;
+  gap: 0.25rem;
+  width: 100%;
+}
+
+.threshold-element {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+  padding: 0.25rem;
+  background-color: var(--bg-base, #1a1a1a);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.element-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  flex: 1;
+}
+
+.element-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.element-counter-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-color, #ffffff);
+  text-align: center;
+}
+
+.element-decrement,
+.element-increment {
+  min-width: 28px;
+  min-height: 28px;
+  font-size: 1rem;
+  font-weight: 700;
+  background-color: var(--bg-elevated, #2a2a2a);
+  color: var(--text-color, #ffffff);
+  border: 1px solid var(--border-color, #444);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.element-decrement:hover,
+.element-increment:hover {
+  background-color: var(--bg-hover, #333);
+}
+
+.element-decrement:active,
+.element-increment:active {
+  transform: scale(0.95);
+  background-color: var(--secondary, #9333ea);
+}
+
+/* Life Sections */
+.life-section {
+  padding: 0.5rem;
+  background-color: var(--bg-elevated, #2a2a2a);
+  border-radius: 8px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+/* Opponent's life rotated 180° for mirrored view */
+.opponent-life {
+  transform: rotate(180deg);
+}
+
+/* Life Display - Core Counter */
+.life-display {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 100%;
+}
+
+.life-btn {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 1.125rem;
+  font-weight: 700;
+  background-color: var(--bg-base, #1a1a1a);
+  color: var(--text-color, #ffffff);
+  border: 2px solid var(--border-color, #444);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+}
+
+.life-btn.large {
+  min-width: 56px;
+  min-height: 56px;
+  font-size: 1.5rem;
+}
+
+.life-btn:hover {
+  background-color: var(--bg-hover, #333);
+  border-color: var(--secondary, #9333ea);
+}
+
+.life-btn:active {
+  transform: scale(0.95);
+  background-color: var(--secondary, #9333ea);
+}
+
+.life-btn.increment {
+  color: #4ade80; /* Green */
+  border-color: #4ade80;
+}
+
+.life-btn.decrement {
+  color: #ef4444; /* Red */
+  border-color: #ef4444;
+}
+
+.life-value-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+.life-value {
+  font-size: 3rem;
+  font-weight: 700;
+  color: var(--text-color, #ffffff);
+  transition: all 0.2s ease;
+  text-align: center;
+  line-height: 1;
+}
+
+/* Life value color based on amount */
+.life-value.critical {
+  color: #ef4444;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.life-value.low {
+  color: #f59e0b;
+}
+
+.life-value.high {
+  color: #4ade80;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+}
+
+
+/* Match Report Button */
+#report-match-btn {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+  min-height: 56px;
+  background-color: var(--secondary, #9333ea);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#report-match-btn:hover,
+#report-match-btn:active {
+  background-color: var(--secondary-hover, #7c3aed);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(147, 51, 234, 0.3);
+}
+
+#report-match-btn.hidden {
+  display: none;
+}
+
+/* Button Styles (Standalone - no base CSS) */
+.btn {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+}
+
+.btn-primary {
+  background-color: var(--secondary, #9333ea);
+  color: #ffffff;
+}
+
+.btn-primary:hover,
+.btn-primary:active {
+  background-color: var(--secondary-hover, #7c3aed);
+  transform: scale(0.98);
+}
+
+.btn-secondary {
+  background-color: var(--bg-base, #1a1a1a);
+  color: var(--text-color, #ffffff);
+  border: 1px solid var(--border-color, #444);
+}
+
+.btn-secondary:hover,
+.btn-secondary:active {
+  background-color: var(--bg-hover, #333);
+}
+
+.btn-danger {
+  background-color: #ef4444;
+  color: #ffffff;
+}
+
+.btn-danger:hover,
+.btn-danger:active {
+  background-color: #dc2626;
+}
+
+.text-muted {
+  color: var(--text-muted, #888);
+  font-size: 0.875rem;
+}
+
+/* Modal Styles */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-content {
+  background-color: var(--bg-elevated, #2a2a2a);
+  border-radius: 12px;
+  max-width: 500px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--border-color, #444);
+}
+
+.modal-header h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-color, #ffffff);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 2rem;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s ease;
+}
+
+.modal-close:hover {
+  color: var(--text-color, #ffffff);
+}
+
+.modal-body {
+  padding: 1.5rem;
+}
+
+.text-muted {
+  color: var(--text-muted, #888);
+  font-size: 0.875rem;
+}
+
+/* Buttons */
+.btn {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 48px; /* Touch target */
+}
+
+.btn-primary {
+  background-color: var(--secondary, #9333ea);
+  color: #ffffff;
+}
+
+.btn-primary:hover,
+.btn-primary:active {
+  background-color: var(--secondary-hover, #7c3aed);
+  transform: scale(0.98);
+}
+
+.btn-secondary {
+  background-color: var(--bg-base, #1a1a1a);
+  color: var(--text-color, #ffffff);
+  border: 1px solid var(--border-color, #444);
+}
+
+.btn-secondary:hover,
+.btn-secondary:active {
+  background-color: var(--bg-hover, #333);
+}
+
+.btn-danger {
+  background-color: #ef4444;
+  color: #ffffff;
+}
+
+.btn-danger:hover,
+.btn-danger:active {
+  background-color: #dc2626;
+}
+
+/* Responsive adjustments */
+@media (max-width: 375px) {
+  .life-value {
+    font-size: 3rem;
+  }
+
+  .threshold-elements {
+    gap: 0.25rem;
+  }
+
+  .threshold-element {
+    padding: 0.25rem;
+    gap: 0.125rem;
+  }
+
+  .element-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .element-counter-value {
+    font-size: 1rem;
+  }
+
+  .element-decrement,
+  .element-increment {
+    min-width: 28px;
+    min-height: 28px;
+    font-size: 1rem;
+  }
+
+  .life-display {
+    gap: 0.5rem;
+  }
+}
+
+/* Landscape mobile */
+@media (max-width: 768px) and (orientation: landscape) {
+  .life-section {
+    padding: 1rem;
+  }
+
+  .life-value {
+    font-size: 3rem;
+  }
+
+  .threshold-section {
+    padding: 0.5rem;
+  }
+}
+
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .life-btn,
+  .counter-btn,
+  .btn {
+    border-width: 2px;
+  }
+}

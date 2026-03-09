@@ -334,6 +334,36 @@ function disconnectSSE() {
   }
 }
 
+// ==================== Fullscreen Support ====================
+
+function requestFullscreen() {
+  const elem = document.documentElement;
+
+  if (elem.requestFullscreen) {
+    elem.requestFullscreen().catch((err) => {
+      console.log("Fullscreen request failed:", err);
+    });
+  } else if (elem.webkitRequestFullscreen) {
+    // Safari
+    elem.webkitRequestFullscreen();
+  } else if (elem.mozRequestFullScreen) {
+    // Firefox
+    elem.mozRequestFullScreen();
+  } else if (elem.msRequestFullscreen) {
+    // IE/Edge
+    elem.msRequestFullscreen();
+  }
+}
+
+function isFullscreen() {
+  return !!(
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.mozFullScreenElement ||
+    document.msFullscreenElement
+  );
+}
+
 // ==================== Initialization ====================
 
 document.addEventListener("DOMContentLoaded", function () {
@@ -350,6 +380,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Check if game already ended (from previous session)
   checkForGameEnd(currentState);
+
+  // Request fullscreen on first user interaction
+  let fullscreenRequested = false;
+  const requestFullscreenOnce = () => {
+    if (!fullscreenRequested && !isFullscreen()) {
+      fullscreenRequested = true;
+      requestFullscreen();
+    }
+  };
+
+  // Try to go fullscreen on first tap/click
+  document.body.addEventListener("click", requestFullscreenOnce, { once: true });
+  document.body.addEventListener("touchstart", requestFullscreenOnce, { once: true });
 
   console.log("[LifeCounter] Initialization complete");
   console.log("[LifeCounter] Threshold elements:", document.querySelectorAll(".threshold-element").length);

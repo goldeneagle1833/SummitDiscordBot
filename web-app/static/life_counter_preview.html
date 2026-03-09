@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1a1a1a">
   <title>Life Counter Preview - Transparent Buttons</title>
   <link rel="icon" type="image/png" href="images/favicon.png">
   <style>
@@ -598,11 +602,54 @@
       }
     });
 
+    // Fullscreen support
+    function requestFullscreen() {
+      const elem = document.documentElement;
+
+      if (elem.requestFullscreen) {
+        elem.requestFullscreen().catch((err) => {
+          console.log("Fullscreen request failed:", err);
+        });
+      } else if (elem.webkitRequestFullscreen) {
+        // Safari
+        elem.webkitRequestFullscreen();
+      } else if (elem.mozRequestFullScreen) {
+        // Firefox
+        elem.mozRequestFullScreen();
+      } else if (elem.msRequestFullscreen) {
+        // IE/Edge
+        elem.msRequestFullscreen();
+      }
+    }
+
+    function isFullscreen() {
+      return !!(
+        document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.mozFullScreenElement ||
+        document.msFullscreenElement
+      );
+    }
+
+    // Request fullscreen on first user interaction
+    let fullscreenRequested = false;
+    const requestFullscreenOnce = () => {
+      if (!fullscreenRequested && !isFullscreen()) {
+        fullscreenRequested = true;
+        requestFullscreen();
+      }
+    };
+
+    // Try to go fullscreen on first tap/click
+    document.body.addEventListener("click", requestFullscreenOnce, { once: true });
+    document.body.addEventListener("touchstart", requestFullscreenOnce, { once: true });
+
     console.log("Life Counter Preview Ready");
     console.log("Try tapping the top/bottom halves of each section");
     console.log("Life counter shows 'DD' when at 0 and can't go negative");
     console.log("Threshold counters start at 0 and can't go negative");
     console.log("Life history will be logged to console");
+    console.log("Fullscreen will activate on first tap");
   </script>
 </body>
 </html>

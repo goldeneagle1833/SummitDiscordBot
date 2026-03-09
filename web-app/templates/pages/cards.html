@@ -9,6 +9,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/components/footer.css') }}?v={{ app_version }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pages/cards.css') }}?v={{ app_version }}" />
   </head>
   <body>
@@ -57,9 +59,8 @@
           <!-- Card tiles will be inserted here by JS -->
         </div>
       </section>
-    </main>
-    <footer><p>&copy; 2026 Summit. All rights reserved.</p></footer>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"></script>
+    </main>    {% include 'components/footer.html' %}
+<script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"></script>
     <script src="{{ url_for('static', filename='js/pages/cards.js') }}?v={{ app_version }}" defer></script>
   </body>
 </html>

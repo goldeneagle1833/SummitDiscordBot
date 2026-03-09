@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Terms of Service - Sorcerers Summit</title>
+    <link
+      rel="icon"
+      type="image/png"
+      href="{{ url_for('static', filename='images/favicon.png') }}" />
+    <!-- CSS Load Order -->
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/tailwind.output.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/global.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/footer.css') }}?v={{ app_version }}" />
+    <style>
+      .content {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      .content h1 {
+        font-size: 2.5rem;
+        margin-bottom: 1rem;
+        color: var(--color-primary);
+      }
+
+      .content h2 {
+        font-size: 1.8rem;
+        margin-top: 2rem;
+        margin-bottom: 1rem;
+        color: #ffffff;
+        font-weight: 600;
+      }
+
+      .content h3 {
+        font-size: 1.3rem;
+        margin-top: 1.5rem;
+        margin-bottom: 0.75rem;
+        color: #e0e0e0;
+        font-weight: 600;
+      }
+
+      .content p {
+        margin-bottom: 1rem;
+        line-height: 1.6;
+      }
+
+      .content ul {
+        margin-left: 2rem;
+        margin-bottom: 1rem;
+      }
+
+      .content li {
+        margin-bottom: 0.5rem;
+      }
+
+      .content a {
+        color: var(--color-primary);
+        text-decoration: underline;
+      }
+
+      .content a:hover {
+        color: var(--color-secondary);
+      }
+
+      .last-updated {
+        font-style: italic;
+        color: var(--color-text-muted);
+        margin-bottom: 2rem;
+      }
+    </style>
+  </head>
+  <body>
+    {% include 'components/navbar.html' %}
+
+    <main>
+      <section class="content">
+        <h1>Terms of Service</h1>
+        <p class="last-updated">Last updated: March 9, 2026</p>
+
+        <h2>1. Acceptance of Terms</h2>
+        <p>
+          By accessing and using Sorcerers Summit ("the Service"), you accept
+          and agree to be bound by these Terms of Service. If you do not agree
+          to these terms, please do not use the Service.
+        </p>
+
+        <h2>2. Description of Service</h2>
+        <p>
+          Sorcerers Summit provides a platform for tracking competitive play in
+          Sorcery: Contested Realm, including:
+        </p>
+        <ul>
+          <li>ELO ranking system for competitive matches</li>
+          <li>Match history and statistics tracking</li>
+          <li>Tournament deck data and analysis</li>
+          <li>Community leaderboards and player profiles</li>
+          <li>Discord bot integration for matchmaking and reporting</li>
+        </ul>
+
+        <h2>3. User Conduct</h2>
+        <p>You agree to use the Service in accordance with the following:</p>
+        <ul>
+          <li>
+            <strong>Accurate Reporting:</strong> Report match results
+            truthfully and accurately
+          </li>
+          <li>
+            <strong>Fair Play:</strong> Do not manipulate ELO ratings or engage
+            in match-fixing
+          </li>
+          <li>
+            <strong>Respectful Behavior:</strong> Treat other users with respect
+          </li>
+          <li>
+            <strong>No Cheating:</strong> Do not use exploits, bots, or
+            automated tools to gain unfair advantages
+          </li>
+          <li>
+            <strong>Account Security:</strong> Keep your Discord account secure
+            and do not share access
+          </li>
+        </ul>
+
+        <h2>4. Account Termination</h2>
+        <p>
+          We reserve the right to suspend or terminate your access to the
+          Service if you violate these Terms of Service, including but not
+          limited to:
+        </p>
+        <ul>
+          <li>Submitting false match reports</li>
+          <li>Harassing other users</li>
+          <li>Attempting to manipulate rankings</li>
+          <li>Using the Service for illegal purposes</li>
+        </ul>
+
+        <h2>5. Data and Privacy</h2>
+        <p>
+          Your use of the Service is also governed by our
+          <a href="/privacy">Privacy Policy</a>. By using the Service, you
+          consent to the collection and use of your data as described in the
+          Privacy Policy.
+        </p>
+
+        <h2>6. Intellectual Property</h2>
+        <p>
+          Sorcery: Contested Realm and all related trademarks are the property
+          of Erik's Curiosa. This Service is not affiliated with or endorsed by
+          Erik's Curiosa. All card data and game information are used for
+          informational and educational purposes.
+        </p>
+
+        <h2>7. Disclaimer of Warranties</h2>
+        <p>
+          The Service is provided "as is" without warranties of any kind, either
+          express or implied. We do not guarantee that:
+        </p>
+        <ul>
+          <li>The Service will be uninterrupted or error-free</li>
+          <li>ELO ratings will be perfectly accurate</li>
+          <li>Data will be permanently stored or backed up</li>
+          <li>The Service will meet your specific requirements</li>
+        </ul>
+
+        <h2>8. Limitation of Liability</h2>
+        <p>
+          In no event shall Sorcerers Summit, its operators, or contributors be
+          liable for any damages arising from your use of the Service, including
+          but not limited to loss of data, loss of rankings, or service
+          interruptions.
+        </p>
+
+        <h2>9. User-Generated Content</h2>
+        <p>
+          By submitting match reports, deck data, or other content to the
+          Service, you grant us a non-exclusive, worldwide license to use,
+          display, and distribute that content as part of the Service.
+        </p>
+
+        <h2>10. Changes to Terms</h2>
+        <p>
+          We reserve the right to modify these Terms of Service at any time.
+          Significant changes will be announced via Discord or the website.
+          Continued use of the Service after changes constitutes acceptance of
+          the new terms.
+        </p>
+
+        <h2>11. Governing Law</h2>
+        <p>
+          These Terms of Service shall be governed by and construed in
+          accordance with applicable laws. Any disputes shall be resolved
+          through good-faith discussion.
+        </p>
+
+        <h2>12. Contact Information</h2>
+        <p>
+          For questions about these Terms of Service, please contact us via
+          Discord:
+          <a
+            href="https://discord.gg/ZDqHSK9VGx"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Join our Discord server</a
+          >
+          and reach out to <strong>OFN-CJ</strong> or
+          <strong>Goldeneagle</strong>.
+        </p>
+      </section>
+    </main>
+
+    {% include 'components/footer.html' %}
+
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"></script>
+  </body>
+</html>

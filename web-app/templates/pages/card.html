@@ -18,6 +18,10 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
+
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/footer.css') }}?v={{ app_version }}" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
       .card-image-container {
@@ -533,11 +537,7 @@
 
       fetchCardData();
       fetchPopularityData();
-    </script>
-
-    <footer>
-      <p>&copy; 2026 Summit. All rights reserved.</p>
-    </footer>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+    </script>    {% include 'components/footer.html' %}
+<script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
   </body>
 </html>

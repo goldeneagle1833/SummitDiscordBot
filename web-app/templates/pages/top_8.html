@@ -18,6 +18,10 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
+
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/footer.css') }}?v={{ app_version }}" />
     <style>
       .events-container {
         max-width: 1200px;
@@ -234,12 +238,8 @@
         </div>
         {% endif %}
       </section>
-    </main>
-
-    <footer>
-      <p>&copy; 2026 Summit. All rights reserved.</p>
-    </footer>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+    </main>    {% include 'components/footer.html' %}
+<script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
     <script>
       function filterEvents() {
         const yearFilter = document.getElementById("year-filter").value;

@@ -42,6 +42,11 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.secret_key = webapp_config.SECRET_KEY
 
+    # Force template reloading (disable caching)
+    app.config['TEMPLATES_AUTO_RELOAD'] = True
+    app.jinja_env.auto_reload = True
+    app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+
     # Register all blueprints
     register_blueprints(app)
 

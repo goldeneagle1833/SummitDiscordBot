@@ -43,6 +43,18 @@ def help_page():
     return render_template("pages/help.html")
 
 
+@pages_bp.route("/privacy")
+def privacy():
+    """Privacy policy page."""
+    return render_template("pages/privacy.html")
+
+
+@pages_bp.route("/terms")
+def terms():
+    """Terms of service page."""
+    return render_template("pages/terms.html")
+
+
 @pages_bp.route("/deck-help")
 def deck_help():
     """Deck help and resources page."""

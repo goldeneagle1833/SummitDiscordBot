@@ -21,6 +21,10 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
+
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/footer.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/pages/help.css') }}?v={{ app_version }}" />
@@ -79,9 +83,7 @@
       </section>
     </main>
 
-    <footer>
-      <p>&copy; 2026 Summit. All rights reserved.</p>
-    </footer>
+    {% include 'components/footer.html' %}
 
     <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"></script>
   </body>

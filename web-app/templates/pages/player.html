@@ -18,6 +18,10 @@
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/navbar.css') }}?v={{ app_version }}" />
+
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/components/footer.css') }}?v={{ app_version }}" />
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/components/modals.css') }}?v={{ app_version }}" />
@@ -1685,11 +1689,7 @@
 
       // Initial load - start at page 1
       fetchPlayerData("lifetime", 1);
-    </script>
-
-    <footer>
-      <p>&copy; 2026 Summit. All rights reserved.</p>
-    </footer>
-    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+    </script>    {% include 'components/footer.html' %}
+<script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
   </body>
 </html>

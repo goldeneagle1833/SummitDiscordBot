@@ -216,9 +216,18 @@ class MatchConfirmationService:
                 }
         """
         # Tier 1: Get recent opponents from match history
-        recent_opponents = self.repo.get_recent_lfg_opponents(
-            user_id=int(current_user_id), limit=limit
-        )
+        # Note: Only works for numeric Discord IDs, not multi-provider IDs like "google_123"
+        recent_opponents = []
+        try:
+            recent_opponents = self.repo.get_recent_lfg_opponents(
+                user_id=int(current_user_id), limit=limit
+            )
+        except (ValueError, TypeError):
+            # User ID is not numeric (e.g., Google OAuth "google_123...")
+            # Skip recent opponents lookup and rely on display name search only
+            logger.debug(
+                f"Skipping recent opponents lookup for non-numeric user_id: {current_user_id}"
+            )
 
         # Build map of recent opponent IDs for quick lookup
         recent_map = {

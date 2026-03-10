@@ -884,3 +884,197 @@
     order: 3;
   }
 }
+
+/* ============================================================================
+   Confirmation Modal - Pending Confirmations & Details
+   ============================================================================ */
+
+/* Pending Confirmations List */
+.pending-confirmations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.pending-confirmation-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background-color: var(--bg-base, #1a1a1a);
+  border: 1px solid var(--border-color, #444);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pending-confirmation-item:hover {
+  background-color: rgba(147, 51, 234, 0.1);
+  border-color: var(--secondary, #9333ea);
+}
+
+.pending-confirmation-item img {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.pending-confirmation-info {
+  flex: 1;
+}
+
+.pending-confirmation-name {
+  display: block;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-color, #ffffff);
+  margin-bottom: 0.25rem;
+}
+
+.pending-confirmation-summary {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--text-muted, #888);
+}
+
+.pending-confirmation-badge {
+  padding: 0.25rem 0.75rem;
+  background-color: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.loading-text {
+  text-align: center;
+  padding: 2rem;
+}
+
+/* Confirmation Details */
+.confirmation-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.confirmation-details.hidden {
+  display: none;
+}
+
+.confirmation-submitter {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background-color: rgba(147, 51, 234, 0.1);
+  border: 1px solid rgba(147, 51, 234, 0.3);
+  border-radius: 8px;
+}
+
+.confirmation-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.confirmation-submitter-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.confirmation-name {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--text-color, #ffffff);
+}
+
+.confirmation-label {
+  font-size: 0.875rem;
+  color: var(--text-muted, #888);
+}
+
+/* Match Info Grid */
+.confirmation-match-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background-color: var(--bg-base, #1a1a1a);
+  border-radius: 8px;
+}
+
+.confirmation-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(68, 68, 68, 0.5);
+}
+
+.confirmation-info-row:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-muted, #888);
+}
+
+.info-value {
+  font-size: 0.875rem;
+  color: var(--text-color, #ffffff);
+  font-weight: 500;
+}
+
+.deck-link {
+  font-size: 0.875rem;
+  color: var(--secondary, #9333ea);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.deck-link:hover {
+  color: #7c3aed;
+  text-decoration: underline;
+}
+
+.confirmation-info-row.hidden {
+  display: none;
+}
+
+/* Confirmation Actions */
+.confirmation-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color, #444);
+}
+
+/* Mobile Adjustments for Confirmation Modal */
+@media (max-width: 480px) {
+  .confirmation-submitter {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .confirmation-actions {
+    flex-wrap: wrap;
+  }
+
+  .confirmation-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  #back-to-list-btn {
+    flex-basis: 100%;
+    order: 3;
+  }
+}

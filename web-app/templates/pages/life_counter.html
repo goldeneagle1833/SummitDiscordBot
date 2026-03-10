@@ -355,10 +355,75 @@
       <button class="modal-close" aria-label="Close modal">&times;</button>
     </div>
     <div class="modal-body">
-      <p class="confirmation-message">You have a pending match confirmation.</p>
-      <div class="confirmation-actions">
-        <button class="btn btn-primary" id="confirm-match-btn">Confirm</button>
-        <button class="btn btn-danger" id="dispute-match-btn">Dispute</button>
+      <!-- Pending Confirmations List -->
+      <div id="pending-confirmations-list" class="pending-confirmations">
+        <p class="text-muted loading-text">Loading pending confirmations...</p>
+      </div>
+
+      <!-- Confirmation Details (shown when user clicks a pending confirmation) -->
+      <div id="confirmation-details" class="confirmation-details hidden">
+        <div class="confirmation-submitter">
+          <img id="confirmation-submitter-avatar" class="confirmation-avatar" src="" alt="Submitter avatar" />
+          <div class="confirmation-submitter-info">
+            <span id="confirmation-submitter-name" class="confirmation-name">Player Name</span>
+            <span class="confirmation-label">reported a match against you</span>
+          </div>
+        </div>
+
+        <div class="confirmation-match-info">
+          <div class="confirmation-info-row">
+            <span class="info-label">Result:</span>
+            <span id="confirmation-result" class="info-value">Player 1 won</span>
+          </div>
+
+          <div class="confirmation-info-row">
+            <span class="info-label">Final Life:</span>
+            <span id="confirmation-final-life" class="info-value">Winner: 5 | Loser: 0</span>
+          </div>
+
+          <div class="confirmation-info-row">
+            <span class="info-label">Who went first:</span>
+            <span id="confirmation-went-first" class="info-value">Submitter</span>
+          </div>
+
+          <div class="confirmation-info-row" id="confirmation-deck-row-winner">
+            <span class="info-label">Winner's Deck:</span>
+            <a id="confirmation-deck-winner" class="deck-link" href="#" target="_blank">View Deck</a>
+          </div>
+
+          <div class="confirmation-info-row" id="confirmation-deck-row-loser">
+            <span class="info-label">Loser's Deck:</span>
+            <a id="confirmation-deck-loser" class="deck-link" href="#" target="_blank">View Deck</a>
+          </div>
+
+          <div class="confirmation-info-row">
+            <span class="info-label">Expires:</span>
+            <span id="confirmation-expires" class="info-value">in 23 hours</span>
+          </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="confirmation-loading" class="loading-indicator hidden">
+          <div class="spinner"></div>
+          <span>Processing...</span>
+        </div>
+
+        <!-- Success/Error Messages -->
+        <div id="confirmation-success" class="alert alert-success hidden"></div>
+        <div id="confirmation-error" class="alert alert-error hidden"></div>
+
+        <!-- Confirmation Actions -->
+        <div class="confirmation-actions">
+          <button class="btn btn-ghost btn-sm" id="back-to-list-btn">
+            ← Back to List
+          </button>
+          <button class="btn btn-danger btn-sm" id="deny-match-btn">
+            Deny
+          </button>
+          <button class="btn btn-success btn-sm" id="confirm-match-btn">
+            Confirm
+          </button>
+        </div>
       </div>
     </div>
   </div>

@@ -664,19 +664,336 @@ function initializeMatchReportListeners() {
   }
 }
 
-// ==================== SSE Notification Client (US3 - Stub) ====================
+// ==================== Confirmation Modal (US3) ====================
 
-let eventSource = null;
+let pendingConfirmations = [];
+let currentConfirmation = null;
+let pollInterval = null;
+const POLL_INTERVAL_MS = 30000; // 30 seconds
 
-function connectSSE() {
-  // Stub for User Story 3 - SSE notifications
-  console.log("SSE connection not yet implemented (User Story 3)");
+async function fetchPendingConfirmations() {
+  try {
+    const response = await fetch("/api/match-report/pending");
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("Failed to fetch pending confirmations:", data.error);
+      return;
+    }
+
+    pendingConfirmations = data.pending_confirmations || [];
+    displayPendingConfirmationsList();
+
+    // Show modal if there are pending confirmations
+    if (pendingConfirmations.length > 0) {
+      const modal = document.getElementById("confirmation-modal");
+      if (modal && modal.classList.contains("hidden")) {
+        modal.classList.remove("hidden");
+      }
+    }
+
+  } catch (error) {
+    console.error("Error fetching pending confirmations:", error);
+  }
 }
 
-function disconnectSSE() {
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
+function displayPendingConfirmationsList() {
+  const listContainer = document.getElementById("pending-confirmations-list");
+
+  if (!pendingConfirmations || pendingConfirmations.length === 0) {
+    listContainer.innerHTML = '<p class="text-muted loading-text">No pending confirmations.</p>';
+    return;
+  }
+
+  listContainer.innerHTML = pendingConfirmations.map(conf => {
+    const submitterName = conf.submitter_display_name || "Unknown Player";
+    const submitterAvatar = conf.submitter_avatar || "/static/images/default-avatar.png";
+    const expiresIn = formatTimeRemaining(conf.expires_at);
+
+    // Determine who won
+    const youWon = conf.winner_discord_id == conf.opponent_discord_id;
+    const resultText = youWon ? "You won" : "You lost";
+
+    return `
+      <div class="pending-confirmation-item" data-confirmation-id="${conf.id}">
+        <img src="${submitterAvatar}" alt="${submitterName}">
+        <div class="pending-confirmation-info">
+          <span class="pending-confirmation-name">${submitterName}</span>
+          <span class="pending-confirmation-summary">${resultText} • Expires ${expiresIn}</span>
+        </div>
+        <span class="pending-confirmation-badge">Pending</span>
+      </div>
+    `;
+  }).join('');
+
+  // Add click handlers
+  listContainer.querySelectorAll(".pending-confirmation-item").forEach(item => {
+    item.addEventListener("click", function() {
+      const confirmationId = parseInt(this.dataset.confirmationId);
+      showConfirmationDetails(confirmationId);
+    });
+  });
+}
+
+function showConfirmationDetails(confirmationId) {
+  const confirmation = pendingConfirmations.find(c => c.id === confirmationId);
+
+  if (!confirmation) {
+    console.error("Confirmation not found:", confirmationId);
+    return;
+  }
+
+  currentConfirmation = confirmation;
+
+  // Populate confirmation details
+  const submitterAvatar = confirmation.submitter_avatar || "/static/images/default-avatar.png";
+  const submitterName = confirmation.submitter_display_name || "Unknown Player";
+
+  document.getElementById("confirmation-submitter-avatar").src = submitterAvatar;
+  document.getElementById("confirmation-submitter-name").textContent = submitterName;
+
+  // Determine who won
+  const youWon = confirmation.winner_discord_id == confirmation.opponent_discord_id;
+  const resultText = youWon
+    ? `${submitterName} reported that you won`
+    : `${submitterName} reported that they won`;
+
+  document.getElementById("confirmation-result").textContent = resultText;
+
+  // Final life
+  document.getElementById("confirmation-final-life").textContent =
+    `Winner: ${confirmation.final_life_winner} | Loser: ${confirmation.final_life_loser}`;
+
+  // Who went first
+  const wentFirst = confirmation.went_first === "submitter" ? submitterName : "You";
+  document.getElementById("confirmation-went-first").textContent = wentFirst;
+
+  // Deck URLs
+  const winnerDeckRow = document.getElementById("confirmation-deck-row-winner");
+  const loserDeckRow = document.getElementById("confirmation-deck-row-loser");
+
+  if (confirmation.winner_deck_url) {
+    document.getElementById("confirmation-deck-winner").href = confirmation.winner_deck_url;
+    winnerDeckRow.classList.remove("hidden");
+  } else {
+    winnerDeckRow.classList.add("hidden");
+  }
+
+  if (confirmation.loser_deck_url) {
+    document.getElementById("confirmation-deck-loser").href = confirmation.loser_deck_url;
+    loserDeckRow.classList.remove("hidden");
+  } else {
+    loserDeckRow.classList.add("hidden");
+  }
+
+  // Expires in
+  document.getElementById("confirmation-expires").textContent = formatTimeRemaining(confirmation.expires_at);
+
+  // Hide alerts
+  document.getElementById("confirmation-success").classList.add("hidden");
+  document.getElementById("confirmation-error").classList.add("hidden");
+  document.getElementById("confirmation-loading").classList.add("hidden");
+
+  // Hide list, show details
+  document.getElementById("pending-confirmations-list").classList.add("hidden");
+  document.getElementById("confirmation-details").classList.remove("hidden");
+}
+
+function formatTimeRemaining(expiresAt) {
+  const now = Math.floor(Date.now() / 1000);
+  const remaining = expiresAt - now;
+
+  if (remaining <= 0) {
+    return "expired";
+  }
+
+  const hours = Math.floor(remaining / 3600);
+  const minutes = Math.floor((remaining % 3600) / 60);
+
+  if (hours > 24) {
+    const days = Math.floor(hours / 24);
+    return `in ${days} day${days > 1 ? 's' : ''}`;
+  } else if (hours > 0) {
+    return `in ${hours} hour${hours > 1 ? 's' : ''}`;
+  } else {
+    return `in ${minutes} minute${minutes > 1 ? 's' : ''}`;
+  }
+}
+
+async function confirmMatch() {
+  if (!currentConfirmation) return;
+
+  // Show loading
+  document.getElementById("confirmation-loading").classList.remove("hidden");
+  document.getElementById("confirmation-success").classList.add("hidden");
+  document.getElementById("confirmation-error").classList.add("hidden");
+
+  // Disable buttons
+  document.getElementById("confirm-match-btn").disabled = true;
+  document.getElementById("deny-match-btn").disabled = true;
+  document.getElementById("back-to-list-btn").disabled = true;
+
+  try {
+    const response = await fetch(`/api/match-report/confirm/${currentConfirmation.id}`, {
+      method: "POST"
+    });
+
+    const data = await response.json();
+
+    // Hide loading
+    document.getElementById("confirmation-loading").classList.add("hidden");
+
+    if (!response.ok) {
+      // Show error
+      const errorEl = document.getElementById("confirmation-error");
+      errorEl.textContent = data.error?.message || "Failed to confirm match. Please try again.";
+      errorEl.classList.remove("hidden");
+
+      // Re-enable buttons
+      document.getElementById("confirm-match-btn").disabled = false;
+      document.getElementById("deny-match-btn").disabled = false;
+      document.getElementById("back-to-list-btn").disabled = false;
+      return;
+    }
+
+    // Success!
+    const successEl = document.getElementById("confirmation-success");
+    successEl.textContent = data.message || "Match confirmed successfully!";
+    successEl.classList.remove("hidden");
+
+    // Close modal after 2 seconds and refresh list
+    setTimeout(() => {
+      document.getElementById("confirmation-modal").classList.add("hidden");
+      backToConfirmationList();
+      fetchPendingConfirmations(); // Refresh list
+    }, 2000);
+
+  } catch (error) {
+    console.error("Error confirming match:", error);
+
+    // Hide loading
+    document.getElementById("confirmation-loading").classList.add("hidden");
+
+    // Show error
+    const errorEl = document.getElementById("confirmation-error");
+    errorEl.textContent = "Network error. Please check your connection and try again.";
+    errorEl.classList.remove("hidden");
+
+    // Re-enable buttons
+    document.getElementById("confirm-match-btn").disabled = false;
+    document.getElementById("deny-match-btn").disabled = false;
+    document.getElementById("back-to-list-btn").disabled = false;
+  }
+}
+
+async function denyMatch() {
+  if (!currentConfirmation) return;
+
+  // Show loading
+  document.getElementById("confirmation-loading").classList.remove("hidden");
+  document.getElementById("confirmation-success").classList.add("hidden");
+  document.getElementById("confirmation-error").classList.add("hidden");
+
+  // Disable buttons
+  document.getElementById("confirm-match-btn").disabled = true;
+  document.getElementById("deny-match-btn").disabled = true;
+  document.getElementById("back-to-list-btn").disabled = true;
+
+  try {
+    const response = await fetch(`/api/match-report/deny/${currentConfirmation.id}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ reason: null }) // Optional: could add reason input field
+    });
+
+    const data = await response.json();
+
+    // Hide loading
+    document.getElementById("confirmation-loading").classList.add("hidden");
+
+    if (!response.ok) {
+      // Show error
+      const errorEl = document.getElementById("confirmation-error");
+      errorEl.textContent = data.error?.message || "Failed to deny match. Please try again.";
+      errorEl.classList.remove("hidden");
+
+      // Re-enable buttons
+      document.getElementById("confirm-match-btn").disabled = false;
+      document.getElementById("deny-match-btn").disabled = false;
+      document.getElementById("back-to-list-btn").disabled = false;
+      return;
+    }
+
+    // Success!
+    const successEl = document.getElementById("confirmation-success");
+    successEl.textContent = data.message || "Match report denied.";
+    successEl.classList.remove("hidden");
+
+    // Close modal after 2 seconds and refresh list
+    setTimeout(() => {
+      document.getElementById("confirmation-modal").classList.add("hidden");
+      backToConfirmationList();
+      fetchPendingConfirmations(); // Refresh list
+    }, 2000);
+
+  } catch (error) {
+    console.error("Error denying match:", error);
+
+    // Hide loading
+    document.getElementById("confirmation-loading").classList.add("hidden");
+
+    // Show error
+    const errorEl = document.getElementById("confirmation-error");
+    errorEl.textContent = "Network error. Please check your connection and try again.";
+    errorEl.classList.remove("hidden");
+
+    // Re-enable buttons
+    document.getElementById("confirm-match-btn").disabled = false;
+    document.getElementById("deny-match-btn").disabled = false;
+    document.getElementById("back-to-list-btn").disabled = false;
+  }
+}
+
+function backToConfirmationList() {
+  document.getElementById("pending-confirmations-list").classList.remove("hidden");
+  document.getElementById("confirmation-details").classList.add("hidden");
+  currentConfirmation = null;
+}
+
+function initializeConfirmationModalListeners() {
+  // Confirm button
+  const confirmBtn = document.getElementById("confirm-match-btn");
+  if (confirmBtn) {
+    confirmBtn.addEventListener("click", confirmMatch);
+  }
+
+  // Deny button
+  const denyBtn = document.getElementById("deny-match-btn");
+  if (denyBtn) {
+    denyBtn.addEventListener("click", denyMatch);
+  }
+
+  // Back to list button
+  const backBtn = document.getElementById("back-to-list-btn");
+  if (backBtn) {
+    backBtn.addEventListener("click", backToConfirmationList);
+  }
+}
+
+function startConfirmationPolling() {
+  // Initial fetch
+  fetchPendingConfirmations();
+
+  // Poll every 30 seconds
+  pollInterval = setInterval(fetchPendingConfirmations, POLL_INTERVAL_MS);
+}
+
+function stopConfirmationPolling() {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
   }
 }
 
@@ -727,6 +1044,12 @@ document.addEventListener("DOMContentLoaded", function () {
   // Initialize match report modal listeners
   initializeMatchReportListeners();
 
+  // Initialize confirmation modal listeners
+  initializeConfirmationModalListeners();
+
+  // Start polling for pending confirmations
+  startConfirmationPolling();
+
   // Check if game already ended (from previous session)
   checkForGameEnd(currentState);
 
@@ -756,5 +1079,6 @@ window.addEventListener("beforeunload", function () {
     LifeCounterState.save(currentState);
   }
 
-  disconnectSSE();
+  // Stop confirmation polling
+  stopConfirmationPolling();
 });

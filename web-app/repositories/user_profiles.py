@@ -130,3 +130,43 @@ class UserProfileRepository:
         )
         conn.commit()
         conn.close()
+
+    def search_by_display_name(
+        self, query: str, provider: str = "discord", limit: int = 10
+    ) -> list[dict]:
+        """
+        Search user profiles by display name (case-insensitive prefix match).
+
+        Args:
+            query: Search string (min 2 characters recommended)
+            provider: OAuth provider ('discord' or 'google'), default 'discord'
+            limit: Maximum number of results to return
+
+        Returns:
+            list[dict]: List of user profile dicts with user_id, display_name, avatar
+        """
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        # Use LIKE for case-insensitive prefix match
+        # The % wildcard matches any characters after the query
+        search_pattern = f"{query}%"
+
+        cur.execute(
+            """
+            SELECT user_id, display_name, avatar
+            FROM user_profiles
+            WHERE LOWER(display_name) LIKE LOWER(?)
+              AND provider = ?
+            ORDER BY display_name ASC
+            LIMIT ?
+            """,
+            (search_pattern, provider, limit),
+        )
+
+        rows = cur.fetchall()
+        profiles = [dict(row) for row in rows]
+
+        conn.close()
+        return profiles

@@ -25,6 +25,7 @@ class MatchConfirmationRepository:
         loser_id: int,
         final_life_winner: int,
         final_life_loser: int,
+        went_first: str,
         winner_deck_url: Optional[str] = None,
         loser_deck_url: Optional[str] = None,
     ) -> int:
@@ -38,6 +39,7 @@ class MatchConfirmationRepository:
             loser_id: Discord user ID of loser
             final_life_winner: Winner's final life total
             final_life_loser: Loser's final life total
+            went_first: Turn order relative to submitter ('submitter'|'opponent')
             winner_deck_url: Optional Curiosa.io deck URL for winner
             loser_deck_url: Optional Curiosa.io deck URL for loser
 
@@ -50,7 +52,7 @@ class MatchConfirmationRepository:
         cursor = conn.cursor()
 
         created_at = int(time.time())
-        expires_at = created_at + (24 * 60 * 60)  # 24 hours from now
+        expires_at = created_at + (48 * 60 * 60)  # 48 hours from now (updated from 24hr)
 
         cursor.execute(
             """
@@ -59,8 +61,8 @@ class MatchConfirmationRepository:
                 winner_discord_id, loser_discord_id,
                 winner_deck_url, loser_deck_url,
                 final_life_winner, final_life_loser,
-                status, created_at, expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                went_first, status, created_at, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
             """,
             (
                 submitter_id,
@@ -71,6 +73,7 @@ class MatchConfirmationRepository:
                 loser_deck_url,
                 final_life_winner,
                 final_life_loser,
+                went_first,
                 created_at,
                 expires_at,
             ),
@@ -299,3 +302,77 @@ class MatchConfirmationRepository:
 
         conn.close()
         return opponents
+
+    def get_confirmations_needing_reminder(self) -> list[dict]:
+        """
+        Get all pending confirmations that need a 24-hour reminder.
+
+        Finds confirmations where:
+        - status is 'pending'
+        - reminder_sent_at is NULL (reminder not yet sent)
+        - created_at is more than 24 hours ago
+        - expires_at is still in the future (not expired yet)
+
+        Returns:
+            list[dict]: List of confirmation records needing reminders
+        """
+        import time
+
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        current_time = int(time.time())
+        twenty_four_hours_ago = current_time - (24 * 60 * 60)
+
+        cursor.execute(
+            """
+            SELECT * FROM match_confirmations
+            WHERE status = 'pending'
+              AND reminder_sent_at IS NULL
+              AND created_at <= ?
+              AND expires_at > ?
+            ORDER BY created_at ASC
+            """,
+            (twenty_four_hours_ago, current_time),
+        )
+
+        rows = cursor.fetchall()
+        confirmations = [dict(row) for row in rows]
+
+        conn.close()
+        return confirmations
+
+    def update_reminder_sent(self, confirmation_id: int) -> bool:
+        """
+        Mark that a reminder has been sent for a confirmation.
+
+        Sets reminder_sent_at to current timestamp.
+
+        Args:
+            confirmation_id: ID of confirmation
+
+        Returns:
+            bool: True if update succeeded, False if not found
+        """
+        import time
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        reminder_sent_at = int(time.time())
+
+        cursor.execute(
+            """
+            UPDATE match_confirmations
+            SET reminder_sent_at = ?
+            WHERE id = ?
+            """,
+            (reminder_sent_at, confirmation_id),
+        )
+
+        rows_affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        return rows_affected > 0

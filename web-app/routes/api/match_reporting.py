@@ -237,30 +237,47 @@ def get_pending_confirmations():
 
     try:
         current_user_id = session["user_id"]
+        service = MatchConfirmationService()
         confirmation_repo = MatchConfirmationRepository()
         user_profile_repo = UserProfileRepository()
 
+        # Normalize user ID (strip 'google_' prefix if present)
+        current_numeric_id = service._normalize_user_id(current_user_id)
+
         # Get pending confirmations where user is the opponent
-        confirmations = confirmation_repo.get_pending_confirmations(current_user_id)
+        confirmations = confirmation_repo.get_pending_confirmations(current_numeric_id)
 
         # Enrich with submitter display names
         enriched_confirmations = []
         for confirmation in confirmations:
-            # Get submitter profile
-            submitter_profiles = user_profile_repo.search_by_display_name(
-                query=str(confirmation["submitter_discord_id"]),
-                provider="discord",
-                limit=1
+            # Get submitter display name (handles both Discord and Google users)
+            # The submitter_discord_id is numeric, but could be from Discord or Google user
+            submitter_numeric_id = confirmation["submitter_discord_id"]
+
+            # Try to find profile by checking both Discord and Google
+            submitter_display_name = "Unknown Player"
+            submitter_avatar = None
+
+            # Try Discord first
+            discord_profiles = user_profile_repo.search_by_display_name(
+                query=str(submitter_numeric_id), provider="discord", limit=1
             )
+            if discord_profiles and discord_profiles[0]["user_id"] == str(submitter_numeric_id):
+                submitter_display_name = discord_profiles[0]["display_name"]
+                submitter_avatar = discord_profiles[0].get("avatar")
+            else:
+                # Try Google
+                google_user_id = f"google_{submitter_numeric_id}"
+                google_profiles = user_profile_repo.search_by_display_name(
+                    query=google_user_id, provider="google", limit=1
+                )
+                if google_profiles and google_profiles[0]["user_id"] == google_user_id:
+                    submitter_display_name = google_profiles[0]["display_name"]
+                    submitter_avatar = google_profiles[0].get("avatar")
 
             # Add submitter info to confirmation
-            confirmation["submitter_display_name"] = "Unknown Player"
-            confirmation["submitter_avatar"] = None
-
-            if submitter_profiles:
-                submitter = submitter_profiles[0]
-                confirmation["submitter_display_name"] = submitter["display_name"]
-                confirmation["submitter_avatar"] = submitter["avatar"]
+            confirmation["submitter_display_name"] = submitter_display_name
+            confirmation["submitter_avatar"] = submitter_avatar
 
             enriched_confirmations.append(confirmation)
 

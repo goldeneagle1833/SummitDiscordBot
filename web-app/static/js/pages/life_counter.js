@@ -303,6 +303,12 @@ let opponentSearchTimeout = null;
 const SEARCH_DEBOUNCE_MS = 300;
 
 function showMatchReportModal() {
+  // Check if user is logged in
+  if (!window.LOGGED_IN) {
+    alert("You must be logged in to report matches. Please log in with Discord or Google.");
+    return;
+  }
+
   const modal = document.getElementById("match-report-modal");
   if (!modal) return;
 

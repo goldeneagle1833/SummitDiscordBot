@@ -49,10 +49,20 @@ def _extract_deck_info(deck_json):
 @players_bp.route("/deck-snapshot/<int:match_id>/<player_id>")
 def deck_snapshot(match_id, player_id):
     """Get deck snapshot for a specific player in a match."""
+    # Normalize player_id (strip 'google_' prefix for Google OAuth users)
+    player_id_str = str(player_id)
+    if player_id_str.startswith("google_"):
+        player_id = player_id_str[7:]  # Remove 'google_' prefix
+
+    # Normalize logged_in_user_id for comparison
     logged_in_user_id = session.get("user_id")
-    is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(
-        player_id
-    )
+    if logged_in_user_id is not None:
+        logged_in_id_str = str(logged_in_user_id)
+        if logged_in_id_str.startswith("google_"):
+            logged_in_id_str = logged_in_id_str[7:]  # Remove 'google_' prefix
+        is_owner = str(logged_in_id_str) == str(player_id)
+    else:
+        is_owner = False
 
     # API key grants access (for server-to-server calls)
     api_key = request.headers.get("X-API-Key")
@@ -91,6 +101,20 @@ def player_api(player_id):
     Query parameters:
     - event: Filter by event. Values: 'lifetime' (default), 'current', or event_id (int)
     """
+    # Normalize player_id (strip 'google_' prefix for Google OAuth users)
+    # Both Discord users ("123456789") and Google users ("google_123456789")
+    # are stored in the database with numeric IDs only
+    original_player_id = player_id
+    player_id_str = str(player_id)
+    if player_id_str.startswith("google_"):
+        player_id = player_id_str[7:]  # Remove 'google_' prefix
+
+    # Convert to int for database queries
+    try:
+        player_id = int(player_id)
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid player ID"}), 400
+
     event_filter = request.args.get("event", "lifetime")
 
     conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
@@ -644,10 +668,19 @@ def player_api(player_id):
     avatar_matchups.sort(key=lambda x: x["total_games"], reverse=True)
 
     # Check ownership
+    # Normalize logged_in_user_id for comparison (strip 'google_' prefix if present)
     logged_in_user_id = session.get("user_id")
-    is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(
-        player_id
-    )
+    if logged_in_user_id is not None:
+        logged_in_id_str = str(logged_in_user_id)
+        if logged_in_id_str.startswith("google_"):
+            logged_in_id_str = logged_in_id_str[7:]  # Remove 'google_' prefix
+        try:
+            normalized_logged_in_id = int(logged_in_id_str)
+            is_owner = normalized_logged_in_id == player_id
+        except (ValueError, TypeError):
+            is_owner = False
+    else:
+        is_owner = False
 
     # API key grants owner-level access (for server-to-server calls)
     api_key = request.headers.get("X-API-Key")

@@ -10,6 +10,7 @@ from repositories.elo_repo import (
     create_events_table,
     create_match_records_archive,
     ensure_event_elo_column,
+    migrate_to_dual_elo_system,
     get_active_event,
     get_total_match_count,
 )
@@ -59,15 +60,15 @@ def calculate_event_k_value(start_date):
 
 def update_elo_db(user_id, user_display_name, did_win, opponent_id):
     """
-    Update the ELO database with match results.
+    Update the ELO database with match results (Discord bot / online games).
 
-    Updates both lifetime ELO (K=32) and event ELO (dynamic K) if an event is active.
+    Updates both online lifetime ELO (K=32) and online event ELO (dynamic K) if an event is active.
     If no event is active, ELO is not updated (returns 0 changes).
 
     Returns:
-        Tuple of (new_lifetime_elo, lifetime_change, new_event_elo, event_change, event_active)
+        Tuple of (new_online_elo, online_change, new_online_event_elo, online_event_change, event_active)
     """
-    ensure_event_elo_column()
+    migrate_to_dual_elo_system()
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
 
@@ -75,88 +76,92 @@ def update_elo_db(user_id, user_display_name, did_win, opponent_id):
                    (user_id INTEGER PRIMARY KEY,
                     user_display_name TEXT,
                     elo INTEGER DEFAULT 1500,
-                    event_elo INTEGER DEFAULT 1500
+                    event_elo INTEGER DEFAULT 1500,
+                    paper_elo INTEGER DEFAULT 1500,
+                    online_elo INTEGER DEFAULT 1500,
+                    paper_event_elo INTEGER DEFAULT 1500,
+                    online_event_elo INTEGER DEFAULT 1500
                    )""")
 
     # Check for active event
     active_event = get_active_event()
 
-    # Get player's current ELOs (or insert if new)
+    # Get player's current online ELOs (or insert if new)
     cur.execute(
-        "SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (user_id,)
+        "SELECT online_elo, online_event_elo FROM overall_standings WHERE user_id=?", (user_id,)
     )
     player_row = cur.fetchone()
 
     if player_row:
-        player_lifetime_elo = player_row[0]
-        player_event_elo = player_row[1] if player_row[1] else 1500
+        player_online_elo = player_row[0] if player_row[0] else 1500
+        player_online_event_elo = player_row[1] if player_row[1] else 1500
         logger.debug(
-            "Existing player %s: lifetime ELO=%d, event ELO=%d",
-            user_id, player_lifetime_elo, player_event_elo,
+            "Existing player %s: online ELO=%d, online event ELO=%d",
+            user_id, player_online_elo, player_online_event_elo,
         )
     else:
-        player_lifetime_elo = 1500
-        player_event_elo = 1500
+        player_online_elo = 1500
+        player_online_event_elo = 1500
         cur.execute(
             """INSERT OR IGNORE INTO overall_standings
-               (user_id, user_display_name, elo, event_elo) VALUES (?, ?, ?, ?)""",
-            (user_id, user_display_name, player_lifetime_elo, player_event_elo),
+               (user_id, user_display_name, online_elo, online_event_elo) VALUES (?, ?, ?, ?)""",
+            (user_id, user_display_name, player_online_elo, player_online_event_elo),
         )
-        logger.debug("New player %s inserted with default ELOs", user_id)
+        logger.debug("New player %s inserted with default online ELOs", user_id)
 
-    # Get opponent's ELOs (or use default if not found)
+    # Get opponent's online ELOs (or use default if not found)
     cur.execute(
-        "SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (opponent_id,)
+        "SELECT online_elo, online_event_elo FROM overall_standings WHERE user_id=?", (opponent_id,)
     )
     opponent_row = cur.fetchone()
 
     if opponent_row:
-        opponent_lifetime_elo = opponent_row[0]
-        opponent_event_elo = opponent_row[1] if opponent_row[1] else 1500
+        opponent_online_elo = opponent_row[0] if opponent_row[0] else 1500
+        opponent_online_event_elo = opponent_row[1] if opponent_row[1] else 1500
     else:
-        opponent_lifetime_elo = 1500
-        opponent_event_elo = 1500
+        opponent_online_elo = 1500
+        opponent_online_event_elo = 1500
 
     # If no active event, don't update ELO
     if not active_event:
-        logger.debug("No active event - ELO not updated for %s", user_id)
+        logger.debug("No active event - online ELO not updated for %s", user_id)
         conn.close()
-        return (player_lifetime_elo, 0, player_event_elo, 0, False)
+        return (player_online_elo, 0, player_online_event_elo, 0, False)
 
-    # Calculate new lifetime ELO (always K=32)
-    new_lifetime_elo = update_elo(
-        player_lifetime_elo, opponent_lifetime_elo, did_win, k=32
+    # Calculate new online lifetime ELO (always K=32)
+    new_online_elo = update_elo(
+        player_online_elo, opponent_online_elo, did_win, k=32
     )
-    lifetime_change = new_lifetime_elo - player_lifetime_elo
+    online_change = new_online_elo - player_online_elo
 
-    # Calculate new event ELO (dynamic K based on days elapsed)
+    # Calculate new online event ELO (dynamic K based on days elapsed)
     event_k = calculate_event_k_value(active_event["start_date"])
-    new_event_elo = update_elo(player_event_elo, opponent_event_elo, did_win, k=event_k)
-    event_change = new_event_elo - player_event_elo
+    new_online_event_elo = update_elo(player_online_event_elo, opponent_online_event_elo, did_win, k=event_k)
+    online_event_change = new_online_event_elo - player_online_event_elo
 
     logger.info(
-        "Player %s ELO updated - lifetime: %d -> %d (%+d), event (K=%d): %d -> %d (%+d)",
-        user_id, player_lifetime_elo, new_lifetime_elo, lifetime_change,
-        event_k, player_event_elo, new_event_elo, event_change,
+        "Player %s online ELO updated - lifetime: %d -> %d (%+d), event (K=%d): %d -> %d (%+d)",
+        user_id, player_online_elo, new_online_elo, online_change,
+        event_k, player_online_event_elo, new_online_event_elo, online_event_change,
     )
 
-    # Update player's ELOs
+    # Update player's online ELOs (also update legacy elo/event_elo for backwards compat)
     cur.execute(
-        "UPDATE overall_standings SET elo = ?, event_elo = ? WHERE user_id = ?",
-        (new_lifetime_elo, new_event_elo, user_id),
+        "UPDATE overall_standings SET online_elo = ?, online_event_elo = ?, elo = ?, event_elo = ? WHERE user_id = ?",
+        (new_online_elo, new_online_event_elo, new_online_elo, new_online_event_elo, user_id),
     )
 
     conn.commit()
     conn.close()
 
-    return (new_lifetime_elo, lifetime_change, new_event_elo, event_change, True)
+    return (new_online_elo, online_change, new_online_event_elo, online_event_change, True)
 
 
 def update_elo_db_ladder(
     user_id, user_display_name, did_win, opponent_id, elo_multiplier=1.0
 ):
     """
-    Update the ELO database with ladder challenge match results.
+    Update the ELO database with ladder challenge match results (Discord bot / online games).
 
     Same as update_elo_db but applies an ELO multiplier to the change.
     For ladder challenges:
@@ -165,9 +170,9 @@ def update_elo_db_ladder(
       - If ELO difference < 100: normal (1x)
 
     Returns:
-        Tuple of (new_lifetime_elo, lifetime_change, new_event_elo, event_change, event_active)
+        Tuple of (new_online_elo, online_change, new_online_event_elo, online_event_change, event_active)
     """
-    ensure_event_elo_column()
+    migrate_to_dual_elo_system()
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
 
@@ -175,85 +180,89 @@ def update_elo_db_ladder(
                    (user_id INTEGER PRIMARY KEY,
                     user_display_name TEXT,
                     elo INTEGER DEFAULT 1500,
-                    event_elo INTEGER DEFAULT 1500
+                    event_elo INTEGER DEFAULT 1500,
+                    paper_elo INTEGER DEFAULT 1500,
+                    online_elo INTEGER DEFAULT 1500,
+                    paper_event_elo INTEGER DEFAULT 1500,
+                    online_event_elo INTEGER DEFAULT 1500
                    )""")
 
     # Check for active event
     active_event = get_active_event()
 
-    # Get player's current ELOs (or insert if new)
+    # Get player's current online ELOs (or insert if new)
     cur.execute(
-        "SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (user_id,)
+        "SELECT online_elo, online_event_elo FROM overall_standings WHERE user_id=?", (user_id,)
     )
     player_row = cur.fetchone()
 
     if player_row:
-        player_lifetime_elo = player_row[0]
-        player_event_elo = player_row[1] if player_row[1] else 1500
+        player_online_elo = player_row[0] if player_row[0] else 1500
+        player_online_event_elo = player_row[1] if player_row[1] else 1500
     else:
-        player_lifetime_elo = 1500
-        player_event_elo = 1500
+        player_online_elo = 1500
+        player_online_event_elo = 1500
         cur.execute(
             """INSERT OR IGNORE INTO overall_standings
-               (user_id, user_display_name, elo, event_elo) VALUES (?, ?, ?, ?)""",
-            (user_id, user_display_name, player_lifetime_elo, player_event_elo),
+               (user_id, user_display_name, online_elo, online_event_elo) VALUES (?, ?, ?, ?)""",
+            (user_id, user_display_name, player_online_elo, player_online_event_elo),
         )
 
-    # Get opponent's ELOs
+    # Get opponent's online ELOs
     cur.execute(
-        "SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (opponent_id,)
+        "SELECT online_elo, online_event_elo FROM overall_standings WHERE user_id=?", (opponent_id,)
     )
     opponent_row = cur.fetchone()
 
     if opponent_row:
-        opponent_lifetime_elo = opponent_row[0]
-        opponent_event_elo = opponent_row[1] if opponent_row[1] else 1500
+        opponent_online_elo = opponent_row[0] if opponent_row[0] else 1500
+        opponent_online_event_elo = opponent_row[1] if opponent_row[1] else 1500
     else:
-        opponent_lifetime_elo = 1500
-        opponent_event_elo = 1500
+        opponent_online_elo = 1500
+        opponent_online_event_elo = 1500
 
     # If no active event, don't update ELO
     if not active_event:
         conn.close()
-        return (player_lifetime_elo, 0, player_event_elo, 0, False)
+        return (player_online_elo, 0, player_online_event_elo, 0, False)
 
-    # Calculate base ELO changes
-    new_lifetime_elo_base = update_elo(
-        player_lifetime_elo, opponent_lifetime_elo, did_win, k=32
+    # Calculate base online ELO changes
+    new_online_elo_base = update_elo(
+        player_online_elo, opponent_online_elo, did_win, k=32
     )
-    base_lifetime_change = new_lifetime_elo_base - player_lifetime_elo
+    base_online_change = new_online_elo_base - player_online_elo
 
     event_k = calculate_event_k_value(active_event["start_date"])
-    new_event_elo_base = update_elo(
-        player_event_elo, opponent_event_elo, did_win, k=event_k
+    new_online_event_elo_base = update_elo(
+        player_online_event_elo, opponent_online_event_elo, did_win, k=event_k
     )
-    base_event_change = new_event_elo_base - player_event_elo
+    base_online_event_change = new_online_event_elo_base - player_online_event_elo
 
     # Apply multiplier
-    lifetime_change = round(base_lifetime_change * elo_multiplier)
-    event_change = round(base_event_change * elo_multiplier)
+    online_change = round(base_online_change * elo_multiplier)
+    online_event_change = round(base_online_event_change * elo_multiplier)
 
-    new_lifetime_elo = player_lifetime_elo + lifetime_change
-    new_event_elo = player_event_elo + event_change
+    new_online_elo = player_online_elo + online_change
+    new_online_event_elo = player_online_event_elo + online_event_change
 
     logger.info(
-        "Ladder ELO update for %s: multiplier=%.1f, "
+        "Ladder online ELO update for %s: multiplier=%.1f, "
         "lifetime %d -> %d (%+d), event %d -> %d (%+d)",
         user_id, elo_multiplier,
-        player_lifetime_elo, new_lifetime_elo, lifetime_change,
-        player_event_elo, new_event_elo, event_change,
+        player_online_elo, new_online_elo, online_change,
+        player_online_event_elo, new_online_event_elo, online_event_change,
     )
 
-    # Update player's ELOs
+    # Update player's online ELOs (also update legacy elo/event_elo for backwards compat)
     cur.execute(
-        "UPDATE overall_standings SET elo = ?, event_elo = ? WHERE user_id = ?",
-        (new_lifetime_elo, new_event_elo, user_id),
+        "UPDATE overall_standings SET online_elo = ?, online_event_elo = ?, elo = ?, event_elo = ? WHERE user_id = ?",
+        (new_online_elo, new_online_event_elo, new_online_elo, new_online_event_elo, user_id),
     )
 
     conn.commit()
     conn.close()
 
-    return (new_lifetime_elo, lifetime_change, new_event_elo, event_change, True)
+    return (new_online_elo, online_change, new_online_event_elo, online_event_change, True)
 
 
 # --- Match Reporting ---
@@ -466,7 +475,7 @@ def start_new_event(event_name):
     """
     create_events_table()
     create_match_records_archive()
-    ensure_event_elo_column()
+    migrate_to_dual_elo_system()
 
     previous_event_summary = None
 
@@ -486,8 +495,8 @@ def start_new_event(event_name):
     )
     event_id = cur.lastrowid
 
-    # Reset all players' event_elo to 1500
-    cur.execute("UPDATE overall_standings SET event_elo = 1500")
+    # Reset all players' event ELOs to 1500 (both paper and online)
+    cur.execute("UPDATE overall_standings SET event_elo = 1500, paper_event_elo = 1500, online_event_elo = 1500")
 
     conn.commit()
     conn.close()
@@ -518,21 +527,42 @@ def end_current_event():
     conn_elo = sqlite3.connect("elo.db")
     cur_elo = conn_elo.cursor()
 
-    # Get final standings ordered by event_elo
-    cur_elo.execute("""SELECT user_id, user_display_name, event_elo
+    # Get all players with either paper or online event games (event_elo != 1500)
+    cur_elo.execute("""SELECT user_id, user_display_name, paper_event_elo, online_event_elo
                        FROM overall_standings
-                       WHERE event_elo != 1500
-                       ORDER BY event_elo DESC""")
-    standings = cur_elo.fetchall()
+                       WHERE paper_event_elo != 1500 OR online_event_elo != 1500""")
+    all_players = cur_elo.fetchall()
 
-    # Archive to event_standings_archive
+    # Build separate rankings for paper and online
+    paper_standings = [(uid, name, paper_elo) for uid, name, paper_elo, _ in all_players if paper_elo != 1500]
+    online_standings = [(uid, name, online_elo) for uid, name, _, online_elo in all_players if online_elo != 1500]
+
+    # Sort by ELO descending
+    paper_standings.sort(key=lambda x: x[2], reverse=True)
+    online_standings.sort(key=lambda x: x[2], reverse=True)
+
+    # Create rank maps
+    paper_ranks = {uid: rank for rank, (uid, _, _) in enumerate(paper_standings, start=1)}
+    online_ranks = {uid: rank for rank, (uid, _, _) in enumerate(online_standings, start=1)}
+
+    # Archive combined standings (one row per player with both paper and online data)
     archived_at = datetime.datetime.now().isoformat()
-    for rank, (user_id, display_name, event_elo) in enumerate(standings, start=1):
+    for user_id, display_name, paper_elo, online_elo in all_players:
+        # Legacy event_elo = max of paper and online
+        final_event_elo = max(paper_elo, online_elo)
+        # Rank by whichever ELO is higher
+        if paper_elo > online_elo:
+            final_rank = paper_ranks.get(user_id, 0)
+        else:
+            final_rank = online_ranks.get(user_id, 0)
+
         cur_elo.execute(
             """INSERT INTO event_standings_archive
-               (event_id, user_id, user_display_name, final_event_elo, final_rank, archived_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (event_id, user_id, display_name, event_elo, rank, archived_at),
+               (event_id, user_id, user_display_name, final_event_elo, final_rank,
+                final_paper_event_elo, final_paper_rank, final_online_event_elo, final_online_rank, archived_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (event_id, user_id, display_name, final_event_elo, final_rank,
+             paper_elo, paper_ranks.get(user_id, None), online_elo, online_ranks.get(user_id, None), archived_at),
         )
 
     # Mark event as ended

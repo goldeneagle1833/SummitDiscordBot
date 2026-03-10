@@ -180,6 +180,26 @@ def create_events_table():
                     archived_at TEXT
                    )""")
 
+    # Add paper/online event ELO columns to archive if they don't exist
+    cur.execute("PRAGMA table_info(event_standings_archive)")
+    archive_columns = {col[1] for col in cur.fetchall()}
+
+    if "final_paper_event_elo" not in archive_columns:
+        cur.execute("ALTER TABLE event_standings_archive ADD COLUMN final_paper_event_elo INTEGER")
+        logger.info("Added final_paper_event_elo to event_standings_archive")
+
+    if "final_online_event_elo" not in archive_columns:
+        cur.execute("ALTER TABLE event_standings_archive ADD COLUMN final_online_event_elo INTEGER")
+        logger.info("Added final_online_event_elo to event_standings_archive")
+
+    if "final_paper_rank" not in archive_columns:
+        cur.execute("ALTER TABLE event_standings_archive ADD COLUMN final_paper_rank INTEGER")
+        logger.info("Added final_paper_rank to event_standings_archive")
+
+    if "final_online_rank" not in archive_columns:
+        cur.execute("ALTER TABLE event_standings_archive ADD COLUMN final_online_rank INTEGER")
+        logger.info("Added final_online_rank to event_standings_archive")
+
     conn.commit()
     conn.close()
 
@@ -282,6 +302,64 @@ def ensure_event_elo_column():
     conn.close()
 
 
+def migrate_to_dual_elo_system():
+    """
+    Migrate to dual ELO system (paper vs online games).
+
+    Adds paper_elo, online_elo, paper_event_elo, online_event_elo columns.
+    Migrates existing data: elo → online_elo, event_elo → online_event_elo
+    (since all existing matches are from Discord bot).
+
+    This migration is idempotent - safe to run multiple times.
+    """
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+
+    # Ensure overall_standings table exists
+    cur.execute("""CREATE TABLE IF NOT EXISTS overall_standings
+                   (user_id INTEGER PRIMARY KEY,
+                    user_display_name TEXT,
+                    elo INTEGER DEFAULT 1500,
+                    event_elo INTEGER DEFAULT 1500
+                   )""")
+
+    # Check which columns exist
+    cur.execute("PRAGMA table_info(overall_standings)")
+    existing_columns = {col[1] for col in cur.fetchall()}
+
+    # Add paper_elo column
+    if "paper_elo" not in existing_columns:
+        logger.info("Adding paper_elo column to overall_standings")
+        cur.execute("ALTER TABLE overall_standings ADD COLUMN paper_elo INTEGER DEFAULT 1500")
+
+    # Add online_elo column
+    if "online_elo" not in existing_columns:
+        logger.info("Adding online_elo column to overall_standings")
+        cur.execute("ALTER TABLE overall_standings ADD COLUMN online_elo INTEGER DEFAULT 1500")
+
+        # Migrate existing elo data to online_elo (all current matches are Discord/online)
+        logger.info("Migrating existing elo data to online_elo")
+        cur.execute("UPDATE overall_standings SET online_elo = elo WHERE online_elo = 1500")
+
+    # Add paper_event_elo column
+    if "paper_event_elo" not in existing_columns:
+        logger.info("Adding paper_event_elo column to overall_standings")
+        cur.execute("ALTER TABLE overall_standings ADD COLUMN paper_event_elo INTEGER DEFAULT 1500")
+
+    # Add online_event_elo column
+    if "online_event_elo" not in existing_columns:
+        logger.info("Adding online_event_elo column to overall_standings")
+        cur.execute("ALTER TABLE overall_standings ADD COLUMN online_event_elo INTEGER DEFAULT 1500")
+
+        # Migrate existing event_elo data to online_event_elo (all current matches are Discord/online)
+        if "event_elo" in existing_columns:
+            logger.info("Migrating existing event_elo data to online_event_elo")
+            cur.execute("UPDATE overall_standings SET online_event_elo = event_elo WHERE online_event_elo = 1500")
+
+    conn.commit()
+    conn.close()
+    logger.info("Dual ELO system migration completed successfully")
+
 
 def create_user_links_table():
     """Create the user_links table for cross-source account linking."""
@@ -332,36 +410,75 @@ def get_active_event():
 
 def get_user_elo(user_id: int) -> int:
     """
-    Get a user's current ELO from the database.
+    Get a user's current online ELO from the database (Discord bot games).
 
     Args:
         user_id: The Discord user ID
 
     Returns:
-        The user's current ELO, or 1500 if not found
+        The user's current online ELO, or 1500 if not found
     """
+    migrate_to_dual_elo_system()
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
-    cur.execute("SELECT elo FROM overall_standings WHERE user_id=?", (user_id,))
+    cur.execute("SELECT online_elo FROM overall_standings WHERE user_id=?", (user_id,))
     row = cur.fetchone()
     conn.close()
-    return row[0] if row else 1500
+    return row[0] if row and row[0] else 1500
 
 
 def get_user_event_elo(user_id: int) -> int:
     """
-    Get a user's current event ELO from the database.
+    Get a user's current online event ELO from the database (Discord bot games).
 
     Args:
         user_id: The Discord user ID
 
     Returns:
-        The user's current event ELO, or 1500 if not found
+        The user's current online event ELO, or 1500 if not found
     """
-    ensure_event_elo_column()
+    migrate_to_dual_elo_system()
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
-    cur.execute("SELECT event_elo FROM overall_standings WHERE user_id=?", (user_id,))
+    cur.execute("SELECT online_event_elo FROM overall_standings WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row and row[0] else 1500
+
+
+def get_user_paper_elo(user_id: int) -> int:
+    """
+    Get a user's current paper ELO from the database (web-reported games).
+
+    Args:
+        user_id: The Discord user ID
+
+    Returns:
+        The user's current paper ELO, or 1500 if not found
+    """
+    migrate_to_dual_elo_system()
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+    cur.execute("SELECT paper_elo FROM overall_standings WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row and row[0] else 1500
+
+
+def get_user_paper_event_elo(user_id: int) -> int:
+    """
+    Get a user's current paper event ELO from the database (web-reported games).
+
+    Args:
+        user_id: The Discord user ID
+
+    Returns:
+        The user's current paper event ELO, or 1500 if not found
+    """
+    migrate_to_dual_elo_system()
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+    cur.execute("SELECT paper_event_elo FROM overall_standings WHERE user_id=?", (user_id,))
     row = cur.fetchone()
     conn.close()
     return row[0] if row and row[0] else 1500
@@ -425,25 +542,25 @@ def get_event_archive_standings(event_id: int):
 
 def get_top_16_user_ids():
     """
-    Get the user IDs of the top 16 players by current event ELO.
+    Get the user IDs of the top 16 players by current online event ELO (Discord bot).
 
-    Only counts players who have played at least one event match (event_elo != 1500).
-    Falls back to lifetime ELO if no active event.
+    Only counts players who have played at least one online event match (online_event_elo != 1500).
+    Falls back to online lifetime ELO if no active event.
 
     Returns:
         List of user_id integers for the top 16 players
     """
-    ensure_event_elo_column()
+    migrate_to_dual_elo_system()
     active_event = get_active_event()
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
 
     if active_event:
         cur.execute(
-            "SELECT user_id FROM overall_standings WHERE event_elo != 1500 ORDER BY event_elo DESC LIMIT 16"
+            "SELECT user_id FROM overall_standings WHERE online_event_elo != 1500 ORDER BY online_event_elo DESC LIMIT 16"
         )
     else:
-        cur.execute("SELECT user_id FROM overall_standings ORDER BY elo DESC LIMIT 16")
+        cur.execute("SELECT user_id FROM overall_standings ORDER BY online_elo DESC LIMIT 16")
 
     rows = cur.fetchall()
     conn.close()

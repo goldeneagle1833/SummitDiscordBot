@@ -1,5 +1,6 @@
 """Service layer for match confirmation business logic."""
 
+import datetime
 import logging
 import re
 from typing import Optional
@@ -220,17 +221,17 @@ class MatchConfirmationService:
                 }
         """
         # Tier 1: Get recent opponents from match history
-        # Note: Only works for numeric Discord IDs, not multi-provider IDs like "google_123"
+        # Works for both Discord and Google users (after normalizing to numeric ID)
         recent_opponents = []
         try:
+            numeric_user_id = self._normalize_user_id(current_user_id)
             recent_opponents = self.repo.get_recent_lfg_opponents(
-                user_id=int(current_user_id), limit=limit
+                user_id=numeric_user_id, limit=limit
             )
-        except (ValueError, TypeError):
-            # User ID is not numeric (e.g., Google OAuth "google_123...")
-            # Skip recent opponents lookup and rely on display name search only
+        except ValueError:
+            # User ID format is invalid, skip recent opponents lookup
             logger.debug(
-                f"Skipping recent opponents lookup for non-numeric user_id: {current_user_id}"
+                f"Skipping recent opponents lookup for invalid user_id: {current_user_id}"
             )
 
         # Build map of recent opponent IDs for quick lookup
@@ -263,11 +264,20 @@ class MatchConfirmationService:
             if user_id in seen_ids:
                 continue
 
+            # Skip users without valid numeric IDs (after stripping google_ prefix)
+            try:
+                self._normalize_user_id(user_id)
+            except ValueError:
+                logger.debug(f"Skipping user with invalid ID format: {user_id}")
+                continue
+
             seen_ids.add(user_id)
 
             # Check if this is a recent opponent
-            if user_id in recent_map:
-                recent_info = recent_map[user_id]
+            # Match by numeric ID (works for both Discord "123" and Google "google_123")
+            numeric_id = str(self._normalize_user_id(user_id))
+            if numeric_id in recent_map:
+                recent_info = recent_map[numeric_id]
                 results.append({
                     "user_id": user_id,
                     "display_name": profile["display_name"],
@@ -306,6 +316,64 @@ class MatchConfirmationService:
 
         return results[:limit]
 
+    def _normalize_user_id(self, user_id: str) -> int:
+        """
+        Normalize user ID to numeric format.
+
+        Strips 'google_' prefix from Google OAuth users and converts to int.
+        Discord users are already numeric.
+
+        Args:
+            user_id: User ID (numeric Discord ID or 'google_12345')
+
+        Returns:
+            int: Numeric user ID
+
+        Raises:
+            ValueError: If user_id cannot be converted to numeric format
+        """
+        user_id_str = str(user_id)
+
+        # Strip 'google_' prefix if present
+        if user_id_str.startswith("google_"):
+            user_id_str = user_id_str[7:]  # Remove 'google_' (7 characters)
+
+        try:
+            return int(user_id_str)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid user ID format: {user_id}")
+
+    def _get_display_name_for_user(self, user_id: str) -> str:
+        """
+        Get display name for a user by checking both Discord and Google profiles.
+
+        Args:
+            user_id: Original user ID (numeric Discord ID or 'google_12345')
+
+        Returns:
+            str: Display name or fallback 'User {numeric_id}'
+        """
+        user_id_str = str(user_id)
+        numeric_id = self._normalize_user_id(user_id_str)
+
+        # Try Discord profile first (numeric ID)
+        discord_profiles = self.user_repo.search_by_display_name(
+            query=str(numeric_id), provider="discord", limit=1
+        )
+        if discord_profiles and discord_profiles[0]["user_id"] == str(numeric_id):
+            return discord_profiles[0]["display_name"]
+
+        # Try Google profile (google_ prefixed ID)
+        google_user_id = f"google_{numeric_id}"
+        google_profiles = self.user_repo.search_by_display_name(
+            query=google_user_id, provider="google", limit=1
+        )
+        if google_profiles and google_profiles[0]["user_id"] == google_user_id:
+            return google_profiles[0]["display_name"]
+
+        # Fallback
+        return f"User {numeric_id}"
+
     def create_match_report(
         self,
         submitter_id: str,
@@ -321,8 +389,8 @@ class MatchConfirmationService:
         Create a new match report with validation and duplicate detection.
 
         Args:
-            submitter_id: Discord user ID of submitter
-            opponent_id: Discord user ID of opponent
+            submitter_id: User ID of submitter (Discord ID or 'google_12345')
+            opponent_id: User ID of opponent (Discord ID or 'google_12345')
             result: Match result ('won' or 'lost')
             went_first: Turn order ('submitter' or 'opponent')
             submitter_deck_url: Optional deck URL for submitter
@@ -343,10 +411,17 @@ class MatchConfirmationService:
             ValueError: If validation fails
             RuntimeError: If duplicate pending report or database error
         """
+        # Step 0: Normalize user IDs (strip 'google_' prefix if present)
+        try:
+            submitter_numeric_id = self._normalize_user_id(submitter_id)
+            opponent_numeric_id = self._normalize_user_id(opponent_id)
+        except ValueError as e:
+            raise ValueError(f"Invalid user ID: {e}")
+
         # Step 1: Validate all inputs
         validation = self.validate_match_report_input(
-            submitter_id=submitter_id,
-            opponent_id=opponent_id,
+            submitter_id=str(submitter_numeric_id),
+            opponent_id=str(opponent_numeric_id),
             result=result,
             went_first=went_first,
             submitter_deck_url=submitter_deck_url,
@@ -361,8 +436,8 @@ class MatchConfirmationService:
 
         # Step 2: Check for duplicate pending reports (within 1 hour)
         has_duplicate = self.repo.check_duplicate_pending(
-            submitter_id=int(submitter_id),
-            opponent_id=int(opponent_id)
+            submitter_id=submitter_numeric_id,
+            opponent_id=opponent_numeric_id
         )
 
         if has_duplicate:
@@ -373,13 +448,13 @@ class MatchConfirmationService:
 
         # Step 3: Calculate winner and loser IDs
         winner_loser = self.calculate_winner_loser(
-            submitter_id=submitter_id,
-            opponent_id=opponent_id,
+            submitter_id=str(submitter_numeric_id),
+            opponent_id=str(opponent_numeric_id),
             result=result
         )
 
-        winner_id = winner_loser["winner_id"]
-        loser_id = winner_loser["loser_id"]
+        winner_numeric_id = int(winner_loser["winner_id"])
+        loser_numeric_id = int(winner_loser["loser_id"])
 
         # Step 4: Map deck URLs to winner/loser
         if result == "won":
@@ -396,10 +471,10 @@ class MatchConfirmationService:
         # Step 5: Create confirmation in database
         import time
         confirmation_id = self.repo.create_confirmation(
-            submitter_id=int(submitter_id),
-            opponent_id=int(opponent_id),
-            winner_id=int(winner_id),
-            loser_id=int(loser_id),
+            submitter_id=submitter_numeric_id,
+            opponent_id=opponent_numeric_id,
+            winner_id=winner_numeric_id,
+            loser_id=loser_numeric_id,
             final_life_winner=final_life_winner,
             final_life_loser=final_life_loser,
             went_first=went_first,
@@ -410,19 +485,12 @@ class MatchConfirmationService:
         expires_at = int(time.time()) + (48 * 60 * 60)
 
         # Step 6: Get opponent display name for response
-        # Try to get from user_profiles, fallback to user_id
-        opponent_profiles = self.user_repo.search_by_display_name(
-            query=str(opponent_id), provider="discord", limit=1
-        )
-        opponent_display_name = (
-            opponent_profiles[0]["display_name"]
-            if opponent_profiles and opponent_profiles[0]["user_id"] == str(opponent_id)
-            else f"User {opponent_id}"
-        )
+        # Try to get from user_profiles (check both Discord and Google)
+        opponent_display_name = self._get_display_name_for_user(opponent_id)
 
         logger.info(
-            f"Match report created: id={confirmation_id}, submitter={submitter_id}, "
-            f"opponent={opponent_id}, result={result}, went_first={went_first}"
+            f"Match report created: id={confirmation_id}, submitter={submitter_id} (normalized: {submitter_numeric_id}), "
+            f"opponent={opponent_id} (normalized: {opponent_numeric_id}), result={result}, went_first={went_first}"
         )
 
         return {
@@ -491,7 +559,9 @@ class MatchConfirmationService:
             )
 
         # Verify user is the opponent
-        if str(confirmation["opponent_discord_id"]) != str(opponent_user_id):
+        # Normalize both IDs for comparison (handles both Discord and Google users)
+        opponent_numeric_id = self._normalize_user_id(opponent_user_id)
+        if confirmation["opponent_discord_id"] != opponent_numeric_id:
             raise PermissionError(
                 "You are not authorized to confirm this match report"
             )
@@ -530,18 +600,104 @@ class MatchConfirmationService:
             confirmed_at=int(time.time())
         )
 
-        # TODO: Create match record and update ELO (Phase 5 - T073-T075)
-        # For now, return success without ELO changes
+        # Update paper ELO ratings for both players
+        from services.paper_elo import update_paper_elo
+        from repositories.matches import MatchRepository
+
+        winner_id = confirmation["winner_discord_id"]
+        loser_id = confirmation["loser_discord_id"]
+
+        # Get display names for logging
+        winner_name = self._get_display_name_for_user(str(winner_id))
+        loser_name = self._get_display_name_for_user(str(loser_id))
+
+        # Update winner's ELO
+        (
+            winner_new_elo,
+            winner_elo_change,
+            winner_new_event_elo,
+            winner_event_elo_change,
+            event_active,
+        ) = update_paper_elo(winner_id, winner_name, did_win=True, opponent_id=loser_id)
+
+        # Update loser's ELO
+        (
+            loser_new_elo,
+            loser_elo_change,
+            loser_new_event_elo,
+            loser_event_elo_change,
+            _,
+        ) = update_paper_elo(loser_id, loser_name, did_win=False, opponent_id=winner_id)
+
+        # Create match record in match_records.db
+        match_repo = MatchRepository()
+        from webapp_config import MATCH_RECORDS_DB_PATH
+        import sqlite3
+
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        # Get deck URLs from confirmation
+        winner_deck_url = confirmation.get("winner_deck_url") or "No URL provided"
+        loser_deck_url = confirmation.get("loser_deck_url") or "No URL provided"
+
+        # Insert match record with source='Web'
+        cur.execute(
+            """INSERT INTO match_records
+               (reporter_id, winner_id, winner_display_name, losser_id, losser_display_name,
+                did_win, timestamp, first_player, match_time, curiosa_url_winner, curiosa_url_loser,
+                match_comment, winner_elo_change, loser_elo_change, winner_went_first, loser_went_first,
+                source, match_type)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                confirmation["submitter_discord_id"],  # reporter_id
+                winner_id,
+                winner_name,
+                loser_id,
+                loser_name,
+                True,  # did_win (from winner's perspective)
+                datetime.datetime.now().isoformat(),
+                confirmation.get("went_first", "Unknown"),  # first_player
+                0,  # match_time (not tracked in confirmations yet)
+                winner_deck_url,
+                loser_deck_url,
+                "Web-confirmed match",  # match_comment
+                winner_event_elo_change if event_active else 0,
+                loser_event_elo_change if event_active else 0,
+                None,  # winner_went_first
+                None,  # loser_went_first
+                "Web",  # source
+                "ranked",  # match_type
+            ),
+        )
+
+        match_id = cur.lastrowid
+        conn.commit()
+        conn.close()
+
         logger.info(
-            f"Match confirmed: id={confirmation_id}, winner={confirmation['winner_discord_id']}, "
-            f"loser={confirmation['loser_discord_id']}"
+            f"Match confirmed: id={confirmation_id}, match_id={match_id}, "
+            f"winner={winner_id} (+{winner_event_elo_change}), loser={loser_id} ({loser_event_elo_change})"
         )
 
         return {
             "success": True,
-            "message": "Match confirmed successfully! ELO ratings will be updated shortly.",
-            "match_id": None,  # Will be implemented in Phase 5
-            "elo_changes": None  # Will be implemented in Phase 5
+            "message": "Match confirmed successfully! ELO ratings have been updated.",
+            "match_id": match_id,
+            "elo_changes": {
+                "winner": {
+                    "old_elo": winner_new_elo - winner_elo_change,
+                    "new_elo": winner_new_elo,
+                    "change": winner_elo_change,
+                    "event_change": winner_event_elo_change if event_active else 0,
+                },
+                "loser": {
+                    "old_elo": loser_new_elo - loser_elo_change,
+                    "new_elo": loser_new_elo,
+                    "change": loser_elo_change,
+                    "event_change": loser_event_elo_change if event_active else 0,
+                },
+            },
         }
 
     def deny_match_report(
@@ -593,7 +749,9 @@ class MatchConfirmationService:
             )
 
         # Verify user is the opponent
-        if str(confirmation["opponent_discord_id"]) != str(opponent_user_id):
+        # Normalize both IDs for comparison (handles both Discord and Google users)
+        opponent_numeric_id = self._normalize_user_id(opponent_user_id)
+        if confirmation["opponent_discord_id"] != opponent_numeric_id:
             raise PermissionError(
                 "You are not authorized to deny this match report"
             )

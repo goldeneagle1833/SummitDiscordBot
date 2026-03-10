@@ -16,30 +16,94 @@ class EloRepository:
         return sqlite3.connect(self._db_path)
 
     def get_all_standings(self) -> list[dict]:
-        """Get all ELO standings (lifetime) ordered by ELO descending."""
+        """Get all ELO standings with both paper and online ELOs."""
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute("""
-            SELECT user_id, user_display_name, elo
-            FROM overall_standings
-            ORDER BY elo DESC
-        """)
-        rows = cur.fetchall()
-        conn.close()
 
-        return [
-            {"user_id": row[0], "display_name": row[1], "elo": row[2]} for row in rows
-        ]
+        # Ensure columns exist
+        cur.execute("PRAGMA table_info(overall_standings)")
+        columns = {col[1] for col in cur.fetchall()}
+
+        has_dual_elo = "paper_elo" in columns and "online_elo" in columns
+
+        if has_dual_elo:
+            cur.execute("""
+                SELECT user_id, user_display_name, elo, paper_elo, online_elo
+                FROM overall_standings
+                ORDER BY elo DESC
+            """)
+            rows = cur.fetchall()
+            conn.close()
+
+            return [
+                {
+                    "user_id": row[0],
+                    "display_name": row[1],
+                    "elo": row[2],
+                    "paper_elo": row[3] if row[3] else 1500,
+                    "online_elo": row[4] if row[4] else 1500,
+                    "primary_mode": "Paper" if (row[3] or 1500) > (row[4] or 1500) else "Online",
+                }
+                for row in rows
+            ]
+        else:
+            # Fallback for old schema
+            cur.execute("""
+                SELECT user_id, user_display_name, elo
+                FROM overall_standings
+                ORDER BY elo DESC
+            """)
+            rows = cur.fetchall()
+            conn.close()
+
+            return [
+                {
+                    "user_id": row[0],
+                    "display_name": row[1],
+                    "elo": row[2],
+                    "paper_elo": 1500,
+                    "online_elo": row[2],  # Assume existing is online
+                    "primary_mode": "Online",
+                }
+                for row in rows
+            ]
 
     def get_all_standings_with_event(self) -> list[dict]:
-        """Get all ELO standings including event ELO."""
+        """Get all ELO standings including event ELOs (both paper and online)."""
         conn = self._get_connection()
         cur = conn.cursor()
-        # Check if event_elo column exists
+        # Check which columns exist
         cur.execute("PRAGMA table_info(overall_standings)")
-        columns = [col[1] for col in cur.fetchall()]
+        columns = {col[1] for col in cur.fetchall()}
 
-        if "event_elo" in columns:
+        has_dual_elo = "paper_elo" in columns and "online_elo" in columns
+        has_dual_event = "paper_event_elo" in columns and "online_event_elo" in columns
+
+        if has_dual_elo and has_dual_event:
+            cur.execute("""
+                SELECT user_id, user_display_name, elo, event_elo,
+                       paper_elo, online_elo, paper_event_elo, online_event_elo
+                FROM overall_standings
+                ORDER BY elo DESC
+            """)
+            rows = cur.fetchall()
+            conn.close()
+            return [
+                {
+                    "user_id": row[0],
+                    "display_name": row[1],
+                    "elo": row[2],
+                    "event_elo": row[3] if row[3] else 1500,
+                    "paper_elo": row[4] if row[4] else 1500,
+                    "online_elo": row[5] if row[5] else 1500,
+                    "paper_event_elo": row[6] if row[6] else 1500,
+                    "online_event_elo": row[7] if row[7] else 1500,
+                    "primary_mode": "Paper" if (row[4] or 1500) > (row[5] or 1500) else "Online",
+                }
+                for row in rows
+            ]
+        elif "event_elo" in columns:
+            # Fallback for old schema with event_elo but not dual ELO
             cur.execute("""
                 SELECT user_id, user_display_name, elo, event_elo
                 FROM overall_standings
@@ -53,11 +117,16 @@ class EloRepository:
                     "display_name": row[1],
                     "elo": row[2],
                     "event_elo": row[3] if row[3] else 1500,
+                    "paper_elo": 1500,
+                    "online_elo": row[2],  # Assume existing is online
+                    "paper_event_elo": 1500,
+                    "online_event_elo": row[3] if row[3] else 1500,
+                    "primary_mode": "Online",
                 }
                 for row in rows
             ]
         else:
-            # Fallback if event_elo doesn't exist yet
+            # Fallback if no event columns exist
             cur.execute("""
                 SELECT user_id, user_display_name, elo
                 FROM overall_standings
@@ -71,6 +140,11 @@ class EloRepository:
                     "display_name": row[1],
                     "elo": row[2],
                     "event_elo": 1500,
+                    "paper_elo": 1500,
+                    "online_elo": row[2],
+                    "paper_event_elo": 1500,
+                    "online_event_elo": 1500,
+                    "primary_mode": "Online",
                 }
                 for row in rows
             ]

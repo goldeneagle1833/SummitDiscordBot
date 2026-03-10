@@ -65,10 +65,10 @@ class MatchConfirmationRepository:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
             """,
             (
-                submitter_id,
-                opponent_id,
-                winner_id,
-                loser_id,
+                str(submitter_id),
+                str(opponent_id),
+                str(winner_id),
+                str(loser_id),
                 winner_deck_url,
                 loser_deck_url,
                 final_life_winner,
@@ -111,7 +111,7 @@ class MatchConfirmationRepository:
               AND expires_at > ?
             ORDER BY created_at DESC
             """,
-            (user_id, current_time),
+            (str(user_id), current_time),
         )
 
         rows = cursor.fetchall()
@@ -219,7 +219,7 @@ class MatchConfirmationRepository:
               AND status = 'pending'
               AND created_at > ?
             """,
-            (submitter_id, opponent_id, one_hour_ago),
+            (str(submitter_id), str(opponent_id), one_hour_ago),
         )
 
         count = cursor.fetchone()[0]
@@ -294,7 +294,7 @@ class MatchConfirmationRepository:
             ORDER BY last_matched_at DESC
             LIMIT ?
             """,
-            (user_id, user_id, user_id, limit),
+            (str(user_id), str(user_id), str(user_id), limit),
         )
 
         rows = cursor.fetchall()

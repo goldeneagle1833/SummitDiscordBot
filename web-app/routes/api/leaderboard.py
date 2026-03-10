@@ -110,6 +110,11 @@ def get_player_event_stats(player_id, event_id):
     try:
         from repositories.elo import EloRepository
 
+        # Normalize player_id (strip 'google_' prefix for Google OAuth users)
+        player_id_str = str(player_id)
+        if player_id_str.startswith("google_"):
+            player_id = player_id_str[7:]  # Remove 'google_' prefix
+
         repo = EloRepository()
         stats = repo.get_player_event_elo(int(player_id), event_id)
         if stats:

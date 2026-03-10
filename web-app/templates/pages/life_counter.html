@@ -491,6 +491,11 @@
   </div>
 </div>
 
+<script>
+  // Pass server-side auth info to JavaScript
+  window.AUTH_PROVIDER = {{ auth_provider|tojson }};
+  window.LOGGED_IN = {{ logged_in|tojson }};
+</script>
 <script src="{{ url_for('static', filename='js/pages/life_counter.js') }}?v={{ app_version }}"></script>
 </body>
 </html>

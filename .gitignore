@@ -43,3 +43,6 @@ nul
 .agents/skills/mermaid-expert/SKILL.md
 discord-bot/docs/lfg-flowchart.md
 discord-bot/docs/matchmaking_system.png
+discord-bot/pull_from_server/download-databases.ps1
+discord-bot/pull_from_server/download-databases-pscp.ps1
+discord-bot/pull_from_server/quick-download.ps1

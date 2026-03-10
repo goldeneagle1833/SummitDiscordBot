@@ -16,7 +16,7 @@ class LeaderboardService:
         self._match_repo = match_repo or MatchRepository()
 
     def get_leaderboard(self) -> list[dict]:
-        """Get unified leaderboard from overall_standings."""
+        """Get unified leaderboard from overall_standings with dual ELO support."""
         standings = self._elo_repo.get_all_standings()
         leaderboard_data = []
         for standing in standings:
@@ -28,6 +28,9 @@ class LeaderboardService:
                     "id": str(user_id),
                     "name": standing["display_name"],
                     "elo": standing["elo"],
+                    "paper_elo": standing.get("paper_elo", 1500),
+                    "online_elo": standing.get("online_elo", 1500),
+                    "primary_mode": standing.get("primary_mode", "Online"),
                     "wins": wins,
                     "losses": losses,
                 }

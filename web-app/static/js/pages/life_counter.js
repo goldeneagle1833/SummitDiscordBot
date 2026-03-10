@@ -339,7 +339,6 @@ function resetMatchReportForm() {
   document.getElementById("opponent-search").value = "";
   document.getElementById("opponent-user-id").value = "";
   document.getElementById("submitter-deck-url").value = "";
-  document.getElementById("opponent-deck-url").value = "";
   document.getElementById("went-first").value = "";
 
   // Hide selected opponent display
@@ -471,15 +470,13 @@ function validateMatchReportForm() {
   const opponentSelected = !!document.getElementById("opponent-user-id").value;
   const turnOrderSelected = !!document.getElementById("went-first").value;
   const submitterDeckUrl = document.getElementById("submitter-deck-url").value;
-  const opponentDeckUrl = document.getElementById("opponent-deck-url").value;
 
-  // Validate deck URLs if provided
+  // Validate deck URL if provided
   const deckUrlPattern = /^https?:\/\/(www\.)?curiosa\.io\/decks\/[a-zA-Z0-9_-]+$/;
   const submitterDeckValid = !submitterDeckUrl || deckUrlPattern.test(submitterDeckUrl);
-  const opponentDeckValid = !opponentDeckUrl || deckUrlPattern.test(opponentDeckUrl);
 
   // Enable submit buttons only if all required fields are valid
-  const isValid = opponentSelected && turnOrderSelected && submitterDeckValid && opponentDeckValid;
+  const isValid = opponentSelected && turnOrderSelected && submitterDeckValid;
 
   document.getElementById("report-win-btn").disabled = !isValid;
   document.getElementById("report-loss-btn").disabled = !isValid;
@@ -506,7 +503,6 @@ async function submitMatchReport(result) {
     result: result,
     went_first: document.getElementById("went-first").value,
     submitter_deck_url: document.getElementById("submitter-deck-url").value || null,
-    opponent_deck_url: document.getElementById("opponent-deck-url").value || null,
     final_life_submitter: parseInt(document.getElementById("final-life-submitter").value),
     final_life_opponent: parseInt(document.getElementById("final-life-opponent").value)
   };
@@ -611,14 +607,9 @@ function initializeMatchReportListeners() {
 
   // Deck URL validation (on input)
   const submitterDeckUrl = document.getElementById("submitter-deck-url");
-  const opponentDeckUrl = document.getElementById("opponent-deck-url");
 
   if (submitterDeckUrl) {
     submitterDeckUrl.addEventListener("input", validateMatchReportForm);
-  }
-
-  if (opponentDeckUrl) {
-    opponentDeckUrl.addEventListener("input", validateMatchReportForm);
   }
 
   // Cancel button
@@ -834,8 +825,15 @@ async function confirmMatch() {
   document.getElementById("back-to-list-btn").disabled = true;
 
   try {
+    // Get deck URL from confirmation form
+    const deckUrl = document.getElementById("confirmation-your-deck-url").value || null;
+
     const response = await fetch(`/api/match-report/confirm/${currentConfirmation.id}`, {
-      method: "POST"
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ deck_url: deckUrl })
     });
 
     const data = await response.json();

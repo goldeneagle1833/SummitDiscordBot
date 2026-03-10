@@ -147,7 +147,6 @@ def submit_match_report():
     result = data.get("result")
     went_first = data.get("went_first")
     submitter_deck_url = data.get("submitter_deck_url")
-    opponent_deck_url = data.get("opponent_deck_url")
     final_life_submitter = data.get("final_life_submitter")
     final_life_opponent = data.get("final_life_opponent")
 
@@ -155,13 +154,14 @@ def submit_match_report():
         service = MatchConfirmationService()
 
         # Call service layer to create match report
+        # Note: opponent_deck_url will be provided by opponent on confirmation
         result_data = service.create_match_report(
             submitter_id=submitter_id,
             opponent_id=opponent_id,
             result=result,
             went_first=went_first,
             submitter_deck_url=submitter_deck_url,
-            opponent_deck_url=opponent_deck_url,
+            opponent_deck_url=None,  # Opponent provides their deck URL on confirmation
             final_life_submitter=final_life_submitter,
             final_life_opponent=final_life_opponent
         )
@@ -293,6 +293,11 @@ def confirm_match_report(confirmation_id):
     Path Parameters:
         confirmation_id (int): ID of confirmation to confirm
 
+    Request Body (JSON, optional):
+        {
+            "deck_url": str (optional Curiosa.io deck URL)
+        }
+
     Returns:
         JSON: {"success": bool, "message": str, "match_id": int (optional)}
 
@@ -313,12 +318,16 @@ def confirm_match_report(confirmation_id):
             }
         }), 401
 
+    # Get optional deck URL from request body
+    data = request.get_json() or {}
+    deck_url = data.get("deck_url")
+
     try:
         current_user_id = session["user_id"]
         service = MatchConfirmationService()
 
         # Confirm the match report
-        result = service.confirm_match_report(confirmation_id, current_user_id)
+        result = service.confirm_match_report(confirmation_id, current_user_id, deck_url)
 
         logger.info(
             f"Match confirmed: confirmation_id={confirmation_id}, "

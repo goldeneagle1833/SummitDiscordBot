@@ -424,7 +424,7 @@ class MatchConfirmationService:
         }
 
     def confirm_match_report(
-        self, confirmation_id: int, opponent_user_id: str
+        self, confirmation_id: int, opponent_user_id: str, opponent_deck_url: Optional[str] = None
     ) -> dict:
         """
         Confirm a pending match report.
@@ -432,13 +432,15 @@ class MatchConfirmationService:
         This method:
         1. Verifies the confirmation exists and is pending
         2. Verifies the user is the opponent on the confirmation
-        3. Marks the confirmation as 'confirmed'
-        4. Creates a match record in the database
-        5. Updates ELO ratings for both players
+        3. Saves the opponent's deck URL (if provided)
+        4. Marks the confirmation as 'confirmed'
+        5. Creates a match record in the database (TODO)
+        6. Updates ELO ratings for both players (TODO)
 
         Args:
             confirmation_id: ID of confirmation to confirm
             opponent_user_id: Discord user ID of user confirming (must be the opponent)
+            opponent_deck_url: Optional Curiosa.io deck URL for opponent's deck
 
         Returns:
             dict: {
@@ -479,6 +481,33 @@ class MatchConfirmationService:
         if str(confirmation["opponent_discord_id"]) != str(opponent_user_id):
             raise PermissionError(
                 "You are not authorized to confirm this match report"
+            )
+
+        # Update opponent's deck URL if provided
+        if opponent_deck_url:
+            # Validate deck URL format
+            import re
+            deck_url_pattern = r"^https?://(www\.)?curiosa\.io/decks/[a-zA-Z0-9_-]+$"
+            if not re.match(deck_url_pattern, opponent_deck_url):
+                raise ValueError("Invalid Curiosa.io deck URL format")
+
+            # Determine if opponent is winner or loser
+            is_winner = str(confirmation["winner_discord_id"]) == str(opponent_user_id)
+            deck_field = "winner_deck_url" if is_winner else "loser_deck_url"
+
+            # Update the deck URL in the database
+            conn = self.repo._get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                f"UPDATE match_confirmations SET {deck_field} = ? WHERE id = ?",
+                (opponent_deck_url, confirmation_id)
+            )
+            conn.commit()
+            conn.close()
+
+            logger.info(
+                f"Updated opponent deck URL: confirmation_id={confirmation_id}, "
+                f"field={deck_field}, url={opponent_deck_url}"
             )
 
         # Mark confirmation as confirmed

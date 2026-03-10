@@ -251,7 +251,7 @@
           </div>
         </div>
 
-        <!-- Deck URLs -->
+        <!-- Deck URL -->
         <div class="form-group">
           <label for="submitter-deck-url">Your Deck URL (optional)</label>
           <input
@@ -263,19 +263,6 @@
             pattern="https?://(www\.)?curiosa\.io/decks/[a-zA-Z0-9_-]+"
           />
           <small class="form-hint">Example: https://curiosa.io/decks/my-deck-123</small>
-        </div>
-
-        <div class="form-group">
-          <label for="opponent-deck-url">Opponent's Deck URL (optional)</label>
-          <input
-            type="url"
-            id="opponent-deck-url"
-            name="opponent_deck_url"
-            class="form-control"
-            placeholder="https://curiosa.io/decks/..."
-            pattern="https?://(www\.)?curiosa\.io/decks/[a-zA-Z0-9_-]+"
-          />
-          <small class="form-hint">Example: https://curiosa.io/decks/opponent-deck-456</small>
         </div>
 
         <!-- Turn Order Toggle -->
@@ -400,6 +387,19 @@
             <span class="info-label">Expires:</span>
             <span id="confirmation-expires" class="info-value">in 23 hours</span>
           </div>
+        </div>
+
+        <!-- Your Deck URL Field -->
+        <div class="form-group">
+          <label for="confirmation-your-deck-url">Your Deck URL (optional)</label>
+          <input
+            type="url"
+            id="confirmation-your-deck-url"
+            class="form-control"
+            placeholder="https://curiosa.io/decks/..."
+            pattern="https?://(www\.)?curiosa\.io/decks/[a-zA-Z0-9_-]+"
+          />
+          <small class="form-hint">Provide your deck URL to complete the match record</small>
         </div>
 
         <!-- Loading Indicator -->

@@ -263,6 +263,12 @@ function initializeEventListeners() {
     resetBtn.addEventListener("click", resetCounter);
   }
 
+  // Fullscreen button
+  const fullscreenBtn = document.getElementById("fullscreen-btn");
+  if (fullscreenBtn) {
+    fullscreenBtn.addEventListener("click", toggleFullscreen);
+  }
+
   // Report match button (functionality for US2)
   const reportBtn = document.getElementById("report-match-btn");
   if (reportBtn) {
@@ -1022,6 +1028,32 @@ function requestFullscreen() {
   }
 }
 
+function exitFullscreen() {
+  if (document.exitFullscreen) {
+    document.exitFullscreen().catch((err) => {
+      console.log("Exit fullscreen failed:", err);
+    });
+  } else if (document.webkitExitFullscreen) {
+    // Safari
+    document.webkitExitFullscreen();
+  } else if (document.mozCancelFullScreen) {
+    // Firefox
+    document.mozCancelFullScreen();
+  } else if (document.msExitFullscreen) {
+    // IE/Edge
+    document.msExitFullscreen();
+  }
+}
+
+function toggleFullscreen() {
+  if (isFullscreen()) {
+    exitFullscreen();
+  } else {
+    requestFullscreen();
+  }
+  updateFullscreenButton();
+}
+
 function isFullscreen() {
   return !!(
     document.fullscreenElement ||
@@ -1029,6 +1061,19 @@ function isFullscreen() {
     document.mozFullScreenElement ||
     document.msFullscreenElement
   );
+}
+
+function updateFullscreenButton() {
+  const fullscreenBtn = document.getElementById("fullscreen-btn");
+  if (!fullscreenBtn) return;
+
+  if (isFullscreen()) {
+    fullscreenBtn.classList.add("active");
+    fullscreenBtn.setAttribute("aria-label", "Exit fullscreen");
+  } else {
+    fullscreenBtn.classList.remove("active");
+    fullscreenBtn.setAttribute("aria-label", "Enter fullscreen");
+  }
 }
 
 // ==================== Initialization ====================
@@ -1069,6 +1114,15 @@ document.addEventListener("DOMContentLoaded", function () {
   // Try to go fullscreen on first tap/click
   document.body.addEventListener("click", requestFullscreenOnce, { once: true });
   document.body.addEventListener("touchstart", requestFullscreenOnce, { once: true });
+
+  // Listen for fullscreen changes to update button state
+  document.addEventListener("fullscreenchange", updateFullscreenButton);
+  document.addEventListener("webkitfullscreenchange", updateFullscreenButton);
+  document.addEventListener("mozfullscreenchange", updateFullscreenButton);
+  document.addEventListener("msfullscreenchange", updateFullscreenButton);
+
+  // Update fullscreen button state on load
+  updateFullscreenButton();
 
   console.log("[LifeCounter] Initialization complete");
   console.log("[LifeCounter] Threshold elements:", document.querySelectorAll(".threshold-element").length);

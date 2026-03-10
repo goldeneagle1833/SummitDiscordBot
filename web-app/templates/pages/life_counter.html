@@ -97,7 +97,13 @@
       background-color: currentColor;
     }
 
-    .reset-btn {
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .icon-btn {
       background: none;
       border: 1px solid #444;
       color: #ffffff;
@@ -113,14 +119,23 @@
       padding: 0;
     }
 
-    .reset-btn:hover {
+    .icon-btn:hover {
       background-color: rgba(147, 51, 234, 0.2);
       border-color: #9333ea;
     }
 
-    .reset-btn:active {
-      transform: rotate(180deg);
+    .icon-btn:active {
       background-color: rgba(147, 51, 234, 0.3);
+    }
+
+    #reset-btn:active {
+      transform: rotate(180deg);
+    }
+
+    #fullscreen-btn.active {
+      background-color: rgba(147, 51, 234, 0.2);
+      border-color: #9333ea;
+      color: #FFC107;
     }
   </style>
 </head>
@@ -142,7 +157,10 @@
         <a href="/auth/login" class="login-link">Log in</a>
       </div>
     {% endif %}
-    <button id="reset-btn" class="reset-btn" aria-label="Reset counter">↻</button>
+    <div class="header-actions">
+      <button id="fullscreen-btn" class="icon-btn" aria-label="Toggle fullscreen">⛶</button>
+      <button id="reset-btn" class="icon-btn" aria-label="Reset counter">↻</button>
+    </div>
   </header>
 
   <div class="life-counter-container">

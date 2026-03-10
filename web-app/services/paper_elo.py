@@ -86,7 +86,7 @@ def get_active_event():
     return None
 
 
-def update_paper_elo(user_id: int, user_display_name: str, did_win: bool, opponent_id: int) -> tuple:
+def update_paper_elo(user_id, user_display_name: str, did_win: bool, opponent_id) -> tuple:
     """
     Update paper ELO ratings for web-confirmed matches.
 
@@ -94,14 +94,33 @@ def update_paper_elo(user_id: int, user_display_name: str, did_win: bool, oppone
     If no event is active, ELO is not updated (returns 0 changes).
 
     Args:
-        user_id: Discord user ID
+        user_id: Discord/Google user ID (int or str - large Google IDs require str)
         user_display_name: Player's display name
         did_win: True if player won, False if lost
-        opponent_id: Opponent's Discord user ID
+        opponent_id: Opponent's user ID (int or str - large Google IDs require str)
 
     Returns:
         Tuple of (new_paper_elo, paper_change, new_paper_event_elo, paper_event_change, event_active)
     """
+    # Convert IDs to SQLite-safe format:
+    # - Discord IDs (fit in 64-bit int): pass as int for correct matching with existing records
+    # - Google OAuth IDs (exceed 64-bit int): pass as str to avoid OverflowError
+    SQLITE_MAX_INT = 9223372036854775807
+
+    def to_sqlite_id(val):
+        """Convert user ID to SQLite-safe type (int if fits, str if too large)."""
+        try:
+            int_val = int(val)
+            if abs(int_val) <= SQLITE_MAX_INT:
+                return int_val
+            return str(val)
+        except (ValueError, TypeError):
+            return str(val)
+
+    user_id_safe = to_sqlite_id(user_id)
+    opponent_id_safe = to_sqlite_id(opponent_id)
+    user_id_str = str(user_id)  # For logging only
+
     conn = sqlite3.connect(str(ELO_DB_PATH))
     cur = conn.cursor()
 
@@ -119,7 +138,7 @@ def update_paper_elo(user_id: int, user_display_name: str, did_win: bool, oppone
 
     # Get player's current paper ELOs (or insert if new)
     cur.execute(
-        "SELECT paper_elo, paper_event_elo FROM overall_standings WHERE user_id=?", (user_id,)
+        "SELECT paper_elo, paper_event_elo FROM overall_standings WHERE user_id=?", (user_id_safe,)
     )
     player_row = cur.fetchone()
 
@@ -128,7 +147,7 @@ def update_paper_elo(user_id: int, user_display_name: str, did_win: bool, oppone
         player_paper_event_elo = player_row[1] if player_row[1] else 1500
         logger.debug(
             "Existing player %s: paper ELO=%d, paper event ELO=%d",
-            user_id, player_paper_elo, player_paper_event_elo,
+            user_id_str, player_paper_elo, player_paper_event_elo,
         )
     else:
         player_paper_elo = 1500
@@ -136,13 +155,13 @@ def update_paper_elo(user_id: int, user_display_name: str, did_win: bool, oppone
         cur.execute(
             """INSERT OR IGNORE INTO overall_standings
                (user_id, user_display_name, paper_elo, paper_event_elo) VALUES (?, ?, ?, ?)""",
-            (user_id, user_display_name, player_paper_elo, player_paper_event_elo),
+            (user_id_safe, user_display_name, player_paper_elo, player_paper_event_elo),
         )
-        logger.debug("New player %s inserted with default paper ELOs", user_id)
+        logger.debug("New player %s inserted with default paper ELOs", user_id_str)
 
     # Get opponent's paper ELOs (or use default if not found)
     cur.execute(
-        "SELECT paper_elo, paper_event_elo FROM overall_standings WHERE user_id=?", (opponent_id,)
+        "SELECT paper_elo, paper_event_elo FROM overall_standings WHERE user_id=?", (opponent_id_safe,)
     )
     opponent_row = cur.fetchone()
 
@@ -158,7 +177,7 @@ def update_paper_elo(user_id: int, user_display_name: str, did_win: bool, oppone
 
     # If no active event, don't update ELO
     if not active_event:
-        logger.debug("No active event - paper ELO not updated for %s", user_id)
+        logger.debug("No active event - paper ELO not updated for %s", user_id_str)
         conn.close()
         return (player_paper_elo, 0, player_paper_event_elo, 0, False)
 
@@ -177,12 +196,12 @@ def update_paper_elo(user_id: int, user_display_name: str, did_win: bool, oppone
 
     logger.info(
         "Player %s paper ELO updated - lifetime: %d -> %d (%+d), event (K=%d): %d -> %d (%+d)",
-        user_id, player_paper_elo, new_paper_elo, paper_change,
+        user_id_str, player_paper_elo, new_paper_elo, paper_change,
         event_k, player_paper_event_elo, new_paper_event_elo, paper_event_change,
     )
 
     # Update player's paper ELOs (also update legacy elo/event_elo for backwards compat if paper is higher)
-    cur.execute("SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (user_id,))
+    cur.execute("SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (user_id_safe,))
     legacy_row = cur.fetchone()
     legacy_elo = legacy_row[0] if legacy_row and legacy_row[0] else 1500
     legacy_event_elo = legacy_row[1] if legacy_row and legacy_row[1] else 1500
@@ -193,7 +212,7 @@ def update_paper_elo(user_id: int, user_display_name: str, did_win: bool, oppone
 
     cur.execute(
         "UPDATE overall_standings SET paper_elo = ?, paper_event_elo = ?, elo = ?, event_elo = ? WHERE user_id = ?",
-        (new_paper_elo, new_paper_event_elo, updated_legacy_elo, updated_legacy_event_elo, user_id),
+        (new_paper_elo, new_paper_event_elo, updated_legacy_elo, updated_legacy_event_elo, user_id_safe),
     )
 
     conn.commit()

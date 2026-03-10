@@ -625,28 +625,37 @@ class MatchConfirmationService:
         json_deck_data_winner = "{}"
         json_deck_data_loser = "{}"
 
-        # Convert TEXT IDs to INTEGER (match_records expects INTEGER type)
-        try:
-            reporter_id_int = int(confirmation["submitter_discord_id"])
-            winner_id_int = int(winner_id)
-            loser_id_int = int(loser_id)
-        except (ValueError, TypeError, OverflowError) as e:
-            logger.error(f"Failed to convert IDs to integers: {e}")
-            raise ValueError(f"Invalid user ID format in confirmation record: {e}")
+        # Convert IDs to SQLite-safe format:
+        # - Discord IDs (fit in 64-bit int): pass as int for correct matching
+        # - Google OAuth IDs (exceed 64-bit int): pass as str to avoid OverflowError
+        SQLITE_MAX_INT = 9223372036854775807
+
+        def to_sqlite_id(val):
+            try:
+                int_val = int(val)
+                if abs(int_val) <= SQLITE_MAX_INT:
+                    return int_val
+                return str(val)
+            except (ValueError, TypeError):
+                return str(val)
+
+        reporter_id_safe = to_sqlite_id(confirmation["submitter_discord_id"])
+        winner_id_safe = to_sqlite_id(winner_id)
+        loser_id_safe = to_sqlite_id(loser_id)
 
         # CRITICAL: Perform all operations in correct order to maintain consistency
         # 1. Update ELO ratings
         # 2. Create match record
         # 3. Mark confirmation as confirmed (LAST - only if everything else succeeds)
 
-        # Update winner's ELO
+        # Update winner's ELO (pass as strings to avoid OverflowError with large Google OAuth IDs)
         (
             winner_new_elo,
             winner_elo_change,
             winner_new_event_elo,
             winner_event_elo_change,
             event_active,
-        ) = update_paper_elo(winner_id_int, winner_name, did_win=True, opponent_id=loser_id_int)
+        ) = update_paper_elo(str(winner_id), winner_name, did_win=True, opponent_id=str(loser_id))
 
         # Update loser's ELO
         (
@@ -655,7 +664,7 @@ class MatchConfirmationService:
             loser_new_event_elo,
             loser_event_elo_change,
             _,
-        ) = update_paper_elo(loser_id_int, loser_name, did_win=False, opponent_id=winner_id_int)
+        ) = update_paper_elo(str(loser_id), loser_name, did_win=False, opponent_id=str(winner_id))
 
         # Create match record in match_records.db
         logger.info(f"Connecting to match_records database at: {MATCH_RECORDS_DB_PATH}")
@@ -682,10 +691,10 @@ class MatchConfirmationService:
                     loser_went_first, match_type)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    reporter_id_int,  # reporter_id (converted to INTEGER)
-                    winner_id_int,    # winner_id (converted to INTEGER)
+                    reporter_id_safe,  # reporter_id (int if fits, str if too large)
+                    winner_id_safe,    # winner_id
                     winner_name,
-                    loser_id_int,     # losser_id (converted to INTEGER)
+                    loser_id_safe,     # losser_id
                     loser_name,
                     True,  # did_win (from winner's perspective)
                     datetime.datetime.now().isoformat(),
@@ -714,9 +723,9 @@ class MatchConfirmationService:
             logger.error(
                 f"Database integrity error creating match record:\n"
                 f"  Error: {e}\n"
-                f"  Reporter ID: {reporter_id_int}\n"
-                f"  Winner ID: {winner_id_int} ({winner_name})\n"
-                f"  Loser ID: {loser_id_int} ({loser_name})\n"
+                f"  Reporter ID: {reporter_id_safe}\n"
+                f"  Winner ID: {winner_id_safe} ({winner_name})\n"
+                f"  Loser ID: {loser_id_safe} ({loser_name})\n"
                 f"  Confirmation ID: {confirmation_id}",
                 exc_info=True
             )

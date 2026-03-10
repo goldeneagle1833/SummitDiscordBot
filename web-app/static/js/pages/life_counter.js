@@ -291,30 +291,376 @@ function initializeEventListeners() {
   });
 }
 
-// ==================== Match Reporting (US2 - Stub) ====================
+// ==================== Match Reporting (US1 & US2) ====================
+
+let opponentSearchTimeout = null;
+const SEARCH_DEBOUNCE_MS = 300;
 
 function showMatchReportModal() {
   const modal = document.getElementById("match-report-modal");
-  if (modal) {
-    // Populate modal with match summary
-    const summaryEl = modal.querySelector(".match-summary");
-    const player1Life = currentState.players.player1.life;
-    const player2Life = currentState.players.player2.life;
+  if (!modal) return;
 
-    let winner = "";
-    if (player1Life <= 0 && player2Life <= 0) {
-      winner = "Draw";
-    } else if (player1Life <= 0) {
-      winner = "Player 2 wins";
-    } else {
-      winner = "Player 1 wins";
+  // Populate match summary
+  const summaryEl = document.getElementById("match-summary-text");
+  const player1Life = currentState.players.player1.life;
+  const player2Life = currentState.players.player2.life;
+
+  let winner = "";
+  if (player1Life <= 0 && player2Life <= 0) {
+    winner = "Draw";
+  } else if (player1Life <= 0) {
+    winner = "You lost";
+  } else {
+    winner = "You won";
+  }
+
+  if (summaryEl) {
+    summaryEl.textContent = `${winner}! Your life: ${player1Life}, Opponent's life: ${player2Life}`;
+  }
+
+  // Auto-fill final life totals
+  document.getElementById("final-life-submitter").value = player1Life;
+  document.getElementById("final-life-opponent").value = player2Life;
+
+  // Reset form state
+  resetMatchReportForm();
+
+  // Show modal
+  modal.classList.remove("hidden");
+
+  // Focus on opponent search
+  setTimeout(() => {
+    document.getElementById("opponent-search")?.focus();
+  }, 100);
+}
+
+function resetMatchReportForm() {
+  // Reset all form inputs
+  document.getElementById("opponent-search").value = "";
+  document.getElementById("opponent-user-id").value = "";
+  document.getElementById("submitter-deck-url").value = "";
+  document.getElementById("opponent-deck-url").value = "";
+  document.getElementById("went-first").value = "";
+
+  // Hide selected opponent display
+  document.getElementById("opponent-selected").classList.add("hidden");
+
+  // Hide autocomplete
+  document.getElementById("opponent-autocomplete").classList.add("hidden");
+
+  // Reset turn order buttons
+  document.querySelectorAll("#turn-order-group .btn-toggle").forEach(btn => {
+    btn.classList.remove("active");
+  });
+
+  // Disable submit buttons
+  document.getElementById("report-win-btn").disabled = true;
+  document.getElementById("report-loss-btn").disabled = true;
+
+  // Hide alerts
+  document.getElementById("match-report-success").classList.add("hidden");
+  document.getElementById("match-report-error").classList.add("hidden");
+  document.getElementById("match-report-loading").classList.add("hidden");
+}
+
+// ==================== Opponent Autocomplete ====================
+
+async function searchOpponents(query) {
+  if (!query || query.length < 2) {
+    document.getElementById("opponent-autocomplete").classList.add("hidden");
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/match-report/search-opponents?q=${encodeURIComponent(query)}&limit=10`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("Opponent search failed:", data.error);
+      return;
     }
 
-    if (summaryEl) {
-      summaryEl.textContent = `${winner}! Final life: Player 1 (${player1Life}) vs Player 2 (${player2Life})`;
+    displayOpponentResults(data.opponents);
+  } catch (error) {
+    console.error("Error searching opponents:", error);
+  }
+}
+
+function displayOpponentResults(opponents) {
+  const dropdown = document.getElementById("opponent-autocomplete");
+
+  if (!opponents || opponents.length === 0) {
+    dropdown.innerHTML = '<div class="autocomplete-empty">No opponents found</div>';
+    dropdown.classList.remove("hidden");
+    return;
+  }
+
+  dropdown.innerHTML = opponents.map(opponent => `
+    <div class="autocomplete-item" data-user-id="${opponent.user_id}">
+      <img src="${opponent.avatar || '/static/images/default-avatar.png'}" alt="${opponent.display_name}">
+      <span class="autocomplete-item-name">${opponent.display_name}</span>
+      ${opponent.is_recent ? '<span class="autocomplete-item-badge">Recent</span>' : ''}
+    </div>
+  `).join('');
+
+  dropdown.classList.remove("hidden");
+
+  // Add click handlers to autocomplete items
+  dropdown.querySelectorAll(".autocomplete-item").forEach(item => {
+    item.addEventListener("click", function() {
+      selectOpponent({
+        user_id: this.dataset.userId,
+        display_name: this.querySelector(".autocomplete-item-name").textContent,
+        avatar: this.querySelector("img").src
+      });
+    });
+  });
+}
+
+function selectOpponent(opponent) {
+  // Set hidden field
+  document.getElementById("opponent-user-id").value = opponent.user_id;
+
+  // Clear search input
+  document.getElementById("opponent-search").value = "";
+
+  // Hide autocomplete
+  document.getElementById("opponent-autocomplete").classList.add("hidden");
+
+  // Show selected opponent display
+  const selectedDisplay = document.getElementById("opponent-selected");
+  document.getElementById("opponent-avatar").src = opponent.avatar;
+  document.getElementById("opponent-name").textContent = opponent.display_name;
+  selectedDisplay.classList.remove("hidden");
+
+  // Validate form (enable submit buttons if valid)
+  validateMatchReportForm();
+}
+
+function clearOpponent() {
+  document.getElementById("opponent-user-id").value = "";
+  document.getElementById("opponent-selected").classList.add("hidden");
+  validateMatchReportForm();
+}
+
+// ==================== Turn Order Toggle ====================
+
+function initializeTurnOrderToggle() {
+  const toggleButtons = document.querySelectorAll("#turn-order-group .btn-toggle");
+
+  toggleButtons.forEach(btn => {
+    btn.addEventListener("click", function() {
+      // Remove active class from all buttons
+      toggleButtons.forEach(b => b.classList.remove("active"));
+
+      // Add active class to clicked button
+      this.classList.add("active");
+
+      // Set hidden field value
+      document.getElementById("went-first").value = this.dataset.value;
+
+      // Validate form
+      validateMatchReportForm();
+    });
+  });
+}
+
+// ==================== Form Validation ====================
+
+function validateMatchReportForm() {
+  const opponentSelected = !!document.getElementById("opponent-user-id").value;
+  const turnOrderSelected = !!document.getElementById("went-first").value;
+  const submitterDeckUrl = document.getElementById("submitter-deck-url").value;
+  const opponentDeckUrl = document.getElementById("opponent-deck-url").value;
+
+  // Validate deck URLs if provided
+  const deckUrlPattern = /^https?:\/\/(www\.)?curiosa\.io\/decks\/[a-zA-Z0-9_-]+$/;
+  const submitterDeckValid = !submitterDeckUrl || deckUrlPattern.test(submitterDeckUrl);
+  const opponentDeckValid = !opponentDeckUrl || deckUrlPattern.test(opponentDeckUrl);
+
+  // Enable submit buttons only if all required fields are valid
+  const isValid = opponentSelected && turnOrderSelected && submitterDeckValid && opponentDeckValid;
+
+  document.getElementById("report-win-btn").disabled = !isValid;
+  document.getElementById("report-loss-btn").disabled = !isValid;
+
+  return isValid;
+}
+
+// ==================== Form Submission ====================
+
+async function submitMatchReport(result) {
+  // Show loading indicator
+  document.getElementById("match-report-loading").classList.remove("hidden");
+  document.getElementById("match-report-success").classList.add("hidden");
+  document.getElementById("match-report-error").classList.add("hidden");
+
+  // Disable buttons during submission
+  document.getElementById("report-win-btn").disabled = true;
+  document.getElementById("report-loss-btn").disabled = true;
+  document.getElementById("cancel-report-btn").disabled = true;
+
+  // Build request payload
+  const payload = {
+    opponent_user_id: document.getElementById("opponent-user-id").value,
+    result: result,
+    went_first: document.getElementById("went-first").value,
+    submitter_deck_url: document.getElementById("submitter-deck-url").value || null,
+    opponent_deck_url: document.getElementById("opponent-deck-url").value || null,
+    final_life_submitter: parseInt(document.getElementById("final-life-submitter").value),
+    final_life_opponent: parseInt(document.getElementById("final-life-opponent").value)
+  };
+
+  try {
+    const response = await fetch("/api/match-report/submit", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+
+    // Hide loading indicator
+    document.getElementById("match-report-loading").classList.add("hidden");
+
+    if (!response.ok) {
+      // Show error message
+      const errorEl = document.getElementById("match-report-error");
+      errorEl.textContent = data.error?.message || "Failed to submit match report. Please try again.";
+      errorEl.classList.remove("hidden");
+
+      // Re-enable buttons
+      document.getElementById("cancel-report-btn").disabled = false;
+      validateMatchReportForm();
+      return;
     }
 
-    modal.classList.remove("hidden");
+    // Success!
+    const successEl = document.getElementById("match-report-success");
+    const opponentName = document.getElementById("opponent-name").textContent;
+    successEl.textContent = `Match report submitted! Waiting for ${opponentName} to confirm. (Expires in 48 hours)`;
+    successEl.classList.remove("hidden");
+
+    // Close modal after 3 seconds
+    setTimeout(() => {
+      document.getElementById("match-report-modal").classList.add("hidden");
+
+      // Reset the life counter state (new game)
+      resetCounter();
+    }, 3000);
+
+  } catch (error) {
+    console.error("Error submitting match report:", error);
+
+    // Hide loading indicator
+    document.getElementById("match-report-loading").classList.add("hidden");
+
+    // Show error message
+    const errorEl = document.getElementById("match-report-error");
+    errorEl.textContent = "Network error. Please check your connection and try again.";
+    errorEl.classList.remove("hidden");
+
+    // Re-enable buttons
+    document.getElementById("cancel-report-btn").disabled = false;
+    validateMatchReportForm();
+  }
+}
+
+// ==================== Match Report Event Listeners ====================
+
+function initializeMatchReportListeners() {
+  // Opponent search autocomplete
+  const opponentSearch = document.getElementById("opponent-search");
+  if (opponentSearch) {
+    opponentSearch.addEventListener("input", function() {
+      const query = this.value.trim();
+
+      // Debounce search
+      if (opponentSearchTimeout) {
+        clearTimeout(opponentSearchTimeout);
+      }
+
+      if (query.length < 2) {
+        document.getElementById("opponent-autocomplete").classList.add("hidden");
+        return;
+      }
+
+      opponentSearchTimeout = setTimeout(() => {
+        searchOpponents(query);
+      }, SEARCH_DEBOUNCE_MS);
+    });
+
+    // Hide autocomplete when clicking outside
+    document.addEventListener("click", function(e) {
+      if (!opponentSearch.contains(e.target) && !document.getElementById("opponent-autocomplete").contains(e.target)) {
+        document.getElementById("opponent-autocomplete").classList.add("hidden");
+      }
+    });
+  }
+
+  // Clear opponent button
+  const clearOpponentBtn = document.getElementById("opponent-clear");
+  if (clearOpponentBtn) {
+    clearOpponentBtn.addEventListener("click", clearOpponent);
+  }
+
+  // Turn order toggle
+  initializeTurnOrderToggle();
+
+  // Deck URL validation (on input)
+  const submitterDeckUrl = document.getElementById("submitter-deck-url");
+  const opponentDeckUrl = document.getElementById("opponent-deck-url");
+
+  if (submitterDeckUrl) {
+    submitterDeckUrl.addEventListener("input", validateMatchReportForm);
+  }
+
+  if (opponentDeckUrl) {
+    opponentDeckUrl.addEventListener("input", validateMatchReportForm);
+  }
+
+  // Cancel button
+  const cancelBtn = document.getElementById("cancel-report-btn");
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", function() {
+      document.getElementById("match-report-modal").classList.add("hidden");
+    });
+  }
+
+  // Form submission (I Won / I Lost buttons)
+  const matchReportForm = document.getElementById("match-report-form");
+  if (matchReportForm) {
+    matchReportForm.addEventListener("submit", function(e) {
+      e.preventDefault();
+
+      // Determine which button was clicked
+      const submitter = document.activeElement;
+      const result = submitter.dataset.result;
+
+      if (result) {
+        submitMatchReport(result);
+      }
+    });
+  }
+
+  // Direct button click handlers (alternative to form submit)
+  const reportWinBtn = document.getElementById("report-win-btn");
+  const reportLossBtn = document.getElementById("report-loss-btn");
+
+  if (reportWinBtn) {
+    reportWinBtn.addEventListener("click", function(e) {
+      e.preventDefault();
+      submitMatchReport("won");
+    });
+  }
+
+  if (reportLossBtn) {
+    reportLossBtn.addEventListener("click", function(e) {
+      e.preventDefault();
+      submitMatchReport("lost");
+    });
   }
 }
 
@@ -377,6 +723,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Initialize event listeners
   initializeEventListeners();
+
+  // Initialize match report modal listeners
+  initializeMatchReportListeners();
 
   // Check if game already ended (from previous session)
   checkForGameEnd(currentState);

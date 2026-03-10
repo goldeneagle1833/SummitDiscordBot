@@ -216,7 +216,7 @@
   </button>
 </div>
 
-<!-- Match Report Modal (for User Story 2) -->
+<!-- Match Report Modal (for User Story 1 & 2) -->
 <div id="match-report-modal" class="modal hidden">
   <div class="modal-content">
     <div class="modal-header">
@@ -224,9 +224,124 @@
       <button class="modal-close" aria-label="Close modal">&times;</button>
     </div>
     <div class="modal-body">
-      <p class="match-summary">Match ended!</p>
+      <!-- Match Summary -->
+      <p class="match-summary" id="match-summary-text">Match ended!</p>
+
+      <!-- Match Report Form -->
       <form id="match-report-form">
-        <p class="text-muted">Match reporting not yet implemented.</p>
+        <!-- Opponent Selection -->
+        <div class="form-group">
+          <label for="opponent-search">Opponent <span class="required">*</span></label>
+          <div class="autocomplete-wrapper">
+            <input
+              type="text"
+              id="opponent-search"
+              class="form-control"
+              placeholder="Search for opponent..."
+              autocomplete="off"
+              required
+            />
+            <div id="opponent-autocomplete" class="autocomplete-dropdown hidden"></div>
+          </div>
+          <input type="hidden" id="opponent-user-id" name="opponent_user_id" />
+          <div id="opponent-selected" class="selected-opponent hidden">
+            <img id="opponent-avatar" class="opponent-avatar" src="" alt="Opponent avatar" />
+            <span id="opponent-name" class="opponent-name"></span>
+            <button type="button" id="opponent-clear" class="clear-opponent" aria-label="Clear opponent">&times;</button>
+          </div>
+        </div>
+
+        <!-- Deck URLs -->
+        <div class="form-group">
+          <label for="submitter-deck-url">Your Deck URL (optional)</label>
+          <input
+            type="url"
+            id="submitter-deck-url"
+            name="submitter_deck_url"
+            class="form-control"
+            placeholder="https://curiosa.io/decks/..."
+            pattern="https?://(www\.)?curiosa\.io/decks/[a-zA-Z0-9_-]+"
+          />
+          <small class="form-hint">Example: https://curiosa.io/decks/my-deck-123</small>
+        </div>
+
+        <div class="form-group">
+          <label for="opponent-deck-url">Opponent's Deck URL (optional)</label>
+          <input
+            type="url"
+            id="opponent-deck-url"
+            name="opponent_deck_url"
+            class="form-control"
+            placeholder="https://curiosa.io/decks/..."
+            pattern="https?://(www\.)?curiosa\.io/decks/[a-zA-Z0-9_-]+"
+          />
+          <small class="form-hint">Example: https://curiosa.io/decks/opponent-deck-456</small>
+        </div>
+
+        <!-- Turn Order Toggle -->
+        <div class="form-group">
+          <label>I went: <span class="required">*</span></label>
+          <div class="button-group" id="turn-order-group">
+            <button
+              type="button"
+              id="went-first-btn"
+              class="btn-toggle"
+              data-value="submitter"
+              aria-label="I went first"
+            >
+              First
+            </button>
+            <button
+              type="button"
+              id="went-second-btn"
+              class="btn-toggle"
+              data-value="opponent"
+              aria-label="I went second"
+            >
+              Second
+            </button>
+          </div>
+          <input type="hidden" id="went-first" name="went_first" />
+        </div>
+
+        <!-- Final Life Totals (auto-filled, hidden) -->
+        <input type="hidden" id="final-life-submitter" name="final_life_submitter" />
+        <input type="hidden" id="final-life-opponent" name="final_life_opponent" />
+
+        <!-- Loading Indicator -->
+        <div id="match-report-loading" class="loading-indicator hidden">
+          <div class="spinner"></div>
+          <span>Submitting match report...</span>
+        </div>
+
+        <!-- Success/Error Messages -->
+        <div id="match-report-success" class="alert alert-success hidden"></div>
+        <div id="match-report-error" class="alert alert-error hidden"></div>
+
+        <!-- Form Actions -->
+        <div class="modal-footer">
+          <button type="button" id="cancel-report-btn" class="btn btn-ghost btn-sm">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            id="report-loss-btn"
+            class="btn btn-danger btn-sm"
+            data-result="lost"
+            disabled
+          >
+            I Lost
+          </button>
+          <button
+            type="submit"
+            id="report-win-btn"
+            class="btn btn-success btn-sm"
+            data-result="won"
+            disabled
+          >
+            I Won
+          </button>
+        </div>
       </form>
     </div>
   </div>

@@ -253,16 +253,18 @@
 
         <!-- Deck URL -->
         <div class="form-group">
-          <label for="submitter-deck-url">Your Deck URL (optional)</label>
+          <label for="submitter-deck-url">Your Deck URL <span class="required">*</span></label>
           <input
             type="url"
             id="submitter-deck-url"
             name="submitter_deck_url"
             class="form-control"
             placeholder="https://curiosa.io/decks/..."
-            pattern="https?://(www\.)?curiosa\.io/decks/[a-zA-Z0-9_-]+"
+            pattern="https://curiosa\.io/decks/[a-z0-9]+"
+            required
           />
-          <small class="form-hint">Example: https://curiosa.io/decks/my-deck-123</small>
+          <small class="form-hint" id="deck-url-hint">Example: https://curiosa.io/decks/cmlnbvekh01ci04lbaq8zhlyw</small>
+          <small class="form-error hidden" id="deck-url-error">Please enter a valid Curiosa.io deck URL</small>
         </div>
 
         <!-- Turn Order Toggle -->

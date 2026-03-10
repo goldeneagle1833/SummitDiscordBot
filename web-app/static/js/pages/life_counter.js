@@ -469,14 +469,27 @@ function initializeTurnOrderToggle() {
 function validateMatchReportForm() {
   const opponentSelected = !!document.getElementById("opponent-user-id").value;
   const turnOrderSelected = !!document.getElementById("went-first").value;
-  const submitterDeckUrl = document.getElementById("submitter-deck-url").value;
+  const submitterDeckUrl = document.getElementById("submitter-deck-url").value.trim();
 
-  // Validate deck URL if provided
-  const deckUrlPattern = /^https?:\/\/(www\.)?curiosa\.io\/decks\/[a-zA-Z0-9_-]+$/;
-  const submitterDeckValid = !submitterDeckUrl || deckUrlPattern.test(submitterDeckUrl);
+  // Deck URL is now REQUIRED and must match exact Curiosa.io format
+  const deckUrlPattern = /^https:\/\/curiosa\.io\/decks\/[a-z0-9]+$/;
+  const deckUrlProvided = !!submitterDeckUrl;
+  const deckUrlValid = deckUrlProvided && deckUrlPattern.test(submitterDeckUrl);
+
+  // Show/hide deck URL error message
+  const deckUrlError = document.getElementById("deck-url-error");
+  const deckUrlInput = document.getElementById("submitter-deck-url");
+
+  if (submitterDeckUrl && !deckUrlValid) {
+    deckUrlError.classList.remove("hidden");
+    deckUrlInput.classList.add("invalid");
+  } else {
+    deckUrlError.classList.add("hidden");
+    deckUrlInput.classList.remove("invalid");
+  }
 
   // Enable submit buttons only if all required fields are valid
-  const isValid = opponentSelected && turnOrderSelected && submitterDeckValid;
+  const isValid = opponentSelected && turnOrderSelected && deckUrlValid;
 
   document.getElementById("report-win-btn").disabled = !isValid;
   document.getElementById("report-loss-btn").disabled = !isValid;

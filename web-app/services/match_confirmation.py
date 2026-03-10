@@ -138,20 +138,24 @@ class MatchConfirmationService:
         if went_first not in ("submitter", "opponent"):
             errors["went_first"] = "Turn order must be 'submitter' or 'opponent'"
 
-        # Validate deck URLs (if provided)
-        deck_url_pattern = r"^https?://(www\.)?curiosa\.io/decks/[a-zA-Z0-9_-]+$"
+        # Validate deck URLs
+        # Strict pattern: https://curiosa.io/decks/[lowercase alphanumeric ID]
+        deck_url_pattern = r"^https://curiosa\.io/decks/[a-z0-9]+$"
 
-        if submitter_deck_url:
-            if not re.match(deck_url_pattern, submitter_deck_url):
-                errors[
-                    "submitter_deck_url"
-                ] = "Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id]"
+        # Submitter deck URL is now REQUIRED
+        if not submitter_deck_url:
+            errors["submitter_deck_url"] = "Your deck URL is required"
+        elif not re.match(deck_url_pattern, submitter_deck_url):
+            errors[
+                "submitter_deck_url"
+            ] = "Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id] (lowercase letters and numbers only)"
 
+        # Opponent deck URL is optional (provided during confirmation)
         if opponent_deck_url:
             if not re.match(deck_url_pattern, opponent_deck_url):
                 errors[
                     "opponent_deck_url"
-                ] = "Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id]"
+                ] = "Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id] (lowercase letters and numbers only)"
 
         return {"valid": len(errors) == 0, "errors": errors}
 
@@ -494,11 +498,11 @@ class MatchConfirmationService:
 
         # Update opponent's deck URL if provided
         if opponent_deck_url:
-            # Validate deck URL format
+            # Validate deck URL format (strict: lowercase alphanumeric only)
             import re
-            deck_url_pattern = r"^https?://(www\.)?curiosa\.io/decks/[a-zA-Z0-9_-]+$"
+            deck_url_pattern = r"^https://curiosa\.io/decks/[a-z0-9]+$"
             if not re.match(deck_url_pattern, opponent_deck_url):
-                raise ValueError("Invalid Curiosa.io deck URL format")
+                raise ValueError("Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id] (lowercase letters and numbers only)")
 
             # Determine if opponent is winner or loser
             is_winner = str(confirmation["winner_discord_id"]) == str(opponent_user_id)

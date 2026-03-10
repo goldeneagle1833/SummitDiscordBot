@@ -18,9 +18,11 @@ class UserProfileRepository:
         return sqlite3.connect(self._db_path)
 
     def _ensure_table(self):
-        """Create user_profiles table if it doesn't exist."""
+        """Create user_profiles table if it doesn't exist and ensure schema is up-to-date."""
         conn = self._get_connection()
         cur = conn.cursor()
+
+        # Create table if it doesn't exist
         cur.execute("""
             CREATE TABLE IF NOT EXISTS user_profiles (
                 user_id TEXT NOT NULL,
@@ -44,6 +46,35 @@ class UserProfileRepository:
                 PRIMARY KEY (user_id, provider)
             )
         """)
+
+        # Check if table has all required columns (for existing tables)
+        cur.execute("PRAGMA table_info(user_profiles)")
+        existing_columns = {row[1] for row in cur.fetchall()}
+
+        required_columns = {
+            'email': 'TEXT',
+            'email_verified': 'INTEGER',
+            'discriminator': 'TEXT',
+            'flags': 'INTEGER',
+            'public_flags': 'INTEGER',
+            'given_name': 'TEXT',
+            'family_name': 'TEXT',
+            'locale': 'TEXT',
+            'raw_oauth_data': 'TEXT'
+        }
+
+        # Add missing columns
+        columns_added = []
+        for col_name, col_type in required_columns.items():
+            if col_name not in existing_columns:
+                cur.execute(f"ALTER TABLE user_profiles ADD COLUMN {col_name} {col_type}")
+                columns_added.append(col_name)
+
+        if columns_added:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Added missing columns to user_profiles: {', '.join(columns_added)}")
+
         conn.commit()
         conn.close()
 

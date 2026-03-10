@@ -1,5 +1,6 @@
 """OAuth authentication routes for Discord and Google."""
 
+import json
 import logging
 from urllib.parse import urlencode
 
@@ -38,7 +39,7 @@ def discord_login():
         "client_id": DISCORD_CLIENT_ID,
         "redirect_uri": DISCORD_REDIRECT_URI,
         "response_type": "code",
-        "scope": "identify",
+        "scope": "identify email",  # Request email scope to get user's email
     }
     auth_url = f"https://discord.com/api/oauth2/authorize?{urlencode(params)}"
     return redirect(auth_url)
@@ -98,13 +99,20 @@ def discord_callback():
     session["avatar"] = user_data.get("avatar")
     session["auth_provider"] = "discord"
 
-    # Save user profile to database (non-blocking)
+    # Save comprehensive user profile to database (non-blocking)
     try:
         profile_repo = UserProfileRepository()
         profile_repo.upsert_profile(
             user_id=str(session["user_id"]),
             display_name=session["username"],
             avatar=session["avatar"],
+            provider="discord",
+            email=user_data.get("email"),
+            email_verified=user_data.get("verified"),
+            discriminator=user_data.get("discriminator"),
+            flags=user_data.get("flags"),
+            public_flags=user_data.get("public_flags"),
+            raw_oauth_data=json.dumps(user_data),
         )
     except Exception as e:
         logger.error(f"Failed to save user profile: {e}")
@@ -197,7 +205,7 @@ def google_callback():
     session["avatar"] = user_data.get("picture")
     session["auth_provider"] = "google"
 
-    # Save user profile to database (non-blocking)
+    # Save comprehensive user profile to database (non-blocking)
     try:
         profile_repo = UserProfileRepository()
         profile_repo.upsert_profile(
@@ -205,6 +213,12 @@ def google_callback():
             display_name=session["username"],
             avatar=session["avatar"],
             provider="google",
+            email=user_data.get("email"),
+            email_verified=user_data.get("verified_email"),
+            given_name=user_data.get("given_name"),
+            family_name=user_data.get("family_name"),
+            locale=user_data.get("locale"),
+            raw_oauth_data=json.dumps(user_data),
         )
     except Exception as e:
         logger.error(f"Failed to save user profile: {e}")

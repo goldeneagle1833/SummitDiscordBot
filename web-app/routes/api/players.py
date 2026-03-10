@@ -423,11 +423,11 @@ def player_api(player_id):
     win_rate = (wins / total_matches * 100) if total_matches > 0 else 0
 
     # First player stats (on the play)
-    # Only count matches from 1/25/2026 onward (when play/draw tracking became reliable)
+    # Only count matches from 2/7/2026 onward (when play/draw tracking became reliable)
     # New columns: winner_went_first (index 17), loser_went_first (index 18)
     # did_win (index 0): 1 if viewed player is winner, 0 if loser
     # timestamp is at index 6
-    play_draw_cutoff = "2026-01-25"
+    play_draw_cutoff = "2026-02-07"
     play_draw_rows = [
         row for row in all_rows
         if row[6] and str(row[6]) >= play_draw_cutoff

@@ -243,10 +243,14 @@ class MatchConfirmationService:
             for opp in recent_opponents
         }
 
-        # Tier 2: Search all user profiles by display name
-        all_profiles = self.user_repo.search_by_display_name(
+        # Tier 2: Search all user profiles by display name (both Discord and Google)
+        discord_profiles = self.user_repo.search_by_display_name(
             query=query, provider="discord", limit=limit * 2
         )
+        google_profiles = self.user_repo.search_by_display_name(
+            query=query, provider="google", limit=limit * 2
+        )
+        all_profiles = discord_profiles + google_profiles
 
         # Merge and prioritize results
         results = []
@@ -456,8 +460,9 @@ class MatchConfirmationService:
             result=result
         )
 
-        winner_numeric_id = int(winner_loser["winner_id"])
-        loser_numeric_id = int(winner_loser["loser_id"])
+        # Keep as strings to avoid overflow with large Google OAuth IDs
+        winner_numeric_id = winner_loser["winner_id"]
+        loser_numeric_id = winner_loser["loser_id"]
 
         # Step 4: Map deck URLs to winner/loser
         if result == "won":
@@ -564,7 +569,7 @@ class MatchConfirmationService:
         # Verify user is the opponent
         # Normalize both IDs for comparison (handles both Discord and Google users)
         opponent_numeric_id = self._normalize_user_id(opponent_user_id)
-        if confirmation["opponent_discord_id"] != opponent_numeric_id:
+        if str(confirmation["opponent_discord_id"]) != str(opponent_numeric_id):
             raise PermissionError(
                 "You are not authorized to confirm this match report"
             )
@@ -754,7 +759,7 @@ class MatchConfirmationService:
         # Verify user is the opponent
         # Normalize both IDs for comparison (handles both Discord and Google users)
         opponent_numeric_id = self._normalize_user_id(opponent_user_id)
-        if confirmation["opponent_discord_id"] != opponent_numeric_id:
+        if str(confirmation["opponent_discord_id"]) != str(opponent_numeric_id):
             raise PermissionError(
                 "You are not authorized to deny this match report"
             )

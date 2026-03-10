@@ -81,13 +81,46 @@ def search_opponents():
             "opponents": opponents
         })
 
-    except Exception as e:
-        logger.error(f"Error searching opponents: {e}", exc_info=True)
+    except ValueError as e:
+        # Invalid user ID format
+        logger.warning(f"Invalid user ID in opponent search: {e}")
         return jsonify({
             "success": False,
             "error": {
-                "code": "SEARCH_ERROR",
-                "message": "Failed to search opponents. Please try again."
+                "code": "INVALID_USER_ID",
+                "message": "Your user profile could not be validated. Please try logging out and back in."
+            }
+        }), 400
+
+    except OverflowError as e:
+        # Integer overflow (should not happen after fixes, but just in case)
+        logger.error(f"Integer overflow in opponent search: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "ID_OVERFLOW",
+                "message": "User ID format error. Please contact support if this persists."
+            }
+        }), 500
+
+    except Exception as e:
+        # Catch-all for unexpected errors
+        error_type = type(e).__name__
+        logger.error(f"Unexpected error searching opponents ({error_type}): {e}", exc_info=True)
+
+        # Provide different messages for database vs other errors
+        if "database" in str(e).lower() or "sqlite" in str(e).lower():
+            error_code = "DATABASE_ERROR"
+            error_msg = "Database connection error. Please try again in a moment."
+        else:
+            error_code = "SEARCH_ERROR"
+            error_msg = f"Search failed ({error_type}). Please try again or contact support."
+
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": error_code,
+                "message": error_msg
             }
         }), 500
 
@@ -203,14 +236,35 @@ def submit_match_report():
             }
         }), status
 
-    except Exception as e:
-        # Unexpected errors
-        logger.error(f"Error creating match report: {e}", exc_info=True)
+    except OverflowError as e:
+        # Integer overflow (should not happen after fixes, but just in case)
+        logger.error(f"Integer overflow in match report: {e}", exc_info=True)
         return jsonify({
             "success": False,
             "error": {
-                "code": "DATABASE_ERROR",
-                "message": "Failed to create match report. Please try again."
+                "code": "ID_OVERFLOW",
+                "message": "User ID format error. Please contact support if this persists."
+            }
+        }), 500
+
+    except Exception as e:
+        # Unexpected errors
+        error_type = type(e).__name__
+        logger.error(f"Unexpected error creating match report ({error_type}): {e}", exc_info=True)
+
+        # Provide different messages for database vs other errors
+        if "database" in str(e).lower() or "sqlite" in str(e).lower():
+            error_code = "DATABASE_ERROR"
+            error_msg = "Database connection error. Please try again in a moment."
+        else:
+            error_code = "SERVER_ERROR"
+            error_msg = f"Failed to create match report ({error_type}). Please try again or contact support."
+
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": error_code,
+                "message": error_msg
             }
         }), 500
 

@@ -19,10 +19,10 @@ class MatchConfirmationRepository:
 
     def create_confirmation(
         self,
-        submitter_id: int,
-        opponent_id: int,
-        winner_id: int,
-        loser_id: int,
+        submitter_id: int | str,
+        opponent_id: int | str,
+        winner_id: int | str,
+        loser_id: int | str,
         final_life_winner: int,
         final_life_loser: int,
         went_first: str,
@@ -33,10 +33,10 @@ class MatchConfirmationRepository:
         Create a new match confirmation request.
 
         Args:
-            submitter_id: Discord user ID of player submitting report
-            opponent_id: Discord user ID of player who must confirm
-            winner_id: Discord user ID of winner
-            loser_id: Discord user ID of loser
+            submitter_id: Discord user ID of player submitting report (int or str to handle large Google IDs)
+            opponent_id: Discord user ID of player who must confirm (int or str to handle large Google IDs)
+            winner_id: Discord user ID of winner (int or str to handle large Google IDs)
+            loser_id: Discord user ID of loser (int or str to handle large Google IDs)
             final_life_winner: Winner's final life total
             final_life_loser: Loser's final life total
             went_first: Turn order relative to submitter ('submitter'|'opponent')

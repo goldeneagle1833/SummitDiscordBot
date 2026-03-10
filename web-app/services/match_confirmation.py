@@ -654,8 +654,18 @@ class MatchConfirmationService:
         ) = update_paper_elo(loser_id_int, loser_name, did_win=False, opponent_id=winner_id_int)
 
         # Create match record in match_records.db
+        logger.info(f"Connecting to match_records database at: {MATCH_RECORDS_DB_PATH}")
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
+
+        # Verify table exists and log column info for debugging
+        try:
+            cur.execute("PRAGMA table_info(match_records)")
+            columns = cur.fetchall()
+            column_names = [col[1] for col in columns]
+            logger.info(f"match_records table has {len(column_names)} columns: {', '.join(column_names)}")
+        except Exception as e:
+            logger.warning(f"Could not check match_records table schema: {e}")
 
         try:
             cur.execute(
@@ -692,8 +702,25 @@ class MatchConfirmationService:
 
         except sqlite3.IntegrityError as e:
             conn.rollback()
-            logger.error(f"Database integrity error creating match record: {e}", exc_info=True)
+            logger.error(
+                f"Database integrity error creating match record:\n"
+                f"  Error: {e}\n"
+                f"  Reporter ID: {reporter_id_int}\n"
+                f"  Winner ID: {winner_id_int} ({winner_name})\n"
+                f"  Loser ID: {loser_id_int} ({loser_name})\n"
+                f"  Confirmation ID: {confirmation_id}",
+                exc_info=True
+            )
             raise RuntimeError(f"Failed to create match record: {e}")
+        except sqlite3.OperationalError as e:
+            conn.rollback()
+            logger.error(
+                f"Database operational error (missing column or table?):\n"
+                f"  Error: {e}\n"
+                f"  DB Path: {MATCH_RECORDS_DB_PATH}",
+                exc_info=True
+            )
+            raise RuntimeError(f"Database error: {e}")
         finally:
             conn.close()
 

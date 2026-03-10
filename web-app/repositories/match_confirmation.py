@@ -85,12 +85,12 @@ class MatchConfirmationRepository:
 
         return confirmation_id
 
-    def get_pending_confirmations(self, user_id: int) -> list[dict]:
+    def get_pending_confirmations(self, user_id: int | str) -> list[dict]:
         """
         Get all pending confirmations for a user (where they are the opponent).
 
         Args:
-            user_id: Discord user ID
+            user_id: Discord user ID (int or str to handle large Google IDs)
 
         Returns:
             list[dict]: List of pending confirmation records
@@ -251,7 +251,7 @@ class MatchConfirmationRepository:
         conn.close()
         return confirmation
 
-    def get_recent_lfg_opponents(self, user_id: int, limit: int = 5) -> list[dict]:
+    def get_recent_lfg_opponents(self, user_id: int | str, limit: int = 5) -> list[dict]:
         """
         Get recent opponents from match history for LFG auto-fill.
 
@@ -259,7 +259,7 @@ class MatchConfirmationRepository:
         Returns empty list if table doesn't exist.
 
         Args:
-            user_id: Discord user ID
+            user_id: Discord user ID (int or str to handle large Google IDs)
             limit: Maximum number of opponents to return
 
         Returns:

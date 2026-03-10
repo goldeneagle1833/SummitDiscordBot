@@ -211,8 +211,8 @@ class EloRepository:
         conn.close()
         return elos
 
-    def get_user_elo(self, user_id: int) -> int | None:
-        """Get ELO for a specific user."""
+    def get_user_elo(self, user_id: int | str) -> int | None:
+        """Get ELO for a specific user (handles both int and str to support large Google IDs)."""
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute("SELECT elo FROM overall_standings WHERE user_id = ?", (user_id,))
@@ -267,8 +267,8 @@ class EloRepository:
             for row in rows
         ]
 
-    def get_player_event_elo(self, user_id: int, event_id: int) -> dict | None:
-        """Get a player's ELO and rank for a specific past event."""
+    def get_player_event_elo(self, user_id: int | str, event_id: int) -> dict | None:
+        """Get a player's ELO and rank for a specific past event (handles both int and str)."""
         conn = self._get_connection()
         cur = conn.cursor()
 

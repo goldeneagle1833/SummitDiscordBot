@@ -316,18 +316,19 @@ class MatchConfirmationService:
 
         return results[:limit]
 
-    def _normalize_user_id(self, user_id: str) -> int:
+    def _normalize_user_id(self, user_id: str) -> str:
         """
-        Normalize user ID to numeric format.
+        Normalize user ID to numeric string format.
 
-        Strips 'google_' prefix from Google OAuth users and converts to int.
+        Strips 'google_' prefix from Google OAuth users.
         Discord users are already numeric.
+        Returns string to avoid overflow with large Google IDs.
 
         Args:
             user_id: User ID (numeric Discord ID or 'google_12345')
 
         Returns:
-            int: Numeric user ID
+            str: Numeric user ID as string
 
         Raises:
             ValueError: If user_id cannot be converted to numeric format
@@ -338,8 +339,10 @@ class MatchConfirmationService:
         if user_id_str.startswith("google_"):
             user_id_str = user_id_str[7:]  # Remove 'google_' (7 characters)
 
+        # Validate numeric format but don't convert to int to avoid overflow
         try:
-            return int(user_id_str)
+            int(user_id_str)  # Validation only
+            return user_id_str  # Return as string
         except (ValueError, TypeError):
             raise ValueError(f"Invalid user ID format: {user_id}")
 

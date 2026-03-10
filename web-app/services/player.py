@@ -17,11 +17,11 @@ class PlayerService:
 
     def get_player_stats(self, player_id: str) -> dict | None:
         """Get comprehensive stats for a player."""
-        user_id = int(player_id)
-
-        elo = self._elo_repo.get_user_elo(user_id)
-        wins = self._match_repo.get_wins_count(user_id)
-        losses = self._match_repo.get_losses_count(user_id)
+        # Keep player_id as string to avoid overflow with large Google IDs
+        # SQLite's type affinity handles string-to-integer comparison automatically
+        elo = self._elo_repo.get_user_elo(player_id)
+        wins = self._match_repo.get_wins_count(player_id)
+        losses = self._match_repo.get_losses_count(player_id)
 
         total_matches = wins + losses
         win_rate = (wins / total_matches * 100) if total_matches > 0 else 0

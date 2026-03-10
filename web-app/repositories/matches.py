@@ -132,8 +132,8 @@ class MatchRepository:
             for row in rows
         ]
 
-    def get_wins_count(self, user_id: int) -> int:
-        """Get number of wins for a user (includes archived matches for lifetime stats)."""
+    def get_wins_count(self, user_id: int | str) -> int:
+        """Get number of wins for a user (includes archived matches for lifetime stats). Accepts int or str."""
         conn = self._get_connection()
         cur = conn.cursor()
 
@@ -157,8 +157,8 @@ class MatchRepository:
         conn.close()
         return current_count + archive_count
 
-    def get_losses_count(self, user_id: int) -> int:
-        """Get number of losses for a user (includes archived matches for lifetime stats)."""
+    def get_losses_count(self, user_id: int | str) -> int:
+        """Get number of losses for a user (includes archived matches for lifetime stats). Accepts int or str."""
         conn = self._get_connection()
         cur = conn.cursor()
 

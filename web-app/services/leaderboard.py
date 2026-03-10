@@ -144,7 +144,8 @@ class LeaderboardService:
         player_stats = self._match_repo.get_source_player_stats(source)
         leaderboard_data = []
         for stat in player_stats:
-            elo = self._elo_repo.get_user_elo(int(stat["user_id"])) or 1500
+            # Keep as string to avoid overflow with large Google IDs
+            elo = self._elo_repo.get_user_elo(stat["user_id"]) or 1500
             leaderboard_data.append({
                 "id": stat["user_id"],
                 "name": stat["display_name"],

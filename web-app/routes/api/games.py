@@ -30,6 +30,11 @@ def record_game():
         if user_id is None:
             return jsonify({"error": "user_id required for API key auth", "success": False}), 400
 
+    # Normalize user_id (strip 'google_' prefix for Google OAuth users)
+    user_id_str = str(user_id)
+    if user_id_str.startswith("google_"):
+        user_id = user_id_str[7:]  # Remove 'google_' prefix
+
     username = session.get("username", "Unknown User")
 
     try:
@@ -71,7 +76,7 @@ def record_game():
                     report_date, json_deck_data)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)""",
                 (
-                    int(user_id),
+                    user_id,  # Keep as string to avoid overflow with large Google IDs
                     username,
                     opponent_name,
                     did_win,
@@ -119,6 +124,11 @@ def delete_recorded_game(report_id):
         if user_id is None:
             return jsonify({"error": "user_id required for API key auth", "success": False}), 400
 
+    # Normalize user_id (strip 'google_' prefix for Google OAuth users)
+    user_id_str = str(user_id)
+    if user_id_str.startswith("google_"):
+        user_id = user_id_str[7:]  # Remove 'google_' prefix
+
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
@@ -132,7 +142,8 @@ def delete_recorded_game(report_id):
             conn.close()
             return jsonify({"error": "Recorded game not found", "success": False}), 404
 
-        if int(row[0]) != int(user_id):
+        # Compare as strings to avoid overflow with large IDs
+        if str(row[0]) != str(user_id):
             conn.close()
             return jsonify({
                 "error": "You can only delete your own recorded games",

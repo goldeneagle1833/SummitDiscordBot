@@ -116,7 +116,8 @@ def get_player_event_stats(player_id, event_id):
             player_id = player_id_str[7:]  # Remove 'google_' prefix
 
         repo = EloRepository()
-        stats = repo.get_player_event_elo(int(player_id), event_id)
+        # Keep as string to avoid overflow with large Google IDs
+        stats = repo.get_player_event_elo(player_id, event_id)
         if stats:
             return jsonify(stats)
         return jsonify({"error": "No data found for this player in this event"}), 404

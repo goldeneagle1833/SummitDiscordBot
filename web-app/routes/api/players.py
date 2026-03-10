@@ -109,9 +109,11 @@ def player_api(player_id):
     if player_id_str.startswith("google_"):
         player_id = player_id_str[7:]  # Remove 'google_' prefix
 
-    # Convert to int for database queries
+    # Keep player_id as string to avoid overflow with large Google OAuth IDs
+    # SQLite's type affinity will handle string-to-integer comparison automatically
+    # Validate that it's numeric (but don't convert to int)
     try:
-        player_id = int(player_id)
+        int(player_id)  # Validate numeric format
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid player ID"}), 400
 
@@ -328,39 +330,33 @@ def player_api(player_id):
         solo_conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         solo_cur = solo_conn.cursor()
 
-        try:
-            player_id_int = int(player_id)
-        except (ValueError, TypeError):
-            player_id_int = None
-
-        if player_id_int is not None:
-            query = """
-                SELECT
-                    is_winner,
-                    first_player,
-                    json_deck_data,
-                    match_time,
-                    CASE WHEN is_winner THEN reporter_name ELSE opponent_name END,
-                    CASE WHEN is_winner THEN opponent_name ELSE reporter_name END,
-                    report_date,
-                    0,
-                    0,
-                    curiosa_link,
-                    CASE WHEN is_winner THEN reporter_id ELSE 0 END,
-                    CASE WHEN is_winner THEN 0 ELSE reporter_id END,
-                    rowid,
-                    CASE WHEN is_winner THEN json_deck_data ELSE NULL END,
-                    CASE WHEN is_winner THEN NULL ELSE json_deck_data END,
-                    CASE WHEN is_winner THEN curiosa_link ELSE NULL END,
-                    CASE WHEN is_winner THEN NULL ELSE curiosa_link END,
-                    NULL as winner_went_first,
-                    NULL as loser_went_first
-                FROM solo_match_reports
-                WHERE reporter_id = ?
-                ORDER BY report_date DESC
-            """
-            solo_cur.execute(query, (player_id_int,))
-            solo_rows = solo_cur.fetchall()
+        query = """
+            SELECT
+                is_winner,
+                first_player,
+                json_deck_data,
+                match_time,
+                CASE WHEN is_winner THEN reporter_name ELSE opponent_name END,
+                CASE WHEN is_winner THEN opponent_name ELSE reporter_name END,
+                report_date,
+                0,
+                0,
+                curiosa_link,
+                CASE WHEN is_winner THEN reporter_id ELSE 0 END,
+                CASE WHEN is_winner THEN 0 ELSE reporter_id END,
+                rowid,
+                CASE WHEN is_winner THEN json_deck_data ELSE NULL END,
+                CASE WHEN is_winner THEN NULL ELSE json_deck_data END,
+                CASE WHEN is_winner THEN curiosa_link ELSE NULL END,
+                CASE WHEN is_winner THEN NULL ELSE curiosa_link END,
+                NULL as winner_went_first,
+                NULL as loser_went_first
+            FROM solo_match_reports
+            WHERE reporter_id = ?
+            ORDER BY report_date DESC
+        """
+        solo_cur.execute(query, (player_id,))
+        solo_rows = solo_cur.fetchall()
 
         solo_conn.close()
     except Exception as e:
@@ -674,11 +670,8 @@ def player_api(player_id):
         logged_in_id_str = str(logged_in_user_id)
         if logged_in_id_str.startswith("google_"):
             logged_in_id_str = logged_in_id_str[7:]  # Remove 'google_' prefix
-        try:
-            normalized_logged_in_id = int(logged_in_id_str)
-            is_owner = normalized_logged_in_id == player_id
-        except (ValueError, TypeError):
-            is_owner = False
+        # Compare as strings to avoid overflow with large IDs
+        is_owner = logged_in_id_str == str(player_id)
     else:
         is_owner = False
 

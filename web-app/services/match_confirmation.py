@@ -604,16 +604,11 @@ class MatchConfirmationService:
                 f"field={deck_field}, url={opponent_deck_url}"
             )
 
-        # Mark confirmation as confirmed
-        self.repo.update_confirmation_status(
-            confirmation_id=confirmation_id,
-            status="confirmed",
-            confirmed_at=int(time.time())
-        )
-
-        # Update paper ELO ratings for both players
+        # Get player IDs and display names FIRST (before any DB operations)
         from services.paper_elo import update_paper_elo
         from repositories.matches import MatchRepository
+        from webapp_config import MATCH_RECORDS_DB_PATH
+        import sqlite3
 
         winner_id = confirmation["winner_discord_id"]
         loser_id = confirmation["loser_discord_id"]
@@ -622,6 +617,24 @@ class MatchConfirmationService:
         winner_name = self._get_display_name_for_user(str(winner_id))
         loser_name = self._get_display_name_for_user(str(loser_id))
 
+        # Get deck URLs from confirmation
+        winner_deck_url = confirmation.get("winner_deck_url") or "No URL provided"
+        loser_deck_url = confirmation.get("loser_deck_url") or "No URL provided"
+
+        # Convert TEXT IDs to INTEGER (match_records expects INTEGER type)
+        try:
+            reporter_id_int = int(confirmation["submitter_discord_id"])
+            winner_id_int = int(winner_id)
+            loser_id_int = int(loser_id)
+        except (ValueError, TypeError, OverflowError) as e:
+            logger.error(f"Failed to convert IDs to integers: {e}")
+            raise ValueError(f"Invalid user ID format in confirmation record: {e}")
+
+        # CRITICAL: Perform all operations in correct order to maintain consistency
+        # 1. Update ELO ratings
+        # 2. Create match record
+        # 3. Mark confirmation as confirmed (LAST - only if everything else succeeds)
+
         # Update winner's ELO
         (
             winner_new_elo,
@@ -629,7 +642,7 @@ class MatchConfirmationService:
             winner_new_event_elo,
             winner_event_elo_change,
             event_active,
-        ) = update_paper_elo(winner_id, winner_name, did_win=True, opponent_id=loser_id)
+        ) = update_paper_elo(winner_id_int, winner_name, did_win=True, opponent_id=loser_id_int)
 
         # Update loser's ELO
         (
@@ -638,62 +651,58 @@ class MatchConfirmationService:
             loser_new_event_elo,
             loser_event_elo_change,
             _,
-        ) = update_paper_elo(loser_id, loser_name, did_win=False, opponent_id=winner_id)
+        ) = update_paper_elo(loser_id_int, loser_name, did_win=False, opponent_id=winner_id_int)
 
         # Create match record in match_records.db
-        match_repo = MatchRepository()
-        from webapp_config import MATCH_RECORDS_DB_PATH
-        import sqlite3
-
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
 
-        # Get deck URLs from confirmation
-        winner_deck_url = confirmation.get("winner_deck_url") or "No URL provided"
-        loser_deck_url = confirmation.get("loser_deck_url") or "No URL provided"
-
-        # Insert match record with source='Web'
-        # Convert TEXT IDs to INTEGER (match_records expects INTEGER type)
         try:
-            reporter_id_int = int(confirmation["submitter_discord_id"])
-            winner_id_int = int(winner_id)
-            loser_id_int = int(loser_id)
-        except (ValueError, TypeError) as e:
-            logger.error(f"Failed to convert IDs to integers: {e}")
-            raise ValueError(f"Invalid user ID format in confirmation record: {e}")
+            cur.execute(
+                """INSERT INTO match_records
+                   (reporter_id, winner_id, winner_display_name, losser_id, losser_display_name,
+                    did_win, timestamp, first_player, match_time, curiosa_url_winner, curiosa_url_loser,
+                    match_comment, winner_elo_change, loser_elo_change, winner_went_first, loser_went_first,
+                    source, match_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    reporter_id_int,  # reporter_id (converted to INTEGER)
+                    winner_id_int,    # winner_id (converted to INTEGER)
+                    winner_name,
+                    loser_id_int,     # losser_id (converted to INTEGER)
+                    loser_name,
+                    True,  # did_win (from winner's perspective)
+                    datetime.datetime.now().isoformat(),
+                    confirmation.get("went_first", "Unknown"),  # first_player
+                    0,  # match_time (not tracked in confirmations yet)
+                    winner_deck_url,
+                    loser_deck_url,
+                    "Web-confirmed match",  # match_comment
+                    winner_event_elo_change if event_active else 0,
+                    loser_event_elo_change if event_active else 0,
+                    None,  # winner_went_first
+                    None,  # loser_went_first
+                    "Web",  # source
+                    "ranked",  # match_type
+                ),
+            )
 
-        cur.execute(
-            """INSERT INTO match_records
-               (reporter_id, winner_id, winner_display_name, losser_id, losser_display_name,
-                did_win, timestamp, first_player, match_time, curiosa_url_winner, curiosa_url_loser,
-                match_comment, winner_elo_change, loser_elo_change, winner_went_first, loser_went_first,
-                source, match_type)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                reporter_id_int,  # reporter_id (converted to INTEGER)
-                winner_id_int,    # winner_id (converted to INTEGER)
-                winner_name,
-                loser_id_int,     # losser_id (converted to INTEGER)
-                loser_name,
-                True,  # did_win (from winner's perspective)
-                datetime.datetime.now().isoformat(),
-                confirmation.get("went_first", "Unknown"),  # first_player
-                0,  # match_time (not tracked in confirmations yet)
-                winner_deck_url,
-                loser_deck_url,
-                "Web-confirmed match",  # match_comment
-                winner_event_elo_change if event_active else 0,
-                loser_event_elo_change if event_active else 0,
-                None,  # winner_went_first
-                None,  # loser_went_first
-                "Web",  # source
-                "ranked",  # match_type
-            ),
+            match_id = cur.lastrowid
+            conn.commit()
+
+        except sqlite3.IntegrityError as e:
+            conn.rollback()
+            logger.error(f"Database integrity error creating match record: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to create match record: {e}")
+        finally:
+            conn.close()
+
+        # Mark confirmation as confirmed ONLY AFTER match record is created successfully
+        self.repo.update_confirmation_status(
+            confirmation_id=confirmation_id,
+            status="confirmed",
+            confirmed_at=int(time.time())
         )
-
-        match_id = cur.lastrowid
-        conn.commit()
-        conn.close()
 
         logger.info(
             f"Match confirmed: id={confirmation_id}, match_id={match_id}, "

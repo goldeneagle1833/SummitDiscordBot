@@ -283,13 +283,13 @@ class MatchConfirmationRepository:
             """
             SELECT
                 CASE
-                    WHEN winner_id = ? THEN loser_id
+                    WHEN winner_id = ? THEN losser_id
                     ELSE winner_id
                 END as opponent_id,
                 MAX(timestamp) as last_matched_at,
                 COUNT(*) as match_count
             FROM match_records
-            WHERE winner_id = ? OR loser_id = ?
+            WHERE winner_id = ? OR losser_id = ?
             GROUP BY opponent_id
             ORDER BY last_matched_at DESC
             LIMIT ?

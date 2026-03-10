@@ -415,8 +415,8 @@ def get_avatar(avatar_name):
     total_wins = 0
     total_losses = 0
 
-    # Stats for play/draw win rates (from 1/25/2026 onward)
-    cutoff_date = "2026-01-25"
+    # Stats for play/draw win rates (from 2/7/2026 onward)
+    cutoff_date = "2026-02-07"
     play_wins = 0
     play_losses = 0
     draw_wins = 0
@@ -987,9 +987,9 @@ def get_avatar_deck_composition(avatar_name):
 def get_play_draw_stats():
     """API endpoint for overall on-the-play vs on-the-draw win rates.
 
-    Returns aggregate stats from all matches from 1/25/2026 onward.
+    Returns aggregate stats from all matches from 2/7/2026 onward.
     """
-    cutoff_date = "2026-01-25"
+    cutoff_date = "2026-02-07"
 
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))

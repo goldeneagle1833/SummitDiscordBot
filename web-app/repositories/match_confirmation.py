@@ -12,10 +12,87 @@ class MatchConfirmationRepository:
 
     def __init__(self, db_path: Path | str | None = None):
         self._db_path = str(db_path or MATCH_RECORDS_DB_PATH)
+        self._ensure_table_exists()
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get a database connection."""
         return sqlite3.connect(self._db_path)
+
+    def _ensure_table_exists(self) -> None:
+        """
+        Ensure match_confirmations table exists, create if missing.
+
+        This method is called during __init__ to guarantee the table exists
+        before any operations are performed. Safe to call multiple times.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Check if table exists
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='match_confirmations'"
+        )
+
+        if not cursor.fetchone():
+            # Table doesn't exist, create it
+            cursor.executescript("""
+                BEGIN TRANSACTION;
+
+                CREATE TABLE IF NOT EXISTS match_confirmations (
+                    -- Primary Key
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                    -- Players involved
+                    submitter_discord_id TEXT NOT NULL,
+                    opponent_discord_id TEXT NOT NULL,
+                    winner_discord_id TEXT NOT NULL,
+                    loser_discord_id TEXT NOT NULL,
+
+                    -- Match details
+                    winner_deck_url TEXT,
+                    loser_deck_url TEXT,
+                    went_first TEXT CHECK(went_first IN ('submitter', 'opponent')),
+                    final_life_winner INTEGER NOT NULL,
+                    final_life_loser INTEGER NOT NULL,
+
+                    -- Status tracking
+                    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'confirmed', 'disputed', 'expired', 'auto_confirmed')),
+                    created_at INTEGER NOT NULL,
+                    expires_at INTEGER NOT NULL,
+                    reminder_sent_at INTEGER,
+                    confirmed_at INTEGER,
+                    dispute_reason TEXT,
+
+                    -- Constraints
+                    CHECK(submitter_discord_id != opponent_discord_id),
+                    CHECK(winner_discord_id IN (submitter_discord_id, opponent_discord_id)),
+                    CHECK(loser_discord_id IN (submitter_discord_id, opponent_discord_id)),
+                    CHECK(winner_discord_id != loser_discord_id)
+                );
+
+                -- Indexes for query performance
+                CREATE INDEX IF NOT EXISTS idx_opponent_pending
+                    ON match_confirmations(opponent_discord_id, status, expires_at)
+                    WHERE status = 'pending';
+
+                CREATE INDEX IF NOT EXISTS idx_status_created
+                    ON match_confirmations(status, created_at);
+
+                CREATE INDEX IF NOT EXISTS idx_expires_reminder
+                    ON match_confirmations(expires_at, reminder_sent_at)
+                    WHERE status = 'pending' AND reminder_sent_at IS NULL;
+
+                CREATE INDEX IF NOT EXISTS idx_submitter_recent
+                    ON match_confirmations(submitter_discord_id, created_at DESC);
+
+                COMMIT;
+            """)
+
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("Created match_confirmations table with indexes")
+
+        conn.close()
 
     def create_confirmation(
         self,

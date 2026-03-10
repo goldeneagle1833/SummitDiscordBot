@@ -132,8 +132,28 @@
     <!-- Streamer chips will be inserted here by JavaScript -->
   </div>
 
-  <!-- Right side: Mobile-only life counter icon -->
+  <!-- Right side: Mobile-only life counter icon + notifications -->
   <div class="flex md:hidden items-center gap-2 flex-1 justify-end">
+    {% if current_user %}
+    <!-- Notification Bell (Mobile) -->
+    <button
+      class="relative flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
+      id="notification-bell-mobile"
+      aria-label="Notifications"
+      title="Match Confirmations">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-6 h-6">
+        <path d="M12 2C11.4477 2 11 2.44772 11 3V3.17071C8.83481 3.58254 7.17254 5.24481 6.76071 7.41L6 11.5L4.5 13V15H19.5V13L18 11.5L17.2393 7.41C16.8275 5.24481 15.1652 3.58254 13 3.17071V3C13 2.44772 12.5523 2 12 2Z" fill="white"/>
+        <path d="M10 17C10 18.1046 10.8954 19 12 19C13.1046 19 14 18.1046 14 17H10Z" fill="white"/>
+      </svg>
+      <!-- Badge -->
+      <span
+        id="notification-badge-mobile"
+        class="hidden absolute -top-1 -right-1 w-5 h-5 bg-red-600 text-white text-xs font-bold rounded-full flex items-center justify-center">
+        0
+      </span>
+    </button>
+    {% endif %}
+
     <a
       href="/life-counter"
       class="flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
@@ -179,6 +199,24 @@
     </a>
 
     {% if current_user %}
+    <!-- Notification Bell (Desktop) -->
+    <button
+      class="relative flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
+      id="notification-bell-desktop"
+      aria-label="Notifications"
+      title="Match Confirmations">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-6 h-6">
+        <path d="M12 2C11.4477 2 11 2.44772 11 3V3.17071C8.83481 3.58254 7.17254 5.24481 6.76071 7.41L6 11.5L4.5 13V15H19.5V13L18 11.5L17.2393 7.41C16.8275 5.24481 15.1652 3.58254 13 3.17071V3C13 2.44772 12.5523 2 12 2Z" fill="white"/>
+        <path d="M10 17C10 18.1046 10.8954 19 12 19C13.1046 19 14 18.1046 14 17H10Z" fill="white"/>
+      </svg>
+      <!-- Badge -->
+      <span
+        id="notification-badge-desktop"
+        class="hidden absolute -top-1 -right-1 w-5 h-5 bg-red-600 text-white text-xs font-bold rounded-full flex items-center justify-center">
+        0
+      </span>
+    </button>
+
     <a
       href="/player/{{ current_user.id }}"
       class="text-primary no-underline font-semibold">
@@ -317,6 +355,234 @@
     }
   })();
 </script>
+
+<!-- Notification System Script -->
+<script>
+  (function() {
+    const CHECK_INTERVAL = 60000; // 1 minute
+    const CACHE_KEY = 'pending_confirmations';
+    const CACHE_TIMESTAMP_KEY = 'pending_confirmations_timestamp';
+    const CACHE_DURATION = 30000; // 30 seconds
+
+    let pendingConfirmations = [];
+
+    function getCachedConfirmations() {
+      const cached = sessionStorage.getItem(CACHE_KEY);
+      const timestamp = sessionStorage.getItem(CACHE_TIMESTAMP_KEY);
+
+      if (cached && timestamp) {
+        const age = Date.now() - parseInt(timestamp);
+        if (age < CACHE_DURATION) {
+          return JSON.parse(cached);
+        }
+      }
+      return null;
+    }
+
+    function cacheConfirmations(confirmations) {
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify(confirmations));
+      sessionStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
+    }
+
+    function formatTimeRemaining(expiresAt) {
+      const now = Math.floor(Date.now() / 1000);
+      const remaining = expiresAt - now;
+
+      if (remaining <= 0) return "expired";
+
+      const hours = Math.floor(remaining / 3600);
+      const minutes = Math.floor((remaining % 3600) / 60);
+
+      if (hours > 24) {
+        const days = Math.floor(hours / 24);
+        return `${days}d`;
+      } else if (hours > 0) {
+        return `${hours}h`;
+      } else {
+        return `${minutes}m`;
+      }
+    }
+
+    async function fetchPendingConfirmations() {
+      // Check if user is logged in (look for user-specific elements)
+      const isLoggedIn = {{ 'true' if current_user else 'false' }};
+      if (!isLoggedIn) return;
+
+      try {
+        // Try cache first
+        const cached = getCachedConfirmations();
+        if (cached) {
+          pendingConfirmations = cached;
+          updateNotificationUI();
+          return;
+        }
+
+        const response = await fetch('/api/match-report/pending');
+        if (!response.ok) {
+          console.error('Failed to fetch pending confirmations:', response.status);
+          return;
+        }
+
+        const data = await response.json();
+        pendingConfirmations = data.pending_confirmations || [];
+
+        // Cache the results
+        cacheConfirmations(pendingConfirmations);
+
+        updateNotificationUI();
+      } catch (error) {
+        console.error('Error fetching pending confirmations:', error);
+      }
+    }
+
+    function updateNotificationUI() {
+      const count = pendingConfirmations.length;
+
+      // Update badges (both mobile and desktop)
+      const badgeMobile = document.getElementById('notification-badge-mobile');
+      const badgeDesktop = document.getElementById('notification-badge-desktop');
+
+      [badgeMobile, badgeDesktop].forEach(badge => {
+        if (badge) {
+          if (count > 0) {
+            badge.textContent = count > 9 ? '9+' : count;
+            badge.classList.remove('hidden');
+          } else {
+            badge.classList.add('hidden');
+          }
+        }
+      });
+
+      // Update dropdown list
+      updateDropdownList();
+    }
+
+    function updateDropdownList() {
+      const listContainer = document.getElementById('notification-list');
+      if (!listContainer) return;
+
+      if (pendingConfirmations.length === 0) {
+        listContainer.innerHTML = `
+          <div class="p-6 text-center text-text-muted text-sm">
+            <svg class="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <p>No pending confirmations</p>
+          </div>
+        `;
+        return;
+      }
+
+      listContainer.innerHTML = pendingConfirmations.map(conf => {
+        const submitterName = conf.submitter_display_name || 'Unknown Player';
+        const expiresIn = formatTimeRemaining(conf.expires_at);
+
+        // Determine who won
+        const youWon = conf.winner_discord_id == conf.opponent_discord_id;
+        const resultText = youWon ? '🏆 You won' : '💀 You lost';
+        const resultClass = youWon ? 'text-green-400' : 'text-red-400';
+
+        return `
+          <a
+            href="/life-counter"
+            class="block px-4 py-3 border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer"
+            data-confirmation-id="${conf.id}">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-semibold text-white truncate">${submitterName}</p>
+                <p class="text-xs ${resultClass} font-medium mt-0.5">${resultText}</p>
+                <p class="text-xs text-text-muted mt-1">Final: ${conf.final_life_winner} - ${conf.final_life_loser}</p>
+              </div>
+              <div class="flex flex-col items-end gap-1">
+                <span class="text-xs px-2 py-0.5 bg-yellow-500/20 text-yellow-400 rounded-full whitespace-nowrap">
+                  ${expiresIn}
+                </span>
+              </div>
+            </div>
+          </a>
+        `;
+      }).join('');
+    }
+
+    function toggleDropdown() {
+      const dropdown = document.getElementById('notification-dropdown');
+      if (!dropdown) return;
+
+      const isHidden = dropdown.classList.contains('hidden');
+
+      if (isHidden) {
+        // Fetch fresh data when opening
+        fetchPendingConfirmations();
+        dropdown.classList.remove('hidden');
+      } else {
+        dropdown.classList.add('hidden');
+      }
+    }
+
+    function closeDropdown() {
+      const dropdown = document.getElementById('notification-dropdown');
+      if (dropdown) {
+        dropdown.classList.add('hidden');
+      }
+    }
+
+    // Initialize on DOM ready
+    function init() {
+      // Attach click handlers to bell icons
+      const bellMobile = document.getElementById('notification-bell-mobile');
+      const bellDesktop = document.getElementById('notification-bell-desktop');
+
+      if (bellMobile) {
+        bellMobile.addEventListener('click', toggleDropdown);
+      }
+      if (bellDesktop) {
+        bellDesktop.addEventListener('click', toggleDropdown);
+      }
+
+      // Close dropdown when clicking outside
+      document.addEventListener('click', function(event) {
+        const dropdown = document.getElementById('notification-dropdown');
+        const bellMobile = document.getElementById('notification-bell-mobile');
+        const bellDesktop = document.getElementById('notification-bell-desktop');
+
+        if (dropdown && !dropdown.contains(event.target) &&
+            event.target !== bellMobile && event.target !== bellDesktop &&
+            !bellMobile?.contains(event.target) && !bellDesktop?.contains(event.target)) {
+          closeDropdown();
+        }
+      });
+
+      // Initial fetch
+      fetchPendingConfirmations();
+
+      // Periodic refresh
+      setInterval(fetchPendingConfirmations, CHECK_INTERVAL);
+    }
+
+    // Run on DOM ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  })();
+</script>
+
+<!-- Notification Dropdown -->
+<div
+  id="notification-dropdown"
+  class="hidden fixed top-16 right-4 md:right-8 w-80 max-h-96 bg-bg-elevated shadow-xl rounded-lg overflow-hidden z-[1001]"
+  style="border: 1px solid rgba(147, 51, 234, 0.3);">
+  <div class="bg-secondary/20 px-4 py-3 border-b border-white/10">
+    <h3 class="text-sm font-bold text-white uppercase tracking-wide">Match Confirmations</h3>
+  </div>
+  <div id="notification-list" class="overflow-y-auto max-h-80">
+    <!-- Populated by JavaScript -->
+    <div class="p-4 text-center text-text-muted text-sm">
+      <div class="animate-pulse">Loading...</div>
+    </div>
+  </div>
+</div>
 
 <!-- Sidebar - Simple text navigation, hidden on mobile by default -->
 <aside

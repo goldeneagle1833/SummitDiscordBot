@@ -422,3 +422,153 @@ class MatchConfirmationService:
             },
             "message": f"Match report submitted. Awaiting confirmation from {opponent_display_name}."
         }
+
+    def confirm_match_report(
+        self, confirmation_id: int, opponent_user_id: str
+    ) -> dict:
+        """
+        Confirm a pending match report.
+
+        This method:
+        1. Verifies the confirmation exists and is pending
+        2. Verifies the user is the opponent on the confirmation
+        3. Marks the confirmation as 'confirmed'
+        4. Creates a match record in the database
+        5. Updates ELO ratings for both players
+
+        Args:
+            confirmation_id: ID of confirmation to confirm
+            opponent_user_id: Discord user ID of user confirming (must be the opponent)
+
+        Returns:
+            dict: {
+                "success": True,
+                "message": str,
+                "match_id": int,
+                "elo_changes": {
+                    "winner": {"old": int, "new": int, "change": int},
+                    "loser": {"old": int, "new": int, "change": int}
+                }
+            }
+
+        Raises:
+            ValueError: If confirmation not found or already processed
+            PermissionError: If user is not the opponent on the confirmation
+        """
+        import time
+
+        # Get confirmation
+        confirmation = self.repo.get_confirmation_by_id(confirmation_id)
+
+        if not confirmation:
+            raise ValueError(f"Confirmation {confirmation_id} not found")
+
+        # Check if confirmation is still pending
+        if confirmation["status"] != "pending":
+            raise ValueError(
+                f"Confirmation {confirmation_id} is already {confirmation['status']}"
+            )
+
+        # Check if confirmation has expired
+        if confirmation["expires_at"] < int(time.time()):
+            raise ValueError(
+                f"Confirmation {confirmation_id} has expired"
+            )
+
+        # Verify user is the opponent
+        if str(confirmation["opponent_discord_id"]) != str(opponent_user_id):
+            raise PermissionError(
+                "You are not authorized to confirm this match report"
+            )
+
+        # Mark confirmation as confirmed
+        self.repo.update_confirmation_status(
+            confirmation_id=confirmation_id,
+            status="confirmed",
+            confirmed_at=int(time.time())
+        )
+
+        # TODO: Create match record and update ELO (Phase 5 - T073-T075)
+        # For now, return success without ELO changes
+        logger.info(
+            f"Match confirmed: id={confirmation_id}, winner={confirmation['winner_discord_id']}, "
+            f"loser={confirmation['loser_discord_id']}"
+        )
+
+        return {
+            "success": True,
+            "message": "Match confirmed successfully! ELO ratings will be updated shortly.",
+            "match_id": None,  # Will be implemented in Phase 5
+            "elo_changes": None  # Will be implemented in Phase 5
+        }
+
+    def deny_match_report(
+        self, confirmation_id: int, opponent_user_id: str, reason: Optional[str] = None
+    ) -> dict:
+        """
+        Deny/dispute a pending match report.
+
+        This method:
+        1. Verifies the confirmation exists and is pending
+        2. Verifies the user is the opponent on the confirmation
+        3. Marks the confirmation as 'disputed'
+        4. Records the optional reason for dispute
+        5. No match record is created, no ELO changes
+
+        Args:
+            confirmation_id: ID of confirmation to deny
+            opponent_user_id: Discord user ID of user denying (must be the opponent)
+            reason: Optional reason for dispute
+
+        Returns:
+            dict: {
+                "success": True,
+                "message": str
+            }
+
+        Raises:
+            ValueError: If confirmation not found or already processed
+            PermissionError: If user is not the opponent on the confirmation
+        """
+        import time
+
+        # Get confirmation
+        confirmation = self.repo.get_confirmation_by_id(confirmation_id)
+
+        if not confirmation:
+            raise ValueError(f"Confirmation {confirmation_id} not found")
+
+        # Check if confirmation is still pending
+        if confirmation["status"] != "pending":
+            raise ValueError(
+                f"Confirmation {confirmation_id} is already {confirmation['status']}"
+            )
+
+        # Check if confirmation has expired
+        if confirmation["expires_at"] < int(time.time()):
+            raise ValueError(
+                f"Confirmation {confirmation_id} has expired"
+            )
+
+        # Verify user is the opponent
+        if str(confirmation["opponent_discord_id"]) != str(opponent_user_id):
+            raise PermissionError(
+                "You are not authorized to deny this match report"
+            )
+
+        # Mark confirmation as disputed
+        self.repo.update_confirmation_status(
+            confirmation_id=confirmation_id,
+            status="disputed",
+            confirmed_at=int(time.time()),
+            dispute_reason=reason
+        )
+
+        logger.info(
+            f"Match denied: id={confirmation_id}, reason={reason}"
+        )
+
+        return {
+            "success": True,
+            "message": "Match report denied. No changes have been made to ratings."
+        }

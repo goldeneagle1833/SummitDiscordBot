@@ -237,19 +237,39 @@ def get_pending_confirmations():
 
     try:
         current_user_id = session["user_id"]
-        repo = MatchConfirmationRepository()
+        confirmation_repo = MatchConfirmationRepository()
+        user_profile_repo = UserProfileRepository()
 
         # Get pending confirmations where user is the opponent
-        confirmations = repo.get_pending_confirmations(current_user_id)
+        confirmations = confirmation_repo.get_pending_confirmations(current_user_id)
 
-        # TODO: Enrich with submitter display names (Phase 4)
+        # Enrich with submitter display names
+        enriched_confirmations = []
+        for confirmation in confirmations:
+            # Get submitter profile
+            submitter_profiles = user_profile_repo.search_by_display_name(
+                query=str(confirmation["submitter_discord_id"]),
+                provider="discord",
+                limit=1
+            )
 
-        logger.info(f"Fetched pending confirmations: user={current_user_id}, count={len(confirmations)}")
+            # Add submitter info to confirmation
+            confirmation["submitter_display_name"] = "Unknown Player"
+            confirmation["submitter_avatar"] = None
+
+            if submitter_profiles:
+                submitter = submitter_profiles[0]
+                confirmation["submitter_display_name"] = submitter["display_name"]
+                confirmation["submitter_avatar"] = submitter["avatar"]
+
+            enriched_confirmations.append(confirmation)
+
+        logger.info(f"Fetched pending confirmations: user={current_user_id}, count={len(enriched_confirmations)}")
 
         return jsonify({
             "success": True,
-            "pending_confirmations": confirmations,
-            "count": len(confirmations)
+            "pending_confirmations": enriched_confirmations,
+            "count": len(enriched_confirmations)
         })
 
     except Exception as e:
@@ -259,5 +279,168 @@ def get_pending_confirmations():
             "error": {
                 "code": "FETCH_ERROR",
                 "message": "Failed to fetch pending confirmations"
+            }
+        }), 500
+
+
+@match_reporting_bp.route("/confirm/<int:confirmation_id>", methods=["POST"])
+def confirm_match_report(confirmation_id):
+    """
+    POST /api/match-report/confirm/<confirmation_id>
+
+    Confirm a pending match report.
+
+    Path Parameters:
+        confirmation_id (int): ID of confirmation to confirm
+
+    Returns:
+        JSON: {"success": bool, "message": str, "match_id": int (optional)}
+
+    Status Codes:
+        200: Confirmed successfully
+        401: Not authenticated
+        403: Not authorized (not the opponent)
+        404: Confirmation not found or expired
+        500: Server error
+    """
+    # Check authentication
+    if "user_id" not in session:
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "UNAUTHORIZED",
+                "message": "Authentication required"
+            }
+        }), 401
+
+    try:
+        current_user_id = session["user_id"]
+        service = MatchConfirmationService()
+
+        # Confirm the match report
+        result = service.confirm_match_report(confirmation_id, current_user_id)
+
+        logger.info(
+            f"Match confirmed: confirmation_id={confirmation_id}, "
+            f"opponent={current_user_id}, match_id={result.get('match_id')}"
+        )
+
+        return jsonify(result), 200
+
+    except ValueError as e:
+        # Not found or expired
+        logger.warning(f"Confirmation not found: {e}")
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "NOT_FOUND",
+                "message": str(e)
+            }
+        }), 404
+
+    except PermissionError as e:
+        # Not authorized (not the opponent)
+        logger.warning(f"Unauthorized confirmation attempt: {e}")
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "FORBIDDEN",
+                "message": str(e)
+            }
+        }), 403
+
+    except Exception as e:
+        logger.error(f"Error confirming match: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "SERVER_ERROR",
+                "message": "Failed to confirm match. Please try again."
+            }
+        }), 500
+
+
+@match_reporting_bp.route("/deny/<int:confirmation_id>", methods=["POST"])
+def deny_match_report(confirmation_id):
+    """
+    POST /api/match-report/deny/<confirmation_id>
+
+    Deny/dispute a pending match report.
+
+    Path Parameters:
+        confirmation_id (int): ID of confirmation to deny
+
+    Request Body (JSON, optional):
+        {
+            "reason": str (optional dispute reason)
+        }
+
+    Returns:
+        JSON: {"success": bool, "message": str}
+
+    Status Codes:
+        200: Denied successfully
+        401: Not authenticated
+        403: Not authorized (not the opponent)
+        404: Confirmation not found or expired
+        500: Server error
+    """
+    # Check authentication
+    if "user_id" not in session:
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "UNAUTHORIZED",
+                "message": "Authentication required"
+            }
+        }), 401
+
+    # Get optional reason from request body
+    data = request.get_json() or {}
+    reason = data.get("reason")
+
+    try:
+        current_user_id = session["user_id"]
+        service = MatchConfirmationService()
+
+        # Deny the match report
+        result = service.deny_match_report(confirmation_id, current_user_id, reason)
+
+        logger.info(
+            f"Match denied: confirmation_id={confirmation_id}, "
+            f"opponent={current_user_id}, reason={reason}"
+        )
+
+        return jsonify(result), 200
+
+    except ValueError as e:
+        # Not found or expired
+        logger.warning(f"Confirmation not found: {e}")
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "NOT_FOUND",
+                "message": str(e)
+            }
+        }), 404
+
+    except PermissionError as e:
+        # Not authorized (not the opponent)
+        logger.warning(f"Unauthorized denial attempt: {e}")
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "FORBIDDEN",
+                "message": str(e)
+            }
+        }), 403
+
+    except Exception as e:
+        logger.error(f"Error denying match: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "SERVER_ERROR",
+                "message": "Failed to deny match. Please try again."
             }
         }), 500

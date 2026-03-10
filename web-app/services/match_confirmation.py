@@ -305,13 +305,17 @@ class MatchConfirmationService:
                 break
 
         # Sort: recent opponents first (by last_matched_at DESC), then alphabetically
-        results.sort(
-            key=lambda x: (
+        def get_sort_key(x):
+            # ISO datetime strings are lexicographically sortable
+            # Use empty string for None to sort to the end
+            timestamp_str = x["last_matched_at"] or ""
+            return (
                 not x["is_recent"],  # Recent first (False < True)
-                -(x["last_matched_at"] or 0),  # Most recent first
+                timestamp_str,  # Older first (we'll reverse later)
                 x["display_name"].lower()  # Then alphabetically
             )
-        )
+
+        results.sort(key=get_sort_key, reverse=True)  # Reverse to get most recent first
 
         logger.info(
             f"Opponent search completed: user={current_user_id}, query='{query}', "

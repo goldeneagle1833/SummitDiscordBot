@@ -653,6 +653,15 @@ class MatchConfirmationService:
         loser_deck_url = confirmation.get("loser_deck_url") or "No URL provided"
 
         # Insert match record with source='Web'
+        # Convert TEXT IDs to INTEGER (match_records expects INTEGER type)
+        try:
+            reporter_id_int = int(confirmation["submitter_discord_id"])
+            winner_id_int = int(winner_id)
+            loser_id_int = int(loser_id)
+        except (ValueError, TypeError) as e:
+            logger.error(f"Failed to convert IDs to integers: {e}")
+            raise ValueError(f"Invalid user ID format in confirmation record: {e}")
+
         cur.execute(
             """INSERT INTO match_records
                (reporter_id, winner_id, winner_display_name, losser_id, losser_display_name,
@@ -661,10 +670,10 @@ class MatchConfirmationService:
                 source, match_type)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                confirmation["submitter_discord_id"],  # reporter_id
-                winner_id,
+                reporter_id_int,  # reporter_id (converted to INTEGER)
+                winner_id_int,    # winner_id (converted to INTEGER)
                 winner_name,
-                loser_id,
+                loser_id_int,     # losser_id (converted to INTEGER)
                 loser_name,
                 True,  # did_win (from winner's perspective)
                 datetime.datetime.now().isoformat(),

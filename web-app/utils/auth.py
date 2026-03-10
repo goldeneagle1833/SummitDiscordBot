@@ -93,9 +93,16 @@ def is_admin() -> bool:
     user_id = session.get("user_id")
     if user_id is None:
         return False
-    return int(user_id) in ADMINS or str(user_id) in [
-        str(x) for x in ADMINS
-    ]
+
+    # Convert user_id to string for comparison (handles both Discord IDs and Google IDs)
+    user_id_str = str(user_id)
+
+    # Check if user_id matches any admin ID (as string)
+    for admin_id in ADMINS:
+        if user_id_str == str(admin_id):
+            return True
+
+    return False
 
 
 def require_admin(f):

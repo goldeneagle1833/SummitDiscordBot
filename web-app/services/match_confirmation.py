@@ -621,6 +621,10 @@ class MatchConfirmationService:
         winner_deck_url = confirmation.get("winner_deck_url") or "No URL provided"
         loser_deck_url = confirmation.get("loser_deck_url") or "No URL provided"
 
+        # Prepare JSON deck data (empty for web submissions - scraping requires bot dependencies)
+        json_deck_data_winner = "{}"
+        json_deck_data_loser = "{}"
+
         # Convert TEXT IDs to INTEGER (match_records expects INTEGER type)
         try:
             reporter_id_int = int(confirmation["submitter_discord_id"])
@@ -668,13 +672,15 @@ class MatchConfirmationService:
             logger.warning(f"Could not check match_records table schema: {e}")
 
         try:
+            # Match bot's INSERT structure exactly
             cur.execute(
                 """INSERT INTO match_records
                    (reporter_id, winner_id, winner_display_name, losser_id, losser_display_name,
-                    did_win, timestamp, first_player, match_time, curiosa_url_winner, curiosa_url_loser,
-                    match_comment, winner_elo_change, loser_elo_change, winner_went_first, loser_went_first,
-                    source, match_type)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    did_win, timestamp, first_player, match_time, curiosa_url, curiosa_url_winner,
+                    curiosa_url_loser, match_comment, json_deck_data, json_deck_data_winner,
+                    json_deck_data_loser, winner_elo_change, loser_elo_change, winner_went_first,
+                    loser_went_first, match_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     reporter_id_int,  # reporter_id (converted to INTEGER)
                     winner_id_int,    # winner_id (converted to INTEGER)
@@ -685,14 +691,17 @@ class MatchConfirmationService:
                     datetime.datetime.now().isoformat(),
                     confirmation.get("went_first", "Unknown"),  # first_player
                     0,  # match_time (not tracked in confirmations yet)
-                    winner_deck_url,
-                    loser_deck_url,
+                    winner_deck_url,  # curiosa_url (backward compatibility)
+                    winner_deck_url,  # curiosa_url_winner
+                    loser_deck_url,   # curiosa_url_loser
                     "Web-confirmed match",  # match_comment
-                    winner_event_elo_change if event_active else 0,
-                    loser_event_elo_change if event_active else 0,
+                    json_deck_data_winner,  # json_deck_data (backward compatibility)
+                    json_deck_data_winner,  # json_deck_data_winner
+                    json_deck_data_loser,   # json_deck_data_loser
+                    winner_event_elo_change if event_active else 0,  # winner_elo_change
+                    loser_event_elo_change if event_active else 0,   # loser_elo_change
                     None,  # winner_went_first
                     None,  # loser_went_first
-                    "Web",  # source
                     "ranked",  # match_type
                 ),
             )

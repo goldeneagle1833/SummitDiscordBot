@@ -430,12 +430,23 @@ def confirm_match_report(confirmation_id):
         }), 403
 
     except Exception as e:
-        logger.error(f"Error confirming match: {e}", exc_info=True)
+        # Unexpected errors
+        error_type = type(e).__name__
+        logger.error(f"Unexpected error confirming match ({error_type}): {e}", exc_info=True)
+
+        # Provide different messages for database vs other errors
+        if "database" in str(e).lower() or "sqlite" in str(e).lower():
+            error_code = "DATABASE_ERROR"
+            error_msg = "Database connection error. Please try again in a moment."
+        else:
+            error_code = "CONFIRMATION_ERROR"
+            error_msg = f"Failed to confirm match ({error_type}). Please try again or contact support."
+
         return jsonify({
             "success": False,
             "error": {
-                "code": "SERVER_ERROR",
-                "message": "Failed to confirm match. Please try again."
+                "code": error_code,
+                "message": error_msg
             }
         }), 500
 
@@ -516,11 +527,22 @@ def deny_match_report(confirmation_id):
         }), 403
 
     except Exception as e:
-        logger.error(f"Error denying match: {e}", exc_info=True)
+        # Unexpected errors
+        error_type = type(e).__name__
+        logger.error(f"Unexpected error denying match ({error_type}): {e}", exc_info=True)
+
+        # Provide different messages for database vs other errors
+        if "database" in str(e).lower() or "sqlite" in str(e).lower():
+            error_code = "DATABASE_ERROR"
+            error_msg = "Database connection error. Please try again in a moment."
+        else:
+            error_code = "DENIAL_ERROR"
+            error_msg = f"Failed to deny match ({error_type}). Please try again or contact support."
+
         return jsonify({
             "success": False,
             "error": {
-                "code": "SERVER_ERROR",
-                "message": "Failed to deny match. Please try again."
+                "code": error_code,
+                "message": error_msg
             }
         }), 500

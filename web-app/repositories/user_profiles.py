@@ -247,3 +247,47 @@ class UserProfileRepository:
 
         conn.close()
         return profiles
+
+    def get_by_user_id(self, user_id: str, provider: str = None) -> dict | None:
+        """
+        Get a user profile by user_id.
+
+        Args:
+            user_id: User's unique ID (Discord numeric ID or 'google_<id>')
+            provider: Optional provider filter ('discord' or 'google')
+
+        Returns:
+            dict: User profile with user_id, display_name, avatar, provider
+                  None if not found
+        """
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        if provider:
+            cur.execute(
+                """
+                SELECT user_id, display_name, avatar, provider
+                FROM user_profiles
+                WHERE user_id = ? AND provider = ?
+                LIMIT 1
+                """,
+                (str(user_id), provider),
+            )
+        else:
+            # Search across all providers
+            cur.execute(
+                """
+                SELECT user_id, display_name, avatar, provider
+                FROM user_profiles
+                WHERE user_id = ?
+                LIMIT 1
+                """,
+                (str(user_id),),
+            )
+
+        row = cur.fetchone()
+        profile = dict(row) if row else None
+
+        conn.close()
+        return profile

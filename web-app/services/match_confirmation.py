@@ -228,10 +228,10 @@ class MatchConfirmationService:
             recent_opponents = self.repo.get_recent_lfg_opponents(
                 user_id=numeric_user_id, limit=limit
             )
-        except ValueError:
-            # User ID format is invalid, skip recent opponents lookup
+        except (ValueError, Exception) as e:
+            # User ID format is invalid or database error, skip recent opponents lookup
             logger.debug(
-                f"Skipping recent opponents lookup for invalid user_id: {current_user_id}"
+                f"Skipping recent opponents lookup for user_id {current_user_id}: {e}"
             )
 
         # Build map of recent opponent IDs for quick lookup
@@ -245,7 +245,12 @@ class MatchConfirmationService:
 
         # Tier 2: Search all user profiles across all name fields (display_name, given_name, family_name)
         # This searches both Discord and Google users
-        all_profiles = self.user_repo.search_users(query=query, limit=limit * 2)
+        try:
+            all_profiles = self.user_repo.search_users(query=query, limit=limit * 2)
+        except Exception as e:
+            # Database error or other issue, return empty results
+            logger.error(f"Error searching user profiles for query '{query}': {e}", exc_info=True)
+            return []
 
         # Merge and prioritize results
         results = []
@@ -265,7 +270,7 @@ class MatchConfirmationService:
 
             # Skip users without valid numeric IDs (after stripping google_ prefix)
             try:
-                self._normalize_user_id(user_id)
+                numeric_id = str(self._normalize_user_id(user_id))
             except ValueError:
                 logger.debug(f"Skipping user with invalid ID format: {user_id}")
                 continue
@@ -274,7 +279,6 @@ class MatchConfirmationService:
 
             # Check if this is a recent opponent
             # Match by numeric ID (works for both Discord "123" and Google "google_123")
-            numeric_id = str(self._normalize_user_id(user_id))
             if numeric_id in recent_map:
                 recent_info = recent_map[numeric_id]
                 results.append({
@@ -346,7 +350,7 @@ class MatchConfirmationService:
         try:
             int(user_id_str)  # Validation only
             return user_id_str  # Return as string
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError):
             raise ValueError(f"Invalid user ID format: {user_id}")
 
     def _get_display_name_for_user(self, user_id: str) -> str:
@@ -581,8 +585,8 @@ class MatchConfirmationService:
             if not re.match(deck_url_pattern, opponent_deck_url):
                 raise ValueError("Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id] (lowercase letters and numbers only)")
 
-            # Determine if opponent is winner or loser
-            is_winner = str(confirmation["winner_discord_id"]) == str(opponent_user_id)
+            # Determine if opponent is winner or loser (use normalized ID for comparison)
+            is_winner = str(confirmation["winner_discord_id"]) == str(opponent_numeric_id)
             deck_field = "winner_deck_url" if is_winner else "loser_deck_url"
 
             # Update the deck URL in the database

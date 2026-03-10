@@ -94,14 +94,14 @@ def search_opponents():
 
     except OverflowError as e:
         # Integer overflow (should not happen after fixes, but just in case)
-        logger.error(f"Integer overflow in opponent search: {e}", exc_info=True)
+        logger.warning(f"Integer overflow in opponent search: {e}")
         return jsonify({
             "success": False,
             "error": {
                 "code": "ID_OVERFLOW",
-                "message": "User ID format error. Please contact support if this persists."
+                "message": "User ID format error. Please try logging out and back in."
             }
-        }), 500
+        }), 400
 
     except Exception as e:
         # Catch-all for unexpected errors
@@ -238,14 +238,14 @@ def submit_match_report():
 
     except OverflowError as e:
         # Integer overflow (should not happen after fixes, but just in case)
-        logger.error(f"Integer overflow in match report: {e}", exc_info=True)
+        logger.warning(f"Integer overflow in match report: {e}")
         return jsonify({
             "success": False,
             "error": {
                 "code": "ID_OVERFLOW",
-                "message": "User ID format error. Please contact support if this persists."
+                "message": "User ID format error. Please try logging out and back in."
             }
-        }), 500
+        }), 400
 
     except Exception as e:
         # Unexpected errors
@@ -308,30 +308,30 @@ def get_pending_confirmations():
             # The submitter_discord_id is numeric, but could be from Discord or Google user
             submitter_numeric_id = confirmation["submitter_discord_id"]
 
-            # Try to find profile by checking both Discord and Google
+            # Try to find profile by user_id
             submitter_display_name = "Unknown Player"
             submitter_avatar = None
 
-            # Try Discord first
-            discord_profiles = user_profile_repo.search_by_display_name(
-                query=str(submitter_numeric_id), provider="discord", limit=1
-            )
-            if discord_profiles and discord_profiles[0]["user_id"] == str(submitter_numeric_id):
-                submitter_display_name = discord_profiles[0]["display_name"]
-                submitter_avatar = discord_profiles[0].get("avatar")
+            # Try Discord first (numeric ID)
+            profile = user_profile_repo.get_by_user_id(str(submitter_numeric_id), provider="discord")
+            if profile:
+                submitter_display_name = profile["display_name"]
+                submitter_avatar = profile.get("avatar")
             else:
-                # Try Google
+                # Try Google (google_ prefixed ID)
                 google_user_id = f"google_{submitter_numeric_id}"
-                google_profiles = user_profile_repo.search_by_display_name(
-                    query=google_user_id, provider="google", limit=1
-                )
-                if google_profiles and google_profiles[0]["user_id"] == google_user_id:
-                    submitter_display_name = google_profiles[0]["display_name"]
-                    submitter_avatar = google_profiles[0].get("avatar")
+                profile = user_profile_repo.get_by_user_id(google_user_id, provider="google")
+                if profile:
+                    submitter_display_name = profile["display_name"]
+                    submitter_avatar = profile.get("avatar")
 
             # Add submitter info to confirmation
             confirmation["submitter_display_name"] = submitter_display_name
             confirmation["submitter_avatar"] = submitter_avatar
+
+            # Remove deck URLs from confirmation response - they should not be visible until after confirmation
+            confirmation.pop("winner_deck_url", None)
+            confirmation.pop("loser_deck_url", None)
 
             enriched_confirmations.append(confirmation)
 

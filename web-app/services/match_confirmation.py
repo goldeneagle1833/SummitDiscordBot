@@ -5,6 +5,7 @@ import re
 from typing import Optional
 
 from repositories.match_confirmation import MatchConfirmationRepository
+from repositories.user_profiles import UserProfileRepository
 
 # Configure logger for match reporting operations
 logger = logging.getLogger(__name__)
@@ -14,8 +15,13 @@ logger.setLevel(logging.INFO)
 class MatchConfirmationService:
     """Business logic for match confirmations."""
 
-    def __init__(self, repository: Optional[MatchConfirmationRepository] = None):
+    def __init__(
+        self,
+        repository: Optional[MatchConfirmationRepository] = None,
+        user_repo: Optional[UserProfileRepository] = None
+    ):
         self.repo = repository or MatchConfirmationRepository()
+        self.user_repo = user_repo or UserProfileRepository()
 
     def create_match_report(
         self,
@@ -183,3 +189,236 @@ class MatchConfirmationService:
         )
 
         return {"winner_id": winner_id, "loser_id": loser_id}
+
+    def search_opponents(
+        self, current_user_id: str, query: str, limit: int = 10
+    ) -> list[dict]:
+        """
+        Search for opponents using 2-tier approach: recent opponents → all users.
+
+        Prioritizes users the current user has recently played against,
+        then searches all user profiles by display name.
+
+        Args:
+            current_user_id: Discord user ID of current user
+            query: Search query string
+            limit: Maximum number of results
+
+        Returns:
+            list[dict]: List of opponents with format:
+                {
+                    "user_id": str,
+                    "display_name": str,
+                    "avatar": str | None,
+                    "recent_match_count": int,
+                    "last_matched_at": int | None,
+                    "is_recent": bool
+                }
+        """
+        # Tier 1: Get recent opponents from match history
+        recent_opponents = self.repo.get_recent_lfg_opponents(
+            user_id=int(current_user_id), limit=limit
+        )
+
+        # Build map of recent opponent IDs for quick lookup
+        recent_map = {
+            str(opp["opponent_id"]): {
+                "match_count": opp["match_count"],
+                "last_matched_at": opp["last_matched_at"]
+            }
+            for opp in recent_opponents
+        }
+
+        # Tier 2: Search all user profiles by display name
+        all_profiles = self.user_repo.search_by_display_name(
+            query=query, provider="discord", limit=limit * 2
+        )
+
+        # Merge and prioritize results
+        results = []
+        seen_ids = set()
+
+        # First, add recent opponents that match the query
+        for profile in all_profiles:
+            user_id = str(profile["user_id"])
+
+            # Skip current user (no self-reporting)
+            if user_id == str(current_user_id):
+                continue
+
+            # Skip duplicates
+            if user_id in seen_ids:
+                continue
+
+            seen_ids.add(user_id)
+
+            # Check if this is a recent opponent
+            if user_id in recent_map:
+                recent_info = recent_map[user_id]
+                results.append({
+                    "user_id": user_id,
+                    "display_name": profile["display_name"],
+                    "avatar": profile.get("avatar"),
+                    "recent_match_count": recent_info["match_count"],
+                    "last_matched_at": recent_info["last_matched_at"],
+                    "is_recent": True
+                })
+            else:
+                results.append({
+                    "user_id": user_id,
+                    "display_name": profile["display_name"],
+                    "avatar": profile.get("avatar"),
+                    "recent_match_count": 0,
+                    "last_matched_at": None,
+                    "is_recent": False
+                })
+
+            # Stop when we have enough results
+            if len(results) >= limit:
+                break
+
+        # Sort: recent opponents first (by last_matched_at DESC), then alphabetically
+        results.sort(
+            key=lambda x: (
+                not x["is_recent"],  # Recent first (False < True)
+                -(x["last_matched_at"] or 0),  # Most recent first
+                x["display_name"].lower()  # Then alphabetically
+            )
+        )
+
+        logger.info(
+            f"Opponent search completed: user={current_user_id}, query='{query}', "
+            f"found={len(results)} (recent={sum(1 for r in results if r['is_recent'])})"
+        )
+
+        return results[:limit]
+
+    def create_match_report(
+        self,
+        submitter_id: str,
+        opponent_id: str,
+        result: str,
+        went_first: str,
+        submitter_deck_url: Optional[str] = None,
+        opponent_deck_url: Optional[str] = None,
+        final_life_submitter: int = 0,
+        final_life_opponent: int = 0
+    ) -> dict:
+        """
+        Create a new match report with validation and duplicate detection.
+
+        Args:
+            submitter_id: Discord user ID of submitter
+            opponent_id: Discord user ID of opponent
+            result: Match result ('won' or 'lost')
+            went_first: Turn order ('submitter' or 'opponent')
+            submitter_deck_url: Optional deck URL for submitter
+            opponent_deck_url: Optional deck URL for opponent
+            final_life_submitter: Submitter's final life total
+            final_life_opponent: Opponent's final life total
+
+        Returns:
+            dict: {
+                "success": True,
+                "confirmation_id": int,
+                "expires_at": int,
+                "opponent": {"user_id": str, "display_name": str},
+                "message": str
+            }
+
+        Raises:
+            ValueError: If validation fails
+            RuntimeError: If duplicate pending report or database error
+        """
+        # Step 1: Validate all inputs
+        validation = self.validate_match_report_input(
+            submitter_id=submitter_id,
+            opponent_id=opponent_id,
+            result=result,
+            went_first=went_first,
+            submitter_deck_url=submitter_deck_url,
+            opponent_deck_url=opponent_deck_url
+        )
+
+        if not validation["valid"]:
+            error_details = ", ".join([
+                f"{field}: {msg}" for field, msg in validation["errors"].items()
+            ])
+            raise ValueError(f"Validation failed: {error_details}")
+
+        # Step 2: Check for duplicate pending reports (within 1 hour)
+        has_duplicate = self.repo.check_duplicate_pending(
+            submitter_id=int(submitter_id),
+            opponent_id=int(opponent_id)
+        )
+
+        if has_duplicate:
+            raise RuntimeError(
+                "You already have a pending match report with this opponent. "
+                "Please wait for confirmation or expiration."
+            )
+
+        # Step 3: Calculate winner and loser IDs
+        winner_loser = self.calculate_winner_loser(
+            submitter_id=submitter_id,
+            opponent_id=opponent_id,
+            result=result
+        )
+
+        winner_id = winner_loser["winner_id"]
+        loser_id = winner_loser["loser_id"]
+
+        # Step 4: Map deck URLs to winner/loser
+        if result == "won":
+            winner_deck_url = submitter_deck_url
+            loser_deck_url = opponent_deck_url
+            final_life_winner = final_life_submitter
+            final_life_loser = final_life_opponent
+        else:
+            winner_deck_url = opponent_deck_url
+            loser_deck_url = submitter_deck_url
+            final_life_winner = final_life_opponent
+            final_life_loser = final_life_submitter
+
+        # Step 5: Create confirmation in database
+        import time
+        confirmation_id = self.repo.create_confirmation(
+            submitter_id=int(submitter_id),
+            opponent_id=int(opponent_id),
+            winner_id=int(winner_id),
+            loser_id=int(loser_id),
+            final_life_winner=final_life_winner,
+            final_life_loser=final_life_loser,
+            went_first=went_first,
+            winner_deck_url=winner_deck_url,
+            loser_deck_url=loser_deck_url
+        )
+
+        expires_at = int(time.time()) + (48 * 60 * 60)
+
+        # Step 6: Get opponent display name for response
+        # Try to get from user_profiles, fallback to user_id
+        opponent_profiles = self.user_repo.search_by_display_name(
+            query=str(opponent_id), provider="discord", limit=1
+        )
+        opponent_display_name = (
+            opponent_profiles[0]["display_name"]
+            if opponent_profiles and opponent_profiles[0]["user_id"] == str(opponent_id)
+            else f"User {opponent_id}"
+        )
+
+        logger.info(
+            f"Match report created: id={confirmation_id}, submitter={submitter_id}, "
+            f"opponent={opponent_id}, result={result}, went_first={went_first}"
+        )
+
+        return {
+            "success": True,
+            "confirmation_id": confirmation_id,
+            "expires_at": expires_at,
+            "opponent": {
+                "user_id": opponent_id,
+                "display_name": opponent_display_name
+            },
+            "message": f"Match report submitted. Awaiting confirmation from {opponent_display_name}."
+        }

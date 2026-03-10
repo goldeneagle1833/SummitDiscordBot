@@ -17,6 +17,7 @@ from routes.api.streamers import streamers_bp
 from routes.api.external_matches import external_matches_bp
 from routes.api.metagame import metagame_bp
 from routes.api.admin import admin_bp
+from routes.api.match_reporting import match_reporting_bp
 
 api_bp.register_blueprint(leaderboard_bp)
 api_bp.register_blueprint(matches_bp)
@@ -30,3 +31,4 @@ api_bp.register_blueprint(streamers_bp)
 api_bp.register_blueprint(external_matches_bp)
 api_bp.register_blueprint(metagame_bp)
 api_bp.register_blueprint(admin_bp)
+api_bp.register_blueprint(match_reporting_bp, url_prefix="/match-report")

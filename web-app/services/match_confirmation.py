@@ -243,14 +243,9 @@ class MatchConfirmationService:
             for opp in recent_opponents
         }
 
-        # Tier 2: Search all user profiles by display name (both Discord and Google)
-        discord_profiles = self.user_repo.search_by_display_name(
-            query=query, provider="discord", limit=limit * 2
-        )
-        google_profiles = self.user_repo.search_by_display_name(
-            query=query, provider="google", limit=limit * 2
-        )
-        all_profiles = discord_profiles + google_profiles
+        # Tier 2: Search all user profiles across all name fields (display_name, given_name, family_name)
+        # This searches both Discord and Google users
+        all_profiles = self.user_repo.search_users(query=query, limit=limit * 2)
 
         # Merge and prioritize results
         results = []

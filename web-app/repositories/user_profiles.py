@@ -170,3 +170,49 @@ class UserProfileRepository:
 
         conn.close()
         return profiles
+
+    def search_users(self, query: str, limit: int = 10) -> list[dict]:
+        """
+        Search user profiles across all providers and name fields.
+
+        Searches display_name, given_name, and family_name fields for matches.
+        Works for both Discord and Google users.
+
+        Args:
+            query: Search string (min 2 characters recommended)
+            limit: Maximum number of results to return
+
+        Returns:
+            list[dict]: List of user profile dicts with user_id, display_name, avatar, provider
+        """
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        # Use LIKE for case-insensitive prefix match
+        search_pattern = f"%{query}%"
+
+        cur.execute(
+            """
+            SELECT user_id, display_name, avatar, provider
+            FROM user_profiles
+            WHERE LOWER(display_name) LIKE LOWER(?)
+               OR LOWER(given_name) LIKE LOWER(?)
+               OR LOWER(family_name) LIKE LOWER(?)
+            ORDER BY
+                -- Prioritize exact display_name matches
+                CASE WHEN LOWER(display_name) = LOWER(?) THEN 0 ELSE 1 END,
+                -- Then prefix matches
+                CASE WHEN LOWER(display_name) LIKE LOWER(?) THEN 0 ELSE 1 END,
+                -- Then alphabetically
+                display_name ASC
+            LIMIT ?
+            """,
+            (search_pattern, search_pattern, search_pattern, query, f"{query}%", limit),
+        )
+
+        rows = cur.fetchall()
+        profiles = [dict(row) for row in rows]
+
+        conn.close()
+        return profiles

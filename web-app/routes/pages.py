@@ -46,7 +46,12 @@ def help_page():
 @pages_bp.route("/life-counter")
 def life_counter():
     """Life counter page for tracking game life totals."""
-    return render_template("pages/life_counter.html")
+    return render_template(
+        "pages/life_counter.html",
+        logged_in=bool(session.get("user_id")),
+        username=session.get("username"),
+        auth_provider=session.get("auth_provider"),
+    )
 
 
 @pages_bp.route("/privacy")

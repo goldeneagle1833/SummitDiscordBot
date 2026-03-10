@@ -139,8 +139,8 @@ class MatchConfirmationService:
             errors["went_first"] = "Turn order must be 'submitter' or 'opponent'"
 
         # Validate deck URLs
-        # Strict pattern: https://curiosa.io/decks/[lowercase alphanumeric ID]
-        deck_url_pattern = r"^https://curiosa\.io/decks/[a-z0-9]+$"
+        # Pattern supports: http/https, optional www, alphanumeric ID with hyphens/underscores, optional query params
+        deck_url_pattern = r"^https?://(www\.)?curiosa\.io/decks/[a-zA-Z0-9_-]+(\?.*)?$"
 
         # Submitter deck URL is now REQUIRED
         if not submitter_deck_url:
@@ -148,14 +148,14 @@ class MatchConfirmationService:
         elif not re.match(deck_url_pattern, submitter_deck_url):
             errors[
                 "submitter_deck_url"
-            ] = "Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id] (lowercase letters and numbers only)"
+            ] = "Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id]"
 
         # Opponent deck URL is optional (provided during confirmation)
         if opponent_deck_url:
             if not re.match(deck_url_pattern, opponent_deck_url):
                 errors[
                     "opponent_deck_url"
-                ] = "Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id] (lowercase letters and numbers only)"
+                ] = "Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id]"
 
         return {"valid": len(errors) == 0, "errors": errors}
 

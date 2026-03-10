@@ -396,7 +396,6 @@ function displayOpponentResults(opponents) {
 
   dropdown.innerHTML = opponents.map(opponent => `
     <div class="autocomplete-item" data-user-id="${opponent.user_id}">
-      <img src="${opponent.avatar || '/static/images/default-avatar.png'}" alt="${opponent.display_name}">
       <span class="autocomplete-item-name">${opponent.display_name}</span>
       ${opponent.is_recent ? '<span class="autocomplete-item-badge">Recent</span>' : ''}
     </div>
@@ -409,8 +408,7 @@ function displayOpponentResults(opponents) {
     item.addEventListener("click", function() {
       selectOpponent({
         user_id: this.dataset.userId,
-        display_name: this.querySelector(".autocomplete-item-name").textContent,
-        avatar: this.querySelector("img").src
+        display_name: this.querySelector(".autocomplete-item-name").textContent
       });
     });
   });
@@ -428,7 +426,6 @@ function selectOpponent(opponent) {
 
   // Show selected opponent display
   const selectedDisplay = document.getElementById("opponent-selected");
-  document.getElementById("opponent-avatar").src = opponent.avatar;
   document.getElementById("opponent-name").textContent = opponent.display_name;
   selectedDisplay.classList.remove("hidden");
 
@@ -471,8 +468,8 @@ function validateMatchReportForm() {
   const turnOrderSelected = !!document.getElementById("went-first").value;
   const submitterDeckUrl = document.getElementById("submitter-deck-url").value.trim();
 
-  // Deck URL is now REQUIRED and must match exact Curiosa.io format
-  const deckUrlPattern = /^https:\/\/curiosa\.io\/decks\/[a-z0-9]+$/;
+  // Deck URL is now REQUIRED and must match Curiosa.io format (supports http/https, www, query params)
+  const deckUrlPattern = /^https?:\/\/(www\.)?curiosa\.io\/decks\/[a-zA-Z0-9_-]+(\?.*)?$/;
   const deckUrlProvided = !!submitterDeckUrl;
   const deckUrlValid = deckUrlProvided && deckUrlPattern.test(submitterDeckUrl);
 
@@ -711,7 +708,6 @@ function displayPendingConfirmationsList() {
 
   listContainer.innerHTML = pendingConfirmations.map(conf => {
     const submitterName = conf.submitter_display_name || "Unknown Player";
-    const submitterAvatar = conf.submitter_avatar || "/static/images/default-avatar.png";
     const expiresIn = formatTimeRemaining(conf.expires_at);
 
     // Determine who won
@@ -720,7 +716,6 @@ function displayPendingConfirmationsList() {
 
     return `
       <div class="pending-confirmation-item" data-confirmation-id="${conf.id}">
-        <img src="${submitterAvatar}" alt="${submitterName}">
         <div class="pending-confirmation-info">
           <span class="pending-confirmation-name">${submitterName}</span>
           <span class="pending-confirmation-summary">${resultText} • Expires ${expiresIn}</span>
@@ -750,10 +745,8 @@ function showConfirmationDetails(confirmationId) {
   currentConfirmation = confirmation;
 
   // Populate confirmation details
-  const submitterAvatar = confirmation.submitter_avatar || "/static/images/default-avatar.png";
   const submitterName = confirmation.submitter_display_name || "Unknown Player";
 
-  document.getElementById("confirmation-submitter-avatar").src = submitterAvatar;
   document.getElementById("confirmation-submitter-name").textContent = submitterName;
 
   // Determine who won

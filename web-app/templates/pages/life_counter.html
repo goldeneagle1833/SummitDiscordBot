@@ -63,6 +63,40 @@
       letter-spacing: 0.05em;
     }
 
+    .login-status {
+      font-size: 0.75rem;
+      color: #888;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .login-status.logged-in {
+      color: #4ade80;
+    }
+
+    .login-status.logged-out {
+      color: #ef4444;
+    }
+
+    .login-link {
+      color: #9333ea;
+      text-decoration: none;
+      font-weight: 600;
+      transition: color 0.2s ease;
+    }
+
+    .login-link:hover {
+      color: #a855f7;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: currentColor;
+    }
+
     .reset-btn {
       background: none;
       border: 1px solid #444;
@@ -98,6 +132,17 @@
       <span>Sorcerers Summit</span>
     </a>
     <div class="page-title">Life Counter</div>
+    {% if logged_in %}
+      <div class="login-status logged-in">
+        <span class="status-dot"></span>
+        <span>{{ username }}</span>
+      </div>
+    {% else %}
+      <div class="login-status logged-out">
+        <span class="status-dot"></span>
+        <a href="/auth/discord" class="login-link">Log in</a>
+      </div>
+    {% endif %}
     <button id="reset-btn" class="reset-btn" aria-label="Reset counter">↻</button>
   </header>
 
@@ -245,7 +290,6 @@
           </div>
           <input type="hidden" id="opponent-user-id" name="opponent_user_id" />
           <div id="opponent-selected" class="selected-opponent hidden">
-            <img id="opponent-avatar" class="opponent-avatar" src="" alt="Opponent avatar" />
             <span id="opponent-name" class="opponent-name"></span>
             <button type="button" id="opponent-clear" class="clear-opponent" aria-label="Clear opponent">&times;</button>
           </div>
@@ -260,7 +304,7 @@
             name="submitter_deck_url"
             class="form-control"
             placeholder="https://curiosa.io/decks/..."
-            pattern="https://curiosa\.io/decks/[a-z0-9]+"
+            pattern="https?://(www\.)?curiosa\.io/decks/[a-zA-Z0-9_-]+(\?.*)?"
             required
           />
           <small class="form-hint" id="deck-url-hint">Example: https://curiosa.io/decks/cmlnbvekh01ci04lbaq8zhlyw</small>
@@ -352,7 +396,6 @@
       <!-- Confirmation Details (shown when user clicks a pending confirmation) -->
       <div id="confirmation-details" class="confirmation-details hidden">
         <div class="confirmation-submitter">
-          <img id="confirmation-submitter-avatar" class="confirmation-avatar" src="" alt="Submitter avatar" />
           <div class="confirmation-submitter-info">
             <span id="confirmation-submitter-name" class="confirmation-name">Player Name</span>
             <span class="confirmation-label">reported a match against you</span>

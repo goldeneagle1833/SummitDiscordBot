@@ -4,7 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Player Profile - Sorcerers Summit</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/favicon.png') }}">
+    <link
+      rel="icon"
+      type="image/png"
+      href="{{ url_for('static', filename='images/favicon.png') }}" />
     <!-- Tailwind CSS (load first) -->
     <link
       rel="stylesheet"
@@ -172,16 +175,33 @@
             gap: 1rem;
           ">
           <div>
-            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem;">
-              <h1 class="player-name" id="player-name" style="margin: 0;">Loading...</h1>
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+                margin-bottom: 0.5rem;
+              ">
+              <h1 class="player-name" id="player-name" style="margin: 0">
+                Loading...
+              </h1>
 
               <!-- ELO Source Toggle -->
-              <div class="elo-source-toggle" id="elo-source-toggle" style="display: none;">
-                <button class="elo-source-btn active" data-source="web" title="Web-reported matches">
+              <div
+                class="elo-source-toggle"
+                id="elo-source-toggle"
+                style="display: none">
+                <button
+                  class="elo-source-btn"
+                  data-source="web"
+                  title="Web-reported matches">
                   🌐 Web
                 </button>
-                <button class="elo-source-btn" data-source="bot" title="Bot-reported matches">
-                  🤖 Bot
+                <button
+                  class="elo-source-btn active"
+                  data-source="bot"
+                  title="Bot-reported matches">
+                  🤖Bot
                 </button>
               </div>
             </div>
@@ -208,28 +228,44 @@
 
         {% if is_admin %}
         <!-- Admin Controls Panel -->
-        <div id="admin-panel" style="
+        <div
+          id="admin-panel"
+          style="
             background: rgba(248, 81, 73, 0.08);
             border: 1px solid rgba(248, 81, 73, 0.3);
             border-radius: 8px;
             padding: 1rem 1.25rem;
             margin-bottom: 1.5rem;
-        ">
-            <h3 style="color: #f85149; margin: 0 0 0.75rem 0; font-size: 0.95rem;">Admin Controls</h3>
-            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-                <button class="btn btn--danger" id="admin-remove-player" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
-                    Remove Player
-                </button>
-                <button class="btn btn--danger" id="admin-remove-match" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
-                    Remove Match
-                </button>
-                <button class="btn btn--secondary" id="admin-reset-elo" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
-                    Set ELO
-                </button>
-                <button class="btn btn--secondary" id="admin-rename-player" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
-                    Rename Player
-                </button>
-            </div>
+          ">
+          <h3 style="color: #f85149; margin: 0 0 0.75rem 0; font-size: 0.95rem">
+            Admin Controls
+          </h3>
+          <div style="display: flex; flex-wrap: wrap; gap: 0.5rem">
+            <button
+              class="btn btn--danger"
+              id="admin-remove-player"
+              style="font-size: 0.85rem; padding: 0.4rem 0.75rem">
+              Remove Player
+            </button>
+            <button
+              class="btn btn--danger"
+              id="admin-remove-match"
+              style="font-size: 0.85rem; padding: 0.4rem 0.75rem">
+              Remove Match
+            </button>
+            <button
+              class="btn btn--secondary"
+              id="admin-reset-elo"
+              style="font-size: 0.85rem; padding: 0.4rem 0.75rem">
+              Set ELO
+            </button>
+            <button
+              class="btn btn--secondary"
+              id="admin-rename-player"
+              style="font-size: 0.85rem; padding: 0.4rem 0.75rem">
+              Rename Player
+            </button>
+          </div>
         </div>
         {% endif %}
 
@@ -256,11 +292,11 @@
             <div class="stat-value" id="stat-avg-time">-</div>
             <div class="stat-label">Avg Match Time</div>
           </div>
-          <div class="stat-card" id="stat-play-card" style="display: none;">
+          <div class="stat-card" id="stat-play-card" style="display: none">
             <div class="stat-value" id="stat-play-wr">-</div>
             <div class="stat-label">On the Play</div>
           </div>
-          <div class="stat-card" id="stat-draw-card" style="display: none;">
+          <div class="stat-card" id="stat-draw-card" style="display: none">
             <div class="stat-value" id="stat-draw-wr">-</div>
             <div class="stat-label">On the Draw</div>
           </div>
@@ -357,7 +393,9 @@
         <div class="match-history">
           <h3>📜 Match History</h3>
           <div class="overflow-x-auto">
-            <table class="match-history-table" style="width: 100%; min-width: 1200px;">
+            <table
+              class="match-history-table"
+              style="width: 100%; min-width: 1200px">
               <thead id="match-history-thead">
                 <!-- Table headers will be inserted by JS based on is_owner -->
               </thead>
@@ -368,25 +406,46 @@
           </div>
 
           <!-- Pagination Controls -->
-          <div id="pagination-controls" style="display: none; margin-top: 20px; text-align: center;">
-            <div style="display: inline-flex; gap: 10px; align-items: center;">
-              <button id="pagination-first" class="pagination-btn" style="padding: 8px 12px; cursor: pointer;">
+          <div
+            id="pagination-controls"
+            style="display: none; margin-top: 20px; text-align: center">
+            <div style="display: inline-flex; gap: 10px; align-items: center">
+              <button
+                id="pagination-first"
+                class="pagination-btn"
+                style="padding: 8px 12px; cursor: pointer">
                 ⏮ First
               </button>
-              <button id="pagination-prev" class="pagination-btn" style="padding: 8px 12px; cursor: pointer;">
+              <button
+                id="pagination-prev"
+                class="pagination-btn"
+                style="padding: 8px 12px; cursor: pointer">
                 ← Previous
               </button>
-              <span id="pagination-info" style="padding: 0 15px; font-weight: bold;">
+              <span
+                id="pagination-info"
+                style="padding: 0 15px; font-weight: bold">
                 Page 1 of 1
               </span>
-              <button id="pagination-next" class="pagination-btn" style="padding: 8px 12px; cursor: pointer;">
+              <button
+                id="pagination-next"
+                class="pagination-btn"
+                style="padding: 8px 12px; cursor: pointer">
                 Next →
               </button>
-              <button id="pagination-last" class="pagination-btn" style="padding: 8px 12px; cursor: pointer;">
+              <button
+                id="pagination-last"
+                class="pagination-btn"
+                style="padding: 8px 12px; cursor: pointer">
                 Last ⏭
               </button>
             </div>
-            <div style="margin-top: 10px; font-size: 14px; color: var(--color-text-muted);">
+            <div
+              style="
+                margin-top: 10px;
+                font-size: 14px;
+                color: var(--color-text-muted);
+              ">
               <span id="pagination-summary">Showing 0-0 of 0 matches</span>
             </div>
           </div>
@@ -408,7 +467,9 @@
             your ELO rating.
           </p>
           <div class="overflow-x-auto">
-            <table class="match-history-table" style="width: 100%; min-width: 500px;">
+            <table
+              class="match-history-table"
+              style="width: 100%; min-width: 500px">
               <thead>
                 <tr>
                   <th>ID</th>
@@ -555,22 +616,46 @@
       <!-- Remove Match Modal -->
       <div class="modal" id="remove-match-modal">
         <div class="modal__backdrop" id="remove-match-backdrop"></div>
-        <div class="modal__content" style="max-width: 480px;">
+        <div class="modal__content" style="max-width: 480px">
           <div class="modal__header">
             <h2 class="modal__title">Remove Match</h2>
-            <button class="modal__close" id="remove-match-close">&times;</button>
+            <button class="modal__close" id="remove-match-close">
+              &times;
+            </button>
           </div>
           <div class="modal__body">
             <div class="form-group">
-              <label class="form-label form-label--required" for="admin-match-id">Match ID</label>
-              <input type="number" class="form-input" id="admin-match-id"
-                     placeholder="Enter match ID (e.g. 1234)" required min="1" />
-              <span class="form-help">The match row ID. ELO changes will be reversed for both players.</span>
+              <label
+                class="form-label form-label--required"
+                for="admin-match-id"
+                >Match ID</label
+              >
+              <input
+                type="number"
+                class="form-input"
+                id="admin-match-id"
+                placeholder="Enter match ID (e.g. 1234)"
+                required
+                min="1" />
+              <span class="form-help"
+                >The match row ID. ELO changes will be reversed for both
+                players.</span
+              >
             </div>
           </div>
           <div class="modal__footer">
-            <button type="button" class="btn btn--secondary" id="remove-match-cancel">Cancel</button>
-            <button type="button" class="btn btn--danger" id="remove-match-confirm">Delete Match</button>
+            <button
+              type="button"
+              class="btn btn--secondary"
+              id="remove-match-cancel">
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn--danger"
+              id="remove-match-confirm">
+              Delete Match
+            </button>
           </div>
         </div>
       </div>
@@ -578,22 +663,42 @@
       <!-- Reset ELO Modal -->
       <div class="modal" id="reset-elo-modal">
         <div class="modal__backdrop" id="reset-elo-backdrop"></div>
-        <div class="modal__content" style="max-width: 480px;">
+        <div class="modal__content" style="max-width: 480px">
           <div class="modal__header">
             <h2 class="modal__title">Set ELO</h2>
             <button class="modal__close" id="reset-elo-close">&times;</button>
           </div>
           <div class="modal__body">
             <div class="form-group">
-              <label class="form-label form-label--required" for="admin-new-elo">New ELO Value</label>
-              <input type="number" class="form-input" id="admin-new-elo"
-                     value="1500" min="0" max="5000" required />
-              <span class="form-help">Enter the new ELO rating (0-5000). Default is 1500.</span>
+              <label class="form-label form-label--required" for="admin-new-elo"
+                >New ELO Value</label
+              >
+              <input
+                type="number"
+                class="form-input"
+                id="admin-new-elo"
+                value="1500"
+                min="0"
+                max="5000"
+                required />
+              <span class="form-help"
+                >Enter the new ELO rating (0-5000). Default is 1500.</span
+              >
             </div>
           </div>
           <div class="modal__footer">
-            <button type="button" class="btn btn--secondary" id="reset-elo-cancel">Cancel</button>
-            <button type="button" class="btn btn--primary" id="reset-elo-confirm">Set ELO</button>
+            <button
+              type="button"
+              class="btn btn--secondary"
+              id="reset-elo-cancel">
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn--primary"
+              id="reset-elo-confirm">
+              Set ELO
+            </button>
           </div>
         </div>
       </div>
@@ -601,21 +706,42 @@
       <!-- Rename Player Modal -->
       <div class="modal" id="rename-player-modal">
         <div class="modal__backdrop" id="rename-player-backdrop"></div>
-        <div class="modal__content" style="max-width: 480px;">
+        <div class="modal__content" style="max-width: 480px">
           <div class="modal__header">
             <h2 class="modal__title">Rename Player</h2>
-            <button class="modal__close" id="rename-player-close">&times;</button>
+            <button class="modal__close" id="rename-player-close">
+              &times;
+            </button>
           </div>
           <div class="modal__body">
             <div class="form-group">
-              <label class="form-label form-label--required" for="admin-new-name">New Display Name</label>
-              <input type="text" class="form-input" id="admin-new-name"
-                     placeholder="Enter new display name" required maxlength="100" />
+              <label
+                class="form-label form-label--required"
+                for="admin-new-name"
+                >New Display Name</label
+              >
+              <input
+                type="text"
+                class="form-input"
+                id="admin-new-name"
+                placeholder="Enter new display name"
+                required
+                maxlength="100" />
             </div>
           </div>
           <div class="modal__footer">
-            <button type="button" class="btn btn--secondary" id="rename-player-cancel">Cancel</button>
-            <button type="button" class="btn btn--primary" id="rename-player-confirm">Save Name</button>
+            <button
+              type="button"
+              class="btn btn--secondary"
+              id="rename-player-cancel">
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn--primary"
+              id="rename-player-confirm">
+              Save Name
+            </button>
           </div>
         </div>
       </div>
@@ -633,7 +759,7 @@
       let eventsData = null;
 
       // ELO source tracking
-      let currentEloSource = 'web'; // 'web' or 'bot'
+      let currentEloSource = 'bot'; // 'web' or 'bot' - default to bot where all matches are
       let hasWebMatches = false;
       let hasBotMatches = false;
 
@@ -916,20 +1042,23 @@
         try {
           currentPage = page;
 
-          // Use provided source or current source, default to "auto" for initial load
-          if (!eloSource) eloSource = currentEloSource || "auto";
+          // Use provided source or current source, default to "bot" (where all matches are)
+          if (!eloSource) eloSource = currentEloSource || "bot";
 
           let url = `/api/player/${playerId}?page=${page}&per_page=${perPage}&source=${eloSource}`;
           if (eventFilter && eventFilter !== "lifetime") {
             url += `&event=${eventFilter}`;
           }
+          console.log('Fetching player data from:', url);
           const res = await fetch(url);
+          console.log('Response status:', res.status);
           if (!res.ok) {
             document.getElementById("player-name").textContent =
               "Player not found";
             return;
           }
           const data = await res.json();
+          console.log('Player data received:', data);
 
           // Store data globally for filter functionality
           storedPlayerData = data;
@@ -1303,7 +1432,7 @@
           if (hasWebMatches || hasBotMatches) {
             toggle.style.display = 'inline-flex';
 
-            // Use the source that the API returned (it auto-detected based on available matches)
+            // Use the source from API (defaults to "bot" where all matches are)
             // Only override if user has a saved preference AND that source has matches
             const saved = localStorage.getItem('elo_source_preference');
             if (saved && (saved === 'web' || saved === 'bot')) {
@@ -1311,12 +1440,12 @@
               if ((saved === 'web' && hasWebMatches) || (saved === 'bot' && hasBotMatches)) {
                 currentEloSource = saved;
               } else {
-                // Saved preference has no matches, use what the API returned
-                currentEloSource = data.elo_source || 'bot';
+                // Saved preference has no matches, default to bot
+                currentEloSource = 'bot';
               }
             } else {
-              // No saved preference - use what the API returned
-              currentEloSource = data.elo_source || 'bot';
+              // No saved preference - default to bot (where all matches are)
+              currentEloSource = 'bot';
             }
 
             // Update toggle button states
@@ -1815,7 +1944,8 @@
       // Initial load - start at page 1
       // currentEloSource will be set during fetchPlayerData based on user type
       fetchPlayerData("lifetime", 1, currentEloSource);
-    </script>    {% include 'components/footer.html' %}
-<script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+    </script>
+    {% include 'components/footer.html' %}
+    <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
   </body>
 </html>

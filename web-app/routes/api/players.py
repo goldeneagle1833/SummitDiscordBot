@@ -106,11 +106,12 @@ def player_api(player_id):
     original_player_id = str(player_id)
 
     # Get source parameter (web, bot, or auto)
-    source = request.args.get("source", "auto")
+    # Default to "bot" for now since all matches are in match_records table
+    source = request.args.get("source", "bot")
 
     # Validate source parameter
-    if source not in ("web", "bot", "auto"):
-        return jsonify({"error": "Invalid source parameter. Must be 'web', 'bot', or 'auto'"}), 400
+    if source not in ("web", "bot"):
+        return jsonify({"error": "Invalid source parameter. Must be 'web' or 'bot'"}), 400
 
     # Normalize player_id for INTEGER-based tables (match_records, overall_standings)
     # Strip 'google_' prefix for these legacy tables
@@ -163,22 +164,6 @@ def player_api(player_id):
         has_bot_matches = bot_count > 0
     except sqlite3.OperationalError:
         pass
-
-    # Auto-detect source if set to "auto"
-    # Priority: use source with matches, prefer web for Google users if both exist
-    if source == "auto":
-        if has_web_matches and has_bot_matches:
-            # Both exist - prefer web for Google users, bot for Discord users
-            source = "web" if original_player_id.startswith("google_") else "bot"
-        elif has_web_matches:
-            # Only web matches exist
-            source = "web"
-        elif has_bot_matches:
-            # Only bot matches exist
-            source = "bot"
-        else:
-            # No matches in either table - default based on user type
-            source = "web" if original_player_id.startswith("google_") else "bot"
 
     # Determine which tables to query based on event filter and source
     include_current_matches = True  # From match_records or match_reports_web table

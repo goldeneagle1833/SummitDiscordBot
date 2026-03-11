@@ -657,6 +657,71 @@ class MatchRepository:
         conn.close()
         return count
 
+    # --- Web match (match_reports_web) admin operations ---
+
+    def get_web_match_full_details(self, match_id: str) -> dict | None:
+        """Get full details of a web match by match_id (e.g. 'web_42')."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """SELECT match_id, winner_id, losser_id, winner_display_name,
+                          losser_display_name, winner_elo_change, loser_elo_change, timestamp
+                   FROM match_reports_web WHERE match_id = ?""",
+                (match_id,),
+            )
+            row = cur.fetchone()
+        except sqlite3.OperationalError:
+            row = None
+        conn.close()
+        if not row:
+            return None
+        return {
+            "match_id": row[0],
+            "winner_id": row[1],
+            "loser_id": row[2],
+            "winner_name": row[3],
+            "loser_name": row[4],
+            "winner_elo_change": row[5] or 0,
+            "loser_elo_change": row[6] or 0,
+            "timestamp": row[7],
+        }
+
+    def delete_web_match(self, match_id: str) -> bool:
+        """Delete a web match record by match_id. Returns True if deleted."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute("DELETE FROM match_reports_web WHERE match_id = ?", (match_id,))
+            deleted = cur.rowcount > 0
+            conn.commit()
+        except sqlite3.OperationalError:
+            deleted = False
+        conn.close()
+        return deleted
+
+    def rename_player_in_web_matches(self, user_id: str, new_name: str) -> int:
+        """Update a player's display name in web match records. Returns rows updated."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        total = 0
+        try:
+            cur.execute(
+                "UPDATE match_reports_web SET winner_display_name = ? WHERE winner_id = ?",
+                (new_name, str(user_id)),
+            )
+            total += cur.rowcount
+            cur.execute(
+                "UPDATE match_reports_web SET losser_display_name = ? WHERE losser_id = ?",
+                (new_name, str(user_id)),
+            )
+            total += cur.rowcount
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Table may not exist
+        conn.close()
+        return total
+
     def get_source_player_stats(self, source: str) -> list[dict]:
         """Get all players and their win/loss for a given source."""
         conn = self._get_connection()

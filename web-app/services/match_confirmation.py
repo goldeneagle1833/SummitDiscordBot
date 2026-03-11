@@ -632,7 +632,6 @@ class MatchConfirmationService:
         from services.paper_elo import update_paper_elo
         from webapp_config import MATCH_RECORDS_DB_PATH
         import sqlite3
-        import uuid
 
         # Keep IDs as TEXT with google_ prefix intact - no normalization
         reporter_id = str(confirmation["submitter_discord_id"])
@@ -676,8 +675,27 @@ class MatchConfirmationService:
             except Exception as e:
                 logger.error(f"Failed to fetch loser deck data: {e}", exc_info=True)
 
-        # Generate unique match_id for web reports (UUID format)
-        match_id = f"web_{uuid.uuid4().hex[:12]}"
+        # Generate sequential match_id for web reports (web_1, web_2, ...)
+        try:
+            id_conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+            id_cur = id_conn.cursor()
+            # Find the highest numeric web_N ID (skip old UUID-based IDs)
+            id_cur.execute("SELECT match_id FROM match_reports_web")
+            max_num = 0
+            for (mid,) in id_cur.fetchall():
+                if mid and mid.startswith("web_"):
+                    suffix = mid.split("_", 1)[1]
+                    try:
+                        num = int(suffix)
+                        if num > max_num:
+                            max_num = num
+                    except (ValueError, IndexError):
+                        pass  # Skip UUID-based IDs like web_1e190f238831
+            next_num = max_num + 1
+            id_conn.close()
+        except Exception:
+            next_num = 1
+        match_id = f"web_{next_num}"
 
         # CRITICAL: Perform all operations in correct order to maintain consistency
         # 1. Update ELO ratings

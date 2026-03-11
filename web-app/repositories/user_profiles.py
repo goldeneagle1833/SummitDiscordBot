@@ -28,6 +28,7 @@ class UserProfileRepository:
                 user_id TEXT NOT NULL,
                 provider TEXT NOT NULL DEFAULT 'discord',
                 display_name TEXT NOT NULL,
+                custom_display_name TEXT,
                 avatar TEXT,
                 email TEXT,
                 email_verified INTEGER,
@@ -60,7 +61,8 @@ class UserProfileRepository:
             'given_name': 'TEXT',
             'family_name': 'TEXT',
             'locale': 'TEXT',
-            'raw_oauth_data': 'TEXT'
+            'raw_oauth_data': 'TEXT',
+            'custom_display_name': 'TEXT',
         }
 
         # Add missing columns
@@ -257,7 +259,7 @@ class UserProfileRepository:
             provider: Optional provider filter ('discord' or 'google')
 
         Returns:
-            dict: User profile with user_id, display_name, avatar, provider
+            dict: User profile with user_id, display_name, custom_display_name, avatar, provider
                   None if not found
         """
         conn = self._get_connection()
@@ -267,7 +269,7 @@ class UserProfileRepository:
         if provider:
             cur.execute(
                 """
-                SELECT user_id, display_name, avatar, provider
+                SELECT user_id, display_name, custom_display_name, avatar, provider
                 FROM user_profiles
                 WHERE user_id = ? AND provider = ?
                 LIMIT 1
@@ -278,7 +280,7 @@ class UserProfileRepository:
             # Search across all providers
             cur.execute(
                 """
-                SELECT user_id, display_name, avatar, provider
+                SELECT user_id, display_name, custom_display_name, avatar, provider
                 FROM user_profiles
                 WHERE user_id = ?
                 LIMIT 1
@@ -291,3 +293,53 @@ class UserProfileRepository:
 
         conn.close()
         return profile
+
+    def get_custom_display_name(self, user_id: str, provider: str = None) -> str | None:
+        """Get the user's custom display name, or None if not set."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        if provider:
+            cur.execute(
+                "SELECT custom_display_name FROM user_profiles WHERE user_id = ? AND provider = ?",
+                (str(user_id), provider),
+            )
+        else:
+            cur.execute(
+                "SELECT custom_display_name FROM user_profiles WHERE user_id = ?",
+                (str(user_id),),
+            )
+
+        row = cur.fetchone()
+        conn.close()
+        return row[0] if row and row[0] else None
+
+    def set_custom_display_name(self, user_id: str, provider: str, custom_name: str) -> bool:
+        """Set the user's custom display name (one-time only).
+
+        Returns True if set successfully, False if already set or user not found.
+        """
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        # Check if already set
+        cur.execute(
+            "SELECT custom_display_name FROM user_profiles WHERE user_id = ? AND provider = ?",
+            (str(user_id), provider),
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return False
+        if row[0]:
+            # Already has a custom display name
+            conn.close()
+            return False
+
+        cur.execute(
+            "UPDATE user_profiles SET custom_display_name = ? WHERE user_id = ? AND provider = ?",
+            (custom_name, str(user_id), provider),
+        )
+        conn.commit()
+        conn.close()
+        return True

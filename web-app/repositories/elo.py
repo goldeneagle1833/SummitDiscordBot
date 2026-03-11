@@ -390,3 +390,77 @@ class EloRepository:
         row = cur.fetchone()
         conn.close()
         return row[0] if row else None
+
+    def reset_paper_elo(self, user_id: str, default_elo: int = 1500) -> bool:
+        """Reset a player's paper ELO to default in paper_standings. Returns True if updated."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='paper_standings'")
+        if not cur.fetchone():
+            conn.close()
+            return False
+
+        cur.execute(
+            "UPDATE paper_standings SET paper_elo = ?, paper_event_elo = ? WHERE user_id = ?",
+            (default_elo, default_elo, str(user_id)),
+        )
+        updated = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return updated
+
+    def upsert_paper_elo(self, user_id: str, display_name: str, new_elo: int):
+        """Insert or update a user's paper ELO in paper_standings."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='paper_standings'")
+        if not cur.fetchone():
+            conn.close()
+            return
+
+        cur.execute(
+            """INSERT INTO paper_standings (user_id, user_display_name, paper_elo, paper_event_elo)
+               VALUES (?, ?, ?, 1500)
+               ON CONFLICT(user_id)
+               DO UPDATE SET paper_elo = ?, user_display_name = ?""",
+            (str(user_id), display_name, new_elo, new_elo, display_name),
+        )
+        conn.commit()
+        conn.close()
+
+    def delete_paper_player(self, user_id: str) -> bool:
+        """Delete a player from paper_standings. Returns True if deleted."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='paper_standings'")
+        if not cur.fetchone():
+            conn.close()
+            return False
+
+        cur.execute("DELETE FROM paper_standings WHERE user_id = ?", (str(user_id),))
+        deleted = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return deleted
+
+    def rename_paper_player(self, user_id: str, new_name: str) -> bool:
+        """Update a player's display name in paper_standings. Returns True if updated."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='paper_standings'")
+        if not cur.fetchone():
+            conn.close()
+            return False
+
+        cur.execute(
+            "UPDATE paper_standings SET user_display_name = ? WHERE user_id = ?",
+            (new_name, str(user_id)),
+        )
+        updated = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return updated

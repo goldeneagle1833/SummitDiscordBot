@@ -20,13 +20,14 @@ def _get_admin_info():
     return admin_id, admin_name
 
 
-@admin_bp.route("/admin/remove-player/<int:user_id>", methods=["DELETE"])
+@admin_bp.route("/admin/remove-player/<path:user_id>", methods=["DELETE"])
 @require_admin
 def remove_player(user_id):
-    """Remove a player from overall_standings (admin only)."""
+    """Remove a player from standings (admin only). Supports both numeric and google_ IDs."""
     service = AdminService()
     # Capture previous state before removal
     current_elo = service._elo_repo.get_user_elo(user_id)
+    paper_elo = service._elo_repo.get_user_paper_elo(str(user_id))
     result = service.remove_player(user_id)
     if result.get("success"):
         admin_id, admin_name = _get_admin_info()
@@ -34,27 +35,40 @@ def remove_player(user_id):
         audit.log_action(
             admin_id, admin_name, "web_remove_player",
             target_id=str(user_id),
-            previous_state={"elo": current_elo},
+            previous_state={"elo": current_elo, "paper_elo": paper_elo},
             new_state={"result": "player removed from standings"},
-            details=f"Removed player {user_id} from standings (ELO was {current_elo})",
+            details=f"Removed player {user_id} from standings (ELO was {current_elo}, paper was {paper_elo})",
         )
     status = 200 if result.get("success") else 404
     return jsonify(result), status
 
 
-@admin_bp.route("/admin/remove-match/<int:match_id>", methods=["DELETE"])
+@admin_bp.route("/admin/remove-match/<path:match_id>", methods=["DELETE"])
 @require_admin
 def remove_match(match_id):
-    """Remove a match record and reverse ELO changes (admin only)."""
+    """Remove a match record and reverse ELO changes (admin only).
+
+    Handles both bot matches (numeric IDs) and web matches (web_N IDs).
+    """
     service = AdminService()
+
     # Capture match details before removal
-    match = service._match_repo.get_match_full_details(match_id)
+    is_web = str(match_id).startswith("web_")
+    if is_web:
+        match = service._match_repo.get_web_match_full_details(match_id)
+    else:
+        try:
+            match = service._match_repo.get_match_full_details(int(match_id))
+        except (ValueError, TypeError):
+            match = None
+
     result = service.remove_match(match_id)
     if result.get("success") and match:
         admin_id, admin_name = _get_admin_info()
         audit = AuditRepository()
+        match_type = "web" if is_web else "bot"
         audit.log_action(
-            admin_id, admin_name, "web_remove_match",
+            admin_id, admin_name, f"web_remove_{match_type}_match",
             target_id=str(match_id),
             previous_state={
                 "winner_id": str(match.get("winner_id")),
@@ -62,48 +76,53 @@ def remove_match(match_id):
                 "loser_id": str(match.get("loser_id")),
                 "loser_name": match.get("loser_name"),
             },
-            new_state={"result": "match deleted, ELO reversed"},
-            details=f"Removed match #{match_id}: {match.get('winner_name')} vs {match.get('loser_name')}",
+            new_state={"result": f"{match_type} match deleted, ELO reversed"},
+            details=f"Removed {match_type} match {match_id}: {match.get('winner_name')} vs {match.get('loser_name')}",
         )
     status = 200 if result.get("success") else 404
     return jsonify(result), status
 
 
-@admin_bp.route("/admin/reset-elo/<int:user_id>", methods=["POST"])
+@admin_bp.route("/admin/reset-elo/<path:user_id>", methods=["POST"])
 @require_admin
 def reset_elo(user_id):
-    """Reset a player's ELO to a specified value (admin only)."""
+    """Reset a player's ELO to a specified value (admin only). Supports both numeric and google_ IDs."""
     data = request.get_json(silent=True)
     new_elo = 1500
-    if data and data.get("new_elo") is not None:
-        try:
-            new_elo = int(data["new_elo"])
-        except (ValueError, TypeError):
-            return jsonify({"success": False, "error": "new_elo must be a number"}), 400
-        if new_elo < 0 or new_elo > 5000:
-            return jsonify({"success": False, "error": "ELO must be between 0 and 5000"}), 400
+    source = "both"
+    if data:
+        if data.get("new_elo") is not None:
+            try:
+                new_elo = int(data["new_elo"])
+            except (ValueError, TypeError):
+                return jsonify({"success": False, "error": "new_elo must be a number"}), 400
+            if new_elo < 0 or new_elo > 5000:
+                return jsonify({"success": False, "error": "ELO must be between 0 and 5000"}), 400
+        if data.get("source") in ("bot", "paper", "both"):
+            source = data["source"]
 
     service = AdminService()
-    current_elo = service._elo_repo.get_user_elo(user_id)
-    result = service.reset_player_elo(user_id, new_elo)
+    current_bot_elo = service._elo_repo.get_user_elo(user_id)
+    current_paper_elo = service._elo_repo.get_user_paper_elo(str(user_id))
+    result = service.reset_player_elo(user_id, new_elo, source)
     if result.get("success"):
         admin_id, admin_name = _get_admin_info()
         audit = AuditRepository()
         audit.log_action(
             admin_id, admin_name, "web_reset_elo",
             target_id=str(user_id),
-            previous_state={"elo": current_elo},
-            new_state={"elo": new_elo},
-            details=f"Reset ELO for player {user_id}: {current_elo} -> {new_elo}",
+            previous_state={"elo": current_bot_elo, "paper_elo": current_paper_elo},
+            new_state={"elo": new_elo, "source": source},
+            details=f"Reset ELO for player {user_id} ({source}): bot {current_bot_elo} -> {new_elo}, paper {current_paper_elo} -> {new_elo}",
         )
     status = 200 if result.get("success") else 404
     return jsonify(result), status
 
 
-@admin_bp.route("/admin/rename-player/<int:user_id>", methods=["POST"])
+@admin_bp.route("/admin/rename-player/<path:user_id>", methods=["POST"])
 @require_admin
 def rename_player(user_id):
-    """Rename a player's display name (admin only)."""
+    """Rename a player's display name (admin only). Supports both numeric and google_ IDs."""
     data = request.get_json(silent=True)
     if not data or not data.get("new_name"):
         return jsonify({"success": False, "error": "new_name is required"}), 400

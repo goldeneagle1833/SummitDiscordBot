@@ -6,8 +6,11 @@ import sqlite3
 
 from flask import Blueprint, jsonify, session, request
 
+import re
+
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, VALID_API_KEYS
 from services.match import MatchService
+from repositories.user_profiles import UserProfileRepository
 from utils.auth import is_admin
 
 logger = logging.getLogger(__name__)
@@ -1057,6 +1060,18 @@ def player_api(player_id):
             }
         )
 
+    # Check if user has set a custom display name
+    has_custom_display_name = False
+    if is_owner:
+        try:
+            profile_repo = UserProfileRepository()
+            custom_name = profile_repo.get_custom_display_name(original_player_id)
+            if not custom_name and original_player_id != player_id_normalized:
+                custom_name = profile_repo.get_custom_display_name(player_id_normalized)
+            has_custom_display_name = custom_name is not None
+        except Exception:
+            pass
+
     return jsonify(
         {
             "id": player_id_normalized,
@@ -1083,6 +1098,7 @@ def player_api(player_id):
             "matches": match_history,
             "recorded_games": recorded_games if is_owner else [],
             "is_owner": is_owner,
+            "has_custom_display_name": has_custom_display_name,
             "pagination": {
                 "current_page": page,
                 "per_page": per_page,
@@ -1099,3 +1115,72 @@ def player_api(player_id):
             "online_elo": online_elo,
         }
     )
+
+
+@players_bp.route("/player/<player_id>/set-display-name", methods=["POST"])
+def set_display_name(player_id):
+    """Set a custom display name for the logged-in user (one-time only)."""
+    # Verify session auth - user must be logged in as this player
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+
+    auth_provider = session.get("auth_provider", "discord")
+
+    # Normalize IDs for comparison
+    original_player_id = str(player_id)
+    logged_in_id_str = str(logged_in_user_id)
+    player_id_normalized = original_player_id
+    if original_player_id.startswith("google_"):
+        player_id_normalized = original_player_id[7:]
+    logged_in_normalized = logged_in_id_str
+    if logged_in_id_str.startswith("google_"):
+        logged_in_normalized = logged_in_id_str[7:]
+
+    if logged_in_normalized != player_id_normalized:
+        return jsonify({"error": "You can only set your own display name"}), 403
+
+    data = request.get_json()
+    if not data or not data.get("display_name"):
+        return jsonify({"error": "Display name is required"}), 400
+
+    new_name = data["display_name"].strip()
+
+    # Validate length
+    if len(new_name) < 1 or len(new_name) > 32:
+        return jsonify({"error": "Display name must be 1-32 characters"}), 400
+
+    # Validate characters (alphanumeric, spaces, hyphens, underscores, periods)
+    if not re.match(r'^[\w\s\-\.]+$', new_name):
+        return jsonify({"error": "Display name can only contain letters, numbers, spaces, hyphens, underscores, and periods"}), 400
+
+    try:
+        profile_repo = UserProfileRepository()
+
+        # Try to set the custom display name (fails if already set)
+        profile_user_id = logged_in_id_str
+        success = profile_repo.set_custom_display_name(profile_user_id, auth_provider, new_name)
+        if not success:
+            return jsonify({"error": "Display name has already been set"}), 409
+
+        # Update display name in leaderboard standings and match records
+        from repositories.elo import EloRepository
+        from repositories.matches import MatchRepository
+
+        elo_repo = EloRepository()
+        match_repo = MatchRepository()
+
+        # Update bot standings (uses normalized ID without google_ prefix)
+        elo_repo.rename_player(player_id_normalized, new_name)
+        match_repo.rename_player_in_matches(player_id_normalized, new_name)
+
+        # Update paper standings (uses original ID with google_ prefix for Google users)
+        elo_repo.rename_paper_player(str(logged_in_id_str), new_name)
+        match_repo.rename_player_in_web_matches(str(logged_in_id_str), new_name)
+
+        logger.info(f"User {logged_in_id_str} set custom display name to '{new_name}'")
+        return jsonify({"success": True, "display_name": new_name})
+
+    except Exception as e:
+        logger.error(f"Error setting display name: {e}", exc_info=True)
+        return jsonify({"error": "Failed to set display name"}), 500

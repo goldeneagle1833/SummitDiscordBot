@@ -234,7 +234,37 @@ def stats_event(event_folder):
 @pages_bp.route("/player/<player_id>")
 def player_profile(player_id):
     """Player profile page."""
-    return render_template("pages/player.html", player_id=player_id)
+    needs_display_name = False
+    default_display_name = ""
+
+    # Check if logged-in user is viewing their own profile and needs to set a display name
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is not None:
+        logged_in_id_str = str(logged_in_user_id)
+        player_id_str = str(player_id)
+
+        # Normalize for comparison
+        logged_in_normalized = logged_in_id_str.removeprefix("google_")
+        player_normalized = player_id_str.removeprefix("google_")
+
+        if logged_in_normalized == player_normalized:
+            try:
+                from repositories.user_profiles import UserProfileRepository
+                profile_repo = UserProfileRepository()
+                auth_provider = session.get("auth_provider", "discord")
+                custom_name = profile_repo.get_custom_display_name(logged_in_id_str, auth_provider)
+                if not custom_name:
+                    needs_display_name = True
+                    default_display_name = session.get("username", "")
+            except Exception:
+                pass
+
+    return render_template(
+        "pages/player.html",
+        player_id=player_id,
+        needs_display_name=needs_display_name,
+        default_display_name=default_display_name,
+    )
 
 
 @pages_bp.route("/avatar/<avatar_name>")

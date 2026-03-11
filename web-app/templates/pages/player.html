@@ -156,6 +156,21 @@
         opacity: 0.5;
         cursor: not-allowed;
       }
+
+      /* Edit deck button */
+      .edit-deck-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        padding: 2px 4px;
+        opacity: 0.5;
+        transition: opacity 0.2s ease;
+        line-height: 1;
+      }
+      .edit-deck-btn:hover {
+        opacity: 1;
+      }
     </style>
   </head>
   <body>
@@ -612,6 +627,90 @@
         </div>
       </div>
 
+      <!-- Edit Deck Modal -->
+      <div class="modal" id="edit-deck-modal">
+        <div class="modal__backdrop" id="edit-deck-backdrop"></div>
+        <div class="modal__content" style="max-width: 480px">
+          <div class="modal__header">
+            <h2 class="modal__title">Edit Deck</h2>
+            <button
+              class="modal__close"
+              onclick="hideEditDeckModal()">
+              &times;
+            </button>
+          </div>
+          <div class="modal__body">
+            <p
+              id="edit-deck-match-info"
+              style="
+                margin-bottom: 12px;
+                opacity: 0.7;
+                font-size: 14px;
+              "></p>
+            <div class="form-group">
+              <label class="form-label" for="edit-deck-url"
+                >Deck URL</label
+              >
+              <input
+                type="url"
+                class="form-input"
+                id="edit-deck-url"
+                placeholder="https://curiosa.io/decks/..." />
+            </div>
+          </div>
+          <div class="modal__footer">
+            <button
+              type="button"
+              class="btn btn--secondary"
+              onclick="hideEditDeckModal()">
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn--primary"
+              id="edit-deck-submit"
+              onclick="submitEditDeck()">
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Display Name Modal -->
+      <div class="modal" id="display-name-modal">
+        <div class="modal__backdrop" id="display-name-backdrop"></div>
+        <div class="modal__content" style="max-width: 480px">
+          <div class="modal__header">
+            <h2 class="modal__title">Choose Your Display Name</h2>
+          </div>
+          <div class="modal__body">
+            <p style="color: var(--color-text-muted); margin-bottom: 1rem; font-size: 0.9rem;">
+              Choose the name that will appear on the leaderboard and your profile.
+              This can only be set once.
+            </p>
+            <div class="form-group">
+              <label class="form-label form-label--required" for="display-name-input">Display Name</label>
+              <input
+                type="text"
+                class="form-input"
+                id="display-name-input"
+                maxlength="32"
+                placeholder="Enter your display name"
+                required />
+              <span class="form-help">1-32 characters. Letters, numbers, spaces, hyphens, underscores, and periods.</span>
+            </div>
+          </div>
+          <div class="modal__footer">
+            <button type="button" class="btn btn--secondary" id="display-name-skip">
+              Use Default
+            </button>
+            <button type="button" class="btn btn--primary" id="display-name-submit">
+              Save Name
+            </button>
+          </div>
+        </div>
+      </div>
+
       {% if is_admin %}
       <!-- Remove Match Modal -->
       <div class="modal" id="remove-match-modal">
@@ -631,15 +730,14 @@
                 >Match ID</label
               >
               <input
-                type="number"
+                type="text"
                 class="form-input"
                 id="admin-match-id"
-                placeholder="Enter match ID (e.g. 1234)"
-                required
-                min="1" />
+                placeholder="Enter match ID (e.g. 1234 or web_5)"
+                required />
               <span class="form-help"
-                >The match row ID. ELO changes will be reversed for both
-                players.</span
+                >Bot match: row number (e.g. 1234). Web match: web_N (e.g. web_5).
+                ELO changes will be reversed for both players.</span
               >
             </div>
           </div>
@@ -684,6 +782,16 @@
               <span class="form-help"
                 >Enter the new ELO rating (0-5000). Default is 1500.</span
               >
+            </div>
+            <div class="form-group" style="margin-top: 0.75rem">
+              <label class="form-label" for="admin-elo-source"
+                >Apply To</label
+              >
+              <select class="form-input" id="admin-elo-source">
+                <option value="both">Both (Online + Paper)</option>
+                <option value="bot">Online Only</option>
+                <option value="paper">Paper Only</option>
+              </select>
             </div>
           </div>
           <div class="modal__footer">
@@ -750,6 +858,8 @@
 
     <script>
       const playerId = "{{ player_id }}";
+      const needsDisplayName = {{ 'true' if needs_display_name else 'false' }};
+      const defaultDisplayName = "{{ default_display_name|e }}";
       let eloChartInstance = null;
       let storedElo = null;
       let storedMatches = null;
@@ -762,6 +872,77 @@
       let currentEloSource = 'bot'; // 'web' or 'bot' - default to bot where all matches are
       let hasWebMatches = false;
       let hasBotMatches = false;
+
+      // Edit deck modal state
+      let editDeckMatchId = null;
+
+      function showEditDeckModal(matchId, currentUrl) {
+        editDeckMatchId = matchId;
+        document.getElementById("edit-deck-url").value = currentUrl || "";
+        document.getElementById("edit-deck-match-info").textContent = `Match #${matchId}`;
+        document.getElementById("edit-deck-modal").classList.add("modal--active");
+      }
+
+      function hideEditDeckModal() {
+        document.getElementById("edit-deck-modal").classList.remove("modal--active");
+        editDeckMatchId = null;
+        document.getElementById("edit-deck-url").value = "";
+      }
+
+      async function submitEditDeck() {
+        const deckUrl = document.getElementById("edit-deck-url").value.trim();
+        if (!deckUrl) {
+          alert("Please enter a deck URL.");
+          return;
+        }
+
+        const submitBtn = document.getElementById("edit-deck-submit");
+        const originalText = submitBtn.textContent;
+        submitBtn.textContent = "Saving...";
+        submitBtn.disabled = true;
+
+        try {
+          const response = await fetch("/api/update-match-deck", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              match_id: editDeckMatchId,
+              deck_url: deckUrl,
+              source: currentEloSource,
+            }),
+          });
+
+          const result = await response.json();
+          if (result.success) {
+            hideEditDeckModal();
+            // Refresh the player data to show updated deck info
+            const eventFilter = document.getElementById("event-filter")?.value || "lifetime";
+            const currentPage = storedPlayerData?.pagination?.current_page || 1;
+            fetchPlayerData(eventFilter, currentPage, currentEloSource);
+          } else {
+            alert(result.error || "Failed to update deck.");
+          }
+        } catch (error) {
+          console.error("Error updating deck:", error);
+          alert("An error occurred while updating the deck.");
+        } finally {
+          submitBtn.textContent = originalText;
+          submitBtn.disabled = false;
+        }
+      }
+
+      // Close edit deck modal on backdrop click or Escape
+      document.addEventListener("DOMContentLoaded", function () {
+        const editDeckBackdrop = document.getElementById("edit-deck-backdrop");
+        if (editDeckBackdrop) {
+          editDeckBackdrop.addEventListener("click", hideEditDeckModal);
+        }
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape" && document.getElementById("edit-deck-modal").classList.contains("modal--active")) {
+            hideEditDeckModal();
+          }
+        });
+      });
 
       // Fetch available events for the filter dropdown
       async function fetchEvents() {
@@ -1254,6 +1435,7 @@
           if (data.is_owner || isLocalServer) {
             thead.innerHTML = `
               <tr>
+                <th style="width: 30px;"></th>
                 <th>ID</th>
                 <th>Result</th>
                 <th>Your Avatar</th>
@@ -1287,7 +1469,7 @@
           const tbody = document.getElementById("match-history-tbody");
           tbody.innerHTML = "";
 
-          const colspanCount = data.is_owner || isLocalServer ? 13 : 7;
+          const colspanCount = data.is_owner || isLocalServer ? 14 : 7;
           if (data.matches.length === 0) {
             const noMatchesMsg = data.is_owner
               ? "No matches yet! Play games on Discord to start tracking your stats."
@@ -1347,7 +1529,13 @@
                 snapshotLink = `<a href="/deck-snapshot/${match.match_id}/${playerId}" class="snapshot-link" title="View deck snapshot">View</a>`;
               }
 
+              const escapedDeckUrl = (match.player_deck_url || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
               row.innerHTML = `
+                <td style="text-align: center; padding: 4px;">
+                  <button class="edit-deck-btn" onclick="showEditDeckModal('${match.match_id}', '${escapedDeckUrl}')" title="Edit deck">
+                    ✏️
+                  </button>
+                </td>
                 <td class="match-id">${matchId}</td>
                 <td class="${resultClass}">${match.result}</td>
                 <td>${avatarName}</td>
@@ -1469,6 +1657,11 @@
 
           // Update pagination controls
           updatePaginationControls(data.pagination);
+
+          // Show display name modal if user hasn't set one yet
+          if (needsDisplayName && data.is_owner && !data.has_custom_display_name) {
+            showDisplayNameModal();
+          }
         } catch (error) {
           document.getElementById("player-name").textContent =
             "Error loading player";
@@ -1876,13 +2069,15 @@
         if (!newElo) { alert("Please enter an ELO value."); return; }
         const eloNum = parseInt(newElo, 10);
         if (isNaN(eloNum) || eloNum < 0 || eloNum > 5000) { alert("ELO must be between 0 and 5000."); return; }
+        const eloSource = document.getElementById("admin-elo-source").value;
+        const sourceLabel = eloSource === "both" ? "online + paper" : eloSource === "bot" ? "online" : "paper";
         const playerName = document.getElementById("player-name").textContent;
-        if (!confirm(`Set "${playerName}"'s ELO to ${eloNum}?`)) return;
+        if (!confirm(`Set "${playerName}"'s ${sourceLabel} ELO to ${eloNum}?`)) return;
         try {
           const res = await fetch(`/api/admin/reset-elo/${playerId}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ new_elo: eloNum }),
+            body: JSON.stringify({ new_elo: eloNum, source: eloSource }),
           });
           const data = await res.json();
           if (data.success) {
@@ -1943,6 +2138,65 @@
         }
       });
       {% endif %}
+
+      // ===== Display Name Modal Logic =====
+
+      function showDisplayNameModal() {
+        const input = document.getElementById("display-name-input");
+        input.value = defaultDisplayName;
+        document.getElementById("display-name-modal").classList.add("modal--active");
+        // Focus the input after modal animation
+        setTimeout(() => input.select(), 100);
+      }
+
+      function hideDisplayNameModal() {
+        document.getElementById("display-name-modal").classList.remove("modal--active");
+      }
+
+      async function submitDisplayName(name) {
+        try {
+          const res = await fetch(`/api/player/${playerId}/set-display-name`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ display_name: name }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            hideDisplayNameModal();
+            // Reload page data to reflect the new name
+            const eventFilter = document.getElementById("elo-filter")?.value || "lifetime";
+            fetchPlayerData(eventFilter, currentPage, currentEloSource);
+          } else {
+            alert("Error: " + (data.error || "Failed to set display name"));
+          }
+        } catch (error) {
+          console.error("Display name submit error:", error);
+          alert("Failed to save display name. Please try again.");
+        }
+      }
+
+      // Display name modal event listeners
+      document.getElementById("display-name-submit")?.addEventListener("click", () => {
+        const name = document.getElementById("display-name-input").value.trim();
+        if (!name) {
+          alert("Please enter a display name.");
+          return;
+        }
+        submitDisplayName(name);
+      });
+
+      document.getElementById("display-name-skip")?.addEventListener("click", () => {
+        // Use the default OAuth name
+        submitDisplayName(defaultDisplayName);
+      });
+
+      // Allow Enter key to submit
+      document.getElementById("display-name-input")?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          document.getElementById("display-name-submit").click();
+        }
+      });
 
       // Initial load - start at page 1
       // currentEloSource will be set during fetchPlayerData based on user type

@@ -561,11 +561,7 @@ def player_api(player_id):
     except sqlite3.OperationalError:
         pass
 
-    # Player not found if no matches AND not in ELO database
-    if not rows and not solo_rows and not player_name_from_elo:
-        return jsonify({"error": "Player not found"}), 404
-
-    # Get player name - prefer from matches, fallback to ELO database
+    # Get player name - prefer from matches, fallback to ELO database, then session
     player_name = None
     if rows:
         first_match = rows[0]
@@ -574,6 +570,24 @@ def player_api(player_id):
         player_name = solo_rows[0][4]
     elif player_name_from_elo:
         player_name = player_name_from_elo
+    else:
+        # New user with no matches - get name from session if it's their profile
+        logged_in_user_id = session.get("user_id")
+        if logged_in_user_id is not None:
+            logged_in_id_str = str(logged_in_user_id)
+            if logged_in_id_str.startswith("google_"):
+                logged_in_id_str = logged_in_id_str[7:]
+            # If viewing their own profile, use session username
+            if logged_in_id_str == str(player_id_normalized):
+                player_name = session.get("username", "Unknown Player")
+
+    # Player not found if no matches AND not in ELO database AND not the logged-in user
+    if not rows and not solo_rows and not player_name_from_elo and not player_name:
+        return jsonify({"error": "Player not found"}), 404
+
+    # Default player name if still not set
+    if not player_name:
+        player_name = "Unknown Player"
 
     # Calculate stats
     total_matches = len(all_rows)

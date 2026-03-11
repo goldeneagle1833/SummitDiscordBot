@@ -356,24 +356,57 @@ class MatchConfirmationService:
             str: Display name or fallback 'User {numeric_id}'
         """
         user_id_str = str(user_id)
+
+        # Try to get profile directly by user_id (supports both Discord numeric IDs and google_ prefixed IDs)
+        try:
+            profile = self.user_repo.get_by_user_id(user_id_str)
+            if profile:
+                return profile["display_name"]
+        except Exception as e:
+            logger.debug(f"Could not get profile for user_id {user_id_str}: {e}")
+
+        # Fallback: normalize and try both Discord and Google formats
         numeric_id = self._normalize_user_id(user_id_str)
 
-        # Try Discord profile first (numeric ID)
-        discord_profiles = self.user_repo.search_by_display_name(
-            query=str(numeric_id), provider="discord", limit=1
-        )
-        if discord_profiles and discord_profiles[0]["user_id"] == str(numeric_id):
-            return discord_profiles[0]["display_name"]
+        # Try Discord profile (numeric ID)
+        try:
+            discord_profile = self.user_repo.get_by_user_id(str(numeric_id))
+            if discord_profile:
+                return discord_profile["display_name"]
+        except Exception:
+            pass
 
         # Try Google profile (google_ prefixed ID)
         google_user_id = f"google_{numeric_id}"
-        google_profiles = self.user_repo.search_by_display_name(
-            query=google_user_id, provider="google", limit=1
-        )
-        if google_profiles and google_profiles[0]["user_id"] == google_user_id:
-            return google_profiles[0]["display_name"]
+        try:
+            google_profile = self.user_repo.get_by_user_id(google_user_id)
+            if google_profile:
+                return google_profile["display_name"]
+        except Exception:
+            pass
 
-        # Fallback
+        # Final fallback: check ELO database (overall_standings)
+        # This handles users who have played matches but haven't logged into the web app
+        try:
+            from webapp_config import ELO_DB_PATH
+            import sqlite3
+
+            conn = sqlite3.connect(str(ELO_DB_PATH))
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT user_display_name FROM overall_standings WHERE user_id = ? LIMIT 1",
+                (numeric_id,)
+            )
+            row = cur.fetchone()
+            conn.close()
+
+            if row and row[0]:
+                logger.info(f"Found display name in ELO database for user {numeric_id}: {row[0]}")
+                return row[0]
+        except Exception as e:
+            logger.debug(f"Could not check ELO database for user {numeric_id}: {e}")
+
+        # Absolute fallback
         return f"User {numeric_id}"
 
     def create_match_report(
@@ -611,9 +644,34 @@ class MatchConfirmationService:
         winner_deck_url = confirmation.get("winner_deck_url") or "No URL provided"
         loser_deck_url = confirmation.get("loser_deck_url") or "No URL provided"
 
-        # Prepare JSON deck data (empty for web submissions - scraping requires bot dependencies)
+        # Fetch JSON deck data from Curiosa if URLs are provided
         json_deck_data_winner = "{}"
         json_deck_data_loser = "{}"
+
+        from services.curiosa import CuriosaService
+        curiosa = CuriosaService()
+
+        if winner_deck_url and winner_deck_url not in ("No URL provided", "Admin reported match"):
+            try:
+                logger.info(f"Fetching winner deck data from {winner_deck_url}")
+                json_deck_data_winner = curiosa.fetch_deck_data(winner_deck_url)
+                if json_deck_data_winner and json_deck_data_winner != "{}":
+                    logger.info(f"Successfully fetched winner deck data (length: {len(json_deck_data_winner)})")
+                else:
+                    logger.warning("Winner deck data fetch returned empty or invalid data")
+            except Exception as e:
+                logger.error(f"Failed to fetch winner deck data: {e}", exc_info=True)
+
+        if loser_deck_url and loser_deck_url not in ("No URL provided", "Admin reported match"):
+            try:
+                logger.info(f"Fetching loser deck data from {loser_deck_url}")
+                json_deck_data_loser = curiosa.fetch_deck_data(loser_deck_url)
+                if json_deck_data_loser and json_deck_data_loser != "{}":
+                    logger.info(f"Successfully fetched loser deck data (length: {len(json_deck_data_loser)})")
+                else:
+                    logger.warning("Loser deck data fetch returned empty or invalid data")
+            except Exception as e:
+                logger.error(f"Failed to fetch loser deck data: {e}", exc_info=True)
 
         # Generate unique match_id for web reports (UUID format)
         match_id = f"web_{uuid.uuid4().hex[:12]}"

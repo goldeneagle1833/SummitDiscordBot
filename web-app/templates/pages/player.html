@@ -1289,7 +1289,10 @@
 
           const colspanCount = data.is_owner || isLocalServer ? 13 : 7;
           if (data.matches.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="${colspanCount}" style="text-align: center; opacity: 0.6;">No matches recorded</td></tr>`;
+            const noMatchesMsg = data.is_owner
+              ? "No matches yet! Play games on Discord to start tracking your stats."
+              : "No matches recorded";
+            tbody.innerHTML = `<tr><td colspan="${colspanCount}" style="text-align: center; opacity: 0.6;">${noMatchesMsg}</td></tr>`;
             return;
           }
 

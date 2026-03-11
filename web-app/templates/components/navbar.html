@@ -102,6 +102,19 @@
   .navbar-platform-icon {
     font-size: 11px;
   }
+
+  /* Notification Bell States */
+  .notification-bell-icon {
+    transition: fill 0.2s ease;
+  }
+
+  .notification-bell-icon.has-notifications {
+    fill: #ef4444; /* Red */
+  }
+
+  .notification-bell-icon:not(.has-notifications) {
+    fill: white;
+  }
 </style>
 
 <!-- Navbar -->
@@ -142,8 +155,8 @@
       aria-label="Notifications"
       title="Match Confirmations">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-6 h-6">
-        <path d="M12 2C11.4477 2 11 2.44772 11 3V3.17071C8.83481 3.58254 7.17254 5.24481 6.76071 7.41L6 11.5L4.5 13V15H19.5V13L18 11.5L17.2393 7.41C16.8275 5.24481 15.1652 3.58254 13 3.17071V3C13 2.44772 12.5523 2 12 2Z" fill="white"/>
-        <path d="M10 17C10 18.1046 10.8954 19 12 19C13.1046 19 14 18.1046 14 17H10Z" fill="white"/>
+        <path class="notification-bell-icon" d="M12 2C11.4477 2 11 2.44772 11 3V3.17071C8.83481 3.58254 7.17254 5.24481 6.76071 7.41L6 11.5L4.5 13V15H19.5V13L18 11.5L17.2393 7.41C16.8275 5.24481 15.1652 3.58254 13 3.17071V3C13 2.44772 12.5523 2 12 2Z"/>
+        <path class="notification-bell-icon" d="M10 17C10 18.1046 10.8954 19 12 19C13.1046 19 14 18.1046 14 17H10Z"/>
       </svg>
       <!-- Badge -->
       <span
@@ -206,8 +219,8 @@
       aria-label="Notifications"
       title="Match Confirmations">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-6 h-6">
-        <path d="M12 2C11.4477 2 11 2.44772 11 3V3.17071C8.83481 3.58254 7.17254 5.24481 6.76071 7.41L6 11.5L4.5 13V15H19.5V13L18 11.5L17.2393 7.41C16.8275 5.24481 15.1652 3.58254 13 3.17071V3C13 2.44772 12.5523 2 12 2Z" fill="white"/>
-        <path d="M10 17C10 18.1046 10.8954 19 12 19C13.1046 19 14 18.1046 14 17H10Z" fill="white"/>
+        <path class="notification-bell-icon" d="M12 2C11.4477 2 11 2.44772 11 3V3.17071C8.83481 3.58254 7.17254 5.24481 6.76071 7.41L6 11.5L4.5 13V15H19.5V13L18 11.5L17.2393 7.41C16.8275 5.24481 15.1652 3.58254 13 3.17071V3C13 2.44772 12.5523 2 12 2Z"/>
+        <path class="notification-bell-icon" d="M10 17C10 18.1046 10.8954 19 12 19C13.1046 19 14 18.1046 14 17H10Z"/>
       </svg>
       <!-- Badge -->
       <span
@@ -453,6 +466,23 @@
         }
       });
 
+      // Update bell icon colors (both mobile and desktop)
+      const bellMobile = document.getElementById('notification-bell-mobile');
+      const bellDesktop = document.getElementById('notification-bell-desktop');
+
+      [bellMobile, bellDesktop].forEach(bell => {
+        if (bell) {
+          const bellIcons = bell.querySelectorAll('.notification-bell-icon');
+          bellIcons.forEach(icon => {
+            if (count > 0) {
+              icon.classList.add('has-notifications');
+            } else {
+              icon.classList.remove('has-notifications');
+            }
+          });
+        }
+      });
+
       // Update dropdown list
       updateDropdownList();
     }
@@ -571,8 +601,8 @@
 <!-- Notification Dropdown -->
 <div
   id="notification-dropdown"
-  class="hidden fixed top-16 right-4 md:right-8 w-80 max-h-96 bg-bg-elevated shadow-xl rounded-lg overflow-hidden z-[1001]"
-  style="border: 1px solid rgba(147, 51, 234, 0.3);">
+  class="hidden fixed top-16 w-80 max-h-96 bg-bg-elevated shadow-xl rounded-lg overflow-hidden z-[1001]"
+  style="right: 1rem; border: 1px solid rgba(147, 51, 234, 0.3);">
   <div class="bg-secondary/20 px-4 py-3 border-b border-white/10">
     <h3 class="text-sm font-bold text-white uppercase tracking-wide">Match Confirmations</h3>
   </div>

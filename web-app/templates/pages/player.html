@@ -115,6 +115,44 @@
       #pagination-controls {
         user-select: none;
       }
+
+      /* ELO Source Toggle */
+      .elo-source-toggle {
+        display: inline-flex;
+        background: var(--color-bg-secondary, #2a2a3e);
+        border: 1px solid var(--color-border, #3a3a4e);
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      .elo-source-btn {
+        padding: 6px 14px;
+        font-size: 13px;
+        border: none;
+        background: transparent;
+        color: var(--color-text-muted, #8b949e);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-weight: 500;
+        white-space: nowrap;
+      }
+
+      .elo-source-btn:hover:not(.active) {
+        background: var(--color-bg-hover, #3a3a4e);
+        color: var(--color-text, #ffffff);
+      }
+
+      .elo-source-btn.active {
+        background: var(--color-primary, #a855f7);
+        color: white;
+        box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+      }
+
+      .elo-source-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
     </style>
   </head>
   <body>
@@ -134,7 +172,19 @@
             gap: 1rem;
           ">
           <div>
-            <h1 class="player-name" id="player-name">Loading...</h1>
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem;">
+              <h1 class="player-name" id="player-name" style="margin: 0;">Loading...</h1>
+
+              <!-- ELO Source Toggle -->
+              <div class="elo-source-toggle" id="elo-source-toggle" style="display: none;">
+                <button class="elo-source-btn active" data-source="web" title="Web-reported matches">
+                  🌐 Web
+                </button>
+                <button class="elo-source-btn" data-source="bot" title="Bot-reported matches">
+                  🤖 Bot
+                </button>
+              </div>
+            </div>
             <div class="player-elo" id="player-elo"></div>
             <div class="player-rank" id="player-rank"></div>
           </div>
@@ -582,6 +632,11 @@
       let storedPlayerData = null;
       let eventsData = null;
 
+      // ELO source tracking
+      let currentEloSource = 'web'; // 'web' or 'bot'
+      let hasWebMatches = false;
+      let hasBotMatches = false;
+
       // Fetch available events for the filter dropdown
       async function fetchEvents() {
         try {
@@ -627,7 +682,8 @@
         }
 
         // Re-fetch all player data with the new filter (reset to page 1)
-        await fetchPlayerData(eventParam, 1);
+        // Pass current ELO source to maintain toggle state
+        await fetchPlayerData(eventParam, 1, currentEloSource);
       }
 
       function renderEloChart(
@@ -856,10 +912,14 @@
       let currentPage = 1;
       const perPage = 50;
 
-      async function fetchPlayerData(eventFilter = "lifetime", page = 1) {
+      async function fetchPlayerData(eventFilter = "lifetime", page = 1, eloSource = null) {
         try {
           currentPage = page;
-          let url = `/api/player/${playerId}?page=${page}&per_page=${perPage}`;
+
+          // Use provided source or current source
+          if (!eloSource) eloSource = currentEloSource;
+
+          let url = `/api/player/${playerId}?page=${page}&per_page=${perPage}&source=${eloSource}`;
           if (eventFilter && eventFilter !== "lifetime") {
             url += `&event=${eventFilter}`;
           }
@@ -1235,6 +1295,40 @@
               btn.addEventListener("click", deleteRecordedGame);
             });
 
+          // Initialize ELO source toggle
+          hasWebMatches = data.has_web_matches || false;
+          hasBotMatches = data.has_bot_matches || false;
+
+          const toggle = document.getElementById('elo-source-toggle');
+          if (hasWebMatches || hasBotMatches) {
+            toggle.style.display = 'inline-flex';
+
+            // Set default source based on saved preference or user type
+            const saved = localStorage.getItem('elo_source_preference');
+            if (saved && (saved === 'web' || saved === 'bot')) {
+              currentEloSource = saved;
+            } else {
+              // Default to web for Google users, bot for Discord users
+              // Auto-detect: google_ prefix = web, numeric = bot
+              currentEloSource = playerId.startsWith('google_') ? 'web' : 'bot';
+            }
+
+            // Update toggle button states
+            document.querySelectorAll('.elo-source-btn').forEach(btn => {
+              btn.classList.toggle('active', btn.dataset.source === currentEloSource);
+              // Disable button if no matches for that source
+              if (btn.dataset.source === 'web' && !hasWebMatches) {
+                btn.disabled = true;
+                btn.title = 'No web matches yet';
+              } else if (btn.dataset.source === 'bot' && !hasBotMatches) {
+                btn.disabled = true;
+                btn.title = 'No bot matches yet';
+              }
+            });
+          } else {
+            toggle.style.display = 'none';
+          }
+
           // Update pagination controls
           updatePaginationControls(data.pagination);
         } catch (error) {
@@ -1278,7 +1372,7 @@
       // Pagination button handlers
       function goToPage(page) {
         const eventFilter = document.getElementById("event-filter")?.value || "lifetime";
-        fetchPlayerData(eventFilter, page);
+        fetchPlayerData(eventFilter, page, currentEloSource);
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
 
@@ -1310,7 +1404,7 @@
 
           if (res.ok && data.success) {
             const eventFilter = document.getElementById("event-filter")?.value || "lifetime";
-            fetchPlayerData(eventFilter, currentPage); // Refresh the page data
+            fetchPlayerData(eventFilter, currentPage, currentEloSource); // Refresh the page data
             alert("Recorded game deleted successfully!");
           } else {
             alert("Error: " + (data.error || "Failed to delete game"));
@@ -1445,7 +1539,7 @@
           if (res.ok && data.success) {
             hideRecordGameModal();
             const eventFilter = document.getElementById("event-filter")?.value || "lifetime";
-            fetchPlayerData(eventFilter, currentPage); // Refresh the page data
+            fetchPlayerData(eventFilter, currentPage, currentEloSource); // Refresh the page data
             alert("Game recorded successfully!");
           } else {
             alert("Error: " + (data.error || "Failed to record game"));
@@ -1523,6 +1617,31 @@
         setupToggleButtons();
         setupCollapsibleSections();
         fetchEvents(); // Load events for filter dropdown
+
+        // ELO Source Toggle Handler
+        document.querySelectorAll('.elo-source-btn').forEach(btn => {
+          btn.addEventListener('click', async function() {
+            if (this.disabled) return;
+
+            const source = this.dataset.source;
+            if (source === currentEloSource) return; // Already selected
+
+            // Update UI
+            document.querySelectorAll('.elo-source-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+
+            // Update state
+            currentEloSource = source;
+            localStorage.setItem('elo_source_preference', source);
+
+            // Refetch data with new source
+            const eventFilter = document.getElementById("elo-filter")?.value || "lifetime";
+            await fetchPlayerData(eventFilter, 1, source);
+
+            // Scroll to top smoothly
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          });
+        });
 
         // Event listeners
         document
@@ -1688,7 +1807,8 @@
       {% endif %}
 
       // Initial load - start at page 1
-      fetchPlayerData("lifetime", 1);
+      // currentEloSource will be set during fetchPlayerData based on user type
+      fetchPlayerData("lifetime", 1, currentEloSource);
     </script>    {% include 'components/footer.html' %}
 <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
   </body>

@@ -100,20 +100,33 @@ def player_api(player_id):
 
     Query parameters:
     - event: Filter by event. Values: 'lifetime' (default), 'current', or event_id (int)
+    - source: ELO source filter. Values: 'web', 'bot', or 'auto' (default)
     """
-    # Normalize player_id (strip 'google_' prefix for Google OAuth users)
-    # Both Discord users ("123456789") and Google users ("google_123456789")
-    # are stored in the database with numeric IDs only
-    original_player_id = player_id
-    player_id_str = str(player_id)
-    if player_id_str.startswith("google_"):
-        player_id = player_id_str[7:]  # Remove 'google_' prefix
+    # Store original player_id (with google_ prefix if present)
+    original_player_id = str(player_id)
+
+    # Get source parameter (web, bot, or auto)
+    source = request.args.get("source", "auto")
+
+    # Auto-detect source based on player ID format
+    if source == "auto":
+        source = "web" if original_player_id.startswith("google_") else "bot"
+
+    # Validate source parameter
+    if source not in ("web", "bot"):
+        return jsonify({"error": "Invalid source parameter. Must be 'web', 'bot', or 'auto'"}), 400
+
+    # Normalize player_id for INTEGER-based tables (match_records, overall_standings)
+    # Strip 'google_' prefix for these legacy tables
+    player_id_normalized = original_player_id
+    if original_player_id.startswith("google_"):
+        player_id_normalized = original_player_id[7:]  # Remove 'google_' prefix
 
     # Keep player_id as string to avoid overflow with large Google OAuth IDs
     # SQLite's type affinity will handle string-to-integer comparison automatically
     # Validate that it's numeric (but don't convert to int)
     try:
-        int(player_id)  # Validate numeric format
+        int(player_id_normalized)  # Validate numeric format
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid player ID"}), 400
 
@@ -122,13 +135,46 @@ def player_api(player_id):
     conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
     cur = conn.cursor()
 
-    # Determine which tables to query based on event filter
-    include_current_matches = True  # From match_records table
+    # Count matches in both tables to determine available sources
+    has_web_matches = False
+    has_bot_matches = False
+
+    # Check for web matches (match_reports_web table with TEXT IDs)
+    try:
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM match_reports_web
+            WHERE winner_id = ? OR losser_id = ?
+            """,
+            (original_player_id, original_player_id),
+        )
+        web_count = cur.fetchone()[0]
+        has_web_matches = web_count > 0
+    except sqlite3.OperationalError:
+        # Table may not exist yet
+        pass
+
+    # Check for bot matches (match_records table with INTEGER IDs)
+    try:
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM match_records
+            WHERE winner_id = ? OR losser_id = ?
+            """,
+            (player_id_normalized, player_id_normalized),
+        )
+        bot_count = cur.fetchone()[0]
+        has_bot_matches = bot_count > 0
+    except sqlite3.OperationalError:
+        pass
+
+    # Determine which tables to query based on event filter and source
+    include_current_matches = True  # From match_records or match_reports_web table
     include_archived_matches = True  # From match_records_archive table
     archive_event_id = None  # Specific event to filter in archive
 
     if event_filter == "current":
-        # Only current event matches (from match_records table)
+        # Only current event matches (from match_records or match_reports_web table)
         include_archived_matches = False
     elif event_filter != "lifetime":
         # Specific past event - only from archive with that event_id
@@ -140,8 +186,53 @@ def player_api(player_id):
 
     rows = []
 
+    # Choose player ID and table based on source
+    if source == "web":
+        # Use original_player_id (with google_ prefix) for TEXT-based match_reports_web table
+        query_player_id = original_player_id
+    else:  # bot
+        # Use normalized player_id (without google_ prefix) for INTEGER-based match_records table
+        query_player_id = player_id_normalized
+
     # Query current matches if needed
-    if include_current_matches:
+    if include_current_matches and source == "web":
+        # Query match_reports_web table (web-based matches)
+        try:
+            cur.execute(
+                """
+                SELECT
+                    CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                    first_player,
+                    json_deck_data,
+                    match_time,
+                    winner_display_name,
+                    losser_display_name,
+                    timestamp,
+                    winner_elo_change,
+                    loser_elo_change,
+                    curiosa_url,
+                    winner_id,
+                    losser_id,
+                    match_id,
+                    json_deck_data_winner,
+                    json_deck_data_loser,
+                    curiosa_url_winner,
+                    curiosa_url_loser,
+                    winner_went_first,
+                    loser_went_first,
+                    match_type
+                FROM match_reports_web
+                WHERE winner_id = ? OR losser_id = ?
+                ORDER BY timestamp DESC
+            """,
+                (query_player_id, query_player_id, query_player_id),
+            )
+            rows = cur.fetchall()
+        except sqlite3.OperationalError:
+            # Table may not exist yet
+            rows = []
+    elif include_current_matches:
+        # Query match_records table (bot-based matches)
         # Try new schema first, fallback to old
         try:
             cur.execute(
@@ -171,7 +262,7 @@ def player_api(player_id):
                 WHERE winner_id = ? OR losser_id = ?
                 ORDER BY timestamp DESC
             """,
-                (player_id, player_id, player_id),
+                (query_player_id, query_player_id, query_player_id),
             )
             rows = cur.fetchall()
         except sqlite3.OperationalError:
@@ -204,7 +295,7 @@ def player_api(player_id):
                     WHERE winner_id = ? OR losser_id = ?
                     ORDER BY timestamp DESC
                 """,
-                    (player_id, player_id, player_id),
+                    (query_player_id, query_player_id, query_player_id),
                 )
                 rows = cur.fetchall()
             except sqlite3.OperationalError:
@@ -236,21 +327,22 @@ def player_api(player_id):
                     WHERE winner_id = ? OR losser_id = ?
                     ORDER BY timestamp DESC
                 """,
-                    (player_id, player_id, player_id),
+                    (query_player_id, query_player_id, query_player_id),
                 )
                 rows = cur.fetchall()
             rows = cur.fetchall()
 
     # Also check archive table for historical matches (if needed based on filter)
+    # Note: Archive is only available for bot matches (match_records_archive)
     archived_rows = []
-    if include_archived_matches:
+    if include_archived_matches and source == "bot":
         # Build the WHERE clause based on event filter
         if archive_event_id is not None:
             event_filter_clause = " AND event_id = ?"
-            query_params = (player_id, player_id, player_id, archive_event_id)
+            query_params = (query_player_id, query_player_id, query_player_id, archive_event_id)
         else:
             event_filter_clause = ""
-            query_params = (player_id, player_id, player_id)
+            query_params = (query_player_id, query_player_id, query_player_id)
 
         try:
             cur.execute(
@@ -324,43 +416,44 @@ def player_api(player_id):
     # Combine current and archived matches
     rows = list(rows) + list(archived_rows)
 
-    # Get solo match reports
+    # Get solo match reports (bot-only)
     solo_rows = []
-    try:
-        solo_conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
-        solo_cur = solo_conn.cursor()
+    if source == "bot":
+        try:
+            solo_conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+            solo_cur = solo_conn.cursor()
 
-        query = """
-            SELECT
-                is_winner,
-                first_player,
-                json_deck_data,
-                match_time,
-                CASE WHEN is_winner THEN reporter_name ELSE opponent_name END,
-                CASE WHEN is_winner THEN opponent_name ELSE reporter_name END,
-                report_date,
-                0,
-                0,
-                curiosa_link,
-                CASE WHEN is_winner THEN reporter_id ELSE 0 END,
-                CASE WHEN is_winner THEN 0 ELSE reporter_id END,
-                rowid,
-                CASE WHEN is_winner THEN json_deck_data ELSE NULL END,
-                CASE WHEN is_winner THEN NULL ELSE json_deck_data END,
-                CASE WHEN is_winner THEN curiosa_link ELSE NULL END,
-                CASE WHEN is_winner THEN NULL ELSE curiosa_link END,
-                NULL as winner_went_first,
-                NULL as loser_went_first
-            FROM solo_match_reports
-            WHERE reporter_id = ?
-            ORDER BY report_date DESC
-        """
-        solo_cur.execute(query, (player_id,))
-        solo_rows = solo_cur.fetchall()
+            query = """
+                SELECT
+                    is_winner,
+                    first_player,
+                    json_deck_data,
+                    match_time,
+                    CASE WHEN is_winner THEN reporter_name ELSE opponent_name END,
+                    CASE WHEN is_winner THEN opponent_name ELSE reporter_name END,
+                    report_date,
+                    0,
+                    0,
+                    curiosa_link,
+                    CASE WHEN is_winner THEN reporter_id ELSE 0 END,
+                    CASE WHEN is_winner THEN 0 ELSE reporter_id END,
+                    rowid,
+                    CASE WHEN is_winner THEN json_deck_data ELSE NULL END,
+                    CASE WHEN is_winner THEN NULL ELSE json_deck_data END,
+                    CASE WHEN is_winner THEN curiosa_link ELSE NULL END,
+                    CASE WHEN is_winner THEN NULL ELSE curiosa_link END,
+                    NULL as winner_went_first,
+                    NULL as loser_went_first
+                FROM solo_match_reports
+                WHERE reporter_id = ?
+                ORDER BY report_date DESC
+            """
+            solo_cur.execute(query, (query_player_id,))
+            solo_rows = solo_cur.fetchall()
 
-        solo_conn.close()
-    except Exception as e:
-        logger.warning(f"Could not fetch solo_match_reports: {e}")
+            solo_conn.close()
+        except Exception as e:
+            logger.warning(f"Could not fetch solo_match_reports: {e}")
 
     all_rows = rows + solo_rows
 
@@ -371,23 +464,66 @@ def player_api(player_id):
     player_name_from_elo = None
     displayed_elo = 1500  # The ELO to display based on filter
     displayed_rank = 0
+    paper_elo = 1500  # Always fetch both for toggle
+    online_elo = 1500
 
     try:
         elo_conn = sqlite3.connect(str(ELO_DB_PATH))
         elo_cur = elo_conn.cursor()
-        elo_cur.execute(
-            "SELECT elo, user_display_name, event_elo FROM overall_standings WHERE user_id = ?",
-            (player_id,),
-        )
-        elo_row = elo_cur.fetchone()
-        if elo_row:
-            player_elo = elo_row[0]
-            player_name_from_elo = elo_row[1]
-            event_elo = elo_row[2] if elo_row[2] else 1500
+
+        # Choose ELO columns based on source
+        if source == "web":
+            # Query paper ELO columns (web-based matches)
+            try:
+                elo_cur.execute(
+                    "SELECT paper_elo, user_display_name, paper_event_elo, elo FROM overall_standings WHERE user_id = ?",
+                    (player_id_normalized,),
+                )
+                elo_row = elo_cur.fetchone()
+                if elo_row:
+                    player_elo = elo_row[0] if elo_row[0] else 1500
+                    player_name_from_elo = elo_row[1]
+                    event_elo = elo_row[2] if elo_row[2] else 1500
+                    paper_elo = player_elo
+                    online_elo = elo_row[3] if elo_row[3] else 1500
+                    # Calculate rank based on paper_elo
+                    elo_cur.execute(
+                        "SELECT COUNT(*) FROM overall_standings WHERE paper_elo > ?", (player_elo,)
+                    )
+                    rank = elo_cur.fetchone()[0] + 1
+            except sqlite3.OperationalError:
+                # paper_elo column may not exist, fall back to elo
+                elo_cur.execute(
+                    "SELECT elo, user_display_name, event_elo FROM overall_standings WHERE user_id = ?",
+                    (player_id_normalized,),
+                )
+                elo_row = elo_cur.fetchone()
+                if elo_row:
+                    player_elo = elo_row[0]
+                    player_name_from_elo = elo_row[1]
+                    event_elo = elo_row[2] if elo_row[2] else 1500
+                    online_elo = player_elo
+                    elo_cur.execute(
+                        "SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (player_elo,)
+                    )
+                    rank = elo_cur.fetchone()[0] + 1
+        else:  # bot
+            # Query legacy ELO columns (bot-based matches)
             elo_cur.execute(
-                "SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (player_elo,)
+                "SELECT elo, user_display_name, event_elo, paper_elo FROM overall_standings WHERE user_id = ?",
+                (player_id_normalized,),
             )
-            rank = elo_cur.fetchone()[0] + 1
+            elo_row = elo_cur.fetchone()
+            if elo_row:
+                player_elo = elo_row[0]
+                player_name_from_elo = elo_row[1]
+                event_elo = elo_row[2] if elo_row[2] else 1500
+                online_elo = player_elo
+                paper_elo = elo_row[3] if len(elo_row) > 3 and elo_row[3] else 1500
+                elo_cur.execute(
+                    "SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (player_elo,)
+                )
+                rank = elo_cur.fetchone()[0] + 1
 
         # Determine displayed ELO/rank based on filter
         if event_filter == "lifetime":
@@ -397,19 +533,25 @@ def player_api(player_id):
             displayed_elo = event_elo
             # For current event, calculate rank among event participants
             try:
-                elo_cur.execute(
-                    "SELECT COUNT(*) FROM overall_standings WHERE event_elo > ? AND event_elo != 1500",
-                    (event_elo,),
-                )
+                if source == "web":
+                    elo_cur.execute(
+                        "SELECT COUNT(*) FROM overall_standings WHERE paper_event_elo > ? AND paper_event_elo != 1500",
+                        (event_elo,),
+                    )
+                else:
+                    elo_cur.execute(
+                        "SELECT COUNT(*) FROM overall_standings WHERE event_elo > ? AND event_elo != 1500",
+                        (event_elo,),
+                    )
                 displayed_rank = elo_cur.fetchone()[0] + 1
             except sqlite3.OperationalError:
                 displayed_rank = 0
         elif archive_event_id is not None:
-            # Get ELO from archived event standings
+            # Get ELO from archived event standings (bot-only for now)
             try:
                 elo_cur.execute(
                     "SELECT final_event_elo, final_rank FROM event_standings_archive WHERE event_id = ? AND user_id = ?",
-                    (archive_event_id, player_id),
+                    (archive_event_id, player_id_normalized),
                 )
                 archive_row = elo_cur.fetchone()
                 if archive_row:
@@ -671,7 +813,7 @@ def player_api(player_id):
         if logged_in_id_str.startswith("google_"):
             logged_in_id_str = logged_in_id_str[7:]  # Remove 'google_' prefix
         # Compare as strings to avoid overflow with large IDs
-        is_owner = logged_in_id_str == str(player_id)
+        is_owner = logged_in_id_str == str(player_id_normalized)
     else:
         is_owner = False
 
@@ -885,7 +1027,7 @@ def player_api(player_id):
 
     return jsonify(
         {
-            "id": player_id,
+            "id": player_id_normalized,
             "name": player_name,
             "elo": player_elo,
             "event_elo": event_elo,
@@ -917,5 +1059,11 @@ def player_api(player_id):
                 "has_previous": page > 1,
                 "has_next": page < total_pages,
             },
+            # Dual ELO system fields
+            "elo_source": source,
+            "has_web_matches": has_web_matches,
+            "has_bot_matches": has_bot_matches,
+            "paper_elo": paper_elo,
+            "online_elo": online_elo,
         }
     )

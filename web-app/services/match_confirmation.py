@@ -205,7 +205,7 @@ class MatchConfirmationService:
         then searches all user profiles by display name.
 
         Args:
-            current_user_id: Discord user ID of current user
+            current_user_id: Discord user ID of current user (can have google_ prefix)
             query: Search query string
             limit: Maximum number of results
 
@@ -221,15 +221,14 @@ class MatchConfirmationService:
                 }
         """
         # Tier 1: Get recent opponents from match history
-        # Works for both Discord and Google users (after normalizing to numeric ID)
+        # Keep user_id as-is (with google_ prefix if present)
         recent_opponents = []
         try:
-            numeric_user_id = self._normalize_user_id(current_user_id)
             recent_opponents = self.repo.get_recent_lfg_opponents(
-                user_id=numeric_user_id, limit=limit
+                user_id=str(current_user_id), limit=limit
             )
-        except (ValueError, Exception) as e:
-            # User ID format is invalid or database error, skip recent opponents lookup
+        except Exception as e:
+            # Database error, skip recent opponents lookup
             logger.debug(
                 f"Skipping recent opponents lookup for user_id {current_user_id}: {e}"
             )
@@ -268,19 +267,12 @@ class MatchConfirmationService:
             if user_id in seen_ids:
                 continue
 
-            # Skip users without valid numeric IDs (after stripping google_ prefix)
-            try:
-                numeric_id = str(self._normalize_user_id(user_id))
-            except ValueError:
-                logger.debug(f"Skipping user with invalid ID format: {user_id}")
-                continue
-
             seen_ids.add(user_id)
 
             # Check if this is a recent opponent
-            # Match by numeric ID (works for both Discord "123" and Google "google_123")
-            if numeric_id in recent_map:
-                recent_info = recent_map[numeric_id]
+            # Match by user_id directly (both are kept as-is with google_ prefix if present)
+            if user_id in recent_map:
+                recent_info = recent_map[user_id]
                 results.append({
                     "user_id": user_id,
                     "display_name": profile["display_name"],
@@ -399,8 +391,8 @@ class MatchConfirmationService:
         Create a new match report with validation and duplicate detection.
 
         Args:
-            submitter_id: User ID of submitter (Discord ID or 'google_12345')
-            opponent_id: User ID of opponent (Discord ID or 'google_12345')
+            submitter_id: User ID of submitter (Discord ID or 'google_12345' - keeps prefix)
+            opponent_id: User ID of opponent (Discord ID or 'google_12345' - keeps prefix)
             result: Match result ('won' or 'lost')
             went_first: Turn order ('submitter' or 'opponent')
             submitter_deck_url: Optional deck URL for submitter
@@ -421,17 +413,15 @@ class MatchConfirmationService:
             ValueError: If validation fails
             RuntimeError: If duplicate pending report or database error
         """
-        # Step 0: Normalize user IDs (strip 'google_' prefix if present)
-        try:
-            submitter_numeric_id = self._normalize_user_id(submitter_id)
-            opponent_numeric_id = self._normalize_user_id(opponent_id)
-        except ValueError as e:
-            raise ValueError(f"Invalid user ID: {e}")
+        # Step 0: Keep user IDs as-is (do NOT strip google_ prefix)
+        # Convert to string to ensure consistent handling
+        submitter_id_str = str(submitter_id)
+        opponent_id_str = str(opponent_id)
 
         # Step 1: Validate all inputs
         validation = self.validate_match_report_input(
-            submitter_id=str(submitter_numeric_id),
-            opponent_id=str(opponent_numeric_id),
+            submitter_id=submitter_id_str,
+            opponent_id=opponent_id_str,
             result=result,
             went_first=went_first,
             submitter_deck_url=submitter_deck_url,
@@ -446,8 +436,8 @@ class MatchConfirmationService:
 
         # Step 2: Check for duplicate pending reports (within 1 hour)
         has_duplicate = self.repo.check_duplicate_pending(
-            submitter_id=submitter_numeric_id,
-            opponent_id=opponent_numeric_id
+            submitter_id=submitter_id_str,
+            opponent_id=opponent_id_str
         )
 
         if has_duplicate:
@@ -456,16 +446,16 @@ class MatchConfirmationService:
                 "Please wait for confirmation or expiration."
             )
 
-        # Step 3: Calculate winner and loser IDs
+        # Step 3: Calculate winner and loser IDs (keep google_ prefix intact)
         winner_loser = self.calculate_winner_loser(
-            submitter_id=str(submitter_numeric_id),
-            opponent_id=str(opponent_numeric_id),
+            submitter_id=submitter_id_str,
+            opponent_id=opponent_id_str,
             result=result
         )
 
-        # Keep as strings to avoid overflow with large Google OAuth IDs
-        winner_numeric_id = winner_loser["winner_id"]
-        loser_numeric_id = winner_loser["loser_id"]
+        # Keep as strings with google_ prefix intact
+        winner_id = winner_loser["winner_id"]
+        loser_id = winner_loser["loser_id"]
 
         # Step 4: Map deck URLs to winner/loser
         if result == "won":
@@ -479,13 +469,13 @@ class MatchConfirmationService:
             final_life_winner = final_life_opponent
             final_life_loser = final_life_submitter
 
-        # Step 5: Create confirmation in database
+        # Step 5: Create confirmation in database (IDs kept as-is with google_ prefix)
         import time
         confirmation_id = self.repo.create_confirmation(
-            submitter_id=submitter_numeric_id,
-            opponent_id=opponent_numeric_id,
-            winner_id=winner_numeric_id,
-            loser_id=loser_numeric_id,
+            submitter_id=submitter_id_str,
+            opponent_id=opponent_id_str,
+            winner_id=winner_id,
+            loser_id=loser_id,
             final_life_winner=final_life_winner,
             final_life_loser=final_life_loser,
             went_first=went_first,
@@ -496,12 +486,11 @@ class MatchConfirmationService:
         expires_at = int(time.time()) + (48 * 60 * 60)
 
         # Step 6: Get opponent display name for response
-        # Try to get from user_profiles (check both Discord and Google)
-        opponent_display_name = self._get_display_name_for_user(opponent_id)
+        opponent_display_name = self._get_display_name_for_user(opponent_id_str)
 
         logger.info(
-            f"Match report created: id={confirmation_id}, submitter={submitter_id} (normalized: {submitter_numeric_id}), "
-            f"opponent={opponent_id} (normalized: {opponent_numeric_id}), result={result}, went_first={went_first}"
+            f"Match report created: id={confirmation_id}, submitter={submitter_id_str}, "
+            f"opponent={opponent_id_str}, result={result}, went_first={went_first}"
         )
 
         return {
@@ -509,7 +498,7 @@ class MatchConfirmationService:
             "confirmation_id": confirmation_id,
             "expires_at": expires_at,
             "opponent": {
-                "user_id": opponent_id,
+                "user_id": opponent_id_str,
                 "display_name": opponent_display_name
             },
             "message": f"Match report submitted. Awaiting confirmation from {opponent_display_name}."
@@ -526,19 +515,19 @@ class MatchConfirmationService:
         2. Verifies the user is the opponent on the confirmation
         3. Saves the opponent's deck URL (if provided)
         4. Marks the confirmation as 'confirmed'
-        5. Creates a match record in the database (TODO)
-        6. Updates ELO ratings for both players (TODO)
+        5. Creates a match record in match_reports_web table
+        6. Updates ELO ratings for both players
 
         Args:
             confirmation_id: ID of confirmation to confirm
-            opponent_user_id: Discord user ID of user confirming (must be the opponent)
+            opponent_user_id: Discord user ID of user confirming (must be the opponent, can have "google_" prefix)
             opponent_deck_url: Optional Curiosa.io deck URL for opponent's deck
 
         Returns:
             dict: {
                 "success": True,
                 "message": str,
-                "match_id": int,
+                "match_id": str,
                 "elo_changes": {
                     "winner": {"old": int, "new": int, "change": int},
                     "loser": {"old": int, "new": int, "change": int}
@@ -570,9 +559,8 @@ class MatchConfirmationService:
             )
 
         # Verify user is the opponent
-        # Normalize both IDs for comparison (handles both Discord and Google users)
-        opponent_numeric_id = self._normalize_user_id(opponent_user_id)
-        if str(confirmation["opponent_discord_id"]) != str(opponent_numeric_id):
+        # Compare user IDs directly as strings (supports both Discord numeric and google_ prefixed IDs)
+        if str(confirmation["opponent_discord_id"]) != str(opponent_user_id):
             raise PermissionError(
                 "You are not authorized to confirm this match report"
             )
@@ -585,8 +573,8 @@ class MatchConfirmationService:
             if not re.match(deck_url_pattern, opponent_deck_url):
                 raise ValueError("Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id] (lowercase letters and numbers only)")
 
-            # Determine if opponent is winner or loser (use normalized ID for comparison)
-            is_winner = str(confirmation["winner_discord_id"]) == str(opponent_numeric_id)
+            # Determine if opponent is winner or loser (direct string comparison - no normalization)
+            is_winner = str(confirmation["winner_discord_id"]) == str(opponent_user_id)
             deck_field = "winner_deck_url" if is_winner else "loser_deck_url"
 
             # Update the deck URL in the database
@@ -606,16 +594,18 @@ class MatchConfirmationService:
 
         # Get player IDs and display names FIRST (before any DB operations)
         from services.paper_elo import update_paper_elo
-        from repositories.matches import MatchRepository
         from webapp_config import MATCH_RECORDS_DB_PATH
         import sqlite3
+        import uuid
 
-        winner_id = confirmation["winner_discord_id"]
-        loser_id = confirmation["loser_discord_id"]
+        # Keep IDs as TEXT with google_ prefix intact - no normalization
+        reporter_id = str(confirmation["submitter_discord_id"])
+        winner_id = str(confirmation["winner_discord_id"])
+        loser_id = str(confirmation["loser_discord_id"])
 
         # Get display names for logging
-        winner_name = self._get_display_name_for_user(str(winner_id))
-        loser_name = self._get_display_name_for_user(str(loser_id))
+        winner_name = self._get_display_name_for_user(winner_id)
+        loser_name = self._get_display_name_for_user(loser_id)
 
         # Get deck URLs from confirmation
         winner_deck_url = confirmation.get("winner_deck_url") or "No URL provided"
@@ -625,81 +615,67 @@ class MatchConfirmationService:
         json_deck_data_winner = "{}"
         json_deck_data_loser = "{}"
 
-        # Convert IDs to SQLite-safe format:
-        # - Discord IDs (fit in 64-bit int): pass as int for correct matching
-        # - Google OAuth IDs (exceed 64-bit int): pass as str to avoid OverflowError
-        SQLITE_MAX_INT = 9223372036854775807
-
-        def to_sqlite_id(val):
-            try:
-                int_val = int(val)
-                if abs(int_val) <= SQLITE_MAX_INT:
-                    return int_val
-                return str(val)
-            except (ValueError, TypeError):
-                return str(val)
-
-        reporter_id_safe = to_sqlite_id(confirmation["submitter_discord_id"])
-        winner_id_safe = to_sqlite_id(winner_id)
-        loser_id_safe = to_sqlite_id(loser_id)
+        # Generate unique match_id for web reports (UUID format)
+        match_id = f"web_{uuid.uuid4().hex[:12]}"
 
         # CRITICAL: Perform all operations in correct order to maintain consistency
         # 1. Update ELO ratings
-        # 2. Create match record
+        # 2. Create match record in match_reports_web table
         # 3. Mark confirmation as confirmed (LAST - only if everything else succeeds)
 
-        # Update winner's ELO (pass as strings to avoid OverflowError with large Google OAuth IDs)
+        # Update winner's ELO (keep IDs as strings with google_ prefix)
         (
             winner_new_elo,
             winner_elo_change,
             winner_new_event_elo,
             winner_event_elo_change,
             event_active,
-        ) = update_paper_elo(str(winner_id), winner_name, did_win=True, opponent_id=str(loser_id))
+        ) = update_paper_elo(winner_id, winner_name, did_win=True, opponent_id=loser_id)
 
-        # Update loser's ELO
+        # Update loser's ELO (keep IDs as strings with google_ prefix)
         (
             loser_new_elo,
             loser_elo_change,
             loser_new_event_elo,
             loser_event_elo_change,
             _,
-        ) = update_paper_elo(str(loser_id), loser_name, did_win=False, opponent_id=str(winner_id))
+        ) = update_paper_elo(loser_id, loser_name, did_win=False, opponent_id=winner_id)
 
-        # Create match record in match_records.db
+        # Create match record in match_reports_web table (uses TEXT for all IDs - no overflow)
         logger.info(f"Connecting to match_records database at: {MATCH_RECORDS_DB_PATH}")
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
 
         # Verify table exists and log column info for debugging
         try:
-            cur.execute("PRAGMA table_info(match_records)")
+            cur.execute("PRAGMA table_info(match_reports_web)")
             columns = cur.fetchall()
             column_names = [col[1] for col in columns]
-            logger.info(f"match_records table has {len(column_names)} columns: {', '.join(column_names)}")
+            logger.info(f"match_reports_web table has {len(column_names)} columns: {', '.join(column_names)}")
         except Exception as e:
-            logger.warning(f"Could not check match_records table schema: {e}")
+            logger.warning(f"Could not check match_reports_web table schema: {e}")
 
         try:
-            # Match bot's INSERT structure exactly
+            # Insert into match_reports_web (all IDs as TEXT to support google_ prefix)
             cur.execute(
-                """INSERT INTO match_records
-                   (reporter_id, winner_id, winner_display_name, losser_id, losser_display_name,
+                """INSERT INTO match_reports_web
+                   (match_id, reporter_id, winner_id, winner_display_name, losser_id, losser_display_name,
                     did_win, timestamp, first_player, match_time, curiosa_url, curiosa_url_winner,
                     curiosa_url_loser, match_comment, json_deck_data, json_deck_data_winner,
                     json_deck_data_loser, winner_elo_change, loser_elo_change, winner_went_first,
-                    loser_went_first, match_type)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    loser_went_first, source, match_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    reporter_id_safe,  # reporter_id (int if fits, str if too large)
-                    winner_id_safe,    # winner_id
-                    winner_name,
-                    loser_id_safe,     # losser_id
-                    loser_name,
-                    True,  # did_win (from winner's perspective)
-                    datetime.datetime.now().isoformat(),
+                    match_id,         # match_id (UUID-based web_xxx)
+                    reporter_id,      # reporter_id (TEXT - keeps google_ prefix)
+                    winner_id,        # winner_id (TEXT - keeps google_ prefix)
+                    winner_name,      # winner_display_name
+                    loser_id,         # losser_id (TEXT - keeps google_ prefix)
+                    loser_name,       # losser_display_name
+                    True,             # did_win (from winner's perspective)
+                    datetime.datetime.now().isoformat(),  # timestamp
                     confirmation.get("went_first", "Unknown"),  # first_player
-                    0,  # match_time (not tracked in confirmations yet)
+                    0,                # match_time (not tracked in confirmations yet)
                     winner_deck_url,  # curiosa_url (backward compatibility)
                     winner_deck_url,  # curiosa_url_winner
                     loser_deck_url,   # curiosa_url_loser
@@ -709,36 +685,38 @@ class MatchConfirmationService:
                     json_deck_data_loser,   # json_deck_data_loser
                     winner_event_elo_change if event_active else 0,  # winner_elo_change
                     loser_event_elo_change if event_active else 0,   # loser_elo_change
-                    None,  # winner_went_first
-                    None,  # loser_went_first
-                    "ranked",  # match_type
+                    None,             # winner_went_first
+                    None,             # loser_went_first
+                    "Web",            # source (mark as web-based)
+                    "ranked",         # match_type
                 ),
             )
 
-            match_id = cur.lastrowid
             conn.commit()
 
         except sqlite3.IntegrityError as e:
             conn.rollback()
             logger.error(
-                f"Database integrity error creating match record:\n"
+                f"Database integrity error creating web match record:\n"
                 f"  Error: {e}\n"
-                f"  Reporter ID: {reporter_id_safe}\n"
-                f"  Winner ID: {winner_id_safe} ({winner_name})\n"
-                f"  Loser ID: {loser_id_safe} ({loser_name})\n"
+                f"  Match ID: {match_id}\n"
+                f"  Reporter ID: {reporter_id}\n"
+                f"  Winner ID: {winner_id} ({winner_name})\n"
+                f"  Loser ID: {loser_id} ({loser_name})\n"
                 f"  Confirmation ID: {confirmation_id}",
                 exc_info=True
             )
-            raise RuntimeError(f"Failed to create match record: {e}")
+            raise RuntimeError(f"Failed to create web match record: {e}")
         except sqlite3.OperationalError as e:
             conn.rollback()
             logger.error(
                 f"Database operational error (missing column or table?):\n"
                 f"  Error: {e}\n"
-                f"  DB Path: {MATCH_RECORDS_DB_PATH}",
+                f"  DB Path: {MATCH_RECORDS_DB_PATH}\n"
+                f"  Hint: Run migrations/create_match_reports_web.py to create the table",
                 exc_info=True
             )
-            raise RuntimeError(f"Database error: {e}")
+            raise RuntimeError(f"Database error: {e}. Please ensure match_reports_web table exists.")
         finally:
             conn.close()
 

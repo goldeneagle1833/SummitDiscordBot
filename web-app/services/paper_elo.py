@@ -102,24 +102,30 @@ def update_paper_elo(user_id, user_display_name: str, did_win: bool, opponent_id
     Returns:
         Tuple of (new_paper_elo, paper_change, new_paper_event_elo, paper_event_change, event_active)
     """
-    # Convert IDs to SQLite-safe format:
-    # - Discord IDs (fit in 64-bit int): pass as int for correct matching with existing records
-    # - Google OAuth IDs (exceed 64-bit int): pass as str to avoid OverflowError
-    SQLITE_MAX_INT = 9223372036854775807
-
+    # Convert IDs to SQLite-safe format for overall_standings (INTEGER PRIMARY KEY):
+    # - Strip 'google_' prefix if present (Google OAuth IDs)
+    # - Discord IDs remain as numeric
+    # NOTE: overall_standings uses INTEGER PRIMARY KEY, so we must strip prefix for ELO storage
     def to_sqlite_id(val):
-        """Convert user ID to SQLite-safe type (int if fits, str if too large)."""
+        """Convert user ID to SQLite-safe integer by stripping google_ prefix if present."""
+        val_str = str(val)
+
+        # Strip google_ prefix if present
+        if val_str.startswith("google_"):
+            val_str = val_str[7:]  # Remove 'google_' (7 characters)
+
         try:
-            int_val = int(val)
-            if abs(int_val) <= SQLITE_MAX_INT:
-                return int_val
-            return str(val)
+            int_val = int(val_str)
+            # overall_standings table uses INTEGER PRIMARY KEY, so return as int
+            # This is safe because we've stripped the google_ prefix
+            return int_val
         except (ValueError, TypeError):
-            return str(val)
+            logger.error(f"Failed to convert user_id to int after stripping prefix: {val}")
+            return 0  # Fallback to avoid crash
 
     user_id_safe = to_sqlite_id(user_id)
     opponent_id_safe = to_sqlite_id(opponent_id)
-    user_id_str = str(user_id)  # For logging only
+    user_id_str = str(user_id)  # For logging only (keeps google_ prefix)
 
     conn = sqlite3.connect(str(ELO_DB_PATH))
     cur = conn.cursor()
@@ -200,19 +206,12 @@ def update_paper_elo(user_id, user_display_name: str, did_win: bool, opponent_id
         event_k, player_paper_event_elo, new_paper_event_elo, paper_event_change,
     )
 
-    # Update player's paper ELOs (also update legacy elo/event_elo for backwards compat if paper is higher)
-    cur.execute("SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (user_id_safe,))
-    legacy_row = cur.fetchone()
-    legacy_elo = legacy_row[0] if legacy_row and legacy_row[0] else 1500
-    legacy_event_elo = legacy_row[1] if legacy_row and legacy_row[1] else 1500
-
-    # Update legacy columns to max of paper and online
-    updated_legacy_elo = max(new_paper_elo, legacy_elo)
-    updated_legacy_event_elo = max(new_paper_event_elo, legacy_event_elo)
-
+    # Update ONLY paper ELO columns (web-based matches)
+    # Do NOT update legacy elo/event_elo - those are managed by the bot for online matches
+    # This keeps web (paper) and bot (online) ELO systems completely separate
     cur.execute(
-        "UPDATE overall_standings SET paper_elo = ?, paper_event_elo = ?, elo = ?, event_elo = ? WHERE user_id = ?",
-        (new_paper_elo, new_paper_event_elo, updated_legacy_elo, updated_legacy_event_elo, user_id_safe),
+        "UPDATE overall_standings SET paper_elo = ?, paper_event_elo = ? WHERE user_id = ?",
+        (new_paper_elo, new_paper_event_elo, user_id_safe),
     )
 
     conn.commit()

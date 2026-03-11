@@ -627,6 +627,36 @@ class MatchRepository:
             for row in rows
         ]
 
+    # --- Web match (match_reports_web) win/loss counting ---
+
+    def get_web_wins_count(self, user_id: str) -> int:
+        """Get number of wins for a user from match_reports_web (web-reported matches)."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT COUNT(*) FROM match_reports_web WHERE winner_id = ?", (str(user_id),)
+            )
+            count = cur.fetchone()[0]
+        except sqlite3.OperationalError:
+            count = 0  # Table doesn't exist yet
+        conn.close()
+        return count
+
+    def get_web_losses_count(self, user_id: str) -> int:
+        """Get number of losses for a user from match_reports_web (web-reported matches)."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT COUNT(*) FROM match_reports_web WHERE losser_id = ?", (str(user_id),)
+            )
+            count = cur.fetchone()[0]
+        except sqlite3.OperationalError:
+            count = 0  # Table doesn't exist yet
+        conn.close()
+        return count
+
     def get_source_player_stats(self, source: str) -> list[dict]:
         """Get all players and their win/loss for a given source."""
         conn = self._get_connection()

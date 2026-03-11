@@ -1,10 +1,15 @@
-"""Paper ELO service for web-reported match confirmations."""
+"""Paper ELO service for web-reported match confirmations.
+
+Uses a separate paper_standings table (TEXT PRIMARY KEY) to avoid conflicts
+with the Discord bot's overall_standings table (INTEGER PRIMARY KEY).
+This supports Google OAuth IDs (21+ digits) that overflow SQLite INTEGER.
+"""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
-from webapp_config import ELO_DB_PATH, MATCH_RECORDS_DB_PATH
+from webapp_config import ELO_DB_PATH
 import sqlite3
 
 logger = logging.getLogger(__name__)
@@ -49,6 +54,16 @@ def calculate_event_k_value(start_date: datetime) -> int:
     return min(k_value, 32)
 
 
+def _ensure_paper_standings_table(cur):
+    """Create paper_standings table if it doesn't exist."""
+    cur.execute("""CREATE TABLE IF NOT EXISTS paper_standings
+                   (user_id TEXT PRIMARY KEY,
+                    user_display_name TEXT,
+                    paper_elo INTEGER DEFAULT 1500,
+                    paper_event_elo INTEGER DEFAULT 1500
+                   )""")
+
+
 def get_active_event():
     """
     Get the currently active event, if any.
@@ -90,61 +105,33 @@ def update_paper_elo(user_id, user_display_name: str, did_win: bool, opponent_id
     """
     Update paper ELO ratings for web-confirmed matches.
 
+    Uses paper_standings table (TEXT PRIMARY KEY) — separate from the Discord bot's
+    overall_standings table. Supports Discord IDs and large Google OAuth IDs.
+
     Updates both paper lifetime ELO (K=32) and paper event ELO (dynamic K) if an event is active.
     If no event is active, ELO is not updated (returns 0 changes).
 
     Args:
-        user_id: Discord/Google user ID (int or str - large Google IDs require str)
+        user_id: Discord/Google user ID (stored as TEXT string)
         user_display_name: Player's display name
         did_win: True if player won, False if lost
-        opponent_id: Opponent's user ID (int or str - large Google IDs require str)
+        opponent_id: Opponent's user ID (stored as TEXT string)
 
     Returns:
         Tuple of (new_paper_elo, paper_change, new_paper_event_elo, paper_event_change, event_active)
     """
-    # Convert IDs to SQLite-safe format for overall_standings (INTEGER PRIMARY KEY):
-    # - Strip 'google_' prefix if present (Google OAuth IDs)
-    # - Discord IDs remain as numeric
-    # NOTE: overall_standings uses INTEGER PRIMARY KEY, so we must strip prefix for ELO storage
-    def to_sqlite_id(val):
-        """Convert user ID to SQLite-safe integer by stripping google_ prefix if present."""
-        val_str = str(val)
-
-        # Strip google_ prefix if present
-        if val_str.startswith("google_"):
-            val_str = val_str[7:]  # Remove 'google_' (7 characters)
-
-        try:
-            int_val = int(val_str)
-            # overall_standings table uses INTEGER PRIMARY KEY, so return as int
-            # This is safe because we've stripped the google_ prefix
-            return int_val
-        except (ValueError, TypeError):
-            logger.error(f"Failed to convert user_id to int after stripping prefix: {val}")
-            return 0  # Fallback to avoid crash
-
-    user_id_safe = to_sqlite_id(user_id)
-    opponent_id_safe = to_sqlite_id(opponent_id)
-    user_id_str = str(user_id)  # For logging only (keeps google_ prefix)
+    # All IDs stored as TEXT strings
+    user_id_str = str(user_id)
+    opponent_id_str = str(opponent_id)
 
     conn = sqlite3.connect(str(ELO_DB_PATH))
     cur = conn.cursor()
 
-    # Ensure overall_standings table exists with dual ELO columns
-    cur.execute("""CREATE TABLE IF NOT EXISTS overall_standings
-                   (user_id INTEGER PRIMARY KEY,
-                    user_display_name TEXT,
-                    elo INTEGER DEFAULT 1500,
-                    event_elo INTEGER DEFAULT 1500,
-                    paper_elo INTEGER DEFAULT 1500,
-                    online_elo INTEGER DEFAULT 1500,
-                    paper_event_elo INTEGER DEFAULT 1500,
-                    online_event_elo INTEGER DEFAULT 1500
-                   )""")
+    _ensure_paper_standings_table(cur)
 
     # Get player's current paper ELOs (or insert if new)
     cur.execute(
-        "SELECT paper_elo, paper_event_elo FROM overall_standings WHERE user_id=?", (user_id_safe,)
+        "SELECT paper_elo, paper_event_elo FROM paper_standings WHERE user_id=?", (user_id_str,)
     )
     player_row = cur.fetchone()
 
@@ -159,15 +146,15 @@ def update_paper_elo(user_id, user_display_name: str, did_win: bool, opponent_id
         player_paper_elo = 1500
         player_paper_event_elo = 1500
         cur.execute(
-            """INSERT OR IGNORE INTO overall_standings
+            """INSERT OR IGNORE INTO paper_standings
                (user_id, user_display_name, paper_elo, paper_event_elo) VALUES (?, ?, ?, ?)""",
-            (user_id_safe, user_display_name, player_paper_elo, player_paper_event_elo),
+            (user_id_str, user_display_name, player_paper_elo, player_paper_event_elo),
         )
         logger.debug("New player %s inserted with default paper ELOs", user_id_str)
 
     # Get opponent's paper ELOs (or use default if not found)
     cur.execute(
-        "SELECT paper_elo, paper_event_elo FROM overall_standings WHERE user_id=?", (opponent_id_safe,)
+        "SELECT paper_elo, paper_event_elo FROM paper_standings WHERE user_id=?", (opponent_id_str,)
     )
     opponent_row = cur.fetchone()
 
@@ -206,12 +193,10 @@ def update_paper_elo(user_id, user_display_name: str, did_win: bool, opponent_id
         event_k, player_paper_event_elo, new_paper_event_elo, paper_event_change,
     )
 
-    # Update ONLY paper ELO columns (web-based matches)
-    # Do NOT update legacy elo/event_elo - those are managed by the bot for online matches
-    # This keeps web (paper) and bot (online) ELO systems completely separate
+    # Update paper ELO in paper_standings
     cur.execute(
-        "UPDATE overall_standings SET paper_elo = ?, paper_event_elo = ? WHERE user_id = ?",
-        (new_paper_elo, new_paper_event_elo, user_id_safe),
+        "UPDATE paper_standings SET paper_elo = ?, paper_event_elo = ?, user_display_name = ? WHERE user_id = ?",
+        (new_paper_elo, new_paper_event_elo, user_display_name, user_id_str),
     )
 
     conn.commit()

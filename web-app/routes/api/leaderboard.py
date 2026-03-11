@@ -46,6 +46,18 @@ def get_combined_leaderboard():
         return jsonify({"error": str(e)}), 500
 
 
+@leaderboard_bp.route("/leaderboard/paper")
+def get_paper_leaderboard():
+    """Get paper ELO leaderboard (web-reported matches only)."""
+    try:
+        service = LeaderboardService()
+        leaderboard_data = service.get_paper_leaderboard()
+        return jsonify(leaderboard_data)
+    except Exception as e:
+        logger.error(f"Error fetching paper leaderboard: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @leaderboard_bp.route("/elo-distribution")
 def get_elo_distribution():
     """Get ELO distribution across bands."""

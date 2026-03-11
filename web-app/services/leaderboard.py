@@ -156,6 +156,26 @@ class LeaderboardService:
         leaderboard_data.sort(key=lambda x: x["elo"], reverse=True)
         return leaderboard_data
 
+    def get_paper_leaderboard(self) -> list[dict]:
+        """Get paper ELO leaderboard from paper_standings with web match win/loss records."""
+        standings = self._elo_repo.get_paper_standings()
+        leaderboard_data = []
+        for standing in standings:
+            user_id = standing["user_id"]
+            wins = self._match_repo.get_web_wins_count(user_id)
+            losses = self._match_repo.get_web_losses_count(user_id)
+            leaderboard_data.append(
+                {
+                    "id": str(user_id),
+                    "name": standing["display_name"],
+                    "paper_elo": standing["paper_elo"],
+                    "paper_event_elo": standing["paper_event_elo"],
+                    "wins": wins,
+                    "losses": losses,
+                }
+            )
+        return leaderboard_data
+
     def get_elo_distribution(self) -> dict:
         """Get ELO distribution across bands."""
         elos = self._elo_repo.get_all_elos()

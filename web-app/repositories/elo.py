@@ -344,3 +344,49 @@ class EloRepository:
         conn.commit()
         conn.close()
         return updated
+
+    # --- Paper Standings (separate table for web-reported matches) ---
+
+    def get_paper_standings(self) -> list[dict]:
+        """Get all paper ELO standings from paper_standings table."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        # Check if table exists
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='paper_standings'")
+        if not cur.fetchone():
+            conn.close()
+            return []
+
+        cur.execute("""
+            SELECT user_id, user_display_name, paper_elo, paper_event_elo
+            FROM paper_standings
+            ORDER BY paper_elo DESC
+        """)
+        rows = cur.fetchall()
+        conn.close()
+
+        return [
+            {
+                "user_id": str(row[0]),
+                "display_name": row[1],
+                "paper_elo": row[2] if row[2] else 1500,
+                "paper_event_elo": row[3] if row[3] else 1500,
+            }
+            for row in rows
+        ]
+
+    def get_user_paper_elo(self, user_id: str) -> int | None:
+        """Get paper ELO for a specific user from paper_standings."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='paper_standings'")
+        if not cur.fetchone():
+            conn.close()
+            return None
+
+        cur.execute("SELECT paper_elo FROM paper_standings WHERE user_id = ?", (str(user_id),))
+        row = cur.fetchone()
+        conn.close()
+        return row[0] if row else None

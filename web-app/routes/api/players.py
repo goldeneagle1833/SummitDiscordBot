@@ -165,6 +165,12 @@ def player_api(player_id):
     except sqlite3.OperationalError:
         pass
 
+    # Auto-detect source: if requested source has no matches, switch to the other
+    if source == "bot" and not has_bot_matches and has_web_matches:
+        source = "web"
+    elif source == "web" and not has_web_matches and has_bot_matches:
+        source = "bot"
+
     # Determine which tables to query based on event filter and source
     include_current_matches = True  # From match_records or match_reports_web table
     include_archived_matches = True  # From match_records_archive table
@@ -327,7 +333,6 @@ def player_api(player_id):
                     (query_player_id, query_player_id, query_player_id),
                 )
                 rows = cur.fetchall()
-            rows = cur.fetchall()
 
     # Also check archive table for historical matches (if needed based on filter)
     # Note: Archive is only available for bot matches (match_records_archive)
@@ -561,7 +566,7 @@ def player_api(player_id):
     except sqlite3.OperationalError:
         pass
 
-    # Get player name - prefer from matches, fallback to ELO database, then session
+    # Get player name - prefer from matches, fallback to ELO database, user_profiles, then session
     player_name = None
     if rows:
         first_match = rows[0]
@@ -570,8 +575,24 @@ def player_api(player_id):
         player_name = solo_rows[0][4]
     elif player_name_from_elo:
         player_name = player_name_from_elo
-    else:
-        # New user with no matches - get name from session if it's their profile
+
+    # Fallback: check user_profiles table (handles Google OAuth users who may not be in ELO db)
+    if not player_name:
+        try:
+            from repositories.user_profiles import UserProfileRepository
+            user_repo = UserProfileRepository()
+            # Try with original ID first (handles google_ prefix)
+            profile = user_repo.get_by_user_id(original_player_id)
+            if not profile and original_player_id != player_id_normalized:
+                # Try with normalized ID
+                profile = user_repo.get_by_user_id(player_id_normalized)
+            if profile:
+                player_name = profile["display_name"]
+        except Exception:
+            pass
+
+    # Fallback: get name from session if it's their profile
+    if not player_name:
         logged_in_user_id = session.get("user_id")
         if logged_in_user_id is not None:
             logged_in_id_str = str(logged_in_user_id)
@@ -581,7 +602,7 @@ def player_api(player_id):
             if logged_in_id_str == str(player_id_normalized):
                 player_name = session.get("username", "Unknown Player")
 
-    # Player not found if no matches AND not in ELO database AND not the logged-in user
+    # Player not found if no matches AND not in ELO database AND not in user_profiles AND not the logged-in user
     if not rows and not solo_rows and not player_name_from_elo and not player_name:
         return jsonify({"error": "Player not found"}), 404
 

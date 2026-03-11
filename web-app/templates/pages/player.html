@@ -1431,24 +1431,24 @@
           hasWebMatches = data.has_web_matches || false;
           hasBotMatches = data.has_bot_matches || false;
 
+          // Sync currentEloSource with what the API actually used (may have auto-detected)
+          if (data.elo_source) {
+            currentEloSource = data.elo_source;
+          }
+
           const toggle = document.getElementById('elo-source-toggle');
           if (hasWebMatches || hasBotMatches) {
             toggle.style.display = 'inline-flex';
 
-            // Use the source from API (defaults to "bot" where all matches are)
+            // Use the source from API response (backend auto-detects the best source)
             // Only override if user has a saved preference AND that source has matches
             const saved = localStorage.getItem('elo_source_preference');
             if (saved && (saved === 'web' || saved === 'bot')) {
               // Only use saved preference if that source has matches
               if ((saved === 'web' && hasWebMatches) || (saved === 'bot' && hasBotMatches)) {
                 currentEloSource = saved;
-              } else {
-                // Saved preference has no matches, default to bot
-                currentEloSource = 'bot';
               }
-            } else {
-              // No saved preference - default to bot (where all matches are)
-              currentEloSource = 'bot';
+              // Otherwise keep the API's auto-detected source
             }
 
             // Update toggle button states

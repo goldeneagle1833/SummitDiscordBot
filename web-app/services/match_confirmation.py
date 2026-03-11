@@ -859,9 +859,8 @@ class MatchConfirmationService:
             )
 
         # Verify user is the opponent
-        # Normalize both IDs for comparison (handles both Discord and Google users)
-        opponent_numeric_id = self._normalize_user_id(opponent_user_id)
-        if str(confirmation["opponent_discord_id"]) != str(opponent_numeric_id):
+        # Compare user IDs directly as strings (supports both Discord numeric and google_ prefixed IDs)
+        if str(confirmation["opponent_discord_id"]) != str(opponent_user_id):
             raise PermissionError(
                 "You are not authorized to deny this match report"
             )

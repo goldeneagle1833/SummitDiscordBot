@@ -295,35 +295,42 @@ def get_pending_confirmations():
         confirmation_repo = MatchConfirmationRepository()
         user_profile_repo = UserProfileRepository()
 
-        # Normalize user ID (strip 'google_' prefix if present)
-        current_numeric_id = service._normalize_user_id(current_user_id)
-
         # Get pending confirmations where user is the opponent
-        confirmations = confirmation_repo.get_pending_confirmations(current_numeric_id)
+        # IDs are stored as-is (with google_ prefix for Google users), so search with original ID
+        current_user_id_str = str(current_user_id)
+        confirmations = confirmation_repo.get_pending_confirmations(current_user_id_str)
+
+        # Also search with normalized ID in case of mixed storage
+        if current_user_id_str.startswith("google_"):
+            numeric_id = current_user_id_str[7:]
+            confirmations += confirmation_repo.get_pending_confirmations(numeric_id)
+        else:
+            confirmations += confirmation_repo.get_pending_confirmations(f"google_{current_user_id_str}")
+
+        # Deduplicate by confirmation ID
+        seen_ids = set()
+        unique_confirmations = []
+        for c in confirmations:
+            if c["id"] not in seen_ids:
+                seen_ids.add(c["id"])
+                unique_confirmations.append(c)
+        confirmations = unique_confirmations
 
         # Enrich with submitter display names
         enriched_confirmations = []
         for confirmation in confirmations:
             # Get submitter display name (handles both Discord and Google users)
-            # The submitter_discord_id is numeric, but could be from Discord or Google user
-            submitter_numeric_id = confirmation["submitter_discord_id"]
+            # submitter_discord_id may have google_ prefix for Google users
+            submitter_id_str = str(confirmation["submitter_discord_id"])
 
-            # Try to find profile by user_id
-            submitter_display_name = "Unknown Player"
+            # Use the service's display name resolver which handles all ID formats
+            submitter_display_name = service._get_display_name_for_user(submitter_id_str)
             submitter_avatar = None
 
-            # Try Discord first (numeric ID)
-            profile = user_profile_repo.get_by_user_id(str(submitter_numeric_id), provider="discord")
+            # Try to get avatar from profile
+            profile = user_profile_repo.get_by_user_id(submitter_id_str)
             if profile:
-                submitter_display_name = profile["display_name"]
                 submitter_avatar = profile.get("avatar")
-            else:
-                # Try Google (google_ prefixed ID)
-                google_user_id = f"google_{submitter_numeric_id}"
-                profile = user_profile_repo.get_by_user_id(google_user_id, provider="google")
-                if profile:
-                    submitter_display_name = profile["display_name"]
-                    submitter_avatar = profile.get("avatar")
 
             # Add submitter info to confirmation
             confirmation["submitter_display_name"] = submitter_display_name

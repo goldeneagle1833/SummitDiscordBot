@@ -916,8 +916,8 @@
         try {
           currentPage = page;
 
-          // Use provided source or current source
-          if (!eloSource) eloSource = currentEloSource;
+          // Use provided source or current source, default to "auto" for initial load
+          if (!eloSource) eloSource = currentEloSource || "auto";
 
           let url = `/api/player/${playerId}?page=${page}&per_page=${perPage}&source=${eloSource}`;
           if (eventFilter && eventFilter !== "lifetime") {
@@ -1303,14 +1303,20 @@
           if (hasWebMatches || hasBotMatches) {
             toggle.style.display = 'inline-flex';
 
-            // Set default source based on saved preference or user type
+            // Use the source that the API returned (it auto-detected based on available matches)
+            // Only override if user has a saved preference AND that source has matches
             const saved = localStorage.getItem('elo_source_preference');
             if (saved && (saved === 'web' || saved === 'bot')) {
-              currentEloSource = saved;
+              // Only use saved preference if that source has matches
+              if ((saved === 'web' && hasWebMatches) || (saved === 'bot' && hasBotMatches)) {
+                currentEloSource = saved;
+              } else {
+                // Saved preference has no matches, use what the API returned
+                currentEloSource = data.elo_source || 'bot';
+              }
             } else {
-              // Default to web for Google users, bot for Discord users
-              // Auto-detect: google_ prefix = web, numeric = bot
-              currentEloSource = playerId.startsWith('google_') ? 'web' : 'bot';
+              // No saved preference - use what the API returned
+              currentEloSource = data.elo_source || 'bot';
             }
 
             // Update toggle button states

@@ -620,6 +620,9 @@ class MatchConfirmationService:
             conn.commit()
             conn.close()
 
+            # Also update the local confirmation dict so later code picks up the new URL
+            confirmation[deck_field] = opponent_deck_url
+
             logger.info(
                 f"Updated opponent deck URL: confirmation_id={confirmation_id}, "
                 f"field={deck_field}, url={opponent_deck_url}"
@@ -713,6 +716,21 @@ class MatchConfirmationService:
         except Exception as e:
             logger.warning(f"Could not check match_reports_web table schema: {e}")
 
+        # Determine winner/loser went_first from submitter-relative "went_first" field
+        went_first_raw = confirmation.get("went_first", "Unknown")
+        submitter_is_winner = str(reporter_id) == str(winner_id)
+        if went_first_raw == "submitter":
+            # Submitter went first
+            winner_went_first_val = "Yes" if submitter_is_winner else "No"
+            loser_went_first_val = "No" if submitter_is_winner else "Yes"
+        elif went_first_raw == "opponent":
+            # Opponent went first
+            winner_went_first_val = "No" if submitter_is_winner else "Yes"
+            loser_went_first_val = "Yes" if submitter_is_winner else "No"
+        else:
+            winner_went_first_val = None
+            loser_went_first_val = None
+
         try:
             # Insert into match_reports_web (all IDs as TEXT to support google_ prefix)
             cur.execute(
@@ -732,7 +750,7 @@ class MatchConfirmationService:
                     loser_name,       # losser_display_name
                     True,             # did_win (from winner's perspective)
                     datetime.datetime.now().isoformat(),  # timestamp
-                    confirmation.get("went_first", "Unknown"),  # first_player
+                    went_first_raw,   # first_player (legacy: "submitter"/"opponent")
                     0,                # match_time (not tracked in confirmations yet)
                     winner_deck_url,  # curiosa_url (backward compatibility)
                     winner_deck_url,  # curiosa_url_winner
@@ -743,8 +761,8 @@ class MatchConfirmationService:
                     json_deck_data_loser,   # json_deck_data_loser
                     winner_event_elo_change if event_active else 0,  # winner_elo_change
                     loser_event_elo_change if event_active else 0,   # loser_elo_change
-                    None,             # winner_went_first
-                    None,             # loser_went_first
+                    winner_went_first_val,  # winner_went_first
+                    loser_went_first_val,   # loser_went_first
                     "Web",            # source (mark as web-based)
                     "ranked",         # match_type
                 ),

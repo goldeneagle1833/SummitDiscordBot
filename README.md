@@ -9,6 +9,7 @@ A comprehensive Discord bot for the **Sorcery: Contested Realm** card game commu
 ## 🌟 Features
 
 ### Discord Bot
+
 - **🎮 LFG (Looking For Game) System** - Queue-based matchmaking with challenge support
 - **📊 ELO Ranking System** - Competitive player rankings with win/loss tracking
 - **🏆 Tournament Management** - Event tracking and leaderboards
@@ -18,6 +19,7 @@ A comprehensive Discord bot for the **Sorcery: Contested Realm** card game commu
 - **📡 Streaming Integration** - Auto-announcements for streamers
 
 ### Web Application
+
 - **📈 Live Leaderboards** - Real-time ELO rankings and statistics
 - **🃏 Deck Viewer** - Browse tournament-winning decklists
 - **📊 Match History** - Detailed game records with deck data
@@ -25,6 +27,7 @@ A comprehensive Discord bot for the **Sorcery: Contested Realm** card game commu
 - **🎥 YouTube Integration** - Featured content and streaming
 
 ### SorceryAI - Rules Assistant
+
 - **🧠 RAG System** - Vector-based retrieval with ChromaDB
 - **📚 Comprehensive Knowledge Base** - Full rulebook, FAQs, card rulings
 - **🔍 Smart Search** - Natural language rules queries
@@ -33,6 +36,7 @@ A comprehensive Discord bot for the **Sorcery: Contested Realm** card game commu
 ## 🚀 Quick Start
 
 ### Prerequisites
+
 - Python 3.10+
 - Discord Bot Token ([Create one here](https://discord.com/developers/applications))
 - OpenAI API Key (for rules assistant)
@@ -40,12 +44,14 @@ A comprehensive Discord bot for the **Sorcery: Contested Realm** card game commu
 ### Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/YOUR_USERNAME/SummitDiscordBot.git
    cd SummitDiscordBot
    ```
 
 2. **Set up Discord Bot**
+
    ```bash
    cd discord-bot
    pip install -r requirements.txt
@@ -55,6 +61,7 @@ A comprehensive Discord bot for the **Sorcery: Contested Realm** card game commu
 3. **Configure environment**
 
    Create `discord-bot/.env`:
+
    ```env
    TOKEN=your_discord_bot_token_here
    OPENAI_API_KEY=your_openai_api_key_here
@@ -63,6 +70,7 @@ A comprehensive Discord bot for the **Sorcery: Contested Realm** card game commu
    Edit `discord-bot/config.py` with your Discord server IDs.
 
 4. **Create test databases**
+
    ```bash
    python scripts/create_test_databases.py
    ```
@@ -73,6 +81,7 @@ A comprehensive Discord bot for the **Sorcery: Contested Realm** card game commu
    ```
 
 ### Running Tests
+
 ```bash
 cd discord-bot
 pytest tests/ -v
@@ -117,6 +126,7 @@ SummitDiscordBot/
 ## 🎮 Bot Commands
 
 ### Prefix Commands (!)
+
 - `!lfg` - Join the looking-for-game queue
 - `!leave` - Leave the queue
 - `!challenge @user` - Challenge a specific player
@@ -127,6 +137,7 @@ SummitDiscordBot/
 - `!rules <query>` - Ask the AI rules assistant
 
 ### Slash Commands (/)
+
 - `/lfg` - Join queue (slash command version)
 - `/challenge` - Challenge a player
 - `/leaderboard` - View rankings
@@ -136,6 +147,7 @@ SummitDiscordBot/
 ## 🛠️ Tech Stack
 
 ### Discord Bot
+
 - **discord.py** - Discord API wrapper
 - **SQLite** - Database (match records, ELO, scores)
 - **OpenAI API** - GPT for AI features
@@ -143,6 +155,7 @@ SummitDiscordBot/
 - **pytest** - Testing framework
 
 ### Web Application
+
 - **Flask** - Web framework
 - **Jinja2** - Template engine
 - **Gunicorn** - WSGI server
@@ -150,6 +163,7 @@ SummitDiscordBot/
 - **YouTube API** - Video integration
 
 ### Infrastructure
+
 - **GitHub Actions** - CI/CD
 - **systemd** - Service management
 - **Cloudflare** - CDN and DDoS protection
@@ -166,6 +180,7 @@ pytest -k "test_queue" -v              # Run tests matching pattern
 ```
 
 **Test Coverage:**
+
 - ✅ Queue operations and matching logic
 - ✅ ELO calculations and rankings
 - ✅ Match reporting and confirmation
@@ -180,12 +195,14 @@ See [TESTING.md](TESTING.md) for detailed testing documentation.
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
 ### Quick Contribution Steps:
+
 1. Fork the repository
 2. Create a test environment (see [CONTRIBUTING.md](CONTRIBUTING.md))
 3. Make your changes with tests
 4. Submit a pull request
 
 **Before submitting:**
+
 - ✅ Tests pass: `pytest tests/ -v`
 - ✅ No syntax errors: `python -m py_compile cogs/**/*.py`
 - ✅ Code follows existing patterns
@@ -203,6 +220,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 ## 🔧 Configuration
 
 ### Discord Bot Setup
+
 1. Create bot application at https://discord.com/developers/applications
 2. Enable these intents:
    - ✅ Message Content Intent
@@ -212,12 +230,15 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 4. Configure `config.py` with your server/channel IDs
 
 ### Database Configuration
+
 - **SQLite databases** (auto-created on first run)
 - Test databases: `discord-bot/test_data/`
 - Production databases: `discord-bot/*.db` (gitignored)
 
 ### API Keys
+
 Required API keys (add to `.env`):
+
 - `TOKEN` - Discord bot token
 - `OPENAI_API_KEY` - OpenAI API key (for rules assistant)
 
@@ -226,6 +247,7 @@ Required API keys (add to `.env`):
 The web application provides a public interface for leaderboards and statistics.
 
 ### Running Locally
+
 ```bash
 cd web-app
 pip install -r requirements.txt
@@ -235,6 +257,7 @@ python app.py
 Visit: http://localhost:5000
 
 ### Production Deployment
+
 ```bash
 gunicorn -c gunicorn_config.py
 ```
@@ -246,6 +269,7 @@ See [web-app/DEPLOYMENT.md](web-app/DEPLOYMENT.md) for full deployment guide.
 RAG-powered system for answering Sorcery rules questions.
 
 ### How It Works
+
 1. User asks a question
 2. Query embedded using OpenAI embeddings
 3. Relevant chunks retrieved from ChromaDB
@@ -253,12 +277,14 @@ RAG-powered system for answering Sorcery rules questions.
 5. Response generated with sources
 
 ### Indexing Knowledge Base
+
 ```bash
 cd SorceryAI
 python scripts/index_knowledge_base.py
 ```
 
 ### Testing Queries
+
 ```bash
 python scripts/test_queries.py
 ```
@@ -279,6 +305,7 @@ python scripts/test_queries.py
 - ✅ XSS protection in web app
 
 **Never commit:**
+
 - `config.py` (contains secrets)
 - `.env` (contains API keys)
 - `*.db` (contains user data)
@@ -302,17 +329,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🗺️ Roadmap
 
-- [ ] Multi-server support
-- [ ] Tournament bracket management
-- [ ] Deck builder integration
-- [ ] Mobile-friendly web interface
 - [ ] Advanced statistics and analytics
-- [ ] Discord slash command migration
-- [ ] Internationalization (i18n)
+- [ ] Localizing language
+- [ ] Player achivements
 
 ## 🏗️ Development
 
 ### Setting Up Development Environment
+
 ```bash
 # Clone and set up
 git clone https://github.com/YOUR_USERNAME/SummitDiscordBot.git
@@ -335,6 +359,7 @@ pytest discord-bot/tests/ -v
 ```
 
 ### Code Style
+
 - Follow PEP 8 Python style guide
 - Use type hints where appropriate
 - Document functions with docstrings
@@ -344,12 +369,14 @@ pytest discord-bot/tests/ -v
 ## 💻 Architecture
 
 ### Bot Architecture
+
 - **Cogs**: Modular command handlers (`cogs/`)
 - **Repositories**: Data access layer (`repositories/`)
 - **Services**: Business logic (`services/`)
 - **Utils**: Shared utilities (`utils/`)
 
 ### Key Patterns
+
 - **Facade Pattern**: `utils/database.py` provides unified interface
 - **Repository Pattern**: Separation of data access and business logic
 - **Package Structure**: Large cogs split into packages (e.g., `cogs/lfg/`)
@@ -361,4 +388,4 @@ See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation.
 
 **Made with ❤️ for the Sorcery: Contested Realm community**
 
-*Star this repo if you find it useful!* ⭐
+_Star this repo if you find it useful!_ ⭐

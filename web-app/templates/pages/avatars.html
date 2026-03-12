@@ -67,6 +67,39 @@
         background: #1a1a2e;
         color: #fff;
       }
+      /* ELO Source Toggle */
+      .elo-source-toggle {
+        display: inline-flex;
+        background: var(--color-bg-secondary, #2a2a3e);
+        border: 1px solid var(--color-border, #3a3a4e);
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .elo-source-btn {
+        padding: 6px 14px;
+        font-size: 13px;
+        border: none;
+        background: transparent;
+        color: var(--color-text-muted, #8b949e);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .elo-source-btn:hover:not(.active) {
+        background: var(--color-bg-hover, #3a3a4e);
+        color: var(--color-text, #ffffff);
+      }
+      .elo-source-btn.active {
+        background: var(--color-primary, #a855f7);
+        color: white;
+        box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+      }
+      .elo-source-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
       .all-popularity-section {
         max-width: 1200px;
         margin: 2rem auto;
@@ -196,11 +229,15 @@
           </select>
         </div>
         <div class="avatar-filter-group">
-          <label for="source-filter">Source:</label>
-          <select id="source-filter">
-            <option value="all">All Sources</option>
-            <!-- Populated by JS -->
-          </select>
+          <label>Match Source:</label>
+          <div class="elo-source-toggle" id="elo-source-toggle">
+            <button class="elo-source-btn active" data-source="discord" title="Online matches (Discord bot)">
+              Online
+            </button>
+            <button class="elo-source-btn" data-source="web" title="Paper matches (web-reported)">
+              Paper
+            </button>
+          </div>
         </div>
         <div class="avatar-filter-group">
           <label for="sort-filter">Sort by:</label>
@@ -503,7 +540,7 @@
 
       // ---- Filter & sort logic ----
       let currentEventFilter = "all";
-      let currentSourceFilter = "all";
+      let currentSourceFilter = "discord"; // Default to online (Discord) matches
       let currentSort = "accuracy";
 
       const SORT_LABELS = {
@@ -566,28 +603,39 @@
             });
           }
 
-          const sourceSelect = document.getElementById("source-filter");
-          // Always include "Discord" as the bot-reported matches source
-          const discordOpt = document.createElement("option");
-          discordOpt.value = "discord";
-          discordOpt.textContent = "Discord";
-          sourceSelect.appendChild(discordOpt);
+          // Initialize toggle buttons
+          document.querySelectorAll('.elo-source-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+              if (this.disabled) return;
 
-          if (data.sources && data.sources.length > 0) {
-            data.sources.forEach(src => {
-              const opt = document.createElement("option");
-              opt.value = src;
-              opt.textContent = src;
-              sourceSelect.appendChild(opt);
+              const source = this.dataset.source;
+              if (source === currentSourceFilter) return; // Already selected
+
+              // Update state
+              currentSourceFilter = source;
+              localStorage.setItem('avatars_source_preference', source);
+
+              // Update UI
+              document.querySelectorAll('.elo-source-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.source === source);
+              });
+
+              // Refetch data
+              fetchAvatarStats();
+            });
+          });
+
+          // Load saved preference or use default (discord)
+          const savedSource = localStorage.getItem('avatars_source_preference');
+          if (savedSource && (savedSource === 'discord' || savedSource === 'web')) {
+            currentSourceFilter = savedSource;
+            document.querySelectorAll('.elo-source-btn').forEach(btn => {
+              btn.classList.toggle('active', btn.dataset.source === savedSource);
             });
           }
 
           eventSelect.addEventListener("change", () => {
             currentEventFilter = eventSelect.value;
-            fetchAvatarStats();
-          });
-          sourceSelect.addEventListener("change", () => {
-            currentSourceFilter = sourceSelect.value;
             fetchAvatarStats();
           });
 
@@ -631,7 +679,8 @@
         try {
           const params = new URLSearchParams();
           if (currentEventFilter !== "all") params.set("event", currentEventFilter);
-          if (currentSourceFilter !== "all") params.set("source", currentSourceFilter);
+          // Always pass source parameter (discord or web)
+          params.set("source", currentSourceFilter);
           const qs = params.toString();
           const res = await fetch("/api/avatars" + (qs ? "?" + qs : ""));
           const data = await res.json();

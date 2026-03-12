@@ -631,6 +631,7 @@ class MatchConfirmationService:
         # Get player IDs and display names FIRST (before any DB operations)
         from services.paper_elo import update_paper_elo
         from webapp_config import MATCH_RECORDS_DB_PATH
+        from repositories.matches import MatchRepository
         import sqlite3
 
         # Keep IDs as TEXT with google_ prefix intact - no normalization
@@ -641,6 +642,21 @@ class MatchConfirmationService:
         # Get display names for logging
         winner_name = self._get_display_name_for_user(winner_id)
         loser_name = self._get_display_name_for_user(loser_id)
+
+        # Check if this is a repeat matchup (consecutive games between same players)
+        match_repo = MatchRepository()
+        winner_last_opponent = match_repo.get_last_opponent(winner_id)
+        loser_last_opponent = match_repo.get_last_opponent(loser_id)
+
+        is_repeat_matchup = (
+            winner_last_opponent == loser_id or loser_last_opponent == winner_id
+        )
+
+        if is_repeat_matchup:
+            logger.info(
+                f"Repeat matchup detected: {winner_name} vs {loser_name}. "
+                f"Match will be recorded but ELO will not be updated."
+            )
 
         # Get deck URLs from confirmation
         winner_deck_url = confirmation.get("winner_deck_url") or "No URL provided"
@@ -698,27 +714,41 @@ class MatchConfirmationService:
         match_id = f"web_{next_num}"
 
         # CRITICAL: Perform all operations in correct order to maintain consistency
-        # 1. Update ELO ratings
+        # 1. Update ELO ratings (unless repeat matchup)
         # 2. Create match record in match_reports_web table
         # 3. Mark confirmation as confirmed (LAST - only if everything else succeeds)
 
-        # Update winner's ELO (keep IDs as strings with google_ prefix)
-        (
-            winner_new_elo,
-            winner_elo_change,
-            winner_new_event_elo,
-            winner_event_elo_change,
-            event_active,
-        ) = update_paper_elo(winner_id, winner_name, did_win=True, opponent_id=loser_id)
+        # Update ELO only if not a repeat matchup
+        if is_repeat_matchup:
+            # Skip ELO updates for repeat matchups
+            winner_new_elo = 1500  # Default values for display
+            winner_elo_change = 0
+            winner_new_event_elo = 1500
+            winner_event_elo_change = 0
+            loser_new_elo = 1500
+            loser_elo_change = 0
+            loser_new_event_elo = 1500
+            loser_event_elo_change = 0
+            event_active = False
+            logger.info("ELO updates skipped due to repeat matchup")
+        else:
+            # Update winner's ELO (keep IDs as strings with google_ prefix)
+            (
+                winner_new_elo,
+                winner_elo_change,
+                winner_new_event_elo,
+                winner_event_elo_change,
+                event_active,
+            ) = update_paper_elo(winner_id, winner_name, did_win=True, opponent_id=loser_id)
 
-        # Update loser's ELO (keep IDs as strings with google_ prefix)
-        (
-            loser_new_elo,
-            loser_elo_change,
-            loser_new_event_elo,
-            loser_event_elo_change,
-            _,
-        ) = update_paper_elo(loser_id, loser_name, did_win=False, opponent_id=winner_id)
+            # Update loser's ELO (keep IDs as strings with google_ prefix)
+            (
+                loser_new_elo,
+                loser_elo_change,
+                loser_new_event_elo,
+                loser_event_elo_change,
+                _,
+            ) = update_paper_elo(loser_id, loser_name, did_win=False, opponent_id=winner_id)
 
         # Create match record in match_reports_web table (uses TEXT for all IDs - no overflow)
         logger.info(f"Connecting to match_records database at: {MATCH_RECORDS_DB_PATH}")
@@ -823,13 +853,24 @@ class MatchConfirmationService:
 
         logger.info(
             f"Match confirmed: id={confirmation_id}, match_id={match_id}, "
-            f"winner={winner_id} (+{winner_event_elo_change}), loser={loser_id} ({loser_event_elo_change})"
+            f"winner={winner_id} (+{winner_event_elo_change}), loser={loser_id} ({loser_event_elo_change}), "
+            f"repeat_matchup={is_repeat_matchup}"
         )
+
+        # Customize message based on whether this is a repeat matchup
+        if is_repeat_matchup:
+            message = (
+                "Match confirmed and recorded! However, this is a repeat game with the same opponent. "
+                "Repeat games do not affect ELO - you must play someone else to gain ELO."
+            )
+        else:
+            message = "Match confirmed successfully! ELO ratings have been updated."
 
         return {
             "success": True,
-            "message": "Match confirmed successfully! ELO ratings have been updated.",
+            "message": message,
             "match_id": match_id,
+            "is_repeat_matchup": is_repeat_matchup,
             "elo_changes": {
                 "winner": {
                     "old_elo": winner_new_elo - winner_elo_change,

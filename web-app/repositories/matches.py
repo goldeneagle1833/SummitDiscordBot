@@ -750,3 +750,70 @@ class MatchRepository:
             {"user_id": str(row[0]), "display_name": row[1], "wins": row[2], "losses": row[3]}
             for row in rows
         ]
+
+    def get_last_opponent(self, user_id: str) -> str | None:
+        """
+        Get the last opponent a player faced.
+
+        Checks both match_records and match_reports_web tables.
+
+        Args:
+            user_id: User ID to check (supports Discord numeric IDs and google_ prefixed IDs)
+
+        Returns:
+            str: Last opponent's user ID, or None if no matches found
+        """
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        # Query both tables and get the most recent match across both
+        # Check match_reports_web first (web-confirmed matches)
+        try:
+            cur.execute(
+                """SELECT
+                    CASE
+                        WHEN winner_id = ? THEN losser_id
+                        ELSE winner_id
+                    END as opponent_id,
+                    timestamp
+                FROM match_reports_web
+                WHERE winner_id = ? OR losser_id = ?
+                ORDER BY timestamp DESC
+                LIMIT 1""",
+                (str(user_id), str(user_id), str(user_id))
+            )
+            web_row = cur.fetchone()
+        except sqlite3.OperationalError:
+            web_row = None  # Table doesn't exist
+
+        # Check match_records (Discord bot matches)
+        cur.execute(
+            """SELECT
+                CASE
+                    WHEN winner_id = ? THEN losser_id
+                    ELSE winner_id
+                END as opponent_id,
+                timestamp
+            FROM match_records
+            WHERE winner_id = ? OR losser_id = ?
+            ORDER BY timestamp DESC
+            LIMIT 1""",
+            (str(user_id), str(user_id), str(user_id))
+        )
+        discord_row = cur.fetchone()
+
+        conn.close()
+
+        # Compare timestamps and return the most recent opponent
+        if web_row and discord_row:
+            # Compare timestamps (both are ISO format strings, lexicographically comparable)
+            if web_row[1] > discord_row[1]:
+                return str(web_row[0]) if web_row[0] else None
+            else:
+                return str(discord_row[0]) if discord_row[0] else None
+        elif web_row:
+            return str(web_row[0]) if web_row[0] else None
+        elif discord_row:
+            return str(discord_row[0]) if discord_row[0] else None
+        else:
+            return None

@@ -294,6 +294,34 @@
         height: 16px;
         cursor: pointer;
       }
+
+      /* ELO Source Toggle */
+      .elo-source-toggle {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: center;
+        margin-top: 0.75rem;
+      }
+      .elo-source-btn {
+        padding: 0.5rem 1.5rem;
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.05);
+        color: rgba(255, 255, 255, 0.7);
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+      .elo-source-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.9);
+      }
+      .elo-source-btn.active {
+        background: var(--color-primary);
+        border-color: var(--color-primary);
+        color: white;
+      }
     </style>
   </head>
   <body>
@@ -306,6 +334,10 @@
           Card popularity calculated from all matches with deck data in the
           database
         </p>
+        <div class="elo-source-toggle" id="elo-source-toggle">
+          <button class="elo-source-btn active" data-source="discord">Online</button>
+          <button class="elo-source-btn" data-source="web">Paper</button>
+        </div>
       </section>
 
       <!-- Filters -->
@@ -441,6 +473,47 @@
     </main>
 
     <script>
+      // ELO source tracking
+      let currentEloSource = 'discord'; // Default to online
+
+      // Load saved preference or default to discord
+      const savedSource = localStorage.getItem('live_popular_cards_source_preference');
+      if (savedSource && (savedSource === 'discord' || savedSource === 'web')) {
+        currentEloSource = savedSource;
+      }
+
+      // Initialize source toggle buttons
+      function initializeSourceToggle() {
+        document.querySelectorAll('.elo-source-btn').forEach(btn => {
+          btn.addEventListener('click', async function() {
+            if (this.disabled) return;
+
+            const source = this.dataset.source;
+            if (source === currentEloSource) return; // Already selected
+
+            // Update state
+            currentEloSource = source;
+            localStorage.setItem('live_popular_cards_source_preference', source);
+
+            // Update UI
+            updateToggleButtons(source);
+
+            // Refetch data
+            await fetchCardStats();
+            await fetchPopularityData();
+          });
+        });
+
+        // Set initial button states
+        updateToggleButtons(currentEloSource);
+      }
+
+      function updateToggleButtons(source) {
+        document.querySelectorAll('.elo-source-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.source === source);
+        });
+      }
+
       let allCards = [];
       let filteredCards = [];
       let currentSort = { field: "percent_of_decks", direction: "desc" };
@@ -565,7 +638,7 @@
 
       async function fetchCardStats() {
         try {
-          const res = await fetch("/api/live-popular-cards");
+          const res = await fetch(`/api/live-popular-cards?source=${currentEloSource}`);
 
           if (res.status === 403) {
             document.getElementById("cards-tbody").innerHTML = `
@@ -645,6 +718,9 @@
           `;
         }
       }
+
+      // Initialize toggle
+      initializeSourceToggle();
 
       fetchCardStats();
 
@@ -948,7 +1024,7 @@
       // Fetch popularity data
       async function fetchPopularityData() {
         try {
-          const res = await fetch("/api/cards/popularity");
+          const res = await fetch(`/api/cards/popularity?source=${currentEloSource}`);
           if (!res.ok) return;
           popularityData = await res.json();
 

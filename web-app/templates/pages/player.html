@@ -869,7 +869,8 @@
       let eventsData = null;
 
       // ELO source tracking
-      let currentEloSource = 'bot'; // 'web' or 'bot' - default to bot where all matches are
+      // Check for saved preference, otherwise backend will auto-detect based on most recent match
+      let currentEloSource = localStorage.getItem('elo_source_preference') || 'bot';
       let hasWebMatches = false;
       let hasBotMatches = false;
 
@@ -2163,9 +2164,17 @@
           const data = await res.json();
           if (res.ok && data.success) {
             hideDisplayNameModal();
-            // Reload page data to reflect the new name
-            const eventFilter = document.getElementById("elo-filter")?.value || "lifetime";
-            fetchPlayerData(eventFilter, currentPage, currentEloSource);
+            // Update the displayed name immediately without re-fetching
+            const playerNameElement = document.getElementById("player-name");
+            if (playerNameElement) {
+              playerNameElement.textContent = data.display_name;
+            }
+            // Update the page title
+            document.title = `${data.display_name} - Sorcerers Summit`;
+            // Mark that we've successfully set the display name to prevent re-showing modal
+            if (storedPlayerData) {
+              storedPlayerData.has_custom_display_name = true;
+            }
           } else {
             alert("Error: " + (data.error || "Failed to set display name"));
           }

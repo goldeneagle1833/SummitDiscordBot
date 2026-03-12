@@ -135,20 +135,24 @@ def player_api(player_id):
     conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
     cur = conn.cursor()
 
-    # Count matches in both tables to determine available sources
+    # Count matches and find most recent match in both tables to determine available sources
     has_web_matches = False
     has_bot_matches = False
+    most_recent_web = None
+    most_recent_bot = None
 
     # Check for web matches (match_reports_web table with TEXT IDs)
     try:
         cur.execute(
             """
-            SELECT COUNT(*) FROM match_reports_web
+            SELECT COUNT(*), MAX(timestamp) FROM match_reports_web
             WHERE winner_id = ? OR losser_id = ?
             """,
             (original_player_id, original_player_id),
         )
-        web_count = cur.fetchone()[0]
+        row = cur.fetchone()
+        web_count = row[0]
+        most_recent_web = row[1]
         has_web_matches = web_count > 0
     except sqlite3.OperationalError:
         # Table may not exist yet
@@ -158,21 +162,30 @@ def player_api(player_id):
     try:
         cur.execute(
             """
-            SELECT COUNT(*) FROM match_records
+            SELECT COUNT(*), MAX(timestamp) FROM match_records
             WHERE winner_id = ? OR losser_id = ?
             """,
             (player_id_normalized, player_id_normalized),
         )
-        bot_count = cur.fetchone()[0]
+        row = cur.fetchone()
+        bot_count = row[0]
+        most_recent_bot = row[1]
         has_bot_matches = bot_count > 0
     except sqlite3.OperationalError:
         pass
 
-    # Auto-detect source: if requested source has no matches, switch to the other
+    # Auto-detect source based on most recent match, with fallback to availability
+    # If requested source has no matches, switch to the other
     if source == "bot" and not has_bot_matches and has_web_matches:
         source = "web"
     elif source == "web" and not has_web_matches and has_bot_matches:
         source = "bot"
+    # If user has matches in both sources, default to whichever has the most recent match
+    elif has_web_matches and has_bot_matches and most_recent_web and most_recent_bot:
+        if most_recent_web > most_recent_bot:
+            source = "web"
+        else:
+            source = "bot"
 
     # Determine which tables to query based on event filter and source
     include_current_matches = True  # From match_records or match_reports_web table
@@ -1163,22 +1176,29 @@ def set_display_name(player_id):
         if not success:
             return jsonify({"error": "Display name has already been set"}), 409
 
+        logger.info(f"User {logged_in_id_str} set custom display name to '{new_name}'")
+
         # Update display name in leaderboard standings and match records
+        # These are cosmetic updates - don't fail if they error
         from repositories.elo import EloRepository
         from repositories.matches import MatchRepository
 
-        elo_repo = EloRepository()
-        match_repo = MatchRepository()
+        try:
+            elo_repo = EloRepository()
+            match_repo = MatchRepository()
 
-        # Update bot standings (uses normalized ID without google_ prefix)
-        elo_repo.rename_player(player_id_normalized, new_name)
-        match_repo.rename_player_in_matches(player_id_normalized, new_name)
+            # Update bot standings (uses normalized ID without google_ prefix)
+            elo_repo.rename_player(player_id_normalized, new_name)
+            match_repo.rename_player_in_matches(player_id_normalized, new_name)
 
-        # Update paper standings (uses original ID with google_ prefix for Google users)
-        elo_repo.rename_paper_player(str(logged_in_id_str), new_name)
-        match_repo.rename_player_in_web_matches(str(logged_in_id_str), new_name)
+            # Update paper standings (uses original ID with google_ prefix for Google users)
+            elo_repo.rename_paper_player(str(logged_in_id_str), new_name)
+            match_repo.rename_player_in_web_matches(str(logged_in_id_str), new_name)
+        except Exception as e:
+            # Log the error but don't fail the whole operation
+            # The custom display name was successfully set, which is what matters
+            logger.warning(f"Error updating display name in ELO/match tables (non-fatal): {e}", exc_info=True)
 
-        logger.info(f"User {logged_in_id_str} set custom display name to '{new_name}'")
         return jsonify({"success": True, "display_name": new_name})
 
     except Exception as e:

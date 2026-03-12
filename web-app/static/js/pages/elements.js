@@ -4,10 +4,57 @@
  * Description: Handles element statistics charts, win rates, presence analysis, and deck composition
  */
 
+// ELO source tracking
+let currentEloSource = 'discord'; // Default to online
+
 document.addEventListener('DOMContentLoaded', () => {
+  initializeSourceToggle();
+
+  // Load saved preference or default to discord
+  const savedSource = localStorage.getItem('elements_source_preference');
+  if (savedSource && (savedSource === 'discord' || savedSource === 'web')) {
+    currentEloSource = savedSource;
+    updateToggleButtons(currentEloSource);
+  }
+
   fetchElementStats();
   fetchDeckComposition();
 });
+
+/**
+ * Initialize source toggle buttons
+ */
+function initializeSourceToggle() {
+  document.querySelectorAll('.elo-source-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+      if (this.disabled) return;
+
+      const source = this.dataset.source;
+      if (source === currentEloSource) return; // Already selected
+
+      // Update state
+      currentEloSource = source;
+      localStorage.setItem('elements_source_preference', source);
+
+      // Update UI
+      updateToggleButtons(source);
+
+      // Refetch data
+      await fetchElementStats();
+      await fetchDeckComposition();
+    });
+  });
+}
+
+/**
+ * Update toggle button states
+ * @param {string} source - 'discord' or 'web'
+ */
+function updateToggleButtons(source) {
+  document.querySelectorAll('.elo-source-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.source === source);
+  });
+}
 
 /**
  * Get element color class for combo labels
@@ -113,7 +160,7 @@ function renderComboBars(combos, containerId) {
  */
 async function fetchElementStats() {
   try {
-    const res = await fetch('/api/elements');
+    const res = await fetch(`/api/elements?source=${currentEloSource}`);
     const data = await res.json();
 
     const container = document.getElementById('element-bars');
@@ -203,7 +250,7 @@ async function fetchElementStats() {
  */
 async function fetchDeckComposition() {
   try {
-    const res = await fetch('/api/deck-composition');
+    const res = await fetch(`/api/deck-composition?source=${currentEloSource}`);
 
     // Check if user has permission
     if (res.status === 403) {

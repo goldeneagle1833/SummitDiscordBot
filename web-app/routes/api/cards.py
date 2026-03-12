@@ -8,7 +8,7 @@ import sqlite3
 from collections import Counter
 from pathlib import Path
 
-from flask import Blueprint, jsonify, current_app
+from flask import Blueprint, jsonify, current_app, request
 
 from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH, CARD_IMAGES_DIR
 from utils.auth import is_admin
@@ -184,9 +184,14 @@ def get_cards():
 
 @cards_bp.route("/live-popular-cards")
 def get_live_popular_cards():
-    """API endpoint for live card popularity stats from all matches with deck data."""
+    """API endpoint for live card popularity stats from all matches with deck data.
+
+    Supports optional query param: ?source=discord|web (default: discord)
+    """
     if not is_admin():
         return jsonify({"error": "Unauthorized"}), 403
+
+    source_filter = request.args.get("source", "discord")
 
     # Load card metadata
     card_metadata = {}
@@ -211,32 +216,43 @@ def get_live_popular_cards():
     use_new_columns = True
     all_rows = []
 
+    # Build source filter clause
+    if source_filter == "discord":
+        where_clause = "AND (source = 'Discord' OR source IS NULL)"
+    elif source_filter == "web":
+        where_clause = "AND source != 'Discord' AND source IS NOT NULL"
+    else:
+        where_clause = ""
+
     # Query current match_records
     try:
-        cur.execute("""
+        cur.execute(f"""
             SELECT json_deck_data_winner, json_deck_data_loser
             FROM match_records
-            WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-               OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+            WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+               OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
+            {where_clause}
         """)
         all_rows.extend(cur.fetchall())
     except sqlite3.OperationalError:
         use_new_columns = False
-        cur.execute("""
+        cur.execute(f"""
             SELECT json_deck_data
             FROM match_records
-            WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+            WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
+            {where_clause}
         """)
         all_rows.extend(cur.fetchall())
 
     # Also query match_records_archive for lifetime stats
     if use_new_columns:
         try:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT json_deck_data_winner, json_deck_data_loser
                 FROM match_records_archive
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
+                {where_clause}
             """)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
@@ -262,10 +278,11 @@ def get_live_popular_cards():
 
     # Also get solo match reports
     try:
-        cur.execute("""
+        cur.execute(f"""
             SELECT json_deck_data
             FROM solo_match_reports
-            WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+            WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
+            {where_clause}
         """)
         for row in cur.fetchall():
             if row[0]:
@@ -343,7 +360,9 @@ def get_elements():
     """API endpoint for elemental winrates from all matches with deck data.
 
     Includes both current event matches and archived matches for lifetime stats.
+    Supports optional query param: ?source=discord|web (default: discord)
     """
+    source_filter = request.args.get("source", "discord")
     card_elements = _load_card_elements()
 
     try:
@@ -353,13 +372,21 @@ def get_elements():
         all_rows = []
         use_new_columns = True
 
-        # Query current match_records
+        # Query current match_records with source filter
         try:
-            cur.execute("""
+            if source_filter == "discord":
+                where_clause = "AND (source = 'Discord' OR source IS NULL)"
+            elif source_filter == "web":
+                where_clause = "AND source != 'Discord' AND source IS NOT NULL"
+            else:
+                where_clause = ""
+
+            cur.execute(f"""
                 SELECT json_deck_data_winner, json_deck_data_loser
                 FROM match_records
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
+                {where_clause}
             """)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
@@ -895,16 +922,27 @@ def get_all_cards_popularity():
     """API endpoint for all cards' popularity over time.
 
     Returns daily counts for every card in a single response.
+    Supports optional query param: ?source=discord|web (default: discord)
     Admin only.
     """
     if not is_admin():
         return jsonify({"error": "Unauthorized"}), 403
+
+    source_filter = request.args.get("source", "discord")
 
     from datetime import datetime, timedelta
     from collections import defaultdict
 
     if not MATCH_RECORDS_DB_PATH.exists():
         return jsonify({"cards": {}})
+
+    # Build source filter clause
+    if source_filter == "discord":
+        where_clause = "AND (source = 'Discord' OR source IS NULL)"
+    elif source_filter == "web":
+        where_clause = "AND source != 'Discord' AND source IS NOT NULL"
+    else:
+        where_clause = ""
 
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
@@ -914,19 +952,21 @@ def get_all_cards_popularity():
         use_new_columns = True
 
         try:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT json_deck_data_winner, json_deck_data_loser, timestamp
                 FROM match_records
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
+                {where_clause}
             """)
             all_rows.extend(cur.fetchall())
         except sqlite3.OperationalError:
             try:
-                cur.execute("""
+                cur.execute(f"""
                     SELECT json_deck_data, '', timestamp
                     FROM match_records
-                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                    WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
+                    {where_clause}
                 """)
                 all_rows.extend(cur.fetchall())
                 use_new_columns = False
@@ -936,11 +976,12 @@ def get_all_cards_popularity():
 
         if use_new_columns:
             try:
-                cur.execute("""
+                cur.execute(f"""
                     SELECT json_deck_data_winner, json_deck_data_loser, timestamp
                     FROM match_records_archive
-                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+                    WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
+                    {where_clause}
                 """)
                 all_rows.extend(cur.fetchall())
             except sqlite3.OperationalError:

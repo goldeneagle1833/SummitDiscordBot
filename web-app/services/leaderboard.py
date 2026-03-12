@@ -176,6 +176,29 @@ class LeaderboardService:
             )
         return leaderboard_data
 
+    def get_paper_event_leaderboard(self) -> dict:
+        """Get paper event leaderboard with active event info."""
+        active_event = self._elo_repo.get_active_event()
+        standings = self._elo_repo.get_paper_standings()
+
+        leaderboard_data = []
+        for standing in standings:
+            user_id = standing["user_id"]
+            # Only include players with non-default event ELO
+            if standing["paper_event_elo"] != 1500:
+                leaderboard_data.append(
+                    {
+                        "id": str(user_id),
+                        "name": standing["display_name"],
+                        "event_elo": standing["paper_event_elo"],
+                    }
+                )
+
+        # Sort by event ELO descending
+        leaderboard_data.sort(key=lambda x: x["event_elo"], reverse=True)
+
+        return {"event": active_event, "leaderboard": leaderboard_data}
+
     def get_elo_distribution(self) -> dict:
         """Get ELO distribution across bands."""
         elos = self._elo_repo.get_all_elos()

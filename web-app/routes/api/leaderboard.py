@@ -58,6 +58,18 @@ def get_paper_leaderboard():
         return jsonify({"error": str(e)}), 500
 
 
+@leaderboard_bp.route("/leaderboard/paper-event")
+def get_paper_event_leaderboard():
+    """Get paper event ELO leaderboard (web-reported matches only)."""
+    try:
+        service = LeaderboardService()
+        event_data = service.get_paper_event_leaderboard()
+        return jsonify(event_data)
+    except Exception as e:
+        logger.error(f"Error fetching paper event leaderboard: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @leaderboard_bp.route("/elo-distribution")
 def get_elo_distribution():
     """Get ELO distribution across bands."""

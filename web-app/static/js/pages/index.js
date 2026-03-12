@@ -4,9 +4,21 @@
  * Description: Handles event leaderboard, YouTube videos, and temporary banners
  */
 
+// ELO source tracking
+let currentEloSource = 'online'; // 'online' or 'paper' - default to online
+
 document.addEventListener('DOMContentLoaded', () => {
   initializeTemporaryNotices();
   initializeEasterEgg();
+  initializeEloSourceToggle();
+
+  // Load saved preference or default to online
+  const savedSource = localStorage.getItem('home_elo_source_preference');
+  if (savedSource && (savedSource === 'online' || savedSource === 'paper')) {
+    currentEloSource = savedSource;
+    updateToggleButtons(currentEloSource);
+  }
+
   fetchEventLeaderboard();
 
   // Auto-refresh event leaderboard every 30 seconds
@@ -166,11 +178,50 @@ function renderEventLeaderboard(eventData) {
 }
 
 /**
+ * Initialize ELO source toggle buttons
+ */
+function initializeEloSourceToggle() {
+  document.querySelectorAll('.elo-source-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+      if (this.disabled) return;
+
+      const source = this.dataset.source;
+      if (source === currentEloSource) return; // Already selected
+
+      // Update state
+      currentEloSource = source;
+      localStorage.setItem('home_elo_source_preference', source);
+
+      // Update UI
+      updateToggleButtons(source);
+
+      // Refetch data with new source
+      await fetchEventLeaderboard();
+    });
+  });
+}
+
+/**
+ * Update toggle button states
+ * @param {string} source - 'online' or 'paper'
+ */
+function updateToggleButtons(source) {
+  document.querySelectorAll('.elo-source-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.source === source);
+  });
+}
+
+/**
  * Fetch event leaderboard from API
  */
 async function fetchEventLeaderboard() {
   try {
-    const res = await fetch('/api/leaderboard/event');
+    // Fetch from different endpoint based on source
+    const endpoint = currentEloSource === 'paper'
+      ? '/api/leaderboard/paper-event'
+      : '/api/leaderboard/event';
+
+    const res = await fetch(endpoint);
     if (!res.ok) {
       console.error('Failed to fetch event leaderboard:', res.status);
       return;

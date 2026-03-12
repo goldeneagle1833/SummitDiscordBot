@@ -41,6 +41,7 @@ from utils.database import (
     get_user_elo,
     update_elo_db,
     log_admin_action,
+    cleanup_old_pairings,
 )
 from utils.constants import SORCERY_NICKNAMES
 from utils.text import find_best_command_match
@@ -56,12 +57,14 @@ class LFGCog(commands.Cog):
         self.check_expired_queue.start()  # Start the background task
         self.cleanup_old_status_messages.start()  # Clean up old messages on startup
         self.cleanup_old_leaderboard_messages.start()  # Clean up old leaderboard on startup
+        self.cleanup_database_pairings.start()  # Clean up old pairings periodically
 
     def cog_unload(self):
         """Clean up when cog is unloaded"""
         self.check_expired_queue.cancel()
         self.cleanup_old_status_messages.cancel()
         self.cleanup_old_leaderboard_messages.cancel()
+        self.cleanup_database_pairings.cancel()
 
     @tasks.loop(count=1)
     async def cleanup_old_status_messages(self):
@@ -365,6 +368,21 @@ class LFGCog(commands.Cog):
 
     @check_expired_queue.before_loop
     async def before_check_expired_queue(self):
+        """Wait for bot to be ready before starting the loop"""
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(hours=6)
+    async def cleanup_database_pairings(self):
+        """Background task to clean up old database pairings every 6 hours"""
+        try:
+            logger.info("Running periodic database pairing cleanup...")
+            cleanup_old_pairings(hours=24)  # Expire pairings older than 24 hours
+            logger.info("Database pairing cleanup completed successfully")
+        except Exception as e:
+            logger.error(f"Error in cleanup_database_pairings task: {e}", exc_info=True)
+
+    @cleanup_database_pairings.before_loop
+    async def before_cleanup_database_pairings(self):
         """Wait for bot to be ready before starting the loop"""
         await self.bot.wait_until_ready()
 

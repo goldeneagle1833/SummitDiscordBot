@@ -537,12 +537,33 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
 
         # Validate pairing exists in DB using both player IDs (most recent active)
         if not view.ladder_info:
-            if not view.guild_id or not get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id):
+            if not view.guild_id:
+                logger.error(
+                    f"guild_id is None during match report validation for user {original_interaction.user.id}"
+                )
                 await interaction.followup.send(
-                    "No active pairing found. You can only report matches against your paired opponent.",
+                    "No active pairing found. Guild context is missing. Please report this bug to an admin.",
                     ephemeral=True,
                 )
                 return
+
+            pairing = get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
+            if not pairing:
+                logger.warning(
+                    f"No active pairing found in guild {view.guild_id} between "
+                    f"user {original_interaction.user.id} and opponent {opponent_id}"
+                )
+                await interaction.followup.send(
+                    "No active pairing found. This may happen if the match wasn't properly saved.\n\n"
+                    "**To report this match manually:** Use `!challenge @opponent` to create a new report flow.",
+                    ephemeral=True,
+                )
+                return
+            else:
+                logger.info(
+                    f"Validated pairing {pairing['pairing_id']} for match report in guild {view.guild_id}: "
+                    f"user {original_interaction.user.id} vs opponent {opponent_id}"
+                )
 
         # Fetch opponent to get their global name
         try:
@@ -733,12 +754,33 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
 
         # Validate pairing exists in DB using both player IDs (most recent active)
         if not view.ladder_info:
-            if not view.guild_id or not get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id):
+            if not view.guild_id:
+                logger.error(
+                    f"guild_id is None during match report validation for user {original_interaction.user.id}"
+                )
                 await interaction.followup.send(
-                    "No active pairing found. You can only report matches against your paired opponent.",
+                    "No active pairing found. Guild context is missing. Please report this bug to an admin.",
                     ephemeral=True,
                 )
                 return
+
+            pairing = get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
+            if not pairing:
+                logger.warning(
+                    f"No active pairing found in guild {view.guild_id} between "
+                    f"user {original_interaction.user.id} and opponent {opponent_id}"
+                )
+                await interaction.followup.send(
+                    "No active pairing found. This may happen if the match wasn't properly saved.\n\n"
+                    "**To report this match manually:** Use `!challenge @opponent` to create a new report flow.",
+                    ephemeral=True,
+                )
+                return
+            else:
+                logger.info(
+                    f"Validated pairing {pairing['pairing_id']} for match report in guild {view.guild_id}: "
+                    f"user {original_interaction.user.id} vs opponent {opponent_id}"
+                )
 
         # Fetch opponent to get their global name
         try:
@@ -1253,12 +1295,33 @@ class LFGReportButtons(discord.ui.View):
 
         # Validate pairing exists in DB using both player IDs (most recent active)
         if not self.ladder_info:
-            if not self.guild_id or not get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id):
+            if not self.guild_id:
+                logger.error(
+                    f"guild_id is None during match report validation for user {interaction.user.id}"
+                )
                 await interaction.followup.send(
-                    "No active pairing found. You can only report matches against your paired opponent.",
+                    "No active pairing found. Guild context is missing. Please report this bug to an admin.",
                     ephemeral=True,
                 )
                 return
+
+            pairing = get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
+            if not pairing:
+                logger.warning(
+                    f"No active pairing found in guild {self.guild_id} between "
+                    f"user {interaction.user.id} and opponent {opponent_id}"
+                )
+                await interaction.followup.send(
+                    "No active pairing found. This may happen if the match wasn't properly saved.\n\n"
+                    "**To report this match manually:** Use `!challenge @opponent` to create a new report flow.",
+                    ephemeral=True,
+                )
+                return
+            else:
+                logger.info(
+                    f"Validated pairing {pairing['pairing_id']} for match report in guild {self.guild_id}: "
+                    f"user {interaction.user.id} vs opponent {opponent_id}"
+                )
 
         # Fetch opponent to get their global name
         try:
@@ -1478,12 +1541,33 @@ class LFGReportButtons(discord.ui.View):
 
         # Validate pairing exists in DB using both player IDs (most recent active)
         if not self.ladder_info:
-            if not self.guild_id or not get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id):
+            if not self.guild_id:
+                logger.error(
+                    f"guild_id is None during match report validation for user {interaction.user.id}"
+                )
                 await interaction.followup.send(
-                    "No active pairing found. You can only report matches against your paired opponent.",
+                    "No active pairing found. Guild context is missing. Please report this bug to an admin.",
                     ephemeral=True,
                 )
                 return
+
+            pairing = get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
+            if not pairing:
+                logger.warning(
+                    f"No active pairing found in guild {self.guild_id} between "
+                    f"user {interaction.user.id} and opponent {opponent_id}"
+                )
+                await interaction.followup.send(
+                    "No active pairing found. This may happen if the match wasn't properly saved.\n\n"
+                    "**To report this match manually:** Use `!challenge @opponent` to create a new report flow.",
+                    ephemeral=True,
+                )
+                return
+            else:
+                logger.info(
+                    f"Validated pairing {pairing['pairing_id']} for match report in guild {self.guild_id}: "
+                    f"user {interaction.user.id} vs opponent {opponent_id}"
+                )
 
         # Fetch opponent to get their global name
         try:

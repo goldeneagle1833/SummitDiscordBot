@@ -711,29 +711,46 @@ def save_pairing(
 
     Returns:
         The pairing_id of the created record
+
+    Raises:
+        ValueError: If guild_id is None or invalid
+        sqlite3.Error: If database operation fails
     """
+    if guild_id is None:
+        raise ValueError("guild_id cannot be None")
+
     create_active_pairings_table()
-    conn = sqlite3.connect("match_records.db")
-    cur = conn.cursor()
 
-    cur.execute(
-        """INSERT INTO active_pairings
-           (guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, status)
-           VALUES (?, ?, ?, ?, ?, ?, 'active')""",
-        (
-            guild_id,
-            player1_id,
-            player2_id,
-            player1_deck_url,
-            player2_deck_url,
-            datetime.datetime.now().isoformat(),
-        ),
-    )
+    # Use context manager for automatic commit/rollback
+    try:
+        with get_db_connection("match_records.db") as conn:
+            cur = conn.cursor()
 
-    pairing_id = cur.lastrowid
-    conn.commit()
-    conn.close()
-    return pairing_id
+            cur.execute(
+                """INSERT INTO active_pairings
+                   (guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, status)
+                   VALUES (?, ?, ?, ?, ?, ?, 'active')""",
+                (
+                    guild_id,
+                    player1_id,
+                    player2_id,
+                    player1_deck_url,
+                    player2_deck_url,
+                    datetime.datetime.now().isoformat(),
+                ),
+            )
+
+            pairing_id = cur.lastrowid
+            logger.info(
+                f"Saved pairing {pairing_id}: guild={guild_id}, player1={player1_id}, player2={player2_id}"
+            )
+            return pairing_id
+    except sqlite3.Error as e:
+        logger.error(
+            f"Database error saving pairing (guild={guild_id}, p1={player1_id}, p2={player2_id}): {e}",
+            exc_info=True,
+        )
+        raise
 
 
 def get_active_pairing_for_user(guild_id: int, user_id: int) -> dict | None:

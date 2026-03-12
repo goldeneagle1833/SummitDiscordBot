@@ -120,14 +120,40 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             # Record match start time
             match_start_time = datetime.datetime.now()
 
+            # Validate guild_id before saving pairing
+            if not interaction.guild or not interaction.guild.id:
+                logger.error(
+                    f"Cannot save pairing: guild_id is None for users {interaction.user.id} and {matched_user_id}"
+                )
+                await interaction.followup.send(
+                    "Error: Could not save match pairing. Please try using !lfg command instead.",
+                    ephemeral=True,
+                )
+                return
+
             # Save pairing to database for validation during match reporting
-            save_pairing(
-                guild_id=interaction.guild.id,
-                player1_id=interaction.user.id,
-                player2_id=matched_user_id,
-                player1_deck_url=deck_url,
-                player2_deck_url=matched_user_deck_url,
-            )
+            try:
+                pairing_id = save_pairing(
+                    guild_id=interaction.guild.id,
+                    player1_id=interaction.user.id,
+                    player2_id=matched_user_id,
+                    player1_deck_url=deck_url,
+                    player2_deck_url=matched_user_deck_url,
+                )
+                logger.info(
+                    f"Saved pairing {pairing_id} in guild {interaction.guild.id}: "
+                    f"{interaction.user.id} ({joiner_global}) vs {matched_user_id} ({matched_global})"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to save pairing for users {interaction.user.id} and {matched_user_id}: {e}",
+                    exc_info=True,
+                )
+                await interaction.followup.send(
+                    "Error: Could not save match pairing to database. Please contact an admin.",
+                    ephemeral=True,
+                )
+                return
 
             # Randomly select which player gets the report buttons
             players = [

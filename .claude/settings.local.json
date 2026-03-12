@@ -40,7 +40,8 @@
       "Bash(dir:*)",
       "Bash(del:*)",
       "Bash(pwsh -File:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(pytest:*)"
     ]
   },
   "enabledPlugins": {

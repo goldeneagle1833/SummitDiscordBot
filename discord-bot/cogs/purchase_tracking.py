@@ -4,6 +4,8 @@ import datetime
 import sqlite3
 import logging
 
+from utils.checks import is_bot_admin
+
 logger = logging.getLogger("discord_bot")
 
 
@@ -197,7 +199,7 @@ class PurchaseTrackingCog(commands.Cog):
             logger.error(f"Error in on_entitlement_delete: {e}")
 
     @commands.command(name="purchase_history")
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def purchase_history(self, ctx, user: discord.User = None, limit: int = 20):
         """
         [ADMIN ONLY] View purchase history from Discord's shop
@@ -285,7 +287,7 @@ class PurchaseTrackingCog(commands.Cog):
             await ctx.send(f"An error occurred: {e}")
 
     @commands.command(name="purchase_stats")
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def purchase_stats(self, ctx):
         """
         [ADMIN ONLY] View statistics about Discord shop purchases
@@ -347,7 +349,7 @@ class PurchaseTrackingCog(commands.Cog):
             await ctx.send(f"An error occurred: {e}")
 
     @commands.command(name="test_purchase_log")
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def test_purchase_log(self, ctx, user: discord.User = None):
         """
         [ADMIN ONLY] Manually log a test purchase to verify the system is working

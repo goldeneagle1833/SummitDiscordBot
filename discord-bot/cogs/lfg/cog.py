@@ -44,6 +44,7 @@ from utils.database import (
 )
 from utils.constants import SORCERY_NICKNAMES
 from utils.text import find_best_command_match
+from utils.checks import is_bot_admin
 
 logger = logging.getLogger("discord_bot")
 
@@ -1136,18 +1137,18 @@ class LFGCog(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def admin_help(self, ctx):
         """Get detailed help for admin commands (requires administrator permissions)."""
         embed = discord.Embed(
             title="Admin Commands",
-            description="Administrative commands for managing ELO, matches, and players.",
+            description="Administrative commands for managing ELO, matches, players, and the server.",
             color=discord.Color.orange(),
         )
 
         # Match Reporting
         embed.add_field(
-            name="Manual Match Reporting",
+            name="Match Reporting",
             value=(
                 "`!admin_report @winner @loser`\n"
                 "Manually report a match result between two players.\n"
@@ -1169,28 +1170,16 @@ class LFGCog(commands.Cog):
             inline=False,
         )
 
-        # Match Correction
+        # Match Correction & Removal
         embed.add_field(
-            name="Match Correction",
+            name="Match Correction & Removal",
             value=(
                 "`!correct_match <match_id>`\n"
-                "Flip the winner/loser of a match and recalculate ALL affected ELO.\n"
-                "**When to use:** When someone reported the wrong outcome. This will:\n"
-                "\u2022 Swap the winner and loser\n"
-                "\u2022 Recalculate ELO for all subsequent matches involving those players\n"
-                "**Recommended over !remove_match** for incorrect reports."
-            ),
-            inline=False,
-        )
-
-        # Match Removal
-        embed.add_field(
-            name="Match Removal",
-            value=(
+                "Flip the winner/loser and recalculate ALL affected ELO.\n"
+                "**Recommended** for incorrect reports.\n\n"
                 "`!remove_match <match_id>`\n"
-                "Remove a specific match and revert the ELO changes from that match.\n"
-                "**When to use:** When a match was a test game or never actually happened.\n"
-                "Does NOT recalculate subsequent matches. Use `!correct_match` instead for wrong reports."
+                "Remove a match and revert its ELO changes.\n"
+                "**When to use:** Test games or matches that never happened."
             ),
             inline=False,
         )
@@ -1200,22 +1189,21 @@ class LFGCog(commands.Cog):
             name="Player Removal",
             value=(
                 "`!remove_player @user`\n"
-                "Remove a player from the system and revert ALL ELO changes from their matches.\n"
-                "**When to use:** When a player was cheating, using multiple accounts, "
-                "or needs to be completely removed from the ranking system.\n"
+                "Remove a player and revert ALL ELO changes from their matches.\n"
                 "**Warning:** This affects all opponents' ELO as well!"
             ),
             inline=False,
         )
 
-        # Full Reset
+        # Event Management
         embed.add_field(
-            name="Full Database Reset",
+            name="Event Management",
             value=(
-                "`!reset_elo`\n"
-                "**DANGER:** Completely reset ALL ELO ratings and match history.\n"
-                "**When to use:** At the start of a new season, or when starting fresh.\n"
-                "**This action cannot be undone!**"
+                "`!start_event <event_name>` - Start a new event/season\n"
+                "`!end_event` - End the current event\n"
+                "`!event_status` - View current event status\n"
+                "`!recalculate_event_elo` - Recalculate all event ELO from match records\n"
+                "`!reset_elo` - **DANGER:** Reset ALL ELO ratings and match history"
             ),
             inline=False,
         )
@@ -1225,30 +1213,56 @@ class LFGCog(commands.Cog):
             name="Activity Monitoring",
             value=(
                 "`!game_activity [hours]`\n"
-                "View game statistics for the last X hours (default 24, max 8760).\n"
-                "**When to use:** To monitor server activity, check for unusual patterns, "
-                "or generate activity reports."
+                "View game statistics for the last X hours (default 24, max 8760)."
             ),
             inline=False,
         )
 
-        # Event Management
+        # Community Management
         embed.add_field(
-            name="Event Management",
+            name="Community Management",
             value=(
-                "`!start_event <event_name>`\n"
-                "Start a new event/season. Archives current event (if any) and resets event ELO.\n"
-                "**When to use:** At the start of a new tournament or season.\n\n"
-                "`!end_event`\n"
-                "End the current event without starting a new one.\n"
-                "**When to use:** To have a break between seasons.\n\n"
-                "`!event_status`\n"
-                "View current event status including name, K-value, and days elapsed."
+                "`!add_discord Name | invite_url | location | description`\n"
+                "`!add_youtube Name | channel_id | channel_url`\n"
+                "`!add_website Name | url | description`\n"
+                "`!remove_community discord|youtube|website <id>`\n"
+                "`!list_community` - List all community entries with IDs"
             ),
             inline=False,
         )
 
-        embed.set_footer(text="All admin commands require administrator permissions")
+        # Streaming
+        embed.add_field(
+            name="Streaming",
+            value=(
+                "`!refresh_streamers` - Manually refresh the streamers list\n"
+                "`!debug_activities` - Show all members with any activity\n"
+                "`!debug_voice` - Show members in voice channels"
+            ),
+            inline=False,
+        )
+
+        # Purchase Tracking
+        embed.add_field(
+            name="Purchase Tracking",
+            value=(
+                "`!purchase_history [@user] [limit]` - View purchase history\n"
+                "`!purchase_stats` - View purchase statistics\n"
+                "`!test_purchase_log` - Log a test purchase"
+            ),
+            inline=False,
+        )
+
+        # Utility
+        embed.add_field(
+            name="Utility",
+            value=(
+                "`!giveaway [hours]` - Pick a random winner from recent posters (default 24h)"
+            ),
+            inline=False,
+        )
+
+        embed.set_footer(text="All admin commands require admin permissions or Bot Admin role")
 
         await ctx.send(embed=embed)
 
@@ -1258,7 +1272,7 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def reset_elo(self, ctx):
         """Admin command to reset all ELO ratings and match history"""
         import sqlite3
@@ -1370,7 +1384,7 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def admin_report(
         self, ctx, winner: discord.Member = None, loser: discord.Member = None
     ):
@@ -1467,7 +1481,7 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def start_event(self, ctx, *, event_name: str = None):
         """
         Start a new event/season. Archives current event and resets event ELO.
@@ -1569,7 +1583,7 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def end_event(self, ctx):
         """
         End the current event without starting a new one.
@@ -1733,7 +1747,7 @@ class LFGCog(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def recalculate_event_elo(self, ctx):
         """
         Recalculate all event ELO from scratch based on match records.
@@ -1884,7 +1898,7 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def spot_elo_reset(self, ctx, user: discord.Member = None, elo: int = None):
         """Admin command to set a specific user's event ELO. Usage: !spot_elo_reset @user 1500"""
         import sqlite3
@@ -1997,7 +2011,7 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def correct_match(self, ctx, match_id: int = None):
         """Admin command to correct a match by flipping the outcome and recalculating all affected ELO.
         Usage: !correct_match <match_id>
@@ -2359,7 +2373,7 @@ class LFGCog(commands.Cog):
             await ctx.send("Invalid match ID. Please provide a valid number.")
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def remove_match(self, ctx, match_id: int = None):
         """Admin command to remove a match report and revert ELO changes. Usage: !remove_match <match_id>"""
         import sqlite3
@@ -2625,7 +2639,7 @@ class LFGCog(commands.Cog):
             await ctx.send("Error fetching top 16. See logs for details.")
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def remove_player(self, ctx, user: discord.Member = None):
         """Admin command to remove a player and revert all ELO changes from their matches. Usage: !remove_player @user"""
         import sqlite3

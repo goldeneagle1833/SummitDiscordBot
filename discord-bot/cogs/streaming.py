@@ -13,6 +13,7 @@ import logging
 from pathlib import Path
 
 from repositories.audit_repo import log_admin_action
+from utils.checks import is_bot_admin
 
 logger = logging.getLogger("discord_bot")
 
@@ -310,7 +311,7 @@ class StreamingCog(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(name="refresh_streamers")
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def refresh_streamers(self, ctx: commands.Context):
         """Manually refresh the streamers list by checking all members."""
         await ctx.send("🔄 Refreshing streamers list...")
@@ -351,7 +352,7 @@ class StreamingCog(commands.Cog):
         )
 
     @commands.command(name="debug_activities")
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def debug_activities(self, ctx: commands.Context):
         """Debug: Show all members with any activity (to diagnose streaming detection)."""
         lines = []
@@ -411,7 +412,7 @@ class StreamingCog(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(name="debug_voice")
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def debug_voice(self, ctx: commands.Context):
         """Debug: Show all members in voice channels and their streaming status."""
         lines = []

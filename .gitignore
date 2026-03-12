@@ -43,6 +43,11 @@ nul
 .agents/skills/mermaid-expert/SKILL.md
 discord-bot/docs/lfg-flowchart.md
 discord-bot/docs/matchmaking_system.png
-discord-bot/pull_from_server/download-databases.ps1
-discord-bot/pull_from_server/download-databases-pscp.ps1
-discord-bot/pull_from_server/quick-download.ps1
+discord-bot/pull_from_server/*
+
+# Ignore implementation summary/documentation markdown files
+*_SUMMARY.md
+*_FIX.md
+DUAL_ELO_IMPLEMENTATION_SUMMARY.md
+GOOGLE_OAUTH_OVERFLOW_FIX.md
+OPPONENT_SEARCH_500_ERROR_FIX.md

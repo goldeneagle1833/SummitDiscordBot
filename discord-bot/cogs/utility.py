@@ -7,6 +7,7 @@ import logging
 import random
 
 from utils.deck_checker import get_deck_id, find_card
+from utils.checks import is_bot_admin
 
 logger = logging.getLogger("discord_bot")
 
@@ -274,7 +275,7 @@ class UtilityCog(commands.Cog):
         logger.info(f"Commands list requested by {ctx.author}")
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def giveaway(self, ctx, hours: float = 24):
         """
         Admin-only: Pick a random winner from users who posted in this channel.

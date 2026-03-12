@@ -9,6 +9,7 @@ from openai import OpenAI
 
 import config
 from utils.text import find_best_command_match
+from utils.checks import is_bot_admin
 
 # EST timezone for daily action resets
 EST = ZoneInfo("America/New_York")
@@ -1480,7 +1481,7 @@ class FunCog(commands.Cog):
             await ctx.send(f"An error occurred: {e}")
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def reset_fart_cooldown(self, ctx, user: discord.Member = None):
         """Admin command to reset a user's fart cooldown (set last fart to 48 hours ago).
         Usage: !reset_fart_cooldown @user

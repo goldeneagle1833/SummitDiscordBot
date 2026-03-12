@@ -15,6 +15,7 @@ from repositories.community_repo import (
     get_all_websites,
 )
 from repositories.audit_repo import log_admin_action
+from utils.checks import is_bot_admin
 
 logger = logging.getLogger("discord_bot")
 
@@ -37,7 +38,7 @@ class CommunityCog(commands.Cog):
         await ctx.send(f"✅ Added Discord server **{name}** (ID: {entry_id}, Location: {location})")
 
     @commands.command(name="add_discord")
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def add_discord_cmd(self, ctx, *, args: str):
         """[ADMIN] Add a Discord server. Usage: !add_discord Name | invite_url | location | description"""
         parts = [p.strip() for p in args.split("|")]
@@ -67,7 +68,7 @@ class CommunityCog(commands.Cog):
         await ctx.send(f"✅ Added YouTube channel **{name}** (ID: {entry_id})")
 
     @commands.command(name="add_youtube")
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def add_youtube_cmd(self, ctx, *, args: str):
         """[ADMIN] Add a YouTube channel. Usage: !add_youtube Name | channel_id | channel_url"""
         parts = [p.strip() for p in args.split("|")]
@@ -96,7 +97,7 @@ class CommunityCog(commands.Cog):
         await ctx.send(f"✅ Added website **{name}** (ID: {entry_id})")
 
     @commands.command(name="add_website")
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def add_website_cmd(self, ctx, *, args: str):
         """[ADMIN] Add a website. Usage: !add_website Name | url | description"""
         parts = [p.strip() for p in args.split("|")]
@@ -145,13 +146,13 @@ class CommunityCog(commands.Cog):
             await ctx.send(f"❌ No {table_type} entry found with ID {entry_id}.")
 
     @commands.command(name="remove_community")
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def remove_community_cmd(self, ctx, table: str, entry_id: int):
         """[ADMIN] Remove a community entry. Usage: !remove_community discord|youtube|website <id>"""
         await self._remove_community_entry(ctx, table, entry_id)
 
     @commands.command(name="list_community")
-    @commands.has_permissions(administrator=True)
+    @is_bot_admin()
     async def list_community_cmd(self, ctx):
         """[ADMIN] List all community entries with IDs."""
         servers = get_all_discord_servers()

@@ -19,6 +19,9 @@ bot.log
 *.pdb
 *.claude
 
+# Test data (local testing only)
+discord-bot/test_data/
+
 # JSON and related files
 *.jsonl
 *.ndjson

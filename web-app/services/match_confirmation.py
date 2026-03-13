@@ -418,7 +418,8 @@ class MatchConfirmationService:
         submitter_deck_url: Optional[str] = None,
         opponent_deck_url: Optional[str] = None,
         final_life_submitter: int = 0,
-        final_life_opponent: int = 0
+        final_life_opponent: int = 0,
+        match_type: str = "ranked"
     ) -> dict:
         """
         Create a new match report with validation and duplicate detection.
@@ -432,6 +433,7 @@ class MatchConfirmationService:
             opponent_deck_url: Optional deck URL for opponent
             final_life_submitter: Submitter's final life total
             final_life_opponent: Opponent's final life total
+            match_type: Match type ('ranked' or 'casual'), defaults to 'ranked'
 
         Returns:
             dict: {
@@ -513,7 +515,8 @@ class MatchConfirmationService:
             final_life_loser=final_life_loser,
             went_first=went_first,
             winner_deck_url=winner_deck_url,
-            loser_deck_url=loser_deck_url
+            loser_deck_url=loser_deck_url,
+            match_type=match_type
         )
 
         expires_at = int(time.time()) + (48 * 60 * 60)

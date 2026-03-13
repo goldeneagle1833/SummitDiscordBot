@@ -352,12 +352,19 @@ function resetMatchReportForm() {
   document.getElementById("opponent-user-id").value = "";
   document.getElementById("submitter-deck-url").value = "";
   document.getElementById("went-first").value = "";
+  document.getElementById("match-type").value = "ranked";
 
   // Hide selected opponent display
   document.getElementById("opponent-selected").classList.add("hidden");
 
   // Hide autocomplete
   document.getElementById("opponent-autocomplete").classList.add("hidden");
+
+  // Reset match type buttons (default to ranked)
+  document.querySelectorAll("#match-type-group .btn-toggle").forEach(btn => {
+    btn.classList.remove("active");
+  });
+  document.getElementById("match-type-ranked-btn").classList.add("active");
 
   // Reset turn order buttons
   document.querySelectorAll("#turn-order-group .btn-toggle").forEach(btn => {
@@ -451,6 +458,28 @@ function clearOpponent() {
   validateMatchReportForm();
 }
 
+// ==================== Match Type Toggle ====================
+
+function initializeMatchTypeToggle() {
+  const toggleButtons = document.querySelectorAll("#match-type-group .btn-toggle");
+
+  toggleButtons.forEach(btn => {
+    btn.addEventListener("click", function() {
+      // Remove active class from all buttons
+      toggleButtons.forEach(b => b.classList.remove("active"));
+
+      // Add active class to clicked button
+      this.classList.add("active");
+
+      // Set hidden field value
+      document.getElementById("match-type").value = this.dataset.value;
+
+      // Validate form
+      validateMatchReportForm();
+    });
+  });
+}
+
 // ==================== Turn Order Toggle ====================
 
 function initializeTurnOrderToggle() {
@@ -526,7 +555,8 @@ async function submitMatchReport(result) {
     went_first: document.getElementById("went-first").value,
     submitter_deck_url: document.getElementById("submitter-deck-url").value || null,
     final_life_submitter: parseInt(document.getElementById("final-life-submitter").value),
-    final_life_opponent: parseInt(document.getElementById("final-life-opponent").value)
+    final_life_opponent: parseInt(document.getElementById("final-life-opponent").value),
+    match_type: document.getElementById("match-type").value || "ranked"
   };
 
   try {
@@ -623,6 +653,9 @@ function initializeMatchReportListeners() {
   if (clearOpponentBtn) {
     clearOpponentBtn.addEventListener("click", clearOpponent);
   }
+
+  // Match type toggle
+  initializeMatchTypeToggle();
 
   // Turn order toggle
   initializeTurnOrderToggle();

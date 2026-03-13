@@ -291,6 +291,37 @@
 
       <!-- Match Report Form -->
       <form id="match-report-form">
+        <!-- Match Type Toggle -->
+        <div class="form-group" style="border-bottom: 2px solid rgba(147, 51, 234, 0.3); padding-bottom: 1rem; margin-bottom: 1.5rem;">
+          <label style="font-weight: 600; font-size: 1.1em; margin-bottom: 0.75rem; display: block;">Match Type <span class="required">*</span></label>
+          <div class="button-group" id="match-type-group" style="display: flex; gap: 0.5rem;">
+            <button
+              type="button"
+              id="match-type-ranked-btn"
+              class="btn-toggle active"
+              data-value="ranked"
+              aria-label="Ranked match (ELO tracked)"
+              style="flex: 1; padding: 0.75rem 1rem; font-weight: 600;"
+            >
+              ⚔️ Ranked
+              <div style="font-size: 0.75em; opacity: 0.8; margin-top: 0.25rem;">ELO Tracked</div>
+            </button>
+            <button
+              type="button"
+              id="match-type-casual-btn"
+              class="btn-toggle"
+              data-value="casual"
+              aria-label="Casual match (no ELO)"
+              style="flex: 1; padding: 0.75rem 1rem; font-weight: 600;"
+            >
+              ⭐ Casual
+              <div style="font-size: 0.75em; opacity: 0.8; margin-top: 0.25rem;">No ELO</div>
+            </button>
+          </div>
+          <input type="hidden" id="match-type" name="match_type" value="ranked" />
+          <small class="form-hint" style="margin-top: 0.5rem; display: block; opacity: 0.7;">Ranked matches affect your ELO rating, casual matches are recorded but don't affect ELO</small>
+        </div>
+
         <!-- Opponent Selection -->
         <div class="form-group">
           <label for="opponent-search">Opponent <span class="required">*</span></label>

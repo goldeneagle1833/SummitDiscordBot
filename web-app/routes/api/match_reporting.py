@@ -182,6 +182,7 @@ def submit_match_report():
     submitter_deck_url = data.get("submitter_deck_url")
     final_life_submitter = data.get("final_life_submitter")
     final_life_opponent = data.get("final_life_opponent")
+    match_type = data.get("match_type", "ranked")  # Default to ranked if not provided
 
     try:
         service = MatchConfirmationService()
@@ -196,7 +197,8 @@ def submit_match_report():
             submitter_deck_url=submitter_deck_url,
             opponent_deck_url=None,  # Opponent provides their deck URL on confirmation
             final_life_submitter=final_life_submitter,
-            final_life_opponent=final_life_opponent
+            final_life_opponent=final_life_opponent,
+            match_type=match_type
         )
 
         logger.info(

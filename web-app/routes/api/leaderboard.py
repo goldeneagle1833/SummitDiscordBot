@@ -148,3 +148,29 @@ def get_player_event_stats(player_id, event_id):
     except Exception as e:
         logger.error(f"Error fetching player event stats: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@leaderboard_bp.route("/leaderboard/archived/<int:event_id>")
+def get_archived_event_leaderboard(event_id):
+    """Get full leaderboard for a specific archived event."""
+    try:
+        from repositories.elo import EloRepository
+
+        repo = EloRepository()
+        leaderboard = repo.get_archived_event_leaderboard(event_id)
+        event_info = None
+
+        # Get event info
+        all_events = repo.get_all_events()
+        for event in all_events:
+            if event["event_id"] == event_id:
+                event_info = event
+                break
+
+        return jsonify({
+            "event_info": event_info,
+            "leaderboard": leaderboard
+        })
+    except Exception as e:
+        logger.error(f"Error fetching archived event leaderboard: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500

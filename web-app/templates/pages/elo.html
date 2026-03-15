@@ -143,6 +143,48 @@
     </div>
   </section>
 
+  <!-- Archived Event Leaderboard Section -->
+  <section class="distribution-section wide">
+    <h2 class="section-title compact">
+      Past Event Leaderboards
+    </h2>
+    <p class="section-subtitle" id="archived-event-subtitle">
+      View final standings from completed events
+    </p>
+
+    <div class="distribution-controls centered">
+      <label for="archived-event-select">Select Event:</label>
+      <select id="archived-event-select">
+        <option value="">-- Select a Past Event --</option>
+        <!-- Past events will be populated by JS -->
+      </select>
+
+      <label for="archived-count-select" style="margin-left: 20px;">Show:</label>
+      <select id="archived-count-select">
+        <option value="16" selected>Top 16</option>
+        <option value="32">Top 32</option>
+        <option value="50">Top 50</option>
+        <option value="100">Top 100</option>
+        <option value="all">All Players</option>
+      </select>
+    </div>
+
+    <div class="distribution-table-container" id="archived-leaderboard-container" style="display: none;">
+      <table class="distribution-table">
+        <thead>
+          <tr>
+            <th class="col-rank">Rank</th>
+            <th>Player</th>
+            <th class="col-align-right">Final ELO</th>
+          </tr>
+        </thead>
+        <tbody id="archived-leaderboard-body">
+          <!-- Rows will be inserted by JS -->
+        </tbody>
+      </table>
+    </div>
+  </section>
+
     </main>    {% include 'components/footer.html' %}
 <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"></script>
     <script src="{{ url_for('static', filename='js/pages/elo.js') }}?v={{ app_version }}" defer></script>

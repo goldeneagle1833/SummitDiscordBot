@@ -300,6 +300,42 @@ class EloRepository:
             }
         return None
 
+    def get_archived_event_leaderboard(self, event_id: int) -> list[dict]:
+        """Get full leaderboard for a specific archived event."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        # Check if event_standings_archive table exists
+        cur.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='event_standings_archive'
+        """)
+        if not cur.fetchone():
+            conn.close()
+            return []
+
+        cur.execute(
+            """
+            SELECT user_id, user_display_name, final_event_elo, final_rank
+            FROM event_standings_archive
+            WHERE event_id = ?
+            ORDER BY final_rank ASC
+        """,
+            (event_id,),
+        )
+        rows = cur.fetchall()
+        conn.close()
+
+        return [
+            {
+                "user_id": row[0],
+                "display_name": row[1],
+                "event_elo": row[2],
+                "rank": row[3],
+            }
+            for row in rows
+        ]
+
     def delete_player(self, user_id: int) -> bool:
         """Delete a player from overall_standings. Returns True if deleted."""
         conn = self._get_connection()

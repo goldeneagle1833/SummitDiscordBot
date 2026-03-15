@@ -557,6 +557,10 @@ def end_current_event():
     paper_standings.sort(key=lambda x: x[2], reverse=True)
     online_standings.sort(key=lambda x: x[2], reverse=True)
 
+    # Build combined standings using max(paper_elo, online_elo) for each player
+    standings = [(uid, name, max(paper_elo, online_elo)) for uid, name, paper_elo, online_elo in all_players]
+    standings.sort(key=lambda x: x[2], reverse=True)
+
     # Create rank maps
     paper_ranks = {uid: rank for rank, (uid, _, _) in enumerate(paper_standings, start=1)}
     online_ranks = {uid: rank for rank, (uid, _, _) in enumerate(online_standings, start=1)}

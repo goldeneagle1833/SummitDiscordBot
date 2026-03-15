@@ -28,7 +28,7 @@ from collections import defaultdict, Counter
 SCRIPT_DIR = Path(__file__).parent
 CONFIG_FILE = SCRIPT_DIR / "email_config.json"
 BOT_LOG = Path("/root/Summit/SummitDiscordBot/discord-bot/bot.log")
-WEB_APP_LOG = Path("/root/Summit/SummitDiscordBot/web-app/app.log")
+WEB_APP_LOG = Path("/var/log/summit-web/error.log")
 LOG_ARCHIVE_DIR = Path("/root/Summit/log_archives")
 
 

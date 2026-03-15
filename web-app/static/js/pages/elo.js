@@ -8,11 +8,14 @@
 let allElos = [];
 let lifetimeData = [];
 let eventData = null;
+let archivedEventData = null;
+let allEvents = [];
 
 document.addEventListener('DOMContentLoaded', () => {
   initializeEventListeners();
   fetchDistribution();
   fetchLeaderboards();
+  fetchArchivedEvents();
 
   // Auto-refresh every 30 seconds
   setInterval(fetchDistribution, 30000);
@@ -48,6 +51,21 @@ function initializeEventListeners() {
 
   document.getElementById('event-count-select').addEventListener('change', function () {
     if (eventData) renderEventLeaderboard(eventData);
+  });
+
+  // Listen for archived event selection
+  document.getElementById('archived-event-select').addEventListener('change', function () {
+    const eventId = this.value;
+    if (eventId) {
+      fetchArchivedEventLeaderboard(eventId);
+    } else {
+      document.getElementById('archived-leaderboard-container').style.display = 'none';
+    }
+  });
+
+  // Listen for archived count select changes
+  document.getElementById('archived-count-select').addEventListener('change', function () {
+    if (archivedEventData) renderArchivedLeaderboard(archivedEventData);
   });
 }
 
@@ -256,6 +274,91 @@ function renderEventLeaderboard(eventData) {
     row.innerHTML = `
       <td class="rank-display">${rankDisplay}</td>
       <td><a href="/player/${player.id}" class="player-link">${player.name}</a></td>
+      <td class="col-align-right event-elo">${player.event_elo}</td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+/**
+ * Fetch all events (past and present) and populate archived event dropdown
+ */
+async function fetchArchivedEvents() {
+  try {
+    const res = await fetch('/api/events');
+    if (!res.ok) {
+      console.error('Failed to fetch events:', res.status);
+      return;
+    }
+    const data = await res.json();
+    allEvents = data.events || [];
+
+    // Populate dropdown with past (non-active) events
+    const select = document.getElementById('archived-event-select');
+    const pastEvents = allEvents.filter(event => !event.is_active);
+
+    pastEvents.forEach(event => {
+      const option = document.createElement('option');
+      option.value = event.event_id;
+      const startDate = new Date(event.start_date).toLocaleDateString();
+      const endDate = event.end_date ? new Date(event.end_date).toLocaleDateString() : 'N/A';
+      option.textContent = `${event.event_name} (${startDate} - ${endDate})`;
+      select.appendChild(option);
+    });
+  } catch (error) {
+    console.error('Error fetching events:', error);
+  }
+}
+
+/**
+ * Fetch archived event leaderboard for a specific event
+ * @param {string} eventId - The event ID to fetch
+ */
+async function fetchArchivedEventLeaderboard(eventId) {
+  try {
+    const res = await fetch(`/api/leaderboard/archived/${eventId}`);
+    if (!res.ok) {
+      console.error('Failed to fetch archived leaderboard:', res.status);
+      return;
+    }
+    const data = await res.json();
+    archivedEventData = data;
+    renderArchivedLeaderboard(data);
+  } catch (error) {
+    console.error('Error fetching archived leaderboard:', error);
+  }
+}
+
+/**
+ * Render archived event leaderboard table
+ * @param {Object} data - Archived event data with event_info and leaderboard
+ */
+function renderArchivedLeaderboard(data) {
+  const container = document.getElementById('archived-leaderboard-container');
+  const tbody = document.getElementById('archived-leaderboard-body');
+
+  if (!data.leaderboard || data.leaderboard.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No players in this event</td></tr>';
+    container.style.display = 'block';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  container.style.display = 'block';
+
+  // Get display count from select
+  const countSelect = document.getElementById('archived-count-select');
+  const countValue = countSelect.value;
+  const displayCount = countValue === 'all' ? data.leaderboard.length : parseInt(countValue);
+
+  // Show players based on selected count
+  data.leaderboard.slice(0, displayCount).forEach((player, index) => {
+    const row = document.createElement('tr');
+    const rankDisplay = index < 3 ? ['🥇', '🥈', '🥉'][index] : `#${player.rank || index + 1}`;
+
+    row.innerHTML = `
+      <td class="rank-display">${rankDisplay}</td>
+      <td><a href="/player/${player.user_id}" class="player-link">${player.display_name}</a></td>
       <td class="col-align-right event-elo">${player.event_elo}</td>
     `;
     tbody.appendChild(row);

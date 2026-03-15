@@ -549,6 +549,11 @@ def end_current_event():
                        WHERE paper_event_elo != 1500 OR online_event_elo != 1500""")
     all_players = cur_elo.fetchall()
 
+    # Filter out players whose max ELO is exactly 1500 (played but lost enough to end at default)
+    # This prevents archiving players like (paper=1400, online=1500) where max=1500
+    all_players = [(uid, name, paper_elo, online_elo) for uid, name, paper_elo, online_elo in all_players
+                   if max(paper_elo, online_elo) != 1500]
+
     # Build separate rankings for paper and online
     paper_standings = [(uid, name, paper_elo) for uid, name, paper_elo, _ in all_players if paper_elo != 1500]
     online_standings = [(uid, name, online_elo) for uid, name, _, online_elo in all_players if online_elo != 1500]

@@ -98,36 +98,6 @@ class LeaderboardService:
                 )
                 event_player_ids.add(user_id)
 
-        # Also include players who have played this season but still have 1500 ELO
-        if event_start:
-            season_players = self._match_repo.get_season_players(event_start)
-            for user_id in season_players:
-                if user_id not in event_player_ids:
-                    # Find their display name from standings or use their ID
-                    display_name = None
-                    for standing in standings:
-                        if standing["user_id"] == user_id:
-                            display_name = standing["display_name"]
-                            break
-
-                    if display_name:
-                        season_wins = self._match_repo.get_season_wins_count(
-                            user_id, event_start
-                        )
-                        season_losses = self._match_repo.get_season_losses_count(
-                            user_id, event_start
-                        )
-
-                        event_data.append(
-                            {
-                                "id": str(user_id),
-                                "name": display_name,
-                                "event_elo": 1500,
-                                "season_wins": season_wins,
-                                "season_losses": season_losses,
-                            }
-                        )
-
         # Sort event data by event_elo descending
         event_data.sort(key=lambda x: x["event_elo"], reverse=True)
 

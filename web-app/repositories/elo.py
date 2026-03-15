@@ -318,7 +318,7 @@ class EloRepository:
             """
             SELECT user_id, user_display_name, final_event_elo, final_rank
             FROM event_standings_archive
-            WHERE event_id = ?
+            WHERE event_id = ? AND final_event_elo != 1500
             ORDER BY final_rank ASC
         """,
             (event_id,),

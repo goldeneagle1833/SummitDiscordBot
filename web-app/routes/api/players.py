@@ -170,6 +170,26 @@ def player_api(player_id):
         row = cur.fetchone()
         bot_count = row[0]
         most_recent_bot = row[1]
+
+        # Also check archive table (matches moved there by !end_event)
+        try:
+            cur.execute(
+                """
+                SELECT COUNT(*), MAX(timestamp) FROM match_records_archive
+                WHERE winner_id = ? OR losser_id = ?
+                """,
+                (player_id_normalized, player_id_normalized),
+            )
+            archive_row = cur.fetchone()
+            bot_count += archive_row[0] if archive_row else 0
+            # Use the most recent timestamp from either table
+            if archive_row and archive_row[1]:
+                if not most_recent_bot or archive_row[1] > most_recent_bot:
+                    most_recent_bot = archive_row[1]
+        except sqlite3.OperationalError:
+            # Archive table may not exist yet
+            pass
+
         has_bot_matches = bot_count > 0
     except sqlite3.OperationalError:
         pass

@@ -284,6 +284,35 @@
         </div>
         {% endif %}
 
+        <!-- Display Name Notification Banner -->
+        <div
+          id="display-name-banner"
+          style="
+            display: none;
+            background: linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(88, 166, 255, 0.1));
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1rem;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+          ">
+          <span style="font-size: 1.2rem">&#x1F4DB;</span>
+          <span style="flex: 1; min-width: 200px; font-size: 0.9rem;">
+            Set a custom display name for the leaderboard and your profile.
+          </span>
+          <button class="btn btn--primary" id="display-name-open-btn" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
+            Set Name
+          </button>
+          <button
+            id="display-name-dismiss"
+            style="background: none; border: none; color: var(--color-text-muted); cursor: pointer; font-size: 1.1rem; padding: 0 4px; line-height: 1;"
+            title="Dismiss">
+            &times;
+          </button>
+        </div>
+
         <!-- Overall Stats -->
         <h3>📊 Overall Stats</h3>
         <div class="player-stats" id="player-stats">
@@ -676,12 +705,13 @@
         </div>
       </div>
 
-      <!-- Display Name Modal -->
+      <!-- Display Name Modal (opened from banner) -->
       <div class="modal" id="display-name-modal">
         <div class="modal__backdrop" id="display-name-backdrop"></div>
         <div class="modal__content" style="max-width: 480px">
           <div class="modal__header">
             <h2 class="modal__title">Choose Your Display Name</h2>
+            <button class="modal__close" id="display-name-close">&times;</button>
           </div>
           <div class="modal__body">
             <p style="color: var(--color-text-muted); margin-bottom: 1rem; font-size: 0.9rem;">
@@ -1111,6 +1141,9 @@
                     const lines = [`ELO: ${point.elo}`];
                     if (point.result) {
                       lines.push(`Result: ${point.result}`);
+                    }
+                    if (point.date) {
+                      lines.push(`Date: ${point.date}`);
                     }
                     return lines;
                   },
@@ -1659,9 +1692,12 @@
           // Update pagination controls
           updatePaginationControls(data.pagination);
 
-          // Show display name modal if user hasn't set one yet
+          // Show display name banner if user hasn't set one yet (non-intrusive)
           if (needsDisplayName && data.is_owner && !data.has_custom_display_name) {
-            showDisplayNameModal();
+            const dismissed = sessionStorage.getItem('display_name_banner_dismissed');
+            if (!dismissed) {
+              document.getElementById("display-name-banner").style.display = "flex";
+            }
           }
         } catch (error) {
           document.getElementById("player-name").textContent =
@@ -2140,13 +2176,12 @@
       });
       {% endif %}
 
-      // ===== Display Name Modal Logic =====
+      // ===== Display Name Banner + Modal Logic =====
 
       function showDisplayNameModal() {
         const input = document.getElementById("display-name-input");
         input.value = defaultDisplayName;
         document.getElementById("display-name-modal").classList.add("modal--active");
-        // Focus the input after modal animation
         setTimeout(() => input.select(), 100);
       }
 
@@ -2154,20 +2189,29 @@
         document.getElementById("display-name-modal").classList.remove("modal--active");
       }
 
+      // Banner: "Set Name" opens the modal
+      document.getElementById("display-name-open-btn")?.addEventListener("click", showDisplayNameModal);
+
+      // Banner: dismiss button hides for this session
+      document.getElementById("display-name-dismiss")?.addEventListener("click", () => {
+        document.getElementById("display-name-banner").style.display = "none";
+        sessionStorage.setItem('display_name_banner_dismissed', '1');
+      });
+
+      // Modal: close button and backdrop
+      document.getElementById("display-name-close")?.addEventListener("click", hideDisplayNameModal);
+      document.getElementById("display-name-backdrop")?.addEventListener("click", hideDisplayNameModal);
+
       let isSubmittingDisplayName = false;
 
       async function submitDisplayName(name) {
-        // Prevent double submission
-        if (isSubmittingDisplayName) {
-          return;
-        }
+        if (isSubmittingDisplayName) return;
 
         isSubmittingDisplayName = true;
         const submitBtn = document.getElementById("display-name-submit");
         const skipBtn = document.getElementById("display-name-skip");
         const originalSubmitText = submitBtn?.textContent;
 
-        // Disable buttons during submission
         if (submitBtn) {
           submitBtn.disabled = true;
           submitBtn.textContent = "Saving...";
@@ -2183,14 +2227,13 @@
           const data = await res.json();
           if (res.ok && data.success) {
             hideDisplayNameModal();
-            // Update the displayed name immediately without re-fetching
+            // Hide the banner too
+            document.getElementById("display-name-banner").style.display = "none";
             const playerNameElement = document.getElementById("player-name");
             if (playerNameElement) {
               playerNameElement.textContent = data.display_name;
             }
-            // Update the page title
             document.title = `${data.display_name} - Sorcerers Summit`;
-            // Mark that we've successfully set the display name to prevent re-showing modal
             if (storedPlayerData) {
               storedPlayerData.has_custom_display_name = true;
             }
@@ -2201,7 +2244,6 @@
           console.error("Display name submit error:", error);
           alert("Failed to save display name. Please try again.");
         } finally {
-          // Re-enable buttons
           isSubmittingDisplayName = false;
           if (submitBtn) {
             submitBtn.disabled = false;
@@ -2211,7 +2253,7 @@
         }
       }
 
-      // Display name modal event listeners
+      // Modal submit/skip event listeners
       document.getElementById("display-name-submit")?.addEventListener("click", () => {
         const name = document.getElementById("display-name-input").value.trim();
         if (!name) {
@@ -2222,11 +2264,9 @@
       });
 
       document.getElementById("display-name-skip")?.addEventListener("click", () => {
-        // Use the default OAuth name
         submitDisplayName(defaultDisplayName);
       });
 
-      // Allow Enter key to submit
       document.getElementById("display-name-input")?.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
           e.preventDefault();

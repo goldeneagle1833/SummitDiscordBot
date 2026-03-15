@@ -194,18 +194,11 @@ def player_api(player_id):
     except sqlite3.OperationalError:
         pass
 
-    # Auto-detect source based on most recent match, with fallback to availability
-    # If requested source has no matches, switch to the other
+    # Fallback: if requested source has no matches, switch to the other
     if source == "bot" and not has_bot_matches and has_web_matches:
         source = "web"
     elif source == "web" and not has_web_matches and has_bot_matches:
         source = "bot"
-    # If user has matches in both sources, default to whichever has the most recent match
-    elif has_web_matches and has_bot_matches and most_recent_web and most_recent_bot:
-        if most_recent_web > most_recent_bot:
-            source = "web"
-        else:
-            source = "bot"
 
     # Determine which tables to query based on event filter and source
     include_current_matches = True  # From match_records or match_reports_web table
@@ -602,30 +595,34 @@ def player_api(player_id):
     except sqlite3.OperationalError:
         pass
 
-    # Get player name - prefer from matches, fallback to ELO database, user_profiles, then session
+    # Get player name - custom_display_name has highest priority
     player_name = None
-    if rows:
-        first_match = rows[0]
-        player_name = first_match[4] if first_match[0] else first_match[5]
-    elif solo_rows:
-        player_name = solo_rows[0][4]
-    elif player_name_from_elo:
-        player_name = player_name_from_elo
+    profile = None
 
-    # Fallback: check user_profiles table (handles Google OAuth users who may not be in ELO db)
-    if not player_name:
-        try:
-            from repositories.user_profiles import UserProfileRepository
-            user_repo = UserProfileRepository()
-            # Try with original ID first (handles google_ prefix)
-            profile = user_repo.get_by_user_id(original_player_id)
-            if not profile and original_player_id != player_id_normalized:
-                # Try with normalized ID
-                profile = user_repo.get_by_user_id(player_id_normalized)
-            if profile:
+    # Check custom_display_name first (user explicitly set this)
+    try:
+        from repositories.user_profiles import UserProfileRepository
+        user_repo = UserProfileRepository()
+        profile = user_repo.get_by_user_id(original_player_id)
+        if not profile and original_player_id != player_id_normalized:
+            profile = user_repo.get_by_user_id(player_id_normalized)
+        if profile:
+            if profile.get("custom_display_name"):
+                player_name = profile["custom_display_name"]
+            elif not player_name:
                 player_name = profile["display_name"]
-        except Exception:
-            pass
+    except Exception:
+        pass
+
+    # Fallback: match records, ELO database
+    if not player_name:
+        if rows:
+            first_match = rows[0]
+            player_name = first_match[4] if first_match[0] else first_match[5]
+        elif solo_rows:
+            player_name = solo_rows[0][4]
+        elif player_name_from_elo:
+            player_name = player_name_from_elo
 
     # Fallback: get name from session if it's their profile
     if not player_name:
@@ -1093,17 +1090,8 @@ def player_api(player_id):
             }
         )
 
-    # Check if user has set a custom display name
-    has_custom_display_name = False
-    if is_owner:
-        try:
-            profile_repo = UserProfileRepository()
-            custom_name = profile_repo.get_custom_display_name(original_player_id)
-            if not custom_name and original_player_id != player_id_normalized:
-                custom_name = profile_repo.get_custom_display_name(player_id_normalized)
-            has_custom_display_name = custom_name is not None
-        except Exception:
-            pass
+    # Check if user has set a custom display name (reuse profile fetched earlier)
+    has_custom_display_name = bool(profile and profile.get("custom_display_name")) if profile else False
 
     return jsonify(
         {

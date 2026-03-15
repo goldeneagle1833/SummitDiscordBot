@@ -162,14 +162,17 @@
         background: none;
         border: none;
         cursor: pointer;
-        font-size: 14px;
         padding: 2px 4px;
-        opacity: 0.5;
+        opacity: 0.4;
         transition: opacity 0.2s ease;
         line-height: 1;
+        color: #aaa;
+        display: inline-flex;
+        align-items: center;
       }
       .edit-deck-btn:hover {
         opacity: 1;
+        color: #fff;
       }
     </style>
   </head>
@@ -1564,11 +1567,14 @@
               }
 
               const escapedDeckUrl = (match.player_deck_url || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+              const editBtn = match.match_id
+                ? `<button class="edit-deck-btn" onclick="showEditDeckModal('${match.match_id}', '${escapedDeckUrl}')" title="Edit deck">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                  </button>`
+                : '';
               row.innerHTML = `
                 <td style="text-align: center; padding: 4px;">
-                  <button class="edit-deck-btn" onclick="showEditDeckModal('${match.match_id}', '${escapedDeckUrl}')" title="Edit deck">
-                    ✏️
-                  </button>
+                  ${editBtn}
                 </td>
                 <td class="match-id">${matchId}</td>
                 <td class="${resultClass}">${match.result}</td>

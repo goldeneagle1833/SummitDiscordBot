@@ -165,10 +165,14 @@ class LogAnalyzer:
 def generate_html_report(bot_analysis: Dict, web_analysis: Dict, period_hours: int) -> str:
     """Generate an HTML email report."""
 
-    total_errors = bot_analysis["stats"]["total_errors"] + web_analysis["stats"]["total_errors"]
-    total_warnings = bot_analysis["stats"]["total_warnings"] + web_analysis["stats"]["total_warnings"]
-    total_critical = bot_analysis["stats"]["total_critical"] + web_analysis["stats"]["total_critical"]
-    total_exceptions = bot_analysis["stats"]["total_exceptions"] + web_analysis["stats"]["total_exceptions"]
+    # Safely get stats with defaults
+    bot_stats = bot_analysis.get("stats", {})
+    web_stats = web_analysis.get("stats", {})
+
+    total_errors = bot_stats.get("total_errors", 0) + web_stats.get("total_errors", 0)
+    total_warnings = bot_stats.get("total_warnings", 0) + web_stats.get("total_warnings", 0)
+    total_critical = bot_stats.get("total_critical", 0) + web_stats.get("total_critical", 0)
+    total_exceptions = bot_stats.get("total_exceptions", 0) + web_stats.get("total_exceptions", 0)
 
     # Determine status
     if total_critical > 0:
@@ -240,9 +244,9 @@ def generate_html_report(bot_analysis: Dict, web_analysis: Dict, period_hours: i
                 <h2>📱 Discord Bot ({bot_analysis['file']})</h2>
     """
 
-    if not bot_analysis['exists']:
+    if not bot_analysis.get('exists', False):
         html += '<p class="no-issues">⚠️ Log file not found</p>'
-    elif bot_analysis['stats']['total_errors'] == 0 and bot_analysis['stats']['total_warnings'] == 0:
+    elif bot_stats.get('total_errors', 0) == 0 and bot_stats.get('total_warnings', 0) == 0:
         html += '<p class="no-issues">✅ No issues found</p>'
     else:
         if bot_analysis['critical']:
@@ -273,9 +277,9 @@ def generate_html_report(bot_analysis: Dict, web_analysis: Dict, period_hours: i
                 <h2>🌐 Web Application ({web_analysis['file']})</h2>
     """
 
-    if not web_analysis['exists']:
+    if not web_analysis.get('exists', False):
         html += '<p class="no-issues">⚠️ Log file not found</p>'
-    elif web_analysis['stats']['total_errors'] == 0 and web_analysis['stats']['total_warnings'] == 0:
+    elif web_stats.get('total_errors', 0) == 0 and web_stats.get('total_warnings', 0) == 0:
         html += '<p class="no-issues">✅ No issues found</p>'
     else:
         if web_analysis['critical']:
@@ -388,8 +392,8 @@ def main():
     html_report = generate_html_report(bot_analysis, web_analysis, 24)
 
     # Determine subject based on severity
-    total_errors = bot_analysis["stats"]["total_errors"] + web_analysis["stats"]["total_errors"]
-    total_critical = bot_analysis["stats"]["total_critical"] + web_analysis["stats"]["total_critical"]
+    total_errors = bot_analysis.get("stats", {}).get("total_errors", 0) + web_analysis.get("stats", {}).get("total_errors", 0)
+    total_critical = bot_analysis.get("stats", {}).get("total_critical", 0) + web_analysis.get("stats", {}).get("total_critical", 0)
 
     if total_critical > 0:
         subject = f"🔴 CRITICAL - Summit Bot Daily Report ({total_errors} errors)"

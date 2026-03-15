@@ -109,6 +109,8 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
 
         # Handle the result outside the lock
         if matched_user_id:
+            match_type_emoji = "⚔️" if match_type == "ranked" else "⭐"
+            match_type_label = "Ranked" if match_type == "ranked" else "Casual"
             # Match found!
             matched_user = await self.bot.fetch_user(matched_user_id)
             lfg_channel = self.bot.get_channel(lfg_cog.lfg_channel_id)

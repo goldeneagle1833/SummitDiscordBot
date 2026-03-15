@@ -1133,12 +1133,15 @@ def player_api(player_id):
 @players_bp.route("/player/<player_id>/set-display-name", methods=["POST"])
 def set_display_name(player_id):
     """Set a custom display name for the logged-in user (one-time only)."""
+    logger.info(f"set_display_name API called: player_id={player_id}")
+
     # Verify session auth - user must be logged in as this player
     logged_in_user_id = session.get("user_id")
     if logged_in_user_id is None:
         return jsonify({"error": "Authentication required"}), 401
 
     auth_provider = session.get("auth_provider", "discord")
+    logger.info(f"set_display_name: logged_in_user_id={logged_in_user_id}, auth_provider={auth_provider}")
 
     # Normalize IDs for comparison
     original_player_id = str(player_id)
@@ -1158,6 +1161,7 @@ def set_display_name(player_id):
         return jsonify({"error": "Display name is required"}), 400
 
     new_name = data["display_name"].strip()
+    logger.info(f"set_display_name: Attempting to set display name to '{new_name}'")
 
     # Validate length
     if len(new_name) < 1 or len(new_name) > 32:

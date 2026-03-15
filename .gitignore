@@ -10,6 +10,11 @@ bot.log
 *.sqlite
 *.cache
 
+# Script configurations and downloaded logs
+scripts/server_config.json
+server/email_config.json
+logs/
+
 # Database files
 *.sqlite3
 *.db3

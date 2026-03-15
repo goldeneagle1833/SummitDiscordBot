@@ -67,6 +67,16 @@ def create_db():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Add lifetime elo_change columns (separate from event elo changes)
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN winner_lifetime_elo_change INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN loser_lifetime_elo_change INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Add new deck columns for winner and loser (Phase 1 migration)
     try:
         cur.execute("ALTER TABLE match_records ADD COLUMN curiosa_url_winner TEXT")
@@ -235,6 +245,16 @@ def create_match_records_archive():
                     loser_lifetime_elo_change INTEGER,
                     archived_at TEXT
                    )""")
+
+    # Add lifetime elo_change columns to archive table if they don't exist (migration)
+    try:
+        cur.execute("ALTER TABLE match_records_archive ADD COLUMN winner_lifetime_elo_change INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cur.execute("ALTER TABLE match_records_archive ADD COLUMN loser_lifetime_elo_change INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     conn.commit()
     conn.close()

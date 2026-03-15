@@ -6,7 +6,7 @@ import logging
 import config
 from cogs.lfg.state import lfg_queue, lfg_queue_lock
 from cogs.lfg.helpers import scrub_urls
-from cogs.lfg.match_reporting import WentFirstView
+from cogs.lfg.match_reporting import MatchTypeSelectionView
 from utils.constants import SORCERY_NICKNAMES
 from utils.database import save_pairing
 
@@ -183,12 +183,8 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
             )
 
-            # Determine match type label for messages
-            match_type_label = "Ranked" if match_type == "ranked" else "Casual"
-            match_type_emoji = "\u2694\ufe0f" if match_type == "ranked" else "\u2b50"
-
-            # Create "Did you go first?" view (step before win/lose buttons)
-            went_first_view = WentFirstView(
+            # Create match type selection view (first step in reporting flow)
+            match_type_selection_view = MatchTypeSelectionView(
                 reporter_id,
                 reporter_id,
                 reporter_global,
@@ -202,14 +198,13 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 opponent_user=other_user,
                 reporter_deck_text=reporter_deck_text,
                 guild_id=interaction.guild.id,
-                match_type=match_type,
             )
 
-            # Send "Did you go first?" question to the selected reporter
+            # Send match type selection to the selected reporter
             try:
                 await reporter_user.send(
-                    f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Did you go first?**",
-                    view=went_first_view,
+                    f"🎮 **Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Choose match type:**",
+                    view=match_type_selection_view,
                 )
             except discord.Forbidden:
                 try:
@@ -230,9 +225,9 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                         # Post without deck URL in public channel
                         await dm_channel.send(
                             scrub_urls(
-                                f"{reporter_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n**Did you go first?**"
+                                f"{reporter_user.mention} 🎮 **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n**Choose match type:**"
                             ),
-                            view=went_first_view,
+                            view=match_type_selection_view,
                         )
                 except Exception as e:
                     logger.error(f"Failed to handle DM failure for reporter: {e}")
@@ -245,7 +240,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             # Send informational message to the other player (no buttons)
             try:
                 await other_user.send(
-                    f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
+                    f"🎮 **Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
                     f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                 )
             except discord.Forbidden:
@@ -267,7 +262,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                         # Post without deck URL in public channel
                         await dm_channel.send(
                             scrub_urls(
-                                f"{other_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
+                                f"{other_user.mention} 🎮 **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
                                 f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
                             )
                         )

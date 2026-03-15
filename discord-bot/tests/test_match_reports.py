@@ -451,6 +451,7 @@ class TestFunctionSignatures:
             "loser_deck_url",
             "winner_went_first",
             "loser_went_first",
+            "match_type",
         ]
 
         assert params == expected_params, f"Expected {expected_params}, got {params}"

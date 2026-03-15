@@ -2154,7 +2154,26 @@
         document.getElementById("display-name-modal").classList.remove("modal--active");
       }
 
+      let isSubmittingDisplayName = false;
+
       async function submitDisplayName(name) {
+        // Prevent double submission
+        if (isSubmittingDisplayName) {
+          return;
+        }
+
+        isSubmittingDisplayName = true;
+        const submitBtn = document.getElementById("display-name-submit");
+        const skipBtn = document.getElementById("display-name-skip");
+        const originalSubmitText = submitBtn?.textContent;
+
+        // Disable buttons during submission
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = "Saving...";
+        }
+        if (skipBtn) skipBtn.disabled = true;
+
         try {
           const res = await fetch(`/api/player/${playerId}/set-display-name`, {
             method: "POST",
@@ -2181,6 +2200,14 @@
         } catch (error) {
           console.error("Display name submit error:", error);
           alert("Failed to save display name. Please try again.");
+        } finally {
+          // Re-enable buttons
+          isSubmittingDisplayName = false;
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalSubmitText;
+          }
+          if (skipBtn) skipBtn.disabled = false;
         }
       }
 

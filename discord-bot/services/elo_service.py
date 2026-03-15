@@ -317,24 +317,31 @@ async def winner_report(
     if match_type == "testing":
         winner_elo_change = 0
         loser_elo_change = 0
+        winner_lifetime_elo_change = 0
+        loser_lifetime_elo_change = 0
         event_active = False
     else:
         # Update ELO and get the change values
         new_lifetime_elo, lifetime_change, new_event_elo, event_change, event_active = (
             update_elo_db(interaction_user_id, interaction_global, did_win, opponent_id)
         )
+        # Store both lifetime and event ELO changes
+        winner_lifetime_elo_change = lifetime_change
         winner_elo_change = event_change if event_active else 0
+        # Approximate loser changes (negative of winner's)
+        loser_lifetime_elo_change = -lifetime_change
         loser_elo_change = (
             -event_change if event_active else 0
-        )  # Approximate: loser loses roughly what winner gains
+        )
 
     cur.execute(
         "INSERT INTO match_records (reporter_id, winner_id, winner_display_name, "
         "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
         "curiosa_url, curiosa_url_winner, curiosa_url_loser, match_comment, "
         "json_deck_data, json_deck_data_winner, json_deck_data_loser, winner_elo_change, loser_elo_change, "
+        "winner_lifetime_elo_change, loser_lifetime_elo_change, "
         "winner_went_first, loser_went_first, match_type) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             reporter_id,
             user_id,
@@ -354,6 +361,8 @@ async def winner_report(
             json_deck_data_loser,
             winner_elo_change,
             loser_elo_change,
+            winner_lifetime_elo_change,
+            loser_lifetime_elo_change,
             winner_went_first,
             loser_went_first,
             match_type,
@@ -416,18 +425,23 @@ async def losser_report(
     new_lifetime_elo, lifetime_change, new_event_elo, event_change, event_active = (
         update_elo_db(interaction_user_id, interaction_global, did_win, opponent_id)
     )
+    # Store both lifetime and event ELO changes
+    loser_lifetime_elo_change = lifetime_change
     loser_elo_change = event_change if event_active else 0
+    # Approximate winner changes (negative of loser's)
+    winner_lifetime_elo_change = -lifetime_change
     winner_elo_change = (
         -event_change if event_active else 0
-    )  # Approximate: winner gains roughly what loser loses
+    )
 
     cur.execute(
         "INSERT INTO match_records (reporter_id, winner_id, winner_display_name, "
         "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
         "curiosa_url, curiosa_url_winner, curiosa_url_loser, match_comment, "
         "json_deck_data, json_deck_data_winner, json_deck_data_loser, winner_elo_change, loser_elo_change, "
+        "winner_lifetime_elo_change, loser_lifetime_elo_change, "
         "winner_went_first, loser_went_first, match_type) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             reporter_id,
             user_id,
@@ -447,6 +461,8 @@ async def losser_report(
             json_deck_data_loser,
             winner_elo_change,
             loser_elo_change,
+            winner_lifetime_elo_change,
+            loser_lifetime_elo_change,
             winner_went_first,
             loser_went_first,
             match_type,

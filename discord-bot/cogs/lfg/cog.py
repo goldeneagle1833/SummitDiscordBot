@@ -696,8 +696,9 @@ class LFGCog(commands.Cog):
     @staticmethod
     def resolve_match_type(type_a, type_b):
         """Determine the match type when two players are matched.
-        If either player explicitly chose 'testing', it's testing.
+        If either player explicitly chose 'testing' (casual), it's casual (no ELO).
         Otherwise it's ranked (including both vs both).
+        Note: 'testing' is the internal value for casual matches.
         """
         if type_a == "testing" or type_b == "testing":
             return "testing"
@@ -2416,14 +2417,15 @@ class LFGCog(commands.Cog):
                 match_cursor.execute(
                     """
                     SELECT match_id, winner_id, losser_id, winner_display_name, losser_display_name,
-                           winner_elo_change, loser_elo_change, timestamp
+                           winner_elo_change, loser_elo_change,
+                           winner_lifetime_elo_change, loser_lifetime_elo_change, timestamp
                     FROM match_records
                     WHERE match_id = ?
                     """,
                     (match_id,),
                 )
             except sqlite3.OperationalError:
-                # Fallback: column might be named differently or use ROWID
+                # Fallback: column might be named differently or use ROWID, or old schema without lifetime columns
                 match_cursor.execute(
                     """
                     SELECT ROWID, winner_id, losser_id, winner_display_name, losser_display_name,
@@ -2441,36 +2443,64 @@ class LFGCog(commands.Cog):
                 match_conn.close()
                 return
 
-            (
-                match_id_db,
-                winner_id,
-                loser_id,
-                winner_name,
-                loser_name,
-                winner_elo_change,
-                loser_elo_change,
-                timestamp,
-            ) = match
+            # Parse match data based on number of columns returned
+            if len(match) == 10:  # New schema with lifetime changes
+                (
+                    match_id_db,
+                    winner_id,
+                    loser_id,
+                    winner_name,
+                    loser_name,
+                    winner_elo_change,
+                    loser_elo_change,
+                    winner_lifetime_elo_change,
+                    loser_lifetime_elo_change,
+                    timestamp,
+                ) = match
+            else:  # Old schema without lifetime changes
+                (
+                    match_id_db,
+                    winner_id,
+                    loser_id,
+                    winner_name,
+                    loser_name,
+                    winner_elo_change,
+                    loser_elo_change,
+                    timestamp,
+                ) = match
+                # Fallback: use event change for lifetime (same as old behavior)
+                winner_lifetime_elo_change = winner_elo_change
+                loser_lifetime_elo_change = loser_elo_change
 
-            # Revert ELO changes (stored values are event ELO changes)
+            # Revert ELO changes using separate lifetime and event changes
             reverted_info = []
 
-            if winner_elo_change:
-                # Winner gained ELO, so subtract it from both lifetime and event
-                elo_cursor.execute(
-                    "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ? WHERE user_id = ?",
-                    (winner_elo_change, winner_elo_change, winner_id),
-                )
-                reverted_info.append(f"**{winner_name}**: -{winner_elo_change} ELO")
+            # Revert winner's ELO
+            if winner_lifetime_elo_change or winner_elo_change:
+                # Revert lifetime ELO (using online_elo and elo for backwards compat)
+                lifetime_revert = winner_lifetime_elo_change if winner_lifetime_elo_change else 0
+                # Revert event ELO
+                event_revert = winner_elo_change if winner_elo_change else 0
 
-            if loser_elo_change:
-                # Loser lost ELO (negative value), so add it back (subtract the negative)
                 elo_cursor.execute(
-                    "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ? WHERE user_id = ?",
-                    (loser_elo_change, loser_elo_change, loser_id),
+                    "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ?, online_elo = online_elo - ?, online_event_elo = online_event_elo - ? WHERE user_id = ?",
+                    (lifetime_revert, event_revert, lifetime_revert, event_revert, winner_id),
+                )
+                reverted_info.append(f"**{winner_name}**: Lifetime -{lifetime_revert}, Event -{event_revert} ELO")
+
+            # Revert loser's ELO
+            if loser_lifetime_elo_change or loser_elo_change:
+                # Revert lifetime ELO (loser_lifetime_elo_change is negative, so subtracting adds it back)
+                lifetime_revert = loser_lifetime_elo_change if loser_lifetime_elo_change else 0
+                # Revert event ELO (loser_elo_change is negative, so subtracting adds it back)
+                event_revert = loser_elo_change if loser_elo_change else 0
+
+                elo_cursor.execute(
+                    "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ?, online_elo = online_elo - ?, online_event_elo = online_event_elo - ? WHERE user_id = ?",
+                    (lifetime_revert, event_revert, lifetime_revert, event_revert, loser_id),
                 )
                 reverted_info.append(
-                    f"**{loser_name}**: {-loser_elo_change if loser_elo_change else 0} ELO"
+                    f"**{loser_name}**: Lifetime +{-lifetime_revert if lifetime_revert else 0}, Event +{-event_revert if event_revert else 0} ELO"
                 )
 
             # Delete the match record (use ROWID to be compatible with older schema)

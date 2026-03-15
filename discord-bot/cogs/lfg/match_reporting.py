@@ -382,7 +382,7 @@ class MatchConfirmationButtons(discord.ui.View):
             update_elo_db(self.loser_id, self.loser_global, False, self.winner_id)
 
         if self.match_type == "testing":
-            elo_msg = " *(\U0001f9ea Testing match - ELO not affected)*"
+            elo_msg = " *(⭐ Casual match - ELO not affected)*"
         elif not event_active:
             elo_msg = " *(No active event - ELO not affected)*"
         else:
@@ -1069,7 +1069,7 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             update_elo_db(view.loser_id, view.loser_global, False, view.winner_id)
 
         if view.match_type == "testing":
-            elo_msg = " *(\U0001f9ea Testing match - ELO not affected)*"
+            elo_msg = " *(⭐ Casual match - ELO not affected)*"
         elif not event_active:
             elo_msg = " *(No active event - ELO not affected)*"
         else:
@@ -1123,6 +1123,107 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         await send_milestone_announcement(
             view.bot, view.winner_id, view.loser_id, match_id
         )
+
+
+class MatchTypeSelectionView(discord.ui.View):
+    """View that asks the reporter to choose Ranked or Casual before match reporting."""
+
+    def __init__(
+        self,
+        match_id: int,
+        player1_id: int,
+        player1_global: str,
+        player2_id: int,
+        player2_global: str,
+        bot=None,
+        channel=None,
+        match_start_time=None,
+        reporter_deck_url=None,
+        opponent_deck_url=None,
+        opponent_user=None,
+        reporter_deck_text: str = "",
+        guild_id: int = None,
+    ):
+        super().__init__(timeout=None)
+        self.match_id = match_id
+        self.player1_id = player1_id
+        self.player1_global = player1_global
+        self.player2_id = player2_id
+        self.player2_global = player2_global
+        self.bot = bot
+        self.channel = channel
+        self.match_start_time = match_start_time or datetime.datetime.now()
+        self.reporter_deck_url = reporter_deck_url
+        self.opponent_deck_url = opponent_deck_url
+        self.opponent_user = opponent_user
+        self.reporter_deck_text = reporter_deck_text
+        self.guild_id = guild_id
+
+    @discord.ui.button(
+        label="⚔️ Ranked (ELO Tracked)",
+        style=discord.ButtonStyle.success,
+        custom_id="match_type_ranked",
+    )
+    async def ranked_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await self._continue_with_match_type(interaction, "ranked")
+
+    @discord.ui.button(
+        label="⭐ Casual (No ELO)",
+        style=discord.ButtonStyle.primary,
+        custom_id="match_type_casual",
+    )
+    async def casual_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await self._continue_with_match_type(interaction, "testing")
+
+    async def _continue_with_match_type(
+        self, interaction: discord.Interaction, match_type: str
+    ):
+        """Delete this message and show the 'Did you go first?' view."""
+        # Delete the match type selection message
+        try:
+            await interaction.message.delete()
+        except Exception as e:
+            logger.warning(f"Could not delete match type selection message: {e}")
+
+        # Create "Did you go first?" view with the selected match type
+        went_first_view = WentFirstView(
+            self.match_id,
+            self.player1_id,
+            self.player1_global,
+            self.player2_id,
+            self.player2_global,
+            self.bot,
+            self.channel,
+            match_start_time=self.match_start_time,
+            reporter_deck_url=self.reporter_deck_url,
+            opponent_deck_url=self.opponent_deck_url,
+            opponent_user=self.opponent_user,
+            reporter_deck_text=self.reporter_deck_text,
+            guild_id=self.guild_id,
+            match_type=match_type,
+        )
+
+        # Build match type label for message
+        match_type_emoji = "⚔️" if match_type == "ranked" else "⭐"
+        match_type_label = "Ranked" if match_type == "ranked" else "Casual"
+
+        # Send the "Did you go first?" question
+        try:
+            await interaction.response.send_message(
+                f"{match_type_emoji} **{match_type_label} Match** - You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\n**Did you go first?**",
+                view=went_first_view,
+            )
+        except Exception as e:
+            logger.error(f"Error sending went first view after match type selection: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "An error occurred. Please try again.",
+                    ephemeral=True,
+                )
 
 
 class WentFirstView(discord.ui.View):
@@ -1209,8 +1310,8 @@ class WentFirstView(discord.ui.View):
         )
 
         # Build match type label for message
-        match_type_emoji = "\u2694\ufe0f" if self.match_type == "ranked" else "\U0001f9ea"
-        match_type_label = "Ranked" if self.match_type == "ranked" else "Testing"
+        match_type_emoji = "⚔️" if self.match_type == "ranked" else "⭐"
+        match_type_label = "Ranked" if self.match_type == "ranked" else "Casual"
 
         # Send the report buttons
         try:

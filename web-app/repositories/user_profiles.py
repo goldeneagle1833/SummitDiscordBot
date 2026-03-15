@@ -319,6 +319,9 @@ class UserProfileRepository:
 
         Returns True if set successfully, False if already set or user not found.
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
         conn = self._get_connection()
         cur = conn.cursor()
 
@@ -328,11 +331,18 @@ class UserProfileRepository:
             (str(user_id), provider),
         )
         row = cur.fetchone()
+
         if not row:
+            logger.warning(f"set_custom_display_name: User not found - user_id={user_id}, provider={provider}")
             conn.close()
             return False
-        if row[0]:
+
+        current_custom_name = row[0]
+        logger.info(f"set_custom_display_name: user_id={user_id}, provider={provider}, current_custom_name={current_custom_name!r}, new_name={custom_name!r}")
+
+        if current_custom_name:
             # Already has a custom display name
+            logger.warning(f"set_custom_display_name: Already set - user_id={user_id}, existing_name={current_custom_name!r}")
             conn.close()
             return False
 
@@ -341,5 +351,8 @@ class UserProfileRepository:
             (custom_name, str(user_id), provider),
         )
         conn.commit()
+        rows_updated = cur.rowcount
         conn.close()
+
+        logger.info(f"set_custom_display_name: SUCCESS - user_id={user_id}, rows_updated={rows_updated}")
         return True

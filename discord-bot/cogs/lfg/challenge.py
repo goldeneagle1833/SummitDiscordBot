@@ -6,7 +6,7 @@ import logging
 import config
 from cogs.lfg.state import lfg_queue
 from cogs.lfg.helpers import scrub_urls
-from cogs.lfg.match_reporting import WentFirstView
+from cogs.lfg.match_reporting import MatchTypeSelectionView
 from utils.database import save_pairing
 
 logger = logging.getLogger("discord_bot")
@@ -220,8 +220,8 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         )
         other_deck_text = f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
 
-        # Create "Did you go first?" view for the reporter
-        went_first_view = WentFirstView(
+        # Create match type selection view for the reporter
+        match_type_selection_view = MatchTypeSelectionView(
             0,  # match_id not needed for direct challenges
             reporter_id,
             reporter_global,
@@ -237,23 +237,23 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
             guild_id=self.guild_id,
         )
 
-        # Send "Did you go first?" question to the selected reporter
+        # Send match type selection to the selected reporter
         if reporter_is_accepter:
             # Reporter is the one who accepted - use followup since we deferred
             try:
                 await interaction.followup.send(
-                    f"**Challenge Accepted!** You're playing against {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Did you go first?**",
-                    view=went_first_view,
+                    f"**Challenge Accepted!** You're playing against {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Choose match type:**",
+                    view=match_type_selection_view,
                     ephemeral=True,
                 )
             except Exception as e:
-                logger.error(f"Failed to send went first question to accepter: {e}")
+                logger.error(f"Failed to send match type selection to accepter: {e}")
         else:
             # Reporter is the challenger - send via DM
             try:
                 await challenger.send(
-                    f"**Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\n**Did you go first?**",
-                    view=went_first_view,
+                    f"**Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\n**Choose match type:**",
+                    view=match_type_selection_view,
                 )
             except discord.Forbidden:
                 try:
@@ -261,9 +261,9 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
                     if dm_channel:
                         await dm_channel.send(
                             scrub_urls(
-                                f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\n**Did you go first?**"
+                                f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\n**Choose match type:**"
                             ),
-                            view=went_first_view,
+                            view=match_type_selection_view,
                         )
                 except Exception as e:
                     logger.error(f"Failed to handle DM failure for challenger: {e}")

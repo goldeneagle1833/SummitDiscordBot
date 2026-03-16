@@ -13,6 +13,9 @@ lfg_queue = {}
 # Lock to prevent race conditions when accessing the queue
 lfg_queue_lock = asyncio.Lock()
 
+# Lock to prevent concurrent update_lfg_status calls (avoids duplicate messages)
+lfg_status_lock = asyncio.Lock()
+
 # Track pending match reports awaiting confirmation
 # Key: (reporter_id, opponent_id), Value: match report data
 pending_match_reports = {}

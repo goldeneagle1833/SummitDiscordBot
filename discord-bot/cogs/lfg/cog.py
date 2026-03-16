@@ -12,6 +12,7 @@ from cogs.lfg import state as lfg_state
 from cogs.lfg.state import (
     lfg_queue,
     lfg_queue_lock,
+    lfg_status_lock,
     pending_match_reports,
     processed_matches,
     active_ladder_challenges,
@@ -388,6 +389,11 @@ class LFGCog(commands.Cog):
 
     async def update_lfg_status(self):
         """Update the persistent LFG status message"""
+        async with lfg_status_lock:
+            await self._update_lfg_status_inner()
+
+    async def _update_lfg_status_inner(self):
+        """Inner implementation of update_lfg_status (called under lfg_status_lock)"""
         lfg_channel = self.bot.get_channel(self.lfg_channel_id)
         if not lfg_channel:
             return

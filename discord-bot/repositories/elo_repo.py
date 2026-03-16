@@ -256,6 +256,16 @@ def create_match_records_archive():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Add winner_went_first/loser_went_first columns (migration for play/draw stats in archive)
+    try:
+        cur.execute("ALTER TABLE match_records_archive ADD COLUMN winner_went_first TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cur.execute("ALTER TABLE match_records_archive ADD COLUMN loser_went_first TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     conn.commit()
     conn.close()
 

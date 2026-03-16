@@ -75,7 +75,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             )
             return
 
-        # Use lock to prevent race conditions
+        # Use lock to prevent race conditions - check, match, OR add must be atomic
         async with lfg_queue_lock:
             # Check if user is already in queue
             if interaction.user.id in lfg_queue:
@@ -103,9 +103,13 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                     f"Lock acquired: Matching {interaction.user.id} with {matched_user_id} (match_type={match_type})"
                 )
             else:
+                # No match found - add to queue while still holding the lock
                 matched_user_id = None
                 matched_user_deck_url = None
                 match_type = None
+                lfg_cog.add_to_lfg_queue(
+                    ctx, timeframe_value, deck_url, self.queue_type
+                )
 
         # Handle the result outside the lock
         if matched_user_id:
@@ -284,18 +288,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 ephemeral=True,
             )
         else:
-            # Add to queue with deck URL
-            async with lfg_queue_lock:
-                if interaction.user.id in lfg_queue:
-                    await interaction.followup.send(
-                        "You're already in the queue!", ephemeral=True
-                    )
-                    return
-
-                lfg_cog.add_to_lfg_queue(
-                    ctx, timeframe_value, deck_url, self.queue_type
-                )
-
+            # Already added to queue inside the lock above
             queue_label = self.queue_type.capitalize()
             deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
             try:

@@ -331,37 +331,41 @@ def player_api(player_id):
                 )
                 rows = cur.fetchall()
             except sqlite3.OperationalError:
-                # Final fallback: minimal columns for very old schema
-                cur.execute(
-                    """
-                    SELECT
-                        CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
-                        first_player,
-                        json_deck_data,
-                        match_time,
-                        winner_display_name,
-                        losser_display_name,
-                        timestamp,
-                        winner_elo_change,
-                        loser_elo_change,
-                        curiosa_url,
-                        winner_id,
-                        losser_id,
-                        rowid as match_id,
-                        NULL as json_deck_data_winner,
-                        NULL as json_deck_data_loser,
-                        NULL as curiosa_url_winner,
-                        NULL as curiosa_url_loser,
-                        NULL as winner_went_first,
-                        NULL as loser_went_first,
-                        NULL as match_type
-                    FROM match_records
-                    WHERE winner_id = ? OR losser_id = ?
-                    ORDER BY timestamp DESC
-                """,
-                    (query_player_id, query_player_id, query_player_id),
-                )
-                rows = cur.fetchall()
+                # Final fallback: minimal columns for very old schema or missing table
+                try:
+                    cur.execute(
+                        """
+                        SELECT
+                            CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                            first_player,
+                            json_deck_data,
+                            match_time,
+                            winner_display_name,
+                            losser_display_name,
+                            timestamp,
+                            winner_elo_change,
+                            loser_elo_change,
+                            curiosa_url,
+                            winner_id,
+                            losser_id,
+                            rowid as match_id,
+                            NULL as json_deck_data_winner,
+                            NULL as json_deck_data_loser,
+                            NULL as curiosa_url_winner,
+                            NULL as curiosa_url_loser,
+                            NULL as winner_went_first,
+                            NULL as loser_went_first,
+                            NULL as match_type
+                        FROM match_records
+                        WHERE winner_id = ? OR losser_id = ?
+                        ORDER BY timestamp DESC
+                    """,
+                        (query_player_id, query_player_id, query_player_id),
+                    )
+                    rows = cur.fetchall()
+                except sqlite3.OperationalError:
+                    # Table doesn't exist at all - no bot matches available
+                    rows = []
 
     # Also check archive table for historical matches (if needed based on filter)
     # Note: Archive is only available for bot matches (match_records_archive)
@@ -650,15 +654,13 @@ def player_api(player_id):
     win_rate = (wins / total_matches * 100) if total_matches > 0 else 0
 
     # First player stats (on the play)
-    # Only count matches from 2/7/2026 onward (when play/draw tracking became reliable)
+    # Uses the same dataset as all other stats (all_rows includes current + archive + solo)
     # New columns: winner_went_first (index 17), loser_went_first (index 18)
     # did_win (index 0): 1 if viewed player is winner, 0 if loser
-    # timestamp is at index 6
-    play_draw_cutoff = "2026-02-07"
-    play_draw_rows = [
-        row for row in all_rows
-        if row[6] and str(row[6]) >= play_draw_cutoff
-    ]
+    # Matches without play/draw data are excluded (both functions return False)
+    # Filter to only include matches from 2-7-2026 forward for play/draw stats
+    cutoff_date = "2026-02-07"
+    play_draw_rows = [row for row in all_rows if row[6] and str(row[6]) >= cutoff_date]
 
     def player_was_on_play(row):
         did_win = row[0]

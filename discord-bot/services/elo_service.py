@@ -620,8 +620,9 @@ def end_current_event():
                 losser_id, losser_display_name, did_win, timestamp, first_player, match_time,
                 curiosa_url, curiosa_url_winner, curiosa_url_loser, match_comment,
                 json_deck_data, json_deck_data_winner, json_deck_data_loser,
-                winner_elo_change, loser_elo_change, archived_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                winner_elo_change, loser_elo_change, winner_went_first, loser_went_first,
+                archived_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 event_id,
                 match_dict.get("match_id"),
@@ -643,6 +644,8 @@ def end_current_event():
                 match_dict.get("json_deck_data_loser"),
                 match_dict.get("winner_elo_change"),
                 match_dict.get("loser_elo_change"),
+                match_dict.get("winner_went_first"),
+                match_dict.get("loser_went_first"),
                 archived_at,
             ),
         )

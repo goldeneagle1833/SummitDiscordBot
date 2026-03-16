@@ -74,6 +74,7 @@ ADMINS = [
     "845209838111031306",  # Kyle
     "275995453957472257",  # Geoffrey
     "google_113075264611538227218",  # Bruce Google
+    "219331660833882112",  # vitaninyon
 ]
 
 # API Key configuration for external integrations

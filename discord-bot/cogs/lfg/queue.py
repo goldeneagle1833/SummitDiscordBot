@@ -6,7 +6,6 @@ import logging
 import config
 from cogs.lfg.state import lfg_queue, lfg_queue_lock
 from cogs.lfg.helpers import scrub_urls
-from cogs.lfg.match_reporting import MatchTypeSelectionView
 from utils.constants import SORCERY_NICKNAMES
 from utils.database import save_pairing
 
@@ -189,8 +188,11 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
             )
 
-            # Create match type selection view (first step in reporting flow)
-            match_type_selection_view = MatchTypeSelectionView(
+            # Create "Did you go first?" view with the pre-determined match type
+            # (Skip match type selection since we already know it from queue types)
+            from cogs.lfg.match_reporting import WentFirstView
+
+            went_first_view = WentFirstView(
                 reporter_id,
                 reporter_id,
                 reporter_global,
@@ -204,13 +206,18 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 opponent_user=other_user,
                 reporter_deck_text=reporter_deck_text,
                 guild_id=interaction.guild.id,
+                match_type=match_type,
             )
 
-            # Send match type selection to the selected reporter
+            # Build match type label for message
+            match_type_emoji = "⚔️" if match_type == "ranked" else "⭐"
+            match_type_label = "Ranked" if match_type == "ranked" else "Casual"
+
+            # Send "Did you go first?" question to the selected reporter
             try:
                 await reporter_user.send(
-                    f"🎮 **Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Choose match type:**",
-                    view=match_type_selection_view,
+                    f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Did you go first?**",
+                    view=went_first_view,
                 )
             except discord.Forbidden:
                 try:
@@ -231,9 +238,9 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                         # Post without deck URL in public channel
                         await dm_channel.send(
                             scrub_urls(
-                                f"{reporter_user.mention} 🎮 **Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n**Choose match type:**"
+                                f"{reporter_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n**Did you go first?**"
                             ),
-                            view=match_type_selection_view,
+                            view=went_first_view,
                         )
                 except Exception as e:
                     logger.error(f"Failed to handle DM failure for reporter: {e}")

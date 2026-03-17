@@ -1,14 +1,35 @@
 """Admin API routes for player and match management."""
 
 import logging
+import sqlite3
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
 
 from flask import Blueprint, jsonify, request, session
 
 from services.admin import AdminService
 from repositories.audit import AuditRepository
 from utils.auth import require_admin
+from webapp_config import ELO_DB_PATH, MATCH_RECORDS_DB_PATH, BOT_DIR
 
 logger = logging.getLogger(__name__)
+
+
+def _import_bot_database_utils():
+    """Import database utilities from discord-bot at runtime to avoid import conflicts."""
+    if str(BOT_DIR) not in sys.path:
+        sys.path.insert(0, str(BOT_DIR))
+
+    # Import at runtime to avoid conflicts
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "bot_database",
+        BOT_DIR / "utils" / "database.py"
+    )
+    bot_db = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bot_db)
+    return bot_db
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -144,3 +165,206 @@ def rename_player(user_id):
         )
     status = 200 if result.get("success") else 404
     return jsonify(result), status
+
+
+@admin_bp.route("/admin/reset-all-elo", methods=["POST"])
+@require_admin
+def reset_all_elo():
+    """DANGER: Completely reset ALL ELO ratings and match history (admin only)."""
+    admin_id, admin_name = _get_admin_info()
+
+    try:
+        # Capture state before reset
+        conn_elo = sqlite3.connect(str(ELO_DB_PATH))
+        cur_elo = conn_elo.cursor()
+        cur_elo.execute("SELECT COUNT(*) FROM overall_standings")
+        player_count = cur_elo.fetchone()[0]
+        conn_elo.close()
+
+        conn_match = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur_match = conn_match.cursor()
+        cur_match.execute("SELECT COUNT(*) FROM match_records")
+        match_count = cur_match.fetchone()[0]
+        conn_match.close()
+
+        # Perform reset
+        conn_elo = sqlite3.connect(str(ELO_DB_PATH))
+        cur_elo = conn_elo.cursor()
+        cur_elo.execute("DELETE FROM overall_standings")
+        cur_elo.execute("DELETE FROM paper_standings")
+        cur_elo.execute("DELETE FROM event_standings_archive")
+        cur_elo.execute("DELETE FROM events")
+        conn_elo.commit()
+        conn_elo.close()
+
+        conn_match = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur_match = conn_match.cursor()
+        cur_match.execute("DELETE FROM match_records")
+        cur_match.execute("DELETE FROM pairings")
+        cur_match.execute("DELETE FROM match_records_archive")
+        cur_match.execute("DELETE FROM match_reports_web")
+        conn_match.commit()
+        conn_match.close()
+
+        # Log action
+        audit = AuditRepository()
+        audit.log_action(
+            admin_id, admin_name, "web_reset_all_elo",
+            previous_state={"players": player_count, "matches": match_count},
+            new_state={"players": 0, "matches": 0},
+            details=f"Full database reset: {player_count} players and {match_count} matches deleted",
+        )
+
+        return jsonify({
+            "success": True,
+            "message": f"All data reset. Deleted {player_count} players and {match_count} matches."
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to reset database: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@admin_bp.route("/admin/game-activity", methods=["GET"])
+@require_admin
+def game_activity():
+    """Get game statistics for the last X hours (admin only)."""
+    hours = request.args.get("hours", 24, type=int)
+    if hours < 1 or hours > 8760:  # Max 1 year
+        return jsonify({"success": False, "error": "Hours must be between 1 and 8760"}), 400
+
+    try:
+        cutoff = datetime.now() - timedelta(hours=hours)
+        cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+
+        conn_match = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur_match = conn_match.cursor()
+
+        # Bot matches
+        cur_match.execute(
+            "SELECT COUNT(*) FROM match_records WHERE timestamp >= ?",
+            (cutoff_str,)
+        )
+        bot_matches = cur_match.fetchone()[0]
+
+        # Web matches
+        cur_match.execute(
+            "SELECT COUNT(*) FROM match_reports_web WHERE timestamp >= ?",
+            (cutoff_str,)
+        )
+        web_matches = cur_match.fetchone()[0]
+
+        # Get unique players (note: column is "losser_id" due to typo in schema)
+        cur_match.execute(
+            """
+            SELECT COUNT(DISTINCT player_id) FROM (
+                SELECT winner_id AS player_id FROM match_records WHERE timestamp >= ?
+                UNION
+                SELECT losser_id AS player_id FROM match_records WHERE timestamp >= ?
+            )
+            """,
+            (cutoff_str, cutoff_str)
+        )
+        active_players = cur_match.fetchone()[0]
+
+        conn_match.close()
+
+        total_matches = bot_matches + web_matches
+
+        return jsonify({
+            "success": True,
+            "hours": hours,
+            "total_matches": total_matches,
+            "bot_matches": bot_matches,
+            "web_matches": web_matches,
+            "active_players": active_players,
+            "start_time": cutoff_str,
+            "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get game activity: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@admin_bp.route("/admin/start-event", methods=["POST"])
+@require_admin
+def start_event_route():
+    """Start a new event/season (admin only)."""
+    data = request.get_json(silent=True)
+    if not data or not data.get("event_name"):
+        return jsonify({"success": False, "error": "event_name is required"}), 400
+
+    event_name = str(data["event_name"]).strip()
+    if not event_name or len(event_name) > 100:
+        return jsonify({"success": False, "error": "Invalid event name (1-100 characters)"}), 400
+
+    try:
+        # Import bot database utilities
+        bot_db = _import_bot_database_utils()
+
+        # Get previous event info for audit log
+        previous_event = bot_db.get_active_event()
+
+        # Start new event
+        result = bot_db.start_new_event(event_name)
+
+        # Log action
+        admin_id, admin_name = _get_admin_info()
+        audit = AuditRepository()
+        audit.log_action(
+            admin_id, admin_name, "web_start_event",
+            target_name=event_name,
+            previous_state={"event": previous_event["event_name"] if previous_event else None},
+            new_state={"event": event_name, "event_id": result["event_id"]},
+            details=f"Started new event '{event_name}' (ID: {result['event_id']})",
+        )
+
+        return jsonify({
+            "success": True,
+            "message": f"Event '{event_name}' started successfully",
+            "event_id": result["event_id"],
+            "previous_event": result.get("previous_event")
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to start event: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@admin_bp.route("/admin/end-event", methods=["POST"])
+@require_admin
+def end_event_route():
+    """End the current event without starting a new one (admin only)."""
+    try:
+        # Import bot database utilities
+        bot_db = _import_bot_database_utils()
+
+        # Get active event for audit log
+        active_event = bot_db.get_active_event()
+        if not active_event:
+            return jsonify({"success": False, "error": "No active event to end"}), 400
+
+        # End event
+        result = bot_db.end_current_event()
+
+        # Log action
+        admin_id, admin_name = _get_admin_info()
+        audit = AuditRepository()
+        audit.log_action(
+            admin_id, admin_name, "web_end_event",
+            target_name=active_event["event_name"],
+            previous_state={"event": active_event["event_name"], "event_id": active_event["event_id"]},
+            new_state={"event": None},
+            details=f"Ended event '{active_event['event_name']}' (ID: {active_event['event_id']})",
+        )
+
+        return jsonify({
+            "success": True,
+            "message": f"Event '{active_event['event_name']}' ended successfully",
+            "summary": result
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to end event: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500

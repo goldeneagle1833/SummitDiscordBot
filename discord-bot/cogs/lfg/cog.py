@@ -1165,7 +1165,7 @@ class LFGCog(commands.Cog):
     @commands.command()
     @is_bot_admin()
     async def admin_help(self, ctx):
-        """Get detailed help for admin commands (requires administrator permissions)."""
+        """Get detailed help for admin commands (requires administrator, Bot Admin, or Judge role)."""
         embed = discord.Embed(
             title="Admin Commands",
             description="Administrative commands for managing ELO, matches, players, and the server.",
@@ -1288,7 +1288,7 @@ class LFGCog(commands.Cog):
             inline=False,
         )
 
-        embed.set_footer(text="All admin commands require admin permissions or Bot Admin role")
+        embed.set_footer(text="All admin commands require admin permissions, Bot Admin role, or Judge role")
 
         await ctx.send(embed=embed)
 

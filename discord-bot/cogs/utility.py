@@ -148,7 +148,7 @@ class UtilityCog(commands.Cog):
         # Admin Commands
         embed.add_field(
             name="🔧 Admin Commands",
-            value="`!admin_help` - View admin commands (requires permissions)",
+            value="`!admin_help` - View admin commands (requires administrator, Bot Admin, or Judge role)",
             inline=False,
         )
 
@@ -263,7 +263,7 @@ class UtilityCog(commands.Cog):
                 "• Most commands work in DMs for privacy\n"
                 "• `!challenge` must be used in #lfg channel\n"
                 "• Fun system commands have daily/weekly limits\n"
-                "• Admin commands require administrator permissions\n"
+                "• Admin commands require administrator, Bot Admin, or Judge role\n"
                 "• Use specific help commands (`!lfg_help`, `!helpfart`, `!admin_help`) for details"
             ),
             inline=False,

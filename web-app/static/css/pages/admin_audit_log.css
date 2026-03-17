@@ -4,6 +4,214 @@
  * Description: Styles for administrative action audit log with pagination
  */
 
+/* === Admin Actions Section === */
+.admin-actions-section {
+  max-width: 1400px;
+  margin: 2rem auto;
+  padding: 0 2rem;
+  margin-bottom: 3rem;
+}
+
+.admin-actions-section h2 {
+  font-family: "Inter", sans-serif;
+  color: var(--color-text);
+  font-size: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.section-subtitle {
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  margin-bottom: 1.5rem;
+}
+
+.active-event-banner {
+  background: rgba(63, 185, 80, 0.15);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+  color: var(--color-text);
+  font-size: 0.95rem;
+}
+
+.active-event-banner.no-event {
+  background: rgba(77, 184, 255, 0.15);
+  border-color: rgba(77, 184, 255, 0.3);
+}
+
+.active-event-banner strong {
+  font-weight: 600;
+}
+
+.event-id {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  margin-left: 0.5rem;
+}
+
+.admin-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.admin-action-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 1.5rem;
+  transition: all 0.3s ease;
+}
+
+.admin-action-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.admin-action-card h3 {
+  font-size: 1.125rem;
+  color: var(--color-text);
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.admin-action-card p {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  color: var(--color-text);
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-size: 0.875rem;
+  transition: all 0.2s;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: rgba(77, 184, 255, 0.5);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.btn {
+  width: 100%;
+  padding: 0.625rem 1.25rem;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  background: rgba(248, 81, 73, 0.2);
+  color: #f85149;
+  border: 1px solid #f85149;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgba(248, 81, 73, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: rgba(77, 184, 255, 0.2);
+  color: #4db8ff;
+  border: 1px solid #4db8ff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: rgba(77, 184, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-success {
+  background: rgba(63, 185, 80, 0.2);
+  color: #3fb950;
+  border: 1px solid #3fb950;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: rgba(63, 185, 80, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-warning {
+  background: rgba(219, 154, 4, 0.2);
+  color: #db9a04;
+  border: 1px solid #db9a04;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background: rgba(219, 154, 4, 0.4);
+  transform: translateY(-1px);
+}
+
+.activity-result {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  min-height: 50px;
+}
+
+.activity-stats h4 {
+  color: var(--color-text);
+  font-size: 0.95rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.activity-stats p {
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.activity-stats .time-range {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  opacity: 0.7;
+}
+
+.loading {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.error {
+  color: #f85149;
+}
+
 /* === Audit Section === */
 .audit-section {
   max-width: 1400px;
@@ -153,6 +361,18 @@
 
 /* === Responsive === */
 @media (max-width: 768px) {
+  .admin-actions-section {
+    padding: 0 1rem;
+  }
+
+  .admin-actions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-action-card {
+    padding: 1.25rem;
+  }
+
   .audit-section {
     padding: 0 1rem;
   }

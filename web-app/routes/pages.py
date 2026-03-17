@@ -332,10 +332,28 @@ def admin_audit_log():
 
     total_pages = max(1, (total + per_page - 1) // per_page)
 
+    # Get active event info for display
+    active_event = None
+    try:
+        import importlib.util
+        from webapp_config import BOT_DIR
+
+        # Import bot database utilities at runtime to avoid conflicts
+        spec = importlib.util.spec_from_file_location(
+            "bot_database",
+            BOT_DIR / "utils" / "database.py"
+        )
+        bot_db = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bot_db)
+        active_event = bot_db.get_active_event()
+    except Exception:
+        pass
+
     return render_template(
         "pages/admin_audit_log.html",
         logs=logs,
         page=page,
         total_pages=total_pages,
         total=total,
+        active_event=active_event,
     )

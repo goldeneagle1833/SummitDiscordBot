@@ -21,6 +21,61 @@
         <p>History of all administrative actions</p>
       </section>
 
+      <section class="admin-actions-section">
+        <h2>Admin Actions</h2>
+        <p class="section-subtitle">Perform administrative operations</p>
+
+        {% if active_event %}
+        <div class="active-event-banner">
+          <strong>📅 Current Event:</strong> {{ active_event.event_name }}
+          <span class="event-id">(ID: {{ active_event.event_id }})</span>
+        </div>
+        {% else %}
+        <div class="active-event-banner no-event">
+          <strong>ℹ️ No active event</strong>
+        </div>
+        {% endif %}
+
+        <div class="admin-actions-grid">
+          <!-- Reset ELO -->
+          <div class="admin-action-card">
+            <h3>⚠️ Full Database Reset</h3>
+            <p>DANGER: Completely reset ALL ELO ratings and match history. This cannot be undone!</p>
+            <button class="btn btn-danger" onclick="resetAllElo()">Reset All Data</button>
+          </div>
+
+          <!-- Game Activity -->
+          <div class="admin-action-card">
+            <h3>📊 Activity Monitoring</h3>
+            <p>View game statistics for the last X hours</p>
+            <div class="form-group">
+              <label for="activity-hours">Hours (1-8760):</label>
+              <input type="number" id="activity-hours" min="1" max="8760" value="24" class="form-input">
+            </div>
+            <button class="btn btn-primary" onclick="getGameActivity()">View Activity</button>
+            <div id="activity-result" class="activity-result"></div>
+          </div>
+
+          <!-- Start Event -->
+          <div class="admin-action-card">
+            <h3>🎯 Start New Event</h3>
+            <p>Start a new event/season. Archives current event (if any) and resets event ELO.</p>
+            <div class="form-group">
+              <label for="event-name">Event Name:</label>
+              <input type="text" id="event-name" placeholder="e.g., Spring 2026 Championship" class="form-input" maxlength="100">
+            </div>
+            <button class="btn btn-success" onclick="startEvent()">Start Event</button>
+          </div>
+
+          <!-- End Event -->
+          <div class="admin-action-card">
+            <h3>🏁 End Current Event</h3>
+            <p>End the current event without starting a new one. For breaks between seasons.</p>
+            <button class="btn btn-warning" onclick="endEvent()">End Event</button>
+          </div>
+        </div>
+      </section>
+
       <section class="audit-section">
         <p class="total-count">{{ total }} total entries</p>
 
@@ -47,9 +102,9 @@
                   <td class="nowrap">{{ log.admin_name }}</td>
                   <td>
                     {% set action = log.action %}
-                    {% if action in ['reset_elo', 'remove_match', 'remove_player', 'remove_community'] %}
+                    {% if action in ['reset_elo', 'remove_match', 'remove_player', 'remove_community', 'web_reset_all_elo', 'web_remove_player', 'web_remove_bot_match', 'web_remove_web_match'] %}
                       <span class="action-badge destructive">{{ action }}</span>
-                    {% elif action in ['correct_match', 'spot_elo_reset', 'recalculate_event_elo', 'start_event', 'end_event', 'refresh_streamers'] %}
+                    {% elif action in ['correct_match', 'spot_elo_reset', 'recalculate_event_elo', 'start_event', 'end_event', 'refresh_streamers', 'web_start_event', 'web_end_event', 'web_reset_elo', 'web_rename_player'] %}
                       <span class="action-badge modify">{{ action }}</span>
                     {% else %}
                       <span class="action-badge create">{{ action }}</span>
@@ -113,5 +168,123 @@
       </section>
     </main>    {% include 'components/footer.html' %}
 <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"></script>
+<script>
+  function resetAllElo() {
+    if (!confirm('⚠️ WARNING: This will DELETE ALL ELO ratings and match history!\n\nThis action CANNOT be undone!\n\nAre you absolutely sure?')) {
+      return;
+    }
+
+    if (!confirm('This is your FINAL warning. ALL data will be permanently deleted.\n\nType YES in the next prompt to confirm.')) {
+      return;
+    }
+
+    const confirmation = prompt('Type YES to confirm database reset:');
+    if (confirmation !== 'YES') {
+      alert('Reset cancelled.');
+      return;
+    }
+
+    fetch('/api/admin/reset-all-elo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert('✅ ' + data.message);
+        location.reload();
+      } else {
+        alert('❌ Error: ' + data.error);
+      }
+    })
+    .catch(error => {
+      alert('❌ Network error: ' + error.message);
+    });
+  }
+
+  function getGameActivity() {
+    const hours = document.getElementById('activity-hours').value;
+    const resultDiv = document.getElementById('activity-result');
+
+    resultDiv.innerHTML = '<p class="loading">Loading...</p>';
+
+    fetch(`/api/admin/game-activity?hours=${hours}`)
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        resultDiv.innerHTML = `
+          <div class="activity-stats">
+            <h4>Activity for Last ${data.hours} Hours</h4>
+            <p><strong>Total Matches:</strong> ${data.total_matches}</p>
+            <p><strong>Bot Matches:</strong> ${data.bot_matches}</p>
+            <p><strong>Web Matches:</strong> ${data.web_matches}</p>
+            <p><strong>Active Players:</strong> ${data.active_players}</p>
+            <p class="time-range"><small>${data.start_time} to ${data.end_time}</small></p>
+          </div>
+        `;
+      } else {
+        resultDiv.innerHTML = `<p class="error">❌ Error: ${data.error}</p>`;
+      }
+    })
+    .catch(error => {
+      resultDiv.innerHTML = `<p class="error">❌ Network error: ${error.message}</p>`;
+    });
+  }
+
+  function startEvent() {
+    const eventName = document.getElementById('event-name').value.trim();
+
+    if (!eventName) {
+      alert('Please enter an event name.');
+      return;
+    }
+
+    if (!confirm(`Start new event "${eventName}"?\n\nThis will archive the current event (if any) and reset event ELO for all players.`)) {
+      return;
+    }
+
+    fetch('/api/admin/start-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_name: eventName })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert('✅ ' + data.message);
+        document.getElementById('event-name').value = '';
+        location.reload();
+      } else {
+        alert('❌ Error: ' + data.error);
+      }
+    })
+    .catch(error => {
+      alert('❌ Network error: ' + error.message);
+    });
+  }
+
+  function endEvent() {
+    if (!confirm('End the current event?\n\nThis will archive the event and leave no active event until you start a new one.')) {
+      return;
+    }
+
+    fetch('/api/admin/end-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert('✅ ' + data.message);
+        location.reload();
+      } else {
+        alert('❌ Error: ' + data.error);
+      }
+    })
+    .catch(error => {
+      alert('❌ Network error: ' + error.message);
+    });
+  }
+</script>
   </body>
 </html>

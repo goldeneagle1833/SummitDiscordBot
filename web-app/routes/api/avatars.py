@@ -1110,6 +1110,118 @@ def get_play_draw_stats():
     })
 
 
+@avatars_bp.route("/avatar/<avatar_name>/matchups")
+def get_avatar_matchups(avatar_name):
+    """API endpoint for avatar vs avatar matchup statistics.
+
+    Returns win/loss record and winrate for the specified avatar against all other avatars.
+    """
+    avatar_name = unquote(avatar_name)
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        all_rows = []
+        use_new_columns = True
+
+        # Query current match_records
+        try:
+            cur.execute("""
+                SELECT json_deck_data_winner, json_deck_data_loser
+                FROM match_records
+                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
+            """)
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError:
+            cur.execute("""
+                SELECT
+                    CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
+                    json_deck_data
+                FROM match_records
+                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+            """)
+            all_rows.extend(cur.fetchall())
+            use_new_columns = False
+
+        # Also query match_records_archive for lifetime stats
+        if use_new_columns:
+            try:
+                cur.execute("""
+                    SELECT json_deck_data_winner, json_deck_data_loser
+                    FROM match_records_archive
+                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
+                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' and json_deck_data_loser != '{}')
+                """)
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass  # Archive table may not exist
+
+        conn.close()
+    except sqlite3.OperationalError:
+        return jsonify({"error": "Database not found"}), 404
+
+    # Track matchup stats: {opponent_avatar: {"wins": X, "losses": Y}}
+    matchup_stats = {}
+
+    def extract_avatar_name(deck_json):
+        if not deck_json or deck_json in ("", "{}"):
+            return None
+        try:
+            deck_data = json.loads(deck_json)
+            if deck_data.get("avatar") and len(deck_data["avatar"]) > 0:
+                return deck_data["avatar"][0].get("name")
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            pass
+        return None
+
+    if use_new_columns:
+        for row in all_rows:
+            winner_avatar = extract_avatar_name(row[0])
+            loser_avatar = extract_avatar_name(row[1])
+
+            # Match where our avatar won
+            if winner_avatar == avatar_name and loser_avatar and loser_avatar != avatar_name:
+                if loser_avatar not in matchup_stats:
+                    matchup_stats[loser_avatar] = {"wins": 0, "losses": 0}
+                matchup_stats[loser_avatar]["wins"] += 1
+
+            # Match where our avatar lost
+            elif loser_avatar == avatar_name and winner_avatar and winner_avatar != avatar_name:
+                if winner_avatar not in matchup_stats:
+                    matchup_stats[winner_avatar] = {"wins": 0, "losses": 0}
+                matchup_stats[winner_avatar]["losses"] += 1
+    else:
+        # Old schema - can't reliably get opponent avatar without more info
+        # Would need to query full match data with both players' decks
+        pass
+
+    # Convert to list format with winrate
+    # Filter out matchups with less than 10 matches for statistical significance
+    matchups = []
+    for opponent, stats in matchup_stats.items():
+        total = stats["wins"] + stats["losses"]
+        if total >= 10:
+            win_rate = (stats["wins"] / total) * 100
+            matchups.append({
+                "opponent": opponent,
+                "wins": stats["wins"],
+                "losses": stats["losses"],
+                "total": total,
+                "win_rate": round(win_rate, 1)
+            })
+
+    # Sort by total matches (most common matchups first)
+    matchups.sort(key=lambda x: x["total"], reverse=True)
+
+    return jsonify({
+        "avatar_name": avatar_name,
+        "matchups": matchups,
+        "total_matchups": len(matchups)
+    })
+
+
 @avatars_bp.route("/list-all-avatars")
 def list_all_avatars():
     """API endpoint to list all unique avatar names from match records.

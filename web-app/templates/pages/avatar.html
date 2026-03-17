@@ -168,6 +168,54 @@
         height: 16px;
         cursor: pointer;
       }
+      /* Matchup table styles */
+      #matchups-container table {
+        background: var(--color-bg-elevated, rgba(255, 255, 255, 0.02));
+      }
+      #matchups-container tbody tr:last-child {
+        border-bottom: none;
+      }
+      /* Win rate gradient colors (5 levels) */
+      #matchups-container .winrate-terrible {
+        color: #e74c3c; /* Red (0-40%) */
+      }
+      #matchups-container .winrate-poor {
+        color: #ff6b6b; /* Light red (41-50%) */
+      }
+      #matchups-container .winrate-good {
+        color: #90ee90; /* Light green (51-60%) */
+      }
+      #matchups-container .winrate-great {
+        color: #2ecc71; /* Normal green (61-70%) */
+      }
+      #matchups-container .winrate-excellent {
+        color: #00ff00; /* Bright green (70%+) */
+      }
+      /* Sortable table headers */
+      #matchups-container th.sortable {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 24px;
+      }
+      #matchups-container th.sortable:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+      #matchups-container th.sortable::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        opacity: 0.3;
+        font-size: 12px;
+      }
+      #matchups-container th.sortable.sort-asc::after {
+        content: "▲";
+        opacity: 1;
+      }
+      #matchups-container th.sortable.sort-desc::after {
+        content: "▼";
+        opacity: 1;
+      }
     </style>
   </head>
   <body>
@@ -238,6 +286,19 @@
               <div class="stat-label">Win Rate on the Draw</div>
               <div class="text-xs text-text-muted mt-1" id="stat-draw-record">-</div>
             </div>
+          </div>
+        </div>
+
+        <!-- Avatar vs Avatar Matchups -->
+        <div class="p-6 md:p-8 border-t border-border">
+          <h3 class="text-lg md:text-xl font-semibold mb-2">
+            ⚔️ Matchups vs Other Avatars
+          </h3>
+          <p class="text-sm text-text-muted mb-4">
+            Showing matchups with 10+ games for statistical significance
+          </p>
+          <div id="matchups-container">
+            <p class="loading-text">Loading matchup data...</p>
           </div>
         </div>
 
@@ -483,6 +544,154 @@
       }
 
       fetchAvatarData();
+
+      let matchupData = null;
+      let currentSortColumn = "total";
+      let currentSortDirection = "desc";
+
+      async function fetchMatchupData() {
+        try {
+          const res = await fetch(
+            `/api/avatar/${encodeURIComponent(avatarName)}/matchups`,
+          );
+          if (!res.ok) {
+            document.getElementById("matchups-container").innerHTML =
+              '<p class="loading-text">Error loading matchup data</p>';
+            return;
+          }
+          const data = await res.json();
+
+          if (!data.matchups || data.matchups.length === 0) {
+            document.getElementById("matchups-container").innerHTML =
+              '<p class="text-center text-text-muted py-8">No matchup data available yet.</p>';
+            return;
+          }
+
+          matchupData = data.matchups;
+          renderMatchupTable();
+        } catch (error) {
+          console.error("Error fetching matchup data:", error);
+          document.getElementById("matchups-container").innerHTML =
+            '<p class="loading-text">Error loading matchup data</p>';
+        }
+      }
+
+      function getWinRateClass(winRate) {
+        if (winRate <= 40) {
+          return "winrate-terrible"; // Red (0-40%)
+        } else if (winRate <= 50) {
+          return "winrate-poor"; // Light red (41-50%)
+        } else if (winRate <= 60) {
+          return "winrate-good"; // Light green (51-60%)
+        } else if (winRate <= 70) {
+          return "winrate-great"; // Normal green (61-70%)
+        } else {
+          return "winrate-excellent"; // Bright green (70%+)
+        }
+      }
+
+      function sortMatchups(column) {
+        if (currentSortColumn === column) {
+          currentSortDirection = currentSortDirection === "asc" ? "desc" : "asc";
+        } else {
+          currentSortColumn = column;
+          currentSortDirection = "desc";
+        }
+
+        matchupData.sort((a, b) => {
+          let aVal, bVal;
+
+          switch (column) {
+            case "opponent":
+              aVal = a.opponent.toLowerCase();
+              bVal = b.opponent.toLowerCase();
+              break;
+            case "winrate":
+              aVal = a.win_rate;
+              bVal = b.win_rate;
+              break;
+            case "wins":
+              aVal = a.wins;
+              bVal = b.wins;
+              break;
+            case "total":
+              aVal = a.total;
+              bVal = b.total;
+              break;
+            default:
+              return 0;
+          }
+
+          if (currentSortDirection === "asc") {
+            return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+          } else {
+            return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+          }
+        });
+
+        renderMatchupTable();
+      }
+
+      function renderMatchupTable() {
+        const container = document.getElementById("matchups-container");
+
+        let html = `
+          <div class="overflow-x-auto -mx-6 md:mx-0">
+            <div class="inline-block min-w-full align-middle px-6 md:px-0">
+              <table class="min-w-full border border-border rounded-soft overflow-hidden">
+                <thead class="bg-bg-elevated border-b border-border">
+                  <tr>
+                    <th class="sortable px-4 py-3 text-left text-xs font-semibold text-text-muted uppercase ${currentSortColumn === 'opponent' ? 'sort-' + currentSortDirection : ''}" onclick="sortMatchups('opponent')">
+                      Opponent Avatar
+                    </th>
+                    <th class="sortable px-4 py-3 text-center text-xs font-semibold text-text-muted uppercase ${currentSortColumn === 'winrate' ? 'sort-' + currentSortDirection : ''}" onclick="sortMatchups('winrate')">
+                      Win Rate
+                    </th>
+                    <th class="sortable px-4 py-3 text-center text-xs font-semibold text-text-muted uppercase ${currentSortColumn === 'wins' ? 'sort-' + currentSortDirection : ''}" onclick="sortMatchups('wins')">
+                      Record
+                    </th>
+                    <th class="sortable px-4 py-3 text-center text-xs font-semibold text-text-muted uppercase ${currentSortColumn === 'total' ? 'sort-' + currentSortDirection : ''}" onclick="sortMatchups('total')">
+                      Matches
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+        `;
+
+        matchupData.forEach((matchup) => {
+          const winRateClass = getWinRateClass(matchup.win_rate);
+
+          html += `
+            <tr class="border-b border-border hover:bg-bg-elevated transition-colors">
+              <td class="px-4 py-3">
+                <a href="/avatar/${encodeURIComponent(matchup.opponent)}" class="text-primary hover:underline">
+                  ${matchup.opponent}
+                </a>
+              </td>
+              <td class="px-4 py-3 text-center font-semibold ${winRateClass}">
+                ${matchup.win_rate}%
+              </td>
+              <td class="px-4 py-3 text-center text-sm">
+                ${matchup.wins}W - ${matchup.losses}L
+              </td>
+              <td class="px-4 py-3 text-center text-text-muted">
+                ${matchup.total}
+              </td>
+            </tr>
+          `;
+        });
+
+        html += `
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+
+        container.innerHTML = html;
+      }
+
+      fetchMatchupData();
 
       async function fetchDeckComposition() {
         try {

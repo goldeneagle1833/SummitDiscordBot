@@ -1076,7 +1076,7 @@ def player_api(player_id):
         # Convert to list and sort by most recent usage
         for deck_url, stats in sorted(deck_stats.items(), key=lambda x: x[1]["last_date"] or "", reverse=True):
             total_games = stats["wins"] + stats["losses"]
-            win_rate = (stats["wins"] / total_games * 100) if total_games > 0 else 0
+            deck_win_rate = (stats["wins"] / total_games * 100) if total_games > 0 else 0
 
             recent_decks.append(
                 {
@@ -1086,7 +1086,7 @@ def player_api(player_id):
                     "date": stats["last_date"],
                     "wins": stats["wins"],
                     "losses": stats["losses"],
-                    "win_rate": round(win_rate, 1),
+                    "win_rate": round(deck_win_rate, 1),
                     "total_games": total_games,
                 }
             )

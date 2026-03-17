@@ -1029,15 +1029,17 @@ def get_play_draw_stats():
                 conn.close()
                 return jsonify({"error": "Database error"}), 500
 
-        # Query archive table with date filter (archive uses old schema with first_player only)
-        # Map first_player to winner_went_first/loser_went_first:
-        #   first_player='y' means winner went first -> winner_went_first='y', loser_went_first='n'
-        #   first_player='n' means loser went first -> winner_went_first='n', loser_went_first='y'
+        # Query archive table with date filter
+        # Use winner_went_first/loser_went_first if available (new records),
+        # otherwise derive from first_player (old records)
         try:
             cur.execute("""
                 SELECT
-                    first_player as winner_went_first,
-                    CASE WHEN first_player = 'y' THEN 'n' ELSE 'y' END as loser_went_first,
+                    COALESCE(winner_went_first, first_player) as winner_went_first,
+                    COALESCE(loser_went_first,
+                        CASE WHEN first_player = 'y' THEN 'n'
+                             WHEN first_player = 'n' THEN 'y'
+                             ELSE NULL END) as loser_went_first,
                     first_player,
                     timestamp
                 FROM match_records_archive

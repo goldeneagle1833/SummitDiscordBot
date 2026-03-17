@@ -5,7 +5,7 @@ import logging
 
 import config
 from cogs.lfg.state import pending_match_reports, processed_matches
-from cogs.lfg.helpers import scrub_urls, send_milestone_announcement
+from cogs.lfg.helpers import scrub_urls, send_milestone_announcement, generate_ladder_challenge_announcement
 from utils.database import (
     winner_report,
     losser_report,
@@ -432,6 +432,31 @@ class MatchConfirmationButtons(discord.ui.View):
         lfg_cog = self.bot.get_cog("LFGCog")
         if lfg_cog:
             await lfg_cog.update_leaderboard()
+
+        # Announce ladder challenge result in LFG channel
+        if self.ladder_info and lfg_cog:
+            lfg_channel = self.bot.get_channel(lfg_cog.lfg_channel_id)
+            if lfg_channel:
+                # Determine if the underdog won and get stakes info
+                challenger_id = self.ladder_info.get("challenger_id")
+                underdog_won = self.winner_id != challenger_id
+                winner_mult = self.ladder_info.get("elo_multiplier_winner", 1.0)
+                loser_mult = self.ladder_info.get("elo_multiplier_loser", 1.0)
+                stakes_text = f"{winner_mult}x/{loser_mult}x" if winner_mult != 1.0 or loser_mult != 1.0 else "Normal"
+
+                # Generate stylized announcement using ChatGPT
+                announcement = generate_ladder_challenge_announcement(
+                    underdog_won=underdog_won,
+                    winner_name=self.winner_global,
+                    loser_name=self.loser_global,
+                    stakes_multiplier=stakes_text
+                )
+
+                # Replace placeholders with actual mentions
+                announcement = announcement.replace("WINNER", f"<@{self.winner_id}>")
+                announcement = announcement.replace("LOSER", f"<@{self.loser_id}>")
+
+                await lfg_channel.send(announcement + f" Top 16: use `!issue_challenge` for special stakes!")
 
         # Check for milestone and send announcement if needed
         await send_milestone_announcement(
@@ -1118,6 +1143,31 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         lfg_cog = view.bot.get_cog("LFGCog")
         if lfg_cog:
             await lfg_cog.update_leaderboard()
+
+        # Announce ladder challenge result in LFG channel
+        if view.ladder_info and lfg_cog:
+            lfg_channel = view.bot.get_channel(lfg_cog.lfg_channel_id)
+            if lfg_channel:
+                # Determine if the underdog won and get stakes info
+                challenger_id = view.ladder_info.get("challenger_id")
+                underdog_won = view.winner_id != challenger_id
+                winner_mult = view.ladder_info.get("elo_multiplier_winner", 1.0)
+                loser_mult = view.ladder_info.get("elo_multiplier_loser", 1.0)
+                stakes_text = f"{winner_mult}x/{loser_mult}x" if winner_mult != 1.0 or loser_mult != 1.0 else "Normal"
+
+                # Generate stylized announcement using ChatGPT
+                announcement = generate_ladder_challenge_announcement(
+                    underdog_won=underdog_won,
+                    winner_name=view.winner_global,
+                    loser_name=view.loser_global,
+                    stakes_multiplier=stakes_text
+                )
+
+                # Replace placeholders with actual mentions
+                announcement = announcement.replace("WINNER", f"<@{view.winner_id}>")
+                announcement = announcement.replace("LOSER", f"<@{view.loser_id}>")
+
+                await lfg_channel.send(announcement + f" Top 16: use `!issue_challenge` for special stakes!")
 
         # Check for milestone
         await send_milestone_announcement(

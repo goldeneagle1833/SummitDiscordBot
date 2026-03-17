@@ -92,10 +92,33 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 matched_user_info = lfg_queue.get(matched_user_id, {})
                 matched_user_deck_url = matched_user_info.get("deck_url")
                 matched_queue_type = matched_user_info.get("queue_type", "ranked")
+                matched_ladder_info = matched_user_info.get("ladder_info")
+
                 # Determine match type based on both players' queue types
                 match_type = lfg_cog.resolve_match_type(
                     self.queue_type, matched_queue_type
                 )
+
+                # If matched user has ladder_info, adjust multipliers based on ELO difference
+                if matched_ladder_info:
+                    from utils.database import get_user_event_elo
+                    challenger_elo = get_user_event_elo(matched_ladder_info["challenger_id"])
+                    opponent_elo = get_user_event_elo(interaction.user.id)
+                    elo_diff = abs(challenger_elo - opponent_elo)
+
+                    if elo_diff < 100:
+                        # Normal stakes - set multipliers to 1.0
+                        matched_ladder_info["elo_multiplier_winner"] = 1.0
+                        matched_ladder_info["elo_multiplier_loser"] = 1.0
+                        logger.info(
+                            f"Ladder challenge match: ELO diff {elo_diff} < 100 - using normal stakes"
+                        )
+                    else:
+                        # Keep special stakes (2.0 for winner, 0.5 for loser)
+                        logger.info(
+                            f"Ladder challenge match: ELO diff {elo_diff} >= 100 - using special stakes (2x/0.5x)"
+                        )
+
                 # Remove matched user from queue
                 lfg_queue.pop(matched_user_id, None)
                 logger.info(
@@ -105,6 +128,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 # No match found - add to queue while still holding the lock
                 matched_user_id = None
                 matched_user_deck_url = None
+                matched_ladder_info = None
                 match_type = None
                 lfg_cog.add_to_lfg_queue(
                     ctx, timeframe_value, deck_url, self.queue_type
@@ -206,6 +230,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 opponent_user=other_user,
                 reporter_deck_text=reporter_deck_text,
                 guild_id=interaction.guild.id,
+                ladder_info=matched_ladder_info,
                 match_type=match_type,
             )
 
@@ -284,8 +309,21 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
 
             # Announce match in LFG channel
             if lfg_channel:
+                # Add ladder challenge info if applicable
+                ladder_note = ""
+                if matched_ladder_info:
+                    from utils.database import get_user_event_elo
+                    elo_diff = abs(
+                        get_user_event_elo(matched_ladder_info["challenger_id"])
+                        - get_user_event_elo(interaction.user.id)
+                    )
+                    if elo_diff >= 100:
+                        ladder_note = " 🏆 **Ladder Challenge!** Top 16 player - Special stakes (2x/0.5x ELO)!"
+                    else:
+                        ladder_note = " 🏆 **Ladder Challenge!** Top 16 player (normal stakes - ELO diff < 100)"
+
                 await lfg_channel.send(
-                    f"{match_type_emoji} **{match_type_label} Match Found!** {interaction.user.mention} matched with {matched_user.mention}!"
+                    f"{match_type_emoji} **{match_type_label} Match Found!** {interaction.user.mention} matched with {matched_user.mention}!{ladder_note}"
                 )
 
             await lfg_cog.update_lfg_status()

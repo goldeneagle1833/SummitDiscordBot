@@ -1244,6 +1244,7 @@ class WentFirstView(discord.ui.View):
         opponent_user=None,
         reporter_deck_text: str = "",
         guild_id: int = None,
+        ladder_info: dict = None,
         match_type: str = "ranked",
     ):
         super().__init__(timeout=None)
@@ -1260,6 +1261,7 @@ class WentFirstView(discord.ui.View):
         self.opponent_user = opponent_user
         self.reporter_deck_text = reporter_deck_text
         self.guild_id = guild_id
+        self.ladder_info = ladder_info
         self.match_type = match_type
 
     @discord.ui.button(
@@ -1306,6 +1308,7 @@ class WentFirstView(discord.ui.View):
             opponent_deck_url=self.opponent_deck_url,
             first_player=first_player,
             guild_id=self.guild_id,
+            ladder_info=self.ladder_info,
             match_type=self.match_type,
         )
 

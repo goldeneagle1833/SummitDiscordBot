@@ -1452,10 +1452,14 @@
               const deckItem = document.createElement("div");
               deckItem.className = "recent-deck-item";
               const date = new Date(deck.date).toLocaleDateString();
+              const winRateColor = deck.win_rate >= 50 ? "#4ade80" : "#f87171";
               deckItem.innerHTML = `
                 <div class="deck-info">
                   <div class="deck-avatar">🎭 ${deck.avatar}</div>
                   <div class="deck-name">${deck.deck_name}</div>
+                  <div class="deck-stats" style="color: ${winRateColor}; font-weight: 600; margin-top: 4px;">
+                    ${deck.wins}W - ${deck.losses}L (${deck.win_rate}%)
+                  </div>
                   <div class="deck-date">${date}</div>
                 </div>
                 <a href="${deck.url}" target="_blank" class="deck-link-button">View Deck →</a>

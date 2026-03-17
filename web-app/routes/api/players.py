@@ -1019,9 +1019,11 @@ def player_api(player_id):
         )
 
     # Recent decks (owner only)
+    # Group matches by deck URL to calculate win rates
     recent_decks = []
     if is_owner:
-        seen_urls = set()
+        deck_stats = {}  # deck_url -> {wins, losses, avatar, deck_name, last_date}
+
         for row in all_rows:
             did_win = row[0]
             winner_deck_url = row[15] if len(row) > 15 else row[9]
@@ -1039,29 +1041,53 @@ def player_api(player_id):
             ):
                 continue
 
-            if player_deck_url in seen_urls:
-                continue
+            # Initialize deck stats if first time seeing this URL
+            if player_deck_url not in deck_stats:
+                avatar_name = "Unknown"
+                deck_name = "Unnamed Deck"
+                if player_deck_json and player_deck_json not in ("", "{}"):
+                    try:
+                        deck_data = json.loads(player_deck_json)
+                        if deck_data.get("avatar") and len(deck_data["avatar"]) > 0:
+                            avatar_name = deck_data["avatar"][0].get("name", "Unknown")
+                        if deck_data.get("name"):
+                            deck_name = deck_data["name"]
+                    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                        pass
 
-            seen_urls.add(player_deck_url)
+                deck_stats[player_deck_url] = {
+                    "wins": 0,
+                    "losses": 0,
+                    "avatar": avatar_name,
+                    "deck_name": deck_name,
+                    "last_date": row[6],
+                }
 
-            avatar_name = "Unknown"
-            deck_name = "Unnamed Deck"
-            if player_deck_json and player_deck_json not in ("", "{}"):
-                try:
-                    deck_data = json.loads(player_deck_json)
-                    if deck_data.get("avatar") and len(deck_data["avatar"]) > 0:
-                        avatar_name = deck_data["avatar"][0].get("name", "Unknown")
-                    if deck_data.get("name"):
-                        deck_name = deck_data["name"]
-                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-                    pass
+            # Update win/loss count
+            if did_win:
+                deck_stats[player_deck_url]["wins"] += 1
+            else:
+                deck_stats[player_deck_url]["losses"] += 1
+
+            # Update last_date if this match is more recent
+            if row[6] and (not deck_stats[player_deck_url]["last_date"] or row[6] > deck_stats[player_deck_url]["last_date"]):
+                deck_stats[player_deck_url]["last_date"] = row[6]
+
+        # Convert to list and sort by most recent usage
+        for deck_url, stats in sorted(deck_stats.items(), key=lambda x: x[1]["last_date"] or "", reverse=True):
+            total_games = stats["wins"] + stats["losses"]
+            win_rate = (stats["wins"] / total_games * 100) if total_games > 0 else 0
 
             recent_decks.append(
                 {
-                    "url": player_deck_url,
-                    "avatar": avatar_name,
-                    "deck_name": deck_name,
-                    "date": row[6],
+                    "url": deck_url,
+                    "avatar": stats["avatar"],
+                    "deck_name": stats["deck_name"],
+                    "date": stats["last_date"],
+                    "wins": stats["wins"],
+                    "losses": stats["losses"],
+                    "win_rate": round(win_rate, 1),
+                    "total_games": total_games,
                 }
             )
 

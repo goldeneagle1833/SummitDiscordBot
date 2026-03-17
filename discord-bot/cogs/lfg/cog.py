@@ -40,6 +40,7 @@ from utils.database import (
     complete_ladder_challenge,
     update_elo_db_ladder,
     get_user_elo,
+    get_user_event_elo,
     update_elo_db,
     log_admin_action,
     cleanup_old_pairings,
@@ -749,13 +750,16 @@ class LFGCog(commands.Cog):
 
         return oldest_valid_match
 
-    def add_to_lfg_queue(self, ctx, timeframe, deck_url=None, queue_type="ranked"):
-        lfg_queue[ctx.author.id] = {
+    def add_to_lfg_queue(self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None):
+        queue_entry = {
             "timestamp": datetime.datetime.now(),
             "timeframe": int(timeframe),
             "deck_url": deck_url,
             "queue_type": queue_type,
         }
+        if ladder_info:
+            queue_entry["ladder_info"] = ladder_info
+        lfg_queue[ctx.author.id] = queue_entry
 
     def pair_players(self, ctx):
         now = datetime.datetime.now()
@@ -969,8 +973,8 @@ class LFGCog(commands.Cog):
     async def issue_challenge(self, ctx):
         """Issue a ladder challenge (Top 16 event players only, once per day).
 
-        Creates a special queue in the LFG channel. Up to 3 players can join,
-        and one is randomly selected to play against you.
+        Adds you to the ranked queue. The next person who matches with you will play
+        for modified ELO stakes.
 
         Stakes:
         - If the non-Top 16 player WINS: 2x ELO gain
@@ -1014,65 +1018,54 @@ class LFGCog(commands.Cog):
                 )
             return
 
-        # Check if they have an active ladder challenge already
-        if user_id in active_ladder_challenges:
-            try:
-                await ctx.author.send("You already have an active ladder challenge!")
-            except discord.Forbidden:
-                await ctx.send(
-                    f"{ctx.author.mention}, you already have an active ladder challenge!",
-                    delete_after=10,
-                )
-            return
+        # Check if already in queue
+        async with lfg_queue_lock:
+            if user_id in lfg_queue:
+                try:
+                    await ctx.author.send("You're already in the LFG queue!")
+                except discord.Forbidden:
+                    await ctx.send(
+                        f"{ctx.author.mention}, you're already in the queue!",
+                        delete_after=10,
+                    )
+                return
 
-        # Save challenge to DB
-        challenge_id = save_ladder_challenge(user_id)
+            # Save challenge to DB
+            challenge_id = save_ladder_challenge(user_id)
 
-        # Get LFG channel
-        lfg_channel = self.bot.get_channel(self.lfg_channel_id)
-        if not lfg_channel:
-            try:
-                await ctx.author.send("LFG channel not found.")
-            except Exception:
-                pass
-            return
+            # Create ladder_info with placeholder multipliers (will be determined on match)
+            guild_id = ctx.guild.id if ctx.guild else None
+            ladder_info = {
+                "challenger_id": user_id,
+                "challenge_id": challenge_id,
+                "elo_multiplier_winner": 2.0,  # Non-Top16 winner gets 2x
+                "elo_multiplier_loser": 0.5,  # Top16 loser gets 0.5x
+                "guild_id": guild_id,
+            }
 
-        # Build initial embed
-        embed = _build_ladder_challenge_embed(user_global, [], user_id)
+            # Add to ranked queue with ladder_info
+            self.add_to_lfg_queue(ctx, timeframe=30, deck_url=None, queue_type="ranked", ladder_info=ladder_info)
 
-        # Create join button view
-        join_view = LadderChallengeJoinButton(self.bot, user_id)
-
-        # Send the challenge message
-        challenge_msg = await lfg_channel.send(embed=embed, view=join_view)
-
-        # Start the timeout task
-        timeout_task = asyncio.create_task(_ladder_challenge_timeout(self.bot, user_id))
-
-        # Store in active challenges
-        active_ladder_challenges[user_id] = {
-            "challenger_global": user_global,
-            "joiners": [],
-            "message": challenge_msg,
-            "channel": lfg_channel,
-            "challenge_id": challenge_id,
-            "task": timeout_task,
-        }
-
-        # Notify challenger
+        # Notify user
         try:
             await ctx.author.send(
-                f"Your ladder challenge has been posted in {lfg_channel.mention}! "
-                f"Waiting up to 5 minutes for up to {LADDER_CHALLENGE_MAX_JOINERS} challengers to join."
+                "You've been added to the ranked queue with ladder challenge stakes!\n"
+                "The next player to match with you will play for modified ELO:\n"
+                "**•** If they win: 2x ELO gain\n"
+                "**•** If you lose: 0.5x ELO loss\n"
+                "**•** If ELO difference < 100: Normal stakes"
             )
         except discord.Forbidden:
             await ctx.send(
-                f"{ctx.author.mention}, your ladder challenge has been posted!",
+                f"{ctx.author.mention}, you've joined the ranked queue with ladder challenge stakes!",
                 delete_after=10,
             )
 
+        # Update status
+        await self.update_lfg_status()
+
         logger.info(
-            f"Ladder challenge created by {user_global} (ID: {user_id}), challenge_id: {challenge_id}"
+            f"Ladder challenge issued by {user_global} (ID: {user_id}), challenge_id: {challenge_id} - added to ranked queue"
         )
 
     @commands.command()
@@ -1108,9 +1101,9 @@ class LFGCog(commands.Cog):
                 "**When to use:** When you want to play against a specific person "
                 "instead of being matched randomly. They have 5 minutes to accept.\n\n"
                 "`!issue_challenge` or `/issue-challenge` - Issue a ladder challenge (Top 16 event players only)\n"
-                "**When to use:** Top 16 event players can issue once per day. Up to 3 players join, "
-                "one is randomly selected. Special ELO stakes: challenger wins = 2x ELO, "
-                "Top 16 loses = 0.5x ELO loss."
+                "**When to use:** Top 16 event players can issue once per day. Adds you to the ranked queue - "
+                "the next player to match with you plays for special stakes. Non-Top 16 wins = 2x ELO gain, "
+                "Top 16 loses = 0.5x ELO loss (normal stakes if ELO diff < 100)."
             ),
             inline=False,
         )

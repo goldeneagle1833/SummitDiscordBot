@@ -1029,21 +1029,23 @@ def get_play_draw_stats():
                 conn.close()
                 return jsonify({"error": "Database error"}), 500
 
-        # Query archive table with date filter
-        if use_new_columns:
-            try:
-                cur.execute("""
-                    SELECT
-                        winner_went_first,
-                        loser_went_first,
-                        first_player,
-                        timestamp
-                    FROM match_records_archive
-                    WHERE timestamp >= ?
-                """, (cutoff_date,))
-                all_rows.extend(cur.fetchall())
-            except sqlite3.OperationalError:
-                pass  # Archive may not exist
+        # Query archive table with date filter (archive uses old schema with first_player only)
+        # Map first_player to winner_went_first/loser_went_first:
+        #   first_player='y' means winner went first -> winner_went_first='y', loser_went_first='n'
+        #   first_player='n' means loser went first -> winner_went_first='n', loser_went_first='y'
+        try:
+            cur.execute("""
+                SELECT
+                    first_player as winner_went_first,
+                    CASE WHEN first_player = 'y' THEN 'n' ELSE 'y' END as loser_went_first,
+                    first_player,
+                    timestamp
+                FROM match_records_archive
+                WHERE timestamp >= ?
+            """, (cutoff_date,))
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError:
+            pass  # Archive may not exist
 
         conn.close()
     except sqlite3.OperationalError as e:

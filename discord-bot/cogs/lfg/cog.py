@@ -971,7 +971,7 @@ class LFGCog(commands.Cog):
 
     @commands.command()
     async def issue_challenge(self, ctx):
-        """Issue a ladder challenge (Top 16 event players only, once per day).
+        """Issue a ladder challenge (Top 16 event players or admins, once per day).
 
         Adds you to the ranked queue. The next person who matches with you will play
         for modified ELO stakes.
@@ -990,20 +990,28 @@ class LFGCog(commands.Cog):
         user_id = ctx.author.id
         user_global = ctx.author.global_name or ctx.author.display_name
 
-        # Check if user is in Top 16 of current event
-        top_16 = get_top_16_user_ids()
-        if user_id not in top_16:
-            try:
-                await ctx.author.send(
-                    "Only Top 16 event players can issue challenges! "
-                    "Check `!event_leaderboard` to see the current event rankings."
-                )
-            except discord.Forbidden:
-                await ctx.send(
-                    f"{ctx.author.mention}, only Top 16 event players can issue challenges!",
-                    delete_after=10,
-                )
-            return
+        # Check if user is an admin (admins can always issue challenges)
+        is_admin = False
+        if ctx.author.guild_permissions.administrator:
+            is_admin = True
+        elif any(role.id == config.BOT_ADMIN_ROLE_ID for role in ctx.author.roles):
+            is_admin = True
+
+        # Check if user is in Top 16 of current event (unless they're an admin)
+        if not is_admin:
+            top_16 = get_top_16_user_ids()
+            if user_id not in top_16:
+                try:
+                    await ctx.author.send(
+                        "Only Top 16 event players can issue challenges! "
+                        "Check `!event_leaderboard` to see the current event rankings."
+                    )
+                except discord.Forbidden:
+                    await ctx.send(
+                        f"{ctx.author.mention}, only Top 16 event players can issue challenges!",
+                        delete_after=10,
+                    )
+                return
 
         # Check if already used today
         if get_ladder_challenge_today(user_id):
@@ -1100,8 +1108,8 @@ class LFGCog(commands.Cog):
                 "`!challenge @user` - Challenge a specific player to a match\n"
                 "**When to use:** When you want to play against a specific person "
                 "instead of being matched randomly. They have 5 minutes to accept.\n\n"
-                "`!issue_challenge` or `/issue-challenge` - Issue a ladder challenge (Top 16 event players only)\n"
-                "**When to use:** Top 16 event players can issue once per day. Adds you to the ranked queue - "
+                "`!issue_challenge` or `/issue-challenge` - Issue a ladder challenge (Top 16 or admins)\n"
+                "**When to use:** Top 16 event players or admins can issue once per day. Adds you to the ranked queue - "
                 "the next player to match with you plays for special stakes. Non-Top 16 wins = 2x ELO gain, "
                 "Top 16 loses = 0.5x ELO loss (normal stakes if ELO diff < 100)."
             ),

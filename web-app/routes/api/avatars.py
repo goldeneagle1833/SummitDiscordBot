@@ -350,7 +350,9 @@ def get_avatar(avatar_name):
                     json_deck_data_loser,
                     curiosa_url_winner,
                     curiosa_url_loser,
-                    rowid as match_id
+                    rowid as match_id,
+                    winner_went_first,
+                    loser_went_first
                 FROM match_records
                 WHERE json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL
                 ORDER BY timestamp DESC
@@ -396,7 +398,12 @@ def get_avatar(avatar_name):
                         json_deck_data_loser,
                         curiosa_url_winner,
                         curiosa_url_loser,
-                        rowid as match_id
+                        rowid as match_id,
+                        COALESCE(winner_went_first, first_player) as winner_went_first,
+                        COALESCE(loser_went_first,
+                            CASE WHEN first_player = 'y' THEN 'n'
+                                 WHEN first_player = 'n' THEN 'y'
+                                 ELSE NULL END) as loser_went_first
                     FROM match_records_archive
                     WHERE json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL
                     ORDER BY timestamp DESC
@@ -468,9 +475,27 @@ def get_avatar(avatar_name):
 
                 # Track play/draw stats from cutoff date onward
                 if row[4] >= cutoff_date:
-                    # Avatar won on the play if first_player is "y" (winner went first)
-                    # Avatar won on the draw if first_player is not "y" (winner went second)
-                    if row[7] and "y" in str(row[7]).lower():
+                    # Use new columns if available, fall back to first_player
+                    winner_went_first = row[14] if len(row) > 14 else None
+                    loser_went_first = row[15] if len(row) > 15 else None
+                    first_player = row[7]
+
+                    # Determine if avatar (winner) was on play using symmetric logic
+                    if winner_went_first is not None or loser_went_first is not None:
+                        if winner_went_first is not None:
+                            winner_on_play = 'y' in str(winner_went_first).lower()
+                        elif loser_went_first is not None:
+                            # If loser went first ('y'), winner was on draw
+                            # If loser went second ('n'), winner was on play
+                            winner_on_play = 'y' not in str(loser_went_first).lower()
+                        else:
+                            winner_on_play = False
+                    elif first_player:
+                        winner_on_play = 'y' in str(first_player).lower()
+                    else:
+                        winner_on_play = False
+
+                    if winner_on_play:
                         play_wins += 1
                     else:
                         draw_wins += 1
@@ -481,12 +506,32 @@ def get_avatar(avatar_name):
 
                 # Track play/draw stats from cutoff date onward
                 if row[4] >= cutoff_date:
-                    # Avatar lost on the play if first_player is not "y" (winner went second, loser went first)
-                    # Avatar lost on the draw if first_player is "y" (winner went first, loser went second)
-                    if row[7] and "y" in str(row[7]).lower():
-                        draw_losses += 1
+                    # Use new columns if available, fall back to first_player
+                    winner_went_first = row[14] if len(row) > 14 else None
+                    loser_went_first = row[15] if len(row) > 15 else None
+                    first_player = row[7]
+
+                    # Determine if avatar (loser) was on play using symmetric logic
+                    if winner_went_first is not None or loser_went_first is not None:
+                        if loser_went_first is not None:
+                            loser_on_play = 'y' in str(loser_went_first).lower()
+                        elif winner_went_first is not None:
+                            # If winner went first ('y'), loser was on draw
+                            # If winner went second ('n'), loser was on play
+                            loser_on_play = 'y' not in str(winner_went_first).lower()
+                        else:
+                            loser_on_play = False
+                    elif first_player:
+                        # If winner went first ('y'), loser was on draw (not on play)
+                        # If winner went second ('n'), loser was on play
+                        loser_on_play = 'y' not in str(first_player).lower()
                     else:
+                        loser_on_play = False
+
+                    if loser_on_play:
                         play_losses += 1
+                    else:
+                        draw_losses += 1
     else:
         for row in rows:
             deck_json = row[9]
@@ -1065,21 +1110,25 @@ def get_play_draw_stats():
         loser_went_first = row[1] if len(row) > 1 else None
         first_player = row[2] if len(row) > 2 else None
 
-        # Use new columns if available
+        # Use new columns if available (derive complementary values to maintain symmetry)
         if winner_went_first is not None or loser_went_first is not None:
-            # Winner on play
-            if winner_went_first and "y" in str(winner_went_first).lower():
-                play_wins += 1
-            # Winner on draw
-            elif winner_went_first and "n" in str(winner_went_first).lower():
-                draw_wins += 1
+            # Determine who went first from whichever column is available
+            if winner_went_first is not None:
+                winner_on_play = 'y' in str(winner_went_first).lower()
+            elif loser_went_first is not None:
+                # If loser went first ('y'), winner was on draw (loser_went_first='y' → winner_on_play=False)
+                # If loser went second ('n'), winner was on play (loser_went_first='n' → winner_on_play=True)
+                winner_on_play = 'y' not in str(loser_went_first).lower()
+            else:
+                continue  # Skip if both are None
 
-            # Loser on play
-            if loser_went_first and "y" in str(loser_went_first).lower():
-                play_losses += 1
-            # Loser on draw
-            elif loser_went_first and "n" in str(loser_went_first).lower():
+            # Increment symmetrical counters (every win has a corresponding loss)
+            if winner_on_play:
+                play_wins += 1
                 draw_losses += 1
+            else:
+                draw_wins += 1
+                play_losses += 1
         # Fallback to old first_player column
         elif first_player:
             fp_lower = str(first_player).lower()

@@ -4,7 +4,7 @@ import logging
 from functools import wraps
 from flask import request, session, jsonify
 
-from webapp_config import VALID_API_KEYS, ADMINS
+from webapp_config import VALID_API_KEYS, ADMINS, CURIO_EDITORS
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,28 @@ def is_admin() -> bool:
     # Check if user_id matches any admin ID (as string)
     for admin_id in ADMINS:
         if user_id_str == str(admin_id):
+            return True
+
+    return False
+
+
+def is_curio_editor() -> bool:
+    """Check if the current user can edit curio entries.
+
+    Access granted if:
+    - User is an admin (full access)
+    - User is in CURIO_EDITORS list
+    """
+    if is_admin():
+        return True
+
+    user_id = session.get("user_id")
+    if user_id is None:
+        return False
+
+    user_id_str = str(user_id)
+    for editor_id in CURIO_EDITORS:
+        if user_id_str == str(editor_id):
             return True
 
     return False

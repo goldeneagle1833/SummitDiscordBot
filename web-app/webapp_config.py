@@ -28,6 +28,11 @@ FART_SCORES_DB_PATH = Path(
 )
 COMMUNITY_DB_PATH = Path(os.environ.get("COMMUNITY_DB_PATH", BOT_DIR / "community.db"))
 
+# Curio tracking upload directory
+STATIC_DIR = BASE_DIR / "static"
+CURIO_UPLOADS_DIR = STATIC_DIR / "uploads" / "curios"
+CURIO_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
 # Flask configuration
 # SECURITY: SECRET_KEY must be set in production via environment variable
 # In development, a random key is generated (sessions won't persist across restarts)
@@ -75,6 +80,15 @@ ADMINS = [
     "275995453957472257",  # Geoffrey
     "google_113075264611538227218",  # Bruce Google
     "219331660833882112",  # vitaninyon
+]
+
+# Curio Tracking editors - can add/edit/delete curio entries (no other admin access)
+CURIO_EDITORS = [
+    # Add Discord/Google IDs of trusted curio editors here
+    # Example: "123456789012345678",  # Username
+    "961211642216087552",
+    "690629397631467671",
+    "296846802924208130",
 ]
 
 # API Key configuration for external integrations

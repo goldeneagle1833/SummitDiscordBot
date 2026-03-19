@@ -26,7 +26,7 @@ if _sorcery_ai_path not in sys.path:
     sys.path.append(_sorcery_ai_path)
 
 from utils.version import APP_VERSION
-from utils.auth import get_current_user, is_admin
+from utils.auth import get_current_user, is_admin, is_curio_editor
 from routes import register_blueprints
 
 # Configure logging
@@ -61,6 +61,7 @@ def create_app() -> Flask:
             "current_user": get_current_user(),
             "app_version": APP_VERSION,
             "is_admin": is_admin(),
+            "is_curio_editor": is_curio_editor(),
         }
 
     logger.info(f"Application initialized, version: {APP_VERSION}")

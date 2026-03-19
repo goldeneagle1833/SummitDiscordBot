@@ -9,6 +9,7 @@ from utils.formatting import format_event_name
 from repositories.fart import FartRepository
 from repositories.events import EventRepository
 from repositories.community import CommunityRepository
+from repositories.curios import CurioRepository
 from repositories.audit import AuditRepository
 
 pages_bp = Blueprint("pages", __name__)
@@ -35,6 +36,15 @@ def community():
         discord_servers=repo.get_discord_servers(),
         websites=repo.get_websites(),
     )
+
+
+@pages_bp.route("/curio-tracking")
+def curio_tracking():
+    """Curio tracking page - community curio data."""
+    repo = CurioRepository()
+    entries = repo.get_all_entries()
+    sets = repo.get_all_sets()
+    return render_template("pages/curio_tracking.html", entries=entries, sets=sets)
 
 
 @pages_bp.route("/help")

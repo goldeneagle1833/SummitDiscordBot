@@ -18,6 +18,7 @@ from routes.api.external_matches import external_matches_bp
 from routes.api.metagame import metagame_bp
 from routes.api.admin import admin_bp
 from routes.api.match_reporting import match_reporting_bp
+from routes.api.curios import curios_bp
 
 api_bp.register_blueprint(leaderboard_bp)
 api_bp.register_blueprint(matches_bp)
@@ -32,3 +33,4 @@ api_bp.register_blueprint(external_matches_bp)
 api_bp.register_blueprint(metagame_bp)
 api_bp.register_blueprint(admin_bp)
 api_bp.register_blueprint(match_reporting_bp, url_prefix="/match-report")
+api_bp.register_blueprint(curios_bp, url_prefix="/curios")

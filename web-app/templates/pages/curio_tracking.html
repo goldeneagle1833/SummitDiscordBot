@@ -47,13 +47,19 @@
 
       <!-- Controls Bar -->
       <div class="curio-controls">
-        <!-- Set Filters -->
+        <!-- Set Filters (desktop: pill buttons, mobile: dropdown) -->
         <div class="curio-filters">
           <button class="curio-filter-btn curio-filter-btn--active" data-set-id="all">All</button>
           {% for s in sets %}
           <button class="curio-filter-btn" data-set-id="{{ s.id }}">{{ s.name }}</button>
           {% endfor %}
         </div>
+        <select class="curio-filter-select" id="curio-filter-select">
+          <option value="all" selected>All Sets</option>
+          {% for s in sets %}
+          <option value="{{ s.id }}">{{ s.name }}</option>
+          {% endfor %}
+        </select>
 
         {% if is_curio_editor %}
         <button class="curio-add-btn" id="add-entry-btn">+ Add Entry</button>

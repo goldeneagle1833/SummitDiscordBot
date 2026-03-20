@@ -45,6 +45,11 @@
   flex-wrap: wrap;
 }
 
+/* Filter Dropdown (mobile only, hidden on desktop) */
+.curio-filter-select {
+  display: none;
+}
+
 /* Filter Buttons */
 .curio-filters {
   display: flex;
@@ -360,39 +365,98 @@
 /* Responsive */
 @media (max-width: 768px) {
   .curio-page {
-    padding: var(--spacing-md) var(--spacing-sm);
+    padding: calc(4rem + var(--spacing-md)) var(--spacing-sm) var(--spacing-md);
+    overflow-x: hidden;
+  }
+
+  .curio-attribution {
+    padding: var(--spacing-sm) var(--spacing-md);
+    margin-bottom: var(--spacing-md);
   }
 
   .curio-controls {
     flex-direction: column;
-    align-items: stretch;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
   }
 
   .curio-filters {
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    padding-bottom: var(--spacing-xs);
-    -webkit-overflow-scrolling: touch;
+    display: none;
+  }
+
+  .curio-filter-select {
+    display: block;
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--color-bg-dark);
+    border: 1px solid var(--color-border-dark);
+    border-radius: var(--border-radius-md);
+    color: var(--color-text);
+    font-size: 16px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .curio-filter-select:focus {
+    outline: none;
+    border-color: var(--color-primary);
   }
 
   .curio-add-btn {
     text-align: center;
   }
 
+  .curio-entry {
+    padding: var(--spacing-md) 0;
+  }
+
+  .curio-entry__name {
+    font-size: var(--font-size-xl);
+    margin-bottom: var(--spacing-sm);
+    text-align: center;
+  }
+
   .curio-entry__content {
     flex-direction: column;
+    align-items: center;
     gap: var(--spacing-md);
   }
 
   .curio-entry__image-wrap {
     width: 100%;
+    max-width: 320px;
+    margin: 0 auto;
   }
 
-  .curio-entry__name {
-    font-size: var(--font-size-xl);
+  .curio-entry__stat {
+    margin-bottom: var(--spacing-sm);
   }
 
   .curio-entry__stat-value {
-    font-size: var(--font-size-2xl);
+    font-size: var(--font-size-xl);
+  }
+
+  .curio-entry__description {
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--spacing-sm);
+  }
+
+  /* Modal footer buttons stack on mobile */
+  .modal__footer {
+    flex-direction: column;
+  }
+
+  .curio-modal__cancel,
+  .curio-modal__submit {
+    width: 100%;
+    text-align: center;
+  }
+
+  .curio-form__field input[type="text"],
+  .curio-form__field input[type="number"],
+  .curio-form__field textarea,
+  .curio-form__field select {
+    font-size: 16px; /* Prevents iOS zoom on focus */
   }
 }

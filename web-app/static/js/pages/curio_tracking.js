@@ -13,25 +13,40 @@
   // --- Filter Logic ---
 
   const filterBtns = document.querySelectorAll(".curio-filter-btn");
+  const filterSelect = document.getElementById("curio-filter-select");
   const entries = document.querySelectorAll(".curio-entry");
 
+  function filterEntries(setId) {
+    entries.forEach((entry) => {
+      if (setId === "all" || entry.getAttribute("data-set-id") === setId) {
+        entry.classList.remove("curio-entry--hidden");
+      } else {
+        entry.classList.add("curio-entry--hidden");
+      }
+    });
+  }
+
+  // Desktop pill buttons
   filterBtns.forEach((btn) => {
     btn.addEventListener("click", () => {
-      // Toggle active state
       filterBtns.forEach((b) => b.classList.remove("curio-filter-btn--active"));
       btn.classList.add("curio-filter-btn--active");
-
       const setId = btn.getAttribute("data-set-id");
-
-      entries.forEach((entry) => {
-        if (setId === "all" || entry.getAttribute("data-set-id") === setId) {
-          entry.classList.remove("curio-entry--hidden");
-        } else {
-          entry.classList.add("curio-entry--hidden");
-        }
-      });
+      if (filterSelect) filterSelect.value = setId;
+      filterEntries(setId);
     });
   });
+
+  // Mobile dropdown
+  if (filterSelect) {
+    filterSelect.addEventListener("change", () => {
+      const setId = filterSelect.value;
+      filterBtns.forEach((b) => {
+        b.classList.toggle("curio-filter-btn--active", b.getAttribute("data-set-id") === setId);
+      });
+      filterEntries(setId);
+    });
+  }
 
   // --- Modal Logic (admin only) ---
 

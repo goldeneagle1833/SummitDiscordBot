@@ -207,7 +207,7 @@ class LFGCog(commands.Cog):
             # Create leaderboard embed with event name and game count
             embed = discord.Embed(
                 title=f"{event_name} Leaderboard ({total_games_played} games played)",
-                description="Current ELO Rankings | Started: 2/7/2026 | End: 3/14/2026",
+                description="Current ELO Rankings | Started: 3/20/2026 | End: 4/25/2026",
                 color=discord.Color.gold(),
             )
 
@@ -750,7 +750,9 @@ class LFGCog(commands.Cog):
 
         return oldest_valid_match
 
-    def add_to_lfg_queue(self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None):
+    def add_to_lfg_queue(
+        self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None
+    ):
         queue_entry = {
             "timestamp": datetime.datetime.now(),
             "timeframe": int(timeframe),
@@ -1052,7 +1054,13 @@ class LFGCog(commands.Cog):
             }
 
             # Add to ranked queue with ladder_info
-            self.add_to_lfg_queue(ctx, timeframe=30, deck_url=None, queue_type="ranked", ladder_info=ladder_info)
+            self.add_to_lfg_queue(
+                ctx,
+                timeframe=30,
+                deck_url=None,
+                queue_type="ranked",
+                ladder_info=ladder_info,
+            )
 
         # Notify user
         try:
@@ -1288,7 +1296,9 @@ class LFGCog(commands.Cog):
             inline=False,
         )
 
-        embed.set_footer(text="All admin commands require admin permissions, Bot Admin role, or Judge role")
+        embed.set_footer(
+            text="All admin commands require admin permissions, Bot Admin role, or Judge role"
+        )
 
         await ctx.send(embed=embed)
 
@@ -2485,26 +2495,44 @@ class LFGCog(commands.Cog):
             # Revert winner's ELO
             if winner_lifetime_elo_change or winner_elo_change:
                 # Revert lifetime ELO (using online_elo and elo for backwards compat)
-                lifetime_revert = winner_lifetime_elo_change if winner_lifetime_elo_change else 0
+                lifetime_revert = (
+                    winner_lifetime_elo_change if winner_lifetime_elo_change else 0
+                )
                 # Revert event ELO
                 event_revert = winner_elo_change if winner_elo_change else 0
 
                 elo_cursor.execute(
                     "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ?, online_elo = online_elo - ?, online_event_elo = online_event_elo - ? WHERE user_id = ?",
-                    (lifetime_revert, event_revert, lifetime_revert, event_revert, winner_id),
+                    (
+                        lifetime_revert,
+                        event_revert,
+                        lifetime_revert,
+                        event_revert,
+                        winner_id,
+                    ),
                 )
-                reverted_info.append(f"**{winner_name}**: Lifetime -{lifetime_revert}, Event -{event_revert} ELO")
+                reverted_info.append(
+                    f"**{winner_name}**: Lifetime -{lifetime_revert}, Event -{event_revert} ELO"
+                )
 
             # Revert loser's ELO
             if loser_lifetime_elo_change or loser_elo_change:
                 # Revert lifetime ELO (loser_lifetime_elo_change is negative, so subtracting adds it back)
-                lifetime_revert = loser_lifetime_elo_change if loser_lifetime_elo_change else 0
+                lifetime_revert = (
+                    loser_lifetime_elo_change if loser_lifetime_elo_change else 0
+                )
                 # Revert event ELO (loser_elo_change is negative, so subtracting adds it back)
                 event_revert = loser_elo_change if loser_elo_change else 0
 
                 elo_cursor.execute(
                     "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ?, online_elo = online_elo - ?, online_event_elo = online_event_elo - ? WHERE user_id = ?",
-                    (lifetime_revert, event_revert, lifetime_revert, event_revert, loser_id),
+                    (
+                        lifetime_revert,
+                        event_revert,
+                        lifetime_revert,
+                        event_revert,
+                        loser_id,
+                    ),
                 )
                 reverted_info.append(
                     f"**{loser_name}**: Lifetime +{-lifetime_revert if lifetime_revert else 0}, Event +{-event_revert if event_revert else 0} ELO"

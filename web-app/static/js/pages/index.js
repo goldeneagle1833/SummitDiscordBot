@@ -5,16 +5,16 @@
  */
 
 // ELO source tracking
-let currentEloSource = 'online'; // 'online' or 'paper' - default to online
+let currentEloSource = "online"; // 'online' or 'paper' - default to online
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
   initializeTemporaryNotices();
   initializeEasterEgg();
   initializeEloSourceToggle();
 
   // Load saved preference or default to online
-  const savedSource = localStorage.getItem('home_elo_source_preference');
-  if (savedSource && (savedSource === 'online' || savedSource === 'paper')) {
+  const savedSource = localStorage.getItem("home_elo_source_preference");
+  if (savedSource && (savedSource === "online" || savedSource === "paper")) {
     currentEloSource = savedSource;
     updateToggleButtons(currentEloSource);
   }
@@ -30,20 +30,20 @@ document.addEventListener('DOMContentLoaded', () => {
  */
 function initializeTemporaryNotices() {
   // Hide temporary notice after expiry (Jan 26, 2026 at 21:37 UTC)
-  const notice = document.getElementById('temp-notice');
+  const notice = document.getElementById("temp-notice");
   if (notice) {
-    const expiryDate = new Date('2026-01-26T21:37:00Z');
+    const expiryDate = new Date("2026-01-26T21:37:00Z");
     if (new Date() > expiryDate) {
-      notice.style.display = 'none';
+      notice.style.display = "none";
     }
   }
 
   // Hide community promo banner after expiry (Feb 20, 2026)
-  const banner = document.getElementById('community-promo-banner');
+  const banner = document.getElementById("community-promo-banner");
   if (banner) {
-    const expiryDate = new Date('2026-02-20T23:59:59Z');
+    const expiryDate = new Date("2026-02-20T23:59:59Z");
     if (new Date() > expiryDate) {
-      banner.style.display = 'none';
+      banner.style.display = "none";
     }
   }
 }
@@ -52,17 +52,17 @@ function initializeTemporaryNotices() {
  * Initialize easter egg (triple-click hero title to access secret page)
  */
 function initializeEasterEgg() {
-  const heroTitle = document.getElementById('hero-secret');
+  const heroTitle = document.getElementById("hero-secret");
   if (!heroTitle) return;
 
   let clickCount = 0;
   let clickTimer;
 
-  heroTitle.addEventListener('click', function (e) {
+  heroTitle.addEventListener("click", function (e) {
     clickCount++;
 
     if (clickCount === 3) {
-      window.location.href = '/secret-fart-leaderboard';
+      window.location.href = "/secret-fart-leaderboard";
       clickCount = 0;
       clearTimeout(clickTimer);
       return;
@@ -81,18 +81,18 @@ function initializeEasterEgg() {
  * @param {Object} videos - Object containing video data
  */
 function renderYouTubeVideos(videos) {
-  const container = document.getElementById('youtube-videos');
+  const container = document.getElementById("youtube-videos");
   if (!container) return;
 
-  container.innerHTML = '';
+  container.innerHTML = "";
 
   // Display all videos from the API response
   for (const key of Object.keys(videos)) {
     const video = videos[key];
     if (!video) continue;
 
-    const card = document.createElement('div');
-    card.className = 'youtube-video-card';
+    const card = document.createElement("div");
+    card.className = "youtube-video-card";
     card.innerHTML = `
       <a href="${video.url}" target="_blank" rel="noopener noreferrer">
         <img src="${video.thumbnail}" alt="${video.title}" class="youtube-video-thumbnail">
@@ -117,12 +117,12 @@ function renderYouTubeVideos(videos) {
  */
 async function fetchYouTubeVideos() {
   try {
-    const res = await fetch('/api/youtube-videos');
+    const res = await fetch("/api/youtube-videos");
     if (!res.ok) return;
     const data = await res.json();
     renderYouTubeVideos(data);
   } catch (error) {
-    console.error('Error fetching YouTube videos:', error);
+    console.error("Error fetching YouTube videos:", error);
   }
 }
 
@@ -131,37 +131,38 @@ async function fetchYouTubeVideos() {
  * @param {Object} eventData - Event data containing event info and leaderboard
  */
 function renderEventLeaderboard(eventData) {
-  const titleEl = document.getElementById('event-title');
-  const subtitleEl = document.getElementById('event-subtitle');
-  const tbody = document.getElementById('event-leaderboard-tbody');
-  const eventSection = document.getElementById('event-section');
-  const noEventSection = document.getElementById('no-event-section');
+  const titleEl = document.getElementById("event-title");
+  const subtitleEl = document.getElementById("event-subtitle");
+  const tbody = document.getElementById("event-leaderboard-tbody");
+  const eventSection = document.getElementById("event-section");
+  const noEventSection = document.getElementById("no-event-section");
 
   if (!eventData.event) {
     // Hide event leaderboard, show no-event content
-    eventSection.style.display = 'none';
-    noEventSection.style.display = 'block';
+    eventSection.style.display = "none";
+    noEventSection.style.display = "block";
     fetchYouTubeVideos();
     return;
   }
 
   // Show event leaderboard, hide no-event content
-  eventSection.style.display = 'block';
-  noEventSection.style.display = 'none';
+  eventSection.style.display = "block";
+  noEventSection.style.display = "none";
 
   titleEl.textContent = eventData.event.event_name;
-  subtitleEl.textContent = `Started: ${new Date(eventData.event.start_date).toLocaleDateString()} | End: 3/14/2026`;
+  subtitleEl.textContent = `Started: ${new Date(eventData.event.start_date).toLocaleDateString()} | End: 4/25/2026`;
 
-  tbody.innerHTML = '';
+  tbody.innerHTML = "";
 
   if (eventData.leaderboard.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3" class="leaderboard-empty-state">No matches played yet</td></tr>';
+    tbody.innerHTML =
+      '<tr><td colspan="3" class="leaderboard-empty-state">No matches played yet</td></tr>';
     return;
   }
 
   // Render all players
   eventData.leaderboard.forEach((player, index) => {
-    const row = document.createElement('tr');
+    const row = document.createElement("tr");
     const rank = index + 1;
     let rankDisplay = rank;
     if (rank <= 3) {
@@ -181,8 +182,8 @@ function renderEventLeaderboard(eventData) {
  * Initialize ELO source toggle buttons
  */
 function initializeEloSourceToggle() {
-  document.querySelectorAll('.elo-source-btn').forEach(btn => {
-    btn.addEventListener('click', async function() {
+  document.querySelectorAll(".elo-source-btn").forEach((btn) => {
+    btn.addEventListener("click", async function () {
       if (this.disabled) return;
 
       const source = this.dataset.source;
@@ -190,7 +191,7 @@ function initializeEloSourceToggle() {
 
       // Update state
       currentEloSource = source;
-      localStorage.setItem('home_elo_source_preference', source);
+      localStorage.setItem("home_elo_source_preference", source);
 
       // Update UI
       updateToggleButtons(source);
@@ -206,8 +207,8 @@ function initializeEloSourceToggle() {
  * @param {string} source - 'online' or 'paper'
  */
 function updateToggleButtons(source) {
-  document.querySelectorAll('.elo-source-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.source === source);
+  document.querySelectorAll(".elo-source-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.source === source);
   });
 }
 
@@ -217,18 +218,19 @@ function updateToggleButtons(source) {
 async function fetchEventLeaderboard() {
   try {
     // Fetch from different endpoint based on source
-    const endpoint = currentEloSource === 'paper'
-      ? '/api/leaderboard/paper-event'
-      : '/api/leaderboard/event';
+    const endpoint =
+      currentEloSource === "paper"
+        ? "/api/leaderboard/paper-event"
+        : "/api/leaderboard/event";
 
     const res = await fetch(endpoint);
     if (!res.ok) {
-      console.error('Failed to fetch event leaderboard:', res.status);
+      console.error("Failed to fetch event leaderboard:", res.status);
       return;
     }
     const data = await res.json();
     renderEventLeaderboard(data);
   } catch (error) {
-    console.error('Error fetching event leaderboard:', error);
+    console.error("Error fetching event leaderboard:", error);
   }
 }

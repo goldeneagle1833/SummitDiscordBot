@@ -205,16 +205,47 @@ def player_api(player_id):
     include_archived_matches = True  # From match_records_archive table
     archive_event_id = None  # Specific event to filter in archive
 
+    # Event date range for filtering web matches (which have no event_id column)
+    event_start_date = None
+    event_end_date = None
+
     if event_filter == "current":
         # Only current event matches (from match_records or match_reports_web table)
         include_archived_matches = False
+        # Look up active event start_date for web match filtering
+        try:
+            elo_conn_tmp = sqlite3.connect(str(ELO_DB_PATH))
+            elo_cur_tmp = elo_conn_tmp.cursor()
+            elo_cur_tmp.execute(
+                "SELECT start_date FROM events WHERE is_active = 1 LIMIT 1"
+            )
+            ev_row = elo_cur_tmp.fetchone()
+            if ev_row:
+                event_start_date = ev_row[0]
+            elo_conn_tmp.close()
+        except sqlite3.OperationalError:
+            pass
     elif event_filter != "lifetime":
         # Specific past event - only from archive with that event_id
         try:
             archive_event_id = int(event_filter)
             include_current_matches = False
+            # Look up past event date range for web match filtering
+            elo_conn_tmp = sqlite3.connect(str(ELO_DB_PATH))
+            elo_cur_tmp = elo_conn_tmp.cursor()
+            elo_cur_tmp.execute(
+                "SELECT start_date, end_date FROM events WHERE event_id = ?",
+                (archive_event_id,),
+            )
+            ev_row = elo_cur_tmp.fetchone()
+            if ev_row:
+                event_start_date = ev_row[0]
+                event_end_date = ev_row[1]
+            elo_conn_tmp.close()
         except (ValueError, TypeError):
             pass  # Invalid event_id, fall back to lifetime
+        except sqlite3.OperationalError:
+            pass
 
     rows = []
 
@@ -227,11 +258,24 @@ def player_api(player_id):
         query_player_id = player_id_normalized
 
     # Query current matches if needed
-    if include_current_matches and source == "web":
+    # For web source: also query when viewing a past event (filter by date range)
+    web_should_query = (source == "web") and (
+        include_current_matches or archive_event_id is not None
+    )
+    if web_should_query:
         # Query match_reports_web table (web-based matches)
+        # Build date filter for event scoping
+        date_filter = ""
+        date_params = (query_player_id, query_player_id, query_player_id)
+        if event_start_date:
+            date_filter += " AND timestamp >= ?"
+            date_params += (event_start_date,)
+        if event_end_date:
+            date_filter += " AND timestamp <= ?"
+            date_params += (event_end_date,)
         try:
             cur.execute(
-                """
+                f"""
                 SELECT
                     CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
                     first_player,
@@ -254,10 +298,10 @@ def player_api(player_id):
                     loser_went_first,
                     match_type
                 FROM match_reports_web
-                WHERE winner_id = ? OR losser_id = ?
+                WHERE (winner_id = ? OR losser_id = ?){date_filter}
                 ORDER BY timestamp DESC
             """,
-                (query_player_id, query_player_id, query_player_id),
+                date_params,
             )
             rows = cur.fetchall()
         except sqlite3.OperationalError:
@@ -501,6 +545,8 @@ def player_api(player_id):
     displayed_rank = 0
     paper_elo = 1500  # Always fetch both for toggle
     online_elo = 1500
+    paper_event_elo = 1500
+    online_event_elo = 1500
 
     try:
         elo_conn = sqlite3.connect(str(ELO_DB_PATH))
@@ -508,26 +554,45 @@ def player_api(player_id):
 
         # Choose ELO columns based on source
         if source == "web":
-            # Query paper ELO columns (web-based matches)
+            # Query paper ELO from paper_standings table (source of truth for web matches)
+            # paper_standings uses TEXT primary key to support google_ prefixed IDs
             try:
                 elo_cur.execute(
-                    "SELECT paper_elo, user_display_name, paper_event_elo, elo FROM overall_standings WHERE user_id = ?",
-                    (player_id_normalized,),
+                    "SELECT paper_elo, user_display_name, paper_event_elo FROM paper_standings WHERE user_id = ?",
+                    (original_player_id,),
                 )
-                elo_row = elo_cur.fetchone()
-                if elo_row:
-                    player_elo = elo_row[0] if elo_row[0] else 1500
-                    player_name_from_elo = elo_row[1]
-                    event_elo = elo_row[2] if elo_row[2] else 1500
+                paper_row = elo_cur.fetchone()
+                if paper_row:
+                    player_elo = paper_row[0] if paper_row[0] else 1500
+                    player_name_from_elo = paper_row[1]
+                    event_elo = paper_row[2] if paper_row[2] else 1500
                     paper_elo = player_elo
-                    online_elo = elo_row[3] if elo_row[3] else 1500
-                    # Calculate rank based on paper_elo
+                    paper_event_elo = event_elo
+                    # Calculate rank based on paper_elo among all paper players
                     elo_cur.execute(
-                        "SELECT COUNT(*) FROM overall_standings WHERE paper_elo > ?", (player_elo,)
+                        "SELECT COUNT(*) FROM paper_standings WHERE paper_elo > ?", (player_elo,)
                     )
                     rank = elo_cur.fetchone()[0] + 1
             except sqlite3.OperationalError:
-                # paper_elo column may not exist, fall back to elo
+                pass  # paper_standings table may not exist yet
+
+            # Also get online ELO from overall_standings for the toggle
+            try:
+                elo_cur.execute(
+                    "SELECT elo, user_display_name, event_elo FROM overall_standings WHERE user_id = ?",
+                    (player_id_normalized,),
+                )
+                online_row = elo_cur.fetchone()
+                if online_row:
+                    online_elo = online_row[0] if online_row[0] else 1500
+                    online_event_elo = online_row[2] if len(online_row) > 2 and online_row[2] else 1500
+                    if not player_name_from_elo:
+                        player_name_from_elo = online_row[1]
+            except sqlite3.OperationalError:
+                pass
+        else:  # bot
+            # Query online ELO columns (bot-based matches)
+            try:
                 elo_cur.execute(
                     "SELECT elo, user_display_name, event_elo FROM overall_standings WHERE user_id = ?",
                     (player_id_normalized,),
@@ -538,27 +603,42 @@ def player_api(player_id):
                     player_name_from_elo = elo_row[1]
                     event_elo = elo_row[2] if elo_row[2] else 1500
                     online_elo = player_elo
+                    online_event_elo = event_elo
                     elo_cur.execute(
                         "SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (player_elo,)
                     )
                     rank = elo_cur.fetchone()[0] + 1
-        else:  # bot
-            # Query legacy ELO columns (bot-based matches)
-            elo_cur.execute(
-                "SELECT elo, user_display_name, event_elo, paper_elo FROM overall_standings WHERE user_id = ?",
-                (player_id_normalized,),
-            )
-            elo_row = elo_cur.fetchone()
-            if elo_row:
-                player_elo = elo_row[0]
-                player_name_from_elo = elo_row[1]
-                event_elo = elo_row[2] if elo_row[2] else 1500
-                online_elo = player_elo
-                paper_elo = elo_row[3] if len(elo_row) > 3 and elo_row[3] else 1500
+            except sqlite3.OperationalError:
+                # event_elo column may not exist, try without it
+                try:
+                    elo_cur.execute(
+                        "SELECT elo, user_display_name FROM overall_standings WHERE user_id = ?",
+                        (player_id_normalized,),
+                    )
+                    elo_row = elo_cur.fetchone()
+                    if elo_row:
+                        player_elo = elo_row[0]
+                        player_name_from_elo = elo_row[1]
+                        online_elo = player_elo
+                        elo_cur.execute(
+                            "SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (player_elo,)
+                        )
+                        rank = elo_cur.fetchone()[0] + 1
+                except sqlite3.OperationalError:
+                    pass
+
+            # Get paper ELO from paper_standings for the source toggle
+            try:
                 elo_cur.execute(
-                    "SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (player_elo,)
+                    "SELECT paper_elo, paper_event_elo FROM paper_standings WHERE user_id = ?",
+                    (original_player_id,),
                 )
-                rank = elo_cur.fetchone()[0] + 1
+                paper_row = elo_cur.fetchone()
+                if paper_row:
+                    paper_elo = paper_row[0] if paper_row[0] else 1500
+                    paper_event_elo = paper_row[1] if paper_row[1] else 1500
+            except sqlite3.OperationalError:
+                pass
 
         # Determine displayed ELO/rank based on filter
         if event_filter == "lifetime":
@@ -570,7 +650,7 @@ def player_api(player_id):
             try:
                 if source == "web":
                     elo_cur.execute(
-                        "SELECT COUNT(*) FROM overall_standings WHERE paper_event_elo > ? AND paper_event_elo != 1500",
+                        "SELECT COUNT(*) FROM paper_standings WHERE paper_event_elo > ? AND paper_event_elo != 1500",
                         (event_elo,),
                     )
                 else:
@@ -1162,6 +1242,8 @@ def player_api(player_id):
             "has_bot_matches": has_bot_matches,
             "paper_elo": paper_elo,
             "online_elo": online_elo,
+            "paper_event_elo": paper_event_elo,
+            "online_event_elo": online_event_elo,
         }
     )
 

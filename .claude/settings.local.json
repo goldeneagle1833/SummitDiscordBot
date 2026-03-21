@@ -42,7 +42,8 @@
       "Bash(pwsh -File:*)",
       "Bash(git push:*)",
       "Bash(pytest:*)",
-      "WebFetch(domain:sorcererssummit.com)"
+      "WebFetch(domain:sorcererssummit.com)",
+      "mcp__claude_ai_Gmail__gmail_search_messages"
     ]
   },
   "enabledPlugins": {

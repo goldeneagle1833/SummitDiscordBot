@@ -1306,6 +1306,9 @@ class LFGCog(commands.Cog):
     async def admin_help_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"admin_help error: {error}")
+            await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
     @is_bot_admin()
@@ -1418,6 +1421,9 @@ class LFGCog(commands.Cog):
     async def reset_elo_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"reset_elo error: {error}")
+            await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
     @is_bot_admin()
@@ -1515,6 +1521,9 @@ class LFGCog(commands.Cog):
     async def admin_report_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"admin_report error: {error}")
+            await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
     @is_bot_admin()
@@ -1617,6 +1626,9 @@ class LFGCog(commands.Cog):
     async def start_event_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"start_event error: {error}")
+            await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
     @is_bot_admin()
@@ -1714,6 +1726,9 @@ class LFGCog(commands.Cog):
     async def end_event_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"end_event error: {error}")
+            await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
     async def event_status(self, ctx):
@@ -1932,6 +1947,9 @@ class LFGCog(commands.Cog):
     async def recalculate_event_elo_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"recalculate_event_elo error: {error}")
+            await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
     @is_bot_admin()
@@ -2045,6 +2063,9 @@ class LFGCog(commands.Cog):
     async def spot_elo_reset_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"spot_elo_reset error: {error}")
+            await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
     @is_bot_admin()
@@ -2407,6 +2428,9 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
         elif isinstance(error, commands.BadArgument):
             await ctx.send("Invalid match ID. Please provide a valid number.")
+        else:
+            logger.error(f"correct_match error: {error}")
+            await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
     @is_bot_admin()
@@ -2602,6 +2626,9 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
         elif isinstance(error, commands.BadArgument):
             await ctx.send("Invalid match ID. Please provide a valid number.")
+        else:
+            logger.error(f"remove_match error: {error}")
+            await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
     async def eligible_for_masters_braket(self, ctx):
@@ -2897,6 +2924,9 @@ class LFGCog(commands.Cog):
     async def remove_player_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"remove_player error: {error}")
+            await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
     async def game_activity(self, ctx, hours: int = 24):

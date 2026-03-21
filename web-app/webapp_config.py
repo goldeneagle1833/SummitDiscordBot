@@ -80,6 +80,7 @@ ADMINS = [
     "275995453957472257",  # Geoffrey
     "google_113075264611538227218",  # Bruce Google
     "219331660833882112",  # vitaninyon
+    "463501244674342955",  # Josh lord of itza
 ]
 
 # Curio Tracking editors - can add/edit/delete curio entries (no other admin access)

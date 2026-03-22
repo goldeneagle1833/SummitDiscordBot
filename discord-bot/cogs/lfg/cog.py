@@ -175,19 +175,24 @@ class LFGCog(commands.Cog):
             conn_elo = sqlite3.connect("elo.db")
             cursor_elo = conn_elo.cursor()
             if active_event:
+                # Get event participants from match_records
+                from repositories.elo_repo import get_event_participant_ids
+                event_participants = get_event_participant_ids(event_start_str)
+
                 cursor_elo.execute("""
                     SELECT user_id, user_display_name, event_elo
                     FROM overall_standings
-                    WHERE event_elo != 1500
                     ORDER BY event_elo DESC
                 """)
+                # Filter to only players who have played event matches
+                all_players = [row for row in cursor_elo.fetchall() if row[0] in event_participants]
             else:
                 cursor_elo.execute("""
                     SELECT user_id, user_display_name, elo
                     FROM overall_standings
                     ORDER BY elo DESC
                 """)
-            all_players = cursor_elo.fetchall()
+                all_players = cursor_elo.fetchall()
             conn_elo.close()
 
             # Connect to match records to get game counts
@@ -1862,27 +1867,26 @@ class LFGCog(commands.Cog):
                 player_elos[winner_id] = new_winner_elo
                 player_elos[loser_id] = new_loser_elo
 
-            # Step 4: Write updated event_elos to database
+            # Step 4: Write updated event_elos to database (always write, even if 1500)
             updates = 0
             for user_id, event_elo in player_elos.items():
-                if event_elo != 1500:
-                    elo_cur.execute(
-                        "UPDATE overall_standings SET event_elo = ? WHERE user_id = ?",
-                        (event_elo, user_id),
-                    )
-                    updates += 1
+                elo_cur.execute(
+                    "UPDATE overall_standings SET event_elo = ? WHERE user_id = ?",
+                    (event_elo, user_id),
+                )
+                updates += 1
 
             elo_conn.commit()
 
-            # Get top players
+            # Get top players (those who participated in event matches)
+            participant_ids = set(player_elos.keys())
             elo_cur.execute("""
-                SELECT user_display_name, event_elo
+                SELECT user_id, user_display_name, event_elo
                 FROM overall_standings
-                WHERE event_elo != 1500
                 ORDER BY event_elo DESC
-                LIMIT 5
             """)
-            top_players = elo_cur.fetchall()
+            top_players = [(name, elo) for uid, name, elo in elo_cur.fetchall()
+                           if uid in participant_ids][:5]
 
             elo_conn.close()
             match_conn.close()
@@ -1899,7 +1903,7 @@ class LFGCog(commands.Cog):
                 value=(
                     f"**Players Reset:** {reset_count}\n"
                     f"**Matches Replayed:** {len(matches)}\n"
-                    f"**Players with Non-1500 ELO:** {updates}"
+                    f"**Players Updated:** {updates}"
                 ),
                 inline=False,
             )

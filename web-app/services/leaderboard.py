@@ -43,16 +43,25 @@ class LeaderboardService:
         active_event = self._elo_repo.get_active_event()
         standings = self._elo_repo.get_event_standings()
 
+        # Get event participants from match_records
+        event_participants = set()
+        if active_event:
+            event_start = active_event.get("start_date")
+            if event_start:
+                event_participants = set(self._match_repo.get_season_players(event_start))
+
         leaderboard_data = []
         for standing in standings:
             user_id = standing["user_id"]
-            leaderboard_data.append(
-                {
-                    "id": str(user_id),
-                    "name": standing["display_name"],
-                    "event_elo": standing["event_elo"],
-                }
-            )
+            # Only include players who have played matches in the event
+            if user_id in event_participants:
+                leaderboard_data.append(
+                    {
+                        "id": str(user_id),
+                        "name": standing["display_name"],
+                        "event_elo": standing["event_elo"],
+                    }
+                )
 
         return {"event": active_event, "leaderboard": leaderboard_data}
 
@@ -67,16 +76,19 @@ class LeaderboardService:
         event_data = []
         event_player_ids = set()
 
-        # Get event start date for season stats
+        # Get event start date for season stats and participant list
         event_start = None
+        event_participants = set()
         if active_event:
             event_start = active_event.get("start_date")
+            if event_start:
+                event_participants = set(self._match_repo.get_season_players(event_start))
 
         for standing in standings:
             user_id = standing["user_id"]
 
-            # Include in event if they have non-default ELO
-            if standing["event_elo"] != 1500:
+            # Include in event if they have played matches in the event period
+            if user_id in event_participants:
                 season_wins = 0
                 season_losses = 0
                 if event_start:
@@ -151,11 +163,18 @@ class LeaderboardService:
         active_event = self._elo_repo.get_active_event()
         standings = self._elo_repo.get_paper_standings()
 
+        # Get paper event participants from web match records
+        paper_participants = set()
+        if active_event:
+            event_start = active_event.get("start_date")
+            if event_start:
+                paper_participants = set(self._match_repo.get_web_season_players(event_start))
+
         leaderboard_data = []
         for standing in standings:
             user_id = standing["user_id"]
-            # Only include players with non-default event ELO
-            if standing["paper_event_elo"] != 1500:
+            # Only include players who have played paper matches in the event
+            if str(user_id) in paper_participants or user_id in paper_participants:
                 leaderboard_data.append(
                     {
                         "id": str(user_id),

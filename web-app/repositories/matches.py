@@ -224,6 +224,27 @@ class MatchRepository:
         conn.close()
         return players
 
+    def get_web_season_players(self, event_start: str) -> list[str]:
+        """Get all player IDs who have played web (paper) matches since event start."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                SELECT DISTINCT user_id FROM (
+                    SELECT winner_id as user_id FROM match_reports_web WHERE timestamp >= ?
+                    UNION
+                    SELECT losser_id as user_id FROM match_reports_web WHERE timestamp >= ?
+                )
+            """,
+                (event_start, event_start),
+            )
+            players = [row[0] for row in cur.fetchall()]
+        except sqlite3.OperationalError:
+            players = []  # Table doesn't exist yet
+        conn.close()
+        return players
+
     def get_match_by_id(self, match_id: int) -> dict | None:
         """Get a single match by its ID."""
         conn = self._get_connection()

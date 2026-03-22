@@ -37,13 +37,18 @@ def get_avatar_filters():
                 FROM events
                 ORDER BY start_date DESC
             """)
+            user_admin = is_admin()
             for row in cur.fetchall():
+                active = bool(row[4])
+                # Only admins can see active events
+                if active and not user_admin:
+                    continue
                 events.append({
                     "event_id": row[0],
                     "event_name": row[1],
                     "start_date": row[2],
                     "end_date": row[3],
-                    "is_active": bool(row[4]),
+                    "is_active": active,
                 })
         conn.close()
     except sqlite3.OperationalError as e:
@@ -257,6 +262,10 @@ def get_all_avatars():
     """
     event_filter = request.args.get("event", "all")
     source_filter = request.args.get("source", "all")
+
+    # Only admins can query the active event
+    if event_filter == "current" and not is_admin():
+        event_filter = "all"
 
     if not MATCH_RECORDS_DB_PATH.exists():
         logger.warning(f"Database not found at {MATCH_RECORDS_DB_PATH}")

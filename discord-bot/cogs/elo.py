@@ -138,7 +138,7 @@ class EloCog(commands.Cog):
     @commands.command()
     async def rank(self, ctx, user: discord.Member = None):
         """Check your current Elo ranking (lifetime and event), or check another user's rank by tagging them."""
-        from utils.database import get_active_event
+        from utils.database import get_active_event, has_player_played_event, get_event_participant_ids
 
         # Determine which user to check
         target_user = user if user else ctx.author
@@ -162,12 +162,19 @@ class EloCog(commands.Cog):
             cur.execute("SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (lifetime_elo,))
             lifetime_rank = cur.fetchone()[0] + 1
 
-            # Get event rank (only count players with event_elo != 1500)
-            cur.execute("SELECT COUNT(*) FROM overall_standings WHERE event_elo > ? AND event_elo != 1500", (event_elo,))
-            event_rank = cur.fetchone()[0] + 1
-
             # Check if there's an active event
             active_event = get_active_event()
+
+            # Check event participation via match_records
+            has_event_games = False
+            event_rank = 1
+            if active_event:
+                event_start_str = active_event["start_date"].isoformat()
+                has_event_games = has_player_played_event(target_user.id, event_start_str)
+                # Get event rank (only count players who have played event matches)
+                event_participants = get_event_participant_ids(event_start_str)
+                cur.execute("SELECT user_id, event_elo FROM overall_standings WHERE event_elo > ?", (event_elo,))
+                event_rank = sum(1 for r in cur.fetchall() if r[0] in event_participants) + 1
 
             if is_self:
                 msg = f"{ctx.author.mention}\n"
@@ -177,7 +184,7 @@ class EloCog(commands.Cog):
             msg += f"**Lifetime ELO:** {lifetime_elo} (Rank #{lifetime_rank})\n"
 
             if active_event:
-                if event_elo != 1500:
+                if has_event_games:
                     msg += f"**Event ELO ({active_event['event_name']}):** {event_elo} (Rank #{event_rank})"
                 else:
                     msg += f"**Event ELO ({active_event['event_name']}):** 1500 (No matches yet)"
@@ -219,22 +226,27 @@ class EloCog(commands.Cog):
     @commands.command()
     async def event_leaderboard(self, ctx):
         """Check the top 16 event Elo rankings for the current event."""
-        from utils.database import get_active_event
+        from utils.database import get_active_event, get_event_participant_ids
 
         active_event = get_active_event()
         if not active_event:
             await ctx.send("No active event. Use `!leaderboard` to see lifetime rankings.")
             return
 
+        event_start_str = active_event["start_date"].isoformat()
+        event_participants = get_event_participant_ids(event_start_str)
+
         conn = sqlite3.connect("elo.db")
         cur = conn.cursor()
         cur.execute(
-            """SELECT user_display_name, event_elo FROM overall_standings
-               WHERE event_elo != 1500
-               ORDER BY event_elo DESC LIMIT 16"""
+            """SELECT user_id, user_display_name, event_elo FROM overall_standings
+               ORDER BY event_elo DESC"""
         )
-        rows = cur.fetchall()
+        all_rows = cur.fetchall()
         conn.close()
+
+        # Filter to only players who have actually played event matches
+        rows = [(name, elo) for uid, name, elo in all_rows if uid in event_participants][:16]
 
         if rows:
             leaderboard = f"🏆 **{active_event['event_name']} Leaderboard** 🏆\n"

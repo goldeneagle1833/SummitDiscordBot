@@ -164,7 +164,6 @@ class EloRepository:
         cur.execute("""
             SELECT user_id, user_display_name, event_elo
             FROM overall_standings
-            WHERE event_elo != 1500
             ORDER BY event_elo DESC
         """)
         rows = cur.fetchall()
@@ -318,7 +317,7 @@ class EloRepository:
             """
             SELECT user_id, user_display_name, final_event_elo, final_rank
             FROM event_standings_archive
-            WHERE event_id = ? AND final_event_elo != 1500
+            WHERE event_id = ?
             ORDER BY final_rank ASC
         """,
             (event_id,),

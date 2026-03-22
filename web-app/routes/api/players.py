@@ -648,17 +648,41 @@ def player_api(player_id):
             displayed_elo = event_elo
             # For current event, calculate rank among event participants
             try:
+                # Get participants from match records
+                match_conn_tmp = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+                match_cur_tmp = match_conn_tmp.cursor()
                 if source == "web":
+                    match_cur_tmp.execute("""
+                        SELECT DISTINCT user_id FROM (
+                            SELECT winner_id as user_id FROM match_reports_web WHERE timestamp >= ?
+                            UNION
+                            SELECT losser_id as user_id FROM match_reports_web WHERE timestamp >= ?
+                        )
+                    """, (event_start_date or "", event_start_date or ""))
+                    web_participants = {str(row[0]) for row in match_cur_tmp.fetchall()}
+                    match_conn_tmp.close()
+
                     elo_cur.execute(
-                        "SELECT COUNT(*) FROM paper_standings WHERE paper_event_elo > ? AND paper_event_elo != 1500",
+                        "SELECT user_id, paper_event_elo FROM paper_standings WHERE paper_event_elo > ?",
                         (event_elo,),
                     )
+                    displayed_rank = sum(1 for r in elo_cur.fetchall() if str(r[0]) in web_participants) + 1
                 else:
+                    match_cur_tmp.execute("""
+                        SELECT DISTINCT user_id FROM (
+                            SELECT winner_id as user_id FROM match_records WHERE timestamp >= ?
+                            UNION
+                            SELECT losser_id as user_id FROM match_records WHERE timestamp >= ?
+                        )
+                    """, (event_start_date or "", event_start_date or ""))
+                    bot_participants = {row[0] for row in match_cur_tmp.fetchall()}
+                    match_conn_tmp.close()
+
                     elo_cur.execute(
-                        "SELECT COUNT(*) FROM overall_standings WHERE event_elo > ? AND event_elo != 1500",
+                        "SELECT user_id, event_elo FROM overall_standings WHERE event_elo > ?",
                         (event_elo,),
                     )
-                displayed_rank = elo_cur.fetchone()[0] + 1
+                    displayed_rank = sum(1 for r in elo_cur.fetchall() if r[0] in bot_participants) + 1
             except sqlite3.OperationalError:
                 displayed_rank = 0
         elif archive_event_id is not None:

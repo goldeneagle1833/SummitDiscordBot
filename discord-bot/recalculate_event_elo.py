@@ -98,33 +98,36 @@ def recalculate_all_event_elo():
     print(f"Processed all {matches_processed} matches")
     print()
 
-    # Step 4: Write all updated event_elos back to database
+    # Step 4: Write all updated event_elos back to database (always write, even if 1500)
     print("Step 4: Writing updated event_elo values to database...")
 
     updates_written = 0
-    for user_id, event_elo in player_elos.items():
-        if event_elo != 1500:  # Only update if changed
-            elo_cur.execute(
-                "UPDATE overall_standings SET event_elo = ? WHERE user_id = ?",
-                (event_elo, user_id),
-            )
-            updates_written += 1
+    for user_id in players_updated:
+        event_elo = player_elos.get(user_id, 1500)
+        elo_cur.execute(
+            "UPDATE overall_standings SET event_elo = ? WHERE user_id = ?",
+            (event_elo, user_id),
+        )
+        updates_written += 1
 
     elo_conn.commit()
     print(f"Updated event_elo for {updates_written} players")
     print()
 
-    # Step 5: Show top players
+    # Step 5: Show top players (those who participated)
     print("Step 5: Top 10 players by event_elo:")
     elo_cur.execute("""
-        SELECT user_display_name, event_elo 
-        FROM overall_standings 
-        WHERE event_elo != 1500 
-        ORDER BY event_elo DESC 
-        LIMIT 10
+        SELECT user_id, user_display_name, event_elo
+        FROM overall_standings
+        ORDER BY event_elo DESC
     """)
-    for i, row in enumerate(elo_cur.fetchall(), 1):
-        print(f"  {i}. {row[0]}: {row[1]}")
+    shown = 0
+    for row in elo_cur.fetchall():
+        if row[0] in players_updated:
+            shown += 1
+            print(f"  {shown}. {row[1]}: {row[2]}")
+            if shown >= 10:
+                break
 
     # Cleanup
     elo_conn.close()

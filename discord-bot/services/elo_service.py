@@ -543,20 +543,21 @@ def end_current_event():
     conn_elo = sqlite3.connect("elo.db")
     cur_elo = conn_elo.cursor()
 
-    # Get all players with either paper or online event games (event_elo != 1500)
+    # Get event participants from match_records
+    from repositories.elo_repo import get_event_participant_ids
+    event_start_str = active_event["start_date"].isoformat()
+    event_participants = get_event_participant_ids(event_start_str)
+
+    # Get all players who participated in the event
     cur_elo.execute("""SELECT user_id, user_display_name, paper_event_elo, online_event_elo
-                       FROM overall_standings
-                       WHERE paper_event_elo != 1500 OR online_event_elo != 1500""")
-    all_players = cur_elo.fetchall()
+                       FROM overall_standings""")
+    all_players = [(uid, name, paper_elo, online_elo)
+                   for uid, name, paper_elo, online_elo in cur_elo.fetchall()
+                   if uid in event_participants]
 
-    # Filter out players whose max ELO is exactly 1500 (played but lost enough to end at default)
-    # This prevents archiving players like (paper=1400, online=1500) where max=1500
-    all_players = [(uid, name, paper_elo, online_elo) for uid, name, paper_elo, online_elo in all_players
-                   if max(paper_elo, online_elo) != 1500]
-
-    # Build separate rankings for paper and online
-    paper_standings = [(uid, name, paper_elo) for uid, name, paper_elo, _ in all_players if paper_elo != 1500]
-    online_standings = [(uid, name, online_elo) for uid, name, _, online_elo in all_players if online_elo != 1500]
+    # Build separate rankings for paper and online (include all participants)
+    paper_standings = [(uid, name, paper_elo) for uid, name, paper_elo, _ in all_players]
+    online_standings = [(uid, name, online_elo) for uid, name, _, online_elo in all_players]
 
     # Sort by ELO descending
     paper_standings.sort(key=lambda x: x[2], reverse=True)

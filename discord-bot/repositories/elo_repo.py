@@ -574,7 +574,7 @@ def get_top_16_user_ids():
     """
     Get the user IDs of the top 16 players by current online event ELO (Discord bot).
 
-    Only counts players who have played at least one online event match (online_event_elo != 1500).
+    Only counts players who have played at least one online event match.
     Falls back to online lifetime ELO if no active event.
 
     Returns:
@@ -586,15 +586,66 @@ def get_top_16_user_ids():
     cur = conn.cursor()
 
     if active_event:
+        event_start_str = active_event["start_date"].isoformat()
+        participants = get_event_participant_ids(event_start_str)
+
         cur.execute(
-            "SELECT user_id FROM overall_standings WHERE online_event_elo != 1500 ORDER BY online_event_elo DESC LIMIT 16"
+            "SELECT user_id FROM overall_standings ORDER BY online_event_elo DESC"
         )
+        rows = [row for row in cur.fetchall() if row[0] in participants][:16]
     else:
         cur.execute("SELECT user_id FROM overall_standings ORDER BY online_elo DESC LIMIT 16")
+        rows = cur.fetchall()
 
-    rows = cur.fetchall()
     conn.close()
     return [row[0] for row in rows]
+
+
+def get_event_participant_ids(event_start_str: str) -> set:
+    """Get the set of player IDs who have played matches since event start.
+
+    Queries match_records to find all players (winners and losers) with
+    matches recorded after the given event start date.
+
+    Args:
+        event_start_str: ISO format date string for event start
+
+    Returns:
+        Set of user_id integers who have participated
+    """
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT DISTINCT player_id FROM (
+            SELECT winner_id AS player_id FROM match_records WHERE timestamp >= ?
+            UNION
+            SELECT losser_id AS player_id FROM match_records WHERE timestamp >= ?
+        )
+    """, (event_start_str, event_start_str))
+    ids = {row[0] for row in cur.fetchall()}
+    conn.close()
+    return ids
+
+
+def has_player_played_event(user_id: int, event_start_str: str) -> bool:
+    """Check if a specific player has played any matches since event start.
+
+    Args:
+        user_id: The player's user ID
+        event_start_str: ISO format date string for event start
+
+    Returns:
+        True if the player has at least one match in the event period
+    """
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT 1 FROM match_records WHERE (winner_id = ? OR losser_id = ?) AND timestamp >= ? LIMIT 1",
+        (user_id, user_id, event_start_str),
+    )
+    result = cur.fetchone() is not None
+    conn.close()
+    return result
 
 
 def get_total_match_count():

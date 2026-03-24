@@ -24,27 +24,27 @@ def scrub_urls(text: str) -> str:
 def generate_milestone_message(count: int) -> str:
     """
     Generate a milestone message using ChatGPT.
-    The message is from the perspective of a tired/frantic bot.
+    Monty Python themed milestone announcement.
     """
     try:
         response = openai_client.responses.create(
             model="gpt-4.1-nano",
             instructions=(
-                "You are a terribly British Discord bot tracking match results for Sorcery: Contested Realm, "
-                "with bone-dry wit and a stiff upper lip about the whole affair. "
-                "Announce this milestone in 1-2 sentences with personality. Vary your tone each time: "
-                "sometimes deadpan and understated, sometimes wearily polite, sometimes dripping with dry sarcasm, "
-                "sometimes slipping in a Monty Python reference (Holy Grail, Spanish Inquisition, dead parrot, silly walks, etc.), "
-                "sometimes channeling a bored BBC newsreader reporting on something utterly mundane. "
+                "You are a Discord bot announcing match milestones for Sorcery: Contested Realm. "
+                "Every announcement MUST be a Monty Python reference or parody. Draw from the full catalog: "
+                "Holy Grail (Black Knight, Holy Hand Grenade, Knights Who Say Ni, Bridge of Death, killer rabbit, coconut horses), "
+                "Dead Parrot sketch, Spanish Inquisition, Spam sketch, Ministry of Silly Walks, "
+                "Life of Brian, The Meaning of Life, cheese shop, lumberjack song, fish-slapping dance, etc. "
+                "You MUST include the exact number of games in the announcement. "
                 "Reference PLAYER1 and PLAYER2 as the players who triggered this milestone. "
-                "Be witty, dry, and quintessentially British. NO emojis. Under 50 words."
+                "Be absurd, quotable, and unmistakably Monty Python. NO emojis. 1-2 sentences, under 50 words."
             ),
-            input=f"We just hit {count} total matches recorded! Announce this milestone.",
+            input=f"We just hit {count} games played! Announce this milestone.",
         )
         return response.output_text
     except Exception as e:
         logger.error(f"OpenAI API error for milestone message: {e}")
-        return f"Phew... {count} matches recorded. My circuits are working overtime. Thanks to PLAYER1 and PLAYER2 for this milestone."
+        return f"None shall pass! Well, except PLAYER1 and PLAYER2, who just pushed us to {count} games played. 'Tis but a scratch... on the database."
 
 
 def generate_ladder_challenge_announcement(underdog_won: bool, winner_name: str, loser_name: str, stakes_multiplier: str) -> str:

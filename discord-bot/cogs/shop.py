@@ -31,9 +31,59 @@ class ShopCog(commands.Cog):
             "bobomb": 25,  # Bob-omb (was 50)
             "bluestar": 38,  # Blue Star (was 75)
             "fart_star": 200,  # Star Killer - removes star from random protected user
+            "thunder_fart": 20,  # Thunder Fart - hit everyone for small damage
+            "gas_shield": 8,  # Gas Shield - reflect 50% damage back at next attacker
+            "stink_bomb": 12,  # Stink Bomb - hit random player (anyone)
+            "fart_rocket": 15,  # Fart Rocket - swap scores with player ahead
+            "fart_trap": 20,  # Fart Trap - target's next attack hits themselves
+            "stink_cloud": 5,  # Stink Cloud - block target from shop for 30 min
+            "gas_gamble": 3,  # Gas Gamble - 50/50 double or lose
+            "fart_leech": 10,  # Fart Leech - steal points from random player
         }
         logger.info("ShopCog initialized")
         self.setup_purchase_database()
+
+    ATTACK_COMMANDS = {
+        'blue_shell', 'red_shell', 'green_shell', 'banana', 'bobomb',
+        'blue_star', 'stink_bomb', 'thunder_fart', 'fart_rocket',
+        'fart_leech', 'stink_cloud', 'fart_star',
+    }
+
+    async def cog_check(self, ctx):
+        """Block shop commands if user is stink clouded, and check fart traps on attacks"""
+        if ctx.command.name in ('fart_shop',):
+            return True
+
+        # Check stink cloud block
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS shop_blocks (
+                    user_id INTEGER PRIMARY KEY,
+                    blocked_until TIMESTAMP
+                )
+            """)
+            cur.execute(
+                "SELECT blocked_until FROM shop_blocks WHERE user_id = ? AND blocked_until > datetime('now')",
+                (ctx.author.id,),
+            )
+            result = cur.fetchone()
+            if result:
+                await ctx.send(
+                    f"{ctx.author.mention}, you're blinded by a Stink Cloud! Wait for it to clear before using shop items!"
+                )
+                return False
+        finally:
+            conn.close()
+
+        # Check fart trap on attack commands
+        if ctx.command.name in self.ATTACK_COMMANDS:
+            trapped = await self.check_fart_trap(ctx, ctx.author.id)
+            if trapped:
+                return False
+
+        return True
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -138,6 +188,51 @@ class ShopCog(commands.Cog):
             "satan": "!evil_star",
             "dark": "!evil_star",
             "darkstar": "!evil_star",
+            # Thunder Fart variations
+            "thunderfart": "!thunder_fart",
+            "thunder_fart": "!thunder_fart",
+            "thunder": "!thunder_fart",
+            "lightning": "!thunder_fart",
+            "thunderf": "!thunder_fart",
+            # Gas Shield variations
+            "gasshield": "!gas_shield",
+            "gas_shield": "!gas_shield",
+            "shield": "!gas_shield",
+            "gshield": "!gas_shield",
+            "reflect": "!gas_shield",
+            # Stink Bomb variations
+            "stinkbomb": "!stink_bomb",
+            "stink_bomb": "!stink_bomb",
+            "stink": "!stink_bomb",
+            "stinkb": "!stink_bomb",
+            # Fart Rocket variations
+            "fartrocket": "!fart_rocket",
+            "fart_rocket": "!fart_rocket",
+            "rocket": "!fart_rocket",
+            "frocket": "!fart_rocket",
+            # Fart Trap variations
+            "farttrap": "!fart_trap",
+            "fart_trap": "!fart_trap",
+            "trap": "!fart_trap",
+            "ftrap": "!fart_trap",
+            # Stink Cloud variations
+            "stinkcloud": "!stink_cloud",
+            "stink_cloud": "!stink_cloud",
+            "cloud": "!stink_cloud",
+            "scloud": "!stink_cloud",
+            "blooper": "!stink_cloud",
+            # Gas Gamble variations
+            "gasgamble": "!gas_gamble",
+            "gas_gamble": "!gas_gamble",
+            "gamble": "!gas_gamble",
+            "ggamble": "!gas_gamble",
+            "coinblock": "!gas_gamble",
+            # Fart Leech variations
+            "fartleech": "!fart_leech",
+            "fart_leech": "!fart_leech",
+            "leech": "!fart_leech",
+            "fleech": "!fart_leech",
+            "steal": "!fart_leech",
         }
 
         actual_commands = {
@@ -160,6 +255,22 @@ class ShopCog(commands.Cog):
             "fartstar": "!fart_star",
             "evil_star": "!evil_star",
             "evilstar": "!evil_star",
+            "thunder_fart": "!thunder_fart",
+            "thunderfart": "!thunder_fart",
+            "gas_shield": "!gas_shield",
+            "gasshield": "!gas_shield",
+            "stink_bomb": "!stink_bomb",
+            "stinkbomb": "!stink_bomb",
+            "fart_rocket": "!fart_rocket",
+            "fartrocket": "!fart_rocket",
+            "fart_trap": "!fart_trap",
+            "farttrap": "!fart_trap",
+            "stink_cloud": "!stink_cloud",
+            "stinkcloud": "!stink_cloud",
+            "gas_gamble": "!gas_gamble",
+            "gasgamble": "!gas_gamble",
+            "fart_leech": "!fart_leech",
+            "fartleech": "!fart_leech",
         }
 
         suggestion = find_best_command_match(failed_command, command_suggestions, actual_commands)
@@ -444,8 +555,85 @@ class ShopCog(commands.Cog):
         conn.close()
         return result
 
+    async def add_points(self, user_id: int, amount: int):
+        """Add points to a user's score"""
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE fart_scores SET score = score + ? WHERE user_id = ?",
+                (amount, user_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    async def get_user_score(self, user_id: int) -> int:
+        """Get a user's current score"""
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT score FROM fart_scores WHERE user_id = ?", (user_id,))
+            result = cur.fetchone()
+            return result[0] if result else 0
+        finally:
+            conn.close()
+
+    async def check_gas_shield(self, ctx, target_id, attacker_id, damage_dealt):
+        """Check if target has a gas shield. If so, reflect 50% damage back to attacker and consume shield."""
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS gas_shields (
+                    user_id INTEGER PRIMARY KEY
+                )
+            """)
+            cur.execute("SELECT 1 FROM gas_shields WHERE user_id = ?", (target_id,))
+            if cur.fetchone():
+                cur.execute("DELETE FROM gas_shields WHERE user_id = ?", (target_id,))
+                conn.commit()
+                reflected = damage_dealt // 2
+                if reflected > 0:
+                    await self.deduct_damage(attacker_id, reflected)
+                    await ctx.send(
+                        f"<@{target_id}>'s Gas Shield reflected {reflected} damage back at <@{attacker_id}>!"
+                    )
+        finally:
+            conn.close()
+
+    async def check_fart_trap(self, ctx, attacker_id):
+        """Check if attacker has a fart trap set on them. Returns True if trapped (attack should be cancelled)."""
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS fart_traps (
+                    user_id INTEGER PRIMARY KEY,
+                    set_by INTEGER NOT NULL
+                )
+            """)
+            cur.execute(
+                "SELECT set_by FROM fart_traps WHERE user_id = ?", (attacker_id,)
+            )
+            result = cur.fetchone()
+            if result:
+                set_by = result[0]
+                cur.execute("DELETE FROM fart_traps WHERE user_id = ?", (attacker_id,))
+                conn.commit()
+                damage = self.roll_damage(3)  # 3d20/2
+                actual_damage = await self.deduct_damage(attacker_id, damage)
+                await ctx.send(
+                    f"<@{attacker_id}> triggered a Fart Trap set by <@{set_by}>!\n"
+                    f"The attack backfired for {actual_damage} damage to themselves!"
+                )
+                return True
+            return False
+        finally:
+            conn.close()
+
     async def find_target(self, user_id: int, direction: str) -> tuple:
-        """Find target based on direction (front/back/random_front)"""
+        """Find target based on direction (front/back/random_front). back and random_front pick randomly."""
         players = await self.get_sorted_players()
         user_index = next(
             (i for i, (pid, _) in enumerate(players) if pid == user_id), None
@@ -457,7 +645,9 @@ class ShopCog(commands.Cog):
         if direction == "front":
             target_index = user_index - 1
         elif direction == "back":
-            target_index = user_index + 1
+            if user_index >= len(players) - 1:
+                return None
+            target_index = random.randint(user_index + 1, len(players) - 1)
         elif direction == "random_front":
             if user_index == 0:
                 return None
@@ -504,6 +694,7 @@ class ShopCog(commands.Cog):
             await ctx.send(
                 f"<@{ctx.author.id}> launched a Blue Shell at leader <@{leader_id}> for {actual_damage} damage!"
             )
+            await self.check_gas_shield(ctx, leader_id, ctx.author.id, actual_damage)
         except Exception as e:
             logger.error(f"Error in blue shell command: {e}")
             await ctx.send("An error occurred while processing the command.")
@@ -537,6 +728,7 @@ class ShopCog(commands.Cog):
         await ctx.send(
             f"<@{ctx.author.id}> hit <@{target[0]}> with a Red Shell for {actual_damage} damage!"
         )
+        await self.check_gas_shield(ctx, target[0], ctx.author.id, actual_damage)
 
     @commands.command(name="green_shell")
     async def green_shell(self, ctx):
@@ -565,6 +757,7 @@ class ShopCog(commands.Cog):
         await ctx.send(
             f"<@{ctx.author.id}> hit <@{target[0]}> with a Green Shell for {actual_damage} damage!"
         )
+        await self.check_gas_shield(ctx, target[0], ctx.author.id, actual_damage)
 
     @commands.command(name="banana")
     async def banana(self, ctx):
@@ -593,6 +786,7 @@ class ShopCog(commands.Cog):
         await ctx.send(
             f"<@{ctx.author.id}> hit <@{target[0]}> with a Banana for {actual_damage} damage!"
         )
+        await self.check_gas_shield(ctx, target[0], ctx.author.id, actual_damage)
 
     @commands.command(name="star")
     @commands.cooldown(1, 45, commands.BucketType.user)
@@ -801,12 +995,14 @@ class ShopCog(commands.Cog):
         hit_info = []  # List of (mention, actual_damage) tuples
         protected_players = []
 
+        hit_player_ids = []
         for player_id, _ in top_5:
             if await self.is_protected(player_id):
                 protected_players.append(f"<@{player_id}>")
             else:
                 actual_damage = await self.deduct_damage(player_id, damage)
                 hit_info.append((f"<@{player_id}>", actual_damage))
+                hit_player_ids.append((player_id, actual_damage))
 
         await self.deduct_points(ctx.author.id, "bobomb")
 
@@ -830,6 +1026,366 @@ class ShopCog(commands.Cog):
             )
 
         await ctx.send(response)
+
+        # Check gas shields for each hit player
+        for player_id, actual_damage in hit_player_ids:
+            await self.check_gas_shield(ctx, player_id, ctx.author.id, actual_damage)
+
+    @commands.command(name="thunder_fart")
+    @commands.cooldown(1, 45, commands.BucketType.user)
+    async def thunder_fart(self, ctx):
+        """Hit ALL players for small damage"""
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+            )
+            return
+
+        if not await self.check_points(ctx.author.id, "thunder_fart"):
+            return await ctx.send(
+                f"You don't have enough points! Thunder Fart costs {self.item_costs['thunder_fart']} points!"
+            )
+
+        players = await self.get_sorted_players()
+        if not players:
+            return await ctx.send("No players found!")
+
+        await self.deduct_points(ctx.author.id, "thunder_fart")
+
+        damage = random.randint(1, 5)
+        hit_players = []
+        hit_player_ids = []
+        protected_players = []
+
+        for player_id, _ in players:
+            if player_id == ctx.author.id:
+                continue
+            if await self.is_protected(player_id):
+                protected_players.append(f"<@{player_id}>")
+            else:
+                actual_damage = await self.deduct_damage(player_id, damage)
+                hit_players.append((f"<@{player_id}>", actual_damage))
+                hit_player_ids.append((player_id, actual_damage))
+
+        response = f"<@{ctx.author.id}> unleashed a Thunder Fart!\n"
+        if hit_players:
+            response += f"Everyone took {damage} damage!\n"
+            response += f"Hit {len(hit_players)} players!\n"
+        if protected_players:
+            response += "⭐ " + ", ".join(protected_players) + " were protected by Stars!"
+
+        await ctx.send(response)
+
+        # Check gas shields for each hit player
+        for player_id, actual_damage in hit_player_ids:
+            await self.check_gas_shield(ctx, player_id, ctx.author.id, actual_damage)
+
+    @commands.command(name="gas_shield")
+    @commands.cooldown(1, 45, commands.BucketType.user)
+    async def gas_shield(self, ctx):
+        """Activate a shield that reflects 50% damage back at the next attacker"""
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+            )
+            return
+
+        if not await self.check_points(ctx.author.id, "gas_shield"):
+            return await ctx.send(
+                f"You don't have enough points! Gas Shield costs {self.item_costs['gas_shield']} points!"
+            )
+
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS gas_shields (
+                    user_id INTEGER PRIMARY KEY
+                )
+            """)
+            cur.execute(
+                "SELECT 1 FROM gas_shields WHERE user_id = ?", (ctx.author.id,)
+            )
+            if cur.fetchone():
+                return await ctx.send(
+                    f"{ctx.author.mention}, you already have a Gas Shield active!"
+                )
+
+            await self.deduct_points(ctx.author.id, "gas_shield")
+            cur.execute(
+                "INSERT INTO gas_shields (user_id) VALUES (?)", (ctx.author.id,)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        await ctx.send(
+            f"<@{ctx.author.id}> activated a Gas Shield! The next attack against them will reflect 50% damage back!"
+        )
+
+    @commands.command(name="stink_bomb")
+    @commands.cooldown(1, 45, commands.BucketType.user)
+    async def stink_bomb(self, ctx):
+        """Hit a random player (anyone) for heavy damage"""
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+            )
+            return
+
+        if not await self.check_points(ctx.author.id, "stink_bomb"):
+            return await ctx.send(
+                f"You don't have enough points! Stink Bomb costs {self.item_costs['stink_bomb']} points!"
+            )
+
+        players = await self.get_sorted_players()
+        # Filter out self
+        targets = [(pid, score) for pid, score in players if pid != ctx.author.id]
+        if not targets:
+            return await ctx.send("No other players found!")
+
+        target_id, _ = random.choice(targets)
+
+        if await self.is_protected(target_id):
+            return await ctx.send(f"<@{target_id}> is protected by a Star!")
+
+        damage = self.roll_damage(3)  # 3d20/2
+        await self.deduct_points(ctx.author.id, "stink_bomb")
+        actual_damage = await self.deduct_damage(target_id, damage)
+        await ctx.send(
+            f"<@{ctx.author.id}> threw a Stink Bomb at <@{target_id}> for {actual_damage} damage!"
+        )
+        await self.check_gas_shield(ctx, target_id, ctx.author.id, actual_damage)
+
+    @commands.command(name="fart_rocket")
+    @commands.cooldown(1, 45, commands.BucketType.user)
+    async def fart_rocket(self, ctx):
+        """Swap scores with the player directly ahead of you"""
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+            )
+            return
+
+        if not await self.check_points(ctx.author.id, "fart_rocket"):
+            return await ctx.send(
+                f"You don't have enough points! Fart Rocket costs {self.item_costs['fart_rocket']} points!"
+            )
+
+        target = await self.find_target(ctx.author.id, "front")
+        if not target:
+            return await ctx.send("No player in front of you!")
+
+        if await self.is_protected(target[0]):
+            return await ctx.send(f"<@{target[0]}> is protected by a Star!")
+
+        await self.deduct_points(ctx.author.id, "fart_rocket")
+
+        # Get both scores and swap them
+        my_score = await self.get_user_score(ctx.author.id)
+        target_score = await self.get_user_score(target[0])
+
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE fart_scores SET score = ? WHERE user_id = ?",
+                (target_score, ctx.author.id),
+            )
+            cur.execute(
+                "UPDATE fart_scores SET score = ? WHERE user_id = ?",
+                (my_score, target[0]),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        await ctx.send(
+            f"<@{ctx.author.id}> launched a Fart Rocket and swapped scores with <@{target[0]}>!\n"
+            f"<@{ctx.author.id}>: {my_score} -> {target_score} | <@{target[0]}>: {target_score} -> {my_score}"
+        )
+
+    @commands.command(name="fart_trap")
+    @commands.cooldown(1, 45, commands.BucketType.user)
+    async def fart_trap(self, ctx):
+        """Set a trap on a random player - their next attack backfires on them!"""
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+            )
+            return
+
+        if not await self.check_points(ctx.author.id, "fart_trap"):
+            return await ctx.send(
+                f"You don't have enough points! Fart Trap costs {self.item_costs['fart_trap']} points!"
+            )
+
+        players = await self.get_sorted_players()
+        targets = [(pid, score) for pid, score in players if pid != ctx.author.id]
+        if not targets:
+            return await ctx.send("No other players found!")
+
+        target_id, _ = random.choice(targets)
+
+        if await self.is_protected(target_id):
+            return await ctx.send(f"<@{target_id}> is protected by a Star!")
+
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS fart_traps (
+                    user_id INTEGER PRIMARY KEY,
+                    set_by INTEGER NOT NULL
+                )
+            """)
+            cur.execute(
+                "SELECT 1 FROM fart_traps WHERE user_id = ?", (target_id,)
+            )
+            if cur.fetchone():
+                return await ctx.send(
+                    f"<@{target_id}> already has a trap set on them!"
+                )
+
+            await self.deduct_points(ctx.author.id, "fart_trap")
+            cur.execute(
+                "INSERT INTO fart_traps (user_id, set_by) VALUES (?, ?)",
+                (target_id, ctx.author.id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        await ctx.send(
+            f"<@{ctx.author.id}> set a Fart Trap on <@{target_id}>!\n"
+            f"Their next attack will backfire on them!"
+        )
+
+    @commands.command(name="stink_cloud")
+    @commands.cooldown(1, 45, commands.BucketType.user)
+    async def stink_cloud(self, ctx):
+        """Blind a random player, preventing them from using shop items for 30 minutes"""
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+            )
+            return
+
+        if not await self.check_points(ctx.author.id, "stink_cloud"):
+            return await ctx.send(
+                f"You don't have enough points! Stink Cloud costs {self.item_costs['stink_cloud']} points!"
+            )
+
+        players = await self.get_sorted_players()
+        targets = [(pid, score) for pid, score in players if pid != ctx.author.id]
+        if not targets:
+            return await ctx.send("No other players found!")
+
+        target_id, _ = random.choice(targets)
+
+        if await self.is_protected(target_id):
+            return await ctx.send(f"<@{target_id}> is protected by a Star!")
+
+        await self.deduct_points(ctx.author.id, "stink_cloud")
+
+        block_until = datetime.datetime.now() + datetime.timedelta(minutes=30)
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS shop_blocks (
+                    user_id INTEGER PRIMARY KEY,
+                    blocked_until TIMESTAMP
+                )
+            """)
+            cur.execute(
+                "INSERT OR REPLACE INTO shop_blocks (user_id, blocked_until) VALUES (?, ?)",
+                (target_id, block_until),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        await ctx.send(
+            f"<@{ctx.author.id}> released a Stink Cloud on <@{target_id}>!\n"
+            f"<@{target_id}> is blinded and can't use shop items for 30 minutes!"
+        )
+
+    @commands.command(name="gas_gamble")
+    @commands.cooldown(1, 45, commands.BucketType.user)
+    async def gas_gamble(self, ctx):
+        """50/50 gamble - double your bet or lose it all!"""
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+            )
+            return
+
+        if not await self.check_points(ctx.author.id, "gas_gamble"):
+            return await ctx.send(
+                f"You don't have enough points! Gas Gamble costs {self.item_costs['gas_gamble']} points!"
+            )
+
+        cost = self.item_costs["gas_gamble"]
+        await self.deduct_points(ctx.author.id, "gas_gamble")
+
+        if random.random() < 0.5:
+            # Win - get double back (net gain = cost)
+            winnings = cost * 2
+            await self.add_points(ctx.author.id, winnings)
+            await ctx.send(
+                f"<@{ctx.author.id}> hit the Gas Gamble and **WON**! +{winnings} points!"
+            )
+        else:
+            # Lose - already deducted, nothing to do
+            await ctx.send(
+                f"<@{ctx.author.id}> tried the Gas Gamble and **LOST**! -{cost} points down the drain!"
+            )
+
+    @commands.command(name="fart_leech")
+    @commands.cooldown(1, 45, commands.BucketType.user)
+    async def fart_leech(self, ctx):
+        """Steal points from a random player and add them to your score"""
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+            )
+            return
+
+        if not await self.check_points(ctx.author.id, "fart_leech"):
+            return await ctx.send(
+                f"You don't have enough points! Fart Leech costs {self.item_costs['fart_leech']} points!"
+            )
+
+        players = await self.get_sorted_players()
+        targets = [(pid, score) for pid, score in players if pid != ctx.author.id]
+        if not targets:
+            return await ctx.send("No other players found!")
+
+        target_id, target_score = random.choice(targets)
+
+        if await self.is_protected(target_id):
+            return await ctx.send(f"<@{target_id}> is protected by a Star!")
+
+        await self.deduct_points(ctx.author.id, "fart_leech")
+
+        steal_amount = self.roll_damage(2)  # 2d20/2
+        # Can't steal more than the target has
+        actual_steal = min(steal_amount, target_score)
+
+        if actual_steal <= 0:
+            await self.add_points(ctx.author.id, 0)
+            return await ctx.send(
+                f"<@{ctx.author.id}> tried to leech <@{target_id}> but they have no points to steal!"
+            )
+
+        await self.deduct_damage(target_id, actual_steal)
+        await self.add_points(ctx.author.id, actual_steal)
+
+        await ctx.send(
+            f"<@{ctx.author.id}> leeched {actual_steal} points from <@{target_id}>!"
+        )
+        await self.check_gas_shield(ctx, target_id, ctx.author.id, actual_steal)
 
     @commands.command(name="fart_shop")
     async def fart_shop(self, ctx):
@@ -890,6 +1446,46 @@ class ShopCog(commands.Cog):
                 "Evil Star (!evil_star)",
                 "😈 Doubles your points... but ONLY if you have exactly 666 points! (FREE)",
                 "FREE",
+            ),
+            (
+                "Thunder Fart (!thunder_fart)",
+                "Hits ALL players for 1-5 damage each",
+                self.item_costs["thunder_fart"],
+            ),
+            (
+                "Gas Shield (!gas_shield)",
+                "Reflects 50% damage back at the next attacker",
+                self.item_costs["gas_shield"],
+            ),
+            (
+                "Stink Bomb (!stink_bomb)",
+                "Hits a random player (anyone!) for 3d20/2 damage",
+                self.item_costs["stink_bomb"],
+            ),
+            (
+                "Fart Rocket (!fart_rocket)",
+                "Swap scores with the player directly ahead of you",
+                self.item_costs["fart_rocket"],
+            ),
+            (
+                "Fart Trap (!fart_trap)",
+                "Set a trap on a random player - their next attack backfires on them!",
+                self.item_costs["fart_trap"],
+            ),
+            (
+                "Stink Cloud (!stink_cloud)",
+                "Blinds a random player, blocking them from shop items for 30 minutes",
+                self.item_costs["stink_cloud"],
+            ),
+            (
+                "Gas Gamble (!gas_gamble)",
+                "50/50 chance to double your bet or lose it all!",
+                self.item_costs["gas_gamble"],
+            ),
+            (
+                "Fart Leech (!fart_leech)",
+                "Steal 2d20/2 points from a random player and add to your score",
+                self.item_costs["fart_leech"],
             ),
         ]
 
@@ -1058,6 +1654,7 @@ class ShopCog(commands.Cog):
                 f"Hit leader <@{leader_id}> for {actual_damage} damage!\n"
                 f"Gained Star protection for 12 hours!"
             )
+            await self.check_gas_shield(ctx, leader_id, ctx.author.id, actual_damage)
         finally:
             conn.close()
 

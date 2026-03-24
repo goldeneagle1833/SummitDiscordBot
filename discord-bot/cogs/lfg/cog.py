@@ -1997,23 +1997,23 @@ class LFGCog(commands.Cog):
 
             # Check if user exists in database
             cursor.execute(
-                "SELECT event_elo FROM overall_standings WHERE user_id = ?", (user.id,)
+                "SELECT online_event_elo FROM overall_standings WHERE user_id = ?", (user.id,)
             )
             result = cursor.fetchone()
 
             old_elo = result[0] if result else None
 
             if result:
-                # Update existing user's event ELO
+                # Update existing user's event ELO (both legacy and dual-ELO columns)
                 cursor.execute(
-                    "UPDATE overall_standings SET event_elo = ?, user_display_name = ? WHERE user_id = ?",
-                    (elo, user_name, user.id),
+                    "UPDATE overall_standings SET event_elo = ?, online_event_elo = ?, user_display_name = ? WHERE user_id = ?",
+                    (elo, elo, user_name, user.id),
                 )
             else:
-                # Insert new user with event ELO
+                # Insert new user with event ELO (both legacy and dual-ELO columns)
                 cursor.execute(
-                    "INSERT INTO overall_standings (user_id, user_display_name, elo, event_elo) VALUES (?, ?, 1500, ?)",
-                    (user.id, user_name, elo),
+                    "INSERT INTO overall_standings (user_id, user_display_name, elo, event_elo, online_elo, online_event_elo) VALUES (?, ?, 1500, ?, 1500, ?)",
+                    (user.id, user_name, elo, elo),
                 )
 
             conn.commit()

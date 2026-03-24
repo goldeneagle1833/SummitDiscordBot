@@ -1160,7 +1160,7 @@ class ShopCog(commands.Cog):
     @commands.command(name="fart_rocket")
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_rocket(self, ctx):
-        """Swap scores with the player directly ahead of you"""
+        """Swap scores with a random player ahead of you"""
         if ctx.channel.id != self.fart_channel_id:
             await ctx.send(
                 f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
@@ -1172,9 +1172,9 @@ class ShopCog(commands.Cog):
                 f"You don't have enough points! Fart Rocket costs {self.item_costs['fart_rocket']} points!"
             )
 
-        target = await self.find_target(ctx.author.id, "front")
+        target = await self.find_target(ctx.author.id, "random_front")
         if not target:
-            return await ctx.send("No player in front of you!")
+            return await ctx.send("No players in front of you!")
 
         if await self.is_protected(target[0]):
             return await ctx.send(f"<@{target[0]}> is protected by a Star!")
@@ -1464,7 +1464,7 @@ class ShopCog(commands.Cog):
             ),
             (
                 "Fart Rocket (!fart_rocket)",
-                "Swap scores with the player directly ahead of you",
+                "Swap scores with a random player ahead of you",
                 self.item_costs["fart_rocket"],
             ),
             (

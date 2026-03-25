@@ -74,7 +74,7 @@ def search_seasons():
 def browse_seasons():
     """Public endpoint for browsing/searching seasons (no auth required)."""
     q = request.args.get("q", "").strip()
-    seasons = service.search_seasons(q, user_id="")
+    seasons = service.search_seasons(q, user_id="", include_ended=True)
     return jsonify({"success": True, "seasons": seasons}), 200
 
 

@@ -197,20 +197,23 @@ class SeasonsRepository:
         conn.commit()
         conn.close()
 
-    def search_seasons(self, query, user_id):
+    def search_seasons(self, query, user_id, include_ended=False):
         conn = self._get_connection()
         cur = conn.cursor()
         like_pattern = f"%{query}%" if query else "%"
+        if include_ended:
+            status_filter = "s.status IN ('active', 'ended')"
+        else:
+            status_filter = "s.status = 'active' AND s.end_date >= date('now')"
         cur.execute(
-            """SELECT s.season_id, s.title, s.description, s.start_date,
+            f"""SELECT s.season_id, s.title, s.description, s.start_date,
                       s.end_date, s.creator_display_name, s.max_members,
-                      s.region,
+                      s.region, s.status,
                       COUNT(sm.user_id) AS member_count,
                       MAX(CASE WHEN sm.user_id = ? THEN 1 ELSE 0 END) AS is_member
                FROM seasons s
                LEFT JOIN season_members sm ON s.season_id = sm.season_id
-               WHERE s.status = 'active'
-                 AND s.end_date >= date('now')
+               WHERE {status_filter}
                  AND s.title LIKE ?
                GROUP BY s.season_id
                ORDER BY s.start_date ASC""",
@@ -224,8 +227,8 @@ class SeasonsRepository:
                 "season_id": row[0], "title": row[1], "description": row[2],
                 "start_date": row[3], "end_date": row[4],
                 "creator_name": row[5], "max_members": row[6],
-                "region": row[7], "member_count": row[8],
-                "is_member": bool(row[9]),
+                "region": row[7], "status": row[8],
+                "member_count": row[9], "is_member": bool(row[10]),
             })
         return results
 

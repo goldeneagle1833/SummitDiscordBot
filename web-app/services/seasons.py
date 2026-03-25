@@ -100,11 +100,16 @@ class SeasonsService:
 
     # ── US2: Join / Search Season ────────────────────────────────
 
-    def search_seasons(self, query, user_id):
-        results = self.repo.search_seasons(query, user_id)
+    def search_seasons(self, query, user_id, include_ended=False):
+        results = self.repo.search_seasons(query, user_id, include_ended=include_ended)
         today = date.today().isoformat()
         for r in results:
-            r["status"] = "upcoming" if r["start_date"] > today else "active"
+            if r["status"] == "ended":
+                pass  # keep "ended"
+            elif r["start_date"] > today:
+                r["status"] = "upcoming"
+            else:
+                r["status"] = "active"
         return results
 
     def join_season(self, user_id, display_name, season_id):

@@ -429,14 +429,17 @@ function renderSeasonResults(seasons) {
     const memberText = s.max_members
       ? s.member_count + '/' + s.max_members + ' members'
       : s.member_count + ' members';
-    const statusBadge = s.start_date > new Date().toISOString().slice(0, 10)
-      ? 'Upcoming' : 'Active';
+    var statusBadge = 'Active';
+    if (s.status === 'ended') statusBadge = 'Ended';
+    else if (s.start_date > new Date().toISOString().slice(0, 10)) statusBadge = 'Upcoming';
+
+    var badgeClass = 'season-card__badge' + (s.status === 'ended' ? ' season-card__badge--ended' : '');
 
     return `
       <a href="/season/${s.season_id}" class="season-card">
         <div class="season-card__header">
           <span class="season-card__title">${s.title}</span>
-          <span class="season-card__badge">${statusBadge}</span>
+          <span class="${badgeClass}">${statusBadge}</span>
         </div>
         <div class="season-card__meta">
           ${s.start_date} \u2014 ${s.end_date} \u00b7 ${memberText}${s.region ? ' \u00b7 \ud83d\udccd ' + s.region : ''} \u00b7 by ${s.creator_name}

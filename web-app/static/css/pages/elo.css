@@ -283,6 +283,11 @@
   color: #4db8ff;
 }
 
+.season-card__badge--ended {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.5);
+}
+
 .season-card__meta {
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.5);

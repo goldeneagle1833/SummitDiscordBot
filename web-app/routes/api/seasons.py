@@ -216,5 +216,11 @@ def get_season_members(season_id):
         "success": True,
         "season_id": season_id,
         "title": season["title"],
+        "description": season["description"],
+        "start_date": season["start_date"],
+        "end_date": season["end_date"],
+        "region": season["region"],
+        "creator_display_name": season["creator_display_name"],
+        "status": season["status"],
         "members": members,
     }), 200

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Season Leaderboard - Sorcerers Summit{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/pages/season.css') }}?v={{ app_version }}">
+{% endblock %}
+
+{% block content %}
+      <!-- Season header populated by JS -->
+      <section class="hero" id="season-hero">
+        <h1 id="season-title">Season Leaderboard</h1>
+        <p id="season-subtitle">Loading...</p>
+      </section>
+
+      <!-- Season metadata -->
+      <section id="season-info" class="season-info" style="display: none;">
+        <div class="season-info__details">
+          <span id="season-dates"></span>
+          <span id="season-region" style="display: none;"></span>
+          <span id="season-creator"></span>
+        </div>
+        <p id="season-description" style="display: none;"></p>
+      </section>
+
+      <section class="leaderboard">
+        <div class="leaderboard-content">
+          <table id="leaderboard-table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Player</th>
+                <th>W/L</th>
+                <th>ELO</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboard-tbody">
+              <!-- Leaderboard rows will be inserted here by JS -->
+            </tbody>
+          </table>
+          <p id="leaderboard-empty" class="leaderboard-empty" style="display: none;">
+            No members in this season yet.
+          </p>
+        </div>
+      </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const SEASON_ID = {{ season_id }};
+</script>
+<script src="{{ url_for('static', filename='js/pages/season.js') }}?v={{ app_version }}" defer></script>
+{% endblock %}

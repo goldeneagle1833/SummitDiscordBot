@@ -174,6 +174,12 @@ def elo_server(server_id):
     )
 
 
+@pages_bp.route("/season/<int:season_id>")
+def season_leaderboard(season_id):
+    """Season leaderboard page."""
+    return render_template("pages/season.html", season_id=season_id)
+
+
 @pages_bp.route("/match-history")
 def match_history():
     """Match history page - shows matches from last 24 hours."""

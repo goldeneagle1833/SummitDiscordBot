@@ -28,6 +28,7 @@ if _sorcery_ai_path not in sys.path:
 from utils.version import APP_VERSION
 from utils.auth import get_current_user, is_admin, is_curio_editor
 from routes import register_blueprints
+from migrations.create_match_reports_web import create_match_reports_web_table
 
 # Configure logging
 logging.basicConfig(
@@ -46,6 +47,12 @@ def create_app() -> Flask:
     app.config['TEMPLATES_AUTO_RELOAD'] = True
     app.jinja_env.auto_reload = True
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+
+    # Ensure required tables exist
+    try:
+        create_match_reports_web_table()
+    except Exception as e:
+        logger.error(f"Failed to ensure match_reports_web table: {e}")
 
     # Register all blueprints
     register_blueprints(app)

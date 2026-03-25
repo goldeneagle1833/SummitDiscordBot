@@ -860,6 +860,40 @@ class MatchConfirmationService:
             f"repeat_matchup={is_repeat_matchup}"
         )
 
+        # Update season ELO if both players share an active season
+        try:
+            from services.seasons import SeasonsService
+            season_match_data = {
+                "reporter_id": reporter_id,
+                "winner_id": winner_id,
+                "loser_id": loser_id,
+                "winner_display_name": winner_name,
+                "loser_display_name": loser_name,
+                "did_win": 1,
+                "winner_went_first": winner_went_first_val,
+                "loser_went_first": loser_went_first_val,
+                "match_time": 0,
+                "match_comment": "Web-confirmed match",
+                "curiosa_url_winner": winner_deck_url,
+                "curiosa_url_loser": loser_deck_url,
+                "json_deck_data_winner": json_deck_data_winner,
+                "json_deck_data_loser": json_deck_data_loser,
+                "source": "Web",
+                "match_type": "ranked",
+            }
+            season_results = SeasonsService().update_season_elos(
+                winner_id, loser_id, match_id,
+                is_repeat_matchup, season_match_data,
+            )
+            if season_results:
+                for sr in season_results:
+                    logger.info(
+                        f"Season ELO updated: {sr['season_title']} - "
+                        f"winner {sr['winner_change']:+d}, loser {sr['loser_change']:+d}"
+                    )
+        except Exception as e:
+            logger.error(f"Season ELO update failed (non-blocking): {e}", exc_info=True)
+
         # Customize message based on whether this is a repeat matchup
         if is_repeat_matchup:
             message = (

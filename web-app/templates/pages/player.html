@@ -242,6 +242,23 @@
               Record Game
             </button>
           </div>
+          <!-- Season Buttons & Management -->
+          <div id="season-buttons-inline" style="display: flex; gap: 0.5rem; align-items: center;">
+            <button
+              class="btn btn--primary"
+              id="create-season-btn"
+              onclick="showCreateSeasonModal()"
+              style="font-size: 0.85rem; padding: 0.4rem 0.75rem">
+              Create Season
+            </button>
+            <button
+              class="btn btn--secondary"
+              id="join-season-btn"
+              onclick="showJoinSeasonModal()"
+              style="font-size: 0.85rem; padding: 0.4rem 0.75rem">
+              Join Season
+            </button>
+          </div>
         </div>
 
         {% if is_admin %}
@@ -292,7 +309,11 @@
           id="display-name-banner"
           style="
             display: none;
-            background: linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(88, 166, 255, 0.1));
+            background: linear-gradient(
+              135deg,
+              rgba(168, 85, 247, 0.15),
+              rgba(88, 166, 255, 0.1)
+            );
             border: 1px solid rgba(168, 85, 247, 0.3);
             border-radius: 8px;
             padding: 0.75rem 1rem;
@@ -302,19 +323,34 @@
             flex-wrap: wrap;
           ">
           <span style="font-size: 1.2rem">&#x1F4DB;</span>
-          <span style="flex: 1; min-width: 200px; font-size: 0.9rem;">
+          <span style="flex: 1; min-width: 200px; font-size: 0.9rem">
             Set a custom display name for the leaderboard and your profile.
           </span>
-          <button class="btn btn--primary" id="display-name-open-btn" style="font-size: 0.85rem; padding: 0.4rem 0.75rem;">
+          <button
+            class="btn btn--primary"
+            id="display-name-open-btn"
+            style="font-size: 0.85rem; padding: 0.4rem 0.75rem">
             Set Name
           </button>
           <button
             id="display-name-dismiss"
-            style="background: none; border: none; color: var(--color-text-muted); cursor: pointer; font-size: 1.1rem; padding: 0 4px; line-height: 1;"
+            style="
+              background: none;
+              border: none;
+              color: var(--color-text-muted);
+              cursor: pointer;
+              font-size: 1.1rem;
+              padding: 0 4px;
+              line-height: 1;
+            "
             title="Dismiss">
             &times;
           </button>
         </div>
+
+        <div
+          id="season-management-section"
+          style="display: none; margin-bottom: 1.5rem"></div>
 
         <!-- Overall Stats -->
         <h3>📊 Overall Stats</h3>
@@ -665,24 +701,16 @@
         <div class="modal__content" style="max-width: 480px">
           <div class="modal__header">
             <h2 class="modal__title">Edit Deck</h2>
-            <button
-              class="modal__close"
-              onclick="hideEditDeckModal()">
+            <button class="modal__close" onclick="hideEditDeckModal()">
               &times;
             </button>
           </div>
           <div class="modal__body">
             <p
               id="edit-deck-match-info"
-              style="
-                margin-bottom: 12px;
-                opacity: 0.7;
-                font-size: 14px;
-              "></p>
+              style="margin-bottom: 12px; opacity: 0.7; font-size: 14px"></p>
             <div class="form-group">
-              <label class="form-label" for="edit-deck-url"
-                >Deck URL</label
-              >
+              <label class="form-label" for="edit-deck-url">Deck URL</label>
               <input
                 type="url"
                 class="form-input"
@@ -714,15 +742,26 @@
         <div class="modal__content" style="max-width: 480px">
           <div class="modal__header">
             <h2 class="modal__title">Choose Your Display Name</h2>
-            <button class="modal__close" id="display-name-close">&times;</button>
+            <button class="modal__close" id="display-name-close">
+              &times;
+            </button>
           </div>
           <div class="modal__body">
-            <p style="color: var(--color-text-muted); margin-bottom: 1rem; font-size: 0.9rem;">
-              Choose the name that will appear on the leaderboard and your profile.
-              This can only be set once.
+            <p
+              style="
+                color: var(--color-text-muted);
+                margin-bottom: 1rem;
+                font-size: 0.9rem;
+              ">
+              Choose the name that will appear on the leaderboard and your
+              profile. This can only be set once.
             </p>
             <div class="form-group">
-              <label class="form-label form-label--required" for="display-name-input">Display Name</label>
+              <label
+                class="form-label form-label--required"
+                for="display-name-input"
+                >Display Name</label
+              >
               <input
                 type="text"
                 class="form-input"
@@ -730,14 +769,23 @@
                 maxlength="32"
                 placeholder="Enter your display name"
                 required />
-              <span class="form-help">1-32 characters. Letters, numbers, spaces, hyphens, underscores, and periods.</span>
+              <span class="form-help"
+                >1-32 characters. Letters, numbers, spaces, hyphens,
+                underscores, and periods.</span
+              >
             </div>
           </div>
           <div class="modal__footer">
-            <button type="button" class="btn btn--secondary" id="display-name-skip">
+            <button
+              type="button"
+              class="btn btn--secondary"
+              id="display-name-skip">
               Use Default
             </button>
-            <button type="button" class="btn btn--primary" id="display-name-submit">
+            <button
+              type="button"
+              class="btn btn--primary"
+              id="display-name-submit">
               Save Name
             </button>
           </div>
@@ -769,8 +817,8 @@
                 placeholder="Enter match ID (e.g. 1234 or web_5)"
                 required />
               <span class="form-help"
-                >Bot match: row number (e.g. 1234). Web match: web_N (e.g. web_5).
-                ELO changes will be reversed for both players.</span
+                >Bot match: row number (e.g. 1234). Web match: web_N (e.g.
+                web_5). ELO changes will be reversed for both players.</span
               >
             </div>
           </div>
@@ -817,9 +865,7 @@
               >
             </div>
             <div class="form-group" style="margin-top: 0.75rem">
-              <label class="form-label" for="admin-elo-source"
-                >Apply To</label
-              >
+              <label class="form-label" for="admin-elo-source">Apply To</label>
               <select class="form-input" id="admin-elo-source">
                 <option value="both">Both (Online + Paper)</option>
                 <option value="bot">Online Only</option>
@@ -887,6 +933,264 @@
         </div>
       </div>
       {% endif %}
+
+      <!-- Create Season Modal -->
+      <div class="modal" id="create-season-modal">
+        <div class="modal__backdrop" onclick="hideCreateSeasonModal()"></div>
+        <div class="modal__content" style="max-width: 520px">
+          <div class="modal__header">
+            <h2 class="modal__title">Create Season</h2>
+            <button class="modal__close" onclick="hideCreateSeasonModal()">
+              &times;
+            </button>
+          </div>
+          <div class="modal__body">
+            <div class="form-group">
+              <label class="form-label form-label--required" for="season-title"
+                >Title</label
+              >
+              <input
+                type="text"
+                class="form-input"
+                id="season-title"
+                maxlength="100"
+                required
+                placeholder="e.g. Portland Winter League" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="season-description"
+                >Description</label
+              >
+              <textarea
+                class="form-textarea"
+                id="season-description"
+                maxlength="500"
+                placeholder="Optional description..."></textarea>
+            </div>
+            <div style="display: flex; gap: 1rem">
+              <div class="form-group" style="flex: 1">
+                <label
+                  class="form-label form-label--required"
+                  for="season-start-date"
+                  >Start Date</label
+                >
+                <input
+                  type="date"
+                  class="form-input"
+                  id="season-start-date"
+                  required />
+              </div>
+              <div class="form-group" style="flex: 1">
+                <label
+                  class="form-label form-label--required"
+                  for="season-end-date"
+                  >End Date</label
+                >
+                <input
+                  type="date"
+                  class="form-input"
+                  id="season-end-date"
+                  required />
+              </div>
+            </div>
+            <div style="display: flex; gap: 1rem">
+              <div class="form-group" style="flex: 1">
+                <label class="form-label" for="season-k-value">K-Value</label>
+                <input
+                  type="number"
+                  class="form-input"
+                  id="season-k-value"
+                  min="1"
+                  max="64"
+                  value="32" />
+                <span class="form-help">ELO sensitivity (1-64)</span>
+              </div>
+              <div class="form-group" style="flex: 1">
+                <label class="form-label" for="season-base-elo">Base ELO</label>
+                <input
+                  type="number"
+                  class="form-input"
+                  id="season-base-elo"
+                  min="500"
+                  max="3000"
+                  value="1500" />
+                <span class="form-help">Starting ELO for members</span>
+              </div>
+            </div>
+            <div style="display: flex; gap: 1rem">
+              <div class="form-group" style="flex: 1">
+                <label class="form-label" for="season-max-members"
+                  >Max Members</label
+                >
+                <input
+                  type="number"
+                  class="form-input"
+                  id="season-max-members"
+                  min="2"
+                  placeholder="Unlimited" />
+              </div>
+              <div class="form-group" style="flex: 1">
+                <label class="form-label" for="season-region">Region</label>
+                <input
+                  type="text"
+                  class="form-input"
+                  id="season-region"
+                  maxlength="100"
+                  placeholder="e.g. Portland, OR" />
+              </div>
+            </div>
+          </div>
+          <div class="modal__footer">
+            <button
+              type="button"
+              class="btn btn--secondary"
+              onclick="hideCreateSeasonModal()">
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn--primary"
+              id="create-season-submit"
+              onclick="submitCreateSeason()">
+              <span class="btn-text">Create</span>
+              <span class="btn-spinner" style="display: none">
+                <svg
+                  class="spinner-icon"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2">
+                  <circle cx="12" cy="12" r="10" stroke-opacity="0.25" />
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round" />
+                </svg>
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Join Season Modal -->
+      <div class="modal" id="join-season-modal">
+        <div class="modal__backdrop" onclick="hideJoinSeasonModal()"></div>
+        <div class="modal__content" style="max-width: 520px">
+          <div class="modal__header">
+            <h2 class="modal__title">Join Season</h2>
+            <button class="modal__close" onclick="hideJoinSeasonModal()">
+              &times;
+            </button>
+          </div>
+          <div class="modal__body">
+            <div class="form-group">
+              <input
+                type="text"
+                class="form-input"
+                id="season-search-input"
+                placeholder="Search seasons by name..."
+                oninput="debouncedSeasonSearch()" />
+            </div>
+            <div
+              id="join-season-results"
+              style="max-height: 400px; overflow-y: auto"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Kick Member Modal -->
+      <div class="modal" id="kick-member-modal">
+        <div class="modal__backdrop" onclick="hideKickMemberModal()"></div>
+        <div class="modal__content" style="max-width: 520px">
+          <div class="modal__header">
+            <h2 class="modal__title">Kick Member</h2>
+            <button class="modal__close" onclick="hideKickMemberModal()">
+              &times;
+            </button>
+          </div>
+          <div class="modal__body">
+            <div id="kick-member-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modify Season Modal -->
+      <div class="modal" id="modify-season-modal">
+        <div class="modal__backdrop" onclick="hideModifySeasonModal()"></div>
+        <div class="modal__content" style="max-width: 520px">
+          <div class="modal__header">
+            <h2 class="modal__title">Modify Season</h2>
+            <button class="modal__close" onclick="hideModifySeasonModal()">
+              &times;
+            </button>
+          </div>
+          <div class="modal__body">
+            <div style="display: flex; gap: 1rem">
+              <div class="form-group" style="flex: 1">
+                <label class="form-label" for="modify-start-date"
+                  >Start Date</label
+                >
+                <input type="date" class="form-input" id="modify-start-date" />
+              </div>
+              <div class="form-group" style="flex: 1">
+                <label class="form-label" for="modify-end-date">End Date</label>
+                <input type="date" class="form-input" id="modify-end-date" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="modify-description"
+                >Description</label
+              >
+              <textarea
+                class="form-textarea"
+                id="modify-description"
+                maxlength="500"></textarea>
+            </div>
+            <div style="display: flex; gap: 1rem">
+              <div class="form-group" style="flex: 1">
+                <label class="form-label" for="modify-k-value">K-Value</label>
+                <input
+                  type="number"
+                  class="form-input"
+                  id="modify-k-value"
+                  min="1"
+                  max="64" />
+              </div>
+              <div class="form-group" style="flex: 1">
+                <label class="form-label" for="modify-max-members"
+                  >Max Members</label
+                >
+                <input
+                  type="number"
+                  class="form-input"
+                  id="modify-max-members"
+                  min="2" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="modify-region">Region</label>
+              <input
+                type="text"
+                class="form-input"
+                id="modify-region"
+                maxlength="100" />
+            </div>
+          </div>
+          <div class="modal__footer">
+            <button
+              type="button"
+              class="btn btn--secondary"
+              onclick="hideModifySeasonModal()">
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn--primary"
+              onclick="submitModifySeason()">
+              Save Changes
+            </button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script>
@@ -1285,6 +1589,9 @@
           const isLocalServer =
             window.location.hostname === "localhost" ||
             window.location.hostname === "127.0.0.1";
+
+          // Track ownership for season controls
+          isProfileOwner = data.is_owner || isLocalServer;
 
           // Update player info
           document.getElementById("player-name").textContent = data.name;
@@ -1709,6 +2016,9 @@
               document.getElementById("display-name-banner").style.display = "flex";
             }
           }
+
+          // Load season info for all players
+          fetchPlayerSeason();
         } catch (error) {
           document.getElementById("player-name").textContent =
             "Error loading player";
@@ -2281,6 +2591,431 @@
         if (e.key === "Enter") {
           e.preventDefault();
           document.getElementById("display-name-submit").click();
+        }
+      });
+
+      // ── Season Management ─────────────────────────────────────
+
+      let currentSeason = null;
+      let seasonSearchTimer = null;
+      let isProfileOwner = false;
+
+      function fetchPlayerSeason() {
+        fetch(`/api/player/${playerId}/seasons`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              currentSeason = data.current_season;
+              renderSeasonManagement(data.current_season);
+            }
+          })
+          .catch(() => {});
+      }
+
+      function renderSeasonManagement(season) {
+        const mgmtSection = document.getElementById("season-management-section");
+        const createBtn = document.getElementById("create-season-btn");
+        const joinBtn = document.getElementById("join-season-btn");
+
+        if (!season) {
+          // Not in a season - show Create/Join buttons for profile owner
+          if (isProfileOwner) {
+            if (createBtn) createBtn.style.display = "";
+            if (joinBtn) joinBtn.style.display = "";
+          } else {
+            if (createBtn) createBtn.style.display = "none";
+            if (joinBtn) joinBtn.style.display = "none";
+          }
+          if (mgmtSection) mgmtSection.style.display = "none";
+          return;
+        }
+
+        // In a season - hide Create/Join, show season info
+        if (createBtn) createBtn.style.display = "none";
+        if (joinBtn) joinBtn.style.display = "none";
+
+        if (mgmtSection) {
+          const isCreator = season.is_creator;
+          const statusBadge = season.status === "active"
+            ? (season.start_date > new Date().toISOString().slice(0, 10) ? "Upcoming" : "Active")
+            : season.status;
+
+          let controlsHtml = "";
+          if (isProfileOwner) {
+            if (isCreator) {
+              controlsHtml = `
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;">
+                  <button class="btn btn--secondary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="showModifySeasonModal()">Modify Season</button>
+                  <button class="btn btn--secondary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="endSeason()">End Season</button>
+                  <button class="btn btn--danger" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="deleteSeason()">Delete Season</button>
+                  <button class="btn btn--secondary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="showKickMemberModal()">Kick Member</button>
+                </div>
+              `;
+            } else {
+              controlsHtml = `
+                <div style="margin-top: 0.75rem;">
+                  <button class="btn btn--danger" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="leaveSeason()">Leave Season</button>
+                </div>
+              `;
+            }
+          }
+
+          mgmtSection.innerHTML = `
+            <div style="background: rgba(88, 166, 255, 0.08); border: 1px solid rgba(88, 166, 255, 0.25); border-radius: 8px; padding: 1rem 1.25rem;">
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                <span style="font-size: 1.1rem;">🏆</span>
+                <h4 style="margin: 0; font-size: 1.05rem; color: var(--color-text-primary);">${season.title}</h4>
+                <span style="font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 4px; background: rgba(88, 166, 255, 0.15); color: var(--color-accent-blue);">${statusBadge}</span>
+              </div>
+              ${season.description ? `<p style="margin: 0.25rem 0 0.5rem 0; font-size: 0.85rem; color: var(--color-text-muted);">${season.description}</p>` : ""}
+              <div style="display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.9rem; margin-top: 0.5rem;">
+                <span>📅 ${season.start_date} — ${season.end_date}</span>
+                ${season.region ? `<span>📍 ${season.region}</span>` : ""}
+              </div>
+              <div style="display: flex; flex-wrap: wrap; gap: 1.25rem; font-size: 0.9rem; margin-top: 0.5rem;">
+                <span><strong>ELO:</strong> ${season.season_elo}</span>
+                <span><strong>Record:</strong> ${season.wins}W - ${season.losses}L</span>
+                <span><strong>Rank:</strong> #${season.rank} of ${season.member_count}</span>
+              </div>
+              ${controlsHtml}
+            </div>
+          `;
+          mgmtSection.style.display = "block";
+        }
+      }
+
+      // ── Create Season Modal ─────────────────────────────────
+
+      function showCreateSeasonModal() {
+        // Set min date to today
+        const today = new Date().toISOString().slice(0, 10);
+        document.getElementById("season-start-date").min = today;
+        document.getElementById("season-end-date").min = today;
+        document.getElementById("create-season-modal").classList.add("modal--active");
+      }
+
+      function hideCreateSeasonModal() {
+        document.getElementById("create-season-modal").classList.remove("modal--active");
+        // Reset form
+        document.getElementById("season-title").value = "";
+        document.getElementById("season-description").value = "";
+        document.getElementById("season-start-date").value = "";
+        document.getElementById("season-end-date").value = "";
+        document.getElementById("season-k-value").value = "32";
+        document.getElementById("season-base-elo").value = "1500";
+        document.getElementById("season-max-members").value = "";
+        document.getElementById("season-region").value = "";
+      }
+
+      async function submitCreateSeason() {
+        const btn = document.getElementById("create-season-submit");
+        const btnText = btn.querySelector(".btn-text");
+        const btnSpinner = btn.querySelector(".btn-spinner");
+
+        const title = document.getElementById("season-title").value.trim();
+        const description = document.getElementById("season-description").value.trim() || null;
+        const start_date = document.getElementById("season-start-date").value;
+        const end_date = document.getElementById("season-end-date").value;
+        const k_value = parseInt(document.getElementById("season-k-value").value) || 32;
+        const base_elo = parseInt(document.getElementById("season-base-elo").value) || 1500;
+        const maxMembers = document.getElementById("season-max-members").value;
+        const max_members = maxMembers ? parseInt(maxMembers) : null;
+        const region = document.getElementById("season-region").value.trim() || null;
+
+        if (!title || !start_date || !end_date) {
+          alert("Title, start date, and end date are required.");
+          return;
+        }
+
+        btn.disabled = true;
+        if (btnText) btnText.style.display = "none";
+        if (btnSpinner) btnSpinner.style.display = "inline-flex";
+
+        try {
+          const res = await fetch("/api/seasons", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title, description, start_date, end_date, k_value, base_elo, max_members, region }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            hideCreateSeasonModal();
+            fetchPlayerSeason();
+          } else {
+            alert("Error: " + (data.error || "Failed to create season"));
+          }
+        } catch (err) {
+          alert("Network error. Please try again.");
+        } finally {
+          btn.disabled = false;
+          if (btnText) btnText.style.display = "";
+          if (btnSpinner) btnSpinner.style.display = "none";
+        }
+      }
+
+      // ── Join Season Modal ───────────────────────────────────
+
+      function showJoinSeasonModal() {
+        document.getElementById("join-season-modal").classList.add("modal--active");
+        document.getElementById("season-search-input").value = "";
+        searchSeasons("");
+      }
+
+      function hideJoinSeasonModal() {
+        document.getElementById("join-season-modal").classList.remove("modal--active");
+        document.getElementById("join-season-results").innerHTML = "";
+      }
+
+      function debouncedSeasonSearch() {
+        clearTimeout(seasonSearchTimer);
+        seasonSearchTimer = setTimeout(() => {
+          const q = document.getElementById("season-search-input").value.trim();
+          searchSeasons(q);
+        }, 300);
+      }
+
+      async function searchSeasons(q) {
+        const container = document.getElementById("join-season-results");
+        try {
+          const res = await fetch(`/api/seasons/search?q=${encodeURIComponent(q)}`);
+          const data = await res.json();
+          if (!data.success || !data.seasons || data.seasons.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: var(--color-text-muted); padding: 2rem 0;">No seasons found</p>';
+            return;
+          }
+          container.innerHTML = data.seasons.map(s => {
+            const memberText = s.max_members ? `${s.member_count}/${s.max_members} members` : `${s.member_count} members`;
+            const isFull = s.max_members && s.member_count >= s.max_members;
+            const statusBadge = s.start_date > new Date().toISOString().slice(0, 10) ? "Upcoming" : "Active";
+            return `
+              <div style="padding: 0.75rem; border: 1px solid var(--color-border); border-radius: 6px; margin-bottom: 0.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                  <div style="flex: 1;">
+                    <strong>${s.title}</strong>
+                    <span style="font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 4px; background: rgba(88, 166, 255, 0.15); color: var(--color-accent-blue); margin-left: 0.5rem;">${statusBadge}</span>
+                    ${s.description ? `<p style="margin: 0.25rem 0 0; font-size: 0.8rem; color: var(--color-text-muted);">${s.description.substring(0, 100)}${s.description.length > 100 ? "..." : ""}</p>` : ""}
+                    <div style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 0.25rem;">
+                      ${s.start_date} — ${s.end_date} · ${memberText}
+                      ${s.region ? ` · 📍 ${s.region}` : ""}
+                      · by ${s.creator_name}
+                    </div>
+                  </div>
+                  <div style="margin-left: 0.75rem;">
+                    ${s.is_member
+                      ? '<span style="font-size: 0.8rem; color: var(--color-text-muted);">Joined</span>'
+                      : isFull
+                        ? '<span style="font-size: 0.8rem; color: var(--color-text-muted);">Full</span>'
+                        : `<button class="btn btn--primary" style="font-size: 0.8rem; padding: 0.3rem 0.75rem;" onclick="joinSeason(${s.season_id})">Join</button>`
+                    }
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join("");
+        } catch (err) {
+          container.innerHTML = '<p style="text-align: center; color: var(--color-text-muted); padding: 2rem 0;">Error loading seasons</p>';
+        }
+      }
+
+      async function joinSeason(seasonId) {
+        try {
+          const res = await fetch(`/api/seasons/${seasonId}/join`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            hideJoinSeasonModal();
+            fetchPlayerSeason();
+          } else {
+            alert("Error: " + (data.error || "Failed to join season"));
+          }
+        } catch (err) {
+          alert("Network error. Please try again.");
+        }
+      }
+
+      // ── Leave / End / Delete Season ─────────────────────────
+
+      async function leaveSeason() {
+        if (!currentSeason) return;
+        if (!window.confirm("Are you sure you want to leave this season?")) return;
+        try {
+          const res = await fetch(`/api/seasons/${currentSeason.season_id}/leave`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            fetchPlayerSeason();
+          } else {
+            alert("Error: " + (data.error || "Failed to leave season"));
+          }
+        } catch (err) {
+          alert("Network error. Please try again.");
+        }
+      }
+
+      async function endSeason() {
+        if (!currentSeason) return;
+        if (!window.confirm("Are you sure you want to end this season? This cannot be undone.")) return;
+        try {
+          const res = await fetch(`/api/seasons/${currentSeason.season_id}/end`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            fetchPlayerSeason();
+          } else {
+            alert("Error: " + (data.error || "Failed to end season"));
+          }
+        } catch (err) {
+          alert("Network error. Please try again.");
+        }
+      }
+
+      async function deleteSeason() {
+        if (!currentSeason) return;
+        if (!window.confirm("This will permanently delete the season and remove all members. Continue?")) return;
+        try {
+          const res = await fetch(`/api/seasons/${currentSeason.season_id}`, {
+            method: "DELETE",
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            fetchPlayerSeason();
+          } else {
+            alert("Error: " + (data.error || "Failed to delete season"));
+          }
+        } catch (err) {
+          alert("Network error. Please try again.");
+        }
+      }
+
+      // ── Kick Member Modal ───────────────────────────────────
+
+      function showKickMemberModal() {
+        if (!currentSeason) return;
+        document.getElementById("kick-member-modal").classList.add("modal--active");
+        fetchKickMemberList();
+      }
+
+      function hideKickMemberModal() {
+        document.getElementById("kick-member-modal").classList.remove("modal--active");
+        document.getElementById("kick-member-list").innerHTML = "";
+      }
+
+      async function fetchKickMemberList() {
+        const container = document.getElementById("kick-member-list");
+        try {
+          const res = await fetch(`/api/seasons/${currentSeason.season_id}/members`);
+          const data = await res.json();
+          if (!data.success || !data.members || data.members.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: var(--color-text-muted); padding: 1rem 0;">No members found</p>';
+            return;
+          }
+          container.innerHTML = data.members.map(m => `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--color-border);">
+              <div>
+                <strong>${m.display_name}</strong>
+                <span style="font-size: 0.8rem; color: var(--color-text-muted); margin-left: 0.5rem;">
+                  ELO: ${m.season_elo} · ${m.wins}W-${m.losses}L · #${m.rank}
+                </span>
+              </div>
+              <div>
+                ${m.is_creator
+                  ? '<span style="font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 4px; background: rgba(168, 85, 247, 0.15); color: #a855f7;">Creator</span>'
+                  : `<button class="btn btn--danger" style="font-size: 0.8rem; padding: 0.2rem 0.6rem;" onclick="kickMember('${m.user_id}', '${m.display_name}')">Kick</button>`
+                }
+              </div>
+            </div>
+          `).join("");
+        } catch (err) {
+          container.innerHTML = '<p style="text-align: center; color: var(--color-text-muted);">Error loading members</p>';
+        }
+      }
+
+      async function kickMember(userId, displayName) {
+        if (!currentSeason) return;
+        if (!window.confirm(`Remove ${displayName} from the season?`)) return;
+        try {
+          const res = await fetch(`/api/seasons/${currentSeason.season_id}/kick`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: userId }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            fetchKickMemberList();
+            fetchPlayerSeason();
+          } else {
+            alert("Error: " + (data.error || "Failed to kick member"));
+          }
+        } catch (err) {
+          alert("Network error. Please try again.");
+        }
+      }
+
+      // ── Modify Season Modal ─────────────────────────────────
+
+      function showModifySeasonModal() {
+        if (!currentSeason) return;
+        document.getElementById("modify-start-date").value = currentSeason.start_date || "";
+        document.getElementById("modify-end-date").value = currentSeason.end_date || "";
+        document.getElementById("modify-description").value = currentSeason.description || "";
+        document.getElementById("modify-k-value").value = currentSeason.k_value || 32;
+        document.getElementById("modify-max-members").value = currentSeason.max_members || "";
+        document.getElementById("modify-region").value = currentSeason.region || "";
+        document.getElementById("modify-season-modal").classList.add("modal--active");
+      }
+
+      function hideModifySeasonModal() {
+        document.getElementById("modify-season-modal").classList.remove("modal--active");
+      }
+
+      async function submitModifySeason() {
+        if (!currentSeason) return;
+        const fields = {};
+        const startDate = document.getElementById("modify-start-date").value;
+        const endDate = document.getElementById("modify-end-date").value;
+        const description = document.getElementById("modify-description").value.trim();
+        const kValue = document.getElementById("modify-k-value").value;
+        const maxMembers = document.getElementById("modify-max-members").value;
+        const region = document.getElementById("modify-region").value.trim();
+
+        if (startDate) fields.start_date = startDate;
+        if (endDate) fields.end_date = endDate;
+        fields.description = description || null;
+        if (kValue) fields.k_value = parseInt(kValue);
+        if (maxMembers) fields.max_members = parseInt(maxMembers);
+        fields.region = region || null;
+
+        try {
+          const res = await fetch(`/api/seasons/${currentSeason.season_id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(fields),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            hideModifySeasonModal();
+            fetchPlayerSeason();
+          } else {
+            alert("Error: " + (data.error || "Failed to update season"));
+          }
+        } catch (err) {
+          alert("Network error. Please try again.");
+        }
+      }
+
+      // Escape key handlers for season modals
+      document.addEventListener("keydown", function(e) {
+        if (e.key === "Escape") {
+          if (document.getElementById("create-season-modal").classList.contains("modal--active")) hideCreateSeasonModal();
+          if (document.getElementById("join-season-modal").classList.contains("modal--active")) hideJoinSeasonModal();
+          if (document.getElementById("kick-member-modal").classList.contains("modal--active")) hideKickMemberModal();
+          if (document.getElementById("modify-season-modal").classList.contains("modal--active")) hideModifySeasonModal();
         }
       });
 

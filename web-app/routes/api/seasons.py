@@ -63,7 +63,18 @@ def create_season():
 def search_seasons():
     q = request.args.get("q", "").strip()
     user_id = str(session.get("user_id", ""))
+    limit = request.args.get("limit", type=int)
     seasons = service.search_seasons(q, user_id)
+    if limit and limit > 0:
+        seasons = seasons[-limit:]
+    return jsonify({"success": True, "seasons": seasons}), 200
+
+
+@seasons_bp.route("/seasons/browse", methods=["GET"])
+def browse_seasons():
+    """Public endpoint for browsing/searching seasons (no auth required)."""
+    q = request.args.get("q", "").strip()
+    seasons = service.search_seasons(q, user_id="")
     return jsonify({"success": True, "seasons": seasons}), 200
 
 

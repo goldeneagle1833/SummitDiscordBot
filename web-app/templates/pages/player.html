@@ -2780,7 +2780,7 @@
       async function searchSeasons(q) {
         const container = document.getElementById("join-season-results");
         try {
-          const res = await fetch(`/api/seasons/search?q=${encodeURIComponent(q)}`);
+          const res = await fetch(`/api/seasons/search?q=${encodeURIComponent(q)}&limit=3`);
           const data = await res.json();
           if (!data.success || !data.seasons || data.seasons.length === 0) {
             container.innerHTML = '<p style="text-align: center; color: var(--color-text-muted); padding: 2rem 0;">No seasons found</p>';

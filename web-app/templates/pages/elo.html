@@ -185,6 +185,23 @@
     </div>
   </section>
 
+  <!-- Season Leaderboards Search Section -->
+  <section class="distribution-section wide">
+    <h2 class="section-title compact">Season Leaderboards</h2>
+    <p class="section-subtitle">Search for user-created seasons</p>
+
+    <div class="season-search-container">
+      <input
+        type="text"
+        id="season-search-input"
+        class="season-search-input"
+        placeholder="Search seasons by name..."
+        autocomplete="off" />
+    </div>
+
+    <div id="season-search-results"></div>
+  </section>
+
     </main>    {% include 'components/footer.html' %}
 <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"></script>
     <script src="{{ url_for('static', filename='js/pages/elo.js') }}?v={{ app_version }}" defer></script>

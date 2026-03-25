@@ -220,3 +220,70 @@
 .col-align-center {
   text-align: center;
 }
+
+/* === Season Search === */
+.season-search-container {
+  margin-bottom: 1rem;
+}
+
+.season-search-input {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.season-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.season-search-input:focus {
+  outline: none;
+  border-color: #4db8ff;
+}
+
+/* Season result cards */
+.season-card {
+  display: block;
+  padding: 0.85rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.season-card:hover {
+  border-color: #4db8ff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.season-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.season-card__title {
+  font-weight: 600;
+  color: #fff;
+}
+
+.season-card__badge {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(88, 166, 255, 0.15);
+  color: #4db8ff;
+}
+
+.season-card__meta {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+}

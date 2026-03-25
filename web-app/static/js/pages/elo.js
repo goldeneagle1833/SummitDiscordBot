@@ -10,12 +10,14 @@ let lifetimeData = [];
 let eventData = null;
 let archivedEventData = null;
 let allEvents = [];
+let seasonSearchTimer = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   initializeEventListeners();
   fetchDistribution();
   fetchLeaderboards();
   fetchArchivedEvents();
+  fetchRecentSeasons();
 
   // Auto-refresh every 30 seconds
   setInterval(fetchDistribution, 30000);
@@ -66,6 +68,19 @@ function initializeEventListeners() {
   // Listen for archived count select changes
   document.getElementById('archived-count-select').addEventListener('change', function () {
     if (archivedEventData) renderArchivedLeaderboard(archivedEventData);
+  });
+
+  // Season search with debounce
+  document.getElementById('season-search-input').addEventListener('input', function () {
+    clearTimeout(seasonSearchTimer);
+    const q = this.value.trim();
+    seasonSearchTimer = setTimeout(() => {
+      if (q) {
+        searchSeasons(q);
+      } else {
+        fetchRecentSeasons();
+      }
+    }, 300);
   });
 }
 
@@ -363,4 +378,70 @@ function renderArchivedLeaderboard(data) {
     `;
     tbody.appendChild(row);
   });
+}
+
+// ── Season Search ─────────────────────────────────────────────
+
+/**
+ * Fetch the 3 most recently created seasons on page load
+ */
+async function fetchRecentSeasons() {
+  try {
+    const res = await fetch('/api/seasons/browse');
+    if (!res.ok) return;
+    const data = await res.json();
+    const seasons = data.seasons || [];
+    // Show last 3 (most recently created)
+    renderSeasonResults(seasons.slice(-3));
+  } catch (error) {
+    console.error('Error fetching recent seasons:', error);
+  }
+}
+
+/**
+ * Search seasons by query
+ * @param {string} q - Search query
+ */
+async function searchSeasons(q) {
+  try {
+    const res = await fetch(`/api/seasons/browse?q=${encodeURIComponent(q)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    renderSeasonResults(data.seasons || []);
+  } catch (error) {
+    console.error('Error searching seasons:', error);
+  }
+}
+
+/**
+ * Render season search results as clickable cards
+ * @param {Object[]} seasons - Array of season objects
+ */
+function renderSeasonResults(seasons) {
+  const container = document.getElementById('season-search-results');
+
+  if (seasons.length === 0) {
+    container.innerHTML = '<p class="empty-state" style="padding: 1.5rem 0;">No seasons found</p>';
+    return;
+  }
+
+  container.innerHTML = seasons.map(function (s) {
+    const memberText = s.max_members
+      ? s.member_count + '/' + s.max_members + ' members'
+      : s.member_count + ' members';
+    const statusBadge = s.start_date > new Date().toISOString().slice(0, 10)
+      ? 'Upcoming' : 'Active';
+
+    return `
+      <a href="/season/${s.season_id}" class="season-card">
+        <div class="season-card__header">
+          <span class="season-card__title">${s.title}</span>
+          <span class="season-card__badge">${statusBadge}</span>
+        </div>
+        <div class="season-card__meta">
+          ${s.start_date} \u2014 ${s.end_date} \u00b7 ${memberText}${s.region ? ' \u00b7 \ud83d\udccd ' + s.region : ''} \u00b7 by ${s.creator_name}
+        </div>
+      </a>
+    `;
+  }).join('');
 }

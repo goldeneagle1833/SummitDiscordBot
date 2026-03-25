@@ -23,17 +23,17 @@ async function fetchSeasonLeaderboard() {
     const infoSection = document.getElementById("season-info");
     infoSection.style.display = "";
 
-    const dates = document.getElementById("season-dates");
-    dates.textContent = `\u{1F4C5} ${data.start_date} \u2014 ${data.end_date}`;
+    document.getElementById("season-dates").textContent =
+      "\u{1F4C5} " + data.start_date + " \u2014 " + data.end_date;
 
     if (data.region) {
       const region = document.getElementById("season-region");
-      region.textContent = `\u{1F4CD} ${data.region}`;
+      region.textContent = "\u{1F4CD} " + data.region;
       region.style.display = "";
     }
 
-    const creator = document.getElementById("season-creator");
-    creator.textContent = `Created by ${data.creator_display_name}`;
+    document.getElementById("season-creator").textContent =
+      "Created by " + data.creator_display_name;
 
     if (data.description) {
       const desc = document.getElementById("season-description");
@@ -52,25 +52,28 @@ async function fetchSeasonLeaderboard() {
       return;
     }
 
-    members.forEach((member) => {
-      const rank = member.rank;
-      let rankDisplay = rank;
+    members.forEach(function (member) {
+      var rank = member.rank;
+      var rankDisplay = '<span class="rank-display">' + rank + "</span>";
 
       if (rank <= 3) {
-        rankDisplay = `<span class="rank-badge rank-${rank}">${rank}</span>`;
+        rankDisplay =
+          '<span class="rank-badge rank-' + rank + '">' + rank + "</span>";
       }
 
-      const creatorBadge = member.is_creator
+      var creatorBadge = member.is_creator
         ? ' <span class="creator-badge">Owner</span>'
         : "";
 
-      const row = document.createElement("tr");
-      row.innerHTML = `
-        <td>${rankDisplay}</td>
-        <td><a href="/player/${member.user_id}" class="player-link">${member.display_name}</a>${creatorBadge}</td>
-        <td><span class="match-win">${member.wins}</span> / <span class="match-loss">${member.losses}</span></td>
-        <td>${member.season_elo}</td>
-      `;
+      var row = document.createElement("tr");
+      row.innerHTML =
+        "<td>" + rankDisplay + "</td>" +
+        '<td><a href="/player/' + member.user_id + '" class="player-link">' +
+          member.display_name + "</a>" + creatorBadge + "</td>" +
+        '<td class="col-align-right"><span class="win-loss">' +
+          member.wins + "W / " + member.losses + "L</span></td>" +
+        '<td class="col-align-right"><span class="lifetime-elo">' +
+          member.season_elo + "</span></td>";
       tbody.appendChild(row);
     });
   } catch (error) {
@@ -80,6 +83,6 @@ async function fetchSeasonLeaderboard() {
   }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", function () {
   fetchSeasonLeaderboard();
 });

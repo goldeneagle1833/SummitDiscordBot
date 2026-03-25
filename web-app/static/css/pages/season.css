@@ -1,30 +1,17 @@
 /*
  * Page: Season Leaderboard
  * Template: templates/pages/season.html
- * Description: Styles for season leaderboard page
+ * Description: Season-specific styles (leaderboard table styling comes from elo.css)
  */
 
-/* === Season Info === */
-.season-info {
-  background: var(--color-bg-elevated);
-  padding: var(--spacing-md) var(--spacing-lg);
-  border-radius: var(--radius-soft);
-  margin-bottom: var(--spacing-lg);
-  border: 1px solid var(--color-border);
-}
-
-.season-info__details {
+/* === Season Metadata === */
+.season-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-md);
+  gap: 1.25rem;
   font-size: 0.9rem;
-  color: var(--color-text-muted);
-}
-
-.season-info p {
-  margin: var(--spacing-sm) 0 0;
-  font-size: 0.9rem;
-  color: var(--color-text-muted);
+  color: rgba(255, 255, 255, 0.7);
+  justify-content: center;
 }
 
 /* === Creator Badge === */
@@ -33,14 +20,7 @@
   padding: 0.1rem 0.4rem;
   border-radius: 4px;
   background: rgba(88, 166, 255, 0.15);
-  color: var(--color-accent-blue, #58a6ff);
+  color: #58a6ff;
   vertical-align: middle;
   margin-left: 0.35rem;
-}
-
-/* === Empty State === */
-.leaderboard-empty {
-  text-align: center;
-  color: var(--color-text-muted);
-  padding: var(--spacing-xl) 0;
 }

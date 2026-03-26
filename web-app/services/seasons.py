@@ -61,8 +61,8 @@ class SeasonsService:
         if base_elo is None:
             base_elo = 1500
         base_elo = int(base_elo)
-        if not 500 <= base_elo <= 3000:
-            raise ValueError("Base ELO must be between 500 and 3000")
+        if not 0 <= base_elo <= 3000:
+            raise ValueError("Base ELO must be between 0 and 3000")
 
         # Validate max_members
         if max_members is not None:

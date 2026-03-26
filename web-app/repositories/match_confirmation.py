@@ -107,6 +107,21 @@ class MatchConfirmationRepository:
             logger = logging.getLogger(__name__)
             logger.info("Added match_type column to match_confirmations table")
 
+        # Re-fetch columns after potential match_type migration
+        cursor.execute("PRAGMA table_info(match_confirmations)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if "season_id" not in columns:
+            cursor.execute("""
+                ALTER TABLE match_confirmations
+                ADD COLUMN season_id INTEGER DEFAULT NULL
+            """)
+            conn.commit()
+
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("Added season_id column to match_confirmations table")
+
         conn.close()
 
     def create_confirmation(
@@ -121,6 +136,7 @@ class MatchConfirmationRepository:
         winner_deck_url: Optional[str] = None,
         loser_deck_url: Optional[str] = None,
         match_type: str = "ranked",
+        season_id: Optional[int] = None,
     ) -> int:
         """
         Create a new match confirmation request.
@@ -136,6 +152,7 @@ class MatchConfirmationRepository:
             winner_deck_url: Optional Curiosa.io deck URL for winner
             loser_deck_url: Optional Curiosa.io deck URL for loser
             match_type: Match type ('ranked' or 'casual'), defaults to 'ranked'
+            season_id: Optional season ID to attribute this match to
 
         Returns:
             int: The confirmation_id of created record
@@ -155,8 +172,8 @@ class MatchConfirmationRepository:
                 winner_discord_id, loser_discord_id,
                 winner_deck_url, loser_deck_url,
                 final_life_winner, final_life_loser,
-                went_first, match_type, status, created_at, expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                went_first, match_type, season_id, status, created_at, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
             """,
             (
                 str(submitter_id),
@@ -169,6 +186,7 @@ class MatchConfirmationRepository:
                 final_life_loser,
                 went_first,
                 match_type,
+                season_id,
                 created_at,
                 expires_at,
             ),

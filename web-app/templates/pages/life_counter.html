@@ -385,6 +385,15 @@
           <input type="hidden" id="went-first" name="went_first" />
         </div>
 
+        <!-- Season Picker (optional) -->
+        <div class="form-group" id="lc-season-picker-group" style="display: none;">
+          <label for="lc-report-season-id">Season (optional)</label>
+          <select id="lc-report-season-id" name="season_id" class="form-control">
+            <option value="">No season</option>
+          </select>
+          <small class="form-hint">Choose a season to count this match toward</small>
+        </div>
+
         <!-- Final Life Totals (auto-filled, hidden) -->
         <input type="hidden" id="final-life-submitter" name="final_life_submitter" />
         <input type="hidden" id="final-life-opponent" name="final_life_opponent" />
@@ -526,6 +535,7 @@
   // Pass server-side auth info to JavaScript
   window.AUTH_PROVIDER = {{ auth_provider|tojson }};
   window.LOGGED_IN = {{ logged_in|tojson }};
+  window.CURRENT_USER_ID = {{ current_user_id|tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/pages/life_counter.js') }}?v={{ app_version }}"></script>
 </body>

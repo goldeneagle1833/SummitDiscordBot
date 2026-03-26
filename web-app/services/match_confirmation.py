@@ -419,7 +419,8 @@ class MatchConfirmationService:
         opponent_deck_url: Optional[str] = None,
         final_life_submitter: int = 0,
         final_life_opponent: int = 0,
-        match_type: str = "ranked"
+        match_type: str = "ranked",
+        season_id: Optional[int] = None
     ) -> dict:
         """
         Create a new match report with validation and duplicate detection.
@@ -481,7 +482,27 @@ class MatchConfirmationService:
                 "Please wait for confirmation or expiration."
             )
 
-        # Step 3: Calculate winner and loser IDs (keep google_ prefix intact)
+        # Step 3: Validate season_id if provided
+        if season_id is not None:
+            try:
+                season_id = int(season_id)
+            except (TypeError, ValueError):
+                raise ValueError("Invalid season_id format")
+            from repositories.seasons import SeasonsRepository
+            seasons_repo = SeasonsRepository()
+            season = seasons_repo.get_season_by_id(season_id)
+            if not season or season["status"] != "active":
+                raise ValueError("Season not found or not active")
+            from datetime import date
+            if season["end_date"] < date.today().isoformat():
+                raise ValueError("Season has ended")
+            # Verify submitter is a member
+            members = seasons_repo.get_season_members(season_id)
+            is_member = any(m["user_id"] == submitter_id_str for m in members)
+            if not is_member:
+                raise ValueError("You are not a member of this season")
+
+        # Step 4: Calculate winner and loser IDs (keep google_ prefix intact)
         winner_loser = self.calculate_winner_loser(
             submitter_id=submitter_id_str,
             opponent_id=opponent_id_str,
@@ -504,7 +525,7 @@ class MatchConfirmationService:
             final_life_winner = final_life_opponent
             final_life_loser = final_life_submitter
 
-        # Step 5: Create confirmation in database (IDs kept as-is with google_ prefix)
+        # Step 6: Create confirmation in database (IDs kept as-is with google_ prefix)
         import time
         confirmation_id = self.repo.create_confirmation(
             submitter_id=submitter_id_str,
@@ -516,7 +537,8 @@ class MatchConfirmationService:
             went_first=went_first,
             winner_deck_url=winner_deck_url,
             loser_deck_url=loser_deck_url,
-            match_type=match_type
+            match_type=match_type,
+            season_id=season_id
         )
 
         expires_at = int(time.time()) + (48 * 60 * 60)
@@ -721,8 +743,11 @@ class MatchConfirmationService:
         # 2. Create match record in match_reports_web table
         # 3. Mark confirmation as confirmed (LAST - only if everything else succeeds)
 
-        # Update ELO only if not a repeat matchup
-        if is_repeat_matchup:
+        # Determine if this is a casual match (no ELO impact)
+        is_casual = confirmation.get("match_type") == "casual"
+
+        # Update ELO only if not a repeat matchup and not casual
+        if is_repeat_matchup or is_casual:
             # Skip ELO updates for repeat matchups
             winner_new_elo = 1500  # Default values for display
             winner_elo_change = 0
@@ -733,7 +758,10 @@ class MatchConfirmationService:
             loser_new_event_elo = 1500
             loser_event_elo_change = 0
             event_active = False
-            logger.info("ELO updates skipped due to repeat matchup")
+            if is_casual:
+                logger.info("ELO updates skipped due to casual match type")
+            else:
+                logger.info("ELO updates skipped due to repeat matchup")
         else:
             # Update winner's ELO (keep IDs as strings with google_ prefix)
             (
@@ -815,7 +843,7 @@ class MatchConfirmationService:
                     winner_went_first_val,  # winner_went_first
                     loser_went_first_val,   # loser_went_first
                     "Web",            # source (mark as web-based)
-                    "ranked",         # match_type
+                    confirmation.get("match_type", "ranked"),  # match_type
                 ),
             )
 
@@ -860,42 +888,47 @@ class MatchConfirmationService:
             f"repeat_matchup={is_repeat_matchup}"
         )
 
-        # Update season ELO if both players share an active season
+        # Update season ELO if a season was selected during submission
         try:
-            from services.seasons import SeasonsService
-            season_match_data = {
-                "reporter_id": reporter_id,
-                "winner_id": winner_id,
-                "loser_id": loser_id,
-                "winner_display_name": winner_name,
-                "loser_display_name": loser_name,
-                "did_win": 1,
-                "winner_went_first": winner_went_first_val,
-                "loser_went_first": loser_went_first_val,
-                "match_time": 0,
-                "match_comment": "Web-confirmed match",
-                "curiosa_url_winner": winner_deck_url,
-                "curiosa_url_loser": loser_deck_url,
-                "json_deck_data_winner": json_deck_data_winner,
-                "json_deck_data_loser": json_deck_data_loser,
-                "source": "Web",
-                "match_type": "ranked",
-            }
-            season_results = SeasonsService().update_season_elos(
-                winner_id, loser_id, match_id,
-                is_repeat_matchup, season_match_data,
-            )
-            if season_results:
-                for sr in season_results:
-                    logger.info(
-                        f"Season ELO updated: {sr['season_title']} - "
-                        f"winner {sr['winner_change']:+d}, loser {sr['loser_change']:+d}"
-                    )
+            stored_season_id = confirmation.get("season_id")
+            if stored_season_id:
+                from services.seasons import SeasonsService
+                season_match_data = {
+                    "reporter_id": reporter_id,
+                    "winner_id": winner_id,
+                    "loser_id": loser_id,
+                    "winner_display_name": winner_name,
+                    "loser_display_name": loser_name,
+                    "did_win": 1,
+                    "winner_went_first": winner_went_first_val,
+                    "loser_went_first": loser_went_first_val,
+                    "match_time": 0,
+                    "match_comment": "Web-confirmed match",
+                    "curiosa_url_winner": winner_deck_url,
+                    "curiosa_url_loser": loser_deck_url,
+                    "json_deck_data_winner": json_deck_data_winner,
+                    "json_deck_data_loser": json_deck_data_loser,
+                    "source": "Web",
+                    "match_type": confirmation.get("match_type", "ranked"),
+                }
+                season_results = SeasonsService().update_season_elos(
+                    winner_id, loser_id, match_id,
+                    is_repeat_matchup, season_match_data,
+                    season_id=stored_season_id,
+                )
+                if season_results:
+                    for sr in season_results:
+                        logger.info(
+                            f"Season ELO updated: {sr['season_title']} - "
+                            f"winner {sr['winner_change']:+d}, loser {sr['loser_change']:+d}"
+                        )
         except Exception as e:
             logger.error(f"Season ELO update failed (non-blocking): {e}", exc_info=True)
 
-        # Customize message based on whether this is a repeat matchup
-        if is_repeat_matchup:
+        # Customize message based on match type and repeat status
+        if is_casual:
+            message = "Casual match confirmed and recorded! No ELO changes."
+        elif is_repeat_matchup:
             message = (
                 "Match confirmed and recorded! However, this is a repeat game with the same opponent. "
                 "Repeat games do not affect ELO - you must play someone else to gain ELO."

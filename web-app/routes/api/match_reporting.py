@@ -183,6 +183,7 @@ def submit_match_report():
     final_life_submitter = data.get("final_life_submitter")
     final_life_opponent = data.get("final_life_opponent")
     match_type = data.get("match_type", "ranked")  # Default to ranked if not provided
+    season_id = data.get("season_id")  # Optional season to count match toward
 
     try:
         service = MatchConfirmationService()
@@ -198,7 +199,8 @@ def submit_match_report():
             opponent_deck_url=None,  # Opponent provides their deck URL on confirmation
             final_life_submitter=final_life_submitter,
             final_life_opponent=final_life_opponent,
-            match_type=match_type
+            match_type=match_type,
+            season_id=season_id
         )
 
         logger.info(

@@ -39,11 +39,7 @@ def create_season():
             max_members, region,
         )
     except ValueError as e:
-        # Check if it's a conflict (already in a season)
-        msg = str(e)
-        if "already in a season" in msg.lower():
-            return jsonify({"success": False, "error": msg}), 409
-        return jsonify({"success": False, "error": msg}), 400
+        return jsonify({"success": False, "error": str(e)}), 400
 
     return jsonify({
         "success": True,
@@ -87,8 +83,6 @@ def join_season(season_id):
         service.join_season(user_id, display_name, season_id)
     except ValueError as e:
         msg = str(e)
-        if "already in a season" in msg.lower():
-            return jsonify({"success": False, "error": msg}), 409
         if "full" in msg.lower():
             return jsonify({"success": False, "error": msg}), 409
         if "not found" in msg.lower():
@@ -108,9 +102,9 @@ def join_season(season_id):
 
 
 @seasons_bp.route("/player/<player_id>/seasons", methods=["GET"])
-def get_player_season(player_id):
-    season = service.get_player_season(player_id)
-    return jsonify({"success": True, "current_season": season}), 200
+def get_player_seasons(player_id):
+    seasons = service.get_player_seasons(player_id)
+    return jsonify({"success": True, "seasons": seasons}), 200
 
 
 @seasons_bp.route("/seasons/<int:season_id>/leave", methods=["POST"])

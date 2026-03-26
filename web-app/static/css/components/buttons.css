@@ -133,7 +133,7 @@
 
 /* Active state for toggle buttons */
 .btn--active {
-  box-shadow: inset 0 0 0 2px var(--color-primary);
+  box-shadow: inset 0 0 0 2px #ffd700;
   transform: scale(0.98);
 }
 
@@ -148,6 +148,7 @@
 }
 
 .btn--secondary.btn--active {
-  background: rgba(255, 255, 255, 0.15);
-  box-shadow: inset 0 0 0 2px var(--color-primary);
+  background: rgba(255, 215, 0, 0.15);
+  box-shadow: inset 0 0 0 2px #ffd700;
+  color: #ffd700;
 }

@@ -337,6 +337,9 @@ function showMatchReportModal() {
   // Reset form state
   resetMatchReportForm();
 
+  // Populate season picker
+  populateLcSeasonPicker();
+
   // Show modal
   modal.classList.remove("hidden");
 
@@ -344,6 +347,34 @@ function showMatchReportModal() {
   setTimeout(() => {
     document.getElementById("opponent-search")?.focus();
   }, 100);
+}
+
+async function populateLcSeasonPicker() {
+  const select = document.getElementById("lc-report-season-id");
+  const group = document.getElementById("lc-season-picker-group");
+  if (!select || !group) return;
+
+  select.innerHTML = '<option value="">No season</option>';
+
+  try {
+    const userId = window.CURRENT_USER_ID;
+    if (!userId) { group.style.display = "none"; return; }
+    const res = await fetch(`/api/player/${userId}/seasons`, {credentials: "same-origin"});
+    const data = await res.json();
+    if (data.success && data.seasons && data.seasons.length > 0) {
+      data.seasons.forEach(s => {
+        const opt = document.createElement("option");
+        opt.value = s.season_id;
+        opt.textContent = s.title;
+        select.appendChild(opt);
+      });
+      group.style.display = "";
+    } else {
+      group.style.display = "none";
+    }
+  } catch (e) {
+    group.style.display = "none";
+  }
 }
 
 function resetMatchReportForm() {
@@ -558,6 +589,10 @@ async function submitMatchReport(result) {
     final_life_opponent: parseInt(document.getElementById("final-life-opponent").value),
     match_type: document.getElementById("match-type").value || "ranked"
   };
+
+  // Include season_id if selected
+  const lcSeasonId = document.getElementById("lc-report-season-id")?.value;
+  if (lcSeasonId) payload.season_id = parseInt(lcSeasonId);
 
   try {
     const response = await fetch("/api/match-report/submit", {

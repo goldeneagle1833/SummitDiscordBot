@@ -78,14 +78,6 @@ class SeasonsService:
             if not region:
                 region = None
 
-        # One-season constraint
-        current = self.repo.get_user_active_season(creator_id)
-        if current:
-            raise ValueError(
-                "You are already in a season. Leave your current season "
-                "before creating a new one."
-            )
-
         # Create season + auto-enroll creator
         season_id = self.repo.create_season(
             creator_id, creator_display_name, title, description,
@@ -121,13 +113,6 @@ class SeasonsService:
         if season["end_date"] < date.today().isoformat():
             raise ValueError("Season has ended")
 
-        # One-season constraint
-        current = self.repo.get_user_active_season(user_id)
-        if current:
-            raise ValueError(
-                "You are already in a season. Leave your current season first."
-            )
-
         # Max members check
         if season["max_members"] is not None:
             count = self.repo.get_member_count(season_id)
@@ -140,45 +125,50 @@ class SeasonsService:
 
     # ── US5: Player Season / Leave ───────────────────────────────
 
-    def get_player_season(self, player_id):
-        membership = self.repo.get_user_active_season(player_id)
-        if not membership:
-            return None
+    def get_player_seasons(self, player_id):
+        """Return list of all active season memberships for a player."""
+        memberships = self.repo.get_user_active_seasons(player_id)
+        if not memberships:
+            return []
 
-        season = self.repo.get_season_by_id(membership["season_id"])
-        if not season:
-            return None
-
-        members = self.repo.get_season_members(membership["season_id"])
-        member_count = len(members)
-
-        # Find this player's rank
-        rank = None
-        for m in members:
-            if m["user_id"] == str(player_id):
-                rank = m["rank"]
-                break
-
+        results = []
         today = date.today().isoformat()
-        status = "upcoming" if season["start_date"] > today else "active"
 
-        return {
-            "season_id": season["season_id"],
-            "title": season["title"],
-            "description": season["description"],
-            "start_date": season["start_date"],
-            "end_date": season["end_date"],
-            "season_elo": membership["season_elo"],
-            "wins": membership["wins"],
-            "losses": membership["losses"],
-            "rank": rank,
-            "member_count": member_count,
-            "max_members": season["max_members"],
-            "region": season["region"],
-            "k_value": season["k_value"],
-            "is_creator": str(player_id) == season["creator_id"],
-            "status": status,
-        }
+        for membership in memberships:
+            season = self.repo.get_season_by_id(membership["season_id"])
+            if not season:
+                continue
+
+            members = self.repo.get_season_members(membership["season_id"])
+            member_count = len(members)
+
+            rank = None
+            for m in members:
+                if m["user_id"] == str(player_id):
+                    rank = m["rank"]
+                    break
+
+            status = "upcoming" if season["start_date"] > today else "active"
+
+            results.append({
+                "season_id": season["season_id"],
+                "title": season["title"],
+                "description": season["description"],
+                "start_date": season["start_date"],
+                "end_date": season["end_date"],
+                "season_elo": membership["season_elo"],
+                "wins": membership["wins"],
+                "losses": membership["losses"],
+                "rank": rank,
+                "member_count": member_count,
+                "max_members": season["max_members"],
+                "region": season["region"],
+                "k_value": season["k_value"],
+                "is_creator": str(player_id) == season["creator_id"],
+                "status": status,
+            })
+
+        return results
 
     def leave_season(self, user_id, season_id):
         season = self.repo.get_season_by_id(season_id)
@@ -191,8 +181,9 @@ class SeasonsService:
             )
 
         # Verify membership
-        membership = self.repo.get_user_active_season(user_id)
-        if not membership or membership["season_id"] != season_id:
+        members = self.repo.get_season_members(season_id)
+        is_member = any(m["user_id"] == str(user_id) for m in members)
+        if not is_member:
             raise ValueError("You are not a member of this season")
 
         self.repo.remove_member(season_id, user_id)
@@ -287,15 +278,22 @@ class SeasonsService:
     # ── US3: Season ELO Tracking ─────────────────────────────────
 
     def update_season_elos(self, winner_id, loser_id, match_id,
-                           is_repeat_matchup, match_data):
+                           is_repeat_matchup, match_data, season_id=None):
         if is_repeat_matchup:
             return []
 
-        season = self.repo.get_shared_active_season(winner_id, loser_id)
-        if not season:
+        # If no explicit season_id, skip season ELO entirely
+        if season_id is None:
             return []
 
-        season_id = season["season_id"]
+        # Verify both players are still in the specified season
+        if not self.repo.verify_shared_season_membership(season_id, winner_id, loser_id):
+            return []
+
+        season = self.repo.get_season_by_id(season_id)
+        if not season or season["status"] != "active":
+            return []
+
         k = season["k_value"]
 
         winner_elo = self.repo.get_member_elo(season_id, winner_id)

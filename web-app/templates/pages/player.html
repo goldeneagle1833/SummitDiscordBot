@@ -239,7 +239,7 @@
               id="record-game-btn"
               class="btn btn--primary"
               style="display: none">
-              Record Game
+              Report Game
             </button>
           </div>
           <!-- Season Buttons & Management -->
@@ -573,119 +573,150 @@
         </div>
       </div>
 
-      <!-- Record Game Modal -->
+      <!-- Report Game Modal (Three-Mode: Ranked / Casual / Solo) -->
       <div class="modal" id="record-game-modal">
         <div class="modal__backdrop" id="modal-backdrop"></div>
         <div class="modal__content">
           <div class="modal__header">
-            <h2 class="modal__title">Match Report</h2>
+            <h2 class="modal__title">Report Game</h2>
             <button class="modal__close" id="modal-close">&times;</button>
           </div>
           <div class="modal__body">
-            <form id="record-game-form">
-              <!-- Deck URL field -->
-              <div class="form-group">
-                <label class="form-label form-label--required" for="deck-url"
-                  >Your Deck URL</label
-                >
-                <input
-                  type="url"
-                  class="form-input"
-                  id="deck-url"
-                  placeholder="https://curiosa.io/decks/..."
-                  required />
-                <span class="form-help">Link to your deck on Curiosa</span>
-              </div>
+            <!-- Mode Toggle -->
+            <div style="display: flex; gap: 0; margin-bottom: 1rem; border: 1px solid var(--color-border); border-radius: 6px; overflow: hidden;">
+              <button type="button" class="btn btn--secondary" id="mode-ranked-btn" onclick="setReportMode('ranked')"
+                style="flex: 1; border-radius: 0; border: none; font-size: 0.9rem; padding: 0.5rem; background: rgba(255, 215, 0, 0.15); color: #ffd700; box-shadow: inset 0 -2px 0 #ffd700;">Ranked</button>
+              <button type="button" class="btn btn--secondary" id="mode-casual-btn" onclick="setReportMode('casual')"
+                style="flex: 1; border-radius: 0; border: none; border-left: 1px solid var(--color-border); font-size: 0.9rem; padding: 0.5rem;">Casual</button>
+              <button type="button" class="btn btn--secondary" id="mode-solo-btn" onclick="setReportMode('solo')"
+                style="flex: 1; border-radius: 0; border: none; border-left: 1px solid var(--color-border); font-size: 0.9rem; padding: 0.5rem;">Solo</button>
+            </div>
+            <input type="hidden" id="report-mode" value="ranked" />
 
-              <!-- Opponent Avatar dropdown -->
-              <div class="form-group">
-                <label
-                  class="form-label form-label--required"
-                  for="opponent-avatar"
-                  >Opponent's Avatar</label
-                >
-                <select class="form-select" id="opponent-avatar" required>
-                  <option value="">Select opponent's avatar...</option>
-                </select>
-              </div>
-
-              <!-- Did you win toggle -->
-              <div class="form-group">
-                <label class="form-label form-label--required"
-                  >Did you win?</label
-                >
-                <div class="btn-group">
-                  <button type="button" class="btn btn--secondary" id="win-yes">
-                    Won
-                  </button>
-                  <button type="button" class="btn btn--secondary" id="win-no">
-                    Lost
-                  </button>
+            <!-- Ranked / Casual fields (confirmation-based flow) -->
+            <div id="confirmation-fields">
+              <form id="confirmation-form">
+                <!-- Opponent search autocomplete -->
+                <div class="form-group">
+                  <label class="form-label form-label--required">Opponent</label>
+                  <div style="position: relative;">
+                    <input type="text" class="form-input" id="opponent-search"
+                      placeholder="Search by name..." autocomplete="off" />
+                    <div id="opponent-search-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 0 0 6px 6px; max-height: 200px; overflow-y: auto; z-index: 10;"></div>
+                  </div>
+                  <input type="hidden" id="selected-opponent-id" value="" />
+                  <div id="selected-opponent-display" style="display: none; margin-top: 0.5rem; padding: 0.4rem 0.75rem; background: rgba(88, 166, 255, 0.08); border-radius: 4px; font-size: 0.9rem;">
+                    <span id="selected-opponent-name"></span>
+                    <button type="button" onclick="clearOpponentSelection()" style="float: right; background: none; border: none; cursor: pointer; color: var(--color-text-muted);">&times;</button>
+                  </div>
                 </div>
-                <input type="hidden" id="did-win" value="" />
-              </div>
 
-              <!-- Did you go first toggle -->
-              <div class="form-group">
-                <label class="form-label form-label--required"
-                  >Did you go first?</label
-                >
-                <div class="btn-group">
-                  <button
-                    type="button"
-                    class="btn btn--secondary"
-                    id="first-yes">
-                    On the Play
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn--secondary"
-                    id="first-no">
-                    On the Draw
-                  </button>
+                <!-- Deck URL -->
+                <div class="form-group">
+                  <label class="form-label form-label--required" for="confirm-deck-url">Your Deck URL</label>
+                  <input type="url" class="form-input" id="confirm-deck-url"
+                    placeholder="https://curiosa.io/decks/..." required />
+                  <span class="form-help">Link to your deck on Curiosa</span>
                 </div>
-                <input type="hidden" id="went-first" value="" />
-              </div>
 
-              <!-- Optional: Match time -->
-              <div class="form-group">
-                <label class="form-label" for="match-time"
-                  >Match Duration (minutes)</label
-                >
-                <input
-                  type="number"
-                  class="form-input"
-                  id="match-time"
-                  min="0"
-                  max="999"
-                  placeholder="Optional" />
-              </div>
+                <!-- Result (Won/Lost) -->
+                <div class="form-group">
+                  <label class="form-label form-label--required">Result</label>
+                  <div class="btn-group">
+                    <button type="button" class="btn btn--secondary" id="confirm-win-yes">Won</button>
+                    <button type="button" class="btn btn--secondary" id="confirm-win-no">Lost</button>
+                  </div>
+                  <input type="hidden" id="confirm-result" value="" />
+                </div>
 
-              <!-- Optional: Notes -->
-              <div class="form-group">
-                <label class="form-label" for="match-comment">Notes</label>
-                <textarea
-                  class="form-textarea"
-                  id="match-comment"
-                  placeholder="Optional match notes..."></textarea>
-              </div>
-            </form>
+                <!-- Turn Order -->
+                <div class="form-group">
+                  <label class="form-label form-label--required">I went</label>
+                  <div class="btn-group">
+                    <button type="button" class="btn btn--secondary" id="confirm-first-me">First</button>
+                    <button type="button" class="btn btn--secondary" id="confirm-first-opp">Second</button>
+                  </div>
+                  <input type="hidden" id="confirm-went-first" value="" />
+                </div>
+
+                <!-- Life Totals -->
+                <div style="display: flex; gap: 1rem;">
+                  <div class="form-group" style="flex: 1;">
+                    <label class="form-label" for="confirm-life-me">Your Final Life (optional)</label>
+                    <input type="number" class="form-input" id="confirm-life-me" value="0" min="0" />
+                  </div>
+                  <div class="form-group" style="flex: 1;">
+                    <label class="form-label" for="confirm-life-opp">Opponent's Final Life (optional)</label>
+                    <input type="number" class="form-input" id="confirm-life-opp" value="0" min="0" />
+                  </div>
+                </div>
+
+                <!-- Season Picker -->
+                <div class="form-group" id="season-picker-group" style="display: none;">
+                  <label class="form-label">Season (optional)</label>
+                  <div style="position: relative;">
+                    <input type="text" class="form-input" id="season-search"
+                      placeholder="Search seasons..." autocomplete="off" />
+                    <div id="season-search-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 0 0 6px 6px; max-height: 200px; overflow-y: auto; z-index: 10;"></div>
+                  </div>
+                  <input type="hidden" id="report-season-id" value="" />
+                  <div id="selected-season-display" style="display: none; margin-top: 0.5rem; padding: 0.4rem 0.75rem; background: rgba(255, 215, 0, 0.08); border-radius: 4px; font-size: 0.9rem;">
+                    <span id="selected-season-name"></span>
+                    <button type="button" onclick="clearSeasonSelection()" style="float: right; background: none; border: none; cursor: pointer; color: var(--color-text-muted);">&times;</button>
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            <!-- Solo fields (existing Record Game form) -->
+            <div id="solo-fields" style="display: none;">
+              <form id="record-game-form">
+                <div class="form-group">
+                  <label class="form-label form-label--required" for="deck-url">Your Deck URL</label>
+                  <input type="url" class="form-input" id="deck-url"
+                    placeholder="https://curiosa.io/decks/..." required />
+                  <span class="form-help">Link to your deck on Curiosa</span>
+                </div>
+                <div class="form-group">
+                  <label class="form-label form-label--required" for="opponent-avatar">Opponent's Avatar</label>
+                  <select class="form-select" id="opponent-avatar" required>
+                    <option value="">Select opponent's avatar...</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label form-label--required">Did you win?</label>
+                  <div class="btn-group">
+                    <button type="button" class="btn btn--secondary" id="win-yes">Won</button>
+                    <button type="button" class="btn btn--secondary" id="win-no">Lost</button>
+                  </div>
+                  <input type="hidden" id="did-win" value="" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label form-label--required">I went</label>
+                  <div class="btn-group">
+                    <button type="button" class="btn btn--secondary" id="first-yes">First</button>
+                    <button type="button" class="btn btn--secondary" id="first-no">Second</button>
+                  </div>
+                  <input type="hidden" id="went-first" value="" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="match-time">Match Duration (minutes)</label>
+                  <input type="number" class="form-input" id="match-time" min="0" max="999" placeholder="Optional" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="match-comment">Notes</label>
+                  <textarea class="form-textarea" id="match-comment" placeholder="Optional match notes..."></textarea>
+                </div>
+              </form>
+            </div>
           </div>
           <div class="modal__footer">
-            <button type="button" class="btn btn--secondary" id="modal-cancel">
-              Cancel
-            </button>
+            <button type="button" class="btn btn--secondary" id="modal-cancel">Cancel</button>
             <button type="button" class="btn btn--primary" id="modal-submit">
               <span class="btn-text">Submit</span>
               <span class="btn-spinner" style="display: none">
-                <svg
-                  class="spinner-icon"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2">
+                <svg class="spinner-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2">
                   <circle cx="12" cy="12" r="10" stroke-opacity="0.25" />
                   <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round" />
                 </svg>
@@ -1191,12 +1222,90 @@
           </div>
         </div>
       </div>
+      <!-- Pending Match Confirmation Modal -->
+      <div class="modal" id="pending-confirmation-modal">
+        <div class="modal__backdrop" onclick="hidePendingConfirmationModal()"></div>
+        <div class="modal__content" style="max-width: 520px">
+          <div class="modal__header">
+            <h2 class="modal__title">Match Confirmation Request</h2>
+            <button class="modal__close" onclick="hidePendingConfirmationModal()">&times;</button>
+          </div>
+          <div class="modal__body">
+            <!-- Pending Confirmations List -->
+            <div id="pending-confirmations-list">
+              <p style="color: var(--color-text-muted);">Loading pending confirmations...</p>
+            </div>
+
+            <!-- Confirmation Details (shown when user clicks a pending confirmation) -->
+            <div id="confirmation-details" style="display: none;">
+              <div style="margin-bottom: var(--spacing-lg);">
+                <span id="confirmation-submitter-name" style="font-weight: 600; color: var(--color-text);"></span>
+                <span style="color: var(--color-text-muted);"> reported a match against you</span>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: var(--spacing-sm); margin-bottom: var(--spacing-lg);">
+                <div style="display: flex; justify-content: space-between; padding: var(--spacing-sm) 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                  <span style="color: var(--color-text-muted);">Result:</span>
+                  <span id="confirmation-result" style="color: var(--color-text);"></span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: var(--spacing-sm) 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                  <span style="color: var(--color-text-muted);">Final Life:</span>
+                  <span id="confirmation-final-life" style="color: var(--color-text);"></span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: var(--spacing-sm) 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                  <span style="color: var(--color-text-muted);">Who went first:</span>
+                  <span id="confirmation-went-first" style="color: var(--color-text);"></span>
+                </div>
+                <div id="confirmation-deck-row-winner" style="display: none; justify-content: space-between; padding: var(--spacing-sm) 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                  <span style="color: var(--color-text-muted);">Winner's Deck:</span>
+                  <a id="confirmation-deck-winner" href="#" target="_blank" style="color: var(--color-primary);">View Deck</a>
+                </div>
+                <div id="confirmation-deck-row-loser" style="display: none; justify-content: space-between; padding: var(--spacing-sm) 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                  <span style="color: var(--color-text-muted);">Loser's Deck:</span>
+                  <a id="confirmation-deck-loser" href="#" target="_blank" style="color: var(--color-primary);">View Deck</a>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: var(--spacing-sm) 0;">
+                  <span style="color: var(--color-text-muted);">Expires:</span>
+                  <span id="confirmation-expires" style="color: var(--color-text);"></span>
+                </div>
+              </div>
+
+              <!-- Your Deck URL Field -->
+              <div class="form-group" style="margin-bottom: var(--spacing-lg);">
+                <label class="form-label" for="confirmation-your-deck-url">Your Deck URL (optional)</label>
+                <input type="url" class="form-input" id="confirmation-your-deck-url"
+                  placeholder="https://curiosa.io/decks/..." />
+              </div>
+
+              <!-- Loading Indicator -->
+              <div id="confirmation-loading" style="display: none; text-align: center; padding: var(--spacing-md);">
+                <span>Processing...</span>
+              </div>
+
+              <!-- Success/Error Messages -->
+              <div id="confirmation-success" style="display: none; padding: var(--spacing-md); background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); border-radius: var(--radius-md); color: #22c55e; margin-bottom: var(--spacing-md);"></div>
+              <div id="confirmation-error" style="display: none; padding: var(--spacing-md); background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: var(--radius-md); color: #ef4444; margin-bottom: var(--spacing-md);"></div>
+
+              <!-- Confirmation Actions -->
+              <div style="display: flex; justify-content: space-between; gap: var(--spacing-md);">
+                <button class="btn btn--secondary" id="back-to-list-btn" onclick="backToConfirmationList()">Back</button>
+                <div style="display: flex; gap: var(--spacing-md);">
+                  <button class="btn btn--secondary" id="deny-match-btn" onclick="denyPendingMatch()" style="color: #ef4444; border-color: #ef4444;">Deny</button>
+                  <button class="btn btn--primary" id="confirm-match-btn" onclick="confirmPendingMatch()">Confirm</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script>
       const playerId = "{{ player_id }}";
       const needsDisplayName = {{ 'true' if needs_display_name else 'false' }};
       const defaultDisplayName = "{{ default_display_name|e }}";
+      const isLoggedIn = {{ 'true' if logged_in else 'false' }};
+      const currentUserId = "{{ current_user_id }}";
       let eloChartInstance = null;
       let storedElo = null;
       let storedMatches = null;
@@ -1592,6 +1701,12 @@
 
           // Track ownership for season controls
           isProfileOwner = data.is_owner || isLocalServer;
+
+          // Check for pending confirmations on own profile
+          if (isProfileOwner && isLoggedIn && !confirmationPollInterval) {
+            fetchPendingConfirmations();
+            confirmationPollInterval = setInterval(fetchPendingConfirmations, CONFIRMATION_POLL_MS);
+          }
 
           // Update player info
           document.getElementById("player-name").textContent = data.name;
@@ -2103,11 +2218,13 @@
         }
       }
 
-      // ===== Record Game Modal Logic =====
+      // ===== Report Game Modal Logic (Three-Mode: Ranked / Casual / Solo) =====
 
       let avatarsList = [];
+      let currentReportMode = "ranked";
+      let opponentSearchTimer = null;
 
-      // Fetch avatars for dropdown
+      // Fetch avatars for Solo mode dropdown
       async function loadAvatars() {
         try {
           const res = await fetch("/api/list-all-avatars");
@@ -2125,31 +2242,259 @@
         }
       }
 
-      // Show/hide modal
-      function showRecordGameModal() {
-        document
-          .getElementById("record-game-modal")
-          .classList.add("modal--active");
+      // Mode toggle
+      function setReportMode(mode) {
+        currentReportMode = mode;
+        document.getElementById("report-mode").value = mode;
+
+        // Update tab button styles
+        ["ranked", "casual", "solo"].forEach(m => {
+          const btn = document.getElementById(`mode-${m}-btn`);
+          if (m === mode) {
+            btn.style.background = "rgba(255, 215, 0, 0.15)";
+            btn.style.color = "#ffd700";
+            btn.style.boxShadow = "inset 0 -2px 0 #ffd700";
+          } else {
+            btn.style.background = "";
+            btn.style.color = "";
+            btn.style.boxShadow = "";
+          }
+        });
+
+        // Show/hide fields
+        document.getElementById("confirmation-fields").style.display = (mode === "solo") ? "none" : "block";
+        document.getElementById("solo-fields").style.display = (mode === "solo") ? "block" : "none";
+
+        // Reset forms on mode switch
+        if (mode === "solo") {
+          resetSoloForm();
+        } else {
+          resetConfirmationForm();
+          populateSeasonPicker();
+        }
       }
 
-      function hideRecordGameModal() {
-        document
-          .getElementById("record-game-modal")
-          .classList.remove("modal--active");
-        resetRecordGameForm();
+      // Season picker (search-based like opponent)
+      let availableSeasons = [];
+
+      async function populateSeasonPicker() {
+        const group = document.getElementById("season-picker-group");
+
+        // Use cached playerSeasons if available, otherwise fetch
+        let seasons = playerSeasons;
+        if (!seasons || seasons.length === 0) {
+          try {
+            const res = await fetch(`/api/player/${playerId}/seasons`, {credentials: "same-origin"});
+            const data = await res.json();
+            seasons = (data.success && data.seasons) ? data.seasons : [];
+          } catch (e) {
+            seasons = [];
+          }
+        }
+
+        availableSeasons = seasons;
+
+        if (seasons.length > 0) {
+          group.style.display = "";
+          setupSeasonSearch();
+        } else {
+          group.style.display = "none";
+        }
       }
 
-      function resetRecordGameForm() {
-        document.getElementById("record-game-form").reset();
-        document.getElementById("did-win").value = "";
-        document.getElementById("went-first").value = "";
-        // Reset button states
-        ["win-yes", "win-no", "first-yes", "first-no"].forEach((id) => {
-          document.getElementById(id).classList.remove("btn--active");
+      function setupSeasonSearch() {
+        const input = document.getElementById("season-search");
+        const resultsDiv = document.getElementById("season-search-results");
+
+        input.addEventListener("input", () => {
+          const query = input.value.trim().toLowerCase();
+          if (query.length === 0) {
+            // Show all seasons when input is focused but empty
+            showSeasonResults(availableSeasons);
+            return;
+          }
+          const filtered = availableSeasons.filter(s =>
+            s.title.toLowerCase().includes(query)
+          );
+          showSeasonResults(filtered);
+        });
+
+        input.addEventListener("focus", () => {
+          if (input.value.trim().length === 0) {
+            showSeasonResults(availableSeasons);
+          }
+        });
+
+        // Hide results on click outside
+        document.addEventListener("click", (e) => {
+          if (!input.contains(e.target) && !resultsDiv.contains(e.target)) {
+            resultsDiv.style.display = "none";
+          }
         });
       }
 
-      // Toggle button selection
+      function showSeasonResults(seasons) {
+        const resultsDiv = document.getElementById("season-search-results");
+        if (seasons.length === 0) {
+          resultsDiv.innerHTML = '<div style="padding: 0.5rem 0.75rem; font-size: 0.85rem; color: var(--color-text-muted);">No seasons found</div>';
+          resultsDiv.style.display = "block";
+          return;
+        }
+        resultsDiv.innerHTML = seasons.map(s => `
+          <div style="padding: 0.5rem 0.75rem; cursor: pointer; border-bottom: 1px solid var(--color-border); font-size: 0.9rem;"
+            onmouseover="this.style.background='rgba(255, 215, 0, 0.1)'"
+            onmouseout="this.style.background=''"
+            onclick="selectSeason('${s.season_id}', '${s.title.replace(/'/g, "\\'")}')">
+            <strong>${s.title}</strong>
+          </div>
+        `).join("");
+        resultsDiv.style.display = "block";
+      }
+
+      function selectSeason(seasonId, title) {
+        document.getElementById("report-season-id").value = seasonId;
+        document.getElementById("season-search").value = "";
+        document.getElementById("season-search").style.display = "none";
+        document.getElementById("selected-season-name").textContent = title;
+        document.getElementById("selected-season-display").style.display = "block";
+        document.getElementById("season-search-results").style.display = "none";
+      }
+
+      function clearSeasonSelection() {
+        document.getElementById("report-season-id").value = "";
+        document.getElementById("season-search").value = "";
+        document.getElementById("season-search").style.display = "";
+        document.getElementById("selected-season-display").style.display = "none";
+      }
+
+      // Opponent search (for Ranked/Casual)
+      function setupOpponentSearch() {
+        const input = document.getElementById("opponent-search");
+        const resultsDiv = document.getElementById("opponent-search-results");
+
+        input.addEventListener("input", () => {
+          clearTimeout(opponentSearchTimer);
+          const query = input.value.trim();
+          if (query.length < 2) {
+            resultsDiv.style.display = "none";
+            return;
+          }
+          opponentSearchTimer = setTimeout(async () => {
+            try {
+              const res = await fetch(`/api/match-report/search-opponents?q=${encodeURIComponent(query)}&limit=10`, {credentials: "same-origin"});
+              const data = await res.json();
+              if (data.success && data.opponents && data.opponents.length > 0) {
+                resultsDiv.innerHTML = data.opponents.map(opp => `
+                  <div style="padding: 0.5rem 0.75rem; cursor: pointer; border-bottom: 1px solid var(--color-border); font-size: 0.9rem;"
+                    onmouseover="this.style.background='rgba(88, 166, 255, 0.1)'"
+                    onmouseout="this.style.background=''"
+                    onclick="selectOpponent('${opp.user_id}', '${opp.display_name.replace(/'/g, "\\'")}')">
+                    <strong>${opp.display_name}</strong>
+                    ${opp.is_recent ? '<span style="font-size: 0.75rem; color: var(--color-accent-blue); margin-left: 0.5rem;">Recent</span>' : ''}
+                  </div>
+                `).join("");
+                resultsDiv.style.display = "block";
+              } else {
+                resultsDiv.innerHTML = '<div style="padding: 0.5rem 0.75rem; font-size: 0.85rem; color: var(--color-text-muted);">No players found</div>';
+                resultsDiv.style.display = "block";
+              }
+            } catch (e) {
+              resultsDiv.style.display = "none";
+            }
+          }, 300);
+        });
+
+        // Hide results on click outside
+        document.addEventListener("click", (e) => {
+          if (!input.contains(e.target) && !resultsDiv.contains(e.target)) {
+            resultsDiv.style.display = "none";
+          }
+        });
+      }
+
+      function selectOpponent(userId, displayName) {
+        document.getElementById("selected-opponent-id").value = userId;
+        document.getElementById("opponent-search").value = "";
+        document.getElementById("opponent-search").style.display = "none";
+        document.getElementById("selected-opponent-name").textContent = displayName;
+        document.getElementById("selected-opponent-display").style.display = "block";
+        document.getElementById("opponent-search-results").style.display = "none";
+      }
+
+      function clearOpponentSelection() {
+        document.getElementById("selected-opponent-id").value = "";
+        document.getElementById("opponent-search").value = "";
+        document.getElementById("opponent-search").style.display = "";
+        document.getElementById("selected-opponent-display").style.display = "none";
+      }
+
+      // Show/hide modal
+      function showRecordGameModal() {
+        setReportMode("ranked");
+        document.getElementById("record-game-modal").classList.add("modal--active");
+      }
+
+      function hideRecordGameModal() {
+        document.getElementById("record-game-modal").classList.remove("modal--active");
+        resetConfirmationForm();
+        resetSoloForm();
+      }
+
+      function resetConfirmationForm() {
+        const form = document.getElementById("confirmation-form");
+        if (form) form.reset();
+        document.getElementById("confirm-result").value = "";
+        document.getElementById("confirm-went-first").value = "";
+        document.getElementById("selected-opponent-id").value = "";
+        clearOpponentSelection();
+        clearSeasonSelection();
+        ["confirm-win-yes", "confirm-win-no", "confirm-first-me", "confirm-first-opp"].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.classList.remove("btn--active");
+        });
+      }
+
+      function resetSoloForm() {
+        const form = document.getElementById("record-game-form");
+        if (form) form.reset();
+        document.getElementById("did-win").value = "";
+        document.getElementById("went-first").value = "";
+        ["win-yes", "win-no", "first-yes", "first-no"].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.classList.remove("btn--active");
+        });
+      }
+
+      // Toggle button setup for Confirmation mode
+      function setupConfirmationToggleButtons() {
+        const cWinYes = document.getElementById("confirm-win-yes");
+        const cWinNo = document.getElementById("confirm-win-no");
+        const cFirstMe = document.getElementById("confirm-first-me");
+        const cFirstOpp = document.getElementById("confirm-first-opp");
+
+        cWinYes.addEventListener("click", () => {
+          document.getElementById("confirm-result").value = "won";
+          cWinYes.classList.add("btn--active");
+          cWinNo.classList.remove("btn--active");
+        });
+        cWinNo.addEventListener("click", () => {
+          document.getElementById("confirm-result").value = "lost";
+          cWinNo.classList.add("btn--active");
+          cWinYes.classList.remove("btn--active");
+        });
+        cFirstMe.addEventListener("click", () => {
+          document.getElementById("confirm-went-first").value = "submitter";
+          cFirstMe.classList.add("btn--active");
+          cFirstOpp.classList.remove("btn--active");
+        });
+        cFirstOpp.addEventListener("click", () => {
+          document.getElementById("confirm-went-first").value = "opponent";
+          cFirstOpp.classList.add("btn--active");
+          cFirstMe.classList.remove("btn--active");
+        });
+      }
+
+      // Toggle button setup for Solo mode (unchanged)
       function setupToggleButtons() {
         const winYes = document.getElementById("win-yes");
         const winNo = document.getElementById("win-no");
@@ -2161,19 +2506,16 @@
           winYes.classList.add("btn--active");
           winNo.classList.remove("btn--active");
         });
-
         winNo.addEventListener("click", () => {
           document.getElementById("did-win").value = "false";
           winNo.classList.add("btn--active");
           winYes.classList.remove("btn--active");
         });
-
         firstYes.addEventListener("click", () => {
           document.getElementById("went-first").value = "true";
           firstYes.classList.add("btn--active");
           firstNo.classList.remove("btn--active");
         });
-
         firstNo.addEventListener("click", () => {
           document.getElementById("went-first").value = "false";
           firstNo.classList.add("btn--active");
@@ -2181,29 +2523,34 @@
         });
       }
 
-      // Submit form
+      // Unified submit handler
       async function submitRecordGame() {
+        const mode = currentReportMode;
+
+        if (mode === "solo") {
+          await submitSoloReport();
+        } else {
+          await submitConfirmationReport(mode);
+        }
+      }
+
+      // Submit Solo report (POST /api/record-game)
+      async function submitSoloReport() {
         const deckUrl = document.getElementById("deck-url").value.trim();
         const opponentAvatar = document.getElementById("opponent-avatar").value;
         const didWin = document.getElementById("did-win").value;
         const wentFirst = document.getElementById("went-first").value;
         const matchTime = document.getElementById("match-time").value;
-        const matchComment = document
-          .getElementById("match-comment")
-          .value.trim();
+        const matchComment = document.getElementById("match-comment").value.trim();
 
-        // Validation
         if (!deckUrl || !opponentAvatar || !didWin || !wentFirst) {
           alert("Please fill in all required fields");
           return;
         }
 
-        // Get button elements
         const submitBtn = document.getElementById("modal-submit");
         const btnText = submitBtn.querySelector(".btn-text");
         const btnSpinner = submitBtn.querySelector(".btn-spinner");
-
-        // Disable button and show spinner
         submitBtn.disabled = true;
         btnText.textContent = "Submitting...";
         btnSpinner.style.display = "inline-flex";
@@ -2221,13 +2568,11 @@
               match_comment: matchComment,
             }),
           });
-
           const data = await res.json();
-
           if (res.ok && data.success) {
             hideRecordGameModal();
             const eventFilter = document.getElementById("event-filter")?.value || "lifetime";
-            fetchPlayerData(eventFilter, currentPage, currentEloSource); // Refresh the page data
+            fetchPlayerData(eventFilter, currentPage, currentEloSource);
             alert("Game recorded successfully!");
           } else {
             alert("Error: " + (data.error || "Failed to record game"));
@@ -2236,7 +2581,65 @@
           console.error("Submit error:", error);
           alert("Failed to submit. Please try again.");
         } finally {
-          // Re-enable button and hide spinner
+          submitBtn.disabled = false;
+          btnText.textContent = "Submit";
+          btnSpinner.style.display = "none";
+        }
+      }
+
+      // Submit Ranked/Casual report (POST /api/match-report/submit)
+      async function submitConfirmationReport(matchType) {
+        const opponentId = document.getElementById("selected-opponent-id").value;
+        const deckUrl = document.getElementById("confirm-deck-url").value.trim();
+        const result = document.getElementById("confirm-result").value;
+        const wentFirst = document.getElementById("confirm-went-first").value;
+        const lifeMe = parseInt(document.getElementById("confirm-life-me").value) || 0;
+        const lifeOpp = parseInt(document.getElementById("confirm-life-opp").value) || 0;
+        const seasonId = document.getElementById("report-season-id").value || null;
+
+        if (!opponentId || !deckUrl || !result || !wentFirst) {
+          alert("Please fill in all required fields (opponent, deck URL, result, turn order)");
+          return;
+        }
+
+        const submitBtn = document.getElementById("modal-submit");
+        const btnText = submitBtn.querySelector(".btn-text");
+        const btnSpinner = submitBtn.querySelector(".btn-spinner");
+        submitBtn.disabled = true;
+        btnText.textContent = "Submitting...";
+        btnSpinner.style.display = "inline-flex";
+
+        try {
+          const payload = {
+            opponent_user_id: opponentId,
+            result: result,
+            went_first: wentFirst,
+            submitter_deck_url: deckUrl,
+            final_life_submitter: lifeMe,
+            final_life_opponent: lifeOpp,
+            match_type: matchType,
+          };
+          if (seasonId) payload.season_id = parseInt(seasonId);
+
+          const res = await fetch("/api/match-report/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            hideRecordGameModal();
+            const oppName = data.opponent?.display_name || "opponent";
+            alert(`Match report submitted! Awaiting confirmation from ${oppName}.`);
+          } else {
+            const errMsg = data.error?.message || data.error || "Failed to submit match report";
+            alert("Error: " + errMsg);
+          }
+        } catch (error) {
+          console.error("Submit error:", error);
+          alert("Failed to submit. Please try again.");
+        } finally {
           submitBtn.disabled = false;
           btnText.textContent = "Submit";
           btnSpinner.style.display = "none";
@@ -2303,6 +2706,8 @@
       document.addEventListener("DOMContentLoaded", () => {
         loadAvatars();
         setupToggleButtons();
+        setupConfirmationToggleButtons();
+        setupOpponentSearch();
         setupCollapsibleSections();
         fetchEvents(); // Load events for filter dropdown
 
@@ -2596,7 +3001,8 @@
 
       // ── Season Management ─────────────────────────────────────
 
-      let currentSeason = null;
+      let playerSeasons = [];
+      let selectedSeasonId = null;
       let seasonSearchTimer = null;
       let isProfileOwner = false;
 
@@ -2605,84 +3011,87 @@
           .then(res => res.json())
           .then(data => {
             if (data.success) {
-              currentSeason = data.current_season;
-              renderSeasonManagement(data.current_season);
+              playerSeasons = data.seasons || [];
+              renderSeasonManagement(playerSeasons);
             }
           })
           .catch(() => {});
       }
 
-      function renderSeasonManagement(season) {
+      function getSeasonById(seasonId) {
+        return playerSeasons.find(s => s.season_id === seasonId) || null;
+      }
+
+      function renderSeasonManagement(seasons) {
         const mgmtSection = document.getElementById("season-management-section");
         const createBtn = document.getElementById("create-season-btn");
         const joinBtn = document.getElementById("join-season-btn");
 
-        if (!season) {
-          // Not in a season - show Create/Join buttons for profile owner
-          if (isProfileOwner) {
-            if (createBtn) createBtn.style.display = "";
-            if (joinBtn) joinBtn.style.display = "";
-          } else {
-            if (createBtn) createBtn.style.display = "none";
-            if (joinBtn) joinBtn.style.display = "none";
-          }
+        // Always show Create/Join for profile owner (multi-season allowed)
+        if (isProfileOwner) {
+          if (createBtn) createBtn.style.display = "";
+          if (joinBtn) joinBtn.style.display = "";
+        } else {
+          if (createBtn) createBtn.style.display = "none";
+          if (joinBtn) joinBtn.style.display = "none";
+        }
+
+        if (!seasons || seasons.length === 0) {
           if (mgmtSection) mgmtSection.style.display = "none";
           return;
         }
 
-        // In a season - hide Create/Join, show season info
-        if (createBtn) createBtn.style.display = "none";
-        if (joinBtn) joinBtn.style.display = "none";
-
         if (mgmtSection) {
-          const isCreator = season.is_creator;
-          const statusBadge = season.status === "active"
-            ? (season.start_date > new Date().toISOString().slice(0, 10) ? "Upcoming" : "Active")
-            : season.status;
+          mgmtSection.innerHTML = seasons.map(season => {
+            const isCreator = season.is_creator;
+            const statusBadge = season.status === "active"
+              ? (season.start_date > new Date().toISOString().slice(0, 10) ? "Upcoming" : "Active")
+              : season.status;
 
-          let controlsHtml = "";
-          if (isProfileOwner) {
-            if (isCreator) {
-              controlsHtml = `
-                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;">
-                  <button class="btn btn--secondary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="showModifySeasonModal()">Modify Season</button>
-                  <button class="btn btn--secondary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="endSeason()">End Season</button>
-                  <button class="btn btn--danger" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="deleteSeason()">Delete Season</button>
-                  <button class="btn btn--secondary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="showKickMemberModal()">Kick Member</button>
-                </div>
-              `;
-            } else {
-              controlsHtml = `
-                <div style="margin-top: 0.75rem;">
-                  <button class="btn btn--danger" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="leaveSeason()">Leave Season</button>
-                </div>
-              `;
+            let controlsHtml = "";
+            if (isProfileOwner) {
+              if (isCreator) {
+                controlsHtml = `
+                  <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;">
+                    <button class="btn btn--secondary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="showModifySeasonModal(${season.season_id})">Modify Season</button>
+                    <button class="btn btn--secondary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="endSeason(${season.season_id})">End Season</button>
+                    <button class="btn btn--danger" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="deleteSeason(${season.season_id})">Delete Season</button>
+                    <button class="btn btn--secondary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="showKickMemberModal(${season.season_id})">Kick Member</button>
+                  </div>
+                `;
+              } else {
+                controlsHtml = `
+                  <div style="margin-top: 0.75rem;">
+                    <button class="btn btn--danger" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="leaveSeason(${season.season_id})">Leave Season</button>
+                  </div>
+                `;
+              }
             }
-          }
 
-          mgmtSection.innerHTML = `
-            <div style="background: rgba(88, 166, 255, 0.08); border: 1px solid rgba(88, 166, 255, 0.25); border-radius: 8px; padding: 1rem 1.25rem;">
-              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
-                <span style="font-size: 1.1rem;">🏆</span>
-                <h4 style="margin: 0; font-size: 1.05rem; color: var(--color-text-primary);">${season.title}</h4>
-                <span style="font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 4px; background: rgba(88, 166, 255, 0.15); color: var(--color-accent-blue);">${statusBadge}</span>
+            return `
+              <div style="background: rgba(88, 166, 255, 0.08); border: 1px solid rgba(88, 166, 255, 0.25); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 0.75rem;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                  <span style="font-size: 1.1rem;">🏆</span>
+                  <h4 style="margin: 0; font-size: 1.05rem; color: var(--color-text-primary);">${season.title}</h4>
+                  <span style="font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 4px; background: rgba(88, 166, 255, 0.15); color: var(--color-accent-blue);">${statusBadge}</span>
+                </div>
+                ${season.description ? `<p style="margin: 0.25rem 0 0.5rem 0; font-size: 0.85rem; color: var(--color-text-muted);">${season.description}</p>` : ""}
+                <div style="display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.9rem; margin-top: 0.5rem;">
+                  <span>📅 ${season.start_date} — ${season.end_date}</span>
+                  ${season.region ? `<span>📍 ${season.region}</span>` : ""}
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 1.25rem; font-size: 0.9rem; margin-top: 0.5rem;">
+                  <span><strong>ELO:</strong> ${season.season_elo}</span>
+                  <span><strong>Record:</strong> ${season.wins}W - ${season.losses}L</span>
+                  <span><strong>Rank:</strong> #${season.rank} of ${season.member_count}</span>
+                </div>
+                <div style="margin-top: 0.75rem;">
+                  <a href="/season/${season.season_id}" class="btn btn--primary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem; text-decoration: none;">View Leaderboard</a>
+                </div>
+                ${controlsHtml}
               </div>
-              ${season.description ? `<p style="margin: 0.25rem 0 0.5rem 0; font-size: 0.85rem; color: var(--color-text-muted);">${season.description}</p>` : ""}
-              <div style="display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.9rem; margin-top: 0.5rem;">
-                <span>📅 ${season.start_date} — ${season.end_date}</span>
-                ${season.region ? `<span>📍 ${season.region}</span>` : ""}
-              </div>
-              <div style="display: flex; flex-wrap: wrap; gap: 1.25rem; font-size: 0.9rem; margin-top: 0.5rem;">
-                <span><strong>ELO:</strong> ${season.season_elo}</span>
-                <span><strong>Record:</strong> ${season.wins}W - ${season.losses}L</span>
-                <span><strong>Rank:</strong> #${season.rank} of ${season.member_count}</span>
-              </div>
-              <div style="margin-top: 0.75rem;">
-                <a href="/season/${season.season_id}" class="btn btn--primary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem; text-decoration: none;">View Leaderboard</a>
-              </div>
-              ${controlsHtml}
-            </div>
-          `;
+            `;
+          }).join("");
           mgmtSection.style.display = "block";
         }
       }
@@ -2840,11 +3249,11 @@
 
       // ── Leave / End / Delete Season ─────────────────────────
 
-      async function leaveSeason() {
-        if (!currentSeason) return;
+      async function leaveSeason(seasonId) {
+        if (!seasonId) return;
         if (!window.confirm("Are you sure you want to leave this season?")) return;
         try {
-          const res = await fetch(`/api/seasons/${currentSeason.season_id}/leave`, {
+          const res = await fetch(`/api/seasons/${seasonId}/leave`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
           });
@@ -2859,11 +3268,11 @@
         }
       }
 
-      async function endSeason() {
-        if (!currentSeason) return;
+      async function endSeason(seasonId) {
+        if (!seasonId) return;
         if (!window.confirm("Are you sure you want to end this season? This cannot be undone.")) return;
         try {
-          const res = await fetch(`/api/seasons/${currentSeason.season_id}/end`, {
+          const res = await fetch(`/api/seasons/${seasonId}/end`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
           });
@@ -2878,11 +3287,11 @@
         }
       }
 
-      async function deleteSeason() {
-        if (!currentSeason) return;
+      async function deleteSeason(seasonId) {
+        if (!seasonId) return;
         if (!window.confirm("This will permanently delete the season and remove all members. Continue?")) return;
         try {
-          const res = await fetch(`/api/seasons/${currentSeason.season_id}`, {
+          const res = await fetch(`/api/seasons/${seasonId}`, {
             method: "DELETE",
           });
           const data = await res.json();
@@ -2898,8 +3307,9 @@
 
       // ── Kick Member Modal ───────────────────────────────────
 
-      function showKickMemberModal() {
-        if (!currentSeason) return;
+      function showKickMemberModal(seasonId) {
+        if (!seasonId) return;
+        selectedSeasonId = seasonId;
         document.getElementById("kick-member-modal").classList.add("modal--active");
         fetchKickMemberList();
       }
@@ -2912,7 +3322,7 @@
       async function fetchKickMemberList() {
         const container = document.getElementById("kick-member-list");
         try {
-          const res = await fetch(`/api/seasons/${currentSeason.season_id}/members`);
+          const res = await fetch(`/api/seasons/${selectedSeasonId}/members`);
           const data = await res.json();
           if (!data.success || !data.members || data.members.length === 0) {
             container.innerHTML = '<p style="text-align: center; color: var(--color-text-muted); padding: 1rem 0;">No members found</p>';
@@ -2940,10 +3350,10 @@
       }
 
       async function kickMember(userId, displayName) {
-        if (!currentSeason) return;
+        if (!selectedSeasonId) return;
         if (!window.confirm(`Remove ${displayName} from the season?`)) return;
         try {
-          const res = await fetch(`/api/seasons/${currentSeason.season_id}/kick`, {
+          const res = await fetch(`/api/seasons/${selectedSeasonId}/kick`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ user_id: userId }),
@@ -2962,14 +3372,16 @@
 
       // ── Modify Season Modal ─────────────────────────────────
 
-      function showModifySeasonModal() {
-        if (!currentSeason) return;
-        document.getElementById("modify-start-date").value = currentSeason.start_date || "";
-        document.getElementById("modify-end-date").value = currentSeason.end_date || "";
-        document.getElementById("modify-description").value = currentSeason.description || "";
-        document.getElementById("modify-k-value").value = currentSeason.k_value || 32;
-        document.getElementById("modify-max-members").value = currentSeason.max_members || "";
-        document.getElementById("modify-region").value = currentSeason.region || "";
+      function showModifySeasonModal(seasonId) {
+        const season = getSeasonById(seasonId);
+        if (!season) return;
+        selectedSeasonId = seasonId;
+        document.getElementById("modify-start-date").value = season.start_date || "";
+        document.getElementById("modify-end-date").value = season.end_date || "";
+        document.getElementById("modify-description").value = season.description || "";
+        document.getElementById("modify-k-value").value = season.k_value || 32;
+        document.getElementById("modify-max-members").value = season.max_members || "";
+        document.getElementById("modify-region").value = season.region || "";
         document.getElementById("modify-season-modal").classList.add("modal--active");
       }
 
@@ -2978,7 +3390,7 @@
       }
 
       async function submitModifySeason() {
-        if (!currentSeason) return;
+        if (!selectedSeasonId) return;
         const fields = {};
         const startDate = document.getElementById("modify-start-date").value;
         const endDate = document.getElementById("modify-end-date").value;
@@ -2995,7 +3407,7 @@
         fields.region = region || null;
 
         try {
-          const res = await fetch(`/api/seasons/${currentSeason.season_id}`, {
+          const res = await fetch(`/api/seasons/${selectedSeasonId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(fields),
@@ -3019,8 +3431,243 @@
           if (document.getElementById("join-season-modal").classList.contains("modal--active")) hideJoinSeasonModal();
           if (document.getElementById("kick-member-modal").classList.contains("modal--active")) hideKickMemberModal();
           if (document.getElementById("modify-season-modal").classList.contains("modal--active")) hideModifySeasonModal();
+          if (document.getElementById("pending-confirmation-modal").classList.contains("modal--active")) hidePendingConfirmationModal();
         }
       });
+
+      // ==================== Pending Match Confirmations ====================
+
+      let pendingConfirmations = [];
+      let currentConfirmation = null;
+      let confirmationPollInterval = null;
+      const CONFIRMATION_POLL_MS = 30000;
+
+      function showPendingConfirmationModal() {
+        document.getElementById("pending-confirmation-modal").classList.add("modal--active");
+      }
+
+      function hidePendingConfirmationModal() {
+        document.getElementById("pending-confirmation-modal").classList.remove("modal--active");
+        backToConfirmationList();
+      }
+
+      async function fetchPendingConfirmations() {
+        try {
+          const response = await fetch("/api/match-report/pending");
+          if (!response.ok) return;
+          const data = await response.json();
+
+          pendingConfirmations = data.pending_confirmations || [];
+          displayPendingConfirmationsList();
+
+          if (pendingConfirmations.length > 0) {
+            const modal = document.getElementById("pending-confirmation-modal");
+            if (!modal.classList.contains("modal--active")) {
+              showPendingConfirmationModal();
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching pending confirmations:", error);
+        }
+      }
+
+      function displayPendingConfirmationsList() {
+        const listContainer = document.getElementById("pending-confirmations-list");
+
+        if (!pendingConfirmations || pendingConfirmations.length === 0) {
+          listContainer.innerHTML = '<p style="color: var(--color-text-muted);">No pending confirmations.</p>';
+          return;
+        }
+
+        listContainer.innerHTML = pendingConfirmations.map(conf => {
+          const submitterName = conf.submitter_display_name || "Unknown Player";
+          const expiresIn = formatConfirmationTimeRemaining(conf.expires_at);
+          const youWon = conf.winner_discord_id == conf.opponent_discord_id;
+          const resultText = youWon ? "You won" : "You lost";
+
+          return `
+            <div style="padding: var(--spacing-md); border: 1px solid rgba(255,255,255,0.1); border-radius: var(--radius-md); cursor: pointer; margin-bottom: var(--spacing-sm); transition: background 0.2s;"
+                 onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background=''"
+                 onclick="showConfirmationDetails(${conf.id})">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <span style="font-weight: 600; color: var(--color-text);">${submitterName}</span>
+                  <br><span style="color: var(--color-text-muted); font-size: 0.875rem;">${resultText} &bull; Expires ${expiresIn}</span>
+                </div>
+                <span style="padding: 2px 8px; background: rgba(234,179,8,0.15); color: #eab308; border-radius: var(--radius-sm); font-size: 0.75rem;">Pending</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      function showConfirmationDetails(confirmationId) {
+        const confirmation = pendingConfirmations.find(c => c.id === confirmationId);
+        if (!confirmation) return;
+
+        currentConfirmation = confirmation;
+
+        const submitterName = confirmation.submitter_display_name || "Unknown Player";
+        document.getElementById("confirmation-submitter-name").textContent = submitterName;
+
+        const youWon = confirmation.winner_discord_id == confirmation.opponent_discord_id;
+        document.getElementById("confirmation-result").textContent = youWon
+          ? `${submitterName} reported that you won`
+          : `${submitterName} reported that they won`;
+
+        document.getElementById("confirmation-final-life").textContent =
+          `Winner: ${confirmation.final_life_winner} | Loser: ${confirmation.final_life_loser}`;
+
+        const wentFirst = confirmation.went_first === "submitter" ? submitterName : "You";
+        document.getElementById("confirmation-went-first").textContent = wentFirst;
+
+        const winnerDeckRow = document.getElementById("confirmation-deck-row-winner");
+        const loserDeckRow = document.getElementById("confirmation-deck-row-loser");
+        if (confirmation.winner_deck_url) {
+          document.getElementById("confirmation-deck-winner").href = confirmation.winner_deck_url;
+          winnerDeckRow.style.display = "flex";
+        } else {
+          winnerDeckRow.style.display = "none";
+        }
+        if (confirmation.loser_deck_url) {
+          document.getElementById("confirmation-deck-loser").href = confirmation.loser_deck_url;
+          loserDeckRow.style.display = "flex";
+        } else {
+          loserDeckRow.style.display = "none";
+        }
+
+        document.getElementById("confirmation-expires").textContent = formatConfirmationTimeRemaining(confirmation.expires_at);
+
+        document.getElementById("confirmation-success").style.display = "none";
+        document.getElementById("confirmation-error").style.display = "none";
+        document.getElementById("confirmation-loading").style.display = "none";
+        document.getElementById("confirm-match-btn").disabled = false;
+        document.getElementById("deny-match-btn").disabled = false;
+        document.getElementById("back-to-list-btn").disabled = false;
+
+        document.getElementById("pending-confirmations-list").style.display = "none";
+        document.getElementById("confirmation-details").style.display = "block";
+      }
+
+      function backToConfirmationList() {
+        document.getElementById("pending-confirmations-list").style.display = "block";
+        document.getElementById("confirmation-details").style.display = "none";
+        currentConfirmation = null;
+      }
+
+      function formatConfirmationTimeRemaining(expiresAt) {
+        const now = Math.floor(Date.now() / 1000);
+        const remaining = expiresAt - now;
+        if (remaining <= 0) return "expired";
+        const hours = Math.floor(remaining / 3600);
+        const minutes = Math.floor((remaining % 3600) / 60);
+        if (hours > 24) {
+          const days = Math.floor(hours / 24);
+          return `in ${days} day${days > 1 ? 's' : ''}`;
+        } else if (hours > 0) {
+          return `in ${hours} hour${hours > 1 ? 's' : ''}`;
+        }
+        return `in ${minutes} minute${minutes > 1 ? 's' : ''}`;
+      }
+
+      async function confirmPendingMatch() {
+        if (!currentConfirmation) return;
+
+        document.getElementById("confirmation-loading").style.display = "block";
+        document.getElementById("confirmation-success").style.display = "none";
+        document.getElementById("confirmation-error").style.display = "none";
+        document.getElementById("confirm-match-btn").disabled = true;
+        document.getElementById("deny-match-btn").disabled = true;
+        document.getElementById("back-to-list-btn").disabled = true;
+
+        try {
+          const deckUrl = document.getElementById("confirmation-your-deck-url").value || null;
+          const response = await fetch(`/api/match-report/confirm/${currentConfirmation.id}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ deck_url: deckUrl })
+          });
+          const data = await response.json();
+          document.getElementById("confirmation-loading").style.display = "none";
+
+          if (!response.ok) {
+            const errorEl = document.getElementById("confirmation-error");
+            errorEl.textContent = data.error?.message || "Failed to confirm match. Please try again.";
+            errorEl.style.display = "block";
+            document.getElementById("confirm-match-btn").disabled = false;
+            document.getElementById("deny-match-btn").disabled = false;
+            document.getElementById("back-to-list-btn").disabled = false;
+            return;
+          }
+
+          const successEl = document.getElementById("confirmation-success");
+          successEl.textContent = data.message || "Match confirmed successfully!";
+          successEl.style.display = "block";
+
+          setTimeout(() => {
+            hidePendingConfirmationModal();
+            fetchPendingConfirmations();
+          }, 2000);
+        } catch (error) {
+          console.error("Error confirming match:", error);
+          document.getElementById("confirmation-loading").style.display = "none";
+          const errorEl = document.getElementById("confirmation-error");
+          errorEl.textContent = "Network error. Please check your connection and try again.";
+          errorEl.style.display = "block";
+          document.getElementById("confirm-match-btn").disabled = false;
+          document.getElementById("deny-match-btn").disabled = false;
+          document.getElementById("back-to-list-btn").disabled = false;
+        }
+      }
+
+      async function denyPendingMatch() {
+        if (!currentConfirmation) return;
+
+        document.getElementById("confirmation-loading").style.display = "block";
+        document.getElementById("confirmation-success").style.display = "none";
+        document.getElementById("confirmation-error").style.display = "none";
+        document.getElementById("confirm-match-btn").disabled = true;
+        document.getElementById("deny-match-btn").disabled = true;
+        document.getElementById("back-to-list-btn").disabled = true;
+
+        try {
+          const response = await fetch(`/api/match-report/deny/${currentConfirmation.id}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: null })
+          });
+          const data = await response.json();
+          document.getElementById("confirmation-loading").style.display = "none";
+
+          if (!response.ok) {
+            const errorEl = document.getElementById("confirmation-error");
+            errorEl.textContent = data.error?.message || "Failed to deny match. Please try again.";
+            errorEl.style.display = "block";
+            document.getElementById("confirm-match-btn").disabled = false;
+            document.getElementById("deny-match-btn").disabled = false;
+            document.getElementById("back-to-list-btn").disabled = false;
+            return;
+          }
+
+          const successEl = document.getElementById("confirmation-success");
+          successEl.textContent = data.message || "Match report denied.";
+          successEl.style.display = "block";
+
+          setTimeout(() => {
+            hidePendingConfirmationModal();
+            fetchPendingConfirmations();
+          }, 2000);
+        } catch (error) {
+          console.error("Error denying match:", error);
+          document.getElementById("confirmation-loading").style.display = "none";
+          const errorEl = document.getElementById("confirmation-error");
+          errorEl.textContent = "Network error. Please check your connection and try again.";
+          errorEl.style.display = "block";
+          document.getElementById("confirm-match-btn").disabled = false;
+          document.getElementById("deny-match-btn").disabled = false;
+          document.getElementById("back-to-list-btn").disabled = false;
+        }
+      }
 
       // Initial load - start at page 1
       // currentEloSource will be set during fetchPlayerData based on user type

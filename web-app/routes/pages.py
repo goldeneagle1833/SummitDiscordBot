@@ -61,6 +61,7 @@ def life_counter():
         logged_in=bool(session.get("user_id")),
         username=session.get("username"),
         auth_provider=session.get("auth_provider"),
+        current_user_id=str(session.get("user_id", "")),
     )
 
 
@@ -280,6 +281,8 @@ def player_profile(player_id):
         player_id=player_id,
         needs_display_name=needs_display_name,
         default_display_name=default_display_name,
+        logged_in=bool(session.get("user_id")),
+        current_user_id=str(session.get("user_id", "")),
     )
 
 

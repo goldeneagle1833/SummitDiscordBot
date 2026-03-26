@@ -257,7 +257,8 @@ class SeasonsRepository:
         conn.commit()
         conn.close()
 
-    def get_user_active_season(self, user_id):
+    def get_user_active_seasons(self, user_id):
+        """Returns ALL active, non-ended seasons for a user."""
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
@@ -273,19 +274,20 @@ class SeasonsRepository:
                  AND s.end_date >= date('now')""",
             (user_id,),
         )
-        row = cur.fetchone()
+        rows = cur.fetchall()
         conn.close()
-        if not row:
-            return None
-        return {
-            "season_id": row[0], "creator_id": row[1],
-            "creator_display_name": row[2], "title": row[3],
-            "description": row[4], "start_date": row[5],
-            "end_date": row[6], "status": row[7], "k_value": row[8],
-            "base_elo": row[9], "max_members": row[10],
-            "region": row[11], "created_at": row[12],
-            "season_elo": row[13], "wins": row[14], "losses": row[15],
-        }
+        return [
+            {
+                "season_id": row[0], "creator_id": row[1],
+                "creator_display_name": row[2], "title": row[3],
+                "description": row[4], "start_date": row[5],
+                "end_date": row[6], "status": row[7], "k_value": row[8],
+                "base_elo": row[9], "max_members": row[10],
+                "region": row[11], "created_at": row[12],
+                "season_elo": row[13], "wins": row[14], "losses": row[15],
+            }
+            for row in rows
+        ]
 
     def get_season_members(self, season_id):
         conn = self._get_connection()
@@ -329,7 +331,8 @@ class SeasonsRepository:
 
     # ── Season ELO ───────────────────────────────────────────────
 
-    def get_shared_active_season(self, user_id_1, user_id_2):
+    def get_shared_active_seasons(self, user_id_1, user_id_2):
+        """Returns all active seasons where both users are members."""
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
@@ -346,15 +349,33 @@ class SeasonsRepository:
                  AND s.end_date >= date('now')""",
             (user_id_1, user_id_2),
         )
-        row = cur.fetchone()
+        rows = cur.fetchall()
         conn.close()
-        if not row:
-            return None
-        return {
-            "season_id": row[0], "creator_id": row[1], "title": row[2],
-            "k_value": row[3], "base_elo": row[4],
-            "start_date": row[5], "end_date": row[6],
-        }
+        return [
+            {
+                "season_id": row[0], "creator_id": row[1], "title": row[2],
+                "k_value": row[3], "base_elo": row[4],
+                "start_date": row[5], "end_date": row[6],
+            }
+            for row in rows
+        ]
+
+    def verify_shared_season_membership(self, season_id, user_id_1, user_id_2):
+        """Returns True if both users are members of the specified active season."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT COUNT(*) FROM season_members sm
+               JOIN seasons s ON sm.season_id = s.season_id
+               WHERE sm.season_id = ?
+                 AND sm.user_id IN (?, ?)
+                 AND s.status = 'active'
+                 AND s.end_date >= date('now')""",
+            (season_id, user_id_1, user_id_2),
+        )
+        count = cur.fetchone()[0]
+        conn.close()
+        return count == 2
 
     def get_member_elo(self, season_id, user_id):
         conn = self._get_connection()

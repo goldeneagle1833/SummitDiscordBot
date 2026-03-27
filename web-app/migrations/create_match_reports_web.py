@@ -83,7 +83,10 @@ def create_match_reports_web_table():
 
             -- Match categorization
             source TEXT DEFAULT 'Web',
-            match_type TEXT DEFAULT 'ranked'
+            match_type TEXT DEFAULT 'ranked',
+
+            -- Season tracking (NULL for non-season matches)
+            season_id INTEGER DEFAULT NULL
         )
     """)
 
@@ -106,6 +109,11 @@ def create_match_reports_web_table():
     cursor.execute("""
         CREATE INDEX idx_match_reports_web_source
         ON match_reports_web(source)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX idx_match_reports_web_season_id
+        ON match_reports_web(season_id)
     """)
 
     conn.commit()

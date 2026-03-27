@@ -818,8 +818,8 @@ class MatchConfirmationService:
                     did_win, timestamp, first_player, match_time, curiosa_url, curiosa_url_winner,
                     curiosa_url_loser, match_comment, json_deck_data, json_deck_data_winner,
                     json_deck_data_loser, winner_elo_change, loser_elo_change, winner_went_first,
-                    loser_went_first, source, match_type)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    loser_went_first, source, match_type, season_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     match_id,         # match_id (UUID-based web_xxx)
                     reporter_id,      # reporter_id (TEXT - keeps google_ prefix)
@@ -844,6 +844,7 @@ class MatchConfirmationService:
                     loser_went_first_val,   # loser_went_first
                     "Web",            # source (mark as web-based)
                     confirmation.get("match_type", "ranked"),  # match_type
+                    confirmation.get("season_id"),  # season_id (NULL for non-season matches)
                 ),
             )
 

@@ -15,6 +15,11 @@ from utils.database import (
     mark_pairing_reported,
     get_pairing_between_players,
 )
+from repositories.limited_repo import (
+    get_limited_pairing_between_players,
+    mark_limited_pairing_reported,
+)
+from services.limited_service import limited_winner_report, get_run_summary, forfeit_arena_run
 
 logger = logging.getLogger("discord_bot")
 
@@ -239,6 +244,8 @@ class MatchConfirmationButtons(discord.ui.View):
         loser_deck_url: str = None,
         ladder_info: dict = None,
         match_type: str = "ranked",
+        winner_run_id: int = None,
+        loser_run_id: int = None,
     ):
         super().__init__(timeout=86400)  # 24 hour timeout - plenty of time to confirm
         self.reporter_id = reporter_id
@@ -261,6 +268,8 @@ class MatchConfirmationButtons(discord.ui.View):
         self.loser_deck_url = loser_deck_url
         self.ladder_info = ladder_info
         self.match_type = match_type
+        self.winner_run_id = winner_run_id
+        self.loser_run_id = loser_run_id
 
     @discord.ui.button(
         label="Confirm",
@@ -344,49 +353,71 @@ class MatchConfirmationButtons(discord.ui.View):
             winner_went_first = "n" if reporter_went_first else "y"
             loser_went_first = "y" if reporter_went_first else "n"
 
-        # Submit match report only ONCE (not twice)
-        # This will insert one record and update ELO for the winner
-        match_id, _, _, event_active = await winner_report(
-            self.reporter_id,  # reporter_id (who originally reported)
-            self.winner_id,
-            self.winner_global,
-            True,
-            self.loser_id,
-            self.loser_global,
-            self.first_player,
-            match_time,
-            winner_deck,  # Use winner's deck URL as primary (backward compatibility)
-            combined_comment,  # Include both decks in comment
-            self.winner_id,  # interaction_user_id
-            self.winner_global,  # interaction_global
-            winner_deck_url=self.winner_deck_url,
-            loser_deck_url=self.loser_deck_url,
-            winner_went_first=winner_went_first,
-            loser_went_first=loser_went_first,
-            match_type=self.match_type,
-        )
-
-        # Update ELO for the loser (with ladder multipliers if applicable)
-        # Skip ELO updates entirely for testing matches
+        # Submit match report - branch based on match type
+        winner_run_complete = False
+        loser_run_complete = False
         stakes_msg = ""
-        if self.match_type == "testing":
-            pass  # No ELO updates for testing matches
-        elif self.ladder_info:
-            stakes_msg = await _apply_ladder_elo(
-                self.bot, self.ladder_info,
-                self.winner_id, self.winner_global,
-                self.loser_id, self.loser_global,
-                match_id, event_active,
-            )
-        else:
-            update_elo_db(self.loser_id, self.loser_global, False, self.winner_id)
+        elo_msg = ""
 
-        if self.match_type == "testing":
-            elo_msg = " *(⭐ Casual match - ELO not affected)*"
-        elif not event_active:
-            elo_msg = " *(No active event - ELO not affected)*"
+        if self.match_type == "limited":
+            # Limited match: use separate limited tables and ELO
+            match_id, winner_run_complete, loser_run_complete = limited_winner_report(
+                reporter_id=self.reporter_id,
+                winner_id=self.winner_id,
+                winner_display_name=self.winner_global,
+                loser_id=self.loser_id,
+                loser_display_name=self.loser_global,
+                first_player=self.first_player,
+                match_time=match_time,
+                curiosa_url_winner=winner_deck,
+                curiosa_url_loser=loser_deck,
+                match_comment=combined_comment,
+                winner_went_first=winner_went_first,
+                loser_went_first=loser_went_first,
+                winner_run_id=self.winner_run_id,
+                loser_run_id=self.loser_run_id,
+            )
+            elo_msg = " *(🎲 Limited match - Limited ELO updated)*"
         else:
-            elo_msg = ""
+            # Standard match: use existing report flow
+            match_id, _, _, event_active = await winner_report(
+                self.reporter_id,
+                self.winner_id,
+                self.winner_global,
+                True,
+                self.loser_id,
+                self.loser_global,
+                self.first_player,
+                match_time,
+                winner_deck,
+                combined_comment,
+                self.winner_id,
+                self.winner_global,
+                winner_deck_url=self.winner_deck_url,
+                loser_deck_url=self.loser_deck_url,
+                winner_went_first=winner_went_first,
+                loser_went_first=loser_went_first,
+                match_type=self.match_type,
+            )
+
+            # Update ELO for the loser (with ladder multipliers if applicable)
+            if self.match_type == "testing":
+                pass  # No ELO updates for testing matches
+            elif self.ladder_info:
+                stakes_msg = await _apply_ladder_elo(
+                    self.bot, self.ladder_info,
+                    self.winner_id, self.winner_global,
+                    self.loser_id, self.loser_global,
+                    match_id, event_active,
+                )
+            else:
+                update_elo_db(self.loser_id, self.loser_global, False, self.winner_id)
+
+            if self.match_type == "testing":
+                elo_msg = " *(⭐ Casual match - ELO not affected)*"
+            elif not event_active:
+                elo_msg = " *(No active event - ELO not affected)*"
+
         # Remove the confirmation message
         await interaction.message.edit(
             content=f"Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.{elo_msg}{stakes_msg}",
@@ -424,9 +455,16 @@ class MatchConfirmationButtons(discord.ui.View):
         # Remove from pending
         pending_match_reports.pop((self.reporter_id, self.opponent_id), None)
 
-        # Mark pairing as reported in database (skip for ladder matches)
-        if guild_id and not self.ladder_info:
+        # Mark pairing as reported in database
+        if self.match_type == "limited":
+            if guild_id:
+                mark_limited_pairing_reported(guild_id, self.winner_id, self.loser_id)
+        elif guild_id and not self.ladder_info:
             mark_pairing_reported(guild_id, self.winner_id, self.loser_id)
+
+        # T022: Send run completion DMs for limited matches
+        if self.match_type == "limited":
+            await self._send_limited_run_status(winner_run_complete, loser_run_complete)
 
         # Update leaderboard in designated channel
         lfg_cog = self.bot.get_cog("LFGCog")
@@ -462,6 +500,31 @@ class MatchConfirmationButtons(discord.ui.View):
         await send_milestone_announcement(
             self.bot, self.winner_id, self.loser_id, match_id
         )
+
+    async def _send_limited_run_status(self, winner_run_complete: bool, loser_run_complete: bool):
+        """Send run status DMs to both players after a limited match."""
+        for player_id, run_id, run_complete in [
+            (self.winner_id, self.winner_run_id, winner_run_complete),
+            (self.loser_id, self.loser_run_id, loser_run_complete),
+        ]:
+            if not run_id:
+                continue
+            try:
+                user = await self.bot.fetch_user(player_id)
+                summary = get_run_summary(run_id)
+                if run_complete:
+                    await user.send(f"🏁 **Arena Run Complete!**\n\n{summary}")
+                else:
+                    # Active run - show Continue/Forfeit buttons
+                    view = RunStatusView(player_id, run_id, self.bot)
+                    await user.send(
+                        f"🎲 **Limited Match Recorded**\n\n{summary}\n\nWhat would you like to do?",
+                        view=view,
+                    )
+            except discord.Forbidden:
+                logger.warning("Could not DM limited run status to user %s", player_id)
+            except Exception as e:
+                logger.error("Error sending limited run status to %s: %s", player_id, e)
 
     @discord.ui.button(
         label="Dispute",
@@ -572,7 +635,10 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 )
                 return
 
-            pairing = get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
+            if view.match_type == "limited":
+                pairing = get_limited_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
+            else:
+                pairing = get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
             if not pairing:
                 logger.warning(
                     f"No active pairing found in guild {view.guild_id} between "
@@ -658,6 +724,8 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 loser_deck_url=view.opponent_deck_url,
                 ladder_info=view.ladder_info,
                 match_type=view.match_type,
+                winner_run_id=view.reporter_run_id,  # Reporter won
+                loser_run_id=view.opponent_run_id,
             )
 
             # Check if opponent has DM-disabled role
@@ -789,7 +857,10 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 )
                 return
 
-            pairing = get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
+            if view.match_type == "limited":
+                pairing = get_limited_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
+            else:
+                pairing = get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
             if not pairing:
                 logger.warning(
                     f"No active pairing found in guild {view.guild_id} between "
@@ -875,6 +946,8 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 loser_deck_url=view.reporter_deck_url,
                 ladder_info=view.ladder_info,
                 match_type=view.match_type,
+                winner_run_id=view.opponent_run_id,  # Opponent won
+                loser_run_id=view.reporter_run_id,
             )
 
             # Check if opponent has DM-disabled role
@@ -1057,48 +1130,68 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             winner_went_first = "n" if reporter_went_first else "y"
             loser_went_first = "y" if reporter_went_first else "n"
 
-        # Submit match report
-        match_id, _, _, event_active = await winner_report(
-            view.reporter_id,
-            view.winner_id,
-            view.winner_global,
-            True,
-            view.loser_id,
-            view.loser_global,
-            view.first_player,
-            match_time,
-            winner_deck,
-            combined_comment,
-            view.winner_id,
-            view.winner_global,
-            winner_deck_url=view.winner_deck_url,
-            loser_deck_url=view.loser_deck_url,
-            winner_went_first=winner_went_first,
-            loser_went_first=loser_went_first,
-            match_type=view.match_type,
-        )
-
-        # Update ELO for the loser (with ladder multipliers if applicable)
-        # Skip ELO updates entirely for testing matches
+        # Submit match report - branch based on match type
+        winner_run_complete = False
+        loser_run_complete = False
         stakes_msg = ""
-        if view.match_type == "testing":
-            pass  # No ELO updates for testing matches
-        elif view.ladder_info:
-            stakes_msg = await _apply_ladder_elo(
-                view.bot, view.ladder_info,
-                view.winner_id, view.winner_global,
-                view.loser_id, view.loser_global,
-                match_id, event_active,
-            )
-        else:
-            update_elo_db(view.loser_id, view.loser_global, False, view.winner_id)
+        elo_msg = ""
 
-        if view.match_type == "testing":
-            elo_msg = " *(⭐ Casual match - ELO not affected)*"
-        elif not event_active:
-            elo_msg = " *(No active event - ELO not affected)*"
+        if view.match_type == "limited":
+            match_id, winner_run_complete, loser_run_complete = limited_winner_report(
+                reporter_id=view.reporter_id,
+                winner_id=view.winner_id,
+                winner_display_name=view.winner_global,
+                loser_id=view.loser_id,
+                loser_display_name=view.loser_global,
+                first_player=view.first_player,
+                match_time=match_time,
+                curiosa_url_winner=winner_deck,
+                curiosa_url_loser=loser_deck,
+                match_comment=combined_comment,
+                winner_went_first=winner_went_first,
+                loser_went_first=loser_went_first,
+                winner_run_id=view.winner_run_id,
+                loser_run_id=view.loser_run_id,
+            )
+            elo_msg = " *(🎲 Limited match - Limited ELO updated)*"
         else:
-            elo_msg = ""
+            match_id, _, _, event_active = await winner_report(
+                view.reporter_id,
+                view.winner_id,
+                view.winner_global,
+                True,
+                view.loser_id,
+                view.loser_global,
+                view.first_player,
+                match_time,
+                winner_deck,
+                combined_comment,
+                view.winner_id,
+                view.winner_global,
+                winner_deck_url=view.winner_deck_url,
+                loser_deck_url=view.loser_deck_url,
+                winner_went_first=winner_went_first,
+                loser_went_first=loser_went_first,
+                match_type=view.match_type,
+            )
+
+            if view.match_type == "testing":
+                pass
+            elif view.ladder_info:
+                stakes_msg = await _apply_ladder_elo(
+                    view.bot, view.ladder_info,
+                    view.winner_id, view.winner_global,
+                    view.loser_id, view.loser_global,
+                    match_id, event_active,
+                )
+            else:
+                update_elo_db(view.loser_id, view.loser_global, False, view.winner_id)
+
+            if view.match_type == "testing":
+                elo_msg = " *(⭐ Casual match - ELO not affected)*"
+            elif not event_active:
+                elo_msg = " *(No active event - ELO not affected)*"
+
         # Update the confirmation message
         await original_interaction.message.edit(
             content=f"Match confirmed! **Match ID: #{match_id}** - {view.winner_global} won against {view.loser_global}.{elo_msg}{stakes_msg}",
@@ -1135,9 +1228,16 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         # Remove from pending
         pending_match_reports.pop((view.reporter_id, view.opponent_id), None)
 
-        # Mark pairing as reported in database (skip for ladder matches)
-        if guild_id and not view.ladder_info:
+        # Mark pairing as reported
+        if view.match_type == "limited":
+            if guild_id:
+                mark_limited_pairing_reported(guild_id, view.winner_id, view.loser_id)
+        elif guild_id and not view.ladder_info:
             mark_pairing_reported(guild_id, view.winner_id, view.loser_id)
+
+        # Send run status DMs for limited matches
+        if view.match_type == "limited":
+            await view._send_limited_run_status(winner_run_complete, loser_run_complete)
 
         # Update leaderboard
         lfg_cog = view.bot.get_cog("LFGCog")
@@ -1296,6 +1396,8 @@ class WentFirstView(discord.ui.View):
         guild_id: int = None,
         ladder_info: dict = None,
         match_type: str = "ranked",
+        reporter_run_id: int = None,
+        opponent_run_id: int = None,
     ):
         super().__init__(timeout=None)
         self.match_id = match_id
@@ -1313,6 +1415,8 @@ class WentFirstView(discord.ui.View):
         self.guild_id = guild_id
         self.ladder_info = ladder_info
         self.match_type = match_type
+        self.reporter_run_id = reporter_run_id
+        self.opponent_run_id = opponent_run_id
 
     @discord.ui.button(
         label="Yes, I went first",
@@ -1360,11 +1464,20 @@ class WentFirstView(discord.ui.View):
             guild_id=self.guild_id,
             ladder_info=self.ladder_info,
             match_type=self.match_type,
+            reporter_run_id=self.reporter_run_id,
+            opponent_run_id=self.opponent_run_id,
         )
 
         # Build match type label for message
-        match_type_emoji = "⚔️" if self.match_type == "ranked" else "⭐"
-        match_type_label = "Ranked" if self.match_type == "ranked" else "Casual"
+        if self.match_type == "limited":
+            match_type_emoji = "🎲"
+            match_type_label = "Limited"
+        elif self.match_type == "ranked":
+            match_type_emoji = "⚔️"
+            match_type_label = "Ranked"
+        else:
+            match_type_emoji = "⭐"
+            match_type_label = "Casual"
 
         # Send the report buttons
         try:
@@ -1398,6 +1511,8 @@ class LFGReportButtons(discord.ui.View):
         guild_id: int = None,
         ladder_info: dict = None,
         match_type: str = "ranked",
+        reporter_run_id: int = None,
+        opponent_run_id: int = None,
     ):
         super().__init__(timeout=None)
         self.match_id = match_id
@@ -1413,6 +1528,8 @@ class LFGReportButtons(discord.ui.View):
         self.guild_id = guild_id
         self.ladder_info = ladder_info
         self.match_type = match_type
+        self.reporter_run_id = reporter_run_id
+        self.opponent_run_id = opponent_run_id
         # Track when the match started for automatic match time calculation
         self.match_start_time = match_start_time or datetime.datetime.now()
 
@@ -1459,7 +1576,10 @@ class LFGReportButtons(discord.ui.View):
                 )
                 return
 
-            pairing = get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
+            if self.match_type == "limited":
+                pairing = get_limited_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
+            else:
+                pairing = get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
             if not pairing:
                 logger.warning(
                     f"No active pairing found in guild {self.guild_id} between "
@@ -1546,6 +1666,8 @@ class LFGReportButtons(discord.ui.View):
                 loser_deck_url=self.opponent_deck_url,  # Opponent lost, so their deck is loser's
                 ladder_info=self.ladder_info,
                 match_type=self.match_type,
+                winner_run_id=self.reporter_run_id,  # Reporter won
+                loser_run_id=self.opponent_run_id,
             )
 
             # Check if opponent has DM-disabled role
@@ -1705,10 +1827,13 @@ class LFGReportButtons(discord.ui.View):
                 )
                 return
 
-            pairing = get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
+            if self.match_type == "limited":
+                pairing = get_limited_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
+            else:
+                pairing = get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
             if not pairing:
                 logger.warning(
-                    f"No active pairing found in guild {self.guild_id} between "
+                    f"No active pairing found in guild {self.guild_id} between"
                     f"user {interaction.user.id} and opponent {opponent_id}"
                 )
                 await interaction.followup.send(
@@ -1792,6 +1917,8 @@ class LFGReportButtons(discord.ui.View):
                 loser_deck_url=self.reporter_deck_url,  # Reporter lost, so their deck is loser's
                 ladder_info=self.ladder_info,
                 match_type=self.match_type,
+                winner_run_id=self.opponent_run_id,  # Opponent won
+                loser_run_id=self.reporter_run_id,
             )
 
             # Check if opponent has DM-disabled role
@@ -1916,3 +2043,63 @@ class LFGReportButtons(discord.ui.View):
             f"{interaction.user.mention} clicked **cancel match**", ephemeral=True
         )
         await interaction.message.edit(view=None)
+
+
+class RunStatusView(discord.ui.View):
+    """Post-match DM view with Continue/Forfeit buttons for active limited arena runs."""
+
+    def __init__(self, user_id: int, run_id: int, bot):
+        super().__init__(timeout=3600)  # 60 minute timeout
+        self.user_id = user_id
+        self.run_id = run_id
+        self.bot = bot
+
+    @discord.ui.button(
+        label="Continue Run",
+        style=discord.ButtonStyle.success,
+        custom_id="limited_continue_run",
+    )
+    async def continue_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This isn't your run.", ephemeral=True)
+            return
+
+        # Disable buttons
+        for item in self.children:
+            item.disabled = True
+
+        summary = get_run_summary(self.run_id)
+        await interaction.response.edit_message(
+            content=f"🎲 **Current Run Status**\n\n{summary}",
+            view=self,
+        )
+
+    @discord.ui.button(
+        label="Forfeit Run",
+        style=discord.ButtonStyle.danger,
+        custom_id="limited_forfeit_run",
+    )
+    async def forfeit_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This isn't your run.", ephemeral=True)
+            return
+
+        # Disable buttons
+        for item in self.children:
+            item.disabled = True
+
+        try:
+            forfeit_summary = forfeit_arena_run(self.user_id)
+            await interaction.response.edit_message(
+                content=f"💀 **Arena Run Forfeited**\n\n{forfeit_summary}",
+                view=self,
+            )
+        except ValueError as e:
+            await interaction.response.edit_message(
+                content=f"Could not forfeit: {e}",
+                view=self,
+            )

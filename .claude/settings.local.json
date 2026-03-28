@@ -44,7 +44,8 @@
       "Bash(pytest:*)",
       "WebFetch(domain:sorcererssummit.com)",
       "mcp__claude_ai_Gmail__gmail_search_messages",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(echo:*)"
     ]
   },
   "enabledPlugins": {

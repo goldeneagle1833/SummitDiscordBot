@@ -44,6 +44,7 @@ from utils.database import (
     update_elo_db,
     log_admin_action,
     cleanup_old_pairings,
+    save_pairing,
 )
 from utils.constants import SORCERY_NICKNAMES
 from utils.text import find_best_command_match
@@ -482,6 +483,27 @@ class LFGCog(commands.Cog):
                     inline=False,
                 )
 
+            # Limited queue section
+            limited_details = []
+            for user_id, info in lfg_queue.items():
+                qt = info.get("queue_type", "ranked")
+                if qt == "limited":
+                    time_elapsed = (now - info["timestamp"]).total_seconds() / 60
+                    time_remaining = info["timeframe"] - time_elapsed
+                    placeholder = SORCERY_NICKNAMES[
+                        randrange(0, len(SORCERY_NICKNAMES))
+                    ]
+                    limited_details.append(
+                        f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`"
+                    )
+
+            if limited_details:
+                embed.add_field(
+                    name="\U0001f3b2 Limited Queue",
+                    value="\n".join(limited_details),
+                    inline=False,
+                )
+
             embed.set_footer(text="Status updates automatically")
 
         # Create the appropriate button view based on queue status
@@ -700,7 +722,11 @@ class LFGCog(commands.Cog):
         ranked <-> ranked, both
         testing <-> testing, both
         both <-> ranked, testing, both
+        limited <-> limited only (fully isolated)
         """
+        # Limited is fully isolated - only matches other limited
+        if type_a == "limited" or type_b == "limited":
+            return type_a == "limited" and type_b == "limited"
         if type_a == "both" or type_b == "both":
             return True
         return type_a == type_b
@@ -708,10 +734,13 @@ class LFGCog(commands.Cog):
     @staticmethod
     def resolve_match_type(type_a, type_b):
         """Determine the match type when two players are matched.
+        If either player has 'limited', match type is 'limited'.
         If either player explicitly chose 'testing' (casual), it's casual (no ELO).
         Otherwise it's ranked (including both vs both).
         Note: 'testing' is the internal value for casual matches.
         """
+        if type_a == "limited" or type_b == "limited":
+            return "limited"
         if type_a == "testing" or type_b == "testing":
             return "testing"
         return "ranked"
@@ -756,7 +785,7 @@ class LFGCog(commands.Cog):
         return oldest_valid_match
 
     def add_to_lfg_queue(
-        self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None
+        self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None, run_id=None
     ):
         queue_entry = {
             "timestamp": datetime.datetime.now(),
@@ -766,6 +795,8 @@ class LFGCog(commands.Cog):
         }
         if ladder_info:
             queue_entry["ladder_info"] = ladder_info
+        if run_id is not None:
+            queue_entry["run_id"] = run_id
         lfg_queue[ctx.author.id] = queue_entry
 
     def pair_players(self, ctx):
@@ -1033,7 +1064,14 @@ class LFGCog(commands.Cog):
                 )
             return
 
-        # Check if already in queue
+        # Check if already in queue + attempt to match
+        matched_user_id = None
+        matched_user_deck_url = None
+        match_type = None
+        challenge_id = None
+        guild_id = ctx.guild.id if ctx.guild else None
+        ladder_info = None
+
         async with lfg_queue_lock:
             if user_id in lfg_queue:
                 try:
@@ -1049,7 +1087,6 @@ class LFGCog(commands.Cog):
             challenge_id = save_ladder_challenge(user_id)
 
             # Create ladder_info with placeholder multipliers (will be determined on match)
-            guild_id = ctx.guild.id if ctx.guild else None
             ladder_info = {
                 "challenger_id": user_id,
                 "challenge_id": challenge_id,
@@ -1058,36 +1095,244 @@ class LFGCog(commands.Cog):
                 "guild_id": guild_id,
             }
 
-            # Add to ranked queue with ladder_info
-            self.add_to_lfg_queue(
-                ctx,
-                timeframe=30,
-                deck_url=None,
-                queue_type="ranked",
+            # Check for an existing match in the ranked queue
+            self.clean_expired_lfg()
+            matched_user_id = self.check_if_someone_is_lfg(ctx, "ranked")
+
+            if matched_user_id:
+                # Get matched user info before removing from queue
+                matched_user_info = lfg_queue.get(matched_user_id, {})
+                matched_user_deck_url = matched_user_info.get("deck_url")
+                matched_queue_type = matched_user_info.get("queue_type", "ranked")
+
+                # Adjust ladder multipliers based on ELO difference
+                challenger_elo = get_user_event_elo(user_id)
+                opponent_elo = get_user_event_elo(matched_user_id)
+                elo_diff = abs(challenger_elo - opponent_elo)
+
+                if elo_diff < 100:
+                    ladder_info["elo_multiplier_winner"] = 1.0
+                    ladder_info["elo_multiplier_loser"] = 1.0
+                    logger.info(
+                        f"Ladder challenge match: ELO diff {elo_diff} < 100 - normal stakes"
+                    )
+                else:
+                    logger.info(
+                        f"Ladder challenge match: ELO diff {elo_diff} >= 100 - special stakes (2x/0.5x)"
+                    )
+
+                match_type = self.resolve_match_type("ranked", matched_queue_type)
+
+                # Remove matched user from queue
+                lfg_queue.pop(matched_user_id, None)
+                logger.info(
+                    f"Lock acquired: Matching challenger {user_id} with {matched_user_id} (match_type={match_type})"
+                )
+            else:
+                # No match found - add to queue
+                self.add_to_lfg_queue(
+                    ctx,
+                    timeframe=30,
+                    deck_url=None,
+                    queue_type="ranked",
+                    ladder_info=ladder_info,
+                )
+
+        # Handle result outside the lock
+        if matched_user_id:
+            # Match found! Process the match
+            matched_user = await self.bot.fetch_user(matched_user_id)
+            lfg_channel = self.bot.get_channel(self.lfg_channel_id)
+            matched_global = matched_user.global_name or matched_user.display_name
+
+            match_start_time = datetime.datetime.now()
+
+            # Save pairing
+            if not guild_id:
+                logger.error(
+                    f"Cannot save pairing: guild_id is None for challenge by {user_id}"
+                )
+                return
+
+            try:
+                pairing_id = save_pairing(
+                    guild_id=guild_id,
+                    player1_id=user_id,
+                    player2_id=matched_user_id,
+                    player1_deck_url=None,
+                    player2_deck_url=matched_user_deck_url,
+                )
+                logger.info(
+                    f"Saved pairing {pairing_id} in guild {guild_id}: "
+                    f"{user_id} ({user_global}) vs {matched_user_id} ({matched_global})"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to save pairing for ladder challenge: {e}",
+                    exc_info=True,
+                )
+                try:
+                    await ctx.author.send(
+                        "Error: Could not save match pairing. Please contact an admin."
+                    )
+                except discord.Forbidden:
+                    pass
+                return
+
+            # Randomly select which player gets the report buttons
+            players = [
+                (user_id, user_global, ctx.author, None, True),
+                (
+                    matched_user_id,
+                    matched_global,
+                    matched_user,
+                    matched_user_deck_url,
+                    False,
+                ),
+            ]
+            reporter_player, other_player = random.sample(players, 2)
+            (
+                reporter_id,
+                reporter_global,
+                reporter_user,
+                reporter_deck_url,
+                reporter_is_joiner,
+            ) = reporter_player
+            other_id, other_global, other_user, other_deck_url, other_is_joiner = (
+                other_player
+            )
+
+            reporter_deck_text = (
+                f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
+            )
+
+            # Create "Did you go first?" view
+            went_first_view = WentFirstView(
+                reporter_id,
+                reporter_id,
+                reporter_global,
+                other_id,
+                other_global,
+                self.bot,
+                lfg_channel,
+                match_start_time=match_start_time,
+                reporter_deck_url=reporter_deck_url,
+                opponent_deck_url=other_deck_url,
+                opponent_user=other_user,
+                reporter_deck_text=reporter_deck_text,
+                guild_id=guild_id,
                 ladder_info=ladder_info,
+                match_type=match_type,
             )
 
-        # Notify user
-        try:
-            await ctx.author.send(
-                "You've been added to the ranked queue with ladder challenge stakes!\n"
-                "The next player to match with you will play for modified ELO:\n"
-                "**•** If they win: 2x ELO gain\n"
-                "**•** If you lose: 0.5x ELO loss\n"
-                "**•** If ELO difference < 100: Normal stakes"
-            )
-        except discord.Forbidden:
-            await ctx.send(
-                f"{ctx.author.mention}, you've joined the ranked queue with ladder challenge stakes!",
-                delete_after=10,
-            )
+            match_type_emoji = "⚔️" if match_type == "ranked" else "⭐"
+            match_type_label = "Ranked" if match_type == "ranked" else "Casual"
 
-        # Update status
-        await self.update_lfg_status()
+            # Send "Did you go first?" question to the selected reporter
+            try:
+                await reporter_user.send(
+                    f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Did you go first?**",
+                    view=went_first_view,
+                )
+            except discord.Forbidden:
+                try:
+                    dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+                    if dm_channel:
+                        guild_obj = self.bot.get_guild(config.GUILD_ID)
+                        if guild_obj:
+                            member = guild_obj.get_member(reporter_user.id)
+                            if member:
+                                await dm_channel.set_permissions(
+                                    member,
+                                    read_messages=True,
+                                    send_messages=True,
+                                )
 
-        logger.info(
-            f"Ladder challenge issued by {user_global} (ID: {user_id}), challenge_id: {challenge_id} - added to ranked queue"
-        )
+                        await dm_channel.send(
+                            scrub_urls(
+                                f"{reporter_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n**Did you go first?**"
+                            ),
+                            view=went_first_view,
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to handle DM failure for reporter: {e}")
+
+            # Send informational message to the other player (no buttons)
+            other_own_deck_text = (
+                f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
+            )
+            try:
+                await other_user.send(
+                    f"🎮 **Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
+                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
+                )
+            except discord.Forbidden:
+                try:
+                    dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+                    if dm_channel:
+                        guild_obj = self.bot.get_guild(config.GUILD_ID)
+                        if guild_obj:
+                            member = guild_obj.get_member(other_user.id)
+                            if member:
+                                await dm_channel.set_permissions(
+                                    member,
+                                    read_messages=True,
+                                    send_messages=True,
+                                )
+
+                        await dm_channel.send(
+                            scrub_urls(
+                                f"{other_user.mention} 🎮 **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
+                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
+                            )
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to handle DM failure for other player: {e}"
+                    )
+
+            # Announce match in LFG channel
+            if lfg_channel:
+                elo_diff_display = abs(
+                    get_user_event_elo(ladder_info["challenger_id"])
+                    - get_user_event_elo(matched_user_id)
+                )
+                if elo_diff_display >= 100:
+                    ladder_note = " 🏆 **Ladder Challenge!** Top 16 player - Special stakes (2x/0.5x ELO)!"
+                else:
+                    ladder_note = " 🏆 **Ladder Challenge!** Top 16 player (normal stakes - ELO diff < 100)"
+
+                await lfg_channel.send(
+                    f"{match_type_emoji} **{match_type_label} Match Found!** {ctx.author.mention} matched with {matched_user.mention}!{ladder_note}"
+                )
+
+            await self.update_lfg_status()
+
+            logger.info(
+                f"Ladder challenge by {user_global} (ID: {user_id}) immediately matched with {matched_global} (ID: {matched_user_id})"
+            )
+        else:
+            # No match - user was added to queue, notify them
+            try:
+                await ctx.author.send(
+                    "You've been added to the ranked queue with ladder challenge stakes!\n"
+                    "The next player to match with you will play for modified ELO:\n"
+                    "**•** If they win: 2x ELO gain\n"
+                    "**•** If you lose: 0.5x ELO loss\n"
+                    "**•** If ELO difference < 100: Normal stakes"
+                )
+            except discord.Forbidden:
+                await ctx.send(
+                    f"{ctx.author.mention}, you've joined the ranked queue with ladder challenge stakes!",
+                    delete_after=10,
+                )
+
+            # Update status
+            await self.update_lfg_status()
+
+            logger.info(
+                f"Ladder challenge issued by {user_global} (ID: {user_id}), challenge_id: {challenge_id} - added to ranked queue"
+            )
 
     @commands.command()
     async def lfg_help(self, ctx):

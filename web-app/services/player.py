@@ -38,3 +38,23 @@ class PlayerService:
     def get_player_matches(self, player_id: str, limit: int = 100) -> list[dict]:
         """Get match history for a player."""
         return self._match_repo.get_player_matches(player_id, limit)
+
+    def get_limited_stats(self, player_id: str) -> dict:
+        """Get limited arena stats for a player."""
+        limited_elo = self._match_repo.get_limited_elo(player_id)
+        arena_runs = self._match_repo.get_limited_arena_runs(player_id)
+        limited_matches = self._match_repo.get_limited_matches_for_player(player_id)
+
+        total_wins = sum(1 for m in limited_matches if str(m["winner_id"]) == str(player_id))
+        total_losses = sum(1 for m in limited_matches if str(m["loser_id"]) == str(player_id))
+        total = total_wins + total_losses
+
+        return {
+            "limited_elo": limited_elo,
+            "arena_runs": arena_runs,
+            "recent_matches": limited_matches,
+            "total_wins": total_wins,
+            "total_losses": total_losses,
+            "total_matches": total,
+            "win_rate": round(total_wins / total * 100, 1) if total > 0 else 0,
+        }

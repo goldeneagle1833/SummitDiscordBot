@@ -17,6 +17,7 @@ from cogs.streaming import StreamingCog
 from cogs.community import CommunityCog
 from cogs.reaction_roles import ReactionRolesCog
 from cogs.match_confirmation_jobs import MatchConfirmationJobs
+from cogs.pilots import PilotsCog
 
 import config
 
@@ -145,6 +146,7 @@ async def setup_cogs():
     await bot.add_cog(CommunityCog(bot))  # Community page management
     await bot.add_cog(ReactionRolesCog(bot))  # Reaction-based role assignment
     await bot.add_cog(MatchConfirmationJobs(bot))  # Background jobs for match confirmation reminders & expiration
+    await bot.add_cog(PilotsCog(bot))  # Feature flag management
 
 
 async def main():

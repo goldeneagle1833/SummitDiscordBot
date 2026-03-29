@@ -1,0 +1,453 @@
+"""Data access layer for Limited queue (arena draft mode) tables.
+
+Manages four separate tables in match_records.db and elo.db:
+- limited_arena_runs: Arena run lifecycle tracking
+- limited_match_records: Match results for limited games
+- limited_active_pairings: Active pairings for limited matches
+- limited_elo (in elo.db): Separate ELO tracking for limited mode
+"""
+
+import sqlite3
+import datetime
+import logging
+
+logger = logging.getLogger("discord_bot")
+
+
+# --- Table Creation ---
+
+
+def create_limited_tables():
+    """Create all limited-mode tables if they don't exist. Idempotent."""
+    # Tables in match_records.db
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS limited_arena_runs (
+        run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        user_display_name TEXT NOT NULL,
+        deck_url TEXT NOT NULL,
+        json_deck_data TEXT,
+        wins INTEGER NOT NULL DEFAULT 0,
+        losses INTEGER NOT NULL DEFAULT 0,
+        starting_elo INTEGER NOT NULL DEFAULT 1500,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT NOT NULL,
+        completed_at TEXT
+    )""")
+
+    cur.execute("""CREATE INDEX IF NOT EXISTS idx_limited_runs_user_status
+                   ON limited_arena_runs(user_id, status)""")
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS limited_match_records (
+        match_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reporter_id INTEGER,
+        winner_id INTEGER,
+        winner_display_name TEXT,
+        loser_id INTEGER,
+        loser_display_name TEXT,
+        did_win BOOLEAN,
+        timestamp TEXT,
+        first_player TEXT,
+        match_time INTEGER,
+        curiosa_url_winner TEXT,
+        curiosa_url_loser TEXT,
+        match_comment TEXT,
+        json_deck_data_winner TEXT,
+        json_deck_data_loser TEXT,
+        winner_elo_change INTEGER,
+        loser_elo_change INTEGER,
+        winner_went_first TEXT,
+        loser_went_first TEXT,
+        winner_run_id INTEGER,
+        loser_run_id INTEGER
+    )""")
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS limited_active_pairings (
+        pairing_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id INTEGER NOT NULL,
+        player1_id INTEGER NOT NULL,
+        player2_id INTEGER NOT NULL,
+        player1_deck_url TEXT,
+        player2_deck_url TEXT,
+        player1_run_id INTEGER,
+        player2_run_id INTEGER,
+        created_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active'
+    )""")
+
+    conn.commit()
+    conn.close()
+
+    # Table in elo.db
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS limited_elo (
+        user_id INTEGER PRIMARY KEY,
+        user_display_name TEXT,
+        elo INTEGER NOT NULL DEFAULT 1500
+    )""")
+
+    conn.commit()
+    conn.close()
+
+    logger.info("Limited tables created/verified successfully")
+
+
+# --- Arena Run Operations ---
+
+
+def create_arena_run(
+    user_id: int,
+    display_name: str,
+    deck_url: str,
+    json_deck_data: str = None,
+    starting_elo: int = 1500,
+) -> int:
+    """Create a new arena run. Returns run_id."""
+    create_limited_tables()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute(
+        """INSERT INTO limited_arena_runs
+           (user_id, user_display_name, deck_url, json_deck_data, starting_elo, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (
+            user_id,
+            display_name,
+            deck_url,
+            json_deck_data,
+            starting_elo,
+            datetime.datetime.now().isoformat(),
+        ),
+    )
+
+    run_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    logger.info("Created arena run %d for user %s (starting ELO: %d)", run_id, user_id, starting_elo)
+    return run_id
+
+
+def get_active_arena_run(user_id: int) -> dict | None:
+    """Get the user's active arena run, or None if no active run."""
+    create_limited_tables()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute(
+        """SELECT run_id, user_id, user_display_name, deck_url, json_deck_data,
+                  wins, losses, starting_elo, status, created_at, completed_at
+           FROM limited_arena_runs
+           WHERE user_id = ? AND status = 'active'
+           ORDER BY created_at DESC
+           LIMIT 1""",
+        (user_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            "run_id": row[0],
+            "user_id": row[1],
+            "user_display_name": row[2],
+            "deck_url": row[3],
+            "json_deck_data": row[4],
+            "wins": row[5],
+            "losses": row[6],
+            "starting_elo": row[7],
+            "status": row[8],
+            "created_at": row[9],
+            "completed_at": row[10],
+        }
+    return None
+
+
+def get_arena_run(run_id: int) -> dict | None:
+    """Get an arena run by ID."""
+    create_limited_tables()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute(
+        """SELECT run_id, user_id, user_display_name, deck_url, json_deck_data,
+                  wins, losses, starting_elo, status, created_at, completed_at
+           FROM limited_arena_runs
+           WHERE run_id = ?""",
+        (run_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            "run_id": row[0],
+            "user_id": row[1],
+            "user_display_name": row[2],
+            "deck_url": row[3],
+            "json_deck_data": row[4],
+            "wins": row[5],
+            "losses": row[6],
+            "starting_elo": row[7],
+            "status": row[8],
+            "created_at": row[9],
+            "completed_at": row[10],
+        }
+    return None
+
+
+def update_arena_run_record(run_id: int, wins: int, losses: int):
+    """Update wins/losses for an arena run."""
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE limited_arena_runs SET wins = ?, losses = ? WHERE run_id = ?",
+        (wins, losses, run_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def complete_arena_run(run_id: int, status: str = "completed"):
+    """Mark an arena run as completed or forfeited."""
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE limited_arena_runs SET status = ?, completed_at = ? WHERE run_id = ?",
+        (status, datetime.datetime.now().isoformat(), run_id),
+    )
+    conn.commit()
+    conn.close()
+    logger.info("Arena run %d marked as %s", run_id, status)
+
+
+# --- Limited Match Record Operations ---
+
+
+def insert_limited_match_record(
+    reporter_id,
+    winner_id,
+    winner_display_name,
+    loser_id,
+    loser_display_name,
+    did_win,
+    first_player,
+    match_time,
+    curiosa_url_winner,
+    curiosa_url_loser,
+    match_comment,
+    json_deck_data_winner,
+    json_deck_data_loser,
+    winner_elo_change,
+    loser_elo_change,
+    winner_went_first,
+    loser_went_first,
+    winner_run_id,
+    loser_run_id,
+) -> int:
+    """Insert a limited match record. Returns match_id."""
+    create_limited_tables()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute(
+        """INSERT INTO limited_match_records
+           (reporter_id, winner_id, winner_display_name, loser_id, loser_display_name,
+            did_win, timestamp, first_player, match_time,
+            curiosa_url_winner, curiosa_url_loser, match_comment,
+            json_deck_data_winner, json_deck_data_loser,
+            winner_elo_change, loser_elo_change,
+            winner_went_first, loser_went_first,
+            winner_run_id, loser_run_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            reporter_id,
+            winner_id,
+            winner_display_name,
+            loser_id,
+            loser_display_name,
+            did_win,
+            datetime.datetime.now().isoformat(),
+            first_player,
+            match_time,
+            curiosa_url_winner,
+            curiosa_url_loser,
+            match_comment,
+            json_deck_data_winner,
+            json_deck_data_loser,
+            winner_elo_change,
+            loser_elo_change,
+            winner_went_first,
+            loser_went_first,
+            winner_run_id,
+            loser_run_id,
+        ),
+    )
+
+    match_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return match_id
+
+
+# --- Limited ELO Operations ---
+
+
+def get_limited_elo(user_id: int) -> int:
+    """Get a user's current Limited ELO rating.
+
+    Returns 1500 if the user has no limited ELO record.
+    """
+    create_limited_tables()
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+    cur.execute("SELECT elo FROM limited_elo WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row and row[0] else 1500
+
+
+def upsert_limited_elo(user_id: int, display_name: str, new_elo: int):
+    """Insert or update a user's Limited ELO rating."""
+    create_limited_tables()
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO limited_elo (user_id, user_display_name, elo)
+           VALUES (?, ?, ?)
+           ON CONFLICT(user_id) DO UPDATE SET
+               user_display_name = excluded.user_display_name,
+               elo = excluded.elo""",
+        (user_id, display_name, new_elo),
+    )
+    conn.commit()
+    conn.close()
+
+
+# --- Limited Pairings Operations ---
+
+
+def save_limited_pairing(
+    guild_id: int,
+    player1_id: int,
+    player2_id: int,
+    player1_deck_url: str = None,
+    player2_deck_url: str = None,
+    player1_run_id: int = None,
+    player2_run_id: int = None,
+) -> int:
+    """Save a new active limited pairing. Returns pairing_id."""
+    if guild_id is None:
+        raise ValueError("guild_id cannot be None")
+
+    create_limited_tables()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute(
+        """INSERT INTO limited_active_pairings
+           (guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url,
+            player1_run_id, player2_run_id, created_at, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')""",
+        (
+            guild_id,
+            player1_id,
+            player2_id,
+            player1_deck_url,
+            player2_deck_url,
+            player1_run_id,
+            player2_run_id,
+            datetime.datetime.now().isoformat(),
+        ),
+    )
+
+    pairing_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    logger.info(
+        "Saved limited pairing %d: guild=%d, p1=%d, p2=%d",
+        pairing_id, guild_id, player1_id, player2_id,
+    )
+    return pairing_id
+
+
+def get_limited_pairing_between_players(
+    guild_id: int, user_id: int, opponent_id: int
+) -> dict | None:
+    """Get the most recent active limited pairing between two players."""
+    create_limited_tables()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute(
+        """SELECT pairing_id, guild_id, player1_id, player2_id,
+                  player1_deck_url, player2_deck_url,
+                  player1_run_id, player2_run_id, created_at
+           FROM limited_active_pairings
+           WHERE guild_id = ? AND status = 'active'
+           AND ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))
+           ORDER BY created_at DESC
+           LIMIT 1""",
+        (guild_id, user_id, opponent_id, opponent_id, user_id),
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            "pairing_id": row[0],
+            "guild_id": row[1],
+            "player1_id": row[2],
+            "player2_id": row[3],
+            "player1_deck_url": row[4],
+            "player2_deck_url": row[5],
+            "player1_run_id": row[6],
+            "player2_run_id": row[7],
+            "created_at": row[8],
+        }
+    return None
+
+
+def mark_limited_pairing_reported(
+    guild_id: int, user_id: int, opponent_id: int
+) -> bool:
+    """Mark a limited pairing as reported. Returns True if updated."""
+    create_limited_tables()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute(
+        """UPDATE limited_active_pairings
+           SET status = 'reported'
+           WHERE status = 'active'
+           AND guild_id = ?
+           AND ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))""",
+        (guild_id, user_id, opponent_id, opponent_id, user_id),
+    )
+
+    updated = cur.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+
+def cleanup_old_limited_pairings(hours: int = 24):
+    """Mark limited pairings older than specified hours as expired."""
+    create_limited_tables()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cutoff = (datetime.datetime.now() - datetime.timedelta(hours=hours)).isoformat()
+    cur.execute(
+        """UPDATE limited_active_pairings
+           SET status = 'expired'
+           WHERE status = 'active' AND created_at < ?""",
+        (cutoff,),
+    )
+
+    conn.commit()
+    conn.close()

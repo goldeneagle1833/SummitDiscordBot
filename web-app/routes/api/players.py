@@ -97,6 +97,97 @@ def deck_snapshot(match_id, player_id):
         return jsonify({"error": str(e)}), 500
 
 
+def _get_limited_stats(player_id: str) -> dict:
+    """Fetch limited arena stats for a player from match_records.db and elo.db."""
+    result = {
+        "has_data": False,
+        "elo": 1500,
+        "arena_runs": [],
+        "recent_matches": [],
+        "total_wins": 0,
+        "total_losses": 0,
+        "total_matches": 0,
+        "win_rate": 0,
+    }
+
+    # Limited ELO from elo.db
+    try:
+        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
+        elo_cur = elo_conn.cursor()
+        elo_cur.execute("SELECT elo FROM limited_elo WHERE user_id = ?", (player_id,))
+        row = elo_cur.fetchone()
+        if row:
+            result["elo"] = row[0]
+            result["has_data"] = True
+        elo_conn.close()
+    except sqlite3.OperationalError:
+        pass
+
+    # Arena runs + matches from match_records.db
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        # Arena runs
+        cur.execute(
+            """SELECT run_id, wins, losses, deck_url, status, starting_elo, created_at, completed_at
+               FROM limited_arena_runs WHERE user_id = ? ORDER BY created_at DESC""",
+            (player_id,),
+        )
+        runs = cur.fetchall()
+        if runs:
+            result["has_data"] = True
+            result["arena_runs"] = [
+                {
+                    "run_id": r[0], "wins": r[1], "losses": r[2], "deck_url": r[3],
+                    "status": r[4], "starting_elo": r[5],
+                    "created_at": r[6][:10] if r[6] else None,
+                    "completed_at": r[7][:10] if r[7] else None,
+                }
+                for r in runs
+            ]
+
+        # Recent limited matches
+        cur.execute(
+            """SELECT match_id, winner_id, winner_display_name, loser_id, loser_display_name,
+                      timestamp, winner_elo_change, loser_elo_change, match_time
+               FROM limited_match_records
+               WHERE winner_id = ? OR loser_id = ?
+               ORDER BY timestamp DESC LIMIT 20""",
+            (player_id, player_id),
+        )
+        matches = cur.fetchall()
+        if matches:
+            result["has_data"] = True
+            total_wins = sum(1 for m in matches if str(m[1]) == str(player_id))
+            total_losses = sum(1 for m in matches if str(m[3]) == str(player_id))
+            total = total_wins + total_losses
+            result["total_wins"] = total_wins
+            result["total_losses"] = total_losses
+            result["total_matches"] = total
+            result["win_rate"] = round(total_wins / total * 100, 1) if total > 0 else 0
+            result["recent_matches"] = [
+                {
+                    "match_id": m[0],
+                    "winner_id": str(m[1]),
+                    "winner_name": m[2] or "Unknown",
+                    "loser_id": str(m[3]),
+                    "loser_name": m[4] or "Unknown",
+                    "timestamp": m[5],
+                    "winner_elo_change": m[6] or 0,
+                    "loser_elo_change": m[7] or 0,
+                    "match_time": m[8] or 0,
+                }
+                for m in matches
+            ]
+
+        conn.close()
+    except sqlite3.OperationalError:
+        pass
+
+    return result
+
+
 @players_bp.route("/player/<player_id>")
 def player_api(player_id):
     """Get comprehensive player stats and match history.
@@ -1225,6 +1316,9 @@ def player_api(player_id):
     # Check if user has set a custom display name (reuse profile fetched earlier)
     has_custom_display_name = bool(profile and profile.get("custom_display_name")) if profile else False
 
+    # Fetch limited arena stats
+    limited_stats = _get_limited_stats(player_id_normalized)
+
     return jsonify(
         {
             "id": player_id_normalized,
@@ -1268,6 +1362,7 @@ def player_api(player_id):
             "online_elo": online_elo,
             "paper_event_elo": paper_event_elo,
             "online_event_elo": online_event_elo,
+            "limited": limited_stats,
         }
     )
 

@@ -61,6 +61,14 @@ from services.elo_service import (  # noqa: F401
     solo_match_report,
 )
 
+# Limited queue (arena draft mode) data access
+from repositories.limited_repo import (  # noqa: F401
+    create_limited_tables,
+)
+
+# Pilots (feature flags)
+from services.pilots_service import is_pilot_active  # noqa: F401
+
 # Audit logging
 from repositories.audit_repo import log_admin_action  # noqa: F401
 

@@ -7,9 +7,10 @@ by any submodule without circular dependencies.
 import asyncio
 
 # In-memory LFG queue
-# user_id: {timestamp, timeframe, deck_url, queue_type, ladder_info (optional)}
-# queue_type: "ranked", "testing", or "both"
+# user_id: {timestamp, timeframe, deck_url, queue_type, ladder_info (optional), run_id (limited only)}
+# queue_type: "ranked", "testing", "both", or "limited"
 # ladder_info: dict with {challenger_id, challenge_id, elo_multiplier_winner, elo_multiplier_loser, guild_id}
+# run_id: int - active arena run ID (only present for queue_type="limited")
 lfg_queue = {}
 
 # Lock to prevent race conditions when accessing the queue

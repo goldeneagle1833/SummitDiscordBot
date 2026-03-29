@@ -472,6 +472,76 @@
           </div>
         </div>
 
+        <!-- Limited Arena Section -->
+        <div id="limited-arena-section" style="display: none">
+          <h3 class="collapsible-header" id="limited-arena-header">
+            <span class="chevron">▼</span>
+            🎲 Limited Arena
+          </h3>
+          <div class="collapsible-content" id="limited-arena-content">
+            <div class="player-stats" id="limited-stats">
+              <div class="stat-card">
+                <div class="stat-value" id="limited-elo">-</div>
+                <div class="stat-label">Limited ELO</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="limited-wins">-</div>
+                <div class="stat-label">Wins</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="limited-losses">-</div>
+                <div class="stat-label">Losses</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="limited-winrate">-</div>
+                <div class="stat-label">Win Rate</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="limited-runs-count">-</div>
+                <div class="stat-label">Arena Runs</div>
+              </div>
+            </div>
+
+            <!-- Arena Run History -->
+            <div id="limited-runs-section" style="margin-top: 1rem">
+              <h4 style="margin-bottom: 0.5rem; color: var(--color-text-muted, #8b949e)">Arena Runs</h4>
+              <div class="overflow-x-auto">
+                <table class="match-history-table" style="width: 100%">
+                  <thead>
+                    <tr>
+                      <th>Record</th>
+                      <th>Status</th>
+                      <th>Deck</th>
+                      <th>Starting ELO</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody id="limited-runs-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Limited Match History -->
+            <div id="limited-matches-section" style="margin-top: 1rem">
+              <h4 style="margin-bottom: 0.5rem; color: var(--color-text-muted, #8b949e)">Recent Limited Matches</h4>
+              <div class="overflow-x-auto">
+                <table class="match-history-table" style="width: 100%">
+                  <thead>
+                    <tr>
+                      <th>Result</th>
+                      <th>Opponent</th>
+                      <th>ELO</th>
+                      <th>Time</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody id="limited-matches-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Match History -->
         <div class="match-history">
           <h3>📜 Match History</h3>
@@ -1903,6 +1973,68 @@
           } else {
             document.getElementById("recent-decks-section").style.display =
               "none";
+          }
+
+          // Render Limited Arena section
+          if (data.limited && data.limited.has_data) {
+            document.getElementById("limited-arena-section").style.display = "block";
+            document.getElementById("limited-elo").textContent = data.limited.elo;
+            document.getElementById("limited-wins").textContent = data.limited.total_wins;
+            document.getElementById("limited-losses").textContent = data.limited.total_losses;
+            document.getElementById("limited-winrate").textContent = `${data.limited.win_rate}%`;
+            document.getElementById("limited-runs-count").textContent = data.limited.arena_runs.length;
+
+            // Render arena runs table
+            const runsBody = document.getElementById("limited-runs-tbody");
+            runsBody.innerHTML = "";
+            if (data.limited.arena_runs.length === 0) {
+              runsBody.innerHTML = '<tr><td colspan="5" style="text-align: center; opacity: 0.6;">No arena runs yet</td></tr>';
+            } else {
+              data.limited.arena_runs.forEach(run => {
+                const statusColor = run.status === "completed" ? "#4ade80"
+                  : run.status === "forfeited" ? "#f87171" : "#facc15";
+                const statusLabel = run.status === "completed" ? "Completed"
+                  : run.status === "forfeited" ? "Forfeited" : "Active";
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                  <td><strong>${run.wins}-${run.losses}</strong></td>
+                  <td style="color: ${statusColor}">${statusLabel}</td>
+                  <td>${run.deck_url ? `<a href="${run.deck_url}" target="_blank" style="color: var(--color-primary, #a855f7)">View Deck</a>` : '-'}</td>
+                  <td>${run.starting_elo}</td>
+                  <td>${run.created_at || '-'}</td>
+                `;
+                runsBody.appendChild(tr);
+              });
+            }
+
+            // Render limited matches table
+            const matchesBody = document.getElementById("limited-matches-tbody");
+            matchesBody.innerHTML = "";
+            if (data.limited.recent_matches.length === 0) {
+              matchesBody.innerHTML = '<tr><td colspan="5" style="text-align: center; opacity: 0.6;">No limited matches yet</td></tr>';
+            } else {
+              data.limited.recent_matches.forEach(match => {
+                const isWinner = String(match.winner_id) === String(playerId);
+                const resultText = isWinner ? "Win" : "Loss";
+                const resultColor = isWinner ? "#4ade80" : "#f87171";
+                const eloChange = isWinner ? match.winner_elo_change : match.loser_elo_change;
+                const eloSign = eloChange >= 0 ? "+" : "";
+                const opponent = isWinner ? match.loser_name : match.winner_name;
+                const matchDate = match.timestamp ? new Date(match.timestamp).toLocaleDateString() : "-";
+                const matchTime = match.match_time > 0 ? `${match.match_time} min` : "-";
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                  <td style="color: ${resultColor}; font-weight: 600;">${resultText}</td>
+                  <td>${opponent}</td>
+                  <td style="color: ${eloChange >= 0 ? '#4ade80' : '#f87171'}">${eloSign}${eloChange}</td>
+                  <td>${matchTime}</td>
+                  <td>${matchDate}</td>
+                `;
+                matchesBody.appendChild(tr);
+              });
+            }
+          } else {
+            document.getElementById("limited-arena-section").style.display = "none";
           }
 
           // Render match history table headers (conditionally include Deck column)

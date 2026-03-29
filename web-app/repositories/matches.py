@@ -3,7 +3,7 @@
 import sqlite3
 from pathlib import Path
 
-from webapp_config import MATCH_RECORDS_DB_PATH
+from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH
 
 
 class MatchRepository:
@@ -11,6 +11,7 @@ class MatchRepository:
 
     def __init__(self, db_path: Path | str | None = None):
         self._db_path = str(db_path or MATCH_RECORDS_DB_PATH)
+        self._elo_db_path = str(ELO_DB_PATH)
         self._ensure_columns()
 
     def _get_connection(self) -> sqlite3.Connection:
@@ -838,3 +839,107 @@ class MatchRepository:
             return str(discord_row[0]) if discord_row[0] else None
         else:
             return None
+
+    # --- Limited Arena (limited_match_records, limited_arena_runs, limited_elo) ---
+
+    def get_limited_matches_for_player(self, player_id: str, limit: int = 20) -> list[dict]:
+        """Get limited match history for a player."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                SELECT
+                    match_id,
+                    winner_id,
+                    winner_display_name,
+                    loser_id,
+                    loser_display_name,
+                    timestamp,
+                    winner_elo_change,
+                    loser_elo_change,
+                    match_time,
+                    winner_run_id,
+                    loser_run_id
+                FROM limited_match_records
+                WHERE winner_id = ? OR loser_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+                """,
+                (player_id, player_id, limit),
+            )
+            rows = cur.fetchall()
+        except sqlite3.OperationalError:
+            rows = []  # Table doesn't exist yet
+        conn.close()
+        return [
+            {
+                "match_id": row[0],
+                "winner_id": str(row[1]),
+                "winner_name": row[2] or "Unknown",
+                "loser_id": str(row[3]),
+                "loser_name": row[4] or "Unknown",
+                "timestamp": row[5],
+                "winner_elo_change": row[6] or 0,
+                "loser_elo_change": row[7] or 0,
+                "match_time": row[8] or 0,
+                "winner_run_id": row[9],
+                "loser_run_id": row[10],
+            }
+            for row in rows
+        ]
+
+    def get_limited_arena_runs(self, player_id: str) -> list[dict]:
+        """Get all arena runs for a player, newest first."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                SELECT
+                    run_id,
+                    wins,
+                    losses,
+                    deck_url,
+                    status,
+                    starting_elo,
+                    created_at,
+                    completed_at
+                FROM limited_arena_runs
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                """,
+                (player_id,),
+            )
+            rows = cur.fetchall()
+        except sqlite3.OperationalError:
+            rows = []  # Table doesn't exist yet
+        conn.close()
+        return [
+            {
+                "run_id": row[0],
+                "wins": row[1],
+                "losses": row[2],
+                "deck_url": row[3],
+                "status": row[4],
+                "starting_elo": row[5],
+                "created_at": row[6],
+                "completed_at": row[7],
+            }
+            for row in rows
+        ]
+
+    def get_limited_elo(self, player_id: str) -> int:
+        """Get limited ELO for a player. Returns 1500 if not found."""
+        conn = sqlite3.connect(str(self._elo_db_path))
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT elo FROM limited_elo WHERE user_id = ?",
+                (player_id,),
+            )
+            row = cur.fetchone()
+        except sqlite3.OperationalError:
+            row = None  # Table doesn't exist yet
+        conn.close()
+        return row[0] if row else 1500

@@ -8,6 +8,9 @@ from cogs.lfg.state import lfg_queue, lfg_queue_lock
 from cogs.lfg.helpers import scrub_urls
 from utils.constants import SORCERY_NICKNAMES
 from utils.database import save_pairing
+from repositories.limited_repo import save_limited_pairing, get_active_arena_run
+from services.limited_service import start_arena_run
+from services.pilots_service import is_pilot_active
 
 logger = logging.getLogger("discord_bot")
 
@@ -53,6 +56,30 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
 
         deck_url = self.deck_url.value.strip() if self.deck_url.value else None
 
+        # Limited queue requires a deck URL
+        if self.queue_type == "limited" and not deck_url:
+            await interaction.followup.send(
+                "A Curiosa deck URL is **required** for Limited queue. Please provide your draft deck URL.",
+                ephemeral=True,
+            )
+            return
+
+        # For limited queue, ensure the player has an active arena run (or start one)
+        run_id = None
+        if self.queue_type == "limited":
+            active_run = get_active_arena_run(interaction.user.id)
+            if active_run:
+                run_id = active_run["run_id"]
+            else:
+                # Start a new arena run
+                display_name = interaction.user.global_name or interaction.user.display_name
+                try:
+                    new_run = start_arena_run(interaction.user.id, display_name, deck_url)
+                    run_id = new_run["run_id"]
+                except ValueError as e:
+                    await interaction.followup.send(str(e), ephemeral=True)
+                    return
+
         # Create a fake context for compatibility
         class FakeContext:
             def __init__(self, bot, interaction):
@@ -93,6 +120,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 matched_user_deck_url = matched_user_info.get("deck_url")
                 matched_queue_type = matched_user_info.get("queue_type", "ranked")
                 matched_ladder_info = matched_user_info.get("ladder_info")
+                matched_run_id = matched_user_info.get("run_id")
 
                 # Determine match type based on both players' queue types
                 match_type = lfg_cog.resolve_match_type(
@@ -129,15 +157,24 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 matched_user_id = None
                 matched_user_deck_url = None
                 matched_ladder_info = None
+                matched_run_id = None
                 match_type = None
                 lfg_cog.add_to_lfg_queue(
-                    ctx, timeframe_value, deck_url, self.queue_type
+                    ctx, timeframe_value, deck_url, self.queue_type,
+                    run_id=run_id,
                 )
 
         # Handle the result outside the lock
         if matched_user_id:
-            match_type_emoji = "⚔️" if match_type == "ranked" else "⭐"
-            match_type_label = "Ranked" if match_type == "ranked" else "Casual"
+            if match_type == "limited":
+                match_type_emoji = "🎲"
+                match_type_label = "Limited"
+            elif match_type == "ranked":
+                match_type_emoji = "⚔️"
+                match_type_label = "Ranked"
+            else:
+                match_type_emoji = "⭐"
+                match_type_label = "Casual"
             # Match found!
             matched_user = await self.bot.fetch_user(matched_user_id)
             lfg_channel = self.bot.get_channel(lfg_cog.lfg_channel_id)
@@ -162,15 +199,26 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
 
             # Save pairing to database for validation during match reporting
             try:
-                pairing_id = save_pairing(
-                    guild_id=interaction.guild.id,
-                    player1_id=interaction.user.id,
-                    player2_id=matched_user_id,
-                    player1_deck_url=deck_url,
-                    player2_deck_url=matched_user_deck_url,
-                )
+                if match_type == "limited":
+                    pairing_id = save_limited_pairing(
+                        guild_id=interaction.guild.id,
+                        player1_id=interaction.user.id,
+                        player2_id=matched_user_id,
+                        player1_deck_url=deck_url,
+                        player2_deck_url=matched_user_deck_url,
+                        player1_run_id=run_id,
+                        player2_run_id=matched_run_id,
+                    )
+                else:
+                    pairing_id = save_pairing(
+                        guild_id=interaction.guild.id,
+                        player1_id=interaction.user.id,
+                        player2_id=matched_user_id,
+                        player1_deck_url=deck_url,
+                        player2_deck_url=matched_user_deck_url,
+                    )
                 logger.info(
-                    f"Saved pairing {pairing_id} in guild {interaction.guild.id}: "
+                    f"Saved {'limited ' if match_type == 'limited' else ''}pairing {pairing_id} in guild {interaction.guild.id}: "
                     f"{interaction.user.id} ({joiner_global}) vs {matched_user_id} ({matched_global})"
                 )
             except Exception as e:
@@ -216,6 +264,18 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             # (Skip match type selection since we already know it from queue types)
             from cogs.lfg.match_reporting import WentFirstView
 
+            # Determine run_ids for reporter and other player
+            if match_type == "limited":
+                if reporter_is_joiner:
+                    reporter_run_id = run_id
+                    other_run_id = matched_run_id
+                else:
+                    reporter_run_id = matched_run_id
+                    other_run_id = run_id
+            else:
+                reporter_run_id = None
+                other_run_id = None
+
             went_first_view = WentFirstView(
                 reporter_id,
                 reporter_id,
@@ -232,11 +292,20 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 guild_id=interaction.guild.id,
                 ladder_info=matched_ladder_info,
                 match_type=match_type,
+                reporter_run_id=reporter_run_id,
+                opponent_run_id=other_run_id,
             )
 
             # Build match type label for message
-            match_type_emoji = "⚔️" if match_type == "ranked" else "⭐"
-            match_type_label = "Ranked" if match_type == "ranked" else "Casual"
+            if match_type == "limited":
+                match_type_emoji = "🎲"
+                match_type_label = "Limited"
+            elif match_type == "ranked":
+                match_type_emoji = "⚔️"
+                match_type_label = "Ranked"
+            else:
+                match_type_emoji = "⭐"
+                match_type_label = "Casual"
 
             # Send "Did you go first?" question to the selected reporter
             try:
@@ -357,6 +426,8 @@ class JoinQueueButtons(discord.ui.View):
     def __init__(self, bot):
         super().__init__(timeout=None)
         self.bot = bot
+        if not is_pilot_active("GrewWolves"):
+            self.remove_item(self.join_limited_button)
 
     async def _handle_join(self, interaction: discord.Interaction, queue_type: str):
         """Shared handler for all join buttons"""
@@ -397,6 +468,22 @@ class JoinQueueButtons(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         await self._handle_join(interaction, "both")
+
+    @discord.ui.button(
+        label="Join Limited",
+        style=discord.ButtonStyle.secondary,
+        custom_id="join_lfg_limited",
+        emoji="🎲",
+    )
+    async def join_limited_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        if not is_pilot_active("GrewWolves"):
+            await interaction.response.send_message(
+                "Limited queue is not currently available.", ephemeral=True
+            )
+            return
+        await self._handle_join(interaction, "limited")
 
 
 class ActiveQueueButtons(JoinQueueButtons):

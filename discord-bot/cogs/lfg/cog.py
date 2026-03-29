@@ -49,6 +49,7 @@ from utils.database import (
 from utils.constants import SORCERY_NICKNAMES
 from utils.text import find_best_command_match
 from utils.checks import is_bot_admin
+from services.pilots_service import is_pilot_active
 
 logger = logging.getLogger("discord_bot")
 
@@ -487,32 +488,33 @@ class LFGCog(commands.Cog):
                     inline=False,
                 )
 
-            # Limited queue section
-            limited_details = []
-            for user_id, info in lfg_queue.items():
-                qt = info.get("queue_type", "ranked")
-                if qt == "limited":
-                    time_elapsed = (now - info["timestamp"]).total_seconds() / 60
-                    time_remaining = info["timeframe"] - time_elapsed
-                    placeholder = SORCERY_NICKNAMES[
-                        randrange(0, len(SORCERY_NICKNAMES))
-                    ]
-                    limited_details.append(
-                        f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`"
-                    )
+            # Limited queue section (only show when pilot is active)
+            if is_pilot_active("GrewWolves"):
+                limited_details = []
+                for user_id, info in lfg_queue.items():
+                    qt = info.get("queue_type", "ranked")
+                    if qt == "limited":
+                        time_elapsed = (now - info["timestamp"]).total_seconds() / 60
+                        time_remaining = info["timeframe"] - time_elapsed
+                        placeholder = SORCERY_NICKNAMES[
+                            randrange(0, len(SORCERY_NICKNAMES))
+                        ]
+                        limited_details.append(
+                            f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`"
+                        )
 
-            if limited_details:
-                embed.add_field(
-                    name="\U0001f3b2 Limited Queue",
-                    value="\n".join(limited_details),
-                    inline=False,
-                )
-            else:
-                embed.add_field(
-                    name="\U0001f3b2 Limited Queue",
-                    value="`Empty`",
-                    inline=False,
-                )
+                if limited_details:
+                    embed.add_field(
+                        name="\U0001f3b2 Limited Queue",
+                        value="\n".join(limited_details),
+                        inline=False,
+                    )
+                else:
+                    embed.add_field(
+                        name="\U0001f3b2 Limited Queue",
+                        value="`Empty`",
+                        inline=False,
+                    )
 
             embed.set_footer(text="Status updates automatically")
 

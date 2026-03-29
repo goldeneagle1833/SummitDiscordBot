@@ -507,6 +507,12 @@ class LFGCog(commands.Cog):
                     value="\n".join(limited_details),
                     inline=False,
                 )
+            else:
+                embed.add_field(
+                    name="\U0001f3b2 Limited Queue",
+                    value="`Empty`",
+                    inline=False,
+                )
 
             embed.set_footer(text="Status updates automatically")
 
@@ -752,13 +758,17 @@ class LFGCog(commands.Cog):
         return "ranked"
 
     def check_if_someone_is_lfg(self, ctx, queue_type="ranked"):
-        """Find oldest player in queue who didn't play against ctx.author recently
-        and is compatible with the given queue_type.
+        """Find a player in queue compatible with the given queue_type.
+        Ranked/Limited: FILO order (newest first), skip last opponent.
+        Casual (testing): No pairing restrictions, FIFO order (oldest first).
         Returns None if no valid match found.
         """
         now = datetime.datetime.now()
-        oldest_valid_match = None
-        oldest_timestamp = None
+        best_match = None
+        best_timestamp = None
+
+        # Casual (testing) has no pairing restrictions
+        is_casual = queue_type == "testing"
 
         for user_id, info in lfg_queue.items():
             if user_id == ctx.author.id:
@@ -776,19 +786,25 @@ class LFGCog(commands.Cog):
             if not self.are_queue_types_compatible(queue_type, their_type):
                 continue
 
-            # Check if they played each other recently
-            if self.check_last_match_opponent(ctx.author.id, user_id):
+            # Ranked/Limited: skip if they played each other in their last match
+            if not is_casual and self.check_last_match_opponent(ctx.author.id, user_id):
                 logger.info(
                     f"Skipping {user_id} - played against {ctx.author.id} in last match"
                 )
                 continue
 
-            # Find the oldest eligible player (FIFO)
-            if oldest_timestamp is None or timestamp < oldest_timestamp:
-                oldest_timestamp = timestamp
-                oldest_valid_match = user_id
+            if is_casual:
+                # Casual: FIFO - match with oldest player (no restrictions)
+                if best_timestamp is None or timestamp < best_timestamp:
+                    best_timestamp = timestamp
+                    best_match = user_id
+            else:
+                # Ranked/Limited: FILO - match with newest player
+                if best_timestamp is None or timestamp > best_timestamp:
+                    best_timestamp = timestamp
+                    best_match = user_id
 
-        return oldest_valid_match
+        return best_match
 
     def add_to_lfg_queue(
         self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None, run_id=None

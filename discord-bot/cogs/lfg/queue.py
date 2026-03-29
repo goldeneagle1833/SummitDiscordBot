@@ -72,9 +72,13 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 run_id = active_run["run_id"]
             else:
                 # Start a new arena run
-                display_name = interaction.user.global_name or interaction.user.display_name
+                display_name = (
+                    interaction.user.global_name or interaction.user.display_name
+                )
                 try:
-                    new_run = start_arena_run(interaction.user.id, display_name, deck_url)
+                    new_run = start_arena_run(
+                        interaction.user.id, display_name, deck_url
+                    )
                     run_id = new_run["run_id"]
                 except ValueError as e:
                     await interaction.followup.send(str(e), ephemeral=True)
@@ -130,7 +134,10 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 # If matched user has ladder_info, adjust multipliers based on ELO difference
                 if matched_ladder_info:
                     from utils.database import get_user_event_elo
-                    challenger_elo = get_user_event_elo(matched_ladder_info["challenger_id"])
+
+                    challenger_elo = get_user_event_elo(
+                        matched_ladder_info["challenger_id"]
+                    )
                     opponent_elo = get_user_event_elo(interaction.user.id)
                     elo_diff = abs(challenger_elo - opponent_elo)
 
@@ -160,7 +167,10 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 matched_run_id = None
                 match_type = None
                 lfg_cog.add_to_lfg_queue(
-                    ctx, timeframe_value, deck_url, self.queue_type,
+                    ctx,
+                    timeframe_value,
+                    deck_url,
+                    self.queue_type,
                     run_id=run_id,
                 )
 
@@ -382,6 +392,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 ladder_note = ""
                 if matched_ladder_info:
                     from utils.database import get_user_event_elo
+
                     elo_diff = abs(
                         get_user_event_elo(matched_ladder_info["challenger_id"])
                         - get_user_event_elo(interaction.user.id)
@@ -409,10 +420,13 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 await interaction.user.send(
                     f"You have been added to the **{queue_label}** queue for {timeframe_value} minutes.{deck_msg}"
                 )
-            except discord.Forbidden:
+            except Exception:
                 pass
 
-            await lfg_cog.update_lfg_status()
+            try:
+                await lfg_cog.update_lfg_status()
+            except Exception as e:
+                logger.error(f"Failed to update LFG status after queue join: {e}")
 
             await interaction.followup.send(
                 f"You've joined the **{queue_label}** queue for {timeframe_value} minutes!{deck_msg}",
@@ -471,9 +485,8 @@ class JoinQueueButtons(discord.ui.View):
 
     @discord.ui.button(
         label="Join Limited",
-        style=discord.ButtonStyle.secondary,
+        style=discord.ButtonStyle.primary,
         custom_id="join_lfg_limited",
-        emoji="🎲",
     )
     async def join_limited_button(
         self, interaction: discord.Interaction, button: discord.ui.Button

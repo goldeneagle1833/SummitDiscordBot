@@ -408,6 +408,10 @@ class LFGCog(commands.Cog):
         # Clean expired entries first
         self.clean_expired_lfg()
 
+        # Log queue state for debugging
+        queue_types = [info.get("queue_type", "ranked") for info in lfg_queue.values()]
+        logger.debug(f"Updating LFG status: {len(lfg_queue)} players, types={queue_types}")
+
         # Create embed based on queue status
         if len(lfg_queue) == 0:
             # RED - Empty queue
@@ -507,12 +511,14 @@ class LFGCog(commands.Cog):
             embed.set_footer(text="Status updates automatically")
 
         # Create the appropriate button view based on queue status
-        if len(lfg_queue) == 0:
-            # Empty queue (red) - no leave button
-            view = JoinQueueButtons(self.bot)
-        else:
-            # Active queue (green) - includes leave button
-            view = ActiveQueueButtons(self.bot)
+        try:
+            if len(lfg_queue) == 0:
+                view = JoinQueueButtons(self.bot)
+            else:
+                view = ActiveQueueButtons(self.bot)
+        except Exception as e:
+            logger.error(f"Error creating queue buttons view: {e}")
+            view = None
 
         # Delete old message and send new one
         try:

@@ -175,13 +175,35 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         match_start_time = datetime.datetime.now()
 
         # Save pairing to database for validation during match reporting
+        if not self.guild_id:
+            logger.warning(
+                f"guild_id is None for challenge between {self.challenger_id} and {interaction.user.id}, "
+                f"attempting to recover from interaction"
+            )
+            if interaction.guild:
+                self.guild_id = interaction.guild.id
+
         if self.guild_id:
-            save_pairing(
-                guild_id=self.guild_id,
-                player1_id=self.challenger_id,
-                player2_id=interaction.user.id,
-                player1_deck_url=self.challenger_deck_url,
-                player2_deck_url=accepter_deck_url,
+            try:
+                pairing_id = save_pairing(
+                    guild_id=self.guild_id,
+                    player1_id=self.challenger_id,
+                    player2_id=interaction.user.id,
+                    player1_deck_url=self.challenger_deck_url,
+                    player2_deck_url=accepter_deck_url,
+                )
+                logger.info(
+                    f"Saved challenge pairing {pairing_id} in guild {self.guild_id}: "
+                    f"{self.challenger_id} vs {interaction.user.id}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to save challenge pairing for {self.challenger_id} vs {interaction.user.id}: {e}",
+                    exc_info=True,
+                )
+        else:
+            logger.error(
+                f"Cannot save challenge pairing: guild_id is None for {self.challenger_id} vs {interaction.user.id}"
             )
 
         # Randomly select which player gets the report buttons

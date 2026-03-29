@@ -29,6 +29,7 @@ from utils.version import APP_VERSION
 from utils.auth import get_current_user, is_admin, is_curio_editor
 from routes import register_blueprints
 from migrations.create_match_reports_web import create_match_reports_web_table
+from migrations.add_season_id_to_match_reports_web import migrate as migrate_season_id
 
 # Configure logging
 logging.basicConfig(
@@ -48,9 +49,10 @@ def create_app() -> Flask:
     app.jinja_env.auto_reload = True
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 
-    # Ensure required tables exist
+    # Ensure required tables exist and run migrations
     try:
         create_match_reports_web_table()
+        migrate_season_id()
     except Exception as e:
         logger.error(f"Failed to ensure match_reports_web table: {e}")
 

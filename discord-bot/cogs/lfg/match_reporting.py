@@ -560,35 +560,24 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             else view.player1_id
         )
 
-        # Validate pairing exists in DB using both player IDs (most recent active)
+        # Soft-validate pairing exists in DB (warn but don't block the report)
         if not view.ladder_info:
             if not view.guild_id:
-                logger.error(
-                    f"guild_id is None during match report validation for user {original_interaction.user.id}"
-                )
-                await interaction.followup.send(
-                    "No active pairing found. Guild context is missing. Please report this bug to an admin.",
-                    ephemeral=True,
-                )
-                return
-
-            pairing = get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
-            if not pairing:
                 logger.warning(
-                    f"No active pairing found in guild {view.guild_id} between "
-                    f"user {original_interaction.user.id} and opponent {opponent_id}"
+                    f"guild_id is None during match report for user {original_interaction.user.id} — skipping pairing validation"
                 )
-                await interaction.followup.send(
-                    "No active pairing found. This may happen if the match wasn't properly saved.\n\n"
-                    "**To report this match manually:** Use `!challenge @opponent` to create a new report flow.",
-                    ephemeral=True,
-                )
-                return
             else:
-                logger.info(
-                    f"Validated pairing {pairing['pairing_id']} for match report in guild {view.guild_id}: "
-                    f"user {original_interaction.user.id} vs opponent {opponent_id}"
-                )
+                pairing = get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
+                if not pairing:
+                    logger.warning(
+                        f"No active pairing found in guild {view.guild_id} between "
+                        f"user {original_interaction.user.id} and opponent {opponent_id} — proceeding anyway"
+                    )
+                else:
+                    logger.info(
+                        f"Validated pairing {pairing['pairing_id']} for match report in guild {view.guild_id}: "
+                        f"user {original_interaction.user.id} vs opponent {opponent_id}"
+                    )
 
         # Fetch opponent to get their global name
         try:
@@ -777,35 +766,24 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
             else view.player1_id
         )
 
-        # Validate pairing exists in DB using both player IDs (most recent active)
+        # Soft-validate pairing exists in DB (warn but don't block the report)
         if not view.ladder_info:
             if not view.guild_id:
-                logger.error(
-                    f"guild_id is None during match report validation for user {original_interaction.user.id}"
-                )
-                await interaction.followup.send(
-                    "No active pairing found. Guild context is missing. Please report this bug to an admin.",
-                    ephemeral=True,
-                )
-                return
-
-            pairing = get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
-            if not pairing:
                 logger.warning(
-                    f"No active pairing found in guild {view.guild_id} between "
-                    f"user {original_interaction.user.id} and opponent {opponent_id}"
+                    f"guild_id is None during match report for user {original_interaction.user.id} — skipping pairing validation"
                 )
-                await interaction.followup.send(
-                    "No active pairing found. This may happen if the match wasn't properly saved.\n\n"
-                    "**To report this match manually:** Use `!challenge @opponent` to create a new report flow.",
-                    ephemeral=True,
-                )
-                return
             else:
-                logger.info(
-                    f"Validated pairing {pairing['pairing_id']} for match report in guild {view.guild_id}: "
-                    f"user {original_interaction.user.id} vs opponent {opponent_id}"
-                )
+                pairing = get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
+                if not pairing:
+                    logger.warning(
+                        f"No active pairing found in guild {view.guild_id} between "
+                        f"user {original_interaction.user.id} and opponent {opponent_id} — proceeding anyway"
+                    )
+                else:
+                    logger.info(
+                        f"Validated pairing {pairing['pairing_id']} for match report in guild {view.guild_id}: "
+                        f"user {original_interaction.user.id} vs opponent {opponent_id}"
+                    )
 
         # Fetch opponent to get their global name
         try:
@@ -1233,6 +1211,9 @@ class MatchTypeSelectionView(discord.ui.View):
         self, interaction: discord.Interaction, match_type: str
     ):
         """Delete this message and show the 'Did you go first?' view."""
+        # Defer FIRST to lock in the interaction before any message operations
+        await interaction.response.defer()
+
         # Delete the match type selection message
         try:
             await interaction.message.delete()
@@ -1261,19 +1242,21 @@ class MatchTypeSelectionView(discord.ui.View):
         match_type_emoji = "⚔️" if match_type == "ranked" else "⭐"
         match_type_label = "Ranked" if match_type == "ranked" else "Casual"
 
-        # Send the "Did you go first?" question
+        # Send the "Did you go first?" question via followup (since we deferred)
         try:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"{match_type_emoji} **{match_type_label} Match** - You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\n**Did you go first?**",
                 view=went_first_view,
             )
         except Exception as e:
             logger.error(f"Error sending went first view after match type selection: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
+            try:
+                await interaction.followup.send(
                     "An error occurred. Please try again.",
                     ephemeral=True,
                 )
+            except Exception:
+                pass
 
 
 class WentFirstView(discord.ui.View):
@@ -1338,6 +1321,9 @@ class WentFirstView(discord.ui.View):
         self, interaction: discord.Interaction, first_player: str
     ):
         """Delete this message and send the actual report buttons."""
+        # Defer FIRST to lock in the interaction before any message operations
+        await interaction.response.defer()
+
         # Delete the "Did you go first?" message
         try:
             await interaction.message.delete()
@@ -1366,19 +1352,21 @@ class WentFirstView(discord.ui.View):
         match_type_emoji = "⚔️" if self.match_type == "ranked" else "⭐"
         match_type_label = "Ranked" if self.match_type == "ranked" else "Casual"
 
-        # Send the report buttons
+        # Send the report buttons via followup (since we deferred)
         try:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\nReport the match result below:",
                 view=view_reporter,
             )
         except Exception as e:
             logger.error(f"Error sending report buttons after went first: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
+            try:
+                await interaction.followup.send(
                     "An error occurred. Please try again.",
                     ephemeral=True,
                 )
+            except Exception:
+                pass
 
 
 class LFGReportButtons(discord.ui.View):
@@ -1447,35 +1435,24 @@ class LFGReportButtons(discord.ui.View):
             else self.player1_id
         )
 
-        # Validate pairing exists in DB using both player IDs (most recent active)
+        # Soft-validate pairing exists in DB (warn but don't block the report)
         if not self.ladder_info:
             if not self.guild_id:
-                logger.error(
-                    f"guild_id is None during match report validation for user {interaction.user.id}"
-                )
-                await interaction.followup.send(
-                    "No active pairing found. Guild context is missing. Please report this bug to an admin.",
-                    ephemeral=True,
-                )
-                return
-
-            pairing = get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
-            if not pairing:
                 logger.warning(
-                    f"No active pairing found in guild {self.guild_id} between "
-                    f"user {interaction.user.id} and opponent {opponent_id}"
+                    f"guild_id is None during match report for user {interaction.user.id} — skipping pairing validation"
                 )
-                await interaction.followup.send(
-                    "No active pairing found. This may happen if the match wasn't properly saved.\n\n"
-                    "**To report this match manually:** Use `!challenge @opponent` to create a new report flow.",
-                    ephemeral=True,
-                )
-                return
             else:
-                logger.info(
-                    f"Validated pairing {pairing['pairing_id']} for match report in guild {self.guild_id}: "
-                    f"user {interaction.user.id} vs opponent {opponent_id}"
-                )
+                pairing = get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
+                if not pairing:
+                    logger.warning(
+                        f"No active pairing found in guild {self.guild_id} between "
+                        f"user {interaction.user.id} and opponent {opponent_id} — proceeding anyway"
+                    )
+                else:
+                    logger.info(
+                        f"Validated pairing {pairing['pairing_id']} for match report in guild {self.guild_id}: "
+                        f"user {interaction.user.id} vs opponent {opponent_id}"
+                    )
 
         # Fetch opponent to get their global name
         try:
@@ -1693,35 +1670,24 @@ class LFGReportButtons(discord.ui.View):
             else self.player1_id
         )
 
-        # Validate pairing exists in DB using both player IDs (most recent active)
+        # Soft-validate pairing exists in DB (warn but don't block the report)
         if not self.ladder_info:
             if not self.guild_id:
-                logger.error(
-                    f"guild_id is None during match report validation for user {interaction.user.id}"
-                )
-                await interaction.followup.send(
-                    "No active pairing found. Guild context is missing. Please report this bug to an admin.",
-                    ephemeral=True,
-                )
-                return
-
-            pairing = get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
-            if not pairing:
                 logger.warning(
-                    f"No active pairing found in guild {self.guild_id} between "
-                    f"user {interaction.user.id} and opponent {opponent_id}"
+                    f"guild_id is None during match report for user {interaction.user.id} — skipping pairing validation"
                 )
-                await interaction.followup.send(
-                    "No active pairing found. This may happen if the match wasn't properly saved.\n\n"
-                    "**To report this match manually:** Use `!challenge @opponent` to create a new report flow.",
-                    ephemeral=True,
-                )
-                return
             else:
-                logger.info(
-                    f"Validated pairing {pairing['pairing_id']} for match report in guild {self.guild_id}: "
-                    f"user {interaction.user.id} vs opponent {opponent_id}"
-                )
+                pairing = get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
+                if not pairing:
+                    logger.warning(
+                        f"No active pairing found in guild {self.guild_id} between "
+                        f"user {interaction.user.id} and opponent {opponent_id} — proceeding anyway"
+                    )
+                else:
+                    logger.info(
+                        f"Validated pairing {pairing['pairing_id']} for match report in guild {self.guild_id}: "
+                        f"user {interaction.user.id} vs opponent {opponent_id}"
+                    )
 
         # Fetch opponent to get their global name
         try:
@@ -1915,4 +1881,10 @@ class LFGReportButtons(discord.ui.View):
         await interaction.response.send_message(
             f"{interaction.user.mention} clicked **cancel match**", ephemeral=True
         )
-        await interaction.message.edit(view=None)
+        try:
+            await interaction.message.edit(view=None)
+        except discord.Forbidden:
+            # Can't edit messages in DM channels - silently ignore
+            pass
+        except discord.NotFound:
+            pass

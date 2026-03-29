@@ -287,6 +287,178 @@ def game_activity():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@admin_bp.route("/admin/dashboard-stats", methods=["GET"])
+@require_admin
+def dashboard_stats():
+    """Get time-series stats for the admin dashboard (unique players, games over time)."""
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        # Games per week (bot matches)
+        cur.execute("""
+            SELECT strftime('%Y-%W', timestamp) as week,
+                   COUNT(*) as games
+            FROM match_records
+            WHERE timestamp IS NOT NULL
+            GROUP BY week
+            ORDER BY week
+        """)
+        bot_weekly = {row[0]: row[1] for row in cur.fetchall()}
+
+        # Games per week (web matches)
+        web_weekly = {}
+        try:
+            cur.execute("""
+                SELECT strftime('%Y-%W', timestamp) as week,
+                       COUNT(*) as games
+                FROM match_reports_web
+                WHERE timestamp IS NOT NULL
+                GROUP BY week
+                ORDER BY week
+            """)
+            web_weekly = {row[0]: row[1] for row in cur.fetchall()}
+        except sqlite3.OperationalError:
+            pass
+
+        # Unique players per week (bot)
+        cur.execute("""
+            SELECT week, COUNT(DISTINCT player_id) as players FROM (
+                SELECT strftime('%Y-%W', timestamp) as week, winner_id as player_id
+                FROM match_records WHERE timestamp IS NOT NULL
+                UNION ALL
+                SELECT strftime('%Y-%W', timestamp) as week, losser_id as player_id
+                FROM match_records WHERE timestamp IS NOT NULL
+            ) GROUP BY week ORDER BY week
+        """)
+        bot_players_weekly = {row[0]: row[1] for row in cur.fetchall()}
+
+        # Unique players per week (web)
+        web_players_weekly = {}
+        try:
+            cur.execute("""
+                SELECT week, COUNT(DISTINCT player_id) as players FROM (
+                    SELECT strftime('%Y-%W', timestamp) as week, winner_id as player_id
+                    FROM match_reports_web WHERE timestamp IS NOT NULL
+                    UNION ALL
+                    SELECT strftime('%Y-%W', timestamp) as week, losser_id as player_id
+                    FROM match_reports_web WHERE timestamp IS NOT NULL
+                ) GROUP BY week ORDER BY week
+            """)
+            web_players_weekly = {row[0]: row[1] for row in cur.fetchall()}
+        except sqlite3.OperationalError:
+            pass
+
+        # Combined unique players per week (across both tables)
+        combined_players_weekly = {}
+        try:
+            cur.execute("""
+                SELECT week, COUNT(DISTINCT player_id) as players FROM (
+                    SELECT strftime('%Y-%W', timestamp) as week, winner_id as player_id
+                    FROM match_records WHERE timestamp IS NOT NULL
+                    UNION
+                    SELECT strftime('%Y-%W', timestamp) as week, losser_id as player_id
+                    FROM match_records WHERE timestamp IS NOT NULL
+                    UNION
+                    SELECT strftime('%Y-%W', timestamp) as week, winner_id as player_id
+                    FROM match_reports_web WHERE timestamp IS NOT NULL
+                    UNION
+                    SELECT strftime('%Y-%W', timestamp) as week, losser_id as player_id
+                    FROM match_reports_web WHERE timestamp IS NOT NULL
+                ) GROUP BY week ORDER BY week
+            """)
+            combined_players_weekly = {row[0]: row[1] for row in cur.fetchall()}
+        except sqlite3.OperationalError:
+            combined_players_weekly = bot_players_weekly.copy()
+
+        # Summary stats
+        cur.execute("SELECT COUNT(*) FROM match_records")
+        total_bot_matches = cur.fetchone()[0]
+        total_web_matches = 0
+        try:
+            cur.execute("SELECT COUNT(*) FROM match_reports_web")
+            total_web_matches = cur.fetchone()[0]
+        except sqlite3.OperationalError:
+            pass
+
+        # Total unique players (all time)
+        try:
+            cur.execute("""
+                SELECT COUNT(DISTINCT player_id) FROM (
+                    SELECT winner_id as player_id FROM match_records
+                    UNION SELECT losser_id as player_id FROM match_records
+                    UNION SELECT winner_id as player_id FROM match_reports_web
+                    UNION SELECT losser_id as player_id FROM match_reports_web
+                )
+            """)
+            total_players = cur.fetchone()[0]
+        except sqlite3.OperationalError:
+            cur.execute("""
+                SELECT COUNT(DISTINCT player_id) FROM (
+                    SELECT winner_id as player_id FROM match_records
+                    UNION SELECT losser_id as player_id FROM match_records
+                )
+            """)
+            total_players = cur.fetchone()[0]
+
+        # Average games per week (last 12 weeks)
+        cur.execute("""
+            SELECT COUNT(*) FROM match_records
+            WHERE timestamp >= date('now', '-84 days')
+        """)
+        recent_bot = cur.fetchone()[0]
+        recent_web = 0
+        try:
+            cur.execute("""
+                SELECT COUNT(*) FROM match_reports_web
+                WHERE timestamp >= date('now', '-84 days')
+            """)
+            recent_web = cur.fetchone()[0]
+        except sqlite3.OperationalError:
+            pass
+        avg_weekly_games = round((recent_bot + recent_web) / 12, 1)
+
+        conn.close()
+
+        # Merge all weeks
+        all_weeks = sorted(set(
+            list(bot_weekly.keys()) + list(web_weekly.keys())
+        ))
+
+        games_over_time = []
+        players_over_time = []
+        for week in all_weeks:
+            bot_g = bot_weekly.get(week, 0)
+            web_g = web_weekly.get(week, 0)
+            games_over_time.append({
+                "week": week,
+                "bot": bot_g,
+                "web": web_g,
+                "total": bot_g + web_g,
+            })
+            players_over_time.append({
+                "week": week,
+                "combined": combined_players_weekly.get(week, 0),
+            })
+
+        return jsonify({
+            "success": True,
+            "games_over_time": games_over_time,
+            "players_over_time": players_over_time,
+            "summary": {
+                "total_matches": total_bot_matches + total_web_matches,
+                "total_bot_matches": total_bot_matches,
+                "total_web_matches": total_web_matches,
+                "total_players": total_players,
+                "avg_weekly_games": avg_weekly_games,
+            },
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get dashboard stats: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @admin_bp.route("/admin/start-event", methods=["POST"])
 @require_admin
 def start_event_route():

@@ -12,6 +12,7 @@
 
     <link rel="stylesheet" href="{{ url_for('static', filename='css/components/footer.css') }}?v={{ app_version }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pages/admin_audit_log.css') }}?v={{ app_version }}" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body>
     {% include 'components/navbar.html' %}
@@ -19,6 +20,59 @@
       <section class="hero">
         <h1>Admin Audit Log</h1>
         <p>History of all administrative actions</p>
+      </section>
+
+      <section class="dashboard-section">
+        <h2>Dashboard</h2>
+        <p class="section-subtitle">Community health at a glance</p>
+
+        <div class="dashboard-summary-cards">
+          <div class="summary-card">
+            <span class="summary-value" id="total-players">--</span>
+            <span class="summary-label">Total Players</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-value" id="total-matches">--</span>
+            <span class="summary-label">Total Matches</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-value" id="avg-weekly">--</span>
+            <span class="summary-label">Avg Games/Week (12wk)</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-value" id="bot-matches">--</span>
+            <span class="summary-label">Online Matches</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-value" id="web-matches">--</span>
+            <span class="summary-label">Paper Matches</span>
+          </div>
+        </div>
+
+        <div class="dashboard-charts-grid">
+          <div class="chart-card">
+            <h3>Games Over Time</h3>
+            <canvas id="games-chart"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Unique Players Over Time</h3>
+            <canvas id="players-chart"></canvas>
+          </div>
+        </div>
+
+        <div class="dashboard-suggestions">
+          <h3>Suggested Metrics to Track</h3>
+          <ul>
+            <li><strong>Player Retention:</strong> % of players who played in consecutive weeks</li>
+            <li><strong>New Player Acquisition:</strong> First-time players per week</li>
+            <li><strong>Match Source Split:</strong> Online vs Paper ratio trends over time</li>
+            <li><strong>Peak Activity Hours:</strong> Heatmap of when matches are played (day/hour)</li>
+            <li><strong>Average Games per Player:</strong> Engagement depth beyond just unique count</li>
+            <li><strong>ELO Distribution:</strong> Histogram of player ratings to see skill spread</li>
+            <li><strong>Top Player Dominance:</strong> Win concentration (do top 10% win disproportionately?)</li>
+            <li><strong>Deck Diversity:</strong> Number of unique avatars in play per week</li>
+          </ul>
+        </div>
       </section>
 
       <section class="admin-actions-section">
@@ -169,6 +223,131 @@
     </main>    {% include 'components/footer.html' %}
 <script src="{{ url_for('static', filename='js/components/navbar.js') }}?v={{ app_version }}"></script>
 <script>
+  // === Dashboard ===
+  const CHART_COLORS = {
+    bot: 'rgba(77, 184, 255, 0.8)',
+    web: 'rgba(63, 185, 80, 0.8)',
+    total: 'rgba(219, 154, 4, 0.8)',
+    players: 'rgba(168, 130, 255, 0.8)',
+    botFill: 'rgba(77, 184, 255, 0.15)',
+    webFill: 'rgba(63, 185, 80, 0.15)',
+    playersFill: 'rgba(168, 130, 255, 0.15)',
+  };
+
+  const chartDefaults = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { labels: { color: 'rgba(255,255,255,0.8)', font: { size: 12 } } },
+    },
+    scales: {
+      x: {
+        ticks: { color: 'rgba(255,255,255,0.5)', maxRotation: 45, maxTicksLimit: 20 },
+        grid: { color: 'rgba(255,255,255,0.05)' },
+      },
+      y: {
+        beginAtZero: true,
+        ticks: { color: 'rgba(255,255,255,0.5)' },
+        grid: { color: 'rgba(255,255,255,0.08)' },
+      },
+    },
+  };
+
+  function weekLabel(yw) {
+    // Convert "YYYY-WW" to a readable date label (first day of that week)
+    const [year, week] = yw.split('-').map(Number);
+    const jan1 = new Date(year, 0, 1);
+    const dayOfWeek = jan1.getDay();
+    const firstMonday = new Date(jan1);
+    firstMonday.setDate(jan1.getDate() + ((8 - dayOfWeek) % 7));
+    const target = new Date(firstMonday);
+    target.setDate(firstMonday.getDate() + (week - 1) * 7);
+    return target.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+  }
+
+  function loadDashboard() {
+    fetch('/api/admin/dashboard-stats')
+      .then(r => r.json())
+      .then(data => {
+        if (!data.success) return;
+
+        // Summary cards
+        document.getElementById('total-players').textContent = data.summary.total_players.toLocaleString();
+        document.getElementById('total-matches').textContent = data.summary.total_matches.toLocaleString();
+        document.getElementById('avg-weekly').textContent = data.summary.avg_weekly_games;
+        document.getElementById('bot-matches').textContent = data.summary.total_bot_matches.toLocaleString();
+        document.getElementById('web-matches').textContent = data.summary.total_web_matches.toLocaleString();
+
+        const labels = data.games_over_time.map(d => weekLabel(d.week));
+
+        // Games chart
+        new Chart(document.getElementById('games-chart'), {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: 'Online',
+                data: data.games_over_time.map(d => d.bot),
+                backgroundColor: CHART_COLORS.bot,
+                borderRadius: 2,
+              },
+              {
+                label: 'Paper',
+                data: data.games_over_time.map(d => d.web),
+                backgroundColor: CHART_COLORS.web,
+                borderRadius: 2,
+              },
+            ],
+          },
+          options: {
+            ...chartDefaults,
+            plugins: {
+              ...chartDefaults.plugins,
+              tooltip: {
+                callbacks: {
+                  afterBody: (items) => {
+                    const idx = items[0].dataIndex;
+                    const total = data.games_over_time[idx].total;
+                    return `Total: ${total}`;
+                  },
+                },
+              },
+            },
+            scales: {
+              ...chartDefaults.scales,
+              x: { ...chartDefaults.scales.x, stacked: true },
+              y: { ...chartDefaults.scales.y, stacked: true },
+            },
+          },
+        });
+
+        // Players chart
+        new Chart(document.getElementById('players-chart'), {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: 'Unique Players',
+                data: data.players_over_time.map(d => d.combined),
+                borderColor: CHART_COLORS.players,
+                backgroundColor: CHART_COLORS.playersFill,
+                fill: true,
+                tension: 0.3,
+                pointRadius: 2,
+                pointHoverRadius: 5,
+              },
+            ],
+          },
+          options: chartDefaults,
+        });
+      })
+      .catch(err => console.error('Dashboard load failed:', err));
+  }
+
+  document.addEventListener('DOMContentLoaded', loadDashboard);
+
   function resetAllElo() {
     if (!confirm('⚠️ WARNING: This will DELETE ALL ELO ratings and match history!\n\nThis action CANNOT be undone!\n\nAre you absolutely sure?')) {
       return;

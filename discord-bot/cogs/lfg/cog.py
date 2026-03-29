@@ -1561,6 +1561,17 @@ class LFGCog(commands.Cog):
             inline=False,
         )
 
+        # Feature Pilots
+        embed.add_field(
+            name="Feature Pilots",
+            value=(
+                "`!pilot_on <name>` - Enable a feature pilot\n"
+                "`!pilot_off <name>` - Disable a feature pilot\n"
+                "`!pilots` - List all pilots and their status"
+            ),
+            inline=False,
+        )
+
         # Utility
         embed.add_field(
             name="Utility",
@@ -1755,13 +1766,31 @@ class LFGCog(commands.Cog):
             # Check for milestone and send announcement if needed
             await send_milestone_announcement(self.bot, winner.id, loser.id, match_id)
 
+            # Get new ELOs for both players
+            winner_elo = get_user_elo(winner.id)
+            winner_event_elo = get_user_event_elo(winner.id)
+            loser_elo = get_user_elo(loser.id)
+            loser_event_elo = get_user_event_elo(loser.id)
+
             # Send confirmation
             elo_status = (
                 "ELO updated" if event_active else "ELO not affected (no active event)"
             )
+            description = (
+                f"**Match ID:** #{match_id}\n"
+                f"**Winner:** {winner.mention} ({winner_name})\n"
+                f"**Loser:** {loser.mention} ({loser_name})\n"
+                f"**Status:** {elo_status}"
+            )
+            if event_active:
+                description += (
+                    f"\n\n**New Ranks:**\n"
+                    f"{winner_name}: **{winner_event_elo}** event / **{winner_elo}** lifetime\n"
+                    f"{loser_name}: **{loser_event_elo}** event / **{loser_elo}** lifetime"
+                )
             success_embed = discord.Embed(
                 title="Match Reported",
-                description=f"**Match ID:** #{match_id}\n**Winner:** {winner.mention} ({winner_name})\n**Loser:** {loser.mention} ({loser_name})\n**Status:** {elo_status}",
+                description=description,
                 color=discord.Color.green(),
             )
             success_embed.set_footer(text=f"Reported by {ctx.author.display_name}")

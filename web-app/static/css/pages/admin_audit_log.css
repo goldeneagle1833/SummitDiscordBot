@@ -4,6 +4,123 @@
  * Description: Styles for administrative action audit log with pagination
  */
 
+/* === Dashboard Section === */
+.dashboard-section {
+  max-width: 1400px;
+  margin: 2rem auto;
+  padding: 0 2rem;
+  margin-bottom: 3rem;
+}
+
+.dashboard-section h2 {
+  font-family: "Inter", sans-serif;
+  color: var(--color-text);
+  font-size: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.dashboard-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.summary-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 1.25rem 1rem;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.summary-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.summary-value {
+  display: block;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1.2;
+  margin-bottom: 0.25rem;
+}
+
+.summary-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.dashboard-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.chart-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.chart-card h3 {
+  font-size: 1rem;
+  color: var(--color-text);
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.chart-card canvas {
+  width: 100% !important;
+  height: 280px !important;
+}
+
+.dashboard-suggestions {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.dashboard-suggestions h3 {
+  font-size: 1rem;
+  color: var(--color-text);
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.dashboard-suggestions ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 0.5rem;
+}
+
+.dashboard-suggestions li {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.dashboard-suggestions li strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
 /* === Admin Actions Section === */
 .admin-actions-section {
   max-width: 1400px;
@@ -361,6 +478,22 @@
 
 /* === Responsive === */
 @media (max-width: 768px) {
+  .dashboard-section {
+    padding: 0 1rem;
+  }
+
+  .dashboard-charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-summary-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .dashboard-suggestions ul {
+    grid-template-columns: 1fr;
+  }
+
   .admin-actions-section {
     padding: 0 1rem;
   }

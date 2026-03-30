@@ -15,6 +15,7 @@ tiktoken>=0.5.0
 
 # Utilities
 python-dotenv>=1.0.0
+overrides>=7.4.0
 
 # Testing
 pytest>=7.4.0

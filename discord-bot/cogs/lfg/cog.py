@@ -944,11 +944,12 @@ class LFGCog(commands.Cog):
     @commands.command()
     async def cancel(self, ctx):
         """Cancel your LFG queue status."""
-        # Delete the user's command message
-        try:
-            await ctx.message.delete()
-        except Exception as e:
-            logger.warning(f"Could not delete cancel command message: {e}")
+        # Delete the user's command message (only in guild channels, not DMs)
+        if ctx.guild:
+            try:
+                await ctx.message.delete()
+            except Exception as e:
+                logger.warning(f"Could not delete cancel command message: {e}")
 
         async with lfg_queue_lock:
             was_in_queue = ctx.author.id in lfg_queue

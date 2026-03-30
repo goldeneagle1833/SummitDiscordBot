@@ -157,6 +157,14 @@ class MatchConfirmationJobs(commands.Cog):
         conn.commit()
         conn.close()
 
+    def _is_valid_discord_id(self, value) -> bool:
+        """Check if a value is a valid Discord snowflake (numeric string or int)."""
+        try:
+            int(value)
+            return True
+        except (ValueError, TypeError):
+            return False
+
     async def _send_reminder_dm(self, confirmation: dict):
         """
         Send a Discord DM reminder to the opponent.
@@ -168,6 +176,10 @@ class MatchConfirmationJobs(commands.Cog):
         submitter_id = confirmation["submitter_discord_id"]
         confirmation_id = confirmation["id"]
 
+        if not self._is_valid_discord_id(opponent_id):
+            logger.warning(f"Skipping reminder for confirmation {confirmation_id}: invalid opponent_id '{opponent_id}'")
+            return
+
         try:
             # Get opponent user
             opponent = await self.bot.fetch_user(int(opponent_id))
@@ -178,9 +190,12 @@ class MatchConfirmationJobs(commands.Cog):
 
             # Get submitter user (for display name)
             try:
-                submitter = await self.bot.fetch_user(int(submitter_id))
-                submitter_name = submitter.display_name if submitter else f"User {submitter_id}"
-            except:
+                if self._is_valid_discord_id(submitter_id):
+                    submitter = await self.bot.fetch_user(int(submitter_id))
+                    submitter_name = submitter.display_name if submitter else f"User {submitter_id}"
+                else:
+                    submitter_name = f"User {submitter_id}"
+            except Exception:
                 submitter_name = f"User {submitter_id}"
 
             # Determine result text
@@ -235,6 +250,11 @@ class MatchConfirmationJobs(commands.Cog):
         submitter_id = confirmation["submitter_discord_id"]
         opponent_id = confirmation["opponent_discord_id"]
         confirmation_id = confirmation["id"]
+
+        # Skip if either ID is not a valid Discord snowflake (e.g. Google OAuth IDs)
+        if not self._is_valid_discord_id(submitter_id) or not self._is_valid_discord_id(opponent_id):
+            logger.warning(f"Skipping expiration notification for confirmation {confirmation_id}: invalid discord IDs (submitter='{submitter_id}', opponent='{opponent_id}')")
+            return
 
         # Determine result
         you_won = confirmation["winner_discord_id"] == submitter_id

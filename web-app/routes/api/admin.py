@@ -398,17 +398,18 @@ def dashboard_stats():
 
         # --- Peak activity hours (day_of_week x hour heatmap) ---
         # strftime %w = 0(Sun)..6(Sat), %H = 00..23
+        # Timestamps are stored in UTC; convert to EST (UTC-5) for display
         cur.execute(f"""
             SELECT day_of_week, hour, SUM(cnt) as total FROM (
                 {_online_union(
-                    "SELECT CAST(strftime('%w', timestamp) AS INTEGER) as day_of_week, "
-                    "CAST(strftime('%H', timestamp) AS INTEGER) as hour, "
+                    "SELECT CAST(strftime('%w', timestamp, '-5 hours') AS INTEGER) as day_of_week, "
+                    "CAST(strftime('%H', timestamp, '-5 hours') AS INTEGER) as hour, "
                     "COUNT(*) as cnt FROM {t} WHERE timestamp IS NOT NULL "
                     "GROUP BY day_of_week, hour"
                 )}
                 {"UNION ALL "
-                 "SELECT CAST(strftime('%w', timestamp) AS INTEGER) as day_of_week, "
-                 "CAST(strftime('%H', timestamp) AS INTEGER) as hour, "
+                 "SELECT CAST(strftime('%w', timestamp, '-5 hours') AS INTEGER) as day_of_week, "
+                 "CAST(strftime('%H', timestamp, '-5 hours') AS INTEGER) as hour, "
                  "COUNT(*) as cnt FROM match_reports_web WHERE timestamp IS NOT NULL "
                  "GROUP BY day_of_week, hour"
                  if has_web else ""}

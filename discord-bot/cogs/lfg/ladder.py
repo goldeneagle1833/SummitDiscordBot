@@ -904,6 +904,20 @@ async def _resolve_ladder_challenge(bot, challenger_id):
         "guild_id": guild_id,
     }
 
+    # Assign active player role to both players if they don't have it
+    try:
+        guild = bot.get_guild(config.GUILD_ID)
+        if guild:
+            active_role = guild.get_role(config.ACTIVE_PLAYER_ROLE_ID)
+            if active_role:
+                for player_id in (challenger_id, selected_id):
+                    member = guild.get_member(player_id)
+                    if member and active_role not in member.roles:
+                        await member.add_roles(active_role)
+                        logger.info(f"Added active player role to {member.display_name} ({player_id})")
+    except Exception as e:
+        logger.error(f"Failed to assign active player role: {e}")
+
     # Send report buttons only to the Top 16 player (challenger)
     report_view = LFGReportButtons(
         match_id=0,

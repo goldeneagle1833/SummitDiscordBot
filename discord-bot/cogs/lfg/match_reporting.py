@@ -419,16 +419,22 @@ class MatchConfirmationButtons(discord.ui.View):
                 elo_msg = " *(No active event - ELO not affected)*"
 
         # Remove the confirmation message
-        await interaction.message.edit(
-            content=f"Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.{elo_msg}{stakes_msg}",
-            view=None,
-        )
+        try:
+            await interaction.message.edit(
+                content=f"Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.{elo_msg}{stakes_msg}",
+                view=None,
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit confirmation message: {e}")
 
         # Send confirmation to confirming user
-        await interaction.followup.send(
-            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}{elo_msg}{stakes_msg}",
-            ephemeral=True,
-        )
+        try:
+            await interaction.followup.send(
+                f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}{elo_msg}{stakes_msg}",
+                ephemeral=True,
+            )
+        except Exception as e:
+            logger.warning(f"Could not send confirmation followup: {e}")
 
         # Notify the reporter
         try:
@@ -469,37 +475,46 @@ class MatchConfirmationButtons(discord.ui.View):
         # Update leaderboard in designated channel
         lfg_cog = self.bot.get_cog("LFGCog")
         if lfg_cog:
-            await lfg_cog.update_leaderboard()
+            try:
+                await lfg_cog.update_leaderboard()
+            except Exception as e:
+                logger.error(f"Failed to update leaderboard: {e}")
 
         # Announce ladder challenge result in LFG channel
         if self.ladder_info and lfg_cog:
-            lfg_channel = self.bot.get_channel(lfg_cog.lfg_channel_id)
-            if lfg_channel:
-                # Determine if the underdog won and get stakes info
-                challenger_id = self.ladder_info.get("challenger_id")
-                underdog_won = self.winner_id != challenger_id
-                winner_mult = self.ladder_info.get("elo_multiplier_winner", 1.0)
-                loser_mult = self.ladder_info.get("elo_multiplier_loser", 1.0)
-                stakes_text = f"{winner_mult}x/{loser_mult}x" if winner_mult != 1.0 or loser_mult != 1.0 else "Normal"
+            try:
+                lfg_channel = self.bot.get_channel(lfg_cog.lfg_channel_id)
+                if lfg_channel:
+                    # Determine if the underdog won and get stakes info
+                    challenger_id = self.ladder_info.get("challenger_id")
+                    underdog_won = self.winner_id != challenger_id
+                    winner_mult = self.ladder_info.get("elo_multiplier_winner", 1.0)
+                    loser_mult = self.ladder_info.get("elo_multiplier_loser", 1.0)
+                    stakes_text = f"{winner_mult}x/{loser_mult}x" if winner_mult != 1.0 or loser_mult != 1.0 else "Normal"
 
-                # Generate stylized announcement using ChatGPT
-                announcement = generate_ladder_challenge_announcement(
-                    underdog_won=underdog_won,
-                    winner_name=self.winner_global,
-                    loser_name=self.loser_global,
-                    stakes_multiplier=stakes_text
-                )
+                    # Generate stylized announcement using ChatGPT
+                    announcement = generate_ladder_challenge_announcement(
+                        underdog_won=underdog_won,
+                        winner_name=self.winner_global,
+                        loser_name=self.loser_global,
+                        stakes_multiplier=stakes_text
+                    )
 
-                # Replace placeholders with actual mentions
-                announcement = announcement.replace("WINNER", f"<@{self.winner_id}>")
-                announcement = announcement.replace("LOSER", f"<@{self.loser_id}>")
+                    # Replace placeholders with actual mentions
+                    announcement = announcement.replace("WINNER", f"<@{self.winner_id}>")
+                    announcement = announcement.replace("LOSER", f"<@{self.loser_id}>")
 
-                await lfg_channel.send(announcement + f" Top 16: use `!issue_challenge` for special stakes!")
+                    await lfg_channel.send(announcement + f" Top 16: use `!issue_challenge` for special stakes!")
+            except Exception as e:
+                logger.error(f"Failed to send ladder challenge announcement: {e}", exc_info=True)
 
         # Check for milestone and send announcement if needed
-        await send_milestone_announcement(
-            self.bot, self.winner_id, self.loser_id, match_id
-        )
+        try:
+            await send_milestone_announcement(
+                self.bot, self.winner_id, self.loser_id, match_id
+            )
+        except Exception as e:
+            logger.error(f"Failed to send milestone announcement: {e}", exc_info=True)
 
     async def _send_limited_run_status(self, winner_run_complete: bool, loser_run_complete: bool):
         """Send run status DMs to both players after a limited match."""
@@ -1171,16 +1186,22 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 elo_msg = " *(No active event - ELO not affected)*"
 
         # Update the confirmation message
-        await original_interaction.message.edit(
-            content=f"Match confirmed! **Match ID: #{match_id}** - {view.winner_global} won against {view.loser_global}.{elo_msg}{stakes_msg}",
-            view=None,
-        )
+        try:
+            await original_interaction.message.edit(
+                content=f"Match confirmed! **Match ID: #{match_id}** - {view.winner_global} won against {view.loser_global}.{elo_msg}{stakes_msg}",
+                view=None,
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit confirmation message: {e}")
 
         # Send confirmation to confirming user
-        await interaction.followup.send(
-            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {view.winner_global}\n**Loser:** {view.loser_global}{elo_msg}{stakes_msg}",
-            ephemeral=True,
-        )
+        try:
+            await interaction.followup.send(
+                f"Match report confirmed and submitted! **Match ID: #{match_id}**\n**Winner:** {view.winner_global}\n**Loser:** {view.loser_global}{elo_msg}{stakes_msg}",
+                ephemeral=True,
+            )
+        except Exception as e:
+            logger.warning(f"Could not send confirmation followup: {e}")
 
         # Notify the reporter
         try:
@@ -1220,37 +1241,46 @@ class ConfirmerDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         # Update leaderboard
         lfg_cog = view.bot.get_cog("LFGCog")
         if lfg_cog:
-            await lfg_cog.update_leaderboard()
+            try:
+                await lfg_cog.update_leaderboard()
+            except Exception as e:
+                logger.error(f"Failed to update leaderboard: {e}")
 
         # Announce ladder challenge result in LFG channel
         if view.ladder_info and lfg_cog:
-            lfg_channel = view.bot.get_channel(lfg_cog.lfg_channel_id)
-            if lfg_channel:
-                # Determine if the underdog won and get stakes info
-                challenger_id = view.ladder_info.get("challenger_id")
-                underdog_won = view.winner_id != challenger_id
-                winner_mult = view.ladder_info.get("elo_multiplier_winner", 1.0)
-                loser_mult = view.ladder_info.get("elo_multiplier_loser", 1.0)
-                stakes_text = f"{winner_mult}x/{loser_mult}x" if winner_mult != 1.0 or loser_mult != 1.0 else "Normal"
+            try:
+                lfg_channel = view.bot.get_channel(lfg_cog.lfg_channel_id)
+                if lfg_channel:
+                    # Determine if the underdog won and get stakes info
+                    challenger_id = view.ladder_info.get("challenger_id")
+                    underdog_won = view.winner_id != challenger_id
+                    winner_mult = view.ladder_info.get("elo_multiplier_winner", 1.0)
+                    loser_mult = view.ladder_info.get("elo_multiplier_loser", 1.0)
+                    stakes_text = f"{winner_mult}x/{loser_mult}x" if winner_mult != 1.0 or loser_mult != 1.0 else "Normal"
 
-                # Generate stylized announcement using ChatGPT
-                announcement = generate_ladder_challenge_announcement(
-                    underdog_won=underdog_won,
-                    winner_name=view.winner_global,
-                    loser_name=view.loser_global,
-                    stakes_multiplier=stakes_text
-                )
+                    # Generate stylized announcement using ChatGPT
+                    announcement = generate_ladder_challenge_announcement(
+                        underdog_won=underdog_won,
+                        winner_name=view.winner_global,
+                        loser_name=view.loser_global,
+                        stakes_multiplier=stakes_text
+                    )
 
-                # Replace placeholders with actual mentions
-                announcement = announcement.replace("WINNER", f"<@{view.winner_id}>")
-                announcement = announcement.replace("LOSER", f"<@{view.loser_id}>")
+                    # Replace placeholders with actual mentions
+                    announcement = announcement.replace("WINNER", f"<@{view.winner_id}>")
+                    announcement = announcement.replace("LOSER", f"<@{view.loser_id}>")
 
-                await lfg_channel.send(announcement + f" Top 16: use `!issue_challenge` for special stakes!")
+                    await lfg_channel.send(announcement + f" Top 16: use `!issue_challenge` for special stakes!")
+            except Exception as e:
+                logger.error(f"Failed to send ladder challenge announcement: {e}", exc_info=True)
 
         # Check for milestone
-        await send_milestone_announcement(
-            view.bot, view.winner_id, view.loser_id, match_id
-        )
+        try:
+            await send_milestone_announcement(
+                view.bot, view.winner_id, view.loser_id, match_id
+            )
+        except Exception as e:
+            logger.error(f"Failed to send milestone announcement: {e}", exc_info=True)
 
 
 class MatchTypeSelectionView(discord.ui.View):

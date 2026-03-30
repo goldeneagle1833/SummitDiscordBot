@@ -242,6 +242,20 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 )
                 return
 
+            # Assign active player role to both players if they don't have it
+            try:
+                guild = self.bot.get_guild(config.GUILD_ID)
+                if guild:
+                    active_role = guild.get_role(config.ACTIVE_PLAYER_ROLE_ID)
+                    if active_role:
+                        for player_id in (interaction.user.id, matched_user_id):
+                            member = guild.get_member(player_id)
+                            if member and active_role not in member.roles:
+                                await member.add_roles(active_role)
+                                logger.info(f"Added active player role to {member.display_name} ({player_id})")
+            except Exception as e:
+                logger.error(f"Failed to assign active player role: {e}")
+
             # Randomly select which player gets the report buttons
             players = [
                 (interaction.user.id, joiner_global, interaction.user, deck_url, True),

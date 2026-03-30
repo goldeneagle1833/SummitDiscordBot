@@ -206,6 +206,20 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
                 f"Cannot save challenge pairing: guild_id is None for {self.challenger_id} vs {interaction.user.id}"
             )
 
+        # Assign active player role to both players if they don't have it
+        try:
+            guild = interaction.client.get_guild(config.GUILD_ID)
+            if guild:
+                active_role = guild.get_role(config.ACTIVE_PLAYER_ROLE_ID)
+                if active_role:
+                    for player_id in (self.challenger_id, interaction.user.id):
+                        member = guild.get_member(player_id)
+                        if member and active_role not in member.roles:
+                            await member.add_roles(active_role)
+                            logger.info(f"Added active player role to {member.display_name} ({player_id})")
+        except Exception as e:
+            logger.error(f"Failed to assign active player role: {e}")
+
         # Randomly select which player gets the report buttons
         # Both challenger and accepter can have deck URLs
         players = [

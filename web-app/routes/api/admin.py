@@ -420,21 +420,26 @@ def dashboard_stats():
             dow, hour, cnt = int(row[0]), int(row[1]), int(row[2])
             heatmap[dow][hour] = cnt
 
-        # --- Top player dominance (win distribution) ---
+        # --- Top player dominance (win distribution, bot matches only) ---
+        # Get wins with display names from bot match tables only
         cur.execute(f"""
-            SELECT player_id, SUM(wins) as total_wins FROM (
-                {_all_union("SELECT winner_id as player_id, 1 as wins FROM {t}")}
+            SELECT player_id, display_name, SUM(wins) as total_wins FROM (
+                {_online_union(
+                    "SELECT winner_id as player_id, "
+                    "winner_display_name as display_name, "
+                    "1 as wins FROM {t}"
+                )}
             ) GROUP BY player_id ORDER BY total_wins DESC
         """)
         win_rows = cur.fetchall()
-        total_wins_all = sum(r[1] for r in win_rows)
+        total_wins_all = sum(r[2] for r in win_rows)
         dominance = {}
         if win_rows and total_wins_all > 0:
             n = len(win_rows)
             top_10_pct = max(1, n // 10)
             top_25_pct = max(1, n // 4)
-            top_10_wins = sum(r[1] for r in win_rows[:top_10_pct])
-            top_25_wins = sum(r[1] for r in win_rows[:top_25_pct])
+            top_10_wins = sum(r[2] for r in win_rows[:top_10_pct])
+            top_25_wins = sum(r[2] for r in win_rows[:top_25_pct])
             dominance = {
                 "total_players_with_wins": n,
                 "top_10_pct_count": top_10_pct,
@@ -442,7 +447,7 @@ def dashboard_stats():
                 "top_25_pct_count": top_25_pct,
                 "top_25_pct_win_share": round(top_25_wins / total_wins_all * 100, 1),
                 "top_10_players": [
-                    {"player_id": str(r[0]), "wins": r[1]}
+                    {"name": r[1] or str(r[0]), "wins": r[2]}
                     for r in win_rows[:10]
                 ],
             }
@@ -489,6 +494,13 @@ def dashboard_stats():
         all_weeks = sorted(set(
             list(bot_weekly.keys()) + list(web_weekly.keys())
         ))
+
+        # Drop the current (partial) week so it doesn't skew charts
+        current_week = datetime.now().strftime("%Y-%W")
+        if all_weeks and all_weeks[-1] == current_week:
+            all_weeks = all_weeks[:-1]
+        if avg_games_per_player and avg_games_per_player[-1]["week"] == current_week:
+            avg_games_per_player = avg_games_per_player[:-1]
 
         games_over_time = []
         players_over_time = []

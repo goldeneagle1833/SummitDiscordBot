@@ -402,7 +402,7 @@
     const topPlayersHtml = dom.top_10_players.map((p, i) =>
       `<tr>
         <td>${i + 1}</td>
-        <td class="nowrap">${p.player_id}</td>
+        <td class="nowrap">${p.name}</td>
         <td><strong>${p.wins}</strong></td>
       </tr>`
     ).join('');

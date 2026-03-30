@@ -62,9 +62,16 @@
 
         <div class="dashboard-charts-grid">
           <div class="chart-card">
+            <h3>New Player Acquisition</h3>
+            <canvas id="new-players-chart"></canvas>
+          </div>
+          <div class="chart-card">
             <h3>Avg Games per Player per Week</h3>
             <canvas id="avg-gpp-chart"></canvas>
           </div>
+        </div>
+
+        <div class="dashboard-charts-grid">
           <div class="chart-card">
             <h3>Top Player Dominance</h3>
             <div id="dominance-content" class="dominance-container">
@@ -85,8 +92,7 @@
           <h3>Suggested Metrics to Track</h3>
           <ul>
             <li><strong>Player Retention:</strong> % of players who played in consecutive weeks</li>
-            <li><strong>New Player Acquisition:</strong> First-time players per week</li>
-            <li><strong>Match Source Split:</strong> Online vs Paper ratio trends over time</li>
+<li><strong>Match Source Split:</strong> Online vs Paper ratio trends over time</li>
             <li><strong>ELO Distribution:</strong> Histogram of player ratings to see skill spread</li>
             <li><strong>Deck Diversity:</strong> Number of unique avatars in play per week</li>
           </ul>
@@ -377,6 +383,24 @@
                 tension: 0.3,
                 pointRadius: 2,
                 pointHoverRadius: 5,
+              },
+            ],
+          },
+          options: chartDefaults,
+        });
+
+        // New player acquisition chart
+        const npLabels = data.new_players_per_week.map(d => weekLabel(d.week));
+        new Chart(document.getElementById('new-players-chart'), {
+          type: 'bar',
+          data: {
+            labels: npLabels,
+            datasets: [
+              {
+                label: 'New Players',
+                data: data.new_players_per_week.map(d => d.count),
+                backgroundColor: 'rgba(255, 136, 68, 0.8)',
+                borderRadius: 2,
               },
             ],
           },

@@ -488,6 +488,26 @@ def dashboard_stats():
                 "avg": round(matches / unique_players, 2) if unique_players else 0,
             })
 
+        # --- New player acquisition (first-time players per week) ---
+        # Find each player's earliest match, then count by week
+        first_match_union = _all_union(
+            "SELECT winner_id as player_id, MIN(timestamp) as first_ts "
+            "FROM {t} WHERE timestamp IS NOT NULL GROUP BY winner_id"
+        ) + " UNION " + _all_union(
+            "SELECT losser_id as player_id, MIN(timestamp) as first_ts "
+            "FROM {t} WHERE timestamp IS NOT NULL GROUP BY losser_id"
+        )
+        cur.execute(f"""
+            SELECT strftime('%Y-%W', first_match) as week, COUNT(*) as new_players
+            FROM (
+                SELECT player_id, MIN(first_ts) as first_match
+                FROM ({first_match_union})
+                GROUP BY player_id
+            )
+            GROUP BY week ORDER BY week
+        """)
+        new_players_weekly = {row[0]: row[1] for row in cur.fetchall()}
+
         conn.close()
 
         # Merge all weeks for time-series
@@ -501,6 +521,7 @@ def dashboard_stats():
             all_weeks = all_weeks[:-1]
         if avg_games_per_player and avg_games_per_player[-1]["week"] == current_week:
             avg_games_per_player = avg_games_per_player[:-1]
+        new_players_weekly.pop(current_week, None)
 
         games_over_time = []
         players_over_time = []
@@ -518,10 +539,16 @@ def dashboard_stats():
                 "combined": combined_players_weekly.get(week, 0),
             })
 
+        new_players_per_week = [
+            {"week": w, "count": new_players_weekly.get(w, 0)}
+            for w in all_weeks
+        ]
+
         return jsonify({
             "success": True,
             "games_over_time": games_over_time,
             "players_over_time": players_over_time,
+            "new_players_per_week": new_players_per_week,
             "heatmap": heatmap,
             "dominance": dominance,
             "avg_games_per_player": avg_games_per_player,

@@ -295,132 +295,197 @@ def dashboard_stats():
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
 
-        # Games per week (bot matches)
-        cur.execute("""
-            SELECT strftime('%Y-%W', timestamp) as week,
-                   COUNT(*) as games
-            FROM match_records
-            WHERE timestamp IS NOT NULL
-            GROUP BY week
-            ORDER BY week
+        # Detect which optional tables exist
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        existing_tables = {row[0] for row in cur.fetchall()}
+        has_archive = "match_records_archive" in existing_tables
+        has_web = "match_reports_web" in existing_tables
+
+        # Build UNION fragments for "all online matches" (current + archive)
+        # and "all matches" (online + web). Archive uses same schema as match_records.
+        online_tables = ["match_records"]
+        if has_archive:
+            online_tables.append("match_records_archive")
+
+        def _online_union(select_tpl):
+            """Build a UNION ALL across online match tables."""
+            return " UNION ALL ".join(select_tpl.format(t=t) for t in online_tables)
+
+        def _all_union(select_tpl, web_select_tpl=None):
+            """Build a UNION across all match tables (for distinct counts)."""
+            parts = [select_tpl.format(t=t) for t in online_tables]
+            if has_web:
+                parts.append((web_select_tpl or select_tpl).format(t="match_reports_web"))
+            return " UNION ".join(parts)
+
+        # --- Games per week (online = match_records + archive) ---
+        cur.execute(f"""
+            SELECT week, SUM(games) FROM (
+                {_online_union(
+                    "SELECT strftime('%Y-%W', timestamp) as week, COUNT(*) as games "
+                    "FROM {t} WHERE timestamp IS NOT NULL GROUP BY week"
+                )}
+            ) GROUP BY week ORDER BY week
         """)
         bot_weekly = {row[0]: row[1] for row in cur.fetchall()}
 
-        # Games per week (web matches)
+        # --- Games per week (web) ---
         web_weekly = {}
-        try:
+        if has_web:
             cur.execute("""
-                SELECT strftime('%Y-%W', timestamp) as week,
-                       COUNT(*) as games
-                FROM match_reports_web
-                WHERE timestamp IS NOT NULL
-                GROUP BY week
-                ORDER BY week
+                SELECT strftime('%Y-%W', timestamp) as week, COUNT(*) as games
+                FROM match_reports_web WHERE timestamp IS NOT NULL
+                GROUP BY week ORDER BY week
             """)
             web_weekly = {row[0]: row[1] for row in cur.fetchall()}
-        except sqlite3.OperationalError:
-            pass
 
-        # Unique players per week (bot)
-        cur.execute("""
+        # --- Combined unique players per week ---
+        cur.execute(f"""
             SELECT week, COUNT(DISTINCT player_id) as players FROM (
-                SELECT strftime('%Y-%W', timestamp) as week, winner_id as player_id
-                FROM match_records WHERE timestamp IS NOT NULL
-                UNION ALL
-                SELECT strftime('%Y-%W', timestamp) as week, losser_id as player_id
-                FROM match_records WHERE timestamp IS NOT NULL
+                {_all_union(
+                    "SELECT strftime('%Y-%W', timestamp) as week, winner_id as player_id "
+                    "FROM {t} WHERE timestamp IS NOT NULL"
+                )}
+                UNION
+                {_all_union(
+                    "SELECT strftime('%Y-%W', timestamp) as week, losser_id as player_id "
+                    "FROM {t} WHERE timestamp IS NOT NULL"
+                )}
             ) GROUP BY week ORDER BY week
         """)
-        bot_players_weekly = {row[0]: row[1] for row in cur.fetchall()}
+        combined_players_weekly = {row[0]: row[1] for row in cur.fetchall()}
 
-        # Unique players per week (web)
-        web_players_weekly = {}
-        try:
-            cur.execute("""
-                SELECT week, COUNT(DISTINCT player_id) as players FROM (
-                    SELECT strftime('%Y-%W', timestamp) as week, winner_id as player_id
-                    FROM match_reports_web WHERE timestamp IS NOT NULL
-                    UNION ALL
-                    SELECT strftime('%Y-%W', timestamp) as week, losser_id as player_id
-                    FROM match_reports_web WHERE timestamp IS NOT NULL
-                ) GROUP BY week ORDER BY week
-            """)
-            web_players_weekly = {row[0]: row[1] for row in cur.fetchall()}
-        except sqlite3.OperationalError:
-            pass
+        # --- Summary: total matches ---
+        cur.execute(f"""
+            SELECT SUM(c) FROM (
+                {_online_union("SELECT COUNT(*) as c FROM {t}")}
+            )
+        """)
+        total_bot_matches = cur.fetchone()[0] or 0
 
-        # Combined unique players per week (across both tables)
-        combined_players_weekly = {}
-        try:
-            cur.execute("""
-                SELECT week, COUNT(DISTINCT player_id) as players FROM (
-                    SELECT strftime('%Y-%W', timestamp) as week, winner_id as player_id
-                    FROM match_records WHERE timestamp IS NOT NULL
-                    UNION
-                    SELECT strftime('%Y-%W', timestamp) as week, losser_id as player_id
-                    FROM match_records WHERE timestamp IS NOT NULL
-                    UNION
-                    SELECT strftime('%Y-%W', timestamp) as week, winner_id as player_id
-                    FROM match_reports_web WHERE timestamp IS NOT NULL
-                    UNION
-                    SELECT strftime('%Y-%W', timestamp) as week, losser_id as player_id
-                    FROM match_reports_web WHERE timestamp IS NOT NULL
-                ) GROUP BY week ORDER BY week
-            """)
-            combined_players_weekly = {row[0]: row[1] for row in cur.fetchall()}
-        except sqlite3.OperationalError:
-            combined_players_weekly = bot_players_weekly.copy()
-
-        # Summary stats
-        cur.execute("SELECT COUNT(*) FROM match_records")
-        total_bot_matches = cur.fetchone()[0]
         total_web_matches = 0
-        try:
+        if has_web:
             cur.execute("SELECT COUNT(*) FROM match_reports_web")
             total_web_matches = cur.fetchone()[0]
-        except sqlite3.OperationalError:
-            pass
 
-        # Total unique players (all time)
-        try:
-            cur.execute("""
-                SELECT COUNT(DISTINCT player_id) FROM (
-                    SELECT winner_id as player_id FROM match_records
-                    UNION SELECT losser_id as player_id FROM match_records
-                    UNION SELECT winner_id as player_id FROM match_reports_web
-                    UNION SELECT losser_id as player_id FROM match_reports_web
-                )
-            """)
-            total_players = cur.fetchone()[0]
-        except sqlite3.OperationalError:
-            cur.execute("""
-                SELECT COUNT(DISTINCT player_id) FROM (
-                    SELECT winner_id as player_id FROM match_records
-                    UNION SELECT losser_id as player_id FROM match_records
-                )
-            """)
-            total_players = cur.fetchone()[0]
-
-        # Average games per week (last 12 weeks)
-        cur.execute("""
-            SELECT COUNT(*) FROM match_records
-            WHERE timestamp >= date('now', '-84 days')
+        # --- Summary: total unique players ---
+        cur.execute(f"""
+            SELECT COUNT(DISTINCT player_id) FROM (
+                {_all_union("SELECT winner_id as player_id FROM {t}")}
+                UNION
+                {_all_union("SELECT losser_id as player_id FROM {t}")}
+            )
         """)
-        recent_bot = cur.fetchone()[0]
+        total_players = cur.fetchone()[0]
+
+        # --- Summary: avg games per week (last 12 weeks) ---
+        cur.execute(f"""
+            SELECT SUM(c) FROM (
+                {_online_union(
+                    "SELECT COUNT(*) as c FROM {t} WHERE timestamp >= date('now', '-84 days')"
+                )}
+            )
+        """)
+        recent_bot = cur.fetchone()[0] or 0
         recent_web = 0
-        try:
+        if has_web:
             cur.execute("""
                 SELECT COUNT(*) FROM match_reports_web
                 WHERE timestamp >= date('now', '-84 days')
             """)
             recent_web = cur.fetchone()[0]
-        except sqlite3.OperationalError:
-            pass
         avg_weekly_games = round((recent_bot + recent_web) / 12, 1)
+
+        # --- Peak activity hours (day_of_week x hour heatmap) ---
+        # strftime %w = 0(Sun)..6(Sat), %H = 00..23
+        cur.execute(f"""
+            SELECT day_of_week, hour, SUM(cnt) as total FROM (
+                {_online_union(
+                    "SELECT CAST(strftime('%w', timestamp) AS INTEGER) as day_of_week, "
+                    "CAST(strftime('%H', timestamp) AS INTEGER) as hour, "
+                    "COUNT(*) as cnt FROM {t} WHERE timestamp IS NOT NULL "
+                    "GROUP BY day_of_week, hour"
+                )}
+                {"UNION ALL "
+                 "SELECT CAST(strftime('%w', timestamp) AS INTEGER) as day_of_week, "
+                 "CAST(strftime('%H', timestamp) AS INTEGER) as hour, "
+                 "COUNT(*) as cnt FROM match_reports_web WHERE timestamp IS NOT NULL "
+                 "GROUP BY day_of_week, hour"
+                 if has_web else ""}
+            ) GROUP BY day_of_week, hour
+        """)
+        # Build 7x24 grid initialized to 0
+        heatmap = [[0] * 24 for _ in range(7)]
+        for row in cur.fetchall():
+            dow, hour, cnt = int(row[0]), int(row[1]), int(row[2])
+            heatmap[dow][hour] = cnt
+
+        # --- Top player dominance (win distribution) ---
+        cur.execute(f"""
+            SELECT player_id, SUM(wins) as total_wins FROM (
+                {_all_union("SELECT winner_id as player_id, 1 as wins FROM {t}")}
+            ) GROUP BY player_id ORDER BY total_wins DESC
+        """)
+        win_rows = cur.fetchall()
+        total_wins_all = sum(r[1] for r in win_rows)
+        dominance = {}
+        if win_rows and total_wins_all > 0:
+            n = len(win_rows)
+            top_10_pct = max(1, n // 10)
+            top_25_pct = max(1, n // 4)
+            top_10_wins = sum(r[1] for r in win_rows[:top_10_pct])
+            top_25_wins = sum(r[1] for r in win_rows[:top_25_pct])
+            dominance = {
+                "total_players_with_wins": n,
+                "top_10_pct_count": top_10_pct,
+                "top_10_pct_win_share": round(top_10_wins / total_wins_all * 100, 1),
+                "top_25_pct_count": top_25_pct,
+                "top_25_pct_win_share": round(top_25_wins / total_wins_all * 100, 1),
+                "top_10_players": [
+                    {"player_id": str(r[0]), "wins": r[1]}
+                    for r in win_rows[:10]
+                ],
+            }
+
+        # --- Average games per player per week ---
+        # Must use UNION ALL (not UNION) to count every match appearance
+        all_match_union = _online_union(
+            "SELECT strftime('%Y-%W', timestamp) as week, winner_id as player_id "
+            "FROM {t} WHERE timestamp IS NOT NULL"
+        ) + " UNION ALL " + _online_union(
+            "SELECT strftime('%Y-%W', timestamp) as week, losser_id as player_id "
+            "FROM {t} WHERE timestamp IS NOT NULL"
+        )
+        if has_web:
+            all_match_union += (
+                " UNION ALL "
+                "SELECT strftime('%Y-%W', timestamp) as week, winner_id as player_id "
+                "FROM match_reports_web WHERE timestamp IS NOT NULL"
+                " UNION ALL "
+                "SELECT strftime('%Y-%W', timestamp) as week, losser_id as player_id "
+                "FROM match_reports_web WHERE timestamp IS NOT NULL"
+            )
+        cur.execute(f"""
+            SELECT week,
+                   COUNT(*) as total_games,
+                   COUNT(DISTINCT player_id) as unique_players
+            FROM ({all_match_union})
+            GROUP BY week ORDER BY week
+        """)
+        avg_games_per_player = []
+        for row in cur.fetchall():
+            week, total_games, unique_players = row[0], row[1], row[2]
+            # total_games counts each match twice (once per player side),
+            # so actual matches = total_games / 2
+            matches = total_games / 2
+            avg_games_per_player.append({
+                "week": week,
+                "avg": round(matches / unique_players, 2) if unique_players else 0,
+            })
 
         conn.close()
 
-        # Merge all weeks
+        # Merge all weeks for time-series
         all_weeks = sorted(set(
             list(bot_weekly.keys()) + list(web_weekly.keys())
         ))
@@ -445,6 +510,9 @@ def dashboard_stats():
             "success": True,
             "games_over_time": games_over_time,
             "players_over_time": players_over_time,
+            "heatmap": heatmap,
+            "dominance": dominance,
+            "avg_games_per_player": avg_games_per_player,
             "summary": {
                 "total_matches": total_bot_matches + total_web_matches,
                 "total_bot_matches": total_bot_matches,

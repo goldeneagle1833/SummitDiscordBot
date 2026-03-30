@@ -84,6 +84,148 @@
   height: 280px !important;
 }
 
+.chart-card-wide {
+  margin-bottom: 2rem;
+}
+
+.chart-subtitle {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  margin-top: -0.5rem;
+  margin-bottom: 1rem;
+}
+
+/* === Heatmap === */
+.heatmap-container {
+  overflow-x: auto;
+}
+
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: 40px repeat(24, 1fr);
+  gap: 2px;
+  min-width: 600px;
+}
+
+.heatmap-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  border-radius: 2px;
+  min-height: 28px;
+}
+
+.heatmap-corner {
+  background: transparent;
+}
+
+.heatmap-header {
+  color: var(--color-text-muted);
+  font-weight: 500;
+  font-size: 0.6rem;
+}
+
+.heatmap-day {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-size: 0.7rem;
+  justify-content: flex-end;
+  padding-right: 6px;
+}
+
+.heatmap-data {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.6rem;
+  cursor: default;
+  transition: transform 0.1s;
+}
+
+.heatmap-data:hover {
+  transform: scale(1.15);
+  z-index: 1;
+}
+
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+
+.heatmap-legend-cell {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+}
+
+/* === Dominance Panel === */
+.dominance-container {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.dominance-stats {
+  margin-bottom: 1rem;
+}
+
+.dominance-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.dominance-stat-row.highlight {
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.2);
+}
+
+.dominance-label {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.dominance-value {
+  color: var(--color-text);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.dominance-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.dominance-table th {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.dominance-table td {
+  padding: 0.35rem 0.5rem;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.empty-state {
+  color: var(--color-text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 1.5rem;
+}
+
 .dashboard-suggestions {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);

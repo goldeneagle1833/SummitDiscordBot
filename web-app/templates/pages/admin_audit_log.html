@@ -60,16 +60,34 @@
           </div>
         </div>
 
+        <div class="dashboard-charts-grid">
+          <div class="chart-card">
+            <h3>Avg Games per Player per Week</h3>
+            <canvas id="avg-gpp-chart"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Top Player Dominance</h3>
+            <div id="dominance-content" class="dominance-container">
+              <p class="loading">Loading...</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-card chart-card-wide">
+          <h3>Peak Activity Hours</h3>
+          <p class="chart-subtitle">Matches played by day of week and hour (all time)</p>
+          <div class="heatmap-container" id="heatmap-container">
+            <p class="loading">Loading...</p>
+          </div>
+        </div>
+
         <div class="dashboard-suggestions">
           <h3>Suggested Metrics to Track</h3>
           <ul>
             <li><strong>Player Retention:</strong> % of players who played in consecutive weeks</li>
             <li><strong>New Player Acquisition:</strong> First-time players per week</li>
             <li><strong>Match Source Split:</strong> Online vs Paper ratio trends over time</li>
-            <li><strong>Peak Activity Hours:</strong> Heatmap of when matches are played (day/hour)</li>
-            <li><strong>Average Games per Player:</strong> Engagement depth beyond just unique count</li>
             <li><strong>ELO Distribution:</strong> Histogram of player ratings to see skill spread</li>
-            <li><strong>Top Player Dominance:</strong> Win concentration (do top 10% win disproportionately?)</li>
             <li><strong>Deck Diversity:</strong> Number of unique avatars in play per week</li>
           </ul>
         </div>
@@ -342,8 +360,118 @@
           },
           options: chartDefaults,
         });
+
+        // Avg games per player chart
+        const gppLabels = data.avg_games_per_player.map(d => weekLabel(d.week));
+        new Chart(document.getElementById('avg-gpp-chart'), {
+          type: 'line',
+          data: {
+            labels: gppLabels,
+            datasets: [
+              {
+                label: 'Avg Games/Player',
+                data: data.avg_games_per_player.map(d => d.avg),
+                borderColor: 'rgba(219, 154, 4, 0.8)',
+                backgroundColor: 'rgba(219, 154, 4, 0.15)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 2,
+                pointHoverRadius: 5,
+              },
+            ],
+          },
+          options: chartDefaults,
+        });
+
+        // Dominance panel
+        renderDominance(data.dominance);
+
+        // Heatmap
+        renderHeatmap(data.heatmap);
       })
       .catch(err => console.error('Dashboard load failed:', err));
+  }
+
+  function renderDominance(dom) {
+    const el = document.getElementById('dominance-content');
+    if (!dom || !dom.total_players_with_wins) {
+      el.innerHTML = '<p class="empty-state">Not enough data yet.</p>';
+      return;
+    }
+
+    const topPlayersHtml = dom.top_10_players.map((p, i) =>
+      `<tr>
+        <td>${i + 1}</td>
+        <td class="nowrap">${p.player_id}</td>
+        <td><strong>${p.wins}</strong></td>
+      </tr>`
+    ).join('');
+
+    el.innerHTML = `
+      <div class="dominance-stats">
+        <div class="dominance-stat-row">
+          <span class="dominance-label">Players with wins</span>
+          <span class="dominance-value">${dom.total_players_with_wins}</span>
+        </div>
+        <div class="dominance-stat-row highlight">
+          <span class="dominance-label">Top 10% (${dom.top_10_pct_count} players)</span>
+          <span class="dominance-value">${dom.top_10_pct_win_share}% of wins</span>
+        </div>
+        <div class="dominance-stat-row">
+          <span class="dominance-label">Top 25% (${dom.top_25_pct_count} players)</span>
+          <span class="dominance-value">${dom.top_25_pct_win_share}% of wins</span>
+        </div>
+      </div>
+      <table class="dominance-table">
+        <thead><tr><th>#</th><th>Player</th><th>Wins</th></tr></thead>
+        <tbody>${topPlayersHtml}</tbody>
+      </table>
+    `;
+  }
+
+  function renderHeatmap(heatmap) {
+    const container = document.getElementById('heatmap-container');
+    if (!heatmap || heatmap.length === 0) {
+      container.innerHTML = '<p class="empty-state">No data.</p>';
+      return;
+    }
+
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const maxVal = Math.max(...heatmap.flat(), 1);
+
+    let html = '<div class="heatmap-grid">';
+    // Header row (hours)
+    html += '<div class="heatmap-cell heatmap-corner"></div>';
+    for (let h = 0; h < 24; h++) {
+      const label = h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`;
+      html += `<div class="heatmap-cell heatmap-header">${label}</div>`;
+    }
+
+    for (let d = 0; d < 7; d++) {
+      html += `<div class="heatmap-cell heatmap-day">${days[d]}</div>`;
+      for (let h = 0; h < 24; h++) {
+        const val = heatmap[d][h];
+        const intensity = val / maxVal;
+        const bg = val === 0
+          ? 'rgba(255,255,255,0.03)'
+          : `rgba(77, 184, 255, ${0.15 + intensity * 0.7})`;
+        html += `<div class="heatmap-cell heatmap-data" style="background:${bg}" title="${days[d]} ${h}:00 - ${val} games">${val || ''}</div>`;
+      }
+    }
+    html += '</div>';
+
+    // Legend
+    html += `<div class="heatmap-legend">
+      <span>Less</span>
+      <div class="heatmap-legend-cell" style="background:rgba(77,184,255,0.15)"></div>
+      <div class="heatmap-legend-cell" style="background:rgba(77,184,255,0.35)"></div>
+      <div class="heatmap-legend-cell" style="background:rgba(77,184,255,0.55)"></div>
+      <div class="heatmap-legend-cell" style="background:rgba(77,184,255,0.75)"></div>
+      <div class="heatmap-legend-cell" style="background:rgba(77,184,255,0.90)"></div>
+      <span>More</span>
+    </div>`;
+
+    container.innerHTML = html;
   }
 
   document.addEventListener('DOMContentLoaded', loadDashboard);

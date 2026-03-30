@@ -164,12 +164,11 @@
 
 /* === Dominance Panel === */
 .dominance-container {
-  max-height: 280px;
   overflow-y: auto;
 }
 
 .dominance-stats {
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
 }
 
 .dominance-stat-row {
@@ -195,6 +194,19 @@
   color: var(--color-text);
   font-weight: 600;
   font-size: 0.85rem;
+}
+
+.dominance-tables-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+}
+
+.dominance-table-title {
+  font-size: 0.85rem;
+  color: var(--color-text);
+  font-weight: 600;
+  margin-bottom: 0.5rem;
 }
 
 .dominance-table {
@@ -625,6 +637,10 @@
   }
 
   .dashboard-charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dominance-tables-grid {
     grid-template-columns: 1fr;
   }
 

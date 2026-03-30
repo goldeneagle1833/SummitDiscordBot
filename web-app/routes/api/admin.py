@@ -420,8 +420,8 @@ def dashboard_stats():
             dow, hour, cnt = int(row[0]), int(row[1]), int(row[2])
             heatmap[dow][hour] = cnt
 
-        # --- Top player dominance (win distribution, bot matches only) ---
-        # Get wins with display names from bot match tables only
+        # --- Top player dominance (W-L records, win rate, streaks) ---
+        # Get per-player wins
         cur.execute(f"""
             SELECT player_id, display_name, SUM(wins) as total_wins FROM (
                 {_online_union(
@@ -431,26 +431,135 @@ def dashboard_stats():
                 )}
             ) GROUP BY player_id ORDER BY total_wins DESC
         """)
-        win_rows = cur.fetchall()
-        total_wins_all = sum(r[2] for r in win_rows)
+        win_rows = {r[0]: {"name": r[1] or str(r[0]), "wins": r[2]} for r in cur.fetchall()}
+
+        # Get per-player losses
+        cur.execute(f"""
+            SELECT player_id, SUM(losses) as total_losses FROM (
+                {_online_union(
+                    "SELECT losser_id as player_id, 1 as losses FROM {t}"
+                )}
+            ) GROUP BY player_id
+        """)
+        for r in cur.fetchall():
+            pid = r[0]
+            if pid in win_rows:
+                win_rows[pid]["losses"] = r[1]
+            else:
+                # Players with only losses (0 wins) - get display name
+                win_rows[pid] = {"name": str(pid), "wins": 0, "losses": r[1]}
+
+        # Get display names for loss-only players
+        cur.execute(f"""
+            SELECT player_id, display_name FROM (
+                {_online_union(
+                    "SELECT losser_id as player_id, "
+                    "losser_display_name as display_name FROM {t}"
+                )}
+            ) GROUP BY player_id
+        """)
+        for r in cur.fetchall():
+            if r[0] in win_rows and win_rows[r[0]]["name"] == str(r[0]):
+                win_rows[r[0]]["name"] = r[1] or str(r[0])
+
+        # Calculate W-L stats for all players
+        for pid in win_rows:
+            p = win_rows[pid]
+            p.setdefault("losses", 0)
+            p["games"] = p["wins"] + p["losses"]
+            p["win_rate"] = round(p["wins"] / p["games"] * 100, 1) if p["games"] > 0 else 0
+
+        # Sort by wins descending for dominance stats
+        sorted_by_wins = sorted(win_rows.values(), key=lambda x: x["wins"], reverse=True)
+        total_wins_all = sum(p["wins"] for p in sorted_by_wins)
+
         dominance = {}
-        if win_rows and total_wins_all > 0:
-            n = len(win_rows)
+        if sorted_by_wins and total_wins_all > 0:
+            n = len(sorted_by_wins)
             top_10_pct = max(1, n // 10)
             top_25_pct = max(1, n // 4)
-            top_10_wins = sum(r[2] for r in win_rows[:top_10_pct])
-            top_25_wins = sum(r[2] for r in win_rows[:top_25_pct])
+            top_10_wins = sum(p["wins"] for p in sorted_by_wins[:top_10_pct])
+            top_25_wins = sum(p["wins"] for p in sorted_by_wins[:top_25_pct])
+
+            # Top 10 by wins (with W-L and win rate)
+            top_10_by_wins = [
+                {
+                    "name": p["name"], "wins": p["wins"],
+                    "losses": p["losses"], "games": p["games"],
+                    "win_rate": p["win_rate"],
+                }
+                for p in sorted_by_wins[:10]
+            ]
+
+            # Top 10 most active (by total games)
+            sorted_by_games = sorted(win_rows.values(), key=lambda x: x["games"], reverse=True)
+            most_active = [
+                {
+                    "name": p["name"], "wins": p["wins"],
+                    "losses": p["losses"], "games": p["games"],
+                    "win_rate": p["win_rate"],
+                }
+                for p in sorted_by_games[:10]
+            ]
+
             dominance = {
                 "total_players_with_wins": n,
                 "top_10_pct_count": top_10_pct,
                 "top_10_pct_win_share": round(top_10_wins / total_wins_all * 100, 1),
                 "top_25_pct_count": top_25_pct,
                 "top_25_pct_win_share": round(top_25_wins / total_wins_all * 100, 1),
-                "top_10_players": [
-                    {"name": r[1] or str(r[0]), "wins": r[2]}
-                    for r in win_rows[:10]
-                ],
+                "top_10_players": top_10_by_wins,
+                "most_active": most_active,
             }
+
+        # --- Win streaks (current + longest) for top players ---
+        # Fetch all matches ordered by time to compute streaks
+        cur.execute(f"""
+            SELECT winner_id, losser_id, timestamp FROM (
+                {_online_union(
+                    "SELECT winner_id, losser_id, timestamp FROM {t} "
+                    "WHERE timestamp IS NOT NULL"
+                )}
+            ) ORDER BY timestamp ASC
+        """)
+        match_history = cur.fetchall()
+
+        # Track current and best streaks per player
+        streaks = {}  # pid -> {"current": int, "best": int, "type": "W"/"L"}
+        for winner_id, loser_id, _ in match_history:
+            # Winner
+            if winner_id not in streaks:
+                streaks[winner_id] = {"current": 0, "best": 0, "type": ""}
+            s = streaks[winner_id]
+            if s["type"] == "W":
+                s["current"] += 1
+            else:
+                s["current"] = 1
+                s["type"] = "W"
+            s["best"] = max(s["best"], s["current"])
+
+            # Loser - streak broken
+            if loser_id not in streaks:
+                streaks[loser_id] = {"current": 0, "best": 0, "type": ""}
+            s = streaks[loser_id]
+            if s["type"] == "L":
+                s["current"] += 1
+            else:
+                s["current"] = 1
+                s["type"] = "L"
+
+        # Build streak leaderboard (longest win streaks ever)
+        streak_list = []
+        for pid, s in streaks.items():
+            if s["best"] >= 3 and pid in win_rows:
+                streak_list.append({
+                    "name": win_rows[pid]["name"],
+                    "best_streak": s["best"],
+                    "current_streak": s["current"] if s["type"] == "W" else 0,
+                })
+        streak_list.sort(key=lambda x: x["best_streak"], reverse=True)
+        if dominance:
+            dominance["streaks"] = streak_list[:10]
 
         # --- Average games per player per week ---
         # Must use UNION ALL (not UNION) to count every match appearance
@@ -508,6 +617,12 @@ def dashboard_stats():
         """)
         new_players_weekly = {row[0]: row[1] for row in cur.fetchall()}
 
+        # --- Total logged-in users (from user_profiles table) ---
+        total_logins = 0
+        if "user_profiles" in existing_tables:
+            cur.execute("SELECT COUNT(DISTINCT user_id) FROM user_profiles")
+            total_logins = cur.fetchone()[0] or 0
+
         conn.close()
 
         # Merge all weeks for time-series
@@ -558,6 +673,7 @@ def dashboard_stats():
                 "total_web_matches": total_web_matches,
                 "total_players": total_players,
                 "avg_weekly_games": avg_weekly_games,
+                "total_logins": total_logins,
             },
         }), 200
 

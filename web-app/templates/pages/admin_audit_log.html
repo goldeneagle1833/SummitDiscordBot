@@ -47,6 +47,10 @@
             <span class="summary-value" id="web-matches">--</span>
             <span class="summary-label">Paper Matches</span>
           </div>
+          <div class="summary-card">
+            <span class="summary-value" id="total-logins">--</span>
+            <span class="summary-label">Users Logged In</span>
+          </div>
         </div>
 
         <div class="dashboard-charts-grid">
@@ -71,12 +75,10 @@
           </div>
         </div>
 
-        <div class="dashboard-charts-grid">
-          <div class="chart-card">
-            <h3>Top Player Dominance</h3>
-            <div id="dominance-content" class="dominance-container">
-              <p class="loading">Loading...</p>
-            </div>
+        <div class="chart-card chart-card-wide">
+          <h3>Top Player Dominance</h3>
+          <div id="dominance-content" class="dominance-container">
+            <p class="loading">Loading...</p>
           </div>
         </div>
 
@@ -301,6 +303,7 @@
         document.getElementById('avg-weekly').textContent = data.summary.avg_weekly_games;
         document.getElementById('bot-matches').textContent = data.summary.total_bot_matches.toLocaleString();
         document.getElementById('web-matches').textContent = data.summary.total_web_matches.toLocaleString();
+        document.getElementById('total-logins').textContent = (data.summary.total_logins || 0).toLocaleString();
 
         const labels = data.games_over_time.map(d => weekLabel(d.week));
 
@@ -423,13 +426,30 @@
       return;
     }
 
-    const topPlayersHtml = dom.top_10_players.map((p, i) =>
-      `<tr>
+    function playerRow(p, i) {
+      return `<tr>
         <td>${i + 1}</td>
         <td class="nowrap">${p.name}</td>
-        <td><strong>${p.wins}</strong></td>
+        <td>${p.wins}</td>
+        <td>${p.losses}</td>
+        <td>${p.games}</td>
+        <td><strong>${p.win_rate}%</strong></td>
+      </tr>`;
+    }
+
+    const topWinsHtml = dom.top_10_players.map(playerRow).join('');
+    const mostActiveHtml = (dom.most_active || []).map(playerRow).join('');
+
+    const streaksHtml = (dom.streaks || []).map((s, i) =>
+      `<tr>
+        <td>${i + 1}</td>
+        <td class="nowrap">${s.name}</td>
+        <td><strong>${s.best_streak}</strong></td>
+        <td>${s.current_streak > 0 ? s.current_streak + ' 🔥' : '-'}</td>
       </tr>`
     ).join('');
+
+    const tableHead = '<thead><tr><th>#</th><th>Player</th><th>W</th><th>L</th><th>Games</th><th>Win%</th></tr></thead>';
 
     el.innerHTML = `
       <div class="dominance-stats">
@@ -446,10 +466,23 @@
           <span class="dominance-value">${dom.top_25_pct_win_share}% of wins</span>
         </div>
       </div>
-      <table class="dominance-table">
-        <thead><tr><th>#</th><th>Player</th><th>Wins</th></tr></thead>
-        <tbody>${topPlayersHtml}</tbody>
-      </table>
+      <div class="dominance-tables-grid">
+        <div>
+          <h4 class="dominance-table-title">Top 10 by Wins</h4>
+          <table class="dominance-table">${tableHead}<tbody>${topWinsHtml}</tbody></table>
+        </div>
+        <div>
+          <h4 class="dominance-table-title">Most Active Players</h4>
+          <table class="dominance-table">${tableHead}<tbody>${mostActiveHtml}</tbody></table>
+        </div>
+        <div>
+          <h4 class="dominance-table-title">Win Streaks</h4>
+          <table class="dominance-table">
+            <thead><tr><th>#</th><th>Player</th><th>Best</th><th>Current</th></tr></thead>
+            <tbody>${streaksHtml || '<tr><td colspan="4">No streaks of 3+ yet</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
     `;
   }
 

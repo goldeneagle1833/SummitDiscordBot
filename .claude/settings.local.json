@@ -46,7 +46,8 @@
       "mcp__claude_ai_Gmail__gmail_search_messages",
       "Bash(git stash:*)",
       "Bash(echo:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(gh run list:*)"
     ]
   },
   "enabledPlugins": {

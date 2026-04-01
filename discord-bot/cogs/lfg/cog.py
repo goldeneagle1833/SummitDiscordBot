@@ -761,7 +761,7 @@ class LFGCog(commands.Cog):
 
     def check_if_someone_is_lfg(self, ctx, queue_type="ranked"):
         """Find a player in queue compatible with the given queue_type.
-        Ranked/Limited: FILO order (newest first), skip last opponent.
+        All queue types use FIFO order (oldest first) with anti-rematch for ranked/limited.
         Casual (testing): No pairing restrictions, FIFO order (oldest first).
         Returns None if no valid match found.
         """
@@ -795,16 +795,10 @@ class LFGCog(commands.Cog):
                 )
                 continue
 
-            if is_casual:
-                # Casual: FIFO - match with oldest player (no restrictions)
-                if best_timestamp is None or timestamp < best_timestamp:
-                    best_timestamp = timestamp
-                    best_match = user_id
-            else:
-                # Ranked/Limited: FILO - match with newest player
-                if best_timestamp is None or timestamp > best_timestamp:
-                    best_timestamp = timestamp
-                    best_match = user_id
+            # All queue types: FIFO - match with oldest player
+            if best_timestamp is None or timestamp < best_timestamp:
+                best_timestamp = timestamp
+                best_match = user_id
 
         return best_match
 

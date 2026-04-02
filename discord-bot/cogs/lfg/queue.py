@@ -9,7 +9,6 @@ from cogs.lfg.helpers import scrub_urls
 from utils.constants import SORCERY_NICKNAMES
 from utils.database import save_pairing
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
-from services.limited_service import start_arena_run
 from services.pilots_service import is_pilot_active
 
 logger = logging.getLogger("discord_bot")
@@ -64,25 +63,20 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             )
             return
 
-        # For limited queue, ensure the player has an active arena run (or start one)
+        # For limited queue, player must have an active arena run (created via RealmsDraft)
         run_id = None
         if self.queue_type == "limited":
             active_run = get_active_arena_run(interaction.user.id)
-            if active_run:
+            if active_run and active_run["status"] == "active" and active_run["wins"] < 5 and active_run["losses"] < 3:
                 run_id = active_run["run_id"]
+                deck_url = active_run["deck_url"]
             else:
-                # Start a new arena run
-                display_name = (
-                    interaction.user.global_name or interaction.user.display_name
-                )
-                try:
-                    new_run = start_arena_run(
-                        interaction.user.id, display_name, deck_url
-                    )
-                    run_id = new_run["run_id"]
-                except ValueError as e:
-                    await interaction.followup.send(str(e), ephemeral=True)
-                    return
+                if active_run and active_run["status"] != "active":
+                    msg = "Your current Limited run is over. Start a new run on RealmsDraft to continue playing Limited."
+                else:
+                    msg = "You need an active arena run to join the Limited queue. Start one on RealmsDraft first."
+                await interaction.followup.send(msg, ephemeral=True)
+                return
 
         # Create a fake context for compatibility
         class FakeContext:

@@ -96,6 +96,9 @@ CURIO_EDITORS = [
 API_KEYS_ENV = os.environ.get("API_KEYS", os.environ.get("API_KEY", ""))
 VALID_API_KEYS = [key.strip() for key in API_KEYS_ENV.split(",") if key.strip()]
 
+# RealmsDraft API key for server-to-server limited arena endpoints
+REALMSDRAFT_API_KEY = os.environ.get("REALMSDRAFT_API_KEY", "")
+
 # Event star ratings (1-3 stars)
 EVENT_RATINGS = {
     "ColumbusExplor2025": 1,

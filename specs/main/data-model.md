@@ -1,6 +1,8 @@
-# Data Model: Limited Queue (Arena Draft Mode)
+# Data Model: Limited Queue (Arena Draft Mode) + RealmsDraft API
 
-## New Tables
+## Existing Tables (Already Implemented in Discord Bot)
+
+All four limited tables already exist in `repositories/limited_repo.py` and are fully operational.
 
 ### `limited_arena_runs` (in `match_records.db`)
 
@@ -25,7 +27,7 @@ Tracks each player's arena run lifecycle (draft -> play -> complete/forfeit).
 **State Transitions**:
 ```
 active -> completed  (when wins=5 or losses=3)
-active -> forfeited  (when player forfeits)
+active -> forfeited  (when player forfeits via DM button or RealmsDraft API)
 ```
 
 ### `limited_match_records` (in `match_records.db`)
@@ -56,8 +58,6 @@ Stores confirmed limited match results. Mirrors `match_records` schema but for l
 | `winner_run_id` | INTEGER | | FK to winner's arena run |
 | `loser_run_id` | INTEGER | | FK to loser's arena run |
 
-**Note**: Column naming uses `loser_id` (corrected spelling) rather than `losser_id` used in legacy `match_records`.
-
 ### `limited_elo` (in `elo.db`)
 
 Separate ELO tracking for limited mode. Simple single-ELO system (no paper/event split).
@@ -70,7 +70,7 @@ Separate ELO tracking for limited mode. Simple single-ELO system (no paper/event
 
 ### `limited_active_pairings` (in `match_records.db`)
 
-Active pairings for limited matches. Same schema as `active_pairings`.
+Active pairings for limited matches. Same pattern as `active_pairings`.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
@@ -85,21 +85,9 @@ Active pairings for limited matches. Same schema as `active_pairings`.
 | `created_at` | TEXT | NOT NULL | ISO timestamp |
 | `status` | TEXT | NOT NULL DEFAULT 'active' | 'active', 'reported', 'expired', 'cancelled' |
 
-## In-Memory State Additions (in `state.py`)
+## No New Tables Required for RealmsDraft API
 
-```python
-# No new dictionaries needed - limited entries go in existing lfg_queue
-# with queue_type="limited"
-#
-# Queue entry structure for limited:
-# user_id: {
-#     "timestamp": datetime,
-#     "timeframe": int,
-#     "deck_url": str,          # REQUIRED for limited
-#     "queue_type": "limited",
-#     "run_id": int,            # Active arena run ID
-# }
-```
+The RealmsDraft API endpoints read/write the **same four tables** listed above. No schema changes needed. The web app accesses these tables via the discord-bot's repository and service layers (already on `sys.path` in `app.py`).
 
 ## Entity Relationships
 
@@ -114,6 +102,33 @@ limited_active_pairings (1) ---- limited_match_records (1)
   via pairing validation (not FK, same pattern as existing)
 ```
 
+## API Data Flow
+
+```
+RealmsDraft                    Summit Web App                    SQLite DBs
+    |                               |                                |
+    |-- GET /status --------------->|                                |
+    |                               |-- get_active_arena_run() ----->|
+    |                               |-- get_limited_elo() ---------->|
+    |                               |<------- run + elo data --------|
+    |<------ JSON response ---------|                                |
+    |                               |                                |
+    |-- POST /run (new deck) ------>|                                |
+    |                               |-- start_arena_run() ---------->|
+    |                               |<------- run_id ----------------|
+    |<------ JSON response ---------|                                |
+    |                               |                                |
+    |-- POST /run (forfeit) ------->|                                |
+    |                               |-- forfeit_arena_run() -------->|
+    |                               |<------- summary ---------------|
+    |<------ JSON response ---------|                                |
+    |                               |                                |
+    |-- POST /end-run ------------->|                                |
+    |                               |-- forfeit_arena_run() -------->|
+    |                               |<------- summary ---------------|
+    |<------ JSON response ---------|                                |
+```
+
 ## Validation Rules
 
 1. **Queue join**: `deck_url` must be non-empty for `queue_type="limited"`
@@ -122,69 +137,4 @@ limited_active_pairings (1) ---- limited_match_records (1)
 4. **Forfeit**: Remaining losses = `3 - current_losses`, each applied sequentially against `starting_elo`
 5. **ELO**: Starts at 1500, K=32 constant (no dynamic K-factor for limited)
 6. **Pairing**: Same validation pattern as existing - must have active pairing before report accepted
-
-## SQL Table Creation
-
-```sql
--- limited_arena_runs
-CREATE TABLE IF NOT EXISTS limited_arena_runs (
-    run_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    user_display_name TEXT NOT NULL,
-    deck_url TEXT NOT NULL,
-    json_deck_data TEXT,
-    wins INTEGER NOT NULL DEFAULT 0,
-    losses INTEGER NOT NULL DEFAULT 0,
-    starting_elo INTEGER NOT NULL DEFAULT 1500,
-    status TEXT NOT NULL DEFAULT 'active',
-    created_at TEXT NOT NULL,
-    completed_at TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_limited_runs_user_status ON limited_arena_runs(user_id, status);
-
--- limited_match_records
-CREATE TABLE IF NOT EXISTS limited_match_records (
-    match_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    reporter_id INTEGER,
-    winner_id INTEGER,
-    winner_display_name TEXT,
-    loser_id INTEGER,
-    loser_display_name TEXT,
-    did_win BOOLEAN,
-    timestamp TEXT,
-    first_player TEXT,
-    match_time INTEGER,
-    curiosa_url_winner TEXT,
-    curiosa_url_loser TEXT,
-    match_comment TEXT,
-    json_deck_data_winner TEXT,
-    json_deck_data_loser TEXT,
-    winner_elo_change INTEGER,
-    loser_elo_change INTEGER,
-    winner_went_first TEXT,
-    loser_went_first TEXT,
-    winner_run_id INTEGER,
-    loser_run_id INTEGER
-);
-
--- limited_elo (in elo.db)
-CREATE TABLE IF NOT EXISTS limited_elo (
-    user_id INTEGER PRIMARY KEY,
-    user_display_name TEXT,
-    elo INTEGER NOT NULL DEFAULT 1500
-);
-
--- limited_active_pairings
-CREATE TABLE IF NOT EXISTS limited_active_pairings (
-    pairing_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id INTEGER NOT NULL,
-    player1_id INTEGER NOT NULL,
-    player2_id INTEGER NOT NULL,
-    player1_deck_url TEXT,
-    player2_deck_url TEXT,
-    player1_run_id INTEGER,
-    player2_run_id INTEGER,
-    created_at TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'active'
-);
-```
+7. **API Auth**: All RealmsDraft endpoints require valid `X-API-Key` header

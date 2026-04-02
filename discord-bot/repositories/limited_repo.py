@@ -200,6 +200,41 @@ def get_arena_run(run_id: int) -> dict | None:
     return None
 
 
+def get_latest_arena_run(user_id: int) -> dict | None:
+    """Get the user's most recent arena run regardless of status."""
+    create_limited_tables()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute(
+        """SELECT run_id, user_id, user_display_name, deck_url, json_deck_data,
+                  wins, losses, starting_elo, status, created_at, completed_at
+           FROM limited_arena_runs
+           WHERE user_id = ?
+           ORDER BY created_at DESC
+           LIMIT 1""",
+        (user_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            "run_id": row[0],
+            "user_id": row[1],
+            "user_display_name": row[2],
+            "deck_url": row[3],
+            "json_deck_data": row[4],
+            "wins": row[5],
+            "losses": row[6],
+            "starting_elo": row[7],
+            "status": row[8],
+            "created_at": row[9],
+            "completed_at": row[10],
+        }
+    return None
+
+
 def update_arena_run_record(run_id: int, wins: int, losses: int):
     """Update wins/losses for an arena run."""
     conn = sqlite3.connect("match_records.db")
@@ -433,6 +468,37 @@ def mark_limited_pairing_reported(
     conn.commit()
     conn.close()
     return updated
+
+
+def get_matches_for_run(run_id: int, user_id: int) -> list[dict]:
+    """Get all match records for a specific arena run, ordered chronologically."""
+    create_limited_tables()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    cur.execute(
+        """SELECT match_id, winner_id, winner_display_name, loser_id, loser_display_name,
+                  timestamp, winner_elo_change, loser_elo_change
+           FROM limited_match_records
+           WHERE winner_run_id = ? OR loser_run_id = ?
+           ORDER BY timestamp ASC""",
+        (run_id, run_id),
+    )
+    rows = cur.fetchall()
+    conn.close()
+
+    matches = []
+    for row in rows:
+        won = row[1] == user_id
+        matches.append({
+            "match_id": row[0],
+            "won": won,
+            "opponent_name": row[4] if won else row[2],
+            "opponent_id": row[3] if won else row[1],
+            "elo_change": row[6] if won else row[7],
+            "timestamp": row[5],
+        })
+    return matches
 
 
 def cleanup_old_limited_pairings(hours: int = 24):

@@ -1,141 +1,114 @@
-# Tasks: Limited Queue (Arena Draft Mode)
+# Tasks: RealmsDraft ↔ Summit API Integration
 
 **Input**: Design documents from `/specs/main/`
-**Prerequisites**: plan.md, spec.md, research.md, data-model.md, quickstart.md
+**Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/realmsdraft-api.md, quickstart.md
 
-**Tests**: Included (Phase 8) - the project has an existing test suite (87+ tests) that must remain passing.
+**Tests**: Not explicitly requested. Manual curl testing described in quickstart.md.
 
-**Organization**: Tasks grouped by user story. US-6 (Start New Arena Run) is merged into US-2 since it's the same arena run creation logic handling the "completed run" case.
+**Organization**: Tasks grouped by API endpoint (user story). Each endpoint can be tested independently once the setup phase is complete.
+
+**Context**: The Discord bot's limited arena system (database tables, repositories, services, match reporting, forfeit logic) is already fully implemented and tested (87+ tests passing). This task list covers ONLY the new web app API surface for RealmsDraft integration.
 
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
-- **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
+- **[Story]**: Which user story this task belongs to (e.g., API1, API2, API3, API4)
 - Include exact file paths in descriptions
 
 ---
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Create new files and wire them into the existing facade pattern
+**Purpose**: Add API key config and authentication decorator needed by all endpoints
 
-- [x] T001 [P] Create `discord-bot/repositories/limited_repo.py` with `create_limited_tables()` that creates all 4 tables (`limited_arena_runs`, `limited_match_records`, `limited_elo`, `limited_active_pairings`) using CREATE TABLE IF NOT EXISTS and the index from data-model.md SQL section
-- [x] T002 [P] Create `discord-bot/services/limited_service.py` skeleton with module docstring and imports from `repositories.limited_repo` and `services.elo_service.update_elo`
-- [x] T003 Update `discord-bot/utils/database.py` facade to import and re-export from `repositories.limited_repo` and `services.limited_service` (follow existing facade pattern importing from `repositories.elo_repo` and `services.elo_service`)
+- [ ] T001 [P] Add `REALMSDRAFT_API_KEY` config value to `web-app/webapp_config.py` — add `REALMSDRAFT_API_KEY = os.environ.get("REALMSDRAFT_API_KEY", "")` alongside existing secret config values, import `os` if not already imported
+- [ ] T002 [P] Create `web-app/utils/api_auth.py` with `@require_api_key` decorator — import `functools.wraps`, `flask.request`, `flask.jsonify`, and `webapp_config`; decorator checks `request.headers.get("X-API-Key")` against `webapp_config.REALMSDRAFT_API_KEY`, returns 401 JSON `{"success": false, "error": "Invalid API key"}` if missing or mismatched (see contract `realmsdraft-api.md` Authentication section for exact implementation)
 
-**Checkpoint**: New files exist, facade exports work, `create_limited_tables()` is callable
-
----
-
-## Phase 2: Foundational (Blocking Prerequisites)
-
-**Purpose**: Core limited ELO and pairing operations that ALL user stories depend on
-
-- [x] T004 [P] Implement limited ELO read/write in `discord-bot/repositories/limited_repo.py`: `get_limited_elo(user_id)` returns int (default 1500), `upsert_limited_elo(user_id, display_name, new_elo)` inserts or updates the `limited_elo` table
-- [x] T005 [P] Implement limited pairings CRUD in `discord-bot/repositories/limited_repo.py`: `save_limited_pairing(guild_id, p1_id, p2_id, p1_deck_url, p2_deck_url, p1_run_id, p2_run_id)`, `get_limited_pairing_between_players(guild_id, user_id, opponent_id)`, `mark_limited_pairing_reported(guild_id, user_id, opponent_id)`, `cleanup_old_limited_pairings(hours=24)` - mirror existing `active_pairings` functions in `discord-bot/repositories/elo_repo.py` but for `limited_active_pairings` table
-- [x] T006 Implement `update_limited_elo(user_id, display_name, did_win, opponent_id)` in `discord-bot/services/limited_service.py` - uses K=32 constant, calls `get_limited_elo()` for both players, applies `update_elo()` from `elo_service.py`, calls `upsert_limited_elo()`, returns `(new_elo, elo_change)`
-
-**Checkpoint**: Limited ELO updates and pairing validation work independently
+**Checkpoint**: Auth decorator exists and can be imported. Config value is readable from environment.
 
 ---
 
-## Phase 3: US-2 + US-6 - Arena Run Tracking (Priority: P1) MVP
+## Phase 2: Foundational (Blueprint Registration)
 
-**Goal**: Players can start arena runs, track wins/losses, complete runs at 3L/5W, and start new runs after previous ones end
+**Purpose**: Create the limited API blueprint skeleton and wire it into the Flask app
 
-**Independent Test**: Call `start_arena_run()`, verify run created with 0-0 record. Call `update_arena_run_record()` to increment wins/losses. Verify `check_run_complete()` returns True at 3L or 5W. Verify `start_arena_run()` works again after a completed run.
+**CRITICAL**: Must complete before any endpoint implementation
+
+- [ ] T003 Create `web-app/routes/api/limited.py` with empty Flask Blueprint — `limited_bp = Blueprint("limited", __name__)`, add imports for `flask.Blueprint`, `flask.jsonify`, `flask.request`, and the `require_api_key` decorator from `utils.api_auth`; also import from discord-bot layer: `repositories.limited_repo.get_active_arena_run`, `repositories.limited_repo.get_limited_elo`, `services.limited_service.start_arena_run`, `services.limited_service.forfeit_arena_run` (these are available because `app.py` adds `discord-bot/` to `sys.path`)
+- [ ] T004 Register `limited_bp` in `web-app/routes/api/__init__.py` — add `from routes.api.limited import limited_bp` and `api_bp.register_blueprint(limited_bp, url_prefix="/limited")` following the existing pattern (see `match_reporting_bp` and `curios_bp` registrations with url_prefix)
+
+**Checkpoint**: Blueprint registered. Server starts without errors. `GET /api/limited/` returns 404 (no routes yet).
+
+---
+
+## Phase 3: API-US1 — GET User Status Endpoint (Priority: P1) MVP
+
+**Goal**: RealmsDraft can check a player's current limited arena run status, record, ELO, and queue eligibility
+
+**Independent Test**: `curl -H "X-API-Key: <key>" http://localhost:5000/api/limited/user/123/status` returns JSON with `has_active_run`, `run`, `limited_elo`, and `can_queue` fields per contract
 
 ### Implementation
 
-- [x] T007 [P] [US2] Implement arena run CRUD in `discord-bot/repositories/limited_repo.py`: `create_arena_run(user_id, display_name, deck_url, json_deck_data, starting_elo)` inserts row returning run_id, `get_active_arena_run(user_id)` returns dict or None (status='active'), `update_arena_run_record(run_id, wins, losses)` updates wins/losses columns, `complete_arena_run(run_id, status)` sets status to 'completed' or 'forfeited' and sets completed_at timestamp
-- [x] T008 [P] [US2] Implement limited match record insert in `discord-bot/repositories/limited_repo.py`: `insert_limited_match_record(reporter_id, winner_id, winner_display_name, loser_id, loser_display_name, did_win, first_player, match_time, curiosa_url_winner, curiosa_url_loser, match_comment, json_deck_data_winner, json_deck_data_loser, winner_elo_change, loser_elo_change, winner_went_first, loser_went_first, winner_run_id, loser_run_id)` inserts into `limited_match_records`, returns match_id
-- [x] T009 [US2] Implement `start_arena_run(user_id, display_name, deck_url)` in `discord-bot/services/limited_service.py` - checks for active run (error if exists), gets current limited ELO as starting_elo, scrapes deck data via `scrape_Curosa()`, calls `create_arena_run()`, returns run dict
-- [x] T010 [US2] Implement `check_run_complete(run_id)` in `discord-bot/services/limited_service.py` - loads run from DB, returns True if wins>=5 or losses>=3, auto-calls `complete_arena_run(run_id, 'completed')` if so
-- [x] T011 [US2] Implement `get_run_summary(run_id)` in `discord-bot/services/limited_service.py` - loads run from DB, returns formatted string with record (e.g., "4-3"), deck URL, Limited ELO, status
-- [x] T012 [US2] Implement `forfeit_arena_run(user_id)` in `discord-bot/services/limited_service.py` - loads active run, calculates `losses_to_apply = 3 - current_losses`, applies each phantom loss sequentially via `update_elo(current_elo, starting_elo, did_win=False, k=32)` updating limited_elo after each, calls `complete_arena_run(run_id, 'forfeited')`, returns run summary
+- [ ] T005 [API1] Implement `GET /api/limited/user/<user_id>/status` in `web-app/routes/api/limited.py` — decorate with `@require_api_key`, call `get_active_arena_run(int(user_id))` to get active run dict (or None), call `get_limited_elo(int(user_id))` for current ELO. Build response per contract: `has_active_run` = True only if run exists and status is "active", `can_queue` = True only if active run with wins < 5 and losses < 3, `run` = most recent run dict (active or last completed/forfeited) or None if player has never played. If run exists, include: `run_id`, `deck_url`, `wins`, `losses`, `status`, `starting_elo`, `created_at`, and `completed_at` (if present). Return 200 with `jsonify()`.
+- [ ] T006 [API1] Handle edge case in GET status: player has no active run but has past runs — query `limited_arena_runs` for most recent run (any status) ordered by `created_at DESC LIMIT 1`. If `get_active_arena_run()` returns None, fall back to this query. Add `get_most_recent_run(user_id)` helper function in `web-app/routes/api/limited.py` or import from `repositories.limited_repo` if the function already exists (check `get_arena_run()` which takes `run_id` — may need a new repo function `get_latest_arena_run(user_id)` in `discord-bot/repositories/limited_repo.py` that queries by user_id ordered by created_at DESC LIMIT 1)
 
-**Checkpoint**: Arena run lifecycle fully functional: create, track, complete, forfeit, restart
+**Checkpoint**: GET status endpoint returns correct JSON for: active run, completed run, no run history, invalid API key (401).
 
 ---
 
-## Phase 4: US-1 - Join Limited Queue with Draft Deck (Priority: P1)
+## Phase 4: API-US2 — POST Start/Forfeit Run Endpoint (Priority: P1)
 
-**Goal**: Players can select "Limited" in the LFG queue, provide a deck URL, and get matched only with other limited players
+**Goal**: RealmsDraft can start a new arena run with a deck URL, or forfeit the current active run using a flag
 
-**Independent Test**: Join queue with "limited" type + deck URL, verify queue entry has `queue_type="limited"` and `run_id`. Verify limited players don't match with ranked/testing players. Verify deck URL is required for limited (rejected without it).
+**Independent Test**: `curl -X POST -H "X-API-Key: <key>" -H "Content-Type: application/json" -d '{"deck_url":"https://curiosa.io/decks/abc","display_name":"Test"}' http://localhost:5000/api/limited/user/123/run` returns 201 with new run. `curl -X POST ... -d '{"forfeit":true}' .../run` returns 200 with forfeited run + penalty summary.
 
 ### Implementation
 
-- [x] T013 [US1] Update queue entry docstring in `discord-bot/cogs/lfg/state.py` to document `run_id` field for limited queue entries (add to existing comment block at line ~10-12)
-- [x] T014 [US1] Add "Limited" as a 4th queue type option in `discord-bot/cogs/lfg/queue.py` - add to the queue type selection UI (Select menu or buttons), validate that deck_url is non-empty when queue_type is "limited" (reject with error message if missing), on queue join: call `get_active_arena_run(user_id)` - if active run exists use it, if no run or completed run call `start_arena_run()`, store `run_id` in queue entry dict
-- [x] T015 [US1] Update `check_if_someone_is_lfg()` in `discord-bot/cogs/lfg/cog.py` to handle limited queue isolation - "limited" only matches with "limited" (add to queue type compatibility check alongside ranked/testing/both logic), pass `run_id` from both players' queue entries into the match context dict used by reporting
-- [x] T016 [US1] Update `resolve_match_type()` in `discord-bot/cogs/lfg/cog.py` (or helpers) - if either player has `queue_type="limited"`, match type resolves to "limited"
-- [x] T017 [US1] Update pairing save in `discord-bot/cogs/lfg/cog.py` - when match_type is "limited", call `save_limited_pairing()` instead of `save_pairing()`, passing both players' run_ids
+- [ ] T007 [API2] Implement `POST /api/limited/user/<user_id>/run` in `web-app/routes/api/limited.py` — decorate with `@require_api_key`, parse JSON body with `request.get_json()`. Branch on `forfeit` flag:
+  - **If `forfeit: true`**: call `forfeit_arena_run(int(user_id))` from `services.limited_service`. If no active run, return 400 `{"success": false, "error": "No active run to forfeit"}`. On success, return 200 with `action: "forfeited"`, the forfeited run dict, updated `limited_elo`, and `penalty_summary` string from the forfeit function.
+  - **If no forfeit flag (new run)**: validate `deck_url` and `display_name` are present in body, return 400 if missing. Call `start_arena_run(int(user_id), display_name, deck_url)` from `services.limited_service`. If player already has active run, return 400 `{"success": false, "error": "Player already has an active run (run_id: X). Forfeit or complete it first."}`. On success, return 201 with `action: "created"`, new run dict, and `limited_elo`.
+- [ ] T008 [API2] Handle forfeit response formatting in POST /run — `forfeit_arena_run()` returns a summary string. Parse this to extract the ELO before/after for the `penalty_summary` field, and fetch the updated run dict by calling `get_arena_run(run_id)` after forfeit completes. Also fetch updated `limited_elo` via `get_limited_elo(user_id)` since it changed during forfeit.
 
-**Checkpoint**: Limited queue works end-to-end: join with deck → isolated matching → limited pairing saved
+**Checkpoint**: POST /run creates new runs (201), forfeits active runs (200), rejects missing fields (400), rejects duplicate active runs (400), rejects forfeit with no active run (400), rejects invalid API key (401).
 
 ---
 
-## Phase 5: US-3 - Limited Match Reporting (Priority: P1)
+## Phase 5: API-US3 — POST End Run Endpoint (Priority: P1)
 
-**Goal**: When limited match is confirmed, results are saved to separate limited tables with separate ELO updates and arena run incremented
+**Goal**: RealmsDraft can force-end a player's current run (e.g., user abandons draft session), applying remaining losses as ELO penalties
 
-**Independent Test**: Two limited-matched players report a result. Verify match saved in `limited_match_records` (not `match_records`). Verify `limited_elo` updated (not `overall_standings`). Verify arena run wins/losses incremented. Verify run completes at 3L/5W with DM.
+**Independent Test**: `curl -X POST -H "X-API-Key: <key>" http://localhost:5000/api/limited/user/123/end-run` returns 200 with forfeited run, `losses_applied` count, and `penalty_summary`.
 
 ### Implementation
 
-- [x] T018 [US3] Implement `limited_winner_report(...)` in `discord-bot/services/limited_service.py` - mirrors `winner_report()` from `elo_service.py` but: calls `update_limited_elo()` instead of `update_elo_db()`, calls `insert_limited_match_record()` instead of inserting into `match_records`, increments winner's arena run wins via `update_arena_run_record()`, calls `check_run_complete()` for winner, returns `(match_id, winner_run_complete)`
-- [x] T019 [US3] Implement `limited_loser_report(...)` in `discord-bot/services/limited_service.py` - mirrors `losser_report()` from `elo_service.py` but for limited tables, increments loser's arena run losses, calls `check_run_complete()` for loser, returns `(match_id, loser_run_complete)`
-- [x] T020 [US3] Thread `is_limited` flag and `run_id` (for both players) through the reporting Views in `discord-bot/cogs/lfg/match_reporting.py` - add parameters to `WentFirstView.__init__()`, `LFGReportButtons.__init__()`, and `MatchConfirmationButtons.__init__()`, pass them through at each handoff
-- [x] T021 [US3] Branch at match confirmation in `discord-bot/cogs/lfg/match_reporting.py` `MatchConfirmationButtons.confirm_button` callback - when `match_type == "limited"`: call `limited_winner_report()` / `limited_loser_report()` instead of existing report functions, call `mark_limited_pairing_reported()` instead of `mark_pairing_reported()`, use `get_limited_pairing_between_players()` for pairing validation instead of `get_pairing_between_players()`
-- [x] T022 [US3] After limited match confirmation in `discord-bot/cogs/lfg/match_reporting.py`, check run completion for both players - if either player's run is complete (returned from report functions), send them a DM with `get_run_summary(run_id)` showing final record
+- [ ] T009 [API3] Implement `POST /api/limited/user/<user_id>/end-run` in `web-app/routes/api/limited.py` — decorate with `@require_api_key`. Get active run via `get_active_arena_run(int(user_id))`. If no active run, return 400 `{"success": false, "error": "No active run to end"}`. Calculate `losses_applied = 3 - run["losses"]`. Call `forfeit_arena_run(int(user_id))`. Fetch updated run and ELO. Return 200 with run dict (now status "forfeited"), `limited_elo`, `losses_applied` integer, and `penalty_summary` string per contract.
 
-**Checkpoint**: Limited match reporting fully works: report → confirm → saved to limited tables → ELO updated → run incremented → completion DM
+**Checkpoint**: POST /end-run forfeits active run (200), returns correct `losses_applied` count, rejects when no active run (400), rejects invalid API key (401).
 
 ---
 
-## Phase 6: US-4 - Post-Match Run Status DM (Continue / Forfeit) (Priority: P2)
+## Phase 6: API-US4 — Discord Bot Queue Validation (Priority: P2)
 
-**Goal**: After each limited match (if run still active), DM players with their run record and Continue/Forfeit buttons
+**Goal**: Discord bot validates that a player has an active arena run before allowing them to join the Limited queue, enforcing "can't join if you don't have an active deck and you meet the win loss requirements"
 
-**Independent Test**: After a limited match where run is still active, verify player receives DM with record + two buttons. Click Continue → message dismissed, stats reply shown. Click Forfeit → run forfeited, ELO penalty applied, summary DM sent.
+**Independent Test**: Try to join limited queue without an active run — bot rejects with message. Start a run via API, then join — bot accepts. Complete a run (5W or 3L), try to join again — bot rejects.
 
 ### Implementation
 
-- [x] T023 [US4] Create `RunStatusView(discord.ui.View)` class in `discord-bot/cogs/lfg/match_reporting.py` with `timeout=3600` (60 min) - takes `user_id`, `run_id`, `bot` as init params, stores them as instance vars
-- [x] T024 [US4] Implement **Continue Run** button in `RunStatusView` - on click: calls `get_run_summary(run_id)`, edits the original message to show current run stats (record, deck URL, Limited ELO), disables both buttons
-- [x] T025 [US4] Implement **Forfeit Run** button in `RunStatusView` - on click: calls `forfeit_arena_run(user_id)` from `limited_service.py`, edits the original message to show forfeit summary with final ELO penalty, disables both buttons
-- [x] T026 [US4] Integrate `RunStatusView` into post-confirmation flow in `discord-bot/cogs/lfg/match_reporting.py` - after limited match confirmed AND run is NOT complete, send DM to each player with embed showing "Your Limited run: X-Y" + deck URL + the `RunStatusView` buttons. If run IS complete, just send the completion summary (no buttons needed)
+- [ ] T010 [API4] Update limited queue join validation in `discord-bot/cogs/lfg/queue.py` — when `queue_type == "limited"`, before adding player to queue: call `get_active_arena_run(user_id)` from `repositories.limited_repo`. If no active run (None) or run status is not "active", send ephemeral error message: "You need an active arena run to join the Limited queue. Start one on RealmsDraft first." If active run exists but is completed (wins >= 5 or losses >= 3), send: "Your current run is complete. Start a new run on RealmsDraft to continue playing Limited." Only allow queue join if active run exists with `status == "active"` and `wins < 5` and `losses < 3`. Store `run_id` and `deck_url` from the active run into the queue entry dict.
+- [ ] T011 [API4] Remove the existing auto-create-run-on-queue-join logic in `discord-bot/cogs/lfg/queue.py` — the current code calls `start_arena_run()` when a player joins limited queue without an active run. This should now be removed since RealmsDraft is responsible for creating runs. Players MUST have a pre-existing active run (created via the POST /run API) before they can join the queue. Keep the `get_active_arena_run()` check but change the else-branch from auto-creating a run to rejecting the queue join.
 
-**Checkpoint**: Post-match DM flow works: active run → Continue/Forfeit buttons, completed run → summary only
+**Checkpoint**: Bot rejects limited queue join without active run. Bot accepts with active run. Run creation only happens via RealmsDraft API.
 
 ---
 
-## Phase 7: US-5 - Limited Stats on Player Profile (Web App) (Priority: P3 - Can Be Deferred)
+## Phase 7: Polish & Cross-Cutting Concerns
 
-**Goal**: Player profile page shows Limited Arena section with ELO, run history, and recent match history
+**Purpose**: Error handling, logging, and validation hardening
 
-**Independent Test**: View a player profile on the web app who has limited match history. Verify "Limited Arena" section appears below existing stats with correct Limited ELO, run history, and match table.
-
-### Implementation
-
-- [x] T027 [P] [US5] Add limited match query functions in `web-app/repositories/matches.py`: `get_limited_matches_for_player(user_id, limit=20)` queries `limited_match_records` for matches where player is winner or loser, `get_limited_arena_runs(user_id)` queries `limited_arena_runs` for all runs by user ordered by created_at DESC, `get_limited_elo(user_id)` queries `limited_elo` table returning elo or 1500
-- [x] T028 [US5] Add limited stats to player profile data in `web-app/services/player.py` - call the new repository functions to fetch limited ELO, arena runs, and recent limited matches, add to the player context dict passed to template
-- [x] T029 [US5] Add "Limited Arena" section to `web-app/templates/pages/player.html` - add below existing stats section: Limited ELO display, arena run history table (run record, deck URL, status, date), recent limited match history table (same format as existing match table but sourced from limited data)
-
-**Checkpoint**: Player profile shows complete limited stats section
-
----
-
-## Phase 8: Testing & Polish
-
-**Purpose**: Verify no regressions and add limited-specific tests
-
-- [x] T030 Run existing test suite `pytest discord-bot/tests/ -v` and verify all 87+ tests still pass (no regressions from changes to queue.py, cog.py, match_reporting.py)
-- [x] T031 Create `discord-bot/tests/test_limited.py` with tests covering: arena run lifecycle (create → update → complete at 3L and 5W), limited ELO calculation (K=32, start at 1500), forfeit ELO penalty (phantom losses against starting ELO applied sequentially), `start_arena_run()` works after completed/forfeited run (US-6), deck URL required validation for limited queue type
-- [x] T032 [P] Add queue isolation test in `discord-bot/tests/test_limited.py` - verify limited queue entries do NOT match with ranked/testing/both entries, and DO match with other limited entries
-- [x] T033 Verify `create_limited_tables()` is called during bot startup or on first use - add call in `discord-bot/repositories/elo_repo.py` `create_db()` or in limited_service functions (idempotent, safe to call multiple times)
-- [x] T034 Code review pass: verify no changes to existing ranked/testing/both queue behavior, no changes to existing ELO tables, no changes to existing match_records table
+- [ ] T012 Add error handling wrapper to all 3 endpoints in `web-app/routes/api/limited.py` — wrap each endpoint body in try/except, catch `ValueError` (invalid user_id conversion), `sqlite3.Error` (database failures), and generic `Exception`. Return appropriate HTTP status (400 for ValueError, 500 for database/unexpected errors) with `{"success": false, "error": "<message>"}` format. Add `logging.getLogger(__name__)` and log errors at ERROR level.
+- [ ] T013 [P] Add request logging to `web-app/routes/api/limited.py` — log each incoming request at INFO level with method, path, user_id, and action taken (e.g., "GET status for user 123: active run found" or "POST run for user 123: new run created"). Use the existing logging pattern from `web-app/app.py`.
+- [ ] T014 Verify existing test suite still passes — run `pytest discord-bot/tests/ -v` from `discord-bot/` directory to confirm all 87+ existing tests still pass after the queue.py changes in T010-T011. No new test files needed since the API endpoints are tested manually via curl.
 
 ---
 
@@ -143,65 +116,86 @@
 
 ### Phase Dependencies
 
-- **Setup (Phase 1)**: No dependencies - start immediately
-- **Foundational (Phase 2)**: Depends on Phase 1 (T001, T002, T003)
-- **US-2 + US-6 (Phase 3)**: Depends on Phase 2 (needs limited ELO + repo functions)
-- **US-1 (Phase 4)**: Depends on Phase 3 (queue join needs `start_arena_run()`)
-- **US-3 (Phase 5)**: Depends on Phase 3 (report needs run updates) and Phase 4 (needs queue matching)
-- **US-4 (Phase 6)**: Depends on Phase 5 (DM sent after match confirmation)
-- **US-5 (Phase 7)**: Depends on Phase 2 only (reads from limited tables) - can run in parallel with Phases 4-6
-- **Testing (Phase 8)**: Depends on Phases 3-6 (needs bot-side features complete)
+- **Setup (Phase 1)**: No dependencies — start immediately
+- **Foundational (Phase 2)**: Depends on Phase 1 (T001, T002) — needs config + auth decorator
+- **API-US1 (Phase 3)**: Depends on Phase 2 (T003, T004) — needs blueprint registered
+- **API-US2 (Phase 4)**: Depends on Phase 2 — can run in parallel with Phase 3
+- **API-US3 (Phase 5)**: Depends on Phase 2 — can run in parallel with Phases 3-4
+- **API-US4 (Phase 6)**: No dependency on Phases 3-5 (bot reads DB directly, doesn't call API)
+- **Polish (Phase 7)**: Depends on Phases 3-6 complete
 
 ### User Story Dependencies
 
 ```
-Phase 1 (Setup)
-    └── Phase 2 (Foundational)
-           ├── Phase 3: US-2+US-6 (Arena Run Tracking)
-           │      └── Phase 4: US-1 (Queue Integration)
-           │             └── Phase 5: US-3 (Match Reporting)
-           │                    └── Phase 6: US-4 (Continue/Forfeit DM)
-           └── Phase 7: US-5 (Web Profile) ← can run in parallel with Phases 4-6
+Phase 1 (Setup: config + auth)
+    └── Phase 2 (Blueprint skeleton + registration)
+           ├── Phase 3: API-US1 (GET status)     ─┐
+           ├── Phase 4: API-US2 (POST run/forfeit) ├── All 3 can run in parallel
+           └── Phase 5: API-US3 (POST end-run)   ─┘
+Phase 6: API-US4 (Bot queue validation) ← independent, can run anytime after Phase 1
+    └── Phase 7 (Polish) ← after all above complete
 ```
 
 ### Parallel Opportunities
 
 **Within Phase 1**: T001 and T002 can run in parallel (different files)
-**Within Phase 2**: T004 and T005 can run in parallel (different functions, same file but independent)
-**Within Phase 3**: T007 and T008 can run in parallel (different functions in same repo file)
-**Phase 7 vs Phases 4-6**: Web app work (US-5) can run entirely in parallel with Discord bot queue/reporting work
-**Within Phase 7**: T027 can start immediately after Phase 2
-**Within Phase 8**: T032 can run in parallel with T031
+**Phases 3, 4, 5**: All three endpoint implementations can run in parallel (same file but independent functions, no dependencies between them)
+**Phase 6 vs Phases 3-5**: Bot queue validation (T010-T011) is independent of web app API work — can run in parallel
+**Within Phase 7**: T012 and T013 can run in parallel (different concerns in same file)
+
+---
+
+## Parallel Example: Endpoint Implementation
+
+```bash
+# After Phase 2 completes, launch all three endpoints in parallel:
+Task: "T005 [API1] Implement GET /api/limited/user/<user_id>/status in web-app/routes/api/limited.py"
+Task: "T007 [API2] Implement POST /api/limited/user/<user_id>/run in web-app/routes/api/limited.py"
+Task: "T009 [API3] Implement POST /api/limited/user/<user_id>/end-run in web-app/routes/api/limited.py"
+
+# Simultaneously, work on bot-side validation:
+Task: "T010 [API4] Update limited queue join validation in discord-bot/cogs/lfg/queue.py"
+```
 
 ---
 
 ## Implementation Strategy
 
-### MVP First (Discord Bot Core)
+### MVP First (GET Status Only)
 
-1. Complete Phase 1: Setup (T001-T003)
-2. Complete Phase 2: Foundational (T004-T006)
-3. Complete Phase 3: US-2+US-6 Arena Run Tracking (T007-T012)
-4. Complete Phase 4: US-1 Queue Integration (T013-T017)
-5. Complete Phase 5: US-3 Match Reporting (T018-T022)
-6. **STOP and VALIDATE**: Limited queue works end-to-end (join → match → report → run tracks)
-7. Deploy and test with real users
+1. Complete Phase 1: Setup (T001-T002)
+2. Complete Phase 2: Blueprint registration (T003-T004)
+3. Complete Phase 3: GET status endpoint (T005-T006)
+4. **STOP and VALIDATE**: RealmsDraft can call GET to check player status
+5. Deploy and verify with RealmsDraft team
 
 ### Incremental Delivery
 
-1. **MVP**: Phases 1-5 → Core limited queue works (join, match, report, track runs)
-2. **Enhancement**: Phase 6 → Post-match Continue/Forfeit DM buttons
-3. **Web visibility**: Phase 7 → Profile stats on web app
-4. **Hardening**: Phase 8 → Tests and regression verification
+1. **MVP**: Phases 1-3 → RealmsDraft can read player status (GET)
+2. **Run management**: Phase 4 → RealmsDraft can create runs and forfeit (POST /run)
+3. **Run termination**: Phase 5 → RealmsDraft can force-end runs (POST /end-run)
+4. **Queue enforcement**: Phase 6 → Bot enforces "must have active run" rule
+5. **Hardening**: Phase 7 → Error handling, logging, regression check
 
 ### Total Task Count
 
-- **Phase 1 (Setup)**: 3 tasks
-- **Phase 2 (Foundational)**: 3 tasks
-- **Phase 3 (US-2+US-6)**: 6 tasks
-- **Phase 4 (US-1)**: 5 tasks
-- **Phase 5 (US-3)**: 5 tasks
-- **Phase 6 (US-4)**: 4 tasks
-- **Phase 7 (US-5)**: 3 tasks
-- **Phase 8 (Testing)**: 5 tasks
-- **Total**: 34 tasks
+- **Phase 1 (Setup)**: 2 tasks
+- **Phase 2 (Foundational)**: 2 tasks
+- **Phase 3 (API-US1: GET status)**: 2 tasks
+- **Phase 4 (API-US2: POST run/forfeit)**: 2 tasks
+- **Phase 5 (API-US3: POST end-run)**: 1 task
+- **Phase 6 (API-US4: Bot queue validation)**: 2 tasks
+- **Phase 7 (Polish)**: 3 tasks
+- **Total**: 14 tasks
+
+### Task Count per User Story
+
+| Story | Description | Tasks |
+|-------|-------------|-------|
+| Setup | Config + auth decorator | 2 |
+| Foundational | Blueprint + registration | 2 |
+| API-US1 | GET user status | 2 |
+| API-US2 | POST start/forfeit run | 2 |
+| API-US3 | POST end run | 1 |
+| API-US4 | Bot queue validation | 2 |
+| Polish | Error handling, logging, tests | 3 |

@@ -58,8 +58,11 @@ def archetype_matchups():
         min_games = request.args.get("min_games", 3, type=int)
         n_clusters = request.args.get("n_clusters", 5, type=int)
         n_clusters = max(2, min(8, n_clusters))
+        threshold = request.args.get("threshold", None, type=float)
+        if threshold is not None:
+            threshold = max(0.0, min(1.0, threshold))
         result = build_archetype_matchup_matrix(
-            min_games=min_games, n_clusters=n_clusters
+            min_games=min_games, n_clusters=n_clusters, threshold=threshold
         )
         return jsonify(result)
     except Exception as e:
@@ -79,8 +82,11 @@ def archetype_matchups_csv():
         min_games = request.args.get("min_games", 3, type=int)
         n_clusters = request.args.get("n_clusters", 5, type=int)
         n_clusters = max(2, min(8, n_clusters))
+        threshold = request.args.get("threshold", None, type=float)
+        if threshold is not None:
+            threshold = max(0.0, min(1.0, threshold))
         data = build_archetype_matchup_matrix(
-            min_games=min_games, n_clusters=n_clusters
+            min_games=min_games, n_clusters=n_clusters, threshold=threshold
         )
 
         archetypes = data["archetypes"]

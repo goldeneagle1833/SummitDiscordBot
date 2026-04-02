@@ -184,71 +184,119 @@ def analyze_matchups(file_stream, divisions=10, threshold=-0.02):
 # ---------------------------------------------------------------------------
 
 
-def _deck_to_card_map(deck_json):
-    """Extract {card_name: quantity} from a deck JSON string (spellbook only).
+def _deck_to_card_maps(deck_json):
+    """Extract (spell_map, site_map) from a deck JSON string.
 
-    Returns None if the deck can't be parsed or has no spellbook cards.
+    Parses both the ``spellbook`` (non-site cards) and ``atlas`` (sites)
+    sections of the Curiosa deck JSON.
+
+    Returns (spell_map, site_map) where:
+    - spell_map = {card_name: qty} for non-Site cards (from spellbook)
+    - site_map  = {card_name: qty} for Site cards (from atlas)
+
+    Returns (None, None) if the deck can't be parsed or has no cards.
     """
     if not deck_json or deck_json in ("", "{}"):
-        return None
+        return None, None
     try:
         deck_data = json.loads(deck_json)
         deck = deck_data[0] if isinstance(deck_data, list) else deck_data
     except (json.JSONDecodeError, TypeError, IndexError):
-        return None
+        return None, None
 
-    card_map = {}
+    spell_map = {}
+    site_map = {}
+
+    # Spellbook contains non-site cards (Minion, Magic, Aura, Artifact)
     for card in deck.get("spellbook", []) or []:
         name = card.get("name")
         if not name:
             continue
         qty = card.get("quantity", 1) or 1
-        card_map[name] = card_map.get(name, 0) + qty
+        spell_map[name] = spell_map.get(name, 0) + qty
 
-    return card_map if card_map else None
+    # Atlas contains site cards
+    for card in deck.get("atlas", []) or []:
+        name = card.get("name")
+        if not name:
+            continue
+        qty = card.get("quantity", 1) or 1
+        site_map[name] = site_map.get(name, 0) + qty
+
+    if not spell_map and not site_map:
+        return None, None
+    return spell_map, site_map
 
 
-def _card_map_fingerprint(card_map):
-    """Create a hashable fingerprint from a card map for de-duplication."""
-    return tuple(sorted(card_map.items()))
+def _card_map_fingerprint(spell_map, site_map):
+    """Create a hashable fingerprint from spell + site maps for de-duplication."""
+    return (tuple(sorted(spell_map.items())), tuple(sorted(site_map.items())))
 
 
-def _build_card_vectors(card_maps):
-    """Convert a list of card maps into a numpy matrix.
+def _jaccard_total(map_a, map_b):
+    """Quantity-aware Jaccard similarity between two card maps.
 
-    Returns (matrix, card_index) where matrix rows are decks and columns are
-    unique card names, values are quantities normalised by L2 norm.
+    intersection = sum of min(qty_a, qty_b) for each card
+    union        = sum of max(qty_a, qty_b) for each card
+    similarity   = intersection / union
+
+    Returns 1.0 if both maps are empty (identical empty decks).
     """
-    all_cards = sorted({card for cm in card_maps for card in cm})
-    card_idx = {name: i for i, name in enumerate(all_cards)}
-    n_decks = len(card_maps)
-    n_cards = len(all_cards)
-
-    matrix = np.zeros((n_decks, n_cards))
-    for i, cm in enumerate(card_maps):
-        for card, qty in cm.items():
-            matrix[i, card_idx[card]] = qty
-
-    # L2-normalise each row for cosine similarity
-    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
-    norms[norms == 0] = 1  # avoid division by zero
-    matrix = matrix / norms
-
-    return matrix, all_cards
+    all_cards = set(map_a) | set(map_b)
+    if not all_cards:
+        return 1.0
+    intersection = sum(min(map_a.get(c, 0), map_b.get(c, 0)) for c in all_cards)
+    union = sum(max(map_a.get(c, 0), map_b.get(c, 0)) for c in all_cards)
+    return intersection / union if union > 0 else 1.0
 
 
-def _cosine_distance_matrix(vectors):
-    """Compute pairwise cosine distance (1 - cosine_similarity)."""
-    sim = vectors @ vectors.T
-    # Clamp to [0, 2] to handle floating-point drift
-    return np.clip(1.0 - sim, 0.0, 2.0)
+def _jaccard_distance_matrix(deck_data, spell_weight=0.7, site_weight=0.3):
+    """Compute pairwise Jaccard distance matrix.
+
+    Args:
+        deck_data: list of (spell_map, site_map) tuples.
+        spell_weight: weight for spell similarity (default 0.7).
+        site_weight: weight for site similarity (default 0.3).
+
+    Returns an NxN numpy distance matrix where
+    dist[i][j] = 1 - weighted_jaccard(deck_i, deck_j).
+    If all site maps are empty, uses unweighted spell-only Jaccard.
+    """
+    n = len(deck_data)
+    dist = np.zeros((n, n))
+
+    # Check if any deck has site data
+    has_sites = any(sm for _, sm in deck_data)
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            spell_sim = _jaccard_total(deck_data[i][0], deck_data[j][0])
+
+            if has_sites:
+                site_sim = _jaccard_total(deck_data[i][1], deck_data[j][1])
+                similarity = spell_weight * spell_sim + site_weight * site_sim
+            else:
+                similarity = spell_sim
+
+            d = 1.0 - similarity
+            dist[i, j] = d
+            dist[j, i] = d
+
+    return dist
 
 
-def _agglomerative_cluster(dist_matrix, n_clusters):
+def _agglomerative_cluster(dist_matrix, n_clusters, max_dist=None):
     """Average-linkage agglomerative clustering (UPGMA).
 
     Uses Lance-Williams matrix updates so each merge is O(n) instead of
     recomputing all pairwise member distances.  Total runtime is O(n^2).
+
+    Args:
+        dist_matrix: NxN pairwise distance matrix.
+        n_clusters: Stop when this many clusters remain.
+        max_dist: Optional distance cutoff.  If provided, stop merging
+            when the closest pair exceeds this distance, even if
+            n_clusters has not been reached.
 
     Returns a list of lists, where each inner list contains the indices of
     items belonging to that cluster.
@@ -269,6 +317,10 @@ def _agglomerative_cluster(dist_matrix, n_clusters):
         # Find closest pair (numpy vectorised argmin)
         flat_idx = np.argmin(dists)
         i, j = divmod(int(flat_idx), n)
+
+        # Stop if closest pair exceeds the distance cutoff
+        if max_dist is not None and dists[i, j] > max_dist:
+            break
 
         # Ensure i < j for consistency
         if i > j:
@@ -366,16 +418,23 @@ def _fetch_match_rows():
     return rows
 
 
-def build_archetype_matchup_matrix(min_games=3, n_clusters=5):
+def build_archetype_matchup_matrix(min_games=3, n_clusters=5, threshold=None):
     """Build a cluster-vs-cluster matchup matrix from match history.
 
-    Decks are grouped by card similarity using agglomerative clustering
-    rather than element combinations.  Only includes matches where *both*
-    players submitted deck data.
+    Decks are grouped by Jaccard similarity (quantity-aware) using
+    agglomerative clustering.  Jaccard is computed separately for spells
+    and sites (weighted 0.7 / 0.3) when card type info is available.
+
+    Only includes matches where *both* players submitted deck data.
 
     Args:
         min_games: Unused (kept for API compatibility).
         n_clusters: Number of deck groups to produce (2-8, default 5).
+            Ignored when threshold is provided.
+        threshold: Optional Jaccard similarity threshold (0.0-1.0).
+            When provided, clustering stops when the minimum similarity
+            between any two clusters drops below this value, instead of
+            stopping at a fixed cluster count.
 
     Returns a dict ready for JSON serialization::
 
@@ -389,23 +448,27 @@ def build_archetype_matchup_matrix(min_games=3, n_clusters=5):
     """
     match_rows = _fetch_match_rows()
 
-    # --- parse every deck into a card map ------------------------------------
-    # Each match produces two card maps (winner, loser).  We also keep the
-    # raw JSON index so we can map matches back to cluster labels later.
-    all_card_maps = []         # index → card_map
+    # --- parse every deck into (spell_map, site_map) -------------------------
+    all_deck_data = []         # index → (spell_map, site_map)
+    all_card_maps = []         # index → combined card_map (for cluster naming)
     match_deck_indices = []    # [(winner_idx, loser_idx), ...]
 
     fingerprint_to_idx = {}    # de-dup identical decks
 
     def _get_or_add(deck_json):
-        cm = _deck_to_card_map(deck_json)
-        if cm is None:
+        spell_map, site_map = _deck_to_card_maps(deck_json)
+        if spell_map is None:
             return None
-        fp = _card_map_fingerprint(cm)
+        fp = _card_map_fingerprint(spell_map, site_map)
         if fp in fingerprint_to_idx:
             return fingerprint_to_idx[fp]
-        idx = len(all_card_maps)
-        all_card_maps.append(cm)
+        idx = len(all_deck_data)
+        all_deck_data.append((spell_map, site_map))
+        # Combined card map for cluster naming (merge spell + site)
+        combined = dict(spell_map)
+        for card, qty in site_map.items():
+            combined[card] = combined.get(card, 0) + qty
+        all_card_maps.append(combined)
         fingerprint_to_idx[fp] = idx
         return idx
 
@@ -415,7 +478,7 @@ def build_archetype_matchup_matrix(min_games=3, n_clusters=5):
         if w_idx is not None and l_idx is not None:
             match_deck_indices.append((w_idx, l_idx))
 
-    if not all_card_maps:
+    if not all_deck_data:
         return {
             "archetypes": [],
             "matrix": [],
@@ -424,11 +487,18 @@ def build_archetype_matchup_matrix(min_games=3, n_clusters=5):
             "match_count": 0,
         }
 
-    # --- cluster decks by card similarity ------------------------------------
-    actual_clusters = min(n_clusters, len(all_card_maps))
-    vectors, _ = _build_card_vectors(all_card_maps)
-    dist_matrix = _cosine_distance_matrix(vectors)
-    clusters = _agglomerative_cluster(dist_matrix, actual_clusters)
+    # --- cluster decks by Jaccard similarity ---------------------------------
+    dist_matrix = _jaccard_distance_matrix(all_deck_data)
+
+    if threshold is not None:
+        # Threshold mode: keep merging until min distance > (1 - threshold)
+        max_dist = 1.0 - threshold
+        clusters = _agglomerative_cluster(
+            dist_matrix, n_clusters=1, max_dist=max_dist
+        )
+    else:
+        actual_clusters = min(n_clusters, len(all_deck_data))
+        clusters = _agglomerative_cluster(dist_matrix, actual_clusters)
 
     # Map deck index → cluster index
     deck_to_cluster = {}

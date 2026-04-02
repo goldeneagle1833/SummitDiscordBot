@@ -342,6 +342,8 @@
           <input type="number" id="min-games" value="3" min="1" max="100" />
           <label for="n-clusters">Clusters</label>
           <input type="number" id="n-clusters" value="5" min="2" max="8" />
+          <label for="similarity-threshold">Threshold</label>
+          <input type="number" id="similarity-threshold" placeholder="e.g. 0.5" min="0" max="1" step="0.05" style="width: 90px;" />
           <button id="reload-btn" onclick="loadArchetypeMatchups()">Reload</button>
         </div>
 
@@ -458,9 +460,12 @@
 
         const minGames = document.getElementById("min-games").value || 3;
         const nClusters = document.getElementById("n-clusters").value || 5;
+        const thresholdVal = document.getElementById("similarity-threshold").value;
 
         try {
-          const res = await fetch(`/api/metagame/matchups?min_games=${minGames}&n_clusters=${nClusters}`);
+          let url = `/api/metagame/matchups?min_games=${minGames}&n_clusters=${nClusters}`;
+          if (thresholdVal !== "") url += `&threshold=${thresholdVal}`;
+          const res = await fetch(url);
           const data = await res.json();
 
           if (!res.ok) {
@@ -576,7 +581,10 @@
       function exportCsv() {
         const minGames = document.getElementById("min-games").value || 3;
         const nClusters = document.getElementById("n-clusters").value || 5;
-        window.location.href = `/api/metagame/matchups/csv?min_games=${minGames}&n_clusters=${nClusters}`;
+        const thresholdVal = document.getElementById("similarity-threshold").value;
+        let url = `/api/metagame/matchups/csv?min_games=${minGames}&n_clusters=${nClusters}`;
+        if (thresholdVal !== "") url += `&threshold=${thresholdVal}`;
+        window.location.href = url;
       }
 
       // Load on page load

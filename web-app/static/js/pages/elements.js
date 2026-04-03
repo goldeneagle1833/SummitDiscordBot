@@ -4,56 +4,108 @@
  * Description: Handles element statistics charts, win rates, presence analysis, and deck composition
  */
 
-// ELO source tracking
+// Filter state
 let currentEloSource = 'discord'; // Default to online
+let currentEventFilter = 'all';
 
 document.addEventListener('DOMContentLoaded', () => {
-  initializeSourceToggle();
-
-  // Load saved preference or default to discord
-  const savedSource = localStorage.getItem('elements_source_preference');
-  if (savedSource && (savedSource === 'discord' || savedSource === 'web')) {
-    currentEloSource = savedSource;
-    updateToggleButtons(currentEloSource);
-  }
-
-  fetchElementStats();
-  fetchDeckComposition();
+  loadFilters();
 });
 
 /**
- * Initialize source toggle buttons
+ * Format event date string for display
+ * @param {string} dateStr - Date string from DB
+ * @returns {string} Formatted date
  */
-function initializeSourceToggle() {
-  document.querySelectorAll('.elo-source-btn').forEach(btn => {
-    btn.addEventListener('click', async function() {
-      if (this.disabled) return;
-
-      const source = this.dataset.source;
-      if (source === currentEloSource) return; // Already selected
-
-      // Update state
-      currentEloSource = source;
-      localStorage.setItem('elements_source_preference', source);
-
-      // Update UI
-      updateToggleButtons(source);
-
-      // Refetch data
-      await fetchElementStats();
-      await fetchDeckComposition();
-    });
-  });
+function formatEventDate(dateStr) {
+  if (!dateStr) return null;
+  const dateOnly = dateStr.split(' ')[0];
+  const parts = dateOnly.split('-');
+  if (parts.length !== 3) return dateStr;
+  const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 /**
- * Update toggle button states
- * @param {string} source - 'discord' or 'web'
+ * Load filters (events dropdown + source toggle) and kick off initial data fetch
  */
-function updateToggleButtons(source) {
-  document.querySelectorAll('.elo-source-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.source === source);
-  });
+async function loadFilters() {
+  try {
+    const res = await fetch('/api/elements/filters');
+    const data = await res.json();
+
+    // Populate event dropdown
+    const eventSelect = document.getElementById('event-filter');
+    if (data.events && data.events.length > 0) {
+      data.events.forEach(evt => {
+        const opt = document.createElement('option');
+        const startFmt = formatEventDate(evt.start_date);
+        const endFmt = formatEventDate(evt.end_date);
+        if (evt.is_active) {
+          opt.value = 'current';
+          opt.textContent = `${evt.event_name} (${startFmt} - Present)`;
+        } else {
+          opt.value = String(evt.event_id);
+          opt.textContent = `${evt.event_name} (${startFmt} - ${endFmt || '?'})`;
+        }
+        eventSelect.appendChild(opt);
+      });
+    }
+
+    eventSelect.addEventListener('change', () => {
+      currentEventFilter = eventSelect.value;
+      fetchElementStats();
+      fetchDeckComposition();
+    });
+
+    // Initialize source toggle buttons
+    document.querySelectorAll('.elo-source-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        if (this.disabled) return;
+        const source = this.dataset.source;
+        if (source === currentEloSource) return;
+
+        currentEloSource = source;
+        localStorage.setItem('elements_source_preference', source);
+
+        document.querySelectorAll('.elo-source-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.source === source);
+        });
+
+        fetchElementStats();
+        fetchDeckComposition();
+      });
+    });
+
+    // Load saved source preference
+    const savedSource = localStorage.getItem('elements_source_preference');
+    if (savedSource && (savedSource === 'discord' || savedSource === 'web')) {
+      currentEloSource = savedSource;
+      document.querySelectorAll('.elo-source-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.source === savedSource);
+      });
+    }
+  } catch (e) {
+    console.error('Error loading filters:', e);
+  }
+
+  // Initial data fetch
+  fetchElementStats();
+  fetchDeckComposition();
+}
+
+/**
+ * Build query string with current filter state
+ * @returns {string} Query string like "?source=discord&event=all"
+ */
+function buildFilterParams() {
+  const params = new URLSearchParams();
+  params.set('source', currentEloSource);
+  if (currentEventFilter !== 'all') {
+    params.set('event', currentEventFilter);
+  }
+  return params.toString();
 }
 
 /**
@@ -160,7 +212,8 @@ function renderComboBars(combos, containerId) {
  */
 async function fetchElementStats() {
   try {
-    const res = await fetch(`/api/elements?source=${currentEloSource}`);
+    const qs = buildFilterParams();
+    const res = await fetch(`/api/elements?${qs}`);
     const data = await res.json();
 
     const container = document.getElementById('element-bars');
@@ -250,7 +303,8 @@ async function fetchElementStats() {
  */
 async function fetchDeckComposition() {
   try {
-    const res = await fetch(`/api/deck-composition?source=${currentEloSource}`);
+    const qs = buildFilterParams();
+    const res = await fetch(`/api/deck-composition?${qs}`);
 
     // Check if user has permission
     if (res.status === 403) {

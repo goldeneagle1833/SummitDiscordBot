@@ -29,6 +29,47 @@
       rel="stylesheet"
       href="{{ url_for('static', filename='css/pages/elements.css') }}?v={{ app_version }}" />
     <style>
+      /* Filter bar */
+      .element-filters {
+        max-width: 1200px;
+        margin: 0 auto 1.5rem;
+        padding: 0 var(--spacing-md);
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .element-filter-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .element-filter-group label {
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.7);
+        white-space: nowrap;
+      }
+      .element-filter-group select {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        padding: 0.4rem 0.8rem;
+        font-size: 0.9rem;
+        cursor: pointer;
+        min-width: 160px;
+      }
+      .element-filter-group select:hover {
+        border-color: rgba(255, 255, 255, 0.4);
+      }
+      .element-filter-group select:focus {
+        outline: none;
+        border-color: var(--primary, #2ecc71);
+      }
+      .element-filter-group select option {
+        background: #1a1a2e;
+        color: #fff;
+      }
       /* ELO Source Toggle */
       .elo-source-toggle {
         display: inline-flex;
@@ -37,11 +78,10 @@
         border-radius: 8px;
         overflow: hidden;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        margin: 0 auto 2rem;
       }
       .elo-source-btn {
-        padding: 8px 20px;
-        font-size: 14px;
+        padding: 6px 14px;
+        font-size: 13px;
         border: none;
         background: transparent;
         color: var(--color-text-muted, #8b949e);
@@ -68,13 +108,26 @@
       <section class="hero">
         <h1>Elemental Win Rates</h1>
         <p>Win rates by element based on cards in reported decklists</p>
-        <div class="elo-source-toggle" id="elo-source-toggle" style="margin-top: 1rem;">
-          <button class="elo-source-btn active" data-source="discord" title="Online matches (Discord bot)">
-            Online
-          </button>
-          <button class="elo-source-btn" data-source="web" title="Paper matches (web-reported)">
-            Paper
-          </button>
+      </section>
+
+      <section class="element-filters" id="element-filters">
+        <div class="element-filter-group">
+          <label for="event-filter">Event:</label>
+          <select id="event-filter">
+            <option value="all">All Events</option>
+            <!-- Populated by JS -->
+          </select>
+        </div>
+        <div class="element-filter-group">
+          <label>Match Source:</label>
+          <div class="elo-source-toggle" id="elo-source-toggle">
+            <button class="elo-source-btn active" data-source="discord" title="Online matches (Discord bot)">
+              Online
+            </button>
+            <button class="elo-source-btn" data-source="web" title="Paper matches (web-reported)">
+              Paper
+            </button>
+          </div>
         </div>
       </section>
 

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, current_app, request
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH, CARD_IMAGES_DIR
+from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH, CARD_IMAGES_DIR, ELO_DB_PATH
 from utils.auth import is_admin
 
 logger = logging.getLogger(__name__)
@@ -355,65 +355,177 @@ def get_live_popular_cards():
     return jsonify(card_list)
 
 
+def _get_event_date_range(event_id):
+    """Get start/end dates for an event. Returns (start_date, end_date) or (None, None)."""
+    try:
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='events'")
+        if not cur.fetchone():
+            conn.close()
+            return None, None
+        if event_id == "current":
+            cur.execute("SELECT start_date, end_date FROM events WHERE is_active = 1 LIMIT 1")
+        else:
+            cur.execute("SELECT start_date, end_date FROM events WHERE event_id = ?", (int(event_id),))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            return row[0], row[1]
+    except (sqlite3.OperationalError, ValueError) as e:
+        logger.warning(f"Could not get event date range: {e}")
+    return None, None
+
+
+@cards_bp.route("/elements/filters")
+def get_element_filters():
+    """Return available events for element page filtering."""
+    events = []
+    try:
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='events'")
+        if cur.fetchone():
+            cur.execute("""
+                SELECT event_id, event_name, start_date, end_date, is_active
+                FROM events
+                ORDER BY start_date DESC
+            """)
+            user_admin = is_admin()
+            for row in cur.fetchall():
+                active = bool(row[4])
+                if active and not user_admin:
+                    continue
+                events.append({
+                    "event_id": row[0],
+                    "event_name": row[1],
+                    "start_date": row[2],
+                    "end_date": row[3],
+                    "is_active": active,
+                })
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not query events: {e}")
+    return jsonify({"events": events})
+
+
+def _collect_element_rows(cur, source_filter, event_filter):
+    """Collect deck data rows for element stats based on source and event filters.
+
+    Returns (rows, use_new_columns).
+    """
+    all_rows = []
+    use_new_columns = True
+
+    deck_where = ("((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
+                  " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))")
+
+    if source_filter == "discord":
+        source_clause = "AND (source = 'Discord' OR source IS NULL)"
+    elif source_filter == "web":
+        source_clause = "AND source != 'Discord' AND source IS NOT NULL"
+    else:
+        source_clause = ""
+
+    # For discord source: use event_id-based filtering on archive (same as avatars)
+    if source_filter == "discord":
+        if event_filter in ("all", "current"):
+            try:
+                cur.execute(f"""
+                    SELECT json_deck_data_winner, json_deck_data_loser
+                    FROM match_records
+                    WHERE {deck_where} {source_clause}
+                """)
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                try:
+                    cur.execute("""
+                        SELECT
+                            CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
+                            json_deck_data
+                        FROM match_records
+                        WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
+                    """)
+                    all_rows.extend(cur.fetchall())
+                    use_new_columns = False
+                except sqlite3.OperationalError:
+                    pass
+
+        # Archive: all events or specific past event
+        if event_filter == "all" and use_new_columns:
+            try:
+                cur.execute(f"""
+                    SELECT json_deck_data_winner, json_deck_data_loser
+                    FROM match_records_archive
+                    WHERE {deck_where}
+                """)
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass
+        elif event_filter not in ("all", "current") and use_new_columns:
+            try:
+                cur.execute(f"""
+                    SELECT json_deck_data_winner, json_deck_data_loser
+                    FROM match_records_archive
+                    WHERE event_id = ?
+                      AND {deck_where}
+                """, (int(event_filter),))
+                all_rows.extend(cur.fetchall())
+            except (sqlite3.OperationalError, ValueError):
+                pass
+
+    elif source_filter == "web":
+        # Web/paper matches - filter by date range for specific events
+        event_start, event_end = None, None
+        if event_filter not in ("all",):
+            event_start, event_end = _get_event_date_range(event_filter)
+
+        params = []
+        where_parts = [
+            deck_where,
+            "source != 'Discord'",
+            "source IS NOT NULL",
+        ]
+        if event_start:
+            where_parts.append("timestamp >= ?")
+            params.append(event_start)
+        if event_end:
+            where_parts.append("timestamp <= ?")
+            params.append(event_end)
+
+        try:
+            query = f"SELECT json_deck_data_winner, json_deck_data_loser FROM match_records WHERE {' AND '.join(where_parts)}"
+            cur.execute(query, params)
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError:
+            pass
+
+    return all_rows, use_new_columns
+
+
 @cards_bp.route("/elements")
 def get_elements():
     """API endpoint for elemental winrates from all matches with deck data.
 
     Includes both current event matches and archived matches for lifetime stats.
-    Supports optional query param: ?source=discord|web (default: discord)
+    Supports optional query params:
+      ?source=discord|web (default: discord)
+      ?event=all|current|<event_id> (default: all)
     """
     source_filter = request.args.get("source", "discord")
+    event_filter = request.args.get("event", "all")
     card_elements = _load_card_elements()
+
+    # Only admins can query the active event
+    if event_filter == "current" and not is_admin():
+        event_filter = "all"
 
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
 
-        all_rows = []
-        use_new_columns = True
+        rows, use_new_columns = _collect_element_rows(cur, source_filter, event_filter)
 
-        # Query current match_records with source filter
-        try:
-            if source_filter == "discord":
-                where_clause = "AND (source = 'Discord' OR source IS NULL)"
-            elif source_filter == "web":
-                where_clause = "AND source != 'Discord' AND source IS NOT NULL"
-            else:
-                where_clause = ""
-
-            cur.execute(f"""
-                SELECT json_deck_data_winner, json_deck_data_loser
-                FROM match_records
-                WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
-                {where_clause}
-            """)
-            all_rows.extend(cur.fetchall())
-        except sqlite3.OperationalError:
-            cur.execute("""
-                SELECT
-                    CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
-                    json_deck_data
-                FROM match_records
-                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
-            """)
-            all_rows.extend(cur.fetchall())
-            use_new_columns = False
-
-        # Also query match_records_archive for lifetime stats
-        if use_new_columns:
-            try:
-                cur.execute("""
-                    SELECT json_deck_data_winner, json_deck_data_loser
-                    FROM match_records_archive
-                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
-                """)
-                all_rows.extend(cur.fetchall())
-            except sqlite3.OperationalError:
-                pass  # Archive table may not exist
-
-        rows = all_rows
         conn.close()
     except sqlite3.OperationalError:
         return jsonify([])
@@ -1086,51 +1198,27 @@ def get_deck_composition():
     """API endpoint for deck element composition across all decks.
 
     Includes both current event matches and archived matches for lifetime stats.
+    Supports optional query params:
+      ?source=discord|web (default: discord)
+      ?event=all|current|<event_id> (default: all)
     """
     if not is_admin():
         return jsonify({"error": "Forbidden"}), 403
 
+    source_filter = request.args.get("source", "discord")
+    event_filter = request.args.get("event", "all")
     card_elements = _load_card_elements()
+
+    # Only admins can query the active event
+    if event_filter == "current" and not is_admin():
+        event_filter = "all"
 
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
 
-        all_rows = []
-        use_new_columns = True
+        rows, use_new_columns = _collect_element_rows(cur, source_filter, event_filter)
 
-        # Query current match_records
-        try:
-            cur.execute("""
-                SELECT json_deck_data_winner, json_deck_data_loser
-                FROM match_records
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
-            """)
-            all_rows.extend(cur.fetchall())
-        except sqlite3.OperationalError:
-            cur.execute("""
-                SELECT json_deck_data
-                FROM match_records
-                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
-            """)
-            all_rows.extend(cur.fetchall())
-            use_new_columns = False
-
-        # Also query match_records_archive for lifetime stats
-        if use_new_columns:
-            try:
-                cur.execute("""
-                    SELECT json_deck_data_winner, json_deck_data_loser
-                    FROM match_records_archive
-                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
-                """)
-                all_rows.extend(cur.fetchall())
-            except sqlite3.OperationalError:
-                pass  # Archive table may not exist
-
-        rows = all_rows
         conn.close()
     except sqlite3.OperationalError:
         return jsonify({"error": "Database not found"}), 404

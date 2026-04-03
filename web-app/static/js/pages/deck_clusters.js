@@ -66,7 +66,12 @@ async function fetchClusters() {
 
     renderSummary(data);
     renderClusterGroups(data);
-    renderHeatmap(data);
+    if (data.heatmap_skipped) {
+      document.getElementById("heatmap-section").style.display = "none";
+    } else {
+      document.getElementById("heatmap-section").style.display = "";
+      renderHeatmap(data);
+    }
   } catch (err) {
     document.getElementById("loading").style.display = "none";
     document.getElementById("error-section").style.display = "block";

@@ -4,6 +4,9 @@ import json
 import numpy as np
 from repositories.matches import MatchRepository
 
+# Skip sending the full distance matrix if more decks than this
+_HEATMAP_MAX_DECKS = 300
+
 
 class ClusteringService:
     """Cluster decks from match reports by card similarity."""
@@ -36,23 +39,27 @@ class ClusteringService:
             for d in decks
         ]
 
-        return {
+        result = {
             "total_decks": len(decks),
             "num_clusters": n_clusters,
             "threshold": threshold,
             "metric": metric,
             "scope": scope,
             "clusters": clusters,
-            "distance_matrix": np.round(dist_matrix, 4).tolist(),
             "deck_labels": deck_labels,
         }
 
-    def _load_match_report_decks(self):
-        """Load and deduplicate decks from all match reports.
+        # Only include the full distance matrix if the deck count is manageable
+        if len(decks) <= _HEATMAP_MAX_DECKS:
+            result["distance_matrix"] = np.round(dist_matrix, 4).tolist()
+        else:
+            result["distance_matrix"] = []
+            result["heatmap_skipped"] = True
 
-        Returns a list of deck dicts in the same format as tournament decks,
-        with extra _player_name and _player_id fields.
-        """
+        return result
+
+    def _load_match_report_decks(self):
+        """Load and deduplicate decks from all match reports."""
         raw_matches = self._match_repo.get_matches_with_deck_data()
         seen = set()  # (player_id, deck_fingerprint) for dedup
         decks = []
@@ -62,7 +69,6 @@ class ClusteringService:
             use_new = entry["use_new_columns"]
 
             if use_new:
-                # New schema: separate winner/loser deck columns
                 winner_id = str(row[0])
                 winner_name = row[1] or "Unknown"
                 loser_id = str(row[2])
@@ -70,20 +76,13 @@ class ClusteringService:
                 winner_json = row[9]
                 loser_json = row[10]
 
-                self._try_add_deck(
-                    decks, seen, winner_json, winner_id, winner_name
-                )
-                self._try_add_deck(
-                    decks, seen, loser_json, loser_id, loser_name
-                )
+                self._try_add_deck(decks, seen, winner_json, winner_id, winner_name)
+                self._try_add_deck(decks, seen, loser_json, loser_id, loser_name)
             else:
-                # Old schema: single json_deck_data column (unknown owner)
                 winner_id = str(row[0])
                 winner_name = row[1] or "Unknown"
                 deck_json = row[9]
-                self._try_add_deck(
-                    decks, seen, deck_json, winner_id, winner_name
-                )
+                self._try_add_deck(decks, seen, deck_json, winner_id, winner_name)
 
         return decks
 
@@ -100,27 +99,23 @@ class ClusteringService:
         if not isinstance(deck_data, dict):
             return
 
-        # Need at least a spellbook with cards
         spellbook = deck_data.get("spellbook", [])
         if not spellbook:
             return
 
-        # Fingerprint: sorted card names for deduplication per player
         fingerprint = tuple(sorted(c.get("name", "") for c in spellbook))
         key = (player_id, fingerprint)
         if key in seen:
             return
         seen.add(key)
 
-        # Add metadata fields the clustering code expects
         deck_data["_player_id"] = player_id
         deck_data["_player_name"] = player_name
-        # Derive a display name from avatar + player
         avatar_list = deck_data.get("avatar", [])
         avatar_name = avatar_list[0].get("name", "Unknown") if avatar_list else "Unknown"
         deck_data["username"] = player_name
         deck_data["name"] = f"{player_name}'s {avatar_name}"
-        deck_data["id"] = ""  # No Curiosa deck ID for match reports
+        deck_data["id"] = ""
 
         decks.append(deck_data)
 
@@ -160,62 +155,85 @@ class ClusteringService:
         return cards
 
     def _compute_jaccard_distance_matrix(self, vectors, metric):
-        """Compute NxN pairwise Jaccard distance matrix."""
+        """Compute NxN pairwise Jaccard distance matrix (vectorized)."""
+        if metric == "distinct":
+            return self._jaccard_distinct_vectorized(vectors)
+        return self._jaccard_total_vectorized(vectors)
+
+    def _jaccard_distinct_vectorized(self, vectors):
+        """Vectorized Jaccard distance for binary (distinct) card presence."""
+        binary = (vectors > 0).astype(np.float64)
+        # intersection[i,j] = number of cards shared between deck i and j
+        intersection = binary @ binary.T
+        # sizes[i] = number of distinct cards in deck i
+        sizes = binary.sum(axis=1)
+        # union[i,j] = |A| + |B| - |A ∩ B|
+        union = sizes[:, None] + sizes[None, :] - intersection
+        # Jaccard distance = 1 - intersection/union
+        with np.errstate(divide="ignore", invalid="ignore"):
+            dist = np.where(union > 0, 1.0 - intersection / union, 1.0)
+        np.fill_diagonal(dist, 0.0)
+        return dist
+
+    def _jaccard_total_vectorized(self, vectors):
+        """Vectorized Jaccard distance for quantity-weighted cards.
+
+        For each pair (i,j): J = sum(min(a,b)) / sum(max(a,b)).
+        Uses chunked computation to avoid creating a full (n,n,d) tensor.
+        """
         n = vectors.shape[0]
         dist = np.zeros((n, n), dtype=np.float64)
+        chunk_size = 64  # Process 64 rows at a time to limit memory
 
-        for i in range(n):
-            for j in range(i + 1, n):
-                a, b = vectors[i], vectors[j]
-                if metric == "distinct":
-                    union = np.sum((a > 0) | (b > 0))
-                    intersection = np.sum((a > 0) & (b > 0))
-                else:
-                    intersection = np.sum(np.minimum(a, b))
-                    union = np.sum(np.maximum(a, b))
+        for start in range(0, n, chunk_size):
+            end = min(start + chunk_size, n)
+            # chunk shape: (chunk, 1, d) vs (1, n, d) -> (chunk, n, d)
+            chunk = vectors[start:end, np.newaxis, :]
+            all_v = vectors[np.newaxis, :, :]
+            mins = np.minimum(chunk, all_v).sum(axis=2)
+            maxs = np.maximum(chunk, all_v).sum(axis=2)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                d = np.where(maxs > 0, 1.0 - mins / maxs, 1.0)
+            dist[start:end, :] = d
 
-                if union == 0:
-                    d = 1.0
-                else:
-                    d = 1.0 - (intersection / union)
-
-                dist[i, j] = d
-                dist[j, i] = d
-
+        np.fill_diagonal(dist, 0.0)
         return dist
 
     def _hierarchical_cluster(self, dist_matrix, threshold):
-        """Agglomerative clustering with complete linkage."""
+        """Agglomerative clustering with complete linkage (vectorized)."""
         n = dist_matrix.shape[0]
         clusters = {i: [i] for i in range(n)}
-        active = set(range(n))
-        cluster_dist = dist_matrix.copy()
+        active = np.ones(n, dtype=bool)
+        cd = dist_matrix.copy()
+        np.fill_diagonal(cd, np.inf)
 
-        while len(active) > 1:
-            min_dist = float("inf")
-            merge_a, merge_b = -1, -1
-            active_list = sorted(active)
+        while np.sum(active) > 1:
+            # Mask inactive rows/cols by setting them to inf
+            mask = np.outer(active, active)
+            masked = np.where(mask, cd, np.inf)
 
-            for idx_i in range(len(active_list)):
-                for idx_j in range(idx_i + 1, len(active_list)):
-                    ci, cj = active_list[idx_i], active_list[idx_j]
-                    if cluster_dist[ci, cj] < min_dist:
-                        min_dist = cluster_dist[ci, cj]
-                        merge_a, merge_b = ci, cj
+            # Find global minimum using numpy (C-speed scan)
+            flat_idx = np.argmin(masked)
+            min_dist = masked.flat[flat_idx]
 
             if min_dist > threshold:
                 break
 
+            merge_a, merge_b = divmod(int(flat_idx), n)
+
+            # Merge b into a
             clusters[merge_a].extend(clusters[merge_b])
             del clusters[merge_b]
-            active.discard(merge_b)
+            active[merge_b] = False
 
-            for other in active:
-                if other == merge_a:
-                    continue
-                new_dist = max(cluster_dist[merge_a, other], cluster_dist[merge_b, other])
-                cluster_dist[merge_a, other] = new_dist
-                cluster_dist[other, merge_a] = new_dist
+            # Complete linkage: new distance = max of old distances (vectorized)
+            cd[merge_a, :] = np.maximum(cd[merge_a, :], cd[merge_b, :])
+            cd[:, merge_a] = cd[merge_a, :]
+            cd[merge_a, merge_a] = np.inf
+
+            # Invalidate merge_b
+            cd[merge_b, :] = np.inf
+            cd[:, merge_b] = np.inf
 
         labels = [0] * n
         for cluster_id, (_, members) in enumerate(sorted(clusters.items())):
@@ -255,9 +273,10 @@ class ClusteringService:
             # Average internal similarity
             avg_sim = 0.0
             pair_count = 0
-            for i_idx in range(len(member_indices)):
-                for j_idx in range(i_idx + 1, len(member_indices)):
-                    avg_sim += 1.0 - dist_matrix[member_indices[i_idx], member_indices[j_idx]]
+            mi = member_indices
+            for i_idx in range(len(mi)):
+                for j_idx in range(i_idx + 1, len(mi)):
+                    avg_sim += 1.0 - dist_matrix[mi[i_idx], mi[j_idx]]
                     pair_count += 1
             if pair_count > 0:
                 avg_sim /= pair_count

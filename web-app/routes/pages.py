@@ -195,6 +195,12 @@ def top_8():
     return render_template("pages/top_8.html", events=events)
 
 
+@pages_bp.route("/deck-clusters")
+def deck_clusters():
+    """Deck clustering analysis page."""
+    return render_template("pages/deck_clusters.html")
+
+
 @pages_bp.route("/top-8/<event_folder>")
 def top_8_event(event_folder):
     """Display Top 8 decks for a specific event."""

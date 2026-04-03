@@ -97,6 +97,7 @@ API_KEYS_ENV = os.environ.get("API_KEYS", os.environ.get("API_KEY", ""))
 VALID_API_KEYS = [key.strip() for key in API_KEYS_ENV.split(",") if key.strip()]
 
 # RealmsDraft API key for server-to-server limited arena endpoints
+# d8396d08a94baea33331ec66709b5c7e3262928ff0d5ebdb1752bda9c21784d4
 REALMSDRAFT_API_KEY = os.environ.get("REALMSDRAFT_API_KEY", "")
 
 # Event star ratings (1-3 stars)

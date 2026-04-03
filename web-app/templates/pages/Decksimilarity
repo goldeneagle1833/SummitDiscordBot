@@ -1,0 +1,518 @@
+<template>
+  <div class="deck-jaccard-stats">
+    <h3 class="stats-title">Deck Similarity</h3>
+
+    <div v-if="loading" class="stats-loading">
+      <div class="loading-spinner"></div>
+      <p>Calculating Jaccard indices...</p>
+    </div>
+    <div v-else-if="error" class="stats-error">
+      <span class="error-icon">⚠️</span>
+      <p>{{ error }}</p>
+    </div>
+    <div v-else class="stats-content">
+      <div class="tables-container">
+        <!-- Jaccard Table -->
+        <table class="stats-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>
+                Distinct Cards
+                <button
+                  class="info-icon"
+                  type="button"
+                  tabindex="0"
+                  aria-label="Jaccard index based on distinct card names: intersection ÷ union"
+                  data-tip="Jaccard index based on distinct card names: intersection ÷ union">
+                  ?
+                </button>
+              </th>
+              <th>
+                Total Cards
+                <button
+                  class="info-icon"
+                  type="button"
+                  tabindex="0"
+                  aria-label="Jaccard index based on total card counts: intersection ÷ union"
+                  data-tip="Jaccard index based on total card counts (quantities): intersection ÷ union">
+                  ?
+                </button>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Spells</strong></td>
+              <td>{{ formatValue(stats.spells.unique) }}</td>
+              <td>{{ formatValue(stats.spells.total) }}</td>
+            </tr>
+            <tr>
+              <td><strong>Sites</strong></td>
+              <td>{{ formatValue(stats.sites.unique) }}</td>
+              <td>{{ formatValue(stats.sites.total) }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Deck Composition Table -->
+        <table class="stats-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>{{ displayDeckAName }}</th>
+              <th>{{ displayDeckBName }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Spells</strong></td>
+              <td>{{ counts.spells.a }}</td>
+              <td>{{ counts.spells.b }}</td>
+            </tr>
+            <tr>
+              <td><strong>Sites</strong></td>
+              <td>{{ counts.sites.a }}</td>
+              <td>{{ counts.sites.b }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+  export default {
+    name: "DeckJaccardStats",
+    props: {
+      diff: {
+        type: Object,
+        required: true,
+      },
+      deckAName: {
+        type: String,
+        required: true,
+      },
+      deckBName: {
+        type: String,
+        required: true,
+      },
+    },
+    data() {
+      return {
+        similarityMetric: "jaccard", //'jaccard', // or 'overlap'
+        stats: {
+          spells: { unique: 0, total: 0 },
+          sites: { unique: 0, total: 0 },
+        },
+        counts: {
+          spells: { a: 0, b: 0 },
+          sites: { a: 0, b: 0 },
+        },
+        loading: false,
+        error: null,
+      };
+    },
+    computed: {
+      displayDeckAName() {
+        return this.deckAName || "Deck A";
+      },
+      displayDeckBName() {
+        return this.deckBName || "Deck B";
+      },
+    },
+    mounted() {
+      this.calculateStats();
+    },
+    watch: {
+      diff: {
+        handler() {
+          this.calculateStats();
+        },
+        deep: true,
+      },
+    },
+    methods: {
+      formatValue(value) {
+        return value.toFixed(3);
+      },
+
+      computeJaccard(categoryFilter) {
+        const uniqueA = new Set();
+        const uniqueB = new Set();
+        const allNames = new Set();
+
+        let totalA = 0;
+        let totalB = 0;
+        const allCounts = {};
+
+        for (const category in this.diff) {
+          if (!categoryFilter(category)) continue;
+          const categoryData = this.diff[category];
+
+          if (categoryData.unique_a) {
+            for (const card of categoryData.unique_a) {
+              uniqueA.add(card.name);
+              totalA += card.quantity || 1;
+              if (!allCounts[card.name]) allCounts[card.name] = { a: 0, b: 0 };
+              allCounts[card.name].a += card.quantity || 1;
+            }
+          }
+
+          if (categoryData.shared) {
+            for (const card of categoryData.shared) {
+              uniqueA.add(card.name);
+              uniqueB.add(card.name);
+              totalA += card.quantity_a || 1;
+              totalB += card.quantity_b || 1;
+              if (!allCounts[card.name]) allCounts[card.name] = { a: 0, b: 0 };
+              allCounts[card.name].a += card.quantity_a || 1;
+              allCounts[card.name].b += card.quantity_b || 1;
+            }
+          }
+
+          if (categoryData.unique_b) {
+            for (const card of categoryData.unique_b) {
+              uniqueB.add(card.name);
+              totalB += card.quantity || 1;
+              if (!allCounts[card.name]) allCounts[card.name] = { a: 0, b: 0 };
+              allCounts[card.name].b += card.quantity || 1;
+            }
+          }
+        }
+
+        for (const name of uniqueA) allNames.add(name);
+        for (const name of uniqueB) allNames.add(name);
+        const intersectionUnique = [...uniqueA].filter((x) =>
+          uniqueB.has(x),
+        ).length;
+        const jUnique =
+          allNames.size > 0 ? intersectionUnique / allNames.size : 0;
+
+        let intersectionTotal = 0;
+        for (const name in allCounts) {
+          intersectionTotal += Math.min(allCounts[name].a, allCounts[name].b);
+        }
+        const unionTotal = totalA + totalB - intersectionTotal;
+        const jTotal = unionTotal > 0 ? intersectionTotal / unionTotal : 0;
+
+        return { unique: jUnique, total: jTotal };
+      },
+
+      computeOverlap(categoryFilter) {
+        const uniqueA = new Set();
+        const uniqueB = new Set();
+
+        let totalA = 0;
+        let totalB = 0;
+        const allCounts = {};
+
+        for (const category in this.diff) {
+          if (!categoryFilter(category)) continue;
+          const categoryData = this.diff[category];
+
+          if (categoryData.unique_a) {
+            for (const card of categoryData.unique_a) {
+              uniqueA.add(card.name);
+              totalA += card.quantity || 1;
+              if (!allCounts[card.name]) allCounts[card.name] = { a: 0, b: 0 };
+              allCounts[card.name].a += card.quantity || 1;
+            }
+          }
+
+          if (categoryData.shared) {
+            for (const card of categoryData.shared) {
+              uniqueA.add(card.name);
+              uniqueB.add(card.name);
+              totalA += card.quantity_a || 1;
+              totalB += card.quantity_b || 1;
+              if (!allCounts[card.name]) allCounts[card.name] = { a: 0, b: 0 };
+              allCounts[card.name].a += card.quantity_a || 1;
+              allCounts[card.name].b += card.quantity_b || 1;
+            }
+          }
+
+          if (categoryData.unique_b) {
+            for (const card of categoryData.unique_b) {
+              uniqueB.add(card.name);
+              totalB += card.quantity || 1;
+              if (!allCounts[card.name]) allCounts[card.name] = { a: 0, b: 0 };
+              allCounts[card.name].b += card.quantity || 1;
+            }
+          }
+        }
+
+        // uniques
+        const intersectionUnique = [...uniqueA].filter((x) =>
+          uniqueB.has(x),
+        ).length;
+        const minUnique = Math.min(uniqueA.size, uniqueB.size);
+        const oUnique = minUnique > 0 ? intersectionUnique / minUnique : 0;
+
+        // totals
+        let intersectionTotal = 0;
+        for (const name in allCounts) {
+          intersectionTotal += Math.min(allCounts[name].a, allCounts[name].b);
+        }
+        const minTotal = Math.min(totalA, totalB);
+        const oTotal = minTotal > 0 ? intersectionTotal / minTotal : 0;
+
+        return { unique: oUnique, total: oTotal };
+      },
+
+      computeCounts(categoryFilter) {
+        let countA = 0,
+          countB = 0;
+        for (const category in this.diff) {
+          if (!categoryFilter(category)) continue;
+          const categoryData = this.diff[category];
+          if (categoryData.unique_a) {
+            countA += categoryData.unique_a.reduce(
+              (sum, c) => sum + (c.quantity || 1),
+              0,
+            );
+          }
+          if (categoryData.unique_b) {
+            countB += categoryData.unique_b.reduce(
+              (sum, c) => sum + (c.quantity || 1),
+              0,
+            );
+          }
+          if (categoryData.shared) {
+            countA += categoryData.shared.reduce(
+              (sum, c) => sum + (c.quantity_a || 1),
+              0,
+            );
+            countB += categoryData.shared.reduce(
+              (sum, c) => sum + (c.quantity_b || 1),
+              0,
+            );
+          }
+        }
+        return { a: countA, b: countB };
+      },
+
+      calculateStats() {
+        if (!this.diff || Object.keys(this.diff).length === 0) return;
+
+        this.loading = true;
+        this.error = null;
+
+        try {
+          const fn =
+            this.similarityMetric === "overlap"
+              ? this.computeOverlap
+              : this.computeJaccard;
+
+          this.stats.spells = fn((category) => category !== "Site");
+          this.stats.sites = fn((category) => category === "Site");
+          this.counts.spells = this.computeCounts(
+            (category) => category !== "Site",
+          );
+          this.counts.sites = this.computeCounts(
+            (category) => category === "Site",
+          );
+
+          this.loading = false;
+        } catch (err) {
+          this.error = "Failed to calculate deck similarity";
+          this.loading = false;
+        }
+      },
+    },
+  };
+</script>
+
+<style scoped>
+  .deck-jaccard-stats {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e9ecef;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  }
+
+  .stats-title {
+    margin: 0 0 1rem 0;
+    color: #495057;
+    font-size: 1.3rem;
+    font-weight: 600;
+    text-align: center;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid #dee2e6;
+  }
+
+  .tables-container {
+    display: flex;
+    justify-content: space-around;
+    gap: 2rem;
+    margin-top: 1rem;
+  }
+
+  .stats-table {
+    min-width: 240px;
+    border-collapse: collapse;
+  }
+
+  .stats-table th,
+  .stats-table td {
+    border: 1px solid #dee2e6;
+    padding: 0.5rem 0.75rem;
+    text-align: center;
+  }
+
+  .stats-loading,
+  .stats-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 160px;
+    color: #6c757d;
+  }
+
+  .loading-spinner {
+    width: 30px;
+    height: 30px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 1rem;
+  }
+
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  .stats-error {
+    color: #dc3545;
+  }
+
+  .error-icon {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Add to your <style scoped> */
+  .deck-jaccard-stats {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background: #fafafa;
+    border-radius: 12px;
+    border: 1px solid #e0e0e0;
+  }
+
+  .tables-container {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    margin-top: 1rem;
+  }
+
+  .table-box {
+    flex: 1;
+    max-width: 320px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    padding: 1rem;
+  }
+
+  .stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+  }
+
+  .stats-table th,
+  .stats-table td {
+    border: 1px solid #ddd;
+    padding: 0.4rem 0.6rem;
+    text-align: center;
+  }
+
+  .stats-table th {
+    background: #f1f3f5;
+    font-weight: 600;
+  }
+
+  /* The small ? badge */
+  .info-icon {
+    position: relative;
+    margin-left: 6px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid #bfc5cc;
+    background: #f7f9fb;
+    color: #5b6b7a;
+    font-size: 12px;
+    line-height: 16px;
+    text-align: center;
+    cursor: help;
+    padding: 0;
+  }
+
+  /* Remove default button chrome */
+  .info-icon {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 1px solid #bfc5cc;
+  }
+
+  /* Tooltip bubble */
+  .info-icon::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    transform: translate(-50%, 6px);
+    white-space: nowrap;
+    background: #1f2937;
+    color: #fff;
+    font-size: 12px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      opacity 0.15s ease,
+      transform 0.15s ease;
+    z-index: 10;
+  }
+
+  /* Little arrow */
+  .info-icon::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: calc(100% - 2px);
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 6px solid #1f2937;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 11;
+  }
+
+  /* Show on hover and keyboard focus */
+  .info-icon:hover::after,
+  .info-icon:hover::before,
+  .info-icon:focus-visible::after,
+  .info-icon:focus-visible::before {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+</style>

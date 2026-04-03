@@ -2,19 +2,22 @@
 
 from flask import Blueprint, jsonify, request
 from services.clustering import ClusteringService
+from utils.auth import is_admin
 
 deck_clusters_bp = Blueprint("deck_clusters", __name__)
 
 
 @deck_clusters_bp.route("/deck-clusters")
 def get_deck_clusters():
-    """Return clustered deck data from all match reports.
+    """Return clustered deck data from all match reports (admin only).
 
     Query params:
         threshold (float): 0.0-1.0, default 0.6
         metric (str): 'distinct' or 'total', default 'distinct'
         scope (str): 'spells' or 'full', default 'spells'
     """
+    if not is_admin():
+        return jsonify({"error": "Unauthorized"}), 403
     threshold = request.args.get("threshold", 0.6, type=float)
     metric = request.args.get("metric", "distinct")
     scope = request.args.get("scope", "spells")

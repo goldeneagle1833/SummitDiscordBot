@@ -197,7 +197,13 @@ def top_8():
 
 @pages_bp.route("/deck-clusters")
 def deck_clusters():
-    """Deck clustering analysis page."""
+    """Deck clustering analysis page - restricted to admins."""
+    if not is_admin():
+        if session.get("user_id") is None:
+            return redirect(url_for("auth.discord_login"))
+        return render_template(
+            "pages/error.html", error="You don't have permission to view this page."
+        ), 403
     return render_template("pages/deck_clusters.html")
 
 

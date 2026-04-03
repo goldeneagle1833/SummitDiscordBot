@@ -1,9 +1,11 @@
 """Business logic for user-created seasons."""
 
 import logging
+import sqlite3
 from datetime import date, datetime
 
 from repositories.seasons import SeasonsRepository
+from webapp_config import MATCH_RECORDS_DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -274,6 +276,144 @@ class SeasonsService:
 
     def get_season_members(self, season_id):
         return self.repo.get_season_members(season_id)
+
+    # ── US6: Creator Match Reporting ──────────────────────────────
+
+    def report_match_as_creator(self, creator_id, season_id, winner_id, loser_id):
+        """Report a match directly as the season creator (bypasses confirmation)."""
+        creator_id = str(creator_id)
+        winner_id = str(winner_id)
+        loser_id = str(loser_id)
+
+        # Validate creator owns this season and season is active
+        season = self.repo.get_season_by_id(season_id)
+        if not season:
+            raise ValueError("Season not found")
+        if creator_id != season["creator_id"]:
+            raise ValueError("Only the season creator can report matches")
+        if season["status"] != "active":
+            raise ValueError("Season is not active")
+        if season["end_date"] < date.today().isoformat():
+            raise ValueError("Season has ended")
+
+        # Validate both players are members
+        members = self.repo.get_season_members(season_id)
+        member_map = {m["user_id"]: m for m in members}
+        if winner_id not in member_map:
+            raise ValueError("Winner is not a member of this season")
+        if loser_id not in member_map:
+            raise ValueError("Loser is not a member of this season")
+        if winner_id == loser_id:
+            raise ValueError("Winner and loser must be different players")
+
+        winner_name = member_map[winner_id]["display_name"]
+        loser_name = member_map[loser_id]["display_name"]
+
+        # Detect repeat matchup
+        from repositories.matches import MatchRepository
+        match_repo = MatchRepository()
+        winner_last = match_repo.get_last_opponent(winner_id)
+        loser_last = match_repo.get_last_opponent(loser_id)
+        is_repeat = winner_last == loser_id or loser_last == winner_id
+
+        # Generate sequential match_id (web_N)
+        try:
+            conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+            cur = conn.cursor()
+            cur.execute("SELECT match_id FROM match_reports_web")
+            max_num = 0
+            for (mid,) in cur.fetchall():
+                if mid and mid.startswith("web_"):
+                    try:
+                        num = int(mid.split("_", 1)[1])
+                        if num > max_num:
+                            max_num = num
+                    except (ValueError, IndexError):
+                        pass
+            conn.close()
+        except Exception:
+            max_num = 0
+        match_id = f"web_{max_num + 1}"
+
+        # Update paper ELO (unless repeat matchup)
+        if is_repeat:
+            logger.info(
+                "Repeat matchup: %s vs %s — paper ELO skipped", winner_id, loser_id
+            )
+        else:
+            from services.paper_elo import update_paper_elo
+            update_paper_elo(winner_id, winner_name, did_win=True, opponent_id=loser_id)
+            update_paper_elo(loser_id, loser_name, did_win=False, opponent_id=winner_id)
+
+        # Insert match record into match_reports_web
+        now = datetime.utcnow().isoformat()
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO match_reports_web
+               (match_id, reporter_id, winner_id, winner_display_name,
+                losser_id, losser_display_name, did_win, timestamp,
+                first_player, match_time, curiosa_url,
+                curiosa_url_winner, curiosa_url_loser, match_comment,
+                json_deck_data, json_deck_data_winner, json_deck_data_loser,
+                winner_elo_change, loser_elo_change,
+                winner_went_first, loser_went_first,
+                source, match_type, season_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                       ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                match_id, creator_id, winner_id, winner_name,
+                loser_id, loser_name, True, now,
+                None, 0, "Admin reported match",
+                "Admin reported match", "Admin reported match",
+                "Season creator reported match",
+                "{}", "{}", "{}",
+                0, 0, None, None,
+                "Web", "ranked", season_id,
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        # Update season ELO
+        season_match_data = {
+            "reporter_id": creator_id,
+            "winner_id": winner_id,
+            "loser_id": loser_id,
+            "winner_display_name": winner_name,
+            "loser_display_name": loser_name,
+            "did_win": 1,
+            "winner_went_first": None,
+            "loser_went_first": None,
+            "match_time": 0,
+            "match_comment": "Season creator reported match",
+            "curiosa_url_winner": "Admin reported match",
+            "curiosa_url_loser": "Admin reported match",
+            "json_deck_data_winner": "{}",
+            "json_deck_data_loser": "{}",
+            "source": "Web",
+            "match_type": "ranked",
+        }
+        self.update_season_elos(
+            winner_id, loser_id, match_id,
+            is_repeat, season_match_data, season_id=season_id,
+        )
+
+        logger.info(
+            "Creator %s reported match in season %d: %s beat %s (match_id=%s, repeat=%s)",
+            creator_id, season_id, winner_name, loser_name, match_id, is_repeat,
+        )
+
+        if is_repeat:
+            msg = "Match recorded. Repeat matchup — ELO not updated."
+        else:
+            msg = f"Match reported: {winner_name} beat {loser_name}."
+
+        return {
+            "match_id": match_id,
+            "is_repeat_matchup": is_repeat,
+            "message": msg,
+        }
 
     # ── US3: Season ELO Tracking ─────────────────────────────────
 

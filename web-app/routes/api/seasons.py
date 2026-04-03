@@ -210,6 +210,40 @@ def kick_member(season_id):
     }), 200
 
 
+@seasons_bp.route("/seasons/<int:season_id>/report-match", methods=["POST"])
+@require_auth
+def report_season_match(season_id):
+    data = request.get_json() or {}
+    creator_id = str(session.get("user_id", ""))
+    winner_id = data.get("winner_id")
+    loser_id = data.get("loser_id")
+
+    if not winner_id or not loser_id:
+        return jsonify({"success": False, "error": "Winner and loser are required"}), 400
+
+    if str(winner_id) == str(loser_id):
+        return jsonify({"success": False, "error": "Winner and loser must be different players"}), 400
+
+    try:
+        result = service.report_match_as_creator(
+            creator_id, season_id, winner_id, loser_id
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "only the season creator" in msg.lower():
+            return jsonify({"success": False, "error": msg}), 403
+        return jsonify({"success": False, "error": msg}), 400
+    except RuntimeError as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    return jsonify({
+        "success": True,
+        "match_id": result["match_id"],
+        "message": result["message"],
+        "is_repeat_matchup": result.get("is_repeat_matchup", False),
+    }), 201
+
+
 @seasons_bp.route("/seasons/<int:season_id>/members", methods=["GET"])
 def get_season_members(season_id):
     season = service.repo.get_season_by_id(season_id)

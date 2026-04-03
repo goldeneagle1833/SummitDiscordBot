@@ -107,18 +107,6 @@ def avatars():
     return render_template("pages/avatars.html", avatar_image_files=avatar_image_files, user_is_admin=is_admin())
 
 
-@pages_bp.route("/metagame")
-def metagame():
-    """Metagame analysis page - restricted to admins."""
-    if not is_admin():
-        if session.get("user_id") is None:
-            return redirect(url_for("auth.discord_login"))
-        return render_template(
-            "pages/error.html", error="You don't have permission to view this page."
-        ), 403
-    return render_template("pages/metagame.html")
-
-
 @pages_bp.route("/cards")
 def cards():
     """Card winrates page - restricted to allowed Discord users."""
@@ -193,18 +181,6 @@ def top_8():
     repo = EventRepository()
     events = repo.get_all_events()
     return render_template("pages/top_8.html", events=events)
-
-
-@pages_bp.route("/deck-clusters")
-def deck_clusters():
-    """Deck clustering analysis page - restricted to admins."""
-    if not is_admin():
-        if session.get("user_id") is None:
-            return redirect(url_for("auth.discord_login"))
-        return render_template(
-            "pages/error.html", error="You don't have permission to view this page."
-        ), 403
-    return render_template("pages/deck_clusters.html")
 
 
 @pages_bp.route("/top-8/<event_folder>")

@@ -1214,6 +1214,49 @@
         </div>
       </div>
 
+      <!-- Report Season Match Modal -->
+      <div class="modal" id="report-season-match-modal">
+        <div class="modal__backdrop" onclick="hideReportSeasonMatchModal()"></div>
+        <div class="modal__content" style="max-width: 520px">
+          <div class="modal__header">
+            <h2 class="modal__title">Report Match</h2>
+            <button class="modal__close" onclick="hideReportSeasonMatchModal()">
+              &times;
+            </button>
+          </div>
+          <div class="modal__body">
+            <div class="form-group">
+              <label class="form-label form-label--required" for="season-match-winner">Winner</label>
+              <select class="form-select" id="season-match-winner">
+                <option value="">Select winner...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label form-label--required" for="season-match-loser">Loser</label>
+              <select class="form-select" id="season-match-loser">
+                <option value="">Select loser...</option>
+              </select>
+            </div>
+            <div id="report-season-match-error" style="color: #ef4444; font-size: 0.85rem; margin-top: 0.5rem; display: none;"></div>
+          </div>
+          <div class="modal__footer">
+            <button
+              type="button"
+              class="btn btn--secondary"
+              onclick="hideReportSeasonMatchModal()">
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn--primary"
+              id="submit-season-match-btn"
+              onclick="submitSeasonMatch()">
+              Report Match
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Modify Season Modal -->
       <div class="modal" id="modify-season-modal">
         <div class="modal__backdrop" onclick="hideModifySeasonModal()"></div>
@@ -3203,6 +3246,7 @@
                     <button class="btn btn--secondary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="endSeason(${season.season_id})">End Season</button>
                     <button class="btn btn--danger" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="deleteSeason(${season.season_id})">Delete Season</button>
                     <button class="btn btn--secondary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="showKickMemberModal(${season.season_id})">Kick Member</button>
+                    <button class="btn btn--primary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="showReportSeasonMatchModal(${season.season_id})">Report Match</button>
                   </div>
                 `;
               } else {
@@ -3513,6 +3557,91 @@
           }
         } catch (err) {
           alert("Network error. Please try again.");
+        }
+      }
+
+      // ── Report Season Match Modal ────────────────────────────
+
+      function showReportSeasonMatchModal(seasonId) {
+        if (!seasonId) return;
+        selectedSeasonId = seasonId;
+        document.getElementById("report-season-match-error").style.display = "none";
+        document.getElementById("report-season-match-modal").classList.add("modal--active");
+        fetchSeasonMembersForMatch();
+      }
+
+      function hideReportSeasonMatchModal() {
+        document.getElementById("report-season-match-modal").classList.remove("modal--active");
+        document.getElementById("season-match-winner").innerHTML = '<option value="">Select winner...</option>';
+        document.getElementById("season-match-loser").innerHTML = '<option value="">Select loser...</option>';
+        document.getElementById("report-season-match-error").style.display = "none";
+      }
+
+      async function fetchSeasonMembersForMatch() {
+        const winnerSelect = document.getElementById("season-match-winner");
+        const loserSelect = document.getElementById("season-match-loser");
+        try {
+          const res = await fetch(`/api/seasons/${selectedSeasonId}/members`);
+          const data = await res.json();
+          if (!data.success || !data.members || data.members.length < 2) {
+            winnerSelect.innerHTML = '<option value="">No members available</option>';
+            loserSelect.innerHTML = '<option value="">No members available</option>';
+            return;
+          }
+          const options = data.members.map(m =>
+            `<option value="${m.user_id}">${m.display_name} (ELO: ${m.season_elo})</option>`
+          ).join("");
+          winnerSelect.innerHTML = '<option value="">Select winner...</option>' + options;
+          loserSelect.innerHTML = '<option value="">Select loser...</option>' + options;
+        } catch (err) {
+          winnerSelect.innerHTML = '<option value="">Error loading members</option>';
+          loserSelect.innerHTML = '<option value="">Error loading members</option>';
+        }
+      }
+
+      async function submitSeasonMatch() {
+        const winnerId = document.getElementById("season-match-winner").value;
+        const loserId = document.getElementById("season-match-loser").value;
+        const errorEl = document.getElementById("report-season-match-error");
+        const submitBtn = document.getElementById("submit-season-match-btn");
+
+        errorEl.style.display = "none";
+
+        if (!winnerId || !loserId) {
+          errorEl.textContent = "Please select both a winner and a loser.";
+          errorEl.style.display = "block";
+          return;
+        }
+        if (winnerId === loserId) {
+          errorEl.textContent = "Winner and loser must be different players.";
+          errorEl.style.display = "block";
+          return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Reporting...";
+
+        try {
+          const res = await fetch(`/api/seasons/${selectedSeasonId}/report-match`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ winner_id: winnerId, loser_id: loserId }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            hideReportSeasonMatchModal();
+            fetchPlayerSeason();
+            alert(data.message || "Match reported successfully!");
+          } else {
+            errorEl.textContent = data.error || "Failed to report match.";
+            errorEl.style.display = "block";
+          }
+        } catch (err) {
+          errorEl.textContent = "Network error. Please try again.";
+          errorEl.style.display = "block";
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Report Match";
         }
       }
 

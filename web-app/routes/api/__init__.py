@@ -15,13 +15,11 @@ from routes.api.rules import rules_bp
 from routes.api.misc import misc_bp
 from routes.api.streamers import streamers_bp
 from routes.api.external_matches import external_matches_bp
-from routes.api.metagame import metagame_bp
 from routes.api.admin import admin_bp
 from routes.api.match_reporting import match_reporting_bp
 from routes.api.curios import curios_bp
 from routes.api.seasons import seasons_bp
 from routes.api.limited import limited_bp
-from routes.api.deck_clusters import deck_clusters_bp
 
 api_bp.register_blueprint(leaderboard_bp)
 api_bp.register_blueprint(matches_bp)
@@ -33,10 +31,8 @@ api_bp.register_blueprint(rules_bp)
 api_bp.register_blueprint(misc_bp)
 api_bp.register_blueprint(streamers_bp)
 api_bp.register_blueprint(external_matches_bp)
-api_bp.register_blueprint(metagame_bp)
 api_bp.register_blueprint(admin_bp)
 api_bp.register_blueprint(match_reporting_bp, url_prefix="/match-report")
 api_bp.register_blueprint(curios_bp, url_prefix="/curios")
 api_bp.register_blueprint(seasons_bp)
 api_bp.register_blueprint(limited_bp, url_prefix="/limited")
-api_bp.register_blueprint(deck_clusters_bp)

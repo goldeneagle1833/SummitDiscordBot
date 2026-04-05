@@ -48,25 +48,29 @@ async def _apply_ladder_elo(bot, ladder_info, winner_id, winner_global, loser_id
         conn_match = _sqlite3.connect("match_records.db")
         cur_match = conn_match.cursor()
         cur_match.execute(
-            "SELECT winner_elo_change FROM match_records WHERE match_id=?",
+            "SELECT winner_elo_change, winner_lifetime_elo_change FROM match_records WHERE match_id=?",
             (match_id,),
         )
         elo_row = cur_match.fetchone()
         conn_match.close()
 
-        if elo_row and elo_row[0]:
-            normal_change = elo_row[0]
-            extra_change = round(normal_change * (winner_mult - 1.0))
+        if elo_row:
+            event_change = elo_row[0] or 0
+            lifetime_change = elo_row[1] or 0
+            extra_event_change = round(event_change * (winner_mult - 1.0))
+            extra_lifetime_change = round(lifetime_change * (winner_mult - 1.0))
             conn_fix = _sqlite3.connect("elo.db")
             cur_fix = conn_fix.cursor()
             cur_fix.execute(
-                "UPDATE overall_standings SET elo = elo + ?, event_elo = event_elo + ? WHERE user_id = ?",
-                (extra_change, extra_change, winner_id),
+                "UPDATE overall_standings SET online_elo = online_elo + ?, online_event_elo = online_event_elo + ?, "
+                "elo = elo + ?, event_elo = event_elo + ? WHERE user_id = ?",
+                (extra_lifetime_change, extra_event_change, extra_lifetime_change, extra_event_change, winner_id),
             )
             cur_fix.commit()
             conn_fix.close()
             logger.info(
-                f"Ladder bonus: Winner {winner_id} gets extra {extra_change:+d} ELO (mult={winner_mult})"
+                f"Ladder bonus: Winner {winner_id} gets extra lifetime {extra_lifetime_change:+d}, "
+                f"event {extra_event_change:+d} ELO (mult={winner_mult})"
             )
 
     # Update loser ELO with multiplier

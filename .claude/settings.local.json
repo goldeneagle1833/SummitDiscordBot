@@ -47,7 +47,9 @@
       "Bash(git stash:*)",
       "Bash(echo:*)",
       "Bash(git checkout:*)",
-      "Bash(gh run list:*)"
+      "Bash(gh run list:*)",
+      "Bash(cmd /c \"type f:\\\\GitHub\\\\SummitDiscordBot\\\\web-app\\\\static\\\\js\\\\pages\\\\avatars.js | find /c /v \"\"\")",
+      "Bash(cmd /c \"dir f:\\\\GitHub\\\\SummitDiscordBot\\\\web-app\\\\static\\\\js\\\\pages\\\\avatars.js\")"
     ]
   },
   "enabledPlugins": {

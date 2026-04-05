@@ -1443,7 +1443,7 @@ class ShopCog(commands.Cog):
             (
                 "Fart Star (!fart_star)",
                 "Removes star protection from a random protected user",
-                self.item_costs["fart_star"],
+                "10% of pts",
             ),
             (
                 "Evil Star (!evil_star)",
@@ -1493,7 +1493,7 @@ class ShopCog(commands.Cog):
         ]
 
         for name, description, cost in items:
-            if cost == "FREE" or cost == "10%":
+            if isinstance(cost, str):
                 cost_display = cost
             else:
                 cost_display = f"{cost} points"
@@ -1666,7 +1666,7 @@ class ShopCog(commands.Cog):
     async def fart_star(self, ctx):
         """
         Remove the star protection from a random protected user.
-        Cost: 200 points
+        Cost: 10% of user's current points (minimum 1 point)
         """
         logger.debug(f"Fart Star command used by {ctx.author.id}")
         try:
@@ -1694,10 +1694,18 @@ class ShopCog(commands.Cog):
                     )
                     return
 
-                # Check if user has enough points
-                if not await self.check_points(ctx.author.id, "fart_star"):
+                # Calculate cost: 10% of user's current points (minimum 1)
+                cur.execute(
+                    "SELECT score FROM fart_scores WHERE user_id = ?",
+                    (ctx.author.id,),
+                )
+                result = cur.fetchone()
+                user_score = result[0] if result else 0
+                cost = max(1, int(user_score * 0.10))
+
+                if user_score < 1:
                     return await ctx.send(
-                        f"You don't have enough points! Fart Star costs {self.item_costs['fart_star']} points!"
+                        f"You don't have enough points! Fart Star costs 10% of your points (minimum 1)."
                     )
 
                 # Get protected users whose protection hasn't expired
@@ -1729,14 +1737,17 @@ class ShopCog(commands.Cog):
                 """,
                     (target_user_id,),
                 )
-                conn.commit()
 
-                # Deduct points from the user
-                await self.deduct_points(ctx.author.id, "fart_star")
+                # Deduct 10% of points
+                cur.execute(
+                    "UPDATE fart_scores SET score = score - ? WHERE user_id = ?",
+                    (cost, ctx.author.id),
+                )
+                conn.commit()
 
                 # Send success message
                 await ctx.send(
-                    f"💥 {ctx.author.mention} used Fart Star! "
+                    f"💥 {ctx.author.mention} used Fart Star (-{cost} points)! "
                     f"<@{target_user_id}>'s star protection has been destroyed! 💥"
                 )
 

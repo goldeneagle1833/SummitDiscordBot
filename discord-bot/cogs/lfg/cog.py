@@ -20,7 +20,7 @@ from cogs.lfg.state import (
     LADDER_CHALLENGE_MAX_JOINERS,
 )
 from cogs.lfg.helpers import scrub_urls, send_milestone_announcement
-from cogs.lfg.match_reporting import WentFirstView, LFGReportButtons
+from cogs.lfg.match_reporting import WentFirstView, LFGReportButtons, _apply_ladder_elo
 from cogs.lfg.challenge import ChallengeInitView, ChallengerDeckModal
 from cogs.lfg.ladder import (
     LadderChallengeJoinButton,
@@ -1821,6 +1821,164 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
         else:
             logger.error(f"admin_report error: {error}")
+            await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def admin_challenge_report(
+        self, ctx, winner: discord.Member = None, loser: discord.Member = None, challenger: discord.Member = None
+    ):
+        """Admin command to manually report a ladder challenge result. Usage: !admin_challenge_report @winner @loser @challenger"""
+
+        # Validate arguments
+        if winner is None or loser is None or challenger is None:
+            await ctx.send(
+                "Please mention all three players. Usage: `!admin_challenge_report @winner @loser @challenger`\n"
+                "`@challenger` is the Top 16 player who issued the challenge."
+            )
+            return
+
+        if winner.id == loser.id:
+            await ctx.send("Winner and loser cannot be the same player!")
+            return
+
+        if winner.bot or loser.bot:
+            await ctx.send("Cannot report matches for bots!")
+            return
+
+        if challenger.id != winner.id and challenger.id != loser.id:
+            await ctx.send("The challenger must be either the winner or the loser!")
+            return
+
+        try:
+            winner_name = winner.global_name or winner.display_name
+            loser_name = loser.global_name or loser.display_name
+
+            # Check ELO difference to determine multipliers
+            challenger_elo = get_user_event_elo(challenger.id)
+            opponent_id = loser.id if challenger.id == winner.id else winner.id
+            opponent_elo = get_user_event_elo(opponent_id)
+            elo_diff = abs(challenger_elo - opponent_elo)
+
+            if elo_diff < 100:
+                elo_multiplier_winner = 1.0
+                elo_multiplier_loser = 1.0
+                stakes_label = "Normal stakes (ELO diff < 100)"
+            else:
+                elo_multiplier_winner = 2.0
+                elo_multiplier_loser = 0.5
+                stakes_label = f"Special stakes (ELO diff {elo_diff} >= 100)"
+
+            guild_id = ctx.guild.id if ctx.guild else None
+
+            ladder_info = {
+                "challenger_id": challenger.id,
+                "challenge_id": None,  # No DB challenge record for admin reports
+                "elo_multiplier_winner": elo_multiplier_winner,
+                "elo_multiplier_loser": elo_multiplier_loser,
+                "guild_id": guild_id,
+            }
+
+            # Report the match (handles winner ELO)
+            match_id, _, _, event_active = await winner_report(
+                ctx.author.id,  # reporter_id (admin)
+                winner.id,
+                winner_name,
+                True,
+                loser.id,
+                loser_name,
+                "n",  # first_player default
+                0,  # match_time default
+                "Admin reported challenge match",  # curiosa_link
+                "Challenge match reported by admin",  # match_comment
+                winner.id,  # interaction_user_id
+                winner_name,  # interaction_global
+                winner_deck_url=None,
+                loser_deck_url=None,
+                winner_went_first=None,
+                loser_went_first=None,
+            )
+
+            # Apply ladder ELO logic (handles loser ELO, multipliers, role assignment)
+            stakes_msg = await _apply_ladder_elo(
+                self.bot, ladder_info,
+                winner.id, winner_name,
+                loser.id, loser_name,
+                match_id, event_active,
+            )
+
+            # Update leaderboard
+            await self.update_leaderboard()
+
+            # Check for milestone
+            await send_milestone_announcement(self.bot, winner.id, loser.id, match_id)
+
+            # Get new ELOs
+            winner_elo = get_user_elo(winner.id)
+            winner_event_elo = get_user_event_elo(winner.id)
+            loser_elo = get_user_elo(loser.id)
+            loser_event_elo = get_user_event_elo(loser.id)
+
+            # Send confirmation
+            elo_status = (
+                "ELO updated" if event_active else "ELO not affected (no active event)"
+            )
+            description = (
+                f"**Match ID:** #{match_id}\n"
+                f"**Winner:** {winner.mention} ({winner_name})\n"
+                f"**Loser:** {loser.mention} ({loser_name})\n"
+                f"**Challenger (Top 16):** {challenger.mention}\n"
+                f"**Stakes:** {stakes_label}\n"
+                f"**Status:** {elo_status}"
+            )
+            if event_active:
+                description += (
+                    f"\n\n**New Ranks:**\n"
+                    f"{winner_name}: **{winner_event_elo}** event / **{winner_elo}** lifetime\n"
+                    f"{loser_name}: **{loser_event_elo}** event / **{loser_elo}** lifetime"
+                )
+            if stakes_msg:
+                description += stakes_msg
+
+            success_embed = discord.Embed(
+                title="Challenge Match Reported",
+                description=description,
+                color=discord.Color.gold(),
+            )
+            success_embed.set_footer(text=f"Reported by {ctx.author.display_name}")
+            await ctx.send(embed=success_embed)
+
+            log_admin_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "admin_challenge_report",
+                target_id=winner.id,
+                target_name=winner_name,
+                previous_state={"winner_id": winner.id, "loser_id": loser.id, "challenger_id": challenger.id},
+                new_state={"match_id": match_id, "elo_status": elo_status, "stakes": stakes_label},
+                details=f"Admin reported challenge match #{match_id}: {winner_name} beat {loser_name} (challenger: {challenger.display_name})",
+            )
+
+            logger.info(
+                f"Admin {ctx.author} (ID: {ctx.author.id}) reported challenge match: "
+                f"{winner_name} beat {loser_name} (challenger: {challenger.display_name}, {stakes_label})"
+            )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Challenge Match Report Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Admin challenge match report failed: {e}")
+
+    @admin_challenge_report.error
+    async def admin_challenge_report_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"admin_challenge_report error: {error}")
             await ctx.send(f"An error occurred: {error}")
 
     @commands.command()

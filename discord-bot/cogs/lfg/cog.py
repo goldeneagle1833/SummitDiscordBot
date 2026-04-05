@@ -1456,7 +1456,11 @@ class LFGCog(commands.Cog):
                 "`!admin_report @winner @loser`\n"
                 "Manually report a match result between two players.\n"
                 "**When to use:** When a match wasn't reported through normal channels, "
-                "or to correct a missed game."
+                "or to correct a missed game.\n\n"
+                "`!admin_challenge_report @winner @loser @challenger`\n"
+                "Manually report a ladder challenge match. `@challenger` is the Top 16 player.\n"
+                "**When to use:** When a challenge match wasn't reported correctly or the challenge feature broke. "
+                "Applies the same ELO rules as normal challenges (2x/0.5x if 100+ ELO apart)."
             ),
             inline=False,
         )

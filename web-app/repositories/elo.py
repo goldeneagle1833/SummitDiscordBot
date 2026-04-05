@@ -346,22 +346,34 @@ class EloRepository:
         return deleted
 
     def reset_player_elo(self, user_id: int, default_elo: int = 1500) -> bool:
-        """Reset a player's ELO to default. Returns True if updated."""
+        """Reset a player's ELO to default. Returns True if updated.
+
+        Updates both legacy columns (elo, event_elo) and dual-ELO columns
+        (online_elo, online_event_elo) to match bot !spot_elo_reset behavior.
+        """
         conn = self._get_connection()
         cur = conn.cursor()
-        # Check if event_elo column exists
         cur.execute("PRAGMA table_info(overall_standings)")
-        columns = [col[1] for col in cur.fetchall()]
+        columns = {col[1] for col in cur.fetchall()}
+
+        set_clauses = ["elo = ?"]
+        params = [default_elo]
+
         if "event_elo" in columns:
-            cur.execute(
-                "UPDATE overall_standings SET elo = ?, event_elo = ? WHERE user_id = ?",
-                (default_elo, default_elo, user_id),
-            )
-        else:
-            cur.execute(
-                "UPDATE overall_standings SET elo = ? WHERE user_id = ?",
-                (default_elo, user_id),
-            )
+            set_clauses.append("event_elo = ?")
+            params.append(default_elo)
+        if "online_elo" in columns:
+            set_clauses.append("online_elo = ?")
+            params.append(default_elo)
+        if "online_event_elo" in columns:
+            set_clauses.append("online_event_elo = ?")
+            params.append(default_elo)
+
+        params.append(user_id)
+        cur.execute(
+            f"UPDATE overall_standings SET {', '.join(set_clauses)} WHERE user_id = ?",
+            params,
+        )
         updated = cur.rowcount > 0
         conn.commit()
         conn.close()

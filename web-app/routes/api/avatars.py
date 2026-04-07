@@ -724,28 +724,34 @@ def get_avatar(avatar_name):
         }
     }
 
-    # Include top player when filtering by a specific event/season
+    # Include top players when filtering by a specific event/season
+    # One top player per ranking method: accuracy, winrate, total_wins
     if event_filter != "all" and player_stats:
-        min_games = 5
-        best_player = None
-        best_win_rate = -1
+        min_games = 10
+        qualified = []
         for pid, stats in player_stats.items():
             total = stats["wins"] + stats["losses"]
             if total >= min_games:
                 wr = stats["wins"] / total * 100
-                if wr > best_win_rate:
-                    best_win_rate = wr
-                    best_pid = pid
-                    best_player = {
-                        "player_id": pid,
-                        "name": stats["name"] or f"Player {pid}",
-                        "wins": stats["wins"],
-                        "losses": stats["losses"],
-                        "total": total,
-                        "win_rate": round(wr, 1)
-                    }
-        if best_player:
-            result["top_player"] = best_player
+                qualified.append({
+                    "player_id": pid,
+                    "name": stats["name"] or f"Player {pid}",
+                    "wins": stats["wins"],
+                    "losses": stats["losses"],
+                    "total": total,
+                    "win_rate": round(wr, 1),
+                    "accuracy": round(wr * total, 1)
+                })
+
+        if qualified:
+            top_by_accuracy = max(qualified, key=lambda p: p["accuracy"])
+            top_by_winrate = max(qualified, key=lambda p: (p["win_rate"], p["total"]))
+            top_by_wins = max(qualified, key=lambda p: (p["wins"], p["win_rate"]))
+            result["top_players"] = {
+                "accuracy": top_by_accuracy,
+                "winrate": top_by_winrate,
+                "total_wins": top_by_wins,
+            }
 
     return jsonify(result)
 

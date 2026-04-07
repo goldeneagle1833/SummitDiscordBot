@@ -149,6 +149,7 @@
         gap: 1rem;
         flex-wrap: wrap;
         align-items: center;
+        justify-content: center;
         margin-bottom: 1.5rem;
       }
       .avatar-filter-group {
@@ -320,7 +321,7 @@
         class="bg-bg-surface border border-border rounded-soft overflow-hidden"
         id="avatar-profile">
         <div class="p-6 md:p-8 border-b border-border">
-          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div class="flex items-center justify-between gap-4">
             <div>
               <h1
                 class="text-2xl sm:text-3xl md:text-4xl font-semibold mb-2 capitalize"
@@ -331,9 +332,16 @@
                 class="text-base sm:text-lg text-text-muted"
                 id="avatar-stats"></div>
             </div>
-            <div id="top-player-badge" class="hidden sm:text-right">
-              <div class="text-xs uppercase tracking-wide text-text-muted mb-1">Top Player</div>
-              <a id="top-player-link" href="#" class="text-lg font-semibold text-primary hover:underline"></a>
+            <div id="top-player-badge" class="hidden shrink-0 text-right">
+              <div class="flex items-center justify-end gap-2 mb-1">
+                <span class="text-xs uppercase tracking-wide text-text-muted">Top Player</span>
+                <select id="top-player-sort" class="text-xs bg-transparent border border-border rounded px-1.5 py-0.5 text-text-muted cursor-pointer" style="background: rgba(255,255,255,0.05);">
+                  <option value="accuracy">Accuracy</option>
+                  <option value="winrate">Win Rate</option>
+                  <option value="total_wins">Total Wins</option>
+                </select>
+              </div>
+              <a id="top-player-link" href="#" class="text-lg font-semibold text-primary hover:underline block"></a>
               <div class="text-sm text-text-muted" id="top-player-record"></div>
             </div>
           </div>
@@ -533,6 +541,7 @@
       const avatarName = "{{ avatar_name }}";
       let currentEventFilter = "all";
       let currentSourceFilter = localStorage.getItem('avatars_source_preference') || "discord";
+      let currentTopPlayers = null;
 
       function buildFilterParams() {
         const params = new URLSearchParams();
@@ -543,7 +552,7 @@
 
       function formatEventDate(dateStr) {
         if (!dateStr) return "?";
-        const d = new Date(dateStr + "T00:00:00");
+        const d = new Date(dateStr.includes("T") ? dateStr : dateStr + "T00:00:00");
         if (isNaN(d.getTime())) return dateStr;
         return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
       }
@@ -608,6 +617,28 @@
 
       loadFilters();
 
+      function updateTopPlayerDisplay() {
+        if (!currentTopPlayers) return;
+        const sortBy = document.getElementById("top-player-sort").value;
+        const player = currentTopPlayers[sortBy];
+        if (!player) return;
+
+        const link = document.getElementById("top-player-link");
+        link.textContent = player.name;
+        link.href = `/player/${player.player_id}`;
+
+        const record = document.getElementById("top-player-record");
+        if (sortBy === "accuracy") {
+          record.textContent = `${player.win_rate}% WR \u00d7 ${player.total} games = ${player.accuracy}`;
+        } else if (sortBy === "winrate") {
+          record.textContent = `${player.win_rate}% (${player.wins}W-${player.losses}L)`;
+        } else {
+          record.textContent = `${player.wins} wins (${player.win_rate}% WR)`;
+        }
+      }
+
+      document.getElementById("top-player-sort").addEventListener("change", updateTopPlayerDisplay);
+
       async function fetchAvatarData() {
         try {
           const qs = buildFilterParams();
@@ -629,14 +660,12 @@
 
           // Show/hide top player badge (only when filtering by season)
           const topPlayerBadge = document.getElementById("top-player-badge");
-          if (data.top_player && currentEventFilter !== "all") {
-            const topPlayerLink = document.getElementById("top-player-link");
-            topPlayerLink.textContent = data.top_player.name;
-            topPlayerLink.href = `/player/${encodeURIComponent(data.top_player.player_id)}`;
-            document.getElementById("top-player-record").textContent =
-              `${data.top_player.win_rate}% (${data.top_player.wins}W-${data.top_player.losses}L)`;
+          if (data.top_players && currentEventFilter !== "all") {
+            currentTopPlayers = data.top_players;
+            updateTopPlayerDisplay();
             topPlayerBadge.classList.remove("hidden");
           } else {
+            currentTopPlayers = null;
             topPlayerBadge.classList.add("hidden");
           }
 

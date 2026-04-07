@@ -1681,6 +1681,12 @@ class ShopCog(commands.Cog):
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
             try:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS evil_star_usage (
+                        user_id INTEGER PRIMARY KEY,
+                        used_at TIMESTAMP
+                    )
+                """)
                 cur.execute(
                     "SELECT used_at FROM evil_star_usage WHERE user_id = ?",
                     (ctx.author.id,),

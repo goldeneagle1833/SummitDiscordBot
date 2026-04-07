@@ -1,100 +1,82 @@
-# Feature Specification: Limited Queue (Arena Draft Mode)
+# Feature Specification: Daily Summary Message
 
 ## Overview
 
-A new "Limited" queue type for the LFG system that enables arena-style draft play. Players draft a deck on Curiosa (against 7 bots), then queue via the Discord bot to play against other drafters. Each player has an "arena run" that tracks wins and losses - the run ends at 3 losses or 5 wins. The entire system is fully isolated from the existing ranked/testing queues: separate database tables, separate ELO tracking, separate match history, and separate player profile stats.
+An automated daily recap message posted to a designated Discord channel every day at 11:30 PM EST. The message provides a snapshot of the day's competitive activity: total matches played, most active players, biggest ELO swings, top ELO gainers, and other community engagement stats. The feature is a new cog that queries existing `match_records` and `overall_standings` tables — no schema changes required.
 
 ## User Stories
 
-### US-1: Join Limited Queue with Draft Deck
+### US-1: Automated Daily Posting
 
-As a player, I want to join the Limited queue with my drafted deck so I can play arena-style matches against other drafters.
-
-**Acceptance Criteria:**
-- A new "Limited" option appears in the LFG queue type selection (alongside Ranked/Casual/Both)
-- When selecting Limited, the player MUST provide a Curiosa deck URL (required, not optional)
-- The system checks if the player has an active arena run:
-  - If no active run: creates a new arena run (0 wins, 0 losses) and adds player to queue
-  - If active run exists (not yet at 3L/5W): adds player to queue with existing run
-  - If run is finished (3L or 5W): player is informed their run is over and must start a new one
-- Limited queue players are ONLY matched with other Limited queue players (fully isolated pool)
-- Matching uses FIFO + anti-rematch logic (same as existing queue, but within the limited pool only)
-
-### US-2: Arena Run Tracking
-
-As a player in a Limited arena run, I want my wins and losses tracked so I know my progress toward 3 losses or 5 wins.
+As a community member, I want an automated daily summary posted at 11:30 PM EST so I can see the day's activity at a glance.
 
 **Acceptance Criteria:**
-- Each arena run tracks: player_id, deck_url, wins, losses, start_time, end_time, status
-- After each confirmed match, the winner's run wins increment and the loser's run losses increment
-- When a player reaches 3 losses OR 5 wins, the run is marked as "completed"
-- A completed player receives a DM summary of their run: final record (e.g., "4-3"), deck used, matches played
-- A player can only have ONE active arena run at a time
+- A rich embed message is posted to a configurable channel every day at 11:30 PM EST
+- The message covers all ranked matches from midnight EST to the time of posting (same calendar day)
+- If zero matches were played, a brief "No matches today" message is posted instead
+- The scheduled task starts automatically when the bot boots and survives across days
+- The task uses `discord.ext.tasks` following the existing `MatchConfirmationJobs` pattern
 
-### US-3: Limited Match Reporting
+### US-2: Core Stats
 
-As a player in a Limited match, I want to report results the same way as regular matches but with Limited-specific tracking.
-
-**Acceptance Criteria:**
-- Match reporting flow is identical to existing (WentFirstView → Report → Confirm)
-- Confirmed matches are saved to a SEPARATE `limited_match_records` table (not `match_records`)
-- Limited ELO is updated in a SEPARATE `limited_elo` table (not `overall_standings`)
-- Limited ELO starts at 1500 for new players, uses same K-factor/formula as existing system
-- Active pairings for limited matches stored in a SEPARATE `limited_active_pairings` table
-- After match confirmation, both players' arena runs are updated (winner +1 win, loser +1 loss)
-- If either player's run reaches 3L or 5W after this match, they receive a run-complete DM
-
-### US-4: Post-Match Run Status DM (Continue / Forfeit)
-
-As a player who just finished a limited match, I want to see my run status and choose whether to continue or forfeit.
+As a community member, I want to see key competitive stats for the day.
 
 **Acceptance Criteria:**
-- After each confirmed limited match, the bot DMs the player with:
-  - Current run record (e.g., "Your Limited run: 2-1")
-  - Deck URL used for the run
-  - Two buttons: **Continue Run** and **Forfeit Run**
-- **Continue Run** button: Dismisses the prompt and replies with the player's current run stats (record, deck, Limited ELO). Does NOT auto-requeue - player joins the limited queue manually when ready.
-- **Forfeit Run** button: Immediately ends the run, applies remaining losses to Limited ELO
-  - Remaining losses = `3 - current_losses`, each calculated against starting ELO
-  - Example: Player is 2-1. Forfeit applies 2 additional phantom losses
-  - Forfeited runs are marked with status "forfeited" in the database
-  - Player receives a final DM summary of the forfeited run
-- **No response (ignored)**: Treated as continuing - the run stays active, player can manually `/lfg` into limited queue later
-- Buttons have a reasonable timeout (e.g., 60 minutes) after which they expire silently
+- **Total Matches Played** — count of ranked matches recorded today
+- **Most Active Player** — the player who appeared in the most matches (wins + losses), with match count shown
+- **Largest ELO Swing** — the single match with the biggest absolute ELO change, showing both players, the result, and the ELO delta
+- **Top ELO Gainer** — the player who gained the most cumulative online lifetime ELO across all today's matches, with net change shown
+- **Biggest ELO Loser** — the player who lost the most cumulative online lifetime ELO today (displayed lightheartedly)
 
-### US-5: Limited Stats on Player Profile (Web App)
+### US-3: Extended / Fun Stats
 
-As a player, I want to see my Limited arena stats on my player profile page, separate from my main stats.
+As a community member, I want additional fun and engagement stats in the daily summary.
 
 **Acceptance Criteria:**
-- A new "Limited Arena" section appears at the bottom of the player profile page
-- Shows: Limited ELO, total arena runs, total wins, total losses, best run record
-- Shows recent limited match history (same format as existing match history but from `limited_match_records`)
-- Completely separate from the main stats section - does not affect any existing profile data
+- **Unique Players** — count of distinct players who played at least one match today
+- **Hot Streaks** — players currently on a win streak of 3+ (computed from recent match history, not just today). Shows player name and streak length (e.g., "DragonSlayer is on a 5-win streak")
+- **Streak Broken** — players who lost today and had a win streak of 6+ going into that loss. Shows player name, the streak that was broken, and who broke it (e.g., "WizardKing's 8-win streak was ended by Newcomer")
+- **Biggest Upset** — the match where the lower-rated player beat the higher-rated player by the largest ELO gap
+- **Average Match Duration** — mean match time in minutes (from `match_time` column, excluding nulls/zeros)
+- Stats that have no data (e.g., no one is on a 3+ streak) are omitted from the embed rather than showing "N/A"
 
-### US-6: Start New Arena Run
+### US-4: GPT-Flavored Commentary
 
-As a player whose previous run ended, I want to start a fresh arena run with a new draft deck.
+As a community member, I want the daily summary to feel alive and entertaining, not just raw stats.
 
 **Acceptance Criteria:**
-- When joining Limited queue after a completed/forfeited run, a new run is automatically created
-- The new run starts with 0 wins, 0 losses
-- The player must provide a new deck URL (can reuse the same URL if they want)
-- Previous run history is preserved in the database
+- After computing all stats, the raw data is sent to OpenAI (`gpt-4.1-nano`) to generate a short, themed commentary paragraph
+- The commentary is placed at the top of the embed (in the description field) before the stat fields
+- The system prompt instructs GPT to write a brief, entertaining recap varying its style each day — sometimes dramatic narrator, sometimes sports broadcaster, sometimes comedic, sometimes poetic. It should reference players by name and call out upsets, streaks, and drama
+- Follows the same pattern as the milestone message in `cogs/lfg/helpers.py`: `openai_client.responses.create()` with `instructions` + `input`
+- If the OpenAI call fails, the embed posts normally without commentary (stats only, no error shown to users)
+- Commentary is capped at ~100 words to keep the embed concise
+- Zero-match days get a short "quiet day" themed message from GPT instead
+
+### US-5: Configuration
+
+As a bot administrator, I want to configure the daily summary channel and time.
+
+**Acceptance Criteria:**
+- `DAILY_SUMMARY_CHANNEL_ID` added to `config.py` (defaults to `LEADERBOARD_CHANNEL_ID`)
+- `DAILY_SUMMARY_HOUR` and `DAILY_SUMMARY_MINUTE` in `config.py` (default 23 and 30)
+- No slash/prefix commands needed to trigger the summary — it is purely automated
+- An admin-only `!daily_summary` prefix command can manually trigger the summary for testing
 
 ## Non-Functional Requirements
 
-- No changes to existing ranked/testing queue functionality (additive only)
-- No changes to existing ELO calculation for main/event standings
-- Database tables use CREATE TABLE IF NOT EXISTS pattern (idempotent)
-- Limited queue state is in-memory (resets on bot restart, like existing queue)
-- Arena run state is persisted in database (survives bot restarts)
-- User IDs stored as INTEGER to match existing Discord ID format
+- Read-only: no writes to any database table; purely SELECT queries
+- Core stats scoped to current EST calendar day (`timestamp LIKE 'YYYY-MM-DD%'`)
+- Win streak stats require querying recent match history (beyond today) to compute current streaks and detect broken streaks
+- Only counts `match_type = 'ranked'` matches (excludes testing matches)
+- Must not block the bot event loop — all DB access in executor or async-safe
+- Embed follows Discord's 6000-character limit; truncate gracefully if needed
+- Uses existing EST timezone pattern from `cogs/fun.py` (`ZoneInfo("America/New_York")`)
 
 ## Out of Scope (Future)
 
-- Limited-specific leaderboard page on web app
-- Draft deck validation (checking if deck was actually drafted vs constructed)
-- Limited queue seasonal resets
-- Limited arena entry fees or rewards system
-- Spectator mode for limited matches
+- Weekly / monthly summary rollups
+- Configurable stats (pick which stats appear)
+- Web app dashboard for daily summaries
+- Sending summary via DM to opted-in users
+- Historical summary archive

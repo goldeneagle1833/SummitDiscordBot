@@ -18,6 +18,7 @@ from cogs.community import CommunityCog
 from cogs.reaction_roles import ReactionRolesCog
 from cogs.match_confirmation_jobs import MatchConfirmationJobs
 from cogs.pilots import PilotsCog
+from cogs.daily_summary import DailySummaryCog
 
 import config
 
@@ -147,6 +148,7 @@ async def setup_cogs():
     await bot.add_cog(ReactionRolesCog(bot))  # Reaction-based role assignment
     await bot.add_cog(MatchConfirmationJobs(bot))  # Background jobs for match confirmation reminders & expiration
     await bot.add_cog(PilotsCog(bot))  # Feature flag management
+    await bot.add_cog(DailySummaryCog(bot))  # Daily summary at 11:30 PM EST
 
 
 async def main():

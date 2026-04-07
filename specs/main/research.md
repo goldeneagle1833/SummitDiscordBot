@@ -1,149 +1,208 @@
-# Research: Limited Queue (Arena Draft Mode) + RealmsDraft API Integration
+# Research: Daily Summary Message
 
-## Part A: Discord Bot (Original - Already Implemented)
+## R-1: Scheduling a daily task at a specific wall-clock time
 
-### R-1: Queue Isolation Strategy
+**Decision:** Use `discord.ext.tasks.loop` with a `time` parameter set to 23:30 EST.
 
-**Decision**: Add "limited" as a new queue_type value alongside "ranked", "testing", "both"
+**Rationale:** `discord.ext.tasks` supports a `time=` parameter accepting a `datetime.time` with timezone info. This fires the loop exactly once per day at the specified wall-clock time, handling DST transitions automatically via `ZoneInfo("America/New_York")`. This is the same library already used by `MatchConfirmationJobs`, `StreamingCog`, and `LFGCog` — no new dependencies.
 
-**Rationale**: The existing queue system already filters on `queue_type` during matching. Adding "limited" as a fourth type means:
-- Limited players only match with other limited players (no compatibility with ranked/testing/both)
-- The existing `resolve_match_type()` function needs a small addition for the "limited" case
-- The `lfg_queue` dictionary structure can be reused - limited entries just have `queue_type: "limited"`
-- No separate in-memory queue needed; isolation is achieved via type filtering during match search
+**Alternatives considered:**
+- `asyncio.sleep` loop: fragile, drifts, doesn't handle DST. Rejected.
+- APScheduler: powerful but adds a dependency the project doesn't use. Rejected.
+- OS-level cron: over-engineered for a single daily message. Rejected.
 
-**Alternatives Considered**:
-- Separate `limited_queue` dict: Rejected because it duplicates queue logic (FIFO, locking, expiration) and creates maintenance burden. The existing queue already supports type-based filtering.
+**Implementation pattern:**
+```python
+from discord.ext import tasks
+from zoneinfo import ZoneInfo
+import datetime
 
-### R-2: Arena Run Persistence
+EST = ZoneInfo("America/New_York")
+DAILY_TIME = datetime.time(hour=23, minute=30, tzinfo=EST)
 
-**Decision**: Store arena runs in a new `limited_arena_runs` table in `match_records.db`
+@tasks.loop(time=DAILY_TIME)
+async def daily_summary_task(self):
+    ...
+```
 
-**Rationale**: Arena runs must survive bot restarts (unlike queue entries). A player's run state (wins, losses, active/completed/forfeited) is critical game state that cannot be in-memory only. Using the existing `match_records.db` file keeps all match-related data together.
+## R-2: Querying today's matches from `match_records`
 
-**Alternatives Considered**:
-- In-memory only: Rejected because a bot restart would lose all arena run progress
-- Separate `limited.db` file: Possible but unnecessary - `match_records.db` already houses all match-related tables
+**Decision:** Filter using `timestamp LIKE 'YYYY-MM-DD%'` where the date is the current EST date.
 
-### R-3: Limited ELO System
+**Rationale:** The `timestamp` column stores ISO format strings (e.g. `2026-04-07T15:30:45.123456`). SQLite's LIKE operator efficiently filters by date prefix. The date is computed in EST using the existing `ZoneInfo("America/New_York")` pattern from `cogs/fun.py`.
 
-**Decision**: Create a separate `limited_elo` table in `elo.db` with a single ELO column (no paper/event split)
+**Key queries:**
 
-**Rationale**: Limited is Discord-bot-only (no paper mode) and doesn't have "events" or "seasons" - it's always active. A simple `user_id -> limited_elo` table with K=32 (constant) is sufficient. The same `update_elo()` pure function from `elo_service.py` can be reused.
+1. **Total matches today:**
+   ```sql
+   SELECT COUNT(*) FROM match_records
+   WHERE timestamp LIKE ? AND match_type = 'ranked'
+   ```
 
-**Alternatives Considered**:
-- Add `limited_elo` column to `overall_standings`: Rejected because the user explicitly wants "its own everything" - complete separation
-- Full dual ELO (lifetime + event): Rejected as overkill - limited has no event/season concept
+2. **Most active player** (most matches as winner or loser):
+   ```sql
+   SELECT player_id, player_name, COUNT(*) as match_count FROM (
+       SELECT winner_id as player_id, winner_display_name as player_name
+       FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'
+       UNION ALL
+       SELECT losser_id as player_id, losser_display_name as player_name
+       FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'
+   ) GROUP BY player_id ORDER BY match_count DESC LIMIT 1
+   ```
 
-### R-4: Forfeit ELO Penalty Calculation
+3. **Largest single-match ELO swing:**
+   ```sql
+   SELECT *, ABS(winner_lifetime_elo_change) as swing
+   FROM match_records
+   WHERE timestamp LIKE ? AND match_type = 'ranked'
+   ORDER BY swing DESC LIMIT 1
+   ```
 
-**Decision**: On forfeit, calculate remaining losses against the player's ELO at run start time using a "phantom opponent" at the starting ELO
+4. **Top ELO gainer** (net across all matches):
+   ```sql
+   SELECT player_id, player_name, SUM(elo_change) as net_change FROM (
+       SELECT winner_id as player_id, winner_display_name as player_name,
+              winner_lifetime_elo_change as elo_change
+       FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'
+       UNION ALL
+       SELECT losser_id as player_id, losser_display_name as player_name,
+              loser_lifetime_elo_change as elo_change
+       FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'
+   ) GROUP BY player_id ORDER BY net_change DESC LIMIT 1
+   ```
 
-**Rationale**: The user specified "3 losses applied against your player ELO against the starting ELO score." This means:
-1. Record the player's Limited ELO when the arena run starts (`starting_elo` in `limited_arena_runs`)
-2. On forfeit, calculate how many losses remain: `losses_to_apply = 3 - current_losses`
-3. For each phantom loss, use `update_elo(current_elo, starting_elo, did_win=False, k=32)` where opponent ELO = starting ELO
-4. Apply sequentially (each loss updates the player's ELO for the next calculation)
+5. **Biggest ELO loser:** Same as #4 but `ORDER BY net_change ASC LIMIT 1`
 
-**Alternatives Considered**:
-- Flat ELO penalty (e.g., -50 per loss): Rejected because it doesn't use the existing ELO formula and would be inconsistent with real match results
-- Single bulk penalty: Rejected because applying losses sequentially is more accurate (each loss shifts the expected score)
+6. **Unique players:**
+   ```sql
+   SELECT COUNT(DISTINCT player_id) FROM (
+       SELECT winner_id as player_id FROM match_records
+       WHERE timestamp LIKE ? AND match_type = 'ranked'
+       UNION
+       SELECT losser_id as player_id FROM match_records
+       WHERE timestamp LIKE ? AND match_type = 'ranked'
+   )
+   ```
 
-### R-5: Match Reporting Integration
+7. **Average match duration:**
+   ```sql
+   SELECT AVG(match_time) FROM match_records
+   WHERE timestamp LIKE ? AND match_type = 'ranked' AND match_time > 0
+   ```
 
-**Decision**: Reuse the existing match reporting flow (WentFirstView -> LFGReportButtons -> MatchConfirmationButtons) with a `is_limited` flag threaded through
+8. **Biggest upset** (lower-rated player won): A large positive `winner_lifetime_elo_change` indicates the winner was lower-rated (expected to lose). Use `winner_lifetime_elo_change` as upset proxy — larger change = bigger upset.
 
-**Rationale**: The reporting UX should be identical - players should not see a different flow just because they're in limited mode. The difference is only in what happens after confirmation:
-1. Match saved to `limited_match_records` instead of `match_records`
-2. Limited ELO updated instead of main ELO
-3. Arena run wins/losses incremented
-4. Run completion check + DM
+## R-3: Win streak detection (current streaks + broken streaks)
 
-### R-6: Deck URL Requirement
+**Decision:** Two-phase approach — identify players from today's matches, then query their recent match history to compute streaks.
 
-**Decision**: Deck URL is mandatory when joining the limited queue (enforced at queue-join time)
+**Rationale:** Streaks span across days, so we can't just look at today's matches. A player who won 4 matches yesterday and 2 today is on a 6-win streak. Similarly, detecting a "broken streak" requires knowing the streak length before today's loss.
 
-**Rationale**: Unlike ranked/testing where deck URL is optional, limited requires it because the deck is the core of the arena run (drafted deck). The existing `queue_entry["deck_url"]` field handles this.
+**Phase 1 — Get today's players:**
+```sql
+SELECT DISTINCT player_id FROM (
+    SELECT winner_id as player_id FROM match_records
+    WHERE timestamp LIKE ? AND match_type = 'ranked'
+    UNION
+    SELECT losser_id as player_id FROM match_records
+    WHERE timestamp LIKE ? AND match_type = 'ranked'
+)
+```
 
-### R-7: Web App Profile Integration
+**Phase 2 — For each player, fetch recent matches (last 20 is sufficient):**
+```sql
+SELECT winner_id, losser_id, timestamp FROM match_records
+WHERE (winner_id = ? OR losser_id = ?) AND match_type = 'ranked'
+ORDER BY timestamp DESC LIMIT 20
+```
 
-**Decision**: Add a "Limited Arena" section to the player profile page, below existing stats
+**Hot Streaks algorithm (current streak ≥ 3):**
+1. For each player, iterate their matches from most recent backwards
+2. Count consecutive wins from the top
+3. If streak ≥ 3, include in "Hot Streaks" section
 
-**Rationale**: Shows Limited ELO, run history, recent limited matches. Web app needs repository functions to query `limited_elo` and `limited_match_records`.
+**Broken Streaks algorithm (streak of 6+ ended today):**
+1. For each player who **lost** today, look at their match history
+2. Find the first loss today, then count consecutive wins immediately before it
+3. If that pre-loss streak was ≥ 6, report it as a broken streak
+4. Include who broke the streak (the opponent who won that match)
 
-### R-8: Anti-Rematch in Limited Pool
+**Performance:** Typically <30 players per day, each needing 1 query of 20 rows. Total: ~30 small queries + Python iteration. Well within acceptable limits for a once-daily task.
 
-**Decision**: Use the same anti-rematch logic as existing queue (skip if opponent was most recent match)
+## R-4: GPT commentary generation
 
-**Rationale**: In a small limited pool, strict anti-rematch could create deadlocks.
+**Decision:** Use `gpt-4.1-nano` via the OpenAI Responses API to generate a short themed commentary from the raw stats. Same pattern as the milestone message in `cogs/lfg/helpers.py`.
 
----
+**Rationale:** The milestone feature already proves this pattern works — cheap, fast, and the `gpt-4.1-nano` model is sufficient for short creative text. Reusing the same client (`openai.OpenAI`) and API shape (`responses.create` with `instructions` + `input`) keeps consistency.
 
-## Part B: RealmsDraft API Integration (New)
+**System prompt (instructions):**
+```
+You are a Discord bot writing a daily recap for Sorcery: Contested Realm, a competitive card game.
+Write a short, entertaining commentary (2-4 sentences, under 100 words) summarizing the day's competitive action.
+Reference players by name. Call out upsets, streaks, and drama — make it feel like a real recap of the day's battles.
+IMPORTANT: Vary your style every day. Rotate between these voices at random:
+- Epic fantasy narrator ("The realm trembled as...")
+- Hype sports broadcaster ("WHAT a day on the ladder!")
+- Dry comedic observer ("In today's episode of 'questionable life choices'...")
+- Poetic bard ("A tale of triumph and tragedy unfolded...")
+- Trash-talking arena announcer ("Ladies and gentlemen, we have CARNAGE!")
+Pick ONE style per day. Do not mix styles within the same recap.
+NO emojis. Do not repeat the raw numbers — the stats are shown separately below your commentary.
+If no matches were played, write a short "quiet day" message in your chosen style instead.
+```
 
-### R-9: Authentication for RealmsDraft API Calls
+**User prompt (input):**
+```
+Today's stats:
+- 12 ranked matches played
+- 8 unique players
+- Most active: DragonSlayer (5 matches)
+- Top ELO gainer: WizardKing (+48)
+- Biggest ELO drop: UnluckyMage (-35)
+- Largest swing: WizardKing beat UnluckyMage (+24 in one match)
+- Biggest upset: Newcomer beat Veteran (+28 ELO gain)
+- Hot streaks: DragonSlayer (5-win streak)
+- Streak broken: UnluckyMage's 8-win streak ended by Newcomer
+- Avg match duration: 18 min
+```
 
-**Decision**: Shared API key via `X-API-Key` header
+**Fallback:** If OpenAI call fails (network error, rate limit, etc.), the embed posts without commentary — just the stat fields. Error is logged but not shown to users.
 
-**Rationale**: RealmsDraft is a trusted first-party service, not a public API consumer. A shared secret (API key) stored in both services' configs is the simplest approach that provides adequate security. The web app already has `webapp_config.py` for secrets and the API is behind Cloudflare + Nginx.
+**Cost:** `gpt-4.1-nano` is extremely cheap (~$0.001 per call). One call per day is negligible.
 
-**Alternatives Considered**:
-- OAuth2/JWT: Overkill for server-to-server communication between two trusted services
-- IP whitelisting only: Too fragile if RealmsDraft's IP changes; API key is more portable
-- No auth: Unacceptable - these endpoints modify player state
+## R-5: Channel and embed design
 
-**Implementation**: Add `REALMSDRAFT_API_KEY` to `webapp_config.py`. Create a `@require_api_key` decorator that checks the `X-API-Key` header against the config value.
+**Decision:** Use a single `discord.Embed` with GPT commentary in the description and stat fields below.
 
-### R-10: Draft/Deck Identifier Format
+**Rationale:** Discord embeds support up to 25 fields, 6000 total characters. The `description` field holds the GPT commentary paragraph. Individual stats go in embed fields below for clean formatting.
 
-**Decision**: Use Curiosa deck URL string (consistent with existing system)
+**Embed structure:**
+- Title: "Daily Summary — April 7, 2026"
+- Description: GPT-generated commentary (2-4 sentences)
+- Color: Gold/amber theme (0xFFD700)
+- Footer: "Summit Bot • Matches tracked since midnight EST"
+- Fields (inline where appropriate):
+  - Matches Played
+  - Unique Players
+  - Most Active Player
+  - Top ELO Gainer
+  - Biggest ELO Drop
+  - Largest ELO Swing (single match)
+  - Biggest Upset
+  - Hot Streaks (players on 3+ current win streak, omitted if none)
+  - Streak Broken (6+ streak ended today, omitted if none)
+  - Avg Match Duration
 
-**Rationale**: The existing limited arena system already stores `deck_url TEXT` in `limited_arena_runs`. RealmsDraft will provide a Curiosa deck URL as the deck identifier. This maintains consistency with the current flow where players paste Curiosa URLs.
+## R-6: Database access pattern
 
-**Alternatives Considered**:
-- Integer draft ID from RealmsDraft: Would require a new column and mapping layer; unnecessary coupling
-- UUID: No benefit over URL string for this use case
+**Decision:** Direct SQLite queries in the cog using `sqlite3`, reading from `match_records.db`.
 
-### R-11: Forfeit Handling - Flag on POST vs Separate Endpoint
+**Rationale:** The daily summary is read-only with no business logic writes. Direct DB access follows KISS. The database path comes from config (same pattern as other cogs).
 
-**Decision**: Use a `forfeit: true` flag on the POST run endpoint
+**Thread safety:** Use `asyncio.to_thread()` to avoid blocking the event loop during DB reads.
 
-**Rationale**: The user explicitly asked "should this also handle a forfeit? With a flag" - this directly answers the question. Having forfeit as a flag on the POST endpoint keeps the API surface small. A separate "end run" endpoint handles natural run completion (all losses consumed).
+## R-7: "No matches" handling
 
-**Alternatives Considered**:
-- Separate DELETE or POST /forfeit endpoint: More RESTful but adds unnecessary endpoint when a flag suffices
-- Only via Discord bot: RealmsDraft needs to trigger forfeits when users abandon drafts
+**Decision:** Post a brief embed with GPT-generated "quiet day" message when zero matches are recorded.
 
-### R-12: Win/Loss Thresholds
-
-**Decision**: Keep hardcoded at 5 wins / 3 losses (matching existing spec and code)
-
-**Rationale**: The existing `limited_service.py:check_run_complete()` already hardcodes `wins >= 5 or losses >= 3`. The user's "x losses out of y" phrasing describes the forfeit penalty calculation (remaining losses = 3 - current_losses), not configurability. Introducing config for thresholds adds complexity with no current need.
-
-### R-13: Queue Joining Validation via API
-
-**Decision**: Discord bot calls Summit web API to validate before allowing limited queue join
-
-**Rationale**: The user states "Joining the Limited Queue will have rules around it (can't join if you don't have an active deck and you meet the win loss requirements)." The GET status endpoint returns enough info for the bot to enforce these rules:
-- Must have an active run (status = "active")
-- Run must not be completed (wins < 5, losses < 3)
-- Active run implies a valid deck URL exists
-
-**Implementation**: Bot calls `GET /api/limited/user/<user_id>/status` before allowing queue join. If no active run or run is complete, reject with message directing user to start a new run via RealmsDraft.
-
-### R-14: Existing Code Reuse
-
-**Decision**: Leverage existing `limited_repo.py` and `limited_service.py` from the discord-bot via sys.path
-
-**Rationale**: The web app already imports from the discord-bot path (`sys.path.append` in `app.py`). For write operations, we import directly from the discord-bot's service/repository layers. The existing `web-app/repositories/matches.py` already has read-only limited functions.
-
-### R-15: Endpoint URL Design
-
-**Decision**: Use `/api/limited/` prefix with RESTful resource naming
-
-**Endpoints**:
-| Method | Path | Purpose |
-|--------|------|---------|
-| `GET` | `/api/limited/user/<user_id>/status` | Get user's run status + current record |
-| `POST` | `/api/limited/user/<user_id>/run` | Start new run with deck URL, or forfeit current run |
-| `POST` | `/api/limited/user/<user_id>/end-run` | End current run (apply remaining loss penalties) |
+**Rationale:** Posting even on quiet days maintains consistency. The GPT system prompt already handles this case ("If no matches were played, write a short 'quiet day' message instead"). Fallback if GPT fails: "No matches were played today. Rest up — tomorrow's a new day!"

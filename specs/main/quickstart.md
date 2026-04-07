@@ -1,283 +1,200 @@
-# Quickstart: RealmsDraft ↔ Summit API Integration
+# Quickstart: Daily Summary Message
 
 ## What This Feature Does
 
-Adds REST API endpoints to the Summit web app that RealmsDraft calls to manage player arena runs:
-- **GET status**: RealmsDraft checks if a player has an active run, match history, score, and can queue
-- **POST run**: RealmsDraft starts a new arena run (with deck URL) or forfeits the current one
-- **POST end-run**: RealmsDraft ends a run early, applying remaining losses as ELO penalties
-- **Queue rules**: Discord bot validates players have an active run before joining the Limited queue
-
-The Discord bot's limited arena system (database, ELO, match reporting) is already fully implemented. This feature adds the external API surface.
+Posts an automated daily recap embed to a Discord channel at 11:30 PM EST. Stats are gathered from the database, then passed through GPT (`gpt-4.1-nano`) to generate an entertaining commentary paragraph. The embed shows the GPT commentary plus structured stat fields: total matches, most active player, ELO leaders/losers, biggest upset, hot streaks, broken streaks, and average match duration. Zero database changes — purely reads from existing `match_records` table.
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `web-app/routes/api/limited.py` | Blueprint with 3 endpoints (GET status, POST run, POST end-run) |
-| `web-app/utils/api_auth.py` | `@require_api_key` decorator for RealmsDraft authentication |
-| `web-app/webapp_config.py` | `REALMSDRAFT_API_KEY` config value |
-| `web-app/routes/api/__init__.py` | Registers `limited_bp` blueprint |
-| `discord-bot/repositories/limited_repo.py` | Data access: arena runs, ELO, pairings, match history |
-| `discord-bot/services/limited_service.py` | Business logic: start run, forfeit, ELO calc |
+| `discord-bot/cogs/daily_summary.py` | New cog: scheduled task + embed builder + admin trigger command |
+| `discord-bot/config.py` | 3 new constants: `DAILY_SUMMARY_CHANNEL_ID`, `DAILY_SUMMARY_HOUR`, `DAILY_SUMMARY_MINUTE` |
+| `discord-bot/main.py` | One line to load the cog |
+| `discord-bot/tests/test_daily_summary.py` | Unit tests for stat computation logic |
 
 ## How It Works
 
-### RealmsDraft Integration Flow
+### Scheduling
 
-```
-1. Player drafts a deck on RealmsDraft
-2. RealmsDraft calls POST /api/limited/user/<id>/run with deck_url
-   → Summit creates arena run (0-0 record) in limited_arena_runs
-3. Player joins Limited queue on Discord (/lfg → Limited)
-   → Bot checks: active run exists + wins < 5 + losses < 3
-4. Player plays match, reports result via Discord
-   → Bot updates run record + Limited ELO (existing flow)
-5. RealmsDraft calls GET /api/limited/user/<id>/status
-   → Gets current run record, match history, ELO, can_queue flag
-6. When player wants to forfeit/abandon:
-   → RealmsDraft calls POST /run with forfeit: true
-   → Or POST /end-run to apply remaining losses
-```
-
-### Authentication
-
-All endpoints require `X-API-Key` header with the shared secret from `webapp_config.py`.
+Uses `discord.ext.tasks` with `time=` parameter (same pattern as `MatchConfirmationJobs`):
 
 ```python
-# In webapp_config.py:
-REALMSDRAFT_API_KEY = os.environ.get("REALMSDRAFT_API_KEY", "")
+from discord.ext import tasks
+from zoneinfo import ZoneInfo
+import datetime
+
+EST = ZoneInfo("America/New_York")
+
+@tasks.loop(time=datetime.time(hour=23, minute=30, tzinfo=EST))
+async def daily_summary_task(self):
+    await self._post_daily_summary()
 ```
 
-### Existing Code Reuse
+The task fires once per day at 11:30 PM EST. DST is handled automatically by `ZoneInfo`.
 
-The web app's `app.py` already adds `discord-bot/` to `sys.path`. The API blueprint imports directly:
+### Data Gathering
+
+All queries run in a single function using `asyncio.to_thread()` to avoid blocking:
 
 ```python
-from repositories.limited_repo import (
-    get_active_arena_run, get_latest_arena_run, get_limited_elo, get_matches_for_run
-)
-from services.limited_service import start_arena_run, forfeit_arena_run
+async def _gather_stats(self, date_prefix: str) -> dict:
+    return await asyncio.to_thread(self._query_stats, date_prefix)
 ```
 
----
+The `date_prefix` is `"YYYY-MM-DD%"` computed from the current EST date.
 
-## API Endpoints
+### GPT Commentary
 
-### GET `/api/limited/user/<user_id>/status`
+After stats are gathered, they're formatted into a text summary and sent to GPT for commentary:
 
-Returns the player's current/latest run, match history for that run, ELO, and queue eligibility.
+```python
+from openai import OpenAI
 
-**Request:**
-```bash
-curl -H "X-API-Key: your-key" http://localhost:5000/api/limited/user/123/status
+openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
+
+def generate_commentary(stats_text: str) -> str:
+    """Generate entertaining commentary from raw stats via GPT."""
+    try:
+        response = openai_client.responses.create(
+            model="gpt-4.1-nano",
+            instructions=(
+                "You are a Discord bot writing a daily recap for Sorcery: Contested Realm, a competitive card game. "
+                "Write a short, entertaining commentary (2-4 sentences, under 100 words) summarizing the day's competitive action. "
+                "Reference players by name. Call out upsets, streaks, and drama — make it feel like a real recap of the day's battles. "
+                "IMPORTANT: Vary your style every day. Rotate between these voices at random: "
+                "Epic fantasy narrator, hype sports broadcaster, dry comedic observer, poetic bard, trash-talking arena announcer. "
+                "Pick ONE style per day. Do not mix styles within the same recap. "
+                "NO emojis. Do not repeat the raw numbers — the stats are shown separately below your commentary. "
+                "If no matches were played, write a short 'quiet day' message in your chosen style instead."
+            ),
+            input=stats_text,
+        )
+        return response.output_text
+    except Exception as e:
+        logger.error(f"OpenAI API error for daily summary: {e}")
+        return None  # Embed posts without commentary
 ```
 
-**Response (active run, 2-1 record):**
-```json
-{
-    "success": true,
-    "user_id": "123",
-    "has_active_run": true,
-    "run": {
-        "run_id": 42,
-        "deck_url": "https://curiosa.io/decks/abc123",
-        "wins": 2,
-        "losses": 1,
-        "status": "active",
-        "starting_elo": 1520,
-        "created_at": "2026-04-01T14:30:00"
-    },
-    "match_history": [
-        {
-            "match_id": 101,
-            "won": true,
-            "opponent_name": "PlayerTwo",
-            "opponent_id": 123456789,
-            "elo_change": 18,
-            "timestamp": "2026-04-01T15:00:00"
-        },
-        {
-            "match_id": 102,
-            "won": true,
-            "opponent_name": "PlayerThree",
-            "opponent_id": 987654321,
-            "elo_change": 16,
-            "timestamp": "2026-04-01T16:30:00"
-        },
-        {
-            "match_id": 103,
-            "won": false,
-            "opponent_name": "PlayerFour",
-            "opponent_id": 111222333,
-            "elo_change": -14,
-            "timestamp": "2026-04-01T17:15:00"
-        }
-    ],
-    "limited_elo": 1535,
-    "can_queue": true
-}
+Same pattern as `cogs/lfg/helpers.py:generate_milestone_message()`.
+
+### Stats Computed
+
+| Stat | Source | Query Strategy |
+|------|--------|---------------|
+| Total matches | `match_records` | `COUNT(*)` where ranked + today |
+| Unique players | `match_records` | `COUNT(DISTINCT)` on union of winner/loser IDs |
+| Most active player | `match_records` | Union winner+loser, group by player, max count |
+| Top ELO gainer | `match_records` | Sum `winner/loser_lifetime_elo_change` per player, max |
+| Biggest ELO drop | `match_records` | Same sum, min |
+| Largest ELO swing | `match_records` | Max `ABS(winner_lifetime_elo_change)` in single match |
+| Biggest upset | `match_records` | Max `winner_lifetime_elo_change` (higher = bigger upset) |
+| Hot streaks | `match_records` | For each today's player, fetch last 20 matches, count consecutive wins from most recent. Show if ≥ 3 |
+| Streak broken | `match_records` | For each player who lost today, check if they had a 6+ win streak going into that loss |
+| Avg match duration | `match_records` | `AVG(match_time)` where > 0 |
+
+### Embed Layout
+
+```
+┌──────────────────────────────────────┐
+│  📊 Daily Summary — April 7, 2026   │
+│                                      │
+│  DragonSlayer was an absolute       │
+│  machine today, grinding out five   │
+│  matches and extending a dominant   │
+│  five-win streak. Meanwhile,        │
+│  Newcomer pulled off the upset of   │
+│  the day, toppling Veteran and      │
+│  snapping UnluckyMage's legendary   │
+│  eight-win run in the process.      │
+│                                      │
+│  ⚔️ Matches Played    🎮 Players    │
+│  12                    8             │
+│                                      │
+│  👑 Most Active Player               │
+│  DragonSlayer (5 matches)            │
+│                                      │
+│  📈 Top ELO Gainer                   │
+│  WizardKing (+48 ELO)               │
+│                                      │
+│  📉 Biggest ELO Drop                 │
+│  UnluckyMage (-35 ELO)              │
+│                                      │
+│  💥 Largest ELO Swing                │
+│  WizardKing beat UnluckyMage (+24)  │
+│                                      │
+│  🎯 Biggest Upset                    │
+│  Newcomer beat Veteran (+28 ELO)    │
+│                                      │
+│  🔥 Hot Streaks                      │
+│  DragonSlayer is on a 5-win streak  │
+│  WizardKing is on a 3-win streak   │
+│                                      │
+│  💔 Streak Broken                    │
+│  UnluckyMage's 8-win streak was    │
+│  ended by Newcomer                  │
+│                                      │
+│  ⏱️ Avg Match Duration: 18 min      │
+│                                      │
+│  Summit Bot • Since midnight EST     │
+└──────────────────────────────────────┘
 ```
 
-**Response (no active run, never played):**
-```json
-{
-    "success": true,
-    "user_id": "123",
-    "has_active_run": false,
-    "run": null,
-    "match_history": [],
-    "limited_elo": 1500,
-    "can_queue": false
-}
+### Admin Trigger
+
+```python
+@commands.command(name="daily_summary")
+@commands.has_permissions(administrator=True)
+async def trigger_summary(self, ctx):
+    """Manually trigger the daily summary (admin only)."""
+    await self._post_daily_summary(channel_override=ctx.channel)
 ```
 
-**Response (completed run, needs new run to queue):**
-```json
-{
-    "success": true,
-    "user_id": "123",
-    "has_active_run": false,
-    "run": {
-        "run_id": 42,
-        "deck_url": "https://curiosa.io/decks/abc123",
-        "wins": 5,
-        "losses": 2,
-        "status": "completed",
-        "starting_elo": 1520,
-        "created_at": "2026-04-01T14:30:00",
-        "completed_at": "2026-04-01T18:45:00"
-    },
-    "match_history": [
-        {"match_id": 101, "won": true, "opponent_name": "PlayerTwo", "opponent_id": 123456789, "elo_change": 18, "timestamp": "2026-04-01T15:00:00"},
-        {"match_id": 102, "won": true, "opponent_name": "PlayerThree", "opponent_id": 987654321, "elo_change": 16, "timestamp": "2026-04-01T16:30:00"},
-        {"match_id": 103, "won": false, "opponent_name": "PlayerFour", "opponent_id": 111222333, "elo_change": -14, "timestamp": "2026-04-01T17:00:00"},
-        {"match_id": 104, "won": true, "opponent_name": "PlayerFive", "opponent_id": 444555666, "elo_change": 15, "timestamp": "2026-04-01T17:30:00"},
-        {"match_id": 105, "won": true, "opponent_name": "PlayerSix", "opponent_id": 777888999, "elo_change": 17, "timestamp": "2026-04-01T18:00:00"},
-        {"match_id": 106, "won": false, "opponent_name": "PlayerSeven", "opponent_id": 222333444, "elo_change": -15, "timestamp": "2026-04-01T18:30:00"},
-        {"match_id": 107, "won": true, "opponent_name": "PlayerEight", "opponent_id": 555666777, "elo_change": 16, "timestamp": "2026-04-01T18:45:00"}
-    ],
-    "limited_elo": 1580,
-    "can_queue": false
-}
+### Zero-Match Day
+
+When no ranked matches are recorded, a simpler embed is posted:
+
+```
+┌──────────────────────────────────────┐
+│  📊 Daily Summary — April 7, 2026   │
+│                                      │
+│  [GPT "quiet day" commentary]       │
+│  e.g. "The arena stood silent       │
+│  today — not a single spell was     │
+│  cast. Sharpen your decks,          │
+│  tomorrow the battle resumes."      │
+│                                      │
+│  Summit Bot • Since midnight EST     │
+└──────────────────────────────────────┘
 ```
 
----
+## Config Changes
 
-### POST `/api/limited/user/<user_id>/run`
+Add to `discord-bot/config.py`:
 
-Start a new arena run or forfeit the current one.
-
-**Request (start new run):**
-```bash
-curl -X POST -H "X-API-Key: your-key" -H "Content-Type: application/json" \
-  -d '{"deck_url": "https://curiosa.io/decks/abc", "display_name": "PlayerOne"}' \
-  http://localhost:5000/api/limited/user/123/run
+```python
+# Daily Summary
+DAILY_SUMMARY_CHANNEL_ID = LEADERBOARD_CHANNEL_ID  # or a dedicated channel
+DAILY_SUMMARY_HOUR = 23    # 11 PM EST (24h)
+DAILY_SUMMARY_MINUTE = 30  # :30
 ```
 
-**Response (201 Created):**
-```json
-{
-    "success": true,
-    "action": "created",
-    "run": {
-        "run_id": 43,
-        "deck_url": "https://curiosa.io/decks/abc",
-        "wins": 0,
-        "losses": 0,
-        "status": "active",
-        "starting_elo": 1535,
-        "created_at": "2026-04-02T10:00:00"
-    },
-    "limited_elo": 1535
-}
+## Cog Loading
+
+Add to `discord-bot/main.py` in `setup_cogs()`:
+
+```python
+from cogs.daily_summary import DailySummaryCog
+await bot.add_cog(DailySummaryCog(bot))
 ```
 
-**Request (forfeit current run):**
-```bash
-curl -X POST -H "X-API-Key: your-key" -H "Content-Type: application/json" \
-  -d '{"forfeit": true}' \
-  http://localhost:5000/api/limited/user/123/run
-```
+## Testing Strategy
 
-**Response (200 OK):**
-```json
-{
-    "success": true,
-    "action": "forfeited",
-    "run": {
-        "run_id": 42,
-        "deck_url": "https://curiosa.io/decks/old-deck",
-        "wins": 2,
-        "losses": 1,
-        "status": "forfeited",
-        "starting_elo": 1520,
-        "created_at": "2026-04-01T14:30:00",
-        "completed_at": "2026-04-02T10:00:00"
-    },
-    "limited_elo": 1490,
-    "penalty_summary": "Applied 2 phantom losses. ELO: 1535 → 1490"
-}
-```
-
-**Error (already has active run):**
-```json
-{"success": false, "error": "Player already has an active run (run_id: 42). Forfeit or complete it first."}
-```
-
-**Error (missing fields):**
-```json
-{"success": false, "error": "deck_url and display_name are required to start a new run"}
-```
-
----
-
-### POST `/api/limited/user/<user_id>/end-run`
-
-End the current active run early, applying remaining losses as ELO penalties.
-
-**Request:**
-```bash
-curl -X POST -H "X-API-Key: your-key" \
-  http://localhost:5000/api/limited/user/123/end-run
-```
-
-**Response (200 OK, player was 2-1 so 2 losses applied):**
-```json
-{
-    "success": true,
-    "run": {
-        "run_id": 42,
-        "deck_url": "https://curiosa.io/decks/abc123",
-        "wins": 2,
-        "losses": 1,
-        "status": "forfeited",
-        "starting_elo": 1520,
-        "created_at": "2026-04-01T14:30:00",
-        "completed_at": "2026-04-02T10:00:00"
-    },
-    "limited_elo": 1490,
-    "losses_applied": 2,
-    "penalty_summary": "Applied 2 phantom losses. ELO: 1535 → 1490"
-}
-```
-
-**Error (no active run):**
-```json
-{"success": false, "error": "No active run to end"}
-```
-
----
-
-## Error Responses
-
-All errors follow this format:
-```json
-{"success": false, "error": "<message>"}
-```
-
-| Status | Meaning |
-|--------|---------|
-| 400 | Bad request (invalid user_id, missing fields, no active run) |
-| 401 | Missing or invalid `X-API-Key` header |
-| 500 | Database or server error |
+Unit tests mock the database and OpenAI client, verifying:
+- Stat computation from sample match data
+- Embed construction (field count, values, description from GPT)
+- Zero-match handling (GPT quiet-day message)
+- GPT fallback (embed posts without commentary when OpenAI fails)
+- Hot streak algorithm (cross-day streaks, edge cases: single match, all wins)
+- Broken streak detection (6+ threshold, who broke it)
+- Date prefix generation in EST

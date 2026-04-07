@@ -1,140 +1,72 @@
-# Data Model: Limited Queue (Arena Draft Mode) + RealmsDraft API
+# Data Model: Daily Summary Message
 
-## Existing Tables (Already Implemented in Discord Bot)
+## No New Tables Required
 
-All four limited tables already exist in `repositories/limited_repo.py` and are fully operational.
+This feature is **read-only**. It queries existing tables to generate a daily summary embed. No schema changes, no new tables, no migrations.
 
-### `limited_arena_runs` (in `match_records.db`)
+## Existing Tables Queried
 
-Tracks each player's arena run lifecycle (draft -> play -> complete/forfeit).
+### `match_records` (in `match_records.db`)
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `run_id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Unique run identifier |
-| `user_id` | INTEGER | NOT NULL | Discord user ID |
-| `user_display_name` | TEXT | NOT NULL | Display name at run start |
-| `deck_url` | TEXT | NOT NULL | Curiosa deck URL for this run |
-| `json_deck_data` | TEXT | | Scraped deck JSON (cached at run creation) |
-| `wins` | INTEGER | NOT NULL DEFAULT 0 | Current win count (max 5) |
-| `losses` | INTEGER | NOT NULL DEFAULT 0 | Current loss count (max 3) |
-| `starting_elo` | INTEGER | NOT NULL DEFAULT 1500 | Player's Limited ELO at run start (for forfeit calc) |
-| `status` | TEXT | NOT NULL DEFAULT 'active' | 'active', 'completed', 'forfeited' |
-| `created_at` | TEXT | NOT NULL | ISO timestamp of run creation |
-| `completed_at` | TEXT | | ISO timestamp of run completion/forfeit |
+Primary data source for all daily stats. Filtered by:
+- `timestamp LIKE 'YYYY-MM-DD%'` (current EST date)
+- `match_type = 'ranked'` (excludes testing matches)
 
-**Indexes**: `CREATE INDEX IF NOT EXISTS idx_limited_runs_user_status ON limited_arena_runs(user_id, status)`
+**Columns used:**
 
-**State Transitions**:
-```
-active -> completed  (when wins=5 or losses=3)
-active -> forfeited  (when player forfeits via DM button or RealmsDraft API)
-```
+| Column | Type | Used For |
+|--------|------|----------|
+| `timestamp` | TEXT (ISO) | Date filtering, match ordering for streak detection |
+| `match_type` | TEXT | Filter to ranked only |
+| `winner_id` | INTEGER | Player identification |
+| `winner_display_name` | TEXT | Display in embed |
+| `losser_id` | INTEGER | Player identification (note: typo in schema is intentional) |
+| `losser_display_name` | TEXT | Display in embed |
+| `winner_lifetime_elo_change` | INTEGER | ELO gain/loss tracking, upset detection |
+| `loser_lifetime_elo_change` | INTEGER | ELO gain/loss tracking |
+| `match_time` | INTEGER | Average duration stat |
 
-### `limited_match_records` (in `match_records.db`)
+### `overall_standings` (in `elo.db`)
 
-Stores confirmed limited match results. Mirrors `match_records` schema but for limited games.
+Not directly queried. ELO changes are derived from `match_records` columns (`winner_lifetime_elo_change`, `loser_lifetime_elo_change`), not from the standings table.
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `match_id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Unique match identifier |
-| `reporter_id` | INTEGER | | Discord ID of reporting player |
-| `winner_id` | INTEGER | | Discord ID of winner |
-| `winner_display_name` | TEXT | | Winner's display name |
-| `loser_id` | INTEGER | | Discord ID of loser |
-| `loser_display_name` | TEXT | | Loser's display name |
-| `did_win` | BOOLEAN | | True if reporter won |
-| `timestamp` | TEXT | | ISO timestamp |
-| `first_player` | TEXT | | 'y'/'n' reporter went first |
-| `match_time` | INTEGER | | Duration in minutes |
-| `curiosa_url_winner` | TEXT | | Winner's deck URL |
-| `curiosa_url_loser` | TEXT | | Loser's deck URL |
-| `match_comment` | TEXT | | User notes |
-| `json_deck_data_winner` | TEXT | | Winner's deck JSON |
-| `json_deck_data_loser` | TEXT | | Loser's deck JSON |
-| `winner_elo_change` | INTEGER | | Winner's Limited ELO change |
-| `loser_elo_change` | INTEGER | | Loser's Limited ELO change |
-| `winner_went_first` | TEXT | | 'y'/'n' |
-| `loser_went_first` | TEXT | | 'y'/'n' |
-| `winner_run_id` | INTEGER | | FK to winner's arena run |
-| `loser_run_id` | INTEGER | | FK to loser's arena run |
+## Configuration (in `config.py`)
 
-### `limited_elo` (in `elo.db`)
+New constants added — no database storage:
 
-Separate ELO tracking for limited mode. Simple single-ELO system (no paper/event split).
+| Constant | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DAILY_SUMMARY_CHANNEL_ID` | int | Same as `LEADERBOARD_CHANNEL_ID` | Channel where summary posts |
+| `DAILY_SUMMARY_HOUR` | int | 23 | Hour in EST (24h format) |
+| `DAILY_SUMMARY_MINUTE` | int | 30 | Minute |
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `user_id` | INTEGER | PRIMARY KEY | Discord user ID |
-| `user_display_name` | TEXT | | Current display name |
-| `elo` | INTEGER | NOT NULL DEFAULT 1500 | Current Limited ELO |
+## In-Memory State
 
-### `limited_active_pairings` (in `match_records.db`)
+None. The cog is stateless — each run queries the database fresh. No caching, no persistent state between summaries.
 
-Active pairings for limited matches. Same pattern as `active_pairings`.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `pairing_id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Unique pairing identifier |
-| `guild_id` | INTEGER | NOT NULL | Discord guild ID |
-| `player1_id` | INTEGER | NOT NULL | First player's Discord ID |
-| `player2_id` | INTEGER | NOT NULL | Second player's Discord ID |
-| `player1_deck_url` | TEXT | | Player 1's deck URL |
-| `player2_deck_url` | TEXT | | Player 2's deck URL |
-| `player1_run_id` | INTEGER | | FK to player 1's arena run |
-| `player2_run_id` | INTEGER | | FK to player 2's arena run |
-| `created_at` | TEXT | NOT NULL | ISO timestamp |
-| `status` | TEXT | NOT NULL DEFAULT 'active' | 'active', 'reported', 'expired', 'cancelled' |
-
-## No New Tables Required for RealmsDraft API
-
-The RealmsDraft API endpoints read/write the **same four tables** listed above. No schema changes needed. The web app accesses these tables via the discord-bot's repository and service layers (already on `sys.path` in `app.py`).
-
-## Entity Relationships
+## Data Flow
 
 ```
-limited_arena_runs (1) --< limited_match_records (many)
-  via winner_run_id / loser_run_id
-
-limited_elo (1) ---- limited_arena_runs (many)
-  via user_id
-
-limited_active_pairings (1) ---- limited_match_records (1)
-  via pairing validation (not FK, same pattern as existing)
+11:30 PM EST trigger
+       |
+       v
+  Compute EST date string ("2026-04-07%")
+       |
+       v
+  Open match_records.db (read-only)
+       |
+       v
+  Execute 7 SQL queries (see research.md R-2)
+       |
+       v
+  Compute win streaks in Python (research.md R-3)
+       |
+       v
+  Build discord.Embed with stats
+       |
+       v
+  Post to DAILY_SUMMARY_CHANNEL_ID
+       |
+       v
+  Close DB connection
 ```
-
-## API Data Flow
-
-```
-RealmsDraft                    Summit Web App                    SQLite DBs
-    |                               |                                |
-    |-- GET /status --------------->|                                |
-    |                               |-- get_active_arena_run() ----->|
-    |                               |-- get_limited_elo() ---------->|
-    |                               |<------- run + elo data --------|
-    |<------ JSON response ---------|                                |
-    |                               |                                |
-    |-- POST /run (new deck) ------>|                                |
-    |                               |-- start_arena_run() ---------->|
-    |                               |<------- run_id ----------------|
-    |<------ JSON response ---------|                                |
-    |                               |                                |
-    |-- POST /run (forfeit) ------->|                                |
-    |                               |-- forfeit_arena_run() -------->|
-    |                               |<------- summary ---------------|
-    |<------ JSON response ---------|                                |
-    |                               |                                |
-    |-- POST /end-run ------------->|                                |
-    |                               |-- forfeit_arena_run() -------->|
-    |                               |<------- summary ---------------|
-    |<------ JSON response ---------|                                |
-```
-
-## Validation Rules
-
-1. **Queue join**: `deck_url` must be non-empty for `queue_type="limited"`
-2. **Arena run**: Only ONE active run per `user_id` at any time
-3. **Run completion**: `wins >= 5 OR losses >= 3` triggers auto-completion
-4. **Forfeit**: Remaining losses = `3 - current_losses`, each applied sequentially against `starting_elo`
-5. **ELO**: Starts at 1500, K=32 constant (no dynamic K-factor for limited)
-6. **Pairing**: Same validation pattern as existing - must have active pairing before report accepted
-7. **API Auth**: All RealmsDraft endpoints require valid `X-API-Key` header

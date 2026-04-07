@@ -322,7 +322,7 @@
         id="avatar-profile">
         <div class="p-6 md:p-8 border-b border-border">
           <div class="flex items-center justify-between gap-4">
-            <div>
+            <div class="flex-1 min-w-0">
               <h1
                 class="text-2xl sm:text-3xl md:text-4xl font-semibold mb-2 capitalize"
                 id="avatar-name">
@@ -332,7 +332,7 @@
                 class="text-base sm:text-lg text-text-muted"
                 id="avatar-stats"></div>
             </div>
-            <div id="top-player-badge" class="hidden shrink-0 text-right">
+            <div id="top-player-badge" class="hidden shrink-0 text-right ml-auto">
               <div class="flex items-center justify-end gap-2 mb-1">
                 <span class="text-xs uppercase tracking-wide text-text-muted">Top Player</span>
                 <select id="top-player-sort" class="text-xs bg-transparent border border-border rounded px-1.5 py-0.5 text-text-muted cursor-pointer" style="background: rgba(255,255,255,0.05);">
@@ -552,7 +552,9 @@
 
       function formatEventDate(dateStr) {
         if (!dateStr) return "?";
-        const d = new Date(dateStr.includes("T") ? dateStr : dateStr + "T00:00:00");
+        // Trim microseconds (e.g. .829851 -> .829) since some browsers only support ms
+        let cleaned = dateStr.replace(/(\.\d{3})\d+/, "$1");
+        const d = new Date(cleaned.includes("T") ? cleaned : cleaned + "T00:00:00");
         if (isNaN(d.getTime())) return dateStr;
         return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
       }

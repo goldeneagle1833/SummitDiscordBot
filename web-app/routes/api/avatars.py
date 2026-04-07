@@ -724,9 +724,8 @@ def get_avatar(avatar_name):
         }
     }
 
-    # Include top players when filtering by a specific event/season
-    # One top player per ranking method: accuracy, winrate, total_wins
-    if event_filter != "all" and player_stats:
+    # Include top players per ranking method: accuracy, winrate, total_wins
+    if player_stats:
         min_games = 10
         qualified = []
         for pid, stats in player_stats.items():

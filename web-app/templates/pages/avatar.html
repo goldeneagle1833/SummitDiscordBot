@@ -662,7 +662,7 @@
 
           // Show/hide top player badge (only when filtering by season)
           const topPlayerBadge = document.getElementById("top-player-badge");
-          if (data.top_players && currentEventFilter !== "all") {
+          if (data.top_players) {
             currentTopPlayers = data.top_players;
             updateTopPlayerDisplay();
             topPlayerBadge.classList.remove("hidden");

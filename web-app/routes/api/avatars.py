@@ -332,8 +332,23 @@ def get_avatar(avatar_name):
     """API endpoint for a specific avatar's stats and match history.
 
     Includes both current event matches and archived matches for lifetime stats.
+
+    Supports optional query params:
+      ?event=all (default) | current | <event_id>
+      ?source=all (default) | discord | <source_name>
     """
     avatar_name = unquote(avatar_name)
+    event_filter = request.args.get("event", "all")
+    source_filter = request.args.get("source", "all")
+
+    # Only admins can query the active event
+    if event_filter == "current" and not is_admin():
+        event_filter = "all"
+
+    # Determine event date range for external match filtering
+    event_start, event_end = None, None
+    if event_filter not in ("all",):
+        event_start, event_end = _get_event_date_range(event_filter)
 
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
@@ -342,57 +357,146 @@ def get_avatar(avatar_name):
         all_rows = []
         use_new_columns = True
 
-        # Query current match_records
-        try:
-            cur.execute("""
-                SELECT
-                    winner_id,
-                    winner_display_name,
-                    losser_id,
-                    losser_display_name,
-                    timestamp,
-                    winner_elo_change,
-                    loser_elo_change,
-                    first_player,
-                    match_time,
-                    json_deck_data_winner,
-                    json_deck_data_loser,
-                    curiosa_url_winner,
-                    curiosa_url_loser,
-                    rowid as match_id,
-                    winner_went_first,
-                    loser_went_first
-                FROM match_records
-                WHERE json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL
-                ORDER BY timestamp DESC
-            """)
-            all_rows.extend(cur.fetchall())
-        except sqlite3.OperationalError:
-            cur.execute("""
-                SELECT
-                    winner_id,
-                    winner_display_name,
-                    losser_id,
-                    losser_display_name,
-                    timestamp,
-                    winner_elo_change,
-                    loser_elo_change,
-                    first_player,
-                    match_time,
-                    json_deck_data,
-                    curiosa_url,
-                    rowid as match_id
-                FROM match_records
-                WHERE json_deck_data IS NOT NULL
-                ORDER BY timestamp DESC
-            """)
-            all_rows.extend(cur.fetchall())
-            use_new_columns = False
+        # Source filter clause for Discord matches
+        discord_source_clause = "AND (source = 'Discord' OR source IS NULL)"
 
-        # Also query match_records_archive for lifetime stats
-        if use_new_columns:
+        # Query current match_records (Discord matches)
+        if source_filter in ("all", "discord"):
+            if event_filter in ("all", "current"):
+                try:
+                    cur.execute(f"""
+                        SELECT
+                            winner_id,
+                            winner_display_name,
+                            losser_id,
+                            losser_display_name,
+                            timestamp,
+                            winner_elo_change,
+                            loser_elo_change,
+                            first_player,
+                            match_time,
+                            json_deck_data_winner,
+                            json_deck_data_loser,
+                            curiosa_url_winner,
+                            curiosa_url_loser,
+                            rowid as match_id,
+                            winner_went_first,
+                            loser_went_first
+                        FROM match_records
+                        WHERE (json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL)
+                          {discord_source_clause}
+                        ORDER BY timestamp DESC
+                    """)
+                    all_rows.extend(cur.fetchall())
+                except sqlite3.OperationalError:
+                    cur.execute("""
+                        SELECT
+                            winner_id,
+                            winner_display_name,
+                            losser_id,
+                            losser_display_name,
+                            timestamp,
+                            winner_elo_change,
+                            loser_elo_change,
+                            first_player,
+                            match_time,
+                            json_deck_data,
+                            curiosa_url,
+                            rowid as match_id
+                        FROM match_records
+                        WHERE json_deck_data IS NOT NULL
+                        ORDER BY timestamp DESC
+                    """)
+                    all_rows.extend(cur.fetchall())
+                    use_new_columns = False
+
+            # Query archive for "all" or specific past event
+            if use_new_columns:
+                if event_filter == "all":
+                    try:
+                        cur.execute(f"""
+                            SELECT
+                                winner_id,
+                                winner_display_name,
+                                losser_id,
+                                losser_display_name,
+                                timestamp,
+                                winner_elo_change,
+                                loser_elo_change,
+                                first_player,
+                                match_time,
+                                json_deck_data_winner,
+                                json_deck_data_loser,
+                                curiosa_url_winner,
+                                curiosa_url_loser,
+                                rowid as match_id,
+                                COALESCE(winner_went_first, first_player) as winner_went_first,
+                                COALESCE(loser_went_first,
+                                    CASE WHEN first_player = 'y' THEN 'n'
+                                         WHEN first_player = 'n' THEN 'y'
+                                         ELSE NULL END) as loser_went_first
+                            FROM match_records_archive
+                            WHERE json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL
+                            ORDER BY timestamp DESC
+                        """)
+                        all_rows.extend(cur.fetchall())
+                    except sqlite3.OperationalError:
+                        pass  # Archive table may not exist
+                elif event_filter != "current":
+                    # Specific past event - query archive by event_id
+                    try:
+                        cur.execute(f"""
+                            SELECT
+                                winner_id,
+                                winner_display_name,
+                                losser_id,
+                                losser_display_name,
+                                timestamp,
+                                winner_elo_change,
+                                loser_elo_change,
+                                first_player,
+                                match_time,
+                                json_deck_data_winner,
+                                json_deck_data_loser,
+                                curiosa_url_winner,
+                                curiosa_url_loser,
+                                rowid as match_id,
+                                COALESCE(winner_went_first, first_player) as winner_went_first,
+                                COALESCE(loser_went_first,
+                                    CASE WHEN first_player = 'y' THEN 'n'
+                                         WHEN first_player = 'n' THEN 'y'
+                                         ELSE NULL END) as loser_went_first
+                            FROM match_records_archive
+                            WHERE (json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL)
+                              AND event_id = ?
+                            ORDER BY timestamp DESC
+                        """, (int(event_filter),))
+                        all_rows.extend(cur.fetchall())
+                    except (sqlite3.OperationalError, ValueError):
+                        pass
+
+        # Query external source matches (non-Discord)
+        if source_filter != "discord" and use_new_columns:
             try:
-                cur.execute("""
+                params = []
+                where_parts = [
+                    "(json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL)",
+                    "source != 'Discord'",
+                    "source IS NOT NULL",
+                ]
+
+                if source_filter not in ("all", "discord"):
+                    where_parts.append("source = ?")
+                    params.append(source_filter)
+
+                if event_start:
+                    where_parts.append("timestamp >= ?")
+                    params.append(event_start)
+                if event_end:
+                    where_parts.append("timestamp <= ?")
+                    params.append(event_end)
+
+                cur.execute(f"""
                     SELECT
                         winner_id,
                         winner_display_name,
@@ -408,18 +512,15 @@ def get_avatar(avatar_name):
                         curiosa_url_winner,
                         curiosa_url_loser,
                         rowid as match_id,
-                        COALESCE(winner_went_first, first_player) as winner_went_first,
-                        COALESCE(loser_went_first,
-                            CASE WHEN first_player = 'y' THEN 'n'
-                                 WHEN first_player = 'n' THEN 'y'
-                                 ELSE NULL END) as loser_went_first
-                    FROM match_records_archive
-                    WHERE json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL
+                        winner_went_first,
+                        loser_went_first
+                    FROM match_records
+                    WHERE {' AND '.join(where_parts)}
                     ORDER BY timestamp DESC
-                """)
+                """, params)
                 all_rows.extend(cur.fetchall())
-            except sqlite3.OperationalError:
-                pass  # Archive table may not exist
+            except sqlite3.OperationalError as e:
+                logger.warning(f"Could not query external sources for avatar: {e}")
 
         rows = all_rows
         conn.close()
@@ -430,6 +531,9 @@ def get_avatar(avatar_name):
     losses_matches = []
     total_wins = 0
     total_losses = 0
+
+    # Per-player stats tracking: {player_id: {"wins": X, "losses": Y, "name": str}}
+    player_stats = {}
 
     # Stats for play/draw win rates (from 2/7/2026 onward)
     cutoff_date = "2026-02-07"
@@ -482,6 +586,12 @@ def get_avatar(avatar_name):
                 total_wins += 1
                 wins_matches.append(match_obj.copy())
 
+                # Track per-player stats (winner used this avatar and won)
+                pid = str(row[0])
+                if pid not in player_stats:
+                    player_stats[pid] = {"wins": 0, "losses": 0, "name": row[1]}
+                player_stats[pid]["wins"] += 1
+
                 # Track play/draw stats from cutoff date onward
                 if row[4] >= cutoff_date:
                     # Use new columns if available, fall back to first_player
@@ -512,6 +622,12 @@ def get_avatar(avatar_name):
             if avatar_in_loser:
                 total_losses += 1
                 losses_matches.append(match_obj.copy())
+
+                # Track per-player stats (loser used this avatar and lost)
+                pid = str(row[2])
+                if pid not in player_stats:
+                    player_stats[pid] = {"wins": 0, "losses": 0, "name": row[3]}
+                player_stats[pid]["losses"] += 1
 
                 # Track play/draw stats from cutoff date onward
                 if row[4] >= cutoff_date:
@@ -586,7 +702,7 @@ def get_avatar(avatar_name):
     play_win_rate = (play_wins / play_total * 100) if play_total > 0 else 0
     draw_win_rate = (draw_wins / draw_total * 100) if draw_total > 0 else 0
 
-    return jsonify({
+    result = {
         "name": avatar_name,
         "total_matches": total_matches,
         "wins": total_wins,
@@ -606,7 +722,32 @@ def get_avatar(avatar_name):
             "total": draw_total,
             "win_rate": round(draw_win_rate, 1)
         }
-    })
+    }
+
+    # Include top player when filtering by a specific event/season
+    if event_filter != "all" and player_stats:
+        min_games = 5
+        best_player = None
+        best_win_rate = -1
+        for pid, stats in player_stats.items():
+            total = stats["wins"] + stats["losses"]
+            if total >= min_games:
+                wr = stats["wins"] / total * 100
+                if wr > best_win_rate:
+                    best_win_rate = wr
+                    best_pid = pid
+                    best_player = {
+                        "player_id": pid,
+                        "name": stats["name"] or f"Player {pid}",
+                        "wins": stats["wins"],
+                        "losses": stats["losses"],
+                        "total": total,
+                        "win_rate": round(wr, 1)
+                    }
+        if best_player:
+            result["top_player"] = best_player
+
+    return jsonify(result)
 
 
 @avatars_bp.route("/avatar/<avatar_name>/popularity")
@@ -1177,8 +1318,23 @@ def get_avatar_matchups(avatar_name):
     """API endpoint for avatar vs avatar matchup statistics.
 
     Returns win/loss record and winrate for the specified avatar against all other avatars.
+
+    Supports optional query params:
+      ?event=all (default) | current | <event_id>
+      ?source=all (default) | discord | <source_name>
     """
     avatar_name = unquote(avatar_name)
+    event_filter = request.args.get("event", "all")
+    source_filter = request.args.get("source", "all")
+
+    # Only admins can query the active event
+    if event_filter == "current" and not is_admin():
+        event_filter = "all"
+
+    # Determine event date range for external match filtering
+    event_start, event_end = None, None
+    if event_filter not in ("all",):
+        event_start, event_end = _get_event_date_range(event_filter)
 
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
@@ -1187,38 +1343,15 @@ def get_avatar_matchups(avatar_name):
         all_rows = []
         use_new_columns = True
 
-        # Query current match_records
-        try:
-            cur.execute("""
-                SELECT json_deck_data_winner, json_deck_data_loser
-                FROM match_records
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
-            """)
-            all_rows.extend(cur.fetchall())
-        except sqlite3.OperationalError:
-            cur.execute("""
-                SELECT
-                    CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
-                    json_deck_data
-                FROM match_records
-                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
-            """)
-            all_rows.extend(cur.fetchall())
-            use_new_columns = False
+        # Collect Discord bot matches
+        if source_filter in ("all", "discord"):
+            discord_rows, use_new_columns = _collect_discord_rows(cur, event_filter)
+            all_rows.extend(discord_rows)
 
-        # Also query match_records_archive for lifetime stats
-        if use_new_columns:
-            try:
-                cur.execute("""
-                    SELECT json_deck_data_winner, json_deck_data_loser
-                    FROM match_records_archive
-                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' and json_deck_data_loser != '{}')
-                """)
-                all_rows.extend(cur.fetchall())
-            except sqlite3.OperationalError:
-                pass  # Archive table may not exist
+        # Collect external source matches
+        if source_filter != "discord" and use_new_columns:
+            ext_rows = _collect_external_rows(cur, source_filter, event_start, event_end)
+            all_rows.extend(ext_rows)
 
         conn.close()
     except sqlite3.OperationalError:

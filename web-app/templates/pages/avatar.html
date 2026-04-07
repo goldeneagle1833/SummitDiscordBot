@@ -143,6 +143,73 @@
       .element-multi {
         color: #9b59b6;
       }
+      /* Filter styles */
+      .avatar-filters {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 1.5rem;
+      }
+      .avatar-filter-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .avatar-filter-group label {
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.7);
+        white-space: nowrap;
+      }
+      .avatar-filter-group select {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        padding: 0.4rem 0.8rem;
+        font-size: 0.9rem;
+        cursor: pointer;
+        min-width: 160px;
+      }
+      .avatar-filter-group select:hover {
+        border-color: rgba(255, 255, 255, 0.4);
+      }
+      .avatar-filter-group select:focus {
+        outline: none;
+        border-color: var(--primary, #2ecc71);
+      }
+      .avatar-filter-group select option {
+        background: #1a1a2e;
+        color: #fff;
+      }
+      .elo-source-toggle {
+        display: inline-flex;
+        background: var(--color-bg-secondary, #2a2a3e);
+        border: 1px solid var(--color-border, #3a3a4e);
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .elo-source-btn {
+        padding: 6px 14px;
+        font-size: 13px;
+        border: none;
+        background: transparent;
+        color: var(--color-text-muted, #8b949e);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .elo-source-btn:hover:not(.active) {
+        background: var(--color-bg-hover, #3a3a4e);
+        color: var(--color-text, #ffffff);
+      }
+      .elo-source-btn.active {
+        background: var(--color-primary, #a855f7);
+        color: white;
+        box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+      }
       .loading-text {
         text-align: center;
         padding: 1.5rem;
@@ -228,18 +295,48 @@
         ← Back to Avatar Win Rates
       </a>
 
+      <div class="avatar-filters" id="avatar-filters">
+        <div class="avatar-filter-group">
+          <label for="event-filter">Event:</label>
+          <select id="event-filter">
+            <option value="all">All Events</option>
+            <!-- Populated by JS -->
+          </select>
+        </div>
+        <div class="avatar-filter-group">
+          <label>Match Source:</label>
+          <div class="elo-source-toggle" id="elo-source-toggle">
+            <button class="elo-source-btn active" data-source="discord" title="Online matches (Discord bot)">
+              Online
+            </button>
+            <button class="elo-source-btn" data-source="web" title="Paper matches (web-reported)">
+              Paper
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div
         class="bg-bg-surface border border-border rounded-soft overflow-hidden"
         id="avatar-profile">
         <div class="p-6 md:p-8 border-b border-border">
-          <h1
-            class="text-2xl sm:text-3xl md:text-4xl font-semibold mb-2 capitalize"
-            id="avatar-name">
-            Loading...
-          </h1>
-          <div
-            class="text-base sm:text-lg text-text-muted"
-            id="avatar-stats"></div>
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <h1
+                class="text-2xl sm:text-3xl md:text-4xl font-semibold mb-2 capitalize"
+                id="avatar-name">
+                Loading...
+              </h1>
+              <div
+                class="text-base sm:text-lg text-text-muted"
+                id="avatar-stats"></div>
+            </div>
+            <div id="top-player-badge" class="hidden sm:text-right">
+              <div class="text-xs uppercase tracking-wide text-text-muted mb-1">Top Player</div>
+              <a id="top-player-link" href="#" class="text-lg font-semibold text-primary hover:underline"></a>
+              <div class="text-sm text-text-muted" id="top-player-record"></div>
+            </div>
+          </div>
         </div>
 
         <!-- Overall Stats -->
@@ -434,11 +531,88 @@
 
     <script>
       const avatarName = "{{ avatar_name }}";
+      let currentEventFilter = "all";
+      let currentSourceFilter = localStorage.getItem('avatars_source_preference') || "discord";
+
+      function buildFilterParams() {
+        const params = new URLSearchParams();
+        if (currentEventFilter !== "all") params.set("event", currentEventFilter);
+        params.set("source", currentSourceFilter);
+        return params.toString();
+      }
+
+      function formatEventDate(dateStr) {
+        if (!dateStr) return "?";
+        const d = new Date(dateStr + "T00:00:00");
+        if (isNaN(d.getTime())) return dateStr;
+        return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      }
+
+      async function loadFilters() {
+        try {
+          const res = await fetch("/api/avatars/filters");
+          const data = await res.json();
+
+          const eventSelect = document.getElementById("event-filter");
+          if (data.events && data.events.length > 0) {
+            data.events.forEach(evt => {
+              const opt = document.createElement("option");
+              const startFmt = formatEventDate(evt.start_date);
+              const endFmt = formatEventDate(evt.end_date);
+              if (evt.is_active) {
+                opt.value = "current";
+                opt.textContent = `${evt.event_name} (${startFmt} - Present)`;
+              } else {
+                opt.value = String(evt.event_id);
+                opt.textContent = `${evt.event_name} (${startFmt} - ${endFmt || "?"})`;
+              }
+              eventSelect.appendChild(opt);
+            });
+          }
+
+          // Initialize source toggle buttons
+          document.querySelectorAll('.elo-source-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+              const source = this.dataset.source;
+              if (source === currentSourceFilter) return;
+
+              currentSourceFilter = source;
+              localStorage.setItem('avatars_source_preference', source);
+
+              document.querySelectorAll('.elo-source-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.source === source);
+              });
+
+              refreshAllData();
+            });
+          });
+
+          // Apply saved source preference
+          document.querySelectorAll('.elo-source-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.source === currentSourceFilter);
+          });
+
+          eventSelect.addEventListener("change", () => {
+            currentEventFilter = eventSelect.value;
+            refreshAllData();
+          });
+        } catch (e) {
+          console.error("Error loading filters:", e);
+        }
+      }
+
+      function refreshAllData() {
+        fetchAvatarData();
+        fetchMatchupData();
+      }
+
+      loadFilters();
 
       async function fetchAvatarData() {
         try {
+          const qs = buildFilterParams();
           const res = await fetch(
-            `/api/avatar/${encodeURIComponent(avatarName)}`,
+            `/api/avatar/${encodeURIComponent(avatarName)}` + (qs ? "?" + qs : ""),
           );
           if (!res.ok) {
             document.getElementById("avatar-name").textContent =
@@ -452,6 +626,19 @@
           document.getElementById("avatar-stats").textContent =
             `${data.total_matches} matches played`;
           document.title = `${data.name} - Sorcerers Summit`;
+
+          // Show/hide top player badge (only when filtering by season)
+          const topPlayerBadge = document.getElementById("top-player-badge");
+          if (data.top_player && currentEventFilter !== "all") {
+            const topPlayerLink = document.getElementById("top-player-link");
+            topPlayerLink.textContent = data.top_player.name;
+            topPlayerLink.href = `/player/${encodeURIComponent(data.top_player.player_id)}`;
+            document.getElementById("top-player-record").textContent =
+              `${data.top_player.win_rate}% (${data.top_player.wins}W-${data.top_player.losses}L)`;
+            topPlayerBadge.classList.remove("hidden");
+          } else {
+            topPlayerBadge.classList.add("hidden");
+          }
 
           // Update overall stats
           document.getElementById("stat-wins").textContent = data.wins;
@@ -551,8 +738,9 @@
 
       async function fetchMatchupData() {
         try {
+          const qs = buildFilterParams();
           const res = await fetch(
-            `/api/avatar/${encodeURIComponent(avatarName)}/matchups`,
+            `/api/avatar/${encodeURIComponent(avatarName)}/matchups` + (qs ? "?" + qs : ""),
           );
           if (!res.ok) {
             document.getElementById("matchups-container").innerHTML =

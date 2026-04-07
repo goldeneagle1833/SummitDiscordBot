@@ -66,7 +66,7 @@ async def _apply_ladder_elo(bot, ladder_info, winner_id, winner_global, loser_id
                 "elo = elo + ?, event_elo = event_elo + ? WHERE user_id = ?",
                 (extra_lifetime_change, extra_event_change, extra_lifetime_change, extra_event_change, winner_id),
             )
-            cur_fix.commit()
+            conn_fix.commit()
             conn_fix.close()
             logger.info(
                 f"Ladder bonus: Winner {winner_id} gets extra lifetime {extra_lifetime_change:+d}, "

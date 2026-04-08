@@ -158,3 +158,14 @@ EVENT_NAME_MAPPINGS = {
     "TTSLeagueS7topCut": "TTS League Season 7 Top Cut",
     "UnlandCup25": "Unland Cup 2025",
 }
+
+# Season date-range filters for match data filtering
+# These appear in event filter dropdowns alongside database events
+SEASON_FILTERS = [
+    {
+        "id": "season_gothic_1",
+        "name": "Gothic Season 1",
+        "start_date": "2026-01-03",
+        "end_date": "2026-02-03",
+    },
+]

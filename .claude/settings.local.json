@@ -50,7 +50,8 @@
       "Bash(gh run list:*)",
       "Bash(cmd /c \"type f:\\\\GitHub\\\\SummitDiscordBot\\\\web-app\\\\static\\\\js\\\\pages\\\\avatars.js | find /c /v \"\"\")",
       "Bash(cmd /c \"dir f:\\\\GitHub\\\\SummitDiscordBot\\\\web-app\\\\static\\\\js\\\\pages\\\\avatars.js\")",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(node -c:*)"
     ]
   },
   "enabledPlugins": {

@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, session, request
 
 import re
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, VALID_API_KEYS
+from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, VALID_API_KEYS, SEASON_FILTERS
 from services.match import MatchService
 from repositories.user_profiles import UserProfileRepository
 from utils.auth import is_admin
@@ -317,26 +317,38 @@ def player_api(player_id):
         except sqlite3.OperationalError:
             pass
     elif event_filter != "lifetime":
-        # Specific past event - only from archive with that event_id
-        try:
-            archive_event_id = int(event_filter)
-            include_current_matches = False
-            # Look up past event date range for web match filtering
-            elo_conn_tmp = sqlite3.connect(str(ELO_DB_PATH))
-            elo_cur_tmp = elo_conn_tmp.cursor()
-            elo_cur_tmp.execute(
-                "SELECT start_date, end_date FROM events WHERE event_id = ?",
-                (archive_event_id,),
-            )
-            ev_row = elo_cur_tmp.fetchone()
-            if ev_row:
-                event_start_date = ev_row[0]
-                event_end_date = ev_row[1]
-            elo_conn_tmp.close()
-        except (ValueError, TypeError):
-            pass  # Invalid event_id, fall back to lifetime
-        except sqlite3.OperationalError:
-            pass
+        if isinstance(event_filter, str) and event_filter.startswith("season_"):
+            # Season date-range filter - query both tables by timestamp
+            for sf in SEASON_FILTERS:
+                if sf["id"] == event_filter:
+                    event_start_date = sf["start_date"]
+                    event_end_date = sf["end_date"]
+                    break
+            # For season filters, include both current and archived matches
+            # (filter by timestamp, not event_id)
+            include_current_matches = True
+            include_archived_matches = True
+        else:
+            # Specific past event - only from archive with that event_id
+            try:
+                archive_event_id = int(event_filter)
+                include_current_matches = False
+                # Look up past event date range for web match filtering
+                elo_conn_tmp = sqlite3.connect(str(ELO_DB_PATH))
+                elo_cur_tmp = elo_conn_tmp.cursor()
+                elo_cur_tmp.execute(
+                    "SELECT start_date, end_date FROM events WHERE event_id = ?",
+                    (archive_event_id,),
+                )
+                ev_row = elo_cur_tmp.fetchone()
+                if ev_row:
+                    event_start_date = ev_row[0]
+                    event_end_date = ev_row[1]
+                elo_conn_tmp.close()
+            except (ValueError, TypeError):
+                pass  # Invalid event_id, fall back to lifetime
+            except sqlite3.OperationalError:
+                pass
 
     rows = []
 
@@ -400,10 +412,16 @@ def player_api(player_id):
             rows = []
     elif include_current_matches:
         # Query match_records table (bot-based matches)
+        # Build season date filter for bot matches
+        bot_date_filter = ""
+        bot_base_params = (query_player_id, query_player_id, query_player_id)
+        if is_season_filter and event_start_date and event_end_date:
+            bot_date_filter = " AND timestamp >= ? AND timestamp <= ?"
+            bot_base_params = (query_player_id, query_player_id, query_player_id, event_start_date, event_end_date)
         # Try new schema first, fallback to old
         try:
             cur.execute(
-                """
+                f"""
                 SELECT
                     CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
                     first_player,
@@ -426,17 +444,17 @@ def player_api(player_id):
                     loser_went_first,
                     match_type
                 FROM match_records
-                WHERE winner_id = ? OR losser_id = ?
+                WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                 ORDER BY timestamp DESC
             """,
-                (query_player_id, query_player_id, query_player_id),
+                bot_base_params,
             )
             rows = cur.fetchall()
         except sqlite3.OperationalError:
             # Fallback: try without new columns but with deck columns
             try:
                 cur.execute(
-                    """
+                    f"""
                     SELECT
                         CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
                         first_player,
@@ -459,17 +477,17 @@ def player_api(player_id):
                         NULL as loser_went_first,
                         NULL as match_type
                     FROM match_records
-                    WHERE winner_id = ? OR losser_id = ?
+                    WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                     ORDER BY timestamp DESC
                 """,
-                    (query_player_id, query_player_id, query_player_id),
+                    bot_base_params,
                 )
                 rows = cur.fetchall()
             except sqlite3.OperationalError:
                 # Final fallback: minimal columns for very old schema or missing table
                 try:
                     cur.execute(
-                        """
+                        f"""
                         SELECT
                             CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
                             first_player,
@@ -492,10 +510,10 @@ def player_api(player_id):
                             NULL as loser_went_first,
                             NULL as match_type
                         FROM match_records
-                        WHERE winner_id = ? OR losser_id = ?
+                        WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                         ORDER BY timestamp DESC
                     """,
-                        (query_player_id, query_player_id, query_player_id),
+                        bot_base_params,
                     )
                     rows = cur.fetchall()
                 except sqlite3.OperationalError:
@@ -505,11 +523,15 @@ def player_api(player_id):
     # Also check archive table for historical matches (if needed based on filter)
     # Note: Archive is only available for bot matches (match_records_archive)
     archived_rows = []
+    is_season_filter = isinstance(event_filter, str) and event_filter.startswith("season_")
     if include_archived_matches and source == "bot":
         # Build the WHERE clause based on event filter
         if archive_event_id is not None:
             event_filter_clause = " AND event_id = ?"
             query_params = (query_player_id, query_player_id, query_player_id, archive_event_id)
+        elif is_season_filter and event_start_date and event_end_date:
+            event_filter_clause = " AND timestamp >= ? AND timestamp <= ?"
+            query_params = (query_player_id, query_player_id, query_player_id, event_start_date, event_end_date)
         else:
             event_filter_clause = ""
             query_params = (query_player_id, query_player_id, query_player_id)

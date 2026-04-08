@@ -331,7 +331,11 @@ async function fetchArchivedEvents() {
  */
 async function fetchArchivedEventLeaderboard(eventId) {
   try {
-    const res = await fetch(`/api/leaderboard/archived/${eventId}`);
+    // Use season route for season date-range filters
+    const url = String(eventId).startsWith('season_')
+      ? `/api/leaderboard/archived/season/${eventId}`
+      : `/api/leaderboard/archived/${eventId}`;
+    const res = await fetch(url);
     if (!res.ok) {
       console.error('Failed to fetch archived leaderboard:', res.status);
       return;

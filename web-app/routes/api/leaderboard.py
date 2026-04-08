@@ -1,9 +1,12 @@
 """Leaderboard API routes."""
 
 import logging
+import sqlite3
+from collections import Counter
 from flask import Blueprint, jsonify
 
 from services.leaderboard import LeaderboardService
+from webapp_config import SEASON_FILTERS, MATCH_RECORDS_DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +120,17 @@ def get_events():
         repo = EloRepository()
         events = repo.get_all_events()
         active_event = repo.get_active_event()
+
+        # Append season date-range filters at the end
+        for sf in SEASON_FILTERS:
+            events.append({
+                "event_id": sf["id"],
+                "event_name": sf["name"],
+                "start_date": sf["start_date"],
+                "end_date": sf["end_date"],
+                "is_active": False,
+            })
+
         return jsonify(
             {
                 "events": events,
@@ -173,4 +187,70 @@ def get_archived_event_leaderboard(event_id):
         })
     except Exception as e:
         logger.error(f"Error fetching archived event leaderboard: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@leaderboard_bp.route("/leaderboard/archived/season/<season_id>")
+def get_season_leaderboard(season_id):
+    """Get leaderboard for a season date-range filter (computed from match records)."""
+    season_key = f"season_{season_id}" if not season_id.startswith("season_") else season_id
+    season = None
+    for sf in SEASON_FILTERS:
+        if sf["id"] == season_key:
+            season = sf
+            break
+    if not season:
+        return jsonify({"error": "Season not found"}), 404
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+        player_stats = Counter()
+        player_names = {}
+
+        # Query match_records within date range
+        for table in ("match_records", "match_records_archive"):
+            try:
+                cur.execute(f"""
+                    SELECT winner_id, winner_display_name, losser_id, losser_display_name
+                    FROM {table}
+                    WHERE (source = 'Discord' OR source IS NULL)
+                      AND timestamp >= ? AND timestamp <= ?
+                """, (season["start_date"], season["end_date"]))
+                for row in cur.fetchall():
+                    winner_id, winner_name, loser_id, loser_name = row
+                    if winner_id:
+                        player_stats[str(winner_id)] += 1
+                        player_names[str(winner_id)] = winner_name or str(winner_id)
+                    if loser_id:
+                        player_stats[str(loser_id)] += 0
+                        player_names[str(loser_id)] = loser_name or str(loser_id)
+            except sqlite3.OperationalError:
+                pass
+
+        # Build leaderboard sorted by wins
+        leaderboard = []
+        for pid, wins in player_stats.most_common():
+            leaderboard.append({
+                "user_id": pid,
+                "display_name": player_names.get(pid, pid),
+                "event_elo": wins,  # Using wins count as the displayed value
+            })
+
+        conn.close()
+
+        event_info = {
+            "event_id": season["id"],
+            "event_name": season["name"],
+            "start_date": season["start_date"],
+            "end_date": season["end_date"],
+            "is_active": False,
+        }
+
+        return jsonify({
+            "event_info": event_info,
+            "leaderboard": leaderboard
+        })
+    except Exception as e:
+        logger.error(f"Error fetching season leaderboard: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500

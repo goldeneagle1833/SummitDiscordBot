@@ -10,7 +10,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, current_app, request
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH, CARD_IMAGES_DIR, ELO_DB_PATH
+from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH, CARD_IMAGES_DIR, ELO_DB_PATH, SEASON_FILTERS
 from utils.auth import is_admin
 
 logger = logging.getLogger(__name__)
@@ -357,6 +357,13 @@ def get_live_popular_cards():
 
 def _get_event_date_range(event_id):
     """Get start/end dates for an event. Returns (start_date, end_date) or (None, None)."""
+    # Check season filters first (string IDs like "season_gothic_1")
+    if isinstance(event_id, str) and event_id.startswith("season_"):
+        for sf in SEASON_FILTERS:
+            if sf["id"] == event_id:
+                return sf["start_date"], sf["end_date"]
+        return None, None
+
     try:
         conn = sqlite3.connect(str(ELO_DB_PATH))
         cur = conn.cursor()
@@ -406,6 +413,17 @@ def get_element_filters():
         conn.close()
     except sqlite3.OperationalError as e:
         logger.warning(f"Could not query events: {e}")
+
+    # Append season date-range filters at the end
+    for sf in SEASON_FILTERS:
+        events.append({
+            "event_id": sf["id"],
+            "event_name": sf["name"],
+            "start_date": sf["start_date"],
+            "end_date": sf["end_date"],
+            "is_active": False,
+        })
+
     return jsonify({"events": events})
 
 
@@ -463,16 +481,41 @@ def _collect_element_rows(cur, source_filter, event_filter):
             except sqlite3.OperationalError:
                 pass
         elif event_filter not in ("all", "current") and use_new_columns:
-            try:
-                cur.execute(f"""
-                    SELECT json_deck_data_winner, json_deck_data_loser
-                    FROM match_records_archive
-                    WHERE event_id = ?
-                      AND {deck_where}
-                """, (int(event_filter),))
-                all_rows.extend(cur.fetchall())
-            except (sqlite3.OperationalError, ValueError):
-                pass
+            if isinstance(event_filter, str) and event_filter.startswith("season_"):
+                # Season date-range filter - query both tables by timestamp
+                start_date, end_date = _get_event_date_range(event_filter)
+                if start_date and end_date:
+                    try:
+                        cur.execute(f"""
+                            SELECT json_deck_data_winner, json_deck_data_loser
+                            FROM match_records
+                            WHERE {deck_where} {source_clause}
+                              AND timestamp >= ? AND timestamp <= ?
+                        """, (start_date, end_date))
+                        all_rows.extend(cur.fetchall())
+                    except sqlite3.OperationalError:
+                        pass
+                    try:
+                        cur.execute(f"""
+                            SELECT json_deck_data_winner, json_deck_data_loser
+                            FROM match_records_archive
+                            WHERE {deck_where}
+                              AND timestamp >= ? AND timestamp <= ?
+                        """, (start_date, end_date))
+                        all_rows.extend(cur.fetchall())
+                    except sqlite3.OperationalError:
+                        pass
+            else:
+                try:
+                    cur.execute(f"""
+                        SELECT json_deck_data_winner, json_deck_data_loser
+                        FROM match_records_archive
+                        WHERE event_id = ?
+                          AND {deck_where}
+                    """, (int(event_filter),))
+                    all_rows.extend(cur.fetchall())
+                except (sqlite3.OperationalError, ValueError):
+                    pass
 
     elif source_filter == "web":
         # Web/paper matches - filter by date range for specific events

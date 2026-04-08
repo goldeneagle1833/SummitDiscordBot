@@ -93,7 +93,8 @@ def discord_callback():
         logger.error(f"Failed to get Discord user info: {e}")
         return redirect(url_for("pages.home"))
 
-    # Store user info in session
+    # Store user info in session (permanent = survives browser close)
+    session.permanent = True
     session["user_id"] = int(user_data["id"])
     session["username"] = user_data["username"]
     session["avatar"] = user_data.get("avatar")
@@ -197,7 +198,8 @@ def google_callback():
         logger.error(f"Failed to get Google user info: {e}")
         return redirect(url_for("pages.home"))
 
-    # Store user info in session
+    # Store user info in session (permanent = survives browser close)
+    session.permanent = True
     # Use Google ID prefixed with 'google_' to distinguish from Discord IDs
     google_user_id = f"google_{user_data['id']}"
     session["user_id"] = google_user_id

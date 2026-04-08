@@ -9,6 +9,7 @@ This is the application factory that ties together:
 
 import sys
 import logging
+from datetime import timedelta
 from pathlib import Path
 from flask import Flask
 
@@ -43,6 +44,12 @@ def create_app() -> Flask:
     """Application factory."""
     app = Flask(__name__)
     app.secret_key = webapp_config.SECRET_KEY
+
+    # Session cookie persistence (30 days) - prevents logout on mobile/browser close
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+    app.config['SESSION_COOKIE_SECURE'] = True      # HTTPS only (Cloudflare)
+    app.config['SESSION_COOKIE_HTTPONLY'] = True     # No JS access
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'   # CSRF protection
 
     # Force template reloading (disable caching)
     app.config['TEMPLATES_AUTO_RELOAD'] = True

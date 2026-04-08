@@ -32,8 +32,11 @@ DAILY_SUMMARY_PROMPT = (
     "MOST_ACTIVE: [Flavored version, must include the player name and match count]\n"
     "TOP_GAINER: [Flavored version, must include the player name and ELO change]\n"
     "BIGGEST_LOSER: [Flavored version, must include the player name and ELO change]\n"
-    "LARGEST_SWING: [Flavored version, must include both player names and ELO change]\n"
     "BIGGEST_UPSET: [Flavored version, must include both player names and ELO change]\n"
+    "RIVALRY: [Flavored version, must include both player names and the record]\n"
+    "HIGHEST_RATED: [Flavored version, must include both player names and combined ELO]\n"
+    "IRONMAN: [Flavored version, must include player name, match count, and hours]\n"
+    "DECK_VARIETY: [Flavored version, must include player name and deck count]\n"
     "HOT_STREAKS: [Flavored version, must include player names and streak counts]\n"
     "STREAK_BROKEN: [Flavored version, must include player names and streak count]\n"
     "AVG_DURATION: [Flavored version, must include the duration in minutes]\n\n"
@@ -169,14 +172,6 @@ class DailySummaryCog(commands.Cog):
                 inline=True,
             )
 
-        if stats.get("largest_swing"):
-            winner, loser, change = stats["largest_swing"]
-            embed.add_field(
-                name="💥 Largest ELO Swing",
-                value=_truncate(gpt.get("LARGEST_SWING", f"{winner} beat {loser} (+{change})"), 100),
-                inline=False,
-            )
-
         # Extended stats
         if stats.get("biggest_upset"):
             winner, loser, change = stats["biggest_upset"]
@@ -184,6 +179,46 @@ class DailySummaryCog(commands.Cog):
                 name="🎯 Biggest Upset",
                 value=_truncate(gpt.get("BIGGEST_UPSET", f"{winner} beat {loser} (+{change} ELO)"), 100),
                 inline=False,
+            )
+
+        if stats.get("rivalry"):
+            p1, p2, p1w, p2w, total = stats["rivalry"]
+            embed.add_field(
+                name="⚔️ Rivalry of the Day",
+                value=_truncate(
+                    gpt.get("RIVALRY", f"{p1} vs {p2} — {p1w}-{p2w} ({total} games)"), 100
+                ),
+                inline=False,
+            )
+
+        if stats.get("highest_rated"):
+            w_name, l_name, w_elo, l_elo = stats["highest_rated"]
+            embed.add_field(
+                name="🏆 Highest Rated Match",
+                value=_truncate(
+                    gpt.get("HIGHEST_RATED", f"{w_name} ({w_elo}) vs {l_name} ({l_elo})"), 100
+                ),
+                inline=False,
+            )
+
+        if stats.get("ironman"):
+            name, count, hours = stats["ironman"]
+            embed.add_field(
+                name="🦾 Ironman",
+                value=_truncate(
+                    gpt.get("IRONMAN", f"{name} — {count} matches over {hours} hours"), 100
+                ),
+                inline=True,
+            )
+
+        if stats.get("deck_variety"):
+            name, count = stats["deck_variety"]
+            embed.add_field(
+                name="🎴 Deck Variety",
+                value=_truncate(
+                    gpt.get("DECK_VARIETY", f"{name} played {count} different decks"), 100
+                ),
+                inline=True,
             )
 
         if stats.get("hot_streaks"):
@@ -227,12 +262,15 @@ class DailySummaryCog(commands.Cog):
         stats = {
             "total_matches": 0,
             "most_active": None,
-            "largest_swing": None,
             "top_gainer": None,
             "biggest_loser": None,
             "unique_players": None,
             "avg_duration": None,
             "biggest_upset": None,
+            "rivalry": None,
+            "highest_rated": None,
+            "ironman": None,
+            "deck_variety": None,
         }
 
         conn = sqlite3.connect("match_records.db")
@@ -266,23 +304,7 @@ class DailySummaryCog(commands.Cog):
             if row:
                 stats["most_active"] = (row[1], row[2])
 
-            # 3. Largest single-match ELO swing
-            cur.execute(
-                """
-                SELECT winner_display_name, losser_display_name,
-                       ABS(winner_lifetime_elo_change) as swing
-                FROM match_records
-                WHERE timestamp LIKE ? AND match_type = 'ranked'
-                      AND winner_lifetime_elo_change IS NOT NULL
-                ORDER BY swing DESC LIMIT 1
-                """,
-                (date_prefix,),
-            )
-            row = cur.fetchone()
-            if row:
-                stats["largest_swing"] = (row[0], row[1], row[2])
-
-            # 4. Top ELO gainer (net across all matches)
+            # 3. Top ELO gainer (net across all matches)
             cur.execute(
                 """
                 SELECT player_id, player_name, SUM(elo_change) as net_change FROM (
@@ -363,6 +385,130 @@ class DailySummaryCog(commands.Cog):
             row = cur.fetchone()
             if row:
                 stats["biggest_upset"] = (row[0], row[1], row[2])
+
+            # 9. Rivalry of the Day (pair who played each other most, min 2)
+            cur.execute(
+                """
+                SELECT
+                    MIN(winner_id, losser_id) as p1_id,
+                    MAX(winner_id, losser_id) as p2_id,
+                    COUNT(*) as match_count
+                FROM match_records
+                WHERE timestamp LIKE ? AND match_type = 'ranked'
+                GROUP BY p1_id, p2_id
+                HAVING match_count >= 2
+                ORDER BY match_count DESC LIMIT 1
+                """,
+                (date_prefix,),
+            )
+            pair = cur.fetchone()
+            if pair:
+                p1_id, p2_id, total = pair
+                cur.execute(
+                    """
+                    SELECT winner_id, winner_display_name, losser_display_name
+                    FROM match_records
+                    WHERE timestamp LIKE ? AND match_type = 'ranked'
+                          AND ((winner_id = ? AND losser_id = ?)
+                               OR (winner_id = ? AND losser_id = ?))
+                    """,
+                    (date_prefix, p1_id, p2_id, p2_id, p1_id),
+                )
+                rivalry_matches = cur.fetchall()
+                p1_wins = sum(1 for m in rivalry_matches if m[0] == p1_id)
+                p2_wins = total - p1_wins
+                p1_name = next(
+                    (m[1] if m[0] == p1_id else m[2] for m in rivalry_matches), None
+                )
+                p2_name = next(
+                    (m[1] if m[0] == p2_id else m[2] for m in rivalry_matches), None
+                )
+                if p1_name and p2_name:
+                    stats["rivalry"] = (p1_name, p2_name, p1_wins, p2_wins, total)
+
+            # 10. Highest Rated Match (highest combined ELO)
+            try:
+                cur.execute("ATTACH DATABASE 'elo.db' AS elo_db")
+                cur.execute(
+                    """
+                    SELECT m.winner_display_name, m.losser_display_name,
+                           COALESCE(w.online_elo, w.elo, 1500) as winner_elo,
+                           COALESCE(l.online_elo, l.elo, 1500) as loser_elo
+                    FROM match_records m
+                    LEFT JOIN elo_db.overall_standings w ON w.user_id = m.winner_id
+                    LEFT JOIN elo_db.overall_standings l ON l.user_id = m.losser_id
+                    WHERE m.timestamp LIKE ? AND m.match_type = 'ranked'
+                    ORDER BY (COALESCE(w.online_elo, w.elo, 1500)
+                              + COALESCE(l.online_elo, l.elo, 1500)) DESC
+                    LIMIT 1
+                    """,
+                    (date_prefix,),
+                )
+                row = cur.fetchone()
+                if row:
+                    stats["highest_rated"] = (row[0], row[1], row[2], row[3])
+                cur.execute("DETACH DATABASE elo_db")
+            except Exception:
+                logger.debug("Could not query highest rated match", exc_info=True)
+
+            # 11. Ironman (longest play session, min 3 matches & 1 hour)
+            cur.execute(
+                """
+                SELECT player_name, match_count, hours FROM (
+                    SELECT player_id, player_name, COUNT(*) as match_count,
+                           ROUND((julianday(MAX(timestamp))
+                                  - julianday(MIN(timestamp))) * 24, 1) as hours
+                    FROM (
+                        SELECT winner_id as player_id, winner_display_name as player_name,
+                               timestamp
+                        FROM match_records
+                        WHERE timestamp LIKE ? AND match_type = 'ranked'
+                        UNION ALL
+                        SELECT losser_id as player_id, losser_display_name as player_name,
+                               timestamp
+                        FROM match_records
+                        WHERE timestamp LIKE ? AND match_type = 'ranked'
+                    )
+                    GROUP BY player_id
+                    HAVING match_count >= 3 AND hours >= 1
+                    ORDER BY hours DESC LIMIT 1
+                )
+                """,
+                (date_prefix, date_prefix),
+            )
+            row = cur.fetchone()
+            if row:
+                stats["ironman"] = (row[0], row[1], row[2])
+
+            # 12. Deck Variety (most different decks used, min 2)
+            cur.execute(
+                """
+                SELECT player_name, COUNT(DISTINCT deck_url) as deck_count FROM (
+                    SELECT winner_id as player_id,
+                           winner_display_name as player_name,
+                           curiosa_url_winner as deck_url
+                    FROM match_records
+                    WHERE timestamp LIKE ? AND match_type = 'ranked'
+                          AND curiosa_url_winner IS NOT NULL
+                          AND curiosa_url_winner != ''
+                    UNION ALL
+                    SELECT losser_id as player_id,
+                           losser_display_name as player_name,
+                           curiosa_url_loser as deck_url
+                    FROM match_records
+                    WHERE timestamp LIKE ? AND match_type = 'ranked'
+                          AND curiosa_url_loser IS NOT NULL
+                          AND curiosa_url_loser != ''
+                )
+                GROUP BY player_id
+                HAVING deck_count >= 2
+                ORDER BY deck_count DESC LIMIT 1
+                """,
+                (date_prefix, date_prefix),
+            )
+            row = cur.fetchone()
+            if row:
+                stats["deck_variety"] = (row[0], row[1])
 
         finally:
             conn.close()
@@ -493,13 +639,25 @@ class DailySummaryCog(commands.Cog):
             name, change = stats["biggest_loser"]
             lines.append(f"- Biggest ELO drop: {name} ({change})")
 
-        if stats.get("largest_swing"):
-            winner, loser, change = stats["largest_swing"]
-            lines.append(f"- Largest swing: {winner} beat {loser} (+{change} in one match)")
-
         if stats.get("biggest_upset"):
             winner, loser, change = stats["biggest_upset"]
             lines.append(f"- Biggest upset: {winner} beat {loser} (+{change} ELO gain)")
+
+        if stats.get("rivalry"):
+            p1, p2, p1w, p2w, total = stats["rivalry"]
+            lines.append(f"- Rivalry of the day: {p1} vs {p2}, {p1w}-{p2w} record ({total} games)")
+
+        if stats.get("highest_rated"):
+            w_name, l_name, w_elo, l_elo = stats["highest_rated"]
+            lines.append(f"- Highest rated match: {w_name} ({w_elo} ELO) vs {l_name} ({l_elo} ELO)")
+
+        if stats.get("ironman"):
+            name, count, hours = stats["ironman"]
+            lines.append(f"- Ironman: {name} played {count} matches over {hours} hours")
+
+        if stats.get("deck_variety"):
+            name, count = stats["deck_variety"]
+            lines.append(f"- Deck variety: {name} played {count} different decks today")
 
         if stats.get("hot_streaks"):
             streaks = ", ".join(f"{name} ({n}-win streak)" for name, n in stats["hot_streaks"][:5])
@@ -514,7 +672,7 @@ class DailySummaryCog(commands.Cog):
 
         return "\n".join(lines)
 
-    def _generate_commentary(self, stats_text: str) -> dict | None:
+    def _generate_commentary(self, stats_text: str):
         """Generate GPT-flavored stats from raw stats text. Returns parsed dict or None."""
         try:
             response = openai_client.responses.create(

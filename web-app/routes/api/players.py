@@ -351,6 +351,7 @@ def player_api(player_id):
                 pass
 
     rows = []
+    is_season_filter = isinstance(event_filter, str) and event_filter.startswith("season_")
 
     # Choose player ID and table based on source
     if source == "web":
@@ -523,7 +524,6 @@ def player_api(player_id):
     # Also check archive table for historical matches (if needed based on filter)
     # Note: Archive is only available for bot matches (match_records_archive)
     archived_rows = []
-    is_season_filter = isinstance(event_filter, str) and event_filter.startswith("season_")
     if include_archived_matches and source == "bot":
         # Build the WHERE clause based on event filter
         if archive_event_id is not None:

@@ -73,12 +73,17 @@ class DailySummaryCog(commands.Cog):
         )
     )
     async def daily_summary_task(self):
-        await self._post_daily_summary()
+        logger.info("Daily summary task firing...")
+        try:
+            await self._post_daily_summary()
+        except Exception:
+            logger.error("Daily summary task failed", exc_info=True)
 
     @daily_summary_task.before_loop
     async def before_daily_summary(self):
         await self.bot.wait_until_ready()
-        logger.info("Daily summary task is ready")
+        next_run = self.daily_summary_task.next_iteration
+        logger.info(f"Daily summary task is ready — next run: {next_run}")
 
     # ------------------------------------------------------------------
     # Admin command

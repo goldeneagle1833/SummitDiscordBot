@@ -1,208 +1,135 @@
-# Research: Daily Summary Message
+# Research: Fun Stats Page
 
-## R-1: Scheduling a daily task at a specific wall-clock time
+## R1: Event Filtering Pattern
 
-**Decision:** Use `discord.ext.tasks.loop` with a `time` parameter set to 23:30 EST.
+**Decision**: Reuse the exact event/source filtering pattern from the avatar winrate page
 
-**Rationale:** `discord.ext.tasks` supports a `time=` parameter accepting a `datetime.time` with timezone info. This fires the loop exactly once per day at the specified wall-clock time, handling DST transitions automatically via `ZoneInfo("America/New_York")`. This is the same library already used by `MatchConfirmationJobs`, `StreamingCog`, and `LFGCog` — no new dependencies.
+**Rationale**: The avatar page (`routes/api/avatars.py`) has a proven, battle-tested pattern:
+- `GET /api/avatars/filters` returns available events + sources
+- API endpoints accept `?event=<id>&source=<value>` query params
+- `_get_event_date_range(event_id)` resolves event IDs to date ranges (supports DB events, season filters, and active events)
+- Queries dynamically switch between `match_records` (current) and `match_records_archive` (historical)
+- The Fun Stats API will share the same filter endpoint pattern
 
-**Alternatives considered:**
-- `asyncio.sleep` loop: fragile, drifts, doesn't handle DST. Rejected.
-- APScheduler: powerful but adds a dependency the project doesn't use. Rejected.
-- OS-level cron: over-engineered for a single daily message. Rejected.
+**Alternatives considered**:
+- Separate filter endpoint for fun-stats — rejected (same data, just duplicates code)
+- Server-side rendering with form POST — rejected (doesn't match existing SPA-like pattern)
 
-**Implementation pattern:**
+## R2: Win Streak Calculation
+
+**Decision**: Port the algorithm from `admin.py:516-563` into the new fun-stats blueprint
+
+**Rationale**: The admin dashboard already computes win streaks correctly:
+1. Fetch all matches ordered by `timestamp ASC`
+2. Iterate through matches tracking `{current: int, best: int, type: "W"/"L"}` per player
+3. Winner: increment current if type is "W", else reset to 1 + set type "W"; update best
+4. Loser: increment current if type is "L", else reset to 1 + set type "L"
+5. Filter to players with `best >= 3`, sort descending
+
+**Adaptation needed**: The admin code uses `_online_union()` helper which is local to admin.py. The fun-stats blueprint will build its own query based on event filter (current table, archive table, or date-range filtered).
+
+**Alternatives considered**:
+- Importing/sharing the admin function — rejected (admin code is tightly coupled to its internal UNION helpers)
+- Precomputing streaks in a separate table — rejected (over-engineering for the dataset size)
+
+## R3: Avatar Diversity (Most Unique Avatars)
+
+**Decision**: Parse `json_deck_data_winner` and `json_deck_data_loser` columns using the established extraction pattern
+
+**Rationale**: Avatar extraction from deck JSON is already proven in `avatars.py:115-125`:
 ```python
-from discord.ext import tasks
-from zoneinfo import ZoneInfo
-import datetime
-
-EST = ZoneInfo("America/New_York")
-DAILY_TIME = datetime.time(hour=23, minute=30, tzinfo=EST)
-
-@tasks.loop(time=DAILY_TIME)
-async def daily_summary_task(self):
-    ...
+deck_data = json.loads(deck_str)
+avatar = deck_data.get("avatar", [{}])
+name = avatar[0].get("name", "Unknown") if avatar else "Unknown"
 ```
 
-## R-2: Querying today's matches from `match_records`
+For diversity:
+1. Query all matches in scope (filtered by event/source)
+2. For each match, extract avatar from winner's and loser's deck data
+3. Build `{player_id: set(avatar_names)}` mapping
+4. Rank by `len(set)` descending, top 10
 
-**Decision:** Filter using `timestamp LIKE 'YYYY-MM-DD%'` where the date is the current EST date.
+**Alternatives considered**:
+- SQL-level JSON extraction — rejected (SQLite's JSON functions are limited, Python approach is proven)
 
-**Rationale:** The `timestamp` column stores ISO format strings (e.g. `2026-04-07T15:30:45.123456`). SQLite's LIKE operator efficiently filters by date prefix. The date is computed in EST using the existing `ZoneInfo("America/New_York")` pattern from `cogs/fun.py`.
+## R4: Biggest Upset Calculation
 
-**Key queries:**
+**Decision**: Use `winner_elo_change` column as a proxy for ELO gap
 
-1. **Total matches today:**
-   ```sql
-   SELECT COUNT(*) FROM match_records
-   WHERE timestamp LIKE ? AND match_type = 'ranked'
-   ```
+**Rationale**: When a low-rated player beats a high-rated player, the ELO change is larger (the system awards more points for upsets). The match with the highest `winner_elo_change` is the biggest upset.
 
-2. **Most active player** (most matches as winner or loser):
-   ```sql
-   SELECT player_id, player_name, COUNT(*) as match_count FROM (
-       SELECT winner_id as player_id, winner_display_name as player_name
-       FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'
-       UNION ALL
-       SELECT losser_id as player_id, losser_display_name as player_name
-       FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'
-   ) GROUP BY player_id ORDER BY match_count DESC LIMIT 1
-   ```
+Display: both player names, result, ELO delta, timestamp.
 
-3. **Largest single-match ELO swing:**
-   ```sql
-   SELECT *, ABS(winner_lifetime_elo_change) as swing
-   FROM match_records
-   WHERE timestamp LIKE ? AND match_type = 'ranked'
-   ORDER BY swing DESC LIMIT 1
-   ```
+**Alternatives considered**:
+- Comparing actual ELO ratings at time of match — not stored, would require reconstruction
+- Using lifetime ELO change columns — these accumulate, not per-match
 
-4. **Top ELO gainer** (net across all matches):
-   ```sql
-   SELECT player_id, player_name, SUM(elo_change) as net_change FROM (
-       SELECT winner_id as player_id, winner_display_name as player_name,
-              winner_lifetime_elo_change as elo_change
-       FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'
-       UNION ALL
-       SELECT losser_id as player_id, losser_display_name as player_name,
-              loser_lifetime_elo_change as elo_change
-       FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'
-   ) GROUP BY player_id ORDER BY net_change DESC LIMIT 1
-   ```
+## R5: Nemesis Pairs
 
-5. **Biggest ELO loser:** Same as #4 but `ORDER BY net_change ASC LIMIT 1`
+**Decision**: Aggregate matchups by unordered player pair, count total encounters
 
-6. **Unique players:**
-   ```sql
-   SELECT COUNT(DISTINCT player_id) FROM (
-       SELECT winner_id as player_id FROM match_records
-       WHERE timestamp LIKE ? AND match_type = 'ranked'
-       UNION
-       SELECT losser_id as player_id FROM match_records
-       WHERE timestamp LIKE ? AND match_type = 'ranked'
-   )
-   ```
+**Rationale**: For each match, create a canonical pair key `(min(winner_id, loser_id), max(winner_id, loser_id))` to count encounters regardless of who won. Track wins per side for the head-to-head record.
 
-7. **Average match duration:**
-   ```sql
-   SELECT AVG(match_time) FROM match_records
-   WHERE timestamp LIKE ? AND match_type = 'ranked' AND match_time > 0
-   ```
-
-8. **Biggest upset** (lower-rated player won): A large positive `winner_lifetime_elo_change` indicates the winner was lower-rated (expected to lose). Use `winner_lifetime_elo_change` as upset proxy — larger change = bigger upset.
-
-## R-3: Win streak detection (current streaks + broken streaks)
-
-**Decision:** Two-phase approach — identify players from today's matches, then query their recent match history to compute streaks.
-
-**Rationale:** Streaks span across days, so we can't just look at today's matches. A player who won 4 matches yesterday and 2 today is on a 6-win streak. Similarly, detecting a "broken streak" requires knowing the streak length before today's loss.
-
-**Phase 1 — Get today's players:**
 ```sql
-SELECT DISTINCT player_id FROM (
-    SELECT winner_id as player_id FROM match_records
-    WHERE timestamp LIKE ? AND match_type = 'ranked'
-    UNION
-    SELECT losser_id as player_id FROM match_records
-    WHERE timestamp LIKE ? AND match_type = 'ranked'
-)
+SELECT
+  MIN(winner_id, losser_id) as p1,
+  MAX(winner_id, losser_id) as p2,
+  COUNT(*) as encounters
+FROM match_records
+GROUP BY MIN(winner_id, losser_id), MAX(winner_id, losser_id)
+ORDER BY encounters DESC
+LIMIT 5
 ```
 
-**Phase 2 — For each player, fetch recent matches (last 20 is sufficient):**
-```sql
-SELECT winner_id, losser_id, timestamp FROM match_records
-WHERE (winner_id = ? OR losser_id = ?) AND match_type = 'ranked'
-ORDER BY timestamp DESC LIMIT 20
-```
+Minimum 3 encounters to qualify.
 
-**Hot Streaks algorithm (current streak ≥ 3):**
-1. For each player, iterate their matches from most recent backwards
-2. Count consecutive wins from the top
-3. If streak ≥ 3, include in "Hot Streaks" section
+## R6: First Player Advantage
 
-**Broken Streaks algorithm (streak of 6+ ended today):**
-1. For each player who **lost** today, look at their match history
-2. Find the first loss today, then count consecutive wins immediately before it
-3. If that pre-loss streak was ≥ 6, report it as a broken streak
-4. Include who broke the streak (the opponent who won that match)
+**Decision**: Analyze `winner_went_first` column across all matches
 
-**Performance:** Typically <30 players per day, each needing 1 query of 20 rows. Total: ~30 small queries + Python iteration. Well within acceptable limits for a once-daily task.
+**Rationale**: The `winner_went_first` column is populated since Feb 2026 (newer matches). Determine first-player win rate by counting matches where winner went first vs loser went first. Show as a simple percentage stat.
 
-## R-4: GPT commentary generation
+Note: Will show "Data available since Feb 2026" for transparency.
 
-**Decision:** Use `gpt-4.1-nano` via the OpenAI Responses API to generate a short themed commentary from the raw stats. Same pattern as the milestone message in `cogs/lfg/helpers.py`.
+## R7: Frontend Architecture
 
-**Rationale:** The milestone feature already proves this pattern works — cheap, fast, and the `gpt-4.1-nano` model is sufficient for short creative text. Reusing the same client (`openai.OpenAI`) and API shape (`responses.create` with `instructions` + `input`) keeps consistency.
+**Decision**: Card-based grid layout with JavaScript-driven rendering
 
-**System prompt (instructions):**
-```
-You are a Discord bot writing a daily recap for Sorcery: Contested Realm, a competitive card game.
-Write a short, entertaining commentary (2-4 sentences, under 100 words) summarizing the day's competitive action.
-Reference players by name. Call out upsets, streaks, and drama — make it feel like a real recap of the day's battles.
-IMPORTANT: Vary your style every day. Rotate between these voices at random:
-- Epic fantasy narrator ("The realm trembled as...")
-- Hype sports broadcaster ("WHAT a day on the ladder!")
-- Dry comedic observer ("In today's episode of 'questionable life choices'...")
-- Poetic bard ("A tale of triumph and tragedy unfolded...")
-- Trash-talking arena announcer ("Ladies and gentlemen, we have CARNAGE!")
-Pick ONE style per day. Do not mix styles within the same recap.
-NO emojis. Do not repeat the raw numbers — the stats are shown separately below your commentary.
-If no matches were played, write a short "quiet day" message in your chosen style instead.
-```
+**Rationale**: Follows the existing web app pattern:
+- Jinja2 template provides page skeleton + filter bar
+- Page-specific JS fetches from API on load and on filter change
+- Results rendered client-side into DOM elements
+- CSS grid for responsive layout (1-col mobile, 2-col tablet, 3-col desktop)
+- Each stat rendered as a card with title, icon/emoji, and ranked table or highlight value
 
-**User prompt (input):**
-```
-Today's stats:
-- 12 ranked matches played
-- 8 unique players
-- Most active: DragonSlayer (5 matches)
-- Top ELO gainer: WizardKing (+48)
-- Biggest ELO drop: UnluckyMage (-35)
-- Largest swing: WizardKing beat UnluckyMage (+24 in one match)
-- Biggest upset: Newcomer beat Veteran (+28 ELO gain)
-- Hot streaks: DragonSlayer (5-win streak)
-- Streak broken: UnluckyMage's 8-win streak ended by Newcomer
-- Avg match duration: 18 min
-```
+**Alternatives considered**:
+- Server-side rendering — rejected (no dynamic filtering without page reload)
+- React/Vue — rejected (doesn't match codebase, massive over-engineering)
 
-**Fallback:** If OpenAI call fails (network error, rate limit, etc.), the embed posts without commentary — just the stat fields. Error is logged but not shown to users.
+## R8: Match Duration Stats
 
-**Cost:** `gpt-4.1-nano` is extremely cheap (~$0.001 per call). One call per day is negligible.
+**Decision**: Use `match_time` column, excluding NULL and zero values
 
-## R-5: Channel and embed design
+**Rationale**: `match_time` stores duration in minutes. Many older matches have NULL or 0. Stats to show:
+- Average match time
+- Fastest match (min non-zero)
+- Longest match (max)
 
-**Decision:** Use a single `discord.Embed` with GPT commentary in the description and stat fields below.
+Simple aggregate queries that work with event/source filtering.
 
-**Rationale:** Discord embeds support up to 25 fields, 6000 total characters. The `description` field holds the GPT commentary paragraph. Individual stats go in embed fields below for clean formatting.
+## R9: Most Improved Player
 
-**Embed structure:**
-- Title: "Daily Summary — April 7, 2026"
-- Description: GPT-generated commentary (2-4 sentences)
-- Color: Gold/amber theme (0xFFD700)
-- Footer: "Summit Bot • Matches tracked since midnight EST"
-- Fields (inline where appropriate):
-  - Matches Played
-  - Unique Players
-  - Most Active Player
-  - Top ELO Gainer
-  - Biggest ELO Drop
-  - Largest ELO Swing (single match)
-  - Biggest Upset
-  - Hot Streaks (players on 3+ current win streak, omitted if none)
-  - Streak Broken (6+ streak ended today, omitted if none)
-  - Avg Match Duration
+**Decision**: Sum per-match ELO changes across the filtered period
 
-## R-6: Database access pattern
+**Rationale**: Each match record stores `winner_lifetime_elo_change` (positive) and `loser_lifetime_elo_change` (negative). Sum a player's changes across all matches in the period = net ELO movement. Top 5 positive movers = "Most Improved".
 
-**Decision:** Direct SQLite queries in the cog using `sqlite3`, reading from `match_records.db`.
+## R10: Ironman Streak (Consecutive Days Playing)
 
-**Rationale:** The daily summary is read-only with no business logic writes. Direct DB access follows KISS. The database path comes from config (same pattern as other cogs).
+**Decision**: Extract distinct dates per player, find longest consecutive-day sequence in Python
 
-**Thread safety:** Use `asyncio.to_thread()` to avoid blocking the event loop during DB reads.
+**Rationale**: For each player, collect unique dates they played, then find the longest gap-free run. Requires Python-side processing (gap-and-island problems are hard in SQLite).
 
-## R-7: "No matches" handling
-
-**Decision:** Post a brief embed with GPT-generated "quiet day" message when zero matches are recorded.
-
-**Rationale:** Posting even on quiet days maintains consistency. The GPT system prompt already handles this case ("If no matches were played, write a short 'quiet day' message instead"). Fallback if GPT fails: "No matches were played today. Rest up — tomorrow's a new day!"
+Algorithm:
+1. Query player IDs + dates from matches
+2. Group dates by player, sort ascending
+3. For each player, iterate finding longest consecutive run

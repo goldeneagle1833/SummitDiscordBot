@@ -157,49 +157,26 @@ def _collect_match_rows(event_filter, source_filter):
         # Match type filter (exclude testing)
         where_parts.append("(match_type = 'ranked' OR match_type IS NULL)")
 
-        if event_filter == "all":
-            # Current + archive
-            _query_table(cur, "match_records", columns, where_parts, params, rows, col_keys)
-            if has_archive:
-                _query_table(cur, "match_records_archive", columns, where_parts, params, rows, col_keys)
+        # Build date/event filter if a specific event or season is selected
+        query_where = list(where_parts)
+        query_params = list(params)
 
-        elif event_filter and event_filter != "current":
-            # Specific event or season — use date-range on both tables
-            start_date, end_date = _get_event_date_range(event_filter)
+        if event_filter and event_filter != "all":
+            # "current", specific event_id, or "season_*" — resolve to date range
+            start_date, end_date = _get_event_date_range(
+                event_filter if event_filter != "current" else "current"
+            )
             if start_date:
-                date_where = where_parts + ["timestamp >= ?"]
-                date_params = params + [start_date]
-                if end_date:
-                    date_where.append("timestamp <= ?")
-                    date_params.append(end_date)
-                _query_table(cur, "match_records", columns, date_where, date_params, rows, col_keys)
-                if has_archive:
-                    _query_table(cur, "match_records_archive", columns, date_where, date_params, rows, col_keys)
-            elif has_archive:
-                # Fallback: no date range found, try archive by event_id
-                try:
-                    eid = int(event_filter)
-                    archive_where = where_parts + ["event_id = ?"]
-                    archive_params = params + [eid]
-                    _query_table(cur, "match_records_archive", columns, archive_where, archive_params, rows, col_keys)
-                except ValueError:
-                    pass
+                query_where.append("timestamp >= ?")
+                query_params.append(start_date)
+            if end_date:
+                query_where.append("timestamp <= ?")
+                query_params.append(end_date)
 
-        elif event_filter == "current":
-            # Active event date-range filter
-            start_date, end_date = _get_event_date_range("current")
-            if start_date:
-                date_where = where_parts + ["timestamp >= ?"]
-                date_params = params + [start_date]
-                if end_date:
-                    date_where.append("timestamp <= ?")
-                    date_params.append(end_date)
-                _query_table(cur, "match_records", columns, date_where, date_params, rows, col_keys)
-                if has_archive:
-                    _query_table(cur, "match_records_archive", columns, date_where, date_params, rows, col_keys)
-        else:
-            # Default: current match_records only
-            _query_table(cur, "match_records", columns, where_parts, params, rows, col_keys)
+        # Always query both tables
+        _query_table(cur, "match_records", columns, query_where, query_params, rows, col_keys)
+        if has_archive:
+            _query_table(cur, "match_records_archive", columns, query_where, query_params, rows, col_keys)
 
         conn.close()
     except Exception as e:
@@ -537,12 +514,8 @@ def get_fun_stats():
 
         rows = _collect_match_rows(event_filter, source_filter)
 
-        # Win streaks need ALL matches to compute correctly (like admin page).
-        # A streak may span multiple events, so filtering breaks the calculation.
-        all_rows = _collect_match_rows("all", source_filter) if event_filter and event_filter != "all" else rows
-
         stats = {
-            "win_streaks": _compute_win_streaks(all_rows),
+            "win_streaks": _compute_win_streaks(rows),
             "most_diverse": _compute_most_diverse(rows),
             "most_active": _compute_most_active(rows),
             "biggest_upsets": _compute_biggest_upsets(rows),

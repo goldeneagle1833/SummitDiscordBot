@@ -1,96 +1,116 @@
-# Tasks: Daily Summary Message
+# Tasks: Fun Stats Page
 
 **Input**: Design documents from `specs/main/`
-**Prerequisites**: plan.md, spec.md, research.md, data-model.md, quickstart.md
+**Prerequisites**: plan.md, research.md, data-model.md, contracts/fun-stats-api.md, quickstart.md
 
-**Tests**: Not explicitly requested. Manual testing via `!daily_summary` admin command.
+**Tests**: Not explicitly requested. Verify via syntax checks and manual browser testing.
 
-**Organization**: Tasks grouped by user story. All tasks primarily modify `discord-bot/cogs/daily_summary.py` so stories are sequential, not parallel.
+**Organization**: Tasks grouped by user story. US1 is the MVP (page + filters + user-requested stats). US2 and US3 add additional stats incrementally.
 
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
-- **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3, US4, US5)
+- **[Story]**: Which user story this task belongs to
 - Include exact file paths in descriptions
 
----
+## User Stories
 
-## Phase 1: Setup & Configuration (US-5)
-
-**Purpose**: Config constants, cog skeleton, bot registration — foundation for all other stories
-
-- [x] T001 [P] [US5] Add `DAILY_SUMMARY_CHANNEL_ID`, `DAILY_SUMMARY_HOUR`, `DAILY_SUMMARY_MINUTE` constants to `discord-bot/config.py` — set defaults: `DAILY_SUMMARY_CHANNEL_ID = LEADERBOARD_CHANNEL_ID`, `DAILY_SUMMARY_HOUR = 23`, `DAILY_SUMMARY_MINUTE = 30`
-- [x] T002 [P] [US5] Create `discord-bot/cogs/daily_summary.py` with `DailySummaryCog` class skeleton — inherit from `commands.Cog`, add `__init__(self, bot)`, `cog_unload(self)`, and empty async `_post_daily_summary(self, channel_override=None)` method. Add `async def setup(bot)` at bottom. Import `discord`, `commands`, `config`, `logging`, `datetime`, `asyncio`, `sqlite3`, `ZoneInfo` from `zoneinfo`
-- [x] T003 [US5] Import and register `DailySummaryCog` in `discord-bot/main.py` inside `setup_cogs()` — add `from cogs.daily_summary import DailySummaryCog` and `await bot.add_cog(DailySummaryCog(bot))`
-
-**Checkpoint**: Cog loads without errors on bot startup. No functionality yet.
+- **US1**: Page scaffolding + event filtering + core stats (win streaks, most diverse, most active) — MVP
+- **US2**: Battle stats (biggest upset, nemesis pairs, first player advantage)
+- **US3**: Activity stats (match duration, most improved, ironman streak)
 
 ---
 
-## Phase 2: Automated Daily Posting (US-1)
+## Phase 1: Setup
 
-**Goal**: The cog fires once daily at 11:30 PM EST and posts a placeholder embed
+**Purpose**: Create all new files and register the blueprint
 
-**Independent Test**: Bot boots, cog loads, `!daily_summary` admin command posts a test embed to the current channel
+- [X] T001 [P] Create the Fun Stats API blueprint skeleton with filter endpoint in `web-app/routes/api/fun_stats.py`. Include: imports (json, logging, sqlite3, Flask Blueprint/jsonify/request), `fun_stats_bp = Blueprint("fun_stats", __name__)`, and `GET /fun-stats/filters` endpoint that returns events + sources. Copy the filter logic from `routes/api/avatars.py:20-79` (query events table from elo.db, query distinct sources from match_records, append SEASON_FILTERS).
+- [X] T002 [P] Create the Fun Stats page template in `web-app/templates/pages/fun_stats.html`. Extend `base.html`. Include: page title "Fun Stats", a filter bar with event and source dropdowns (copy HTML structure from avatar page filter bar), and an empty `<div id="stats-grid">` container for JS-rendered stat cards. Load page-specific CSS/JS in the appropriate blocks.
+- [X] T003 [P] Create page-specific CSS in `web-app/static/css/pages/fun-stats.css`. Define: `.stats-grid` (CSS grid: 1-col on mobile, 2-col on tablet ≥768px, 3-col on desktop ≥1024px, gap 1rem), `.stat-card` (background bg-elevated, border-radius, padding, box-shadow matching existing card styles), `.stat-card h3` (title styling), `.stat-table` (full-width table with existing table styles), `.stat-highlight` (large centered number for single-value stats like first player advantage).
+- [X] T004 [P] Create page-specific JS skeleton in `web-app/static/js/pages/fun-stats.js`. Include: IIFE wrapper, `fetchFilters()` function that calls `GET /api/fun-stats/filters` and populates event/source dropdowns, `fetchStats()` function stub that calls `GET /api/fun-stats` with filter params and calls `renderStats(data)`, event listeners on filter dropdowns to trigger `fetchStats()`, and `DOMContentLoaded` init that calls `fetchFilters()` then `fetchStats()`. Follow the pattern from the avatar page JS.
+- [X] T005 Add the `/fun-stats` page route in `web-app/routes/pages.py`. Add a function that renders `pages/fun_stats.html`. Place it near the other public page routes (after `/elements`). No admin check required.
+- [X] T006 Add "Fun Stats" link to the sidebar menu in `web-app/templates/components/navbar.html`. Insert `<a href="/fun-stats" class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">Fun Stats</a>` after the "Element Winrates" link (after line 681).
+- [X] T007 Register the fun_stats blueprint in `web-app/app.py`. Add `from routes.api.fun_stats import fun_stats_bp` to imports and `app.register_blueprint(fun_stats_bp, url_prefix="/api")` alongside the other blueprint registrations.
 
-- [x] T004 [US1] Add `discord.ext.tasks` scheduled loop to `DailySummaryCog` in `discord-bot/cogs/daily_summary.py` — use `@tasks.loop(time=datetime.time(hour=config.DAILY_SUMMARY_HOUR, minute=config.DAILY_SUMMARY_MINUTE, tzinfo=ZoneInfo("America/New_York")))`. Start task in `__init__` with `self.daily_summary_task.start()`, cancel in `cog_unload` with `self.daily_summary_task.cancel()`. Add `@daily_summary_task.before_loop` waiting for `self.bot.wait_until_ready()`. Task calls `await self._post_daily_summary()`
-- [x] T005 [US1] Implement `_post_daily_summary(self, channel_override=None)` in `discord-bot/cogs/daily_summary.py` — compute current EST date using `datetime.datetime.now(ZoneInfo("America/New_York"))`, format as `date_prefix = f"{est_now.strftime('%Y-%m-%d')}%"`. Get target channel: use `channel_override` if provided, else `self.bot.get_channel(config.DAILY_SUMMARY_CHANNEL_ID)`. If channel is None, log error and return. Post a placeholder embed with title `f"Daily Summary — {est_now.strftime('%B %d, %Y')}"`, color `0xFFD700`, footer "Summit Bot • Matches tracked since midnight EST"
-- [x] T006 [US1] Add admin-only `!daily_summary` prefix command in `discord-bot/cogs/daily_summary.py` — `@commands.command(name="daily_summary")` with `@commands.has_permissions(administrator=True)`, calls `await self._post_daily_summary(channel_override=ctx.channel)`
-
-**Checkpoint**: `!daily_summary` posts a placeholder embed. Scheduled task is wired up (verifiable via bot startup logs).
-
----
-
-## Phase 3: Core Stats (US-2)
-
-**Goal**: The embed shows total matches, most active player, largest ELO swing, top ELO gainer, biggest ELO loser
-
-**Independent Test**: `!daily_summary` shows all 5 core stats from today's `match_records`
-
-- [x] T007 [US2] Implement `_query_core_stats(self, date_prefix: str) -> dict` in `discord-bot/cogs/daily_summary.py` — open `match_records.db` (path from `config.MATCH_RECORDS_DB` or construct from `config.DB_PATH`), execute these SQL queries with `match_type = 'ranked'` filter. Note: loser column is spelled `losser_id` / `losser_display_name` in the schema. Queries: (1) `SELECT COUNT(*)` for total matches, (2) most active player via UNION ALL of `winner_id`/`losser_id` grouped by player_id ordered by count DESC LIMIT 1, (3) largest single-match ELO swing via `ABS(winner_lifetime_elo_change)` ORDER DESC LIMIT 1 (include both player names and the match result), (4) top ELO gainer via SUM of `winner_lifetime_elo_change`/`loser_lifetime_elo_change` per player ORDER DESC LIMIT 1, (5) biggest ELO loser — same sum ORDER ASC LIMIT 1. Return dict with keys: `total_matches`, `most_active` (name + count), `largest_swing` (winner_name, loser_name, change), `top_gainer` (name + net_change), `biggest_loser` (name + net_change). Close DB connection in finally block.
-- [x] T008 [US2] Wire `_query_core_stats` into `_post_daily_summary` in `discord-bot/cogs/daily_summary.py` — replace placeholder embed. Call `stats = await asyncio.to_thread(self._query_core_stats, date_prefix)`. If `stats["total_matches"] == 0`, post simple embed with description "No ranked matches were played today." and return early. Otherwise proceed to build full embed.
-- [x] T009 [US2] Build embed fields for core stats in `_post_daily_summary` in `discord-bot/cogs/daily_summary.py` — add embed fields: "Matches Played" (value=count, inline=True), "Most Active Player" (value=f"{name} ({count} matches)"), "Top ELO Gainer" (value=f"{name} (+{change} ELO)"), "Biggest ELO Drop" (value=f"{name} ({change} ELO)"), "Largest ELO Swing" (value=f"{winner} beat {loser} (+{change})")
-
-**Checkpoint**: `!daily_summary` shows real stats from the database. Zero-match days show a brief message.
+**Checkpoint**: Visiting `/fun-stats` shows the page skeleton with filter dropdowns. Filters endpoint returns events/sources. No stats rendered yet.
 
 ---
 
-## Phase 4: Extended / Fun Stats (US-3)
+## Phase 2: Foundational (Blocking Prerequisites)
 
-**Goal**: Add unique players, biggest upset, avg match duration, hot streaks, and broken streaks
+**Purpose**: Event/source filter infrastructure in the API — shared by all stats
 
-**Independent Test**: `!daily_summary` shows extended stats. Streak stats correctly span across days. Empty stats are omitted from embed.
+**⚠️ CRITICAL**: All stat computation depends on this filter→query logic
 
-- [x] T010 [US3] Add unique players and average match duration queries in `discord-bot/cogs/daily_summary.py` — extend `_query_core_stats` (or create `_query_extended_stats`). Unique players: `SELECT COUNT(DISTINCT player_id) FROM (SELECT winner_id as player_id ... UNION SELECT losser_id ...)`. Avg duration: `SELECT AVG(match_time) FROM match_records WHERE timestamp LIKE ? AND match_type='ranked' AND match_time > 0`. Add results to stats dict. Add embed fields: "Unique Players" (inline=True), "Avg Match Duration" (value=f"{round(avg)} min", inline=True). Omit avg duration field if result is None.
-- [x] T011 [US3] Add biggest upset query in `discord-bot/cogs/daily_summary.py` — query the match with the highest `winner_lifetime_elo_change` today (proxy: larger ELO gain = lower-rated winner = bigger upset). Include winner name, loser name, and ELO change. Add embed field "Biggest Upset" (value=f"{winner} beat {loser} (+{change} ELO)"). Omit field if no matches or max change is ≤ 0.
-- [x] T012 [US3] Implement hot streak detection in `discord-bot/cogs/daily_summary.py` — create `_compute_streaks(self, date_prefix: str) -> dict` that: (1) gets distinct player IDs from today's matches, (2) for each player, fetches their last 20 matches (`SELECT winner_id, losser_id, winner_display_name, losser_display_name, timestamp FROM match_records WHERE (winner_id=? OR losser_id=?) AND match_type='ranked' ORDER BY timestamp DESC LIMIT 20`), (3) iterates from most recent match backwards counting consecutive wins, (4) collects players with streak ≥ 3 into `hot_streaks` list (sorted by streak length DESC). Call via `asyncio.to_thread()`. Add embed field "Hot Streaks" with each player on a new line (e.g., "DragonSlayer is on a 5-win streak\nWizardKing is on a 3-win streak"). Omit field entirely if list is empty. Cap at top 5 entries.
-- [x] T013 [US3] Implement broken streak detection in `discord-bot/cogs/daily_summary.py` — extend `_compute_streaks`: for each player who LOST at least one match today, find their earliest loss today in the ordered match history, then count consecutive wins immediately before that loss. If pre-loss streak was ≥ 6, record as broken: `{"player": loser_name, "streak": N, "broken_by": winner_name}`. Add embed field "Streak Broken" (e.g., "UnluckyMage's 8-win streak was ended by Newcomer"). Omit field if no 6+ streaks were broken.
+- [X] T008 Implement event/source filter→query helper functions in `web-app/routes/api/fun_stats.py`. Add: `_get_event_date_range(event_id)` (copy from `avatars.py:82-130` — resolves event IDs to start/end dates using elo.db events table and SEASON_FILTERS), and `_collect_match_rows(event_filter, source_filter, columns)` that builds the appropriate SQL query selecting the requested columns from `match_records` (current), `match_records_archive` (historical), or both (with optional source and date-range WHERE clauses). Include `WHERE match_type = 'ranked'` filter. Return list of row tuples. Follow the connection pattern: open/close per function, import paths from `webapp_config`.
+- [X] T009 Add the main `GET /fun-stats` endpoint skeleton in `web-app/routes/api/fun_stats.py`. Parse `event` and `source` query params from request.args. Call `_collect_match_rows()` to get filtered match data. Return `{"success": true, "stats": {}}` JSON with empty stat objects. Wrap in try/except returning `{"success": false, "error": str}` on failure.
 
-**Checkpoint**: Full stat suite visible. Streak detection works across days. Missing stats gracefully omitted.
+**Checkpoint**: `GET /api/fun-stats?event=all` returns `{"success": true, "stats": {}}`. Filter params are parsed and passed to helper. No stats computed yet.
 
 ---
 
-## Phase 5: GPT-Flavored Commentary (US-4)
+## Phase 3: User Story 1 — Core Stats (Priority: P1) — MVP
 
-**Goal**: Stats are sent to GPT for an entertaining commentary paragraph displayed at the top of the embed
+**Goal**: Deliver the 3 user-requested stats: win streaks, most diverse player, most active player
 
-**Independent Test**: `!daily_summary` shows GPT commentary in the embed description above the stat fields. Commentary varies in style. If OpenAI is unreachable, embed still posts with stats only.
+**Independent Test**: Visit `/fun-stats`, verify 3 stat cards render with data. Change event filter, verify stats update.
 
-- [x] T014 [US4] Implement `_format_stats_for_gpt(self, stats: dict) -> str` in `discord-bot/cogs/daily_summary.py` — convert stats dict into human-readable text: "Today's stats:\n- {N} ranked matches played\n- {N} unique players\n- Most active: {name} ({N} matches)\n- Top ELO gainer: {name} (+{N})\n- Biggest ELO drop: {name} ({N})\n..." etc. Include hot streaks and broken streaks if present. Omit lines for stats that don't exist. For zero-match days, return "No matches were played today."
-- [x] T015 [US4] Implement `_generate_commentary(self, stats_text: str) -> str | None` in `discord-bot/cogs/daily_summary.py` — add `from openai import OpenAI` and `openai_client = OpenAI(api_key=config.OPENAI_API_KEY)` at module level. Define `DAILY_SUMMARY_PROMPT` constant with the system prompt from research.md R-4: "You are a Discord bot writing a daily recap for Sorcery: Contested Realm, a competitive card game. Write a short, entertaining commentary (2-4 sentences, under 100 words)... IMPORTANT: Vary your style every day. Rotate between these voices at random: Epic fantasy narrator, hype sports broadcaster, dry comedic observer, poetic bard, trash-talking arena announcer. Pick ONE style per day. Do not mix styles... NO emojis. Do not repeat the raw numbers... If no matches were played, write a short 'quiet day' message in your chosen style instead." Call `openai_client.responses.create(model="gpt-4.1-nano", instructions=DAILY_SUMMARY_PROMPT, input=stats_text)`, return `response.output_text`. On any exception, log error and return `None`.
-- [x] T016 [US4] Integrate GPT commentary into embed in `discord-bot/cogs/daily_summary.py` — in `_post_daily_summary`, after gathering stats and before adding fields: call `stats_text = self._format_stats_for_gpt(stats)`, then `commentary = await asyncio.to_thread(self._generate_commentary, stats_text)`. If `commentary` is not None, set `embed.description = commentary`. For zero-match days, still call GPT with "No matches were played today." for a styled quiet-day message; if GPT returns None, use fallback description "No ranked matches were played today." Apply commentary to both normal and zero-match embeds.
+### Implementation
 
-**Checkpoint**: Full feature complete. Commentary appears at top of embed. Fallback works when GPT is unavailable.
+- [X] T010 [US1] Implement `_compute_win_streaks(rows)` in `web-app/routes/api/fun_stats.py`. Input: list of `(winner_id, winner_display_name, losser_id, losser_display_name, timestamp)` tuples sorted by timestamp ASC. Port the algorithm from `admin.py:516-563`: iterate matches tracking `{current, best, type}` per player_id. Build display-name lookup from winner/loser names. Return top 10 players with `best_streak >= 3`, sorted by best_streak DESC, each as `{"name", "best_streak", "current_streak"}`. Current_streak is 0 if player's last result type is "L".
+- [X] T011 [US1] Implement `_compute_most_diverse(rows)` in `web-app/routes/api/fun_stats.py`. Input: list of `(winner_id, winner_display_name, json_deck_data_winner, losser_id, losser_display_name, json_deck_data_loser)` tuples. For each match, extract avatar name from winner and loser deck JSON using the pattern from `avatars.py:115-125` (`json.loads(deck_str).get("avatar", [{}])[0].get("name")`). Build `{player_id: {"name": str, "avatars": set()}}` mapping. Return top 10 by `len(avatars)` DESC as `{"name", "unique_avatars", "avatars": list}`.
+- [X] T012 [US1] Implement `_compute_most_active(rows)` in `web-app/routes/api/fun_stats.py`. Input: list of `(winner_id, winner_display_name, losser_id, losser_display_name)` tuples. Count wins and losses per player_id, build `games = wins + losses`. Return top 10 by games DESC as `{"name", "wins", "losses", "games"}`.
+- [X] T013 [US1] Wire the 3 core stat functions into the `GET /fun-stats` endpoint in `web-app/routes/api/fun_stats.py`. Call `_collect_match_rows()` with the columns needed by each stat function. Call each compute function and add results to the `stats` dict: `win_streaks`, `most_diverse`, `most_active`. Note: use a single broad query that returns all needed columns to avoid multiple DB round-trips, then slice the relevant columns for each function.
+- [X] T014 [US1] Implement `renderStats(data)` in `web-app/static/js/pages/fun-stats.js` for the 3 core stats. For each stat, generate a card HTML string and insert into `#stats-grid`. Win Streaks: table with rank, name, best streak, current streak (show fire emoji if current > 0). Most Diverse: table with rank, name, unique avatar count, avatar list as comma-separated text. Most Active: table with rank, name, games, W-L record. Show loading spinner while fetching, hide on render. Hide cards with empty data arrays.
+
+**Checkpoint**: MVP complete. `/fun-stats` shows 3 stat cards with real data. Event/source filters work. Empty stats hidden gracefully.
 
 ---
 
-## Phase 6: Polish & Validation
+## Phase 4: User Story 2 — Battle Stats (Priority: P2)
 
-**Purpose**: Logging, error handling, embed size safety
+**Goal**: Add biggest upset, nemesis pairs, and first player advantage stats
 
-- [x] T017 Add structured logging throughout `discord-bot/cogs/daily_summary.py` — use `logger = logging.getLogger("discord_bot")`. Log on: task start ("Running daily summary for {date}..."), zero-match day, GPT call success/failure, embed post success with channel name, channel-not-found error. Match logging style of existing cogs.
-- [x] T018 Validate embed size constraints in `discord-bot/cogs/daily_summary.py` — ensure total embed content stays under Discord's 6000-char limit. If hot streaks list has more than 5 entries, truncate to top 5 with "and N more..." suffix. If GPT commentary exceeds 500 chars, truncate with "..." suffix. Add a helper `_truncate(text: str, max_len: int) -> str` if needed.
-- [x] T019 Run `!daily_summary` end-to-end against live database to verify all stats render correctly, GPT commentary appears with varied styles, zero-match handling works, and embed formatting looks clean in Discord.
+**Independent Test**: Visit `/fun-stats`, verify 3 new stat cards appear below the core stats with correct data.
+
+### Implementation
+
+- [X] T015 [P] [US2] Implement `_compute_biggest_upsets(rows)` in `web-app/routes/api/fun_stats.py`. Input: list of `(winner_display_name, losser_display_name, winner_elo_change, loser_elo_change, timestamp)` tuples. Filter to rows where `winner_elo_change` is not NULL and > 0. Sort by `winner_elo_change` DESC. Return top 5 as `{"winner_name", "loser_name", "elo_change", "timestamp"}`.
+- [X] T016 [P] [US2] Implement `_compute_nemesis_pairs(rows)` in `web-app/routes/api/fun_stats.py`. Input: list of `(winner_id, winner_display_name, losser_id, losser_display_name)` tuples. For each match, create canonical pair key `(min(id1, id2), max(id1, id2))`. Track encounters count and per-player wins. Filter to pairs with `encounters >= 3`. Return top 5 by encounters DESC as `{"player1_name", "player2_name", "encounters", "p1_wins", "p2_wins"}`.
+- [X] T017 [P] [US2] Implement `_compute_first_player_advantage(rows)` in `web-app/routes/api/fun_stats.py`. Input: list of `(winner_went_first, loser_went_first)` tuples. Count matches where both columns are not NULL/empty (has data). Count how many times `winner_went_first` is truthy (winner was the one who went first). Calculate `first_player_win_rate = first_player_wins / total * 100`. Return `{"total_matches", "first_player_wins", "first_player_win_rate"}` or null if no data.
+- [X] T018 [US2] Wire the 3 battle stat functions into the `GET /fun-stats` endpoint in `web-app/routes/api/fun_stats.py`. Add columns to the main query as needed. Call each function and add to `stats` dict: `biggest_upsets`, `nemesis_pairs`, `first_player_advantage`.
+- [X] T019 [US2] Add rendering for battle stats in `web-app/static/js/pages/fun-stats.js`. Biggest Upsets: table with rank, winner name, "beat", loser name, ELO change with + prefix, date. Nemesis Pairs: table showing both names, total encounters, head-to-head record (e.g., "8-7"). First Player Advantage: single highlight card showing win rate percentage as a large number, plus total matches below. Hide cards with null/empty data.
+
+**Checkpoint**: 6 stat cards now visible. Battle stats render correctly with event filtering.
+
+---
+
+## Phase 5: User Story 3 — Activity Stats (Priority: P3)
+
+**Goal**: Add match duration, most improved, and ironman streak stats
+
+**Independent Test**: Visit `/fun-stats`, verify 3 new stat cards appear. Check that "Most Improved" shows last-7-days data.
+
+### Implementation
+
+- [X] T020 [P] [US3] Implement `_compute_match_duration(rows)` in `web-app/routes/api/fun_stats.py`. Input: list of `(match_time,)` tuples. Filter out NULL and 0 values. Calculate average (rounded to 1 decimal), min, and max. Return `{"average_minutes", "fastest_minutes", "longest_minutes", "total_with_data"}` or null if no valid data.
+- [X] T021 [P] [US3] Implement `_compute_most_improved(rows)` in `web-app/routes/api/fun_stats.py`. Input: list of `(winner_id, winner_display_name, winner_lifetime_elo_change, losser_id, losser_display_name, loser_lifetime_elo_change, timestamp)` tuples. Filter to matches within the last 7 days (compare timestamp to current date minus 7 days). Sum ELO changes per player (positive when winning, negative when losing). Return top 5 players with net positive change, sorted DESC, as `{"name", "elo_change"}`.
+- [X] T022 [P] [US3] Implement `_compute_ironman_streak(rows)` in `web-app/routes/api/fun_stats.py`. Input: list of `(winner_id, winner_display_name, losser_id, losser_display_name, timestamp)` tuples. Extract date from each timestamp. Build `{player_id: {"name": str, "dates": set()}}`. For each player, sort dates ascending and find the longest consecutive-day run (iterate, check if next date == prev date + 1 day). Return top 10 by consecutive_days DESC as `{"name", "consecutive_days"}`.
+- [X] T023 [US3] Wire the 3 activity stat functions into the `GET /fun-stats` endpoint in `web-app/routes/api/fun_stats.py`. Add to `stats` dict: `match_duration`, `most_improved`, `ironman_streak`.
+- [X] T024 [US3] Add rendering for activity stats in `web-app/static/js/pages/fun-stats.js`. Match Duration: highlight card showing average as large number, plus fastest/longest as secondary stats below. Most Improved: table with rank, name, ELO change with + prefix and green color, labeled "Last 7 Days". Ironman Streak: table with rank, name, consecutive days count. Hide cards with null/empty data.
+
+**Checkpoint**: All 9 stat cards visible and functional. Full feature complete.
+
+---
+
+## Phase 6: Polish & Cross-Cutting Concerns
+
+**Purpose**: UX improvements, edge cases, final verification
+
+- [X] T025 [P] Add loading and empty states in `web-app/static/js/pages/fun-stats.js`. Show a spinner/skeleton in `#stats-grid` while API call is in-flight. On error response, show a user-friendly error message. For individual stats with no data, either hide the card entirely or show a "No data available" message inside the card.
+- [X] T026 [P] Add responsive fine-tuning in `web-app/static/css/pages/fun-stats.css`. Ensure stat tables don't overflow on mobile (add `overflow-x: auto` wrapper). Verify filter bar stacks vertically on mobile. Test card grid at all breakpoints.
+- [X] T027 Run syntax verification: `python -c "from routes.api.fun_stats import fun_stats_bp"` from the `web-app/` directory to confirm the blueprint imports cleanly with no errors.
 
 ---
 
@@ -98,88 +118,65 @@
 
 ### Phase Dependencies
 
-- **Phase 1 (Setup/US-5)**: No dependencies — start immediately
-- **Phase 2 (US-1)**: Depends on Phase 1 — cog skeleton must exist
-- **Phase 3 (US-2)**: Depends on Phase 2 — needs `_post_daily_summary` method
-- **Phase 4 (US-3)**: Depends on Phase 3 — extends the query + embed flow
-- **Phase 5 (US-4)**: Depends on Phase 3 — needs stats dict to format for GPT
-- **Phase 6 (Polish)**: Depends on all phases complete
+- **Setup (Phase 1)**: No dependencies — all T001-T004 can run in parallel (different files), T005-T007 are edits to existing files
+- **Foundational (Phase 2)**: Depends on T001 (blueprint file exists). BLOCKS all user stories
+- **US1 (Phase 3)**: Depends on Phase 2 (filter infrastructure). T010-T012 can run in parallel (independent functions), T013 depends on T010-T012, T014 depends on T013
+- **US2 (Phase 4)**: Depends on Phase 2. T015-T017 can run in parallel. T018 depends on T015-T017. T019 depends on T018
+- **US3 (Phase 5)**: Depends on Phase 2. T020-T022 can run in parallel. T023 depends on T020-T022. T024 depends on T023
+- **Polish (Phase 6)**: Depends on US1 at minimum. T025-T026 can run in parallel
 
 ### User Story Dependencies
 
-```
-Phase 1 (US-5: Config + skeleton)
-    └── Phase 2 (US-1: Scheduling + admin command)
-           └── Phase 3 (US-2: Core stats + embed)
-                  ├── Phase 4 (US-3: Extended stats)
-                  └── Phase 5 (US-4: GPT commentary)
-                         └── Phase 6 (Polish)
-```
+- **US1 (P1)**: Depends only on Phase 2 — no cross-story dependencies
+- **US2 (P2)**: Depends only on Phase 2 — no cross-story dependencies. Can run in parallel with US1
+- **US3 (P3)**: Depends only on Phase 2 — no cross-story dependencies. Can run in parallel with US1/US2
 
-- US-3 and US-4 could theoretically run in parallel after US-2, but since all tasks modify the same file (`daily_summary.py`), sequential execution is safer.
+### Within Each User Story
+
+- Compute functions (parallel) → wire into endpoint → frontend rendering (sequential)
 
 ### Parallel Opportunities
 
-- **Phase 1**: T001 and T002 can run in parallel (different files: `config.py` vs `daily_summary.py`)
-- **All other tasks**: Sequential (same file)
-
----
-
-## Parallel Example: Phase 1
-
-```bash
-# These touch different files and can run simultaneously:
-Task: "T001 - Add config constants to discord-bot/config.py"
-Task: "T002 - Create cog skeleton in discord-bot/cogs/daily_summary.py"
+```
+Phase 1: T001 | T002 | T003 | T004  (all parallel — different files)
+          then T005, T006, T007      (edits to existing files — sequential)
+Phase 2: T008 → T009                 (sequential — same file)
+Phase 3: T010 | T011 | T012         (parallel — independent functions)
+          then T013 → T014           (sequential)
+Phase 4: T015 | T016 | T017         (parallel — independent functions)
+          then T018 → T019           (sequential)
+Phase 5: T020 | T021 | T022         (parallel — independent functions)
+          then T023 → T024           (sequential)
+Phase 6: T025 | T026 | T027         (parallel — different files)
 ```
 
 ---
 
 ## Implementation Strategy
 
-### MVP First (Phases 1-3)
+### MVP First (US1 Only)
 
-1. Complete Phase 1: Setup — config + skeleton + registration
-2. Complete Phase 2: Scheduling — task loop + admin command
-3. Complete Phase 3: Core Stats — real data in the embed
-4. **STOP and VALIDATE**: `!daily_summary` shows core stats
-5. Deploy — daily summaries start posting with basic stats
+1. Complete Phase 1: Setup (page exists, filters load)
+2. Complete Phase 2: Foundational (event/source filter→query works)
+3. Complete Phase 3: US1 — Core Stats (3 user-requested stats render)
+4. **STOP and VALIDATE**: Page loads, filters work, 3 stats show data
+5. Deploy if ready — page is already useful
 
-### Full Feature (add Phases 4-5)
+### Incremental Delivery
 
-6. Complete Phase 4: Extended Stats — streaks, upsets, unique players
-7. Complete Phase 5: GPT Commentary — entertaining rotating-voice recaps
-8. Complete Phase 6: Polish — logging, embed safety
-9. **VALIDATE**: Full embed with GPT commentary
-10. Deploy final version
-
-### Incremental Value
-
-- **After Phase 3**: Basic daily summary with 5 core competitive stats
-- **After Phase 4**: Rich stats including cross-day streak tracking and upset detection
-- **After Phase 5**: GPT commentary gives each day's summary personality with rotating voices
-
----
-
-## Total Task Count
-
-| Phase | Description | Tasks |
-|-------|-------------|-------|
-| Phase 1 | Setup & Config (US-5) | 3 |
-| Phase 2 | Scheduling (US-1) | 3 |
-| Phase 3 | Core Stats (US-2) | 3 |
-| Phase 4 | Extended Stats (US-3) | 4 |
-| Phase 5 | GPT Commentary (US-4) | 3 |
-| Phase 6 | Polish | 3 |
-| **Total** | | **19** |
+1. Setup + Foundational → page skeleton with working filters
+2. Add US1 → 3 core stats visible → **MVP deployed**
+3. Add US2 → 6 stats visible (battle stats added)
+4. Add US3 → 9 stats visible (activity stats added)
+5. Polish → loading states, responsive tweaks, error handling
 
 ---
 
 ## Notes
 
-- All tasks modify `discord-bot/cogs/daily_summary.py` unless noted otherwise
-- The `losser_id` / `losser_display_name` typo in the database schema is intentional — all queries MUST use this spelling
-- EST timezone: use `ZoneInfo("America/New_York")` which handles DST automatically
-- Existing pattern references: `cogs/match_confirmation_jobs.py` for task loop, `cogs/lfg/helpers.py` for OpenAI integration
-- DB file: `match_records.db` — check config for exact path construction
-- The OpenAI client uses `responses.create()` (Responses API), NOT `chat.completions.create()`
+- All stat computation happens in `web-app/routes/api/fun_stats.py` — single file for all backend logic
+- All rendering happens in `web-app/static/js/pages/fun-stats.js` — single file for all frontend logic
+- The `losser_id` / `losser_display_name` column typo is intentional — match the existing schema exactly
+- Event filtering uses two databases: `elo.db` for event metadata, `match_records.db` for match data
+- "Most Improved" uses a rolling 7-day window regardless of event filter
+- All stats default to current event data when no filter is selected

@@ -113,8 +113,10 @@
   // ── Win Streaks ──────────────────────────────────────────────────
 
   function renderWinStreaks(data) {
-    if (!data || data.length === 0) return;
-    const rows = data
+    if (!data || (!data.best && !data.active)) return;
+    if ((!data.best || data.best.length === 0) && (!data.active || data.active.length === 0)) return;
+
+    const bestRows = (data.best || [])
       .map(
         (p, i) =>
           `<tr>
@@ -125,13 +127,54 @@
       </tr>`
       )
       .join("");
-    appendCard(
-      "\ud83c\udfc6 Win Streaks",
-      `<div class="stat-table-wrap"><table class="stat-table">
+
+    const activeRows =
+      data.active && data.active.length > 0
+        ? data.active
+            .map(
+              (p, i) =>
+                `<tr>
+          <td class="rank">${i + 1}</td>
+          <td class="name">${escapeHtml(p.name)}</td>
+          <td class="number">${p.current_streak} \ud83d\udd25</td>
+        </tr>`
+            )
+            .join("")
+        : '<tr><td colspan="3" style="text-align:center;color:rgba(255,255,255,0.5);padding:1rem">No active win streaks</td></tr>';
+
+    const bestTable = `<div class="stat-table-wrap"><table class="stat-table">
         <thead><tr><th></th><th>Player</th><th>Best</th><th>Current</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table></div>`
-    );
+        <tbody>${bestRows}</tbody>
+      </table></div>`;
+
+    const activeTable = `<div class="stat-table-wrap"><table class="stat-table">
+        <thead><tr><th></th><th>Player</th><th>Streak</th></tr></thead>
+        <tbody>${activeRows}</tbody>
+      </table></div>`;
+
+    const card = document.createElement("div");
+    card.className = "stat-card";
+    card.innerHTML =
+      `<h3>\ud83c\udfc6 Win Streaks</h3>` +
+      `<div class="streak-toggle">` +
+      `<button class="toggle-btn active" data-view="best">Best All-Time</button>` +
+      `<button class="toggle-btn" data-view="active">Active Streaks</button>` +
+      `</div>` +
+      `<div class="streak-view" data-view="best">${bestTable}</div>` +
+      `<div class="streak-view" data-view="active" style="display:none">${activeTable}</div>`;
+
+    card.querySelectorAll(".toggle-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        card.querySelectorAll(".toggle-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const view = btn.dataset.view;
+        card.querySelectorAll(".streak-view").forEach((v) => {
+          v.style.display = v.dataset.view === view ? "" : "none";
+        });
+      });
+    });
+
+    statsGrid.appendChild(card);
   }
 
   // ── Most Diverse ─────────────────────────────────────────────────

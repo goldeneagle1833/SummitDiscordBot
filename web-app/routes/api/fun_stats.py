@@ -163,16 +163,31 @@ def _collect_match_rows(event_filter, source_filter):
             if has_archive:
                 _query_table(cur, "match_records_archive", columns, where_parts, params, rows, col_keys)
 
-        elif event_filter and event_filter != "current" and not str(event_filter).startswith("season_"):
-            # Specific past event from archive
-            if has_archive:
-                archive_where = where_parts + ["event_id = ?"]
-                archive_params = params + [int(event_filter)]
-                _query_table(cur, "match_records_archive", columns, archive_where, archive_params, rows, col_keys)
-
-        elif event_filter and (event_filter == "current" or str(event_filter).startswith("season_")):
-            # Date-range filter
+        elif event_filter and event_filter != "current":
+            # Specific event or season — use date-range on both tables
             start_date, end_date = _get_event_date_range(event_filter)
+            if start_date:
+                date_where = where_parts + ["timestamp >= ?"]
+                date_params = params + [start_date]
+                if end_date:
+                    date_where.append("timestamp <= ?")
+                    date_params.append(end_date)
+                _query_table(cur, "match_records", columns, date_where, date_params, rows, col_keys)
+                if has_archive:
+                    _query_table(cur, "match_records_archive", columns, date_where, date_params, rows, col_keys)
+            elif has_archive:
+                # Fallback: no date range found, try archive by event_id
+                try:
+                    eid = int(event_filter)
+                    archive_where = where_parts + ["event_id = ?"]
+                    archive_params = params + [eid]
+                    _query_table(cur, "match_records_archive", columns, archive_where, archive_params, rows, col_keys)
+                except ValueError:
+                    pass
+
+        elif event_filter == "current":
+            # Active event date-range filter
+            start_date, end_date = _get_event_date_range("current")
             if start_date:
                 date_where = where_parts + ["timestamp >= ?"]
                 date_params = params + [start_date]
@@ -265,16 +280,26 @@ def _compute_win_streaks(rows):
             s["current"] = 1
             s["type"] = "L"
 
-    result = []
+    best = []
+    active = []
     for pid, s in streaks.items():
+        name = names.get(pid, str(pid))
+        current = s["current"] if s["type"] == "W" else 0
         if s["best"] >= 3:
-            result.append({
-                "name": names.get(pid, str(pid)),
+            best.append({
+                "name": name,
                 "best_streak": s["best"],
-                "current_streak": s["current"] if s["type"] == "W" else 0,
+                "current_streak": current,
             })
-    result.sort(key=lambda x: x["best_streak"], reverse=True)
-    return result[:10]
+        if current >= 2:
+            active.append({
+                "name": name,
+                "current_streak": current,
+            })
+
+    best.sort(key=lambda x: x["best_streak"], reverse=True)
+    active.sort(key=lambda x: x["current_streak"], reverse=True)
+    return {"best": best[:10], "active": active[:10]}
 
 
 def _extract_avatar(deck_str):

@@ -537,8 +537,12 @@ def get_fun_stats():
 
         rows = _collect_match_rows(event_filter, source_filter)
 
+        # Win streaks need ALL matches to compute correctly (like admin page).
+        # A streak may span multiple events, so filtering breaks the calculation.
+        all_rows = _collect_match_rows("all", source_filter) if event_filter and event_filter != "all" else rows
+
         stats = {
-            "win_streaks": _compute_win_streaks(rows),
+            "win_streaks": _compute_win_streaks(all_rows),
             "most_diverse": _compute_most_diverse(rows),
             "most_active": _compute_most_active(rows),
             "biggest_upsets": _compute_biggest_upsets(rows),

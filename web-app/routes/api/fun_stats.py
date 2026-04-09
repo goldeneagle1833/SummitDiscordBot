@@ -157,26 +157,47 @@ def _collect_match_rows(event_filter, source_filter):
         # Match type filter (exclude testing)
         where_parts.append("(match_type = 'ranked' OR match_type IS NULL)")
 
-        # Build date/event filter if a specific event or season is selected
-        query_where = list(where_parts)
-        query_params = list(params)
+        if not event_filter or event_filter == "all":
+            # No filter — all data from both tables
+            _query_table(cur, "match_records", columns, where_parts, params, rows, col_keys)
+            if has_archive:
+                _query_table(cur, "match_records_archive", columns, where_parts, params, rows, col_keys)
 
-        if event_filter and event_filter != "all":
-            # "current", specific event_id, or "season_*" — resolve to date range
-            start_date, end_date = _get_event_date_range(
-                event_filter if event_filter != "current" else "current"
-            )
+        elif event_filter == "current" or str(event_filter).startswith("season_"):
+            # Date-range filter (current event or season_* string IDs)
+            start_date, end_date = _get_event_date_range(event_filter)
+            date_where = list(where_parts)
+            date_params = list(params)
             if start_date:
-                query_where.append("timestamp >= ?")
-                query_params.append(start_date)
+                date_where.append("timestamp >= ?")
+                date_params.append(start_date)
             if end_date:
-                query_where.append("timestamp <= ?")
-                query_params.append(end_date)
+                date_where.append("timestamp <= ?")
+                date_params.append(end_date)
+            _query_table(cur, "match_records", columns, date_where, date_params, rows, col_keys)
+            if has_archive:
+                _query_table(cur, "match_records_archive", columns, date_where, date_params, rows, col_keys)
 
-        # Always query both tables
-        _query_table(cur, "match_records", columns, query_where, query_params, rows, col_keys)
-        if has_archive:
-            _query_table(cur, "match_records_archive", columns, query_where, query_params, rows, col_keys)
+        else:
+            # Numeric event_id — use event_id on archive (like avatar page),
+            # and date range on match_records (for active events)
+            start_date, end_date = _get_event_date_range(event_filter)
+            if start_date:
+                date_where = list(where_parts) + ["timestamp >= ?"]
+                date_params = list(params) + [start_date]
+                if end_date:
+                    date_where.append("timestamp <= ?")
+                    date_params.append(end_date)
+                _query_table(cur, "match_records", columns, date_where, date_params, rows, col_keys)
+
+            if has_archive:
+                try:
+                    eid = int(event_filter)
+                    archive_where = list(where_parts) + ["event_id = ?"]
+                    archive_params = list(params) + [eid]
+                    _query_table(cur, "match_records_archive", columns, archive_where, archive_params, rows, col_keys)
+                except ValueError:
+                    pass
 
         conn.close()
     except Exception as e:
@@ -188,7 +209,8 @@ def _collect_match_rows(event_filter, source_filter):
 def _query_table(cur, table, columns, where_parts, params, rows, col_keys):
     """Execute a SELECT on a table with optional WHERE clauses, appending dicts to rows.
 
-    Handles tables missing some columns (e.g. archive) by substituting NULL.
+    Handles tables missing some columns (e.g. archive) by substituting NULL
+    in SELECT and dropping WHERE clauses that reference missing columns.
     """
     try:
         # Detect which columns actually exist in this table
@@ -199,14 +221,23 @@ def _query_table(cur, table, columns, where_parts, params, rows, col_keys):
         safe_cols = [col if col in available else "NULL" for col in col_keys]
         col_str = ", ".join(safe_cols)
 
-        # Filter WHERE clauses that reference missing columns
+        # Filter WHERE clauses that reference missing columns.
+        # Check ALL identifiers in each clause, not just col_keys.
+        sql_keywords = {
+            "IS", "NOT", "NULL", "OR", "AND", "LIKE", "IN", "BETWEEN",
+            "SELECT", "FROM", "WHERE", "ORDER", "BY", "ASC", "DESC",
+            "CASE", "WHEN", "THEN", "ELSE", "END", "AS", "ON",
+        }
         safe_where = []
         safe_params = []
         param_idx = 0
         for part in where_parts:
             has_param = "?" in part
-            # Check if clause uses a missing column
-            uses_missing = any(col not in available and col in part for col in col_keys)
+            # Extract word-like identifiers from the clause
+            identifiers = set(part.replace("(", " ").replace(")", " ").replace("=", " ").split())
+            identifiers = {w for w in identifiers if w.isidentifier() and w.upper() not in sql_keywords}
+            # Drop clause if any identifier is a missing column
+            uses_missing = any(ident not in available and ident != "NULL" for ident in identifiers)
             if not uses_missing:
                 safe_where.append(part)
                 if has_param:
@@ -390,30 +421,6 @@ def _compute_nemesis_pairs(rows):
             })
     result.sort(key=lambda x: x["encounters"], reverse=True)
     return result[:5]
-
-
-def _compute_first_player_advantage(rows):
-    """Compute overall first-player win rate."""
-    total = 0
-    first_wins = 0
-
-    for r in rows:
-        wf = r["winner_went_first"]
-        lf = r["loser_went_first"]
-        if not wf and not lf:
-            continue
-        total += 1
-        # If winner_went_first has a truthy value, the first player won
-        if wf:
-            first_wins += 1
-
-    if total == 0:
-        return None
-    return {
-        "total_matches": total,
-        "first_player_wins": first_wins,
-        "first_player_win_rate": round(first_wins / total * 100, 1),
-    }
 
 
 def _compute_match_duration(rows):

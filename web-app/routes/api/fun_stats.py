@@ -194,10 +194,36 @@ def _collect_match_rows(event_filter, source_filter):
 
 
 def _query_table(cur, table, columns, where_parts, params, rows, col_keys):
-    """Execute a SELECT on a table with optional WHERE clauses, appending dicts to rows."""
-    where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+    """Execute a SELECT on a table with optional WHERE clauses, appending dicts to rows.
+
+    Handles tables missing some columns (e.g. archive) by substituting NULL.
+    """
     try:
-        cur.execute(f"SELECT {columns} FROM {table} WHERE {where_clause}", params)
+        # Detect which columns actually exist in this table
+        cur.execute(f"PRAGMA table_info({table})")
+        available = {r[1] for r in cur.fetchall()}
+
+        # Build SELECT list — NULL for missing columns
+        safe_cols = [col if col in available else "NULL" for col in col_keys]
+        col_str = ", ".join(safe_cols)
+
+        # Filter WHERE clauses that reference missing columns
+        safe_where = []
+        safe_params = []
+        param_idx = 0
+        for part in where_parts:
+            has_param = "?" in part
+            # Check if clause uses a missing column
+            uses_missing = any(col not in available and col in part for col in col_keys)
+            if not uses_missing:
+                safe_where.append(part)
+                if has_param:
+                    safe_params.append(params[param_idx])
+            if has_param:
+                param_idx += 1
+
+        where_clause = " AND ".join(safe_where) if safe_where else "1=1"
+        cur.execute(f"SELECT {col_str} FROM {table} WHERE {where_clause}", safe_params)
         for row in cur.fetchall():
             rows.append(dict(zip(col_keys, row)))
     except sqlite3.OperationalError as e:
@@ -327,7 +353,6 @@ def _compute_biggest_upsets(rows):
         if elo and elo > 0:
             candidates.append({
                 "winner_name": r["winner_display_name"] or "Unknown",
-                "loser_name": r["losser_display_name"] or "Unknown",
                 "elo_change": elo,
                 "timestamp": r["timestamp"] or "",
             })
@@ -391,7 +416,7 @@ def _compute_first_player_advantage(rows):
 
 def _compute_match_duration(rows):
     """Compute match duration stats (average, min, max)."""
-    times = [r["match_time"] for r in rows if r["match_time"] and r["match_time"] > 0]
+    times = [r["match_time"] for r in rows if r["match_time"] and 4 <= r["match_time"] <= 180]
     if not times:
         return None
     return {
@@ -493,7 +518,6 @@ def get_fun_stats():
             "most_active": _compute_most_active(rows),
             "biggest_upsets": _compute_biggest_upsets(rows),
             "nemesis_pairs": _compute_nemesis_pairs(rows),
-            "first_player_advantage": _compute_first_player_advantage(rows),
             "match_duration": _compute_match_duration(rows),
             "most_improved": _compute_most_improved(rows),
             "ironman_streak": _compute_ironman_streak(rows),

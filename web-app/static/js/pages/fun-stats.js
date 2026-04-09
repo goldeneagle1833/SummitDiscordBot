@@ -99,7 +99,6 @@
     renderMostActive(stats.most_active);
     renderBiggestUpsets(stats.biggest_upsets);
     renderNemesisPairs(stats.nemesis_pairs);
-    renderFirstPlayerAdvantage(stats.first_player_advantage);
     renderMatchDuration(stats.match_duration);
     renderMostImproved(stats.most_improved);
     renderIronmanStreak(stats.ironman_streak);
@@ -193,8 +192,6 @@
           `<tr>
         <td class="rank">${i + 1}</td>
         <td class="name">${escapeHtml(m.winner_name)}</td>
-        <td style="color:rgba(255,255,255,0.4)">beat</td>
-        <td class="name">${escapeHtml(m.loser_name)}</td>
         <td class="number text-positive">+${m.elo_change}</td>
       </tr>`
       )
@@ -202,7 +199,7 @@
     appendCard(
       "\ud83d\udca5 Biggest Upsets",
       `<div class="stat-table-wrap"><table class="stat-table">
-        <thead><tr><th></th><th>Winner</th><th></th><th>Loser</th><th>ELO</th></tr></thead>
+        <thead><tr><th></th><th>Player</th><th>ELO Gained</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>`
     );
@@ -231,29 +228,6 @@
         <thead><tr><th></th><th>Player</th><th></th><th>Player</th><th>Games</th><th>H2H</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>`
-    );
-  }
-
-  // ── First Player Advantage ───────────────────────────────────────
-
-  function renderFirstPlayerAdvantage(data) {
-    if (!data) return;
-    appendCard(
-      "\ud83c\udfb2 First Player Advantage",
-      `<div class="stat-highlight">
-        <div class="big-number">${data.first_player_win_rate.toFixed(1)}%</div>
-        <div class="big-label">Win rate when going first</div>
-        <div class="sub-stats">
-          <div class="sub-stat">
-            <div class="value">${data.first_player_wins}</div>
-            <div class="label">First Won</div>
-          </div>
-          <div class="sub-stat">
-            <div class="value">${data.total_matches}</div>
-            <div class="label">Total</div>
-          </div>
-        </div>
-      </div>`
     );
   }
 

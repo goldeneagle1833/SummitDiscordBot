@@ -1,5 +1,23 @@
 /* Fun Stats Page */
 
+/* Hero (not in base.html CSS) */
+.hero {
+  text-align: center;
+  padding: var(--spacing-2xl, 2rem) var(--spacing-lg, 1.5rem);
+  margin-bottom: var(--spacing-lg, 1.5rem);
+}
+
+.hero h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: var(--spacing-md, 1rem);
+}
+
+.hero p {
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+  font-size: 1.1rem;
+}
+
 .fun-stats-filters {
   max-width: 1200px;
   margin: 0 auto 1.5rem;
@@ -17,7 +35,7 @@
 }
 
 .filter-group label {
-  font-size: 0.9rem;
+  font-size: 1rem;
   color: rgba(255, 255, 255, 0.7);
   white-space: nowrap;
 }
@@ -28,7 +46,7 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 6px;
   padding: 0.4rem 0.8rem;
-  font-size: 0.9rem;
+  font-size: 1rem;
   cursor: pointer;
   min-width: 160px;
 }
@@ -79,9 +97,9 @@
 }
 
 .stat-card h3 {
-  font-size: 1rem;
+  font-size: 1.15rem;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.95);
   margin: 0 0 0.75rem;
   display: flex;
   align-items: center;
@@ -96,22 +114,22 @@
 .stat-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
 }
 
 .stat-table th {
   text-align: left;
   padding: 0.4rem 0.5rem;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.55);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   white-space: nowrap;
 }
 
 .stat-table td {
   padding: 0.4rem 0.5rem;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.9);
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   white-space: nowrap;
 }
@@ -153,8 +171,8 @@
 }
 
 .stat-highlight .big-label {
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.55);
   margin-top: 0.25rem;
 }
 
@@ -170,14 +188,14 @@
 }
 
 .stat-highlight .sub-stat .value {
-  font-size: 1.1rem;
+  font-size: 1.2rem;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.9);
 }
 
 .stat-highlight .sub-stat .label {
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.55);
   text-transform: uppercase;
 }
 
@@ -224,8 +242,8 @@
 
 /* Avatar list in diversity card */
 .avatar-list {
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.55);
   white-space: normal;
   max-width: 200px;
   line-height: 1.3;

@@ -137,6 +137,12 @@ def elements():
     return render_template("pages/elements.html")
 
 
+@pages_bp.route("/fun-stats")
+def fun_stats():
+    """Fun community stats page."""
+    return render_template("pages/fun_stats.html")
+
+
 @pages_bp.route("/elo")
 def elo():
     """ELO leaderboards page."""

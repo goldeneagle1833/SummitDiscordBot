@@ -254,6 +254,12 @@ class ShopCog(commands.Cog):
             "big_banana": "!big_banana",
             "bignana": "!big_banana",
             "bigban": "!big_banana",
+            # Fart Donation variations
+            "fartdonation": "!fart_donation",
+            "fart_donation": "!fart_donation",
+            "donation": "!fart_donation",
+            "donate": "!fart_donation",
+            "give": "!fart_donation",
         }
 
         actual_commands = {
@@ -298,6 +304,8 @@ class ShopCog(commands.Cog):
             "fartlance": "!fart_lance",
             "big_banana": "!big_banana",
             "bigbanana": "!big_banana",
+            "fart_donation": "!fart_donation",
+            "fartdonation": "!fart_donation",
         }
 
         suggestion = find_best_command_match(failed_command, command_suggestions, actual_commands)
@@ -1348,7 +1356,6 @@ class ShopCog(commands.Cog):
         )
 
     @commands.command(name="gas_gamble")
-    @commands.cooldown(1, 45, commands.BucketType.user)
     async def gas_gamble(self, ctx, amount: int = None):
         """Gamble any amount of points! 40% chance to double, 60% chance to lose. Usage: !gas_gamble <amount>"""
         if ctx.channel.id != self.fart_channel_id:
@@ -1392,6 +1399,54 @@ class ShopCog(commands.Cog):
             await ctx.send(
                 f"<@{ctx.author.id}> gambled {amount} points and **LOST**! -{amount} points down the drain!"
             )
+
+    @commands.command(name="fart_donation")
+    @commands.cooldown(1, 45, commands.BucketType.user)
+    async def fart_donation(self, ctx, target: discord.Member = None, amount: int = None):
+        """Donate points to another player! Usage: !fart_donation @user <amount>"""
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+            )
+            return
+
+        if target is None or amount is None:
+            return await ctx.send(
+                f"{ctx.author.mention}, usage: `!fart_donation @user <amount>`"
+            )
+
+        if amount <= 0:
+            return await ctx.send("You must donate at least 1 point!")
+
+        if target.id == ctx.author.id:
+            return await ctx.send("You can't donate to yourself!")
+
+        if target.bot:
+            return await ctx.send("You can't donate to a bot!")
+
+        user_score = await self.get_user_score(ctx.author.id)
+        if user_score < amount:
+            return await ctx.send(
+                f"You don't have enough points! You have {user_score} but tried to donate {amount}."
+            )
+
+        # Deduct from donor, add to recipient
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE fart_scores SET score = score - ? WHERE user_id = ?",
+                (amount, ctx.author.id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        await self.add_points(target.id, amount)
+
+        await ctx.send(
+            f"<@{ctx.author.id}> donated {amount} points to <@{target.id}>! How generous!"
+        )
 
     @commands.command(name="fart_leech")
     @commands.cooldown(1, 45, commands.BucketType.user)
@@ -1774,6 +1829,11 @@ class ShopCog(commands.Cog):
                 "Fart Leech (!fart_leech)",
                 "Steal 2d20/2 points from a random player and add to your score\n*What's yours is mine.*",
                 self.item_costs["fart_leech"],
+            ),
+            (
+                "Fart Donation (!fart_donation @user <amount>)",
+                "Donate your points to another player.\n*Sharing is caring.*",
+                "Custom",
             ),
         ]
 

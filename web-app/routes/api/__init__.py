@@ -21,6 +21,7 @@ from routes.api.curios import curios_bp
 from routes.api.seasons import seasons_bp
 from routes.api.limited import limited_bp
 from routes.api.fun_stats import fun_stats_bp
+from routes.api.events import events_bp
 
 api_bp.register_blueprint(leaderboard_bp)
 api_bp.register_blueprint(matches_bp)
@@ -38,3 +39,4 @@ api_bp.register_blueprint(curios_bp, url_prefix="/curios")
 api_bp.register_blueprint(seasons_bp)
 api_bp.register_blueprint(limited_bp, url_prefix="/limited")
 api_bp.register_blueprint(fun_stats_bp)
+api_bp.register_blueprint(events_bp)

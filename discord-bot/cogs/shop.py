@@ -8,6 +8,7 @@ from openai import OpenAI
 
 import config
 from utils.text import find_best_command_match
+from cogs.fun import parse_to_est_date, get_est_date, safe_parse_datetime
 
 logger = logging.getLogger("discord_bot")
 
@@ -34,11 +35,14 @@ class ShopCog(commands.Cog):
             "thunder_fart": 20,  # Thunder Fart - hit everyone for small damage
             "gas_shield": 8,  # Gas Shield - reflect 50% damage back at next attacker
             "stink_bomb": 12,  # Stink Bomb - hit random player (anyone)
-            "fart_rocket": 15,  # Fart Rocket - swap scores with player ahead
+            "fart_rocket": 100,  # Fart Rocket - swap scores with player ahead
             "fart_trap": 20,  # Fart Trap - target's next attack hits themselves
             "stink_cloud": 5,  # Stink Cloud - block target from shop for 30 min
             "gas_gamble": 3,  # Gas Gamble - 50/50 double or lose
             "fart_leech": 10,  # Fart Leech - steal points from random player
+            "fart_twister": 50,  # Fart Twister - launch player into another, uses daily action
+            "fart_lance": 15,  # Fart Lance - diminishing damage to 3 players ahead
+            "big_banana": 10,  # Big Banana - hit player behind for 4d10 damage (weekly)
         }
         logger.info("ShopCog initialized")
         self.setup_purchase_database()
@@ -46,7 +50,8 @@ class ShopCog(commands.Cog):
     ATTACK_COMMANDS = {
         'blue_shell', 'red_shell', 'green_shell', 'banana', 'bobomb',
         'blue_star', 'stink_bomb', 'thunder_fart', 'fart_rocket',
-        'fart_leech', 'stink_cloud', 'fart_star',
+        'fart_leech', 'stink_cloud', 'fart_star', 'fart_twister',
+        'fart_lance', 'big_banana',
     }
 
     async def cog_check(self, ctx):
@@ -233,6 +238,22 @@ class ShopCog(commands.Cog):
             "leech": "!fart_leech",
             "fleech": "!fart_leech",
             "steal": "!fart_leech",
+            # Fart Twister variations
+            "farttwister": "!fart_twister",
+            "fart_twister": "!fart_twister",
+            "twister": "!fart_twister",
+            "tornado": "!fart_twister",
+            # Fart Lance variations
+            "fartlance": "!fart_lance",
+            "fart_lance": "!fart_lance",
+            "lance": "!fart_lance",
+            "icelance": "!fart_lance",
+            "ice_lance": "!fart_lance",
+            # Big Banana variations
+            "bigbanana": "!big_banana",
+            "big_banana": "!big_banana",
+            "bignana": "!big_banana",
+            "bigban": "!big_banana",
         }
 
         actual_commands = {
@@ -271,6 +292,12 @@ class ShopCog(commands.Cog):
             "gasgamble": "!gas_gamble",
             "fart_leech": "!fart_leech",
             "fartleech": "!fart_leech",
+            "fart_twister": "!fart_twister",
+            "farttwister": "!fart_twister",
+            "fart_lance": "!fart_lance",
+            "fartlance": "!fart_lance",
+            "big_banana": "!big_banana",
+            "bigbanana": "!big_banana",
         }
 
         suggestion = find_best_command_match(failed_command, command_suggestions, actual_commands)
@@ -545,6 +572,10 @@ class ShopCog(commands.Cog):
         """Roll specified number of D20 dice and return average"""
         total = sum(random.randint(1, 20) for _ in range(num_dice))
         return total // 2
+
+    def roll_d10_damage(self, num_dice: int) -> int:
+        """Roll specified number of D10 dice (no halving)"""
+        return sum(random.randint(1, 10) for _ in range(num_dice))
 
     async def get_sorted_players(self):
         """Get players sorted by score"""
@@ -1260,8 +1291,8 @@ class ShopCog(commands.Cog):
             conn.close()
 
         await ctx.send(
-            f"<@{ctx.author.id}> set a Fart Trap on <@{target_id}>!\n"
-            f"Their next attack will backfire on them!"
+            f"<@{ctx.author.id}> set a fart trap! "
+            f"Someone's next attack will backfire on them..."
         )
 
     @commands.command(name="stink_cloud")
@@ -1390,6 +1421,228 @@ class ShopCog(commands.Cog):
         )
         await self.check_gas_shield(ctx, target_id, ctx.author.id, actual_steal)
 
+    @commands.command(name="fart_twister")
+    @commands.cooldown(1, 45, commands.BucketType.user)
+    async def fart_twister(self, ctx):
+        """Launch a random player into another! Costs 50 points AND uses your daily fart."""
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+            )
+            return
+
+        # Check daily action cooldown
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT date_last_updated FROM fart_scores WHERE user_id=?",
+                (ctx.author.id,),
+            )
+            row = cur.fetchone()
+            if row:
+                parsed = safe_parse_datetime(row[0])
+                if parsed:
+                    last_date = parse_to_est_date(row[0])
+                    if last_date == get_est_date():
+                        await ctx.send(
+                            f"{ctx.author.mention}, you've already used your daily action today! "
+                            f"Fart Twister uses your daily fart."
+                        )
+                        return
+        finally:
+            conn.close()
+
+        if not await self.check_points(ctx.author.id, "fart_twister"):
+            return await ctx.send(
+                f"You don't have enough points! Fart Twister costs {self.item_costs['fart_twister']} points!"
+            )
+
+        players = await self.get_sorted_players()
+        targets = [(pid, score) for pid, score in players if pid != ctx.author.id]
+        if len(targets) < 2:
+            return await ctx.send("Not enough players for a Fart Twister! Need at least 2 other players.")
+
+        # Pick two different random targets
+        player_a, player_b = random.sample(targets, 2)
+        player_a_id, player_a_score = player_a
+        player_b_id, _ = player_b
+
+        # All-or-nothing: if either is protected, fizzle
+        if await self.is_protected(player_a_id) or await self.is_protected(player_b_id):
+            return await ctx.send(
+                f"The Fart Twister fizzles! One of the targets has Star protection. "
+                f"Your points are safe."
+            )
+
+        damage = player_a_score // 2
+
+        # Deduct cost and update daily action
+        await self.deduct_points(ctx.author.id, "fart_twister")
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE fart_scores SET date_last_updated=? WHERE user_id=?",
+                (datetime.datetime.now().isoformat(), ctx.author.id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Apply damage to both targets
+        actual_damage_a = await self.deduct_damage(player_a_id, damage)
+        actual_damage_b = await self.deduct_damage(player_b_id, damage)
+
+        await ctx.send(
+            f"🌪️ **FART TWISTER!** <@{ctx.author.id}> unleashed a massive twister!\n"
+            f"<@{player_a_id}> was launched into the air and crashed into <@{player_b_id}>!\n"
+            f"💥 <@{player_a_id}> took {actual_damage_a} damage!\n"
+            f"💥 <@{player_b_id}> took {actual_damage_b} damage!\n"
+            f"*(Damage based on half of <@{player_a_id}>'s {player_a_score} points)*"
+        )
+
+        await self.check_gas_shield(ctx, player_a_id, ctx.author.id, actual_damage_a)
+        await self.check_gas_shield(ctx, player_b_id, ctx.author.id, actual_damage_b)
+
+    @commands.command(name="fart_lance")
+    @commands.cooldown(1, 45, commands.BucketType.user)
+    async def fart_lance(self, ctx):
+        """Ice Lance - hit up to 3 players ahead with diminishing damage!"""
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+            )
+            return
+
+        if not await self.check_points(ctx.author.id, "fart_lance"):
+            return await ctx.send(
+                f"You don't have enough points! Fart Lance costs {self.item_costs['fart_lance']} points!"
+            )
+
+        players = await self.get_sorted_players()
+        user_index = next(
+            (i for i, (pid, _) in enumerate(players) if pid == ctx.author.id), None
+        )
+
+        if user_index is None or user_index == 0:
+            return await ctx.send("No players in front of you to lance!")
+
+        await self.deduct_points(ctx.author.id, "fart_lance")
+
+        # Hit up to 3 players ahead with diminishing damage: 3d20/2, 2d20/2, 1d20/2
+        dice_counts = [3, 2, 1]
+        hit_results = []
+        protected_players = []
+        hit_player_ids = []
+
+        for i, num_dice in enumerate(dice_counts):
+            target_index = user_index - 1 - i
+            if target_index < 0:
+                break
+
+            target_id, _ = players[target_index]
+
+            if await self.is_protected(target_id):
+                protected_players.append(f"<@{target_id}>")
+                continue
+
+            damage = self.roll_damage(num_dice)
+            actual_damage = await self.deduct_damage(target_id, damage)
+            hit_results.append((f"<@{target_id}>", actual_damage, num_dice))
+            hit_player_ids.append((target_id, actual_damage))
+
+        response = f"🧊 **FART LANCE!** <@{ctx.author.id}> fired a triple-burst of gas!\n"
+
+        if hit_results:
+            for mention, dmg, dice in hit_results:
+                response += f"💥 {mention} took {dmg} damage! ({dice}d20/2)\n"
+
+        if protected_players:
+            response += "⭐ " + ", ".join(protected_players) + " blocked by Star protection!"
+
+        if not hit_results and not protected_players:
+            response += "The lance hit nothing but air!"
+
+        await ctx.send(response)
+
+        for player_id, actual_damage in hit_player_ids:
+            await self.check_gas_shield(ctx, player_id, ctx.author.id, actual_damage)
+
+    @commands.command(name="big_banana")
+    @commands.cooldown(1, 45, commands.BucketType.user)
+    async def big_banana(self, ctx):
+        """Hit a random player behind you with 4d10 damage! Once per week."""
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+            )
+            return
+
+        if not await self.check_points(ctx.author.id, "big_banana"):
+            return await ctx.send(
+                f"You don't have enough points! Big Banana costs {self.item_costs['big_banana']} points!"
+            )
+
+        # Check weekly cooldown
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS command_usage
+                (user_id INTEGER,
+                 command_name TEXT,
+                 last_used TEXT,
+                 PRIMARY KEY (user_id, command_name))
+            """)
+            cur.execute(
+                "SELECT last_used FROM command_usage WHERE user_id=? AND command_name='big_banana'",
+                (ctx.author.id,),
+            )
+            row = cur.fetchone()
+            if row:
+                parsed = safe_parse_datetime(row[0])
+                if parsed:
+                    last_used_date = parsed.date()
+                    next_available = last_used_date + datetime.timedelta(weeks=1)
+                    if next_available > datetime.datetime.now().date():
+                        days_remaining = (next_available - datetime.datetime.now().date()).days
+                        return await ctx.send(
+                            f"You can only use Big Banana once per week! "
+                            f"Try again in {days_remaining} day{'s' if days_remaining != 1 else ''}."
+                        )
+        finally:
+            conn.close()
+
+        target = await self.find_target(ctx.author.id, "back")
+        if not target:
+            return await ctx.send("No players behind you!")
+
+        if await self.is_protected(target[0]):
+            return await ctx.send(f"<@{target[0]}> is protected by a Star!")
+
+        damage = self.roll_d10_damage(4)  # 4d10
+        await self.deduct_points(ctx.author.id, "big_banana")
+        actual_damage = await self.deduct_damage(target[0], damage)
+
+        # Update weekly cooldown
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "INSERT OR REPLACE INTO command_usage (user_id, command_name, last_used) VALUES (?, 'big_banana', ?)",
+                (ctx.author.id, datetime.datetime.now().isoformat()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        await ctx.send(
+            f"🍌 **BIG BANANA!** <@{ctx.author.id}> hurled a massive banana at <@{target[0]}> "
+            f"for {actual_damage} damage! (4d10)"
+        )
+        await self.check_gas_shield(ctx, target[0], ctx.author.id, actual_damage)
+
     @commands.command(name="fart_shop")
     async def fart_shop(self, ctx):
         """Display all available shop items"""
@@ -1402,92 +1655,107 @@ class ShopCog(commands.Cog):
         items = [
             (
                 "Blue Shell (!blue_shell)",
-                "Hits the leader with 3d20/2 damage",
+                "Hits the leader with 3d20/2 damage\n*Seeks the strongest stench...*",
                 self.item_costs["blue"],
             ),
             (
                 "Red Shell (!red_shell)",
-                "Hits the player directly in front of you with 2d20/2 damage",
+                "Hits the player directly in front of you with 2d20/2 damage\n*Locked on and loaded.*",
                 self.item_costs["red"],
             ),
             (
                 "Green Shell (!green_shell)",
-                "Hits a random player in front of you with 2d20/2 damage",
+                "Hits a random player in front of you with 2d20/2 damage\n*Bouncing off the walls.*",
                 self.item_costs["green"],
             ),
             (
                 "Banana (!banana)",
-                "Hits a random player behind you with 2d20/2 damage",
+                "Hits a random player behind you with 2d20/2 damage\n*Slippery. Normal banana, normal odds.*",
                 self.item_costs["banana"],
             ),
             (
+                "Big Banana (!big_banana)",
+                "Hits a random player behind you with 4d10 damage (once/week)\n*Big slippery. More banana-y.*",
+                self.item_costs["big_banana"],
+            ),
+            (
                 "Star (!star)",
-                "Protects you from all items for 24 hours (Costs 10% of your points)",
+                "Protects you from all items for 24 hours (Costs 10% of your points)\n*Invincible... for now.*",
                 "10%",
             ),
             (
                 "Mushroom (!mushroom)",
-                "Mushroom Boost - Next fart rolls twice, take higher! (Once per week)",
+                "Mushroom Boost - Next fart rolls twice, take higher! (Once per week)\n*Eat this. Trust me.*",
                 self.item_costs["mushroom"],
             ),
             (
                 "Bob-omb (!bobomb)",
-                "Hits the top 5 players with 3d20/2 damage",
+                "Hits the top 5 players with 3d20/2 damage\n*Nobody is safe from this blast.*",
                 self.item_costs["bobomb"],
             ),
             (
                 "Blue Star (!blue_star)",
-                "Hits the leader with 4d20/2 damage AND protects you for 12 hours",
+                "Hits the leader with 4d20/2 damage AND protects you for 12 hours\n*Attack and defend in one move.*",
                 self.item_costs["bluestar"],
             ),
             (
                 "Fart Star (!fart_star)",
-                "Removes star protection from a random protected user",
+                "Removes star protection from a random protected user\n*No star lasts forever.*",
                 "10% of pts",
             ),
             (
                 "Evil Star (!evil_star)",
-                "😈 Doubles your points... but ONLY if you have exactly 666 points! (FREE)",
+                "😈 Doubles your points... but ONLY if you have exactly 666 points! (FREE)\n*The beast rewards the faithful.*",
                 "FREE",
             ),
             (
                 "Thunder Fart (!thunder_fart)",
-                "Hits ALL players for 1-5 damage each",
+                "Hits ALL players for 1-5 damage each\n*The whole room trembles.*",
                 self.item_costs["thunder_fart"],
             ),
             (
                 "Gas Shield (!gas_shield)",
-                "Reflects 50% damage back at the next attacker",
+                "Reflects 50% damage back at the next attacker\n*Touch me and find out.*",
                 self.item_costs["gas_shield"],
             ),
             (
                 "Stink Bomb (!stink_bomb)",
-                "Hits a random player (anyone!) for 3d20/2 damage",
+                "Hits a random player (anyone!) for 3d20/2 damage\n*Nowhere to hide.*",
                 self.item_costs["stink_bomb"],
             ),
             (
                 "Fart Rocket (!fart_rocket)",
-                "Swap scores with a random player",
+                "Swap scores with a random player\n*Identity theft is flattery.*",
                 self.item_costs["fart_rocket"],
             ),
             (
+                "Fart Lance (!fart_lance)",
+                "Hits up to 3 players ahead with diminishing damage (3/2/1 d20/2)\n*A triple-burst of gaseous fury.*",
+                self.item_costs["fart_lance"],
+            ),
+            (
                 "Fart Trap (!fart_trap)",
-                "Set a trap on a random player - their next attack backfires on them!",
+                "Set a hidden trap - a player's next attack backfires on them!\n*You'll never see it coming...*",
                 self.item_costs["fart_trap"],
             ),
             (
+                "Fart Twister (!fart_twister)",
+                "Launch a player into another! Damage = half the launched player's score. Uses daily fart.\n*What goes up must come crashing down.*",
+                self.item_costs["fart_twister"],
+            ),
+            (
                 "Stink Cloud (!stink_cloud)",
-                "Blinds a random player, blocking them from shop items for 30 minutes",
+                "Blinds a random player, blocking them from shop items for 30 minutes\n*Can't buy what you can't see.*",
                 self.item_costs["stink_cloud"],
             ),
             (
                 "Gas Gamble (!gas_gamble)",
-                "50/50 chance to double your bet or lose it all!",
+                "50/50 chance to double your bet or lose it all!\n*Feeling lucky, punk?*",
                 self.item_costs["gas_gamble"],
             ),
             (
                 "Fart Leech (!fart_leech)",
-                "Steal 2d20/2 points from a random player and add to your score",
+                "Steal 2d20/2 points from a random player and add to your score\n*What's yours is mine.*",
                 self.item_costs["fart_leech"],
             ),
         ]

@@ -1834,11 +1834,11 @@ class LFGCog(commands.Cog):
         self, ctx, winner: discord.Member = None, loser: discord.Member = None
     ):
         """Admin command to manually report a limited match result. Usage: !admin_limited_report @winner @loser"""
-        REALMSDRAFT_USER_ID = 247563860746305536
+        DRAFT_SORCERY_USER_ID = 247563860746305536
 
-        # Permission check: bot admins OR the RealmsDraft user
+        # Permission check: bot admins OR the Draft Sorcery user
         is_admin = False
-        if ctx.author.id == REALMSDRAFT_USER_ID:
+        if ctx.author.id == DRAFT_SORCERY_USER_ID:
             is_admin = True
         elif ctx.author.guild_permissions.administrator:
             is_admin = True

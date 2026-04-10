@@ -1,4 +1,4 @@
-"""RealmsDraft integration API for limited arena runs."""
+"""Draft Sorcery integration API for limited arena runs."""
 
 import logging
 import sqlite3

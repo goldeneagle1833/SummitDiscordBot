@@ -63,7 +63,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             )
             return
 
-        # For limited queue, player must have an active arena run (created via RealmsDraft)
+        # For limited queue, player must have an active arena run (created via Draft Sorcery)
         run_id = None
         if self.queue_type == "limited":
             active_run = get_active_arena_run(interaction.user.id)
@@ -72,9 +72,9 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 deck_url = active_run["deck_url"]
             else:
                 if active_run and active_run["status"] != "active":
-                    msg = "Your current Limited run is over. Start a new run on RealmsDraft to continue playing Limited."
+                    msg = "Your current Limited run is over. Start a new run at https://draftsorcery.com/ to continue playing Limited."
                 else:
-                    msg = "You need an active arena run to join the Limited queue. Start one on RealmsDraft first."
+                    msg = "You need an active arena run to join the Limited queue. Start one at https://draftsorcery.com/ first."
                 await interaction.followup.send(msg, ephemeral=True)
                 return
 

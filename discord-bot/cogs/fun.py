@@ -740,6 +740,17 @@ class FunCog(commands.Cog):
                     "⚠️ There was an error updating the leader role, but your fart was counted!"
                 )
 
+            # Assign farter role to user
+            try:
+                guild = self.bot.get_guild(self.guild_id)
+                if guild:
+                    farter_role = guild.get_role(1445222741686095994)
+                    member = guild.get_member(ctx.author.id)
+                    if farter_role and member and farter_role not in member.roles:
+                        await member.add_roles(farter_role)
+            except Exception as e:
+                logger.error(f"Error assigning farter role: {e}")
+
         except Exception as e:
             logger.error(f"Unexpected error in fart command: {e}")
             await ctx.send(

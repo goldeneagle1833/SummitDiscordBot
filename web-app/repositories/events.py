@@ -131,6 +131,46 @@ class EventRepository:
 
         return {"success": True}
 
+    def _get_order_file(self) -> Path:
+        """Get the path to the event order JSON file."""
+        return self._events_dir / "_event_order.json"
+
+    def _load_event_order(self) -> list[str] | None:
+        """Load the saved event order (list of folder names), or None if not set."""
+        order_file = self._get_order_file()
+        if not order_file.exists():
+            return None
+        try:
+            with open(order_file, "r", encoding="utf-8") as f:
+                order = json.load(f)
+            if isinstance(order, list):
+                return order
+        except Exception:
+            pass
+        return None
+
+    def save_event_order(self, folder_order: list[str]) -> dict:
+        """Save a custom event display order.
+
+        Args:
+            folder_order: List of event folder names in desired display order.
+
+        Returns:
+            dict with "success" bool and optional "error" string.
+        """
+        # Validate all entries are strings
+        if not all(isinstance(f, str) for f in folder_order):
+            return {"success": False, "error": "All entries must be strings"}
+
+        try:
+            with open(self._get_order_file(), "w", encoding="utf-8") as f:
+                json.dump(folder_order, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Failed to save event order: {e}")
+            return {"success": False, "error": "Failed to save event order"}
+
+        return {"success": True}
+
     def get_all_events(self) -> list[dict]:
         """Get all events with their metadata."""
         events = []
@@ -169,14 +209,19 @@ class EventRepository:
                 except Exception:
                     pass
 
-        # Sort by year descending
-        events.sort(
-            key=lambda e: (
-                extract_year_from_name(e["name"]) > 0,
-                extract_year_from_name(e["name"]),
-            ),
-            reverse=True,
-        )
+        # Use saved custom order if available, otherwise sort by year
+        saved_order = self._load_event_order()
+        if saved_order:
+            order_map = {name: i for i, name in enumerate(saved_order)}
+            events.sort(key=lambda e: order_map.get(e["folder"], len(saved_order)))
+        else:
+            events.sort(
+                key=lambda e: (
+                    extract_year_from_name(e["name"]) > 0,
+                    extract_year_from_name(e["name"]),
+                ),
+                reverse=True,
+            )
 
         return events
 

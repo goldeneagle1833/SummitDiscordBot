@@ -155,6 +155,92 @@
       .star.empty {
         color: rgba(255, 255, 255, 0.2);
       }
+
+      /* Admin drag-and-drop reorder styles */
+      .event-card.dragging {
+        opacity: 0.4;
+        border-color: #4db8ff;
+      }
+
+      .event-card.drag-over {
+        border-color: #4db8ff;
+        box-shadow: 0 0 12px rgba(77, 184, 255, 0.4);
+      }
+
+      .event-card .drag-handle-card {
+        display: none;
+      }
+
+      .admin-reorder .event-card .drag-handle-card {
+        display: block;
+        color: rgba(255, 255, 255, 0.3);
+        font-size: 1.2rem;
+        cursor: grab;
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+      }
+
+      .admin-reorder .event-card .drag-handle-card:hover {
+        color: rgba(255, 255, 255, 0.7);
+      }
+
+      .admin-reorder .event-card {
+        position: relative;
+      }
+
+      .reorder-controls {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 0.5rem;
+        gap: 0.5rem;
+      }
+
+      .save-order-btn {
+        padding: 0.5rem 1.2rem;
+        background: #4db8ff;
+        color: #000;
+        border: none;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.9rem;
+        display: none;
+      }
+
+      .save-order-btn:hover {
+        background: #3aa0e6;
+      }
+
+      .save-order-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .reorder-toast {
+        position: fixed;
+        bottom: 2rem;
+        right: 2rem;
+        padding: 0.8rem 1.5rem;
+        border-radius: 8px;
+        color: #fff;
+        font-weight: 600;
+        z-index: 1000;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+
+      .reorder-toast.show {
+        opacity: 1;
+      }
+
+      .reorder-toast.success {
+        background: #27ae60;
+      }
+
+      .reorder-toast.error {
+        background: #e74c3c;
+      }
     </style>
   </head>
   <body>
@@ -208,13 +294,19 @@
             events|length }} events</span
           >
         </div>
-        <div class="events-grid">
+        {% if is_admin %}
+        <div class="reorder-controls">
+          <button class="save-order-btn" id="save-events-btn" onclick="saveEventOrder()">Save Order</button>
+        </div>
+        {% endif %}
+        <div class="events-grid{% if is_admin %} admin-reorder{% endif %}" id="events-grid">
           {% for event in events %}
           <a
             class="event-card"
             data-name="{{ event.name|lower }}"
-            data-folder="{{ event.folder|lower }}"
+            data-folder="{{ event.folder }}"
             href="/top-8/{{ event.folder }}">
+            {% if is_admin %}<span class="drag-handle-card" title="Drag to reorder">&#x2801;&#x2801;</span>{% endif %}
             <h3>{{ event.name }}</h3>
             <div class="event-rating">
               {% for i in range(1, 4) %} {% if i <= event.rating %}
@@ -285,5 +377,146 @@
         .getElementById("format-filter")
         .addEventListener("change", filterEvents);
     </script>
+
+    <!-- Toast notification for reorder -->
+    <div class="reorder-toast" id="reorder-toast"></div>
+
+    {% if is_admin %}
+    <script>
+      // Drag-and-drop reordering for event cards grid
+      (function() {
+        const grid = document.getElementById('events-grid');
+        if (!grid) return;
+
+        let dragCard = null;
+        let isDragging = false;
+
+        grid.addEventListener('dragstart', function(e) {
+          const card = e.target.closest('.event-card');
+          if (!card) return;
+          dragCard = card;
+          isDragging = true;
+          card.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', '');
+        });
+
+        grid.addEventListener('dragend', function(e) {
+          const card = e.target.closest('.event-card');
+          if (card) card.classList.remove('dragging');
+          grid.querySelectorAll('.event-card').forEach(c => c.classList.remove('drag-over'));
+          dragCard = null;
+          isDragging = false;
+        });
+
+        grid.addEventListener('dragover', function(e) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          const card = e.target.closest('.event-card');
+          if (!card || card === dragCard) return;
+          grid.querySelectorAll('.event-card').forEach(c => c.classList.remove('drag-over'));
+          card.classList.add('drag-over');
+        });
+
+        grid.addEventListener('dragleave', function(e) {
+          const card = e.target.closest('.event-card');
+          if (card) card.classList.remove('drag-over');
+        });
+
+        grid.addEventListener('drop', function(e) {
+          e.preventDefault();
+          const card = e.target.closest('.event-card');
+          if (!card || !dragCard || card === dragCard) return;
+
+          // Insert dragged card before or after target based on position
+          const cards = Array.from(grid.querySelectorAll('.event-card'));
+          const dragIdx = cards.indexOf(dragCard);
+          const dropIdx = cards.indexOf(card);
+
+          if (dragIdx < dropIdx) {
+            grid.insertBefore(dragCard, card.nextSibling);
+          } else {
+            grid.insertBefore(dragCard, card);
+          }
+
+          grid.querySelectorAll('.event-card').forEach(c => c.classList.remove('drag-over'));
+
+          // Show save button
+          const btn = document.getElementById('save-events-btn');
+          if (btn) btn.style.display = 'inline-block';
+        });
+
+        // Prevent navigation when dragging, allow click when not
+        grid.addEventListener('click', function(e) {
+          const handle = e.target.closest('.drag-handle-card');
+          if (handle) {
+            e.preventDefault();
+          }
+        });
+
+        // Make cards draggable only from the handle
+        grid.querySelectorAll('.event-card').forEach(card => {
+          const handle = card.querySelector('.drag-handle-card');
+          if (handle) {
+            card.draggable = true;
+            card.addEventListener('mousedown', function(e) {
+              if (!e.target.closest('.drag-handle-card')) {
+                card.draggable = false;
+              } else {
+                card.draggable = true;
+              }
+            });
+            // Re-enable after drag ends so next drag from handle works
+            card.addEventListener('mouseup', function() {
+              card.draggable = true;
+            });
+          }
+        });
+
+        // Save event order to server
+        window.saveEventOrder = function() {
+          const cards = grid.querySelectorAll('.event-card');
+          const order = Array.from(cards).map(c => c.dataset.folder);
+
+          const btn = document.getElementById('save-events-btn');
+          if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+          }
+
+          fetch('/api/events/reorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order: order })
+          })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              showToast('Event order saved!', 'success');
+              if (btn) btn.style.display = 'none';
+            } else {
+              showToast(data.error || 'Failed to save', 'error');
+            }
+          })
+          .catch(() => {
+            showToast('Network error', 'error');
+          })
+          .finally(() => {
+            if (btn) {
+              btn.disabled = false;
+              btn.textContent = 'Save Order';
+            }
+          });
+        };
+
+        function showToast(message, type) {
+          const toast = document.getElementById('reorder-toast');
+          toast.textContent = message;
+          toast.className = 'reorder-toast ' + type + ' show';
+          setTimeout(() => { toast.classList.remove('show'); }, 3000);
+        }
+      })();
+    </script>
+    {% endif %}
   </body>
 </html>

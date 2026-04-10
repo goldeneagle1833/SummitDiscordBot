@@ -33,3 +33,22 @@ def reorder_event_decks(event_folder):
 
     status = 200 if result.get("success") else 400
     return jsonify(result), status
+
+
+@events_bp.route("/events/reorder", methods=["POST"])
+@require_admin
+def reorder_events_list():
+    """Reorder the events listing page (admin only)."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "Request body required"}), 400
+
+    folder_order = data.get("order")
+    if not isinstance(folder_order, list) or not all(isinstance(f, str) for f in folder_order):
+        return jsonify({"success": False, "error": "order must be a list of folder name strings"}), 400
+
+    repo = EventRepository()
+    result = repo.save_event_order(folder_order)
+
+    status = 200 if result.get("success") else 400
+    return jsonify(result), status

@@ -50,6 +50,8 @@ from utils.constants import SORCERY_NICKNAMES
 from utils.text import find_best_command_match
 from utils.checks import is_bot_admin
 from services.pilots_service import is_pilot_active
+from services.limited_service import limited_winner_report, get_run_summary
+from repositories.limited_repo import get_active_arena_run, get_limited_elo
 
 logger = logging.getLogger("discord_bot")
 
@@ -1825,6 +1827,134 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
         else:
             logger.error(f"admin_report error: {error}")
+            await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    async def admin_limited_report(
+        self, ctx, winner: discord.Member = None, loser: discord.Member = None
+    ):
+        """Admin command to manually report a limited match result. Usage: !admin_limited_report @winner @loser"""
+        REALMSDRAFT_USER_ID = 247563860746305536
+
+        # Permission check: bot admins OR the RealmsDraft user
+        is_admin = False
+        if ctx.author.id == REALMSDRAFT_USER_ID:
+            is_admin = True
+        elif ctx.author.guild_permissions.administrator:
+            is_admin = True
+        elif any(role.id == config.BOT_ADMIN_ROLE_ID for role in ctx.author.roles):
+            is_admin = True
+        elif any(role.id == config.JUDGE_ROLE_ID for role in ctx.author.roles):
+            is_admin = True
+
+        if not is_admin:
+            await ctx.send("You don't have permission to use this command.")
+            return
+
+        # Validate arguments
+        if winner is None or loser is None:
+            await ctx.send(
+                "Please mention both players. Usage: `!admin_limited_report @winner @loser`"
+            )
+            return
+
+        if winner.id == loser.id:
+            await ctx.send("Winner and loser cannot be the same player!")
+            return
+
+        if winner.bot or loser.bot:
+            await ctx.send("Cannot report matches for bots!")
+            return
+
+        try:
+            winner_name = winner.global_name or winner.display_name
+            loser_name = loser.global_name or loser.display_name
+
+            # Verify both players have active arena runs
+            winner_run = get_active_arena_run(winner.id)
+            loser_run = get_active_arena_run(loser.id)
+
+            if not winner_run:
+                await ctx.send(f"{winner.mention} ({winner_name}) does not have an active limited arena run.")
+                return
+            if not loser_run:
+                await ctx.send(f"{loser.mention} ({loser_name}) does not have an active limited arena run.")
+                return
+
+            # Report the limited match
+            match_id, winner_run_complete, loser_run_complete = limited_winner_report(
+                reporter_id=ctx.author.id,
+                winner_id=winner.id,
+                winner_display_name=winner_name,
+                loser_id=loser.id,
+                loser_display_name=loser_name,
+                first_player="n",
+                match_time=0,
+                curiosa_url_winner=winner_run["deck_url"],
+                curiosa_url_loser=loser_run["deck_url"],
+                match_comment="Admin reported limited match",
+                winner_went_first="n",
+                loser_went_first="n",
+                winner_run_id=winner_run["run_id"],
+                loser_run_id=loser_run["run_id"],
+            )
+
+            # Get updated ELOs and run info
+            winner_elo = get_limited_elo(winner.id)
+            loser_elo = get_limited_elo(loser.id)
+            winner_run_summary = get_run_summary(winner_run["run_id"])
+            loser_run_summary = get_run_summary(loser_run["run_id"])
+
+            # Build confirmation embed
+            description = (
+                f"**Match ID:** #{match_id}\n"
+                f"**Winner:** {winner.mention} ({winner_name})\n"
+                f"**Loser:** {loser.mention} ({loser_name})\n\n"
+                f"**Limited ELO:**\n"
+                f"{winner_name}: **{winner_elo}**\n"
+                f"{loser_name}: **{loser_elo}**\n\n"
+                f"**{winner_name}'s Run:** {'Completed!' if winner_run_complete else 'Still active'}\n"
+                f"**{loser_name}'s Run:** {'Completed!' if loser_run_complete else 'Still active'}"
+            )
+
+            success_embed = discord.Embed(
+                title="Limited Match Reported",
+                description=description,
+                color=discord.Color.green(),
+            )
+            success_embed.set_footer(text=f"Reported by {ctx.author.display_name}")
+            await ctx.send(embed=success_embed)
+
+            log_admin_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "admin_limited_report",
+                target_id=winner.id,
+                target_name=winner_name,
+                previous_state={"winner_id": winner.id, "loser_id": loser.id},
+                new_state={"match_id": match_id, "winner_run_complete": winner_run_complete, "loser_run_complete": loser_run_complete},
+                details=f"Admin reported limited match #{match_id}: {winner_name} beat {loser_name}",
+            )
+
+            logger.info(
+                f"Admin {ctx.author} (ID: {ctx.author.id}) reported limited match: {winner_name} beat {loser_name}"
+            )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Limited Match Report Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Admin limited match report failed: {e}")
+
+    @admin_limited_report.error
+    async def admin_limited_report_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You don't have permission to use this command.")
+        else:
+            logger.error(f"admin_limited_report error: {error}")
             await ctx.send(f"An error occurred: {error}")
 
     @commands.command()

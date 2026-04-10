@@ -15,6 +15,7 @@ from repositories.limited_repo import (
     get_arena_run,
     update_arena_run_record,
     complete_arena_run,
+    insert_limited_match_record,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,119 @@ def start_arena_run(user_id, display_name, deck_url):
 
     run_id = _create_arena_run(user_id, display_name, deck_url, json_deck_data, starting_elo)
     return get_arena_run(run_id)
+
+
+def _check_run_complete(run_id):
+    """Check if an arena run has reached completion (5W or 3L). Auto-completes if so."""
+    run = get_arena_run(run_id)
+    if not run or run["status"] != "active":
+        return run is not None and run["status"] != "active"
+
+    if run["wins"] >= 5 or run["losses"] >= 3:
+        complete_arena_run(run_id, "completed")
+        logger.info("Arena run %d completed: %d-%d", run_id, run["wins"], run["losses"])
+        return True
+    return False
+
+
+def report_match(winner_id, winner_display_name, loser_id, loser_display_name,
+                 first_player=None, match_time=None, match_comment=None):
+    """Report a limited match result from a 3rd party source.
+
+    Both players must have active arena runs. Updates limited ELO for both,
+    inserts a match record, increments run win/loss counts, and auto-completes
+    runs that hit thresholds (5W or 3L).
+
+    Returns dict with match_id, ELO changes, and run statuses.
+    Raises ValueError if either player lacks an active run.
+    """
+    winner_run = get_active_arena_run(winner_id)
+    loser_run = get_active_arena_run(loser_id)
+
+    if not winner_run:
+        raise ValueError(f"Winner {winner_id} has no active arena run")
+    if not loser_run:
+        raise ValueError(f"Loser {loser_id} has no active arena run")
+
+    winner_run_id = winner_run["run_id"]
+    loser_run_id = loser_run["run_id"]
+
+    # Update limited ELO for both players
+    winner_elo_before = get_limited_elo(winner_id)
+    loser_elo_before = get_limited_elo(loser_id)
+
+    new_winner_elo = _calculate_elo(winner_elo_before, loser_elo_before, did_win=True)
+    new_loser_elo = _calculate_elo(loser_elo_before, winner_elo_before, did_win=False)
+
+    winner_elo_change = new_winner_elo - winner_elo_before
+    loser_elo_change = new_loser_elo - loser_elo_before
+
+    upsert_limited_elo(winner_id, winner_display_name, new_winner_elo)
+    upsert_limited_elo(loser_id, loser_display_name, new_loser_elo)
+
+    # Determine who went first
+    winner_went_first = "y" if first_player == str(winner_id) else "n"
+    loser_went_first = "y" if first_player == str(loser_id) else "n"
+
+    # Insert match record
+    match_id = insert_limited_match_record(
+        reporter_id=0,  # API-reported
+        winner_id=winner_id,
+        winner_display_name=winner_display_name,
+        loser_id=loser_id,
+        loser_display_name=loser_display_name,
+        did_win=True,
+        first_player=first_player or "",
+        match_time=match_time or 0,
+        curiosa_url_winner=winner_run["deck_url"],
+        curiosa_url_loser=loser_run["deck_url"],
+        match_comment=match_comment or "",
+        json_deck_data_winner=winner_run.get("json_deck_data", "{}"),
+        json_deck_data_loser=loser_run.get("json_deck_data", "{}"),
+        winner_elo_change=winner_elo_change,
+        loser_elo_change=loser_elo_change,
+        winner_went_first=winner_went_first,
+        loser_went_first=loser_went_first,
+        winner_run_id=winner_run_id,
+        loser_run_id=loser_run_id,
+    )
+
+    # Update arena run records
+    update_arena_run_record(winner_run_id, winner_run["wins"] + 1, winner_run["losses"])
+    update_arena_run_record(loser_run_id, loser_run["wins"], loser_run["losses"] + 1)
+
+    # Check if either run is now complete
+    winner_run_complete = _check_run_complete(winner_run_id)
+    loser_run_complete = _check_run_complete(loser_run_id)
+
+    logger.info(
+        "API match %d reported: winner=%s (%+d), loser=%s (%+d)",
+        match_id, winner_id, winner_elo_change, loser_id, loser_elo_change,
+    )
+
+    return {
+        "match_id": match_id,
+        "winner": {
+            "user_id": winner_id,
+            "display_name": winner_display_name,
+            "elo": new_winner_elo,
+            "elo_change": winner_elo_change,
+            "run_id": winner_run_id,
+            "run_wins": winner_run["wins"] + 1,
+            "run_losses": winner_run["losses"],
+            "run_complete": winner_run_complete,
+        },
+        "loser": {
+            "user_id": loser_id,
+            "display_name": loser_display_name,
+            "elo": new_loser_elo,
+            "elo_change": loser_elo_change,
+            "run_id": loser_run_id,
+            "run_wins": loser_run["wins"],
+            "run_losses": loser_run["losses"] + 1,
+            "run_complete": loser_run_complete,
+        },
+    }
 
 
 def forfeit_arena_run(user_id):

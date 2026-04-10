@@ -13,7 +13,7 @@ from repositories.limited_repo import (
     get_limited_elo,
     get_matches_for_run,
 )
-from services.limited_service import forfeit_arena_run, start_arena_run
+from services.limited_service import forfeit_arena_run, report_match, start_arena_run
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +145,64 @@ def post_user_run(user_id):
         return jsonify({"success": False, "error": "Database error"}), 500
     except Exception as e:
         logger.error("Unexpected error in POST run for user %s: %s", user_id, e)
+        return jsonify({"success": False, "error": "Internal server error"}), 500
+
+
+@limited_bp.route("/report-match", methods=["POST"])
+@require_api_key
+def post_report_match():
+    """Submit a limited match result from a 3rd party source.
+
+    Both players must have active arena runs.
+    """
+    body = request.get_json(silent=True) or {}
+
+    # Validate required fields
+    winner_id = body.get("winner_id")
+    loser_id = body.get("loser_id")
+    winner_display_name = body.get("winner_display_name")
+    loser_display_name = body.get("loser_display_name")
+
+    if not all([winner_id, loser_id, winner_display_name, loser_display_name]):
+        return jsonify({
+            "success": False,
+            "error": "winner_id, loser_id, winner_display_name, and loser_display_name are required",
+        }), 400
+
+    try:
+        winner_id = int(winner_id)
+        loser_id = int(loser_id)
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "winner_id and loser_id must be valid integers"}), 400
+
+    if winner_id == loser_id:
+        return jsonify({"success": False, "error": "winner_id and loser_id must be different"}), 400
+
+    try:
+        result = report_match(
+            winner_id=winner_id,
+            winner_display_name=winner_display_name,
+            loser_id=loser_id,
+            loser_display_name=loser_display_name,
+            first_player=body.get("first_player"),
+            match_time=body.get("match_time"),
+            match_comment=body.get("match_comment"),
+        )
+
+        logger.info(
+            "POST report-match: match_id=%d, winner=%s, loser=%s",
+            result["match_id"], winner_id, loser_id,
+        )
+
+        return jsonify({"success": True, **result}), 201
+
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except sqlite3.Error as e:
+        logger.error("Database error in POST report-match: %s", e)
+        return jsonify({"success": False, "error": "Database error"}), 500
+    except Exception as e:
+        logger.error("Unexpected error in POST report-match: %s", e)
         return jsonify({"success": False, "error": "Internal server error"}), 500
 
 

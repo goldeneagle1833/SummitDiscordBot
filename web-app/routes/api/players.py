@@ -1258,6 +1258,9 @@ def player_api(player_id):
             ):
                 continue
 
+            # Normalize URL by stripping query parameters (e.g. ?tab=view)
+            player_deck_url = player_deck_url.split("?")[0]
+
             # Initialize deck stats if first time seeing this URL
             if player_deck_url not in deck_stats:
                 avatar_name = "Unknown"

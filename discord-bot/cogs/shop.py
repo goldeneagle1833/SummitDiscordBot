@@ -1213,18 +1213,19 @@ class ShopCog(commands.Cog):
         if await self.is_protected(target[0]):
             return await ctx.send(f"<@{target[0]}> is protected by a Star!")
 
-        await self.deduct_points(ctx.author.id, "fart_rocket")
-
         # Get both scores and swap them
         my_score = await self.get_user_score(ctx.author.id)
         target_score = await self.get_user_score(target[0])
 
+        cost = self.item_costs["fart_rocket"]
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
         try:
+            # Swap scores, then deduct cost from the user's new score
+            new_user_score = max(0, target_score - cost)
             cur.execute(
                 "UPDATE fart_scores SET score = ? WHERE user_id = ?",
-                (target_score, ctx.author.id),
+                (new_user_score, ctx.author.id),
             )
             cur.execute(
                 "UPDATE fart_scores SET score = ? WHERE user_id = ?",
@@ -1236,7 +1237,8 @@ class ShopCog(commands.Cog):
 
         await ctx.send(
             f"<@{ctx.author.id}> launched a Fart Rocket and swapped scores with <@{target[0]}>!\n"
-            f"<@{ctx.author.id}>: {my_score} -> {target_score} | <@{target[0]}>: {target_score} -> {my_score}"
+            f"<@{ctx.author.id}>: {my_score} -> {target_score} -> {new_user_score} (-{cost} cost)\n"
+            f"<@{target[0]}>: {target_score} -> {my_score}"
         )
 
     @commands.command(name="fart_trap")
@@ -1347,33 +1349,48 @@ class ShopCog(commands.Cog):
 
     @commands.command(name="gas_gamble")
     @commands.cooldown(1, 45, commands.BucketType.user)
-    async def gas_gamble(self, ctx):
-        """50/50 gamble - double your bet or lose it all!"""
+    async def gas_gamble(self, ctx, amount: int = None):
+        """Gamble any amount of points! 40% chance to double, 60% chance to lose. Usage: !gas_gamble <amount>"""
         if ctx.channel.id != self.fart_channel_id:
             await ctx.send(
                 f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
             )
             return
 
-        if not await self.check_points(ctx.author.id, "gas_gamble"):
+        if amount is None or amount <= 0:
             return await ctx.send(
-                f"You don't have enough points! Gas Gamble costs {self.item_costs['gas_gamble']} points!"
+                f"{ctx.author.mention}, specify an amount to gamble! Usage: `!gas_gamble <amount>`"
             )
 
-        cost = self.item_costs["gas_gamble"]
-        await self.deduct_points(ctx.author.id, "gas_gamble")
+        user_score = await self.get_user_score(ctx.author.id)
+        if user_score < amount:
+            return await ctx.send(
+                f"You don't have enough points! You have {user_score} but tried to gamble {amount}."
+            )
 
-        if random.random() < 0.5:
-            # Win - get double back (net gain = cost)
-            winnings = cost * 2
+        # Deduct the bet
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE fart_scores SET score = score - ? WHERE user_id = ?",
+                (amount, ctx.author.id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        if random.random() < 0.4:
+            # Win - get double back (net gain = amount)
+            winnings = amount * 2
             await self.add_points(ctx.author.id, winnings)
             await ctx.send(
-                f"<@{ctx.author.id}> hit the Gas Gamble and **WON**! +{winnings} points!"
+                f"<@{ctx.author.id}> gambled {amount} points and **WON**! +{winnings} points!"
             )
         else:
-            # Lose - already deducted, nothing to do
+            # Lose - already deducted
             await ctx.send(
-                f"<@{ctx.author.id}> tried the Gas Gamble and **LOST**! -{cost} points down the drain!"
+                f"<@{ctx.author.id}> gambled {amount} points and **LOST**! -{amount} points down the drain!"
             )
 
     @commands.command(name="fart_leech")
@@ -1749,9 +1766,9 @@ class ShopCog(commands.Cog):
                 self.item_costs["stink_cloud"],
             ),
             (
-                "Gas Gamble (!gas_gamble)",
-                "50/50 chance to double your bet or lose it all!\n*Feeling lucky, punk?*",
-                self.item_costs["gas_gamble"],
+                "Gas Gamble (!gas_gamble <amount>)",
+                "Gamble any amount! 40% chance to double, 60% to lose it all.\n*Feeling lucky, punk?*",
+                "Custom",
             ),
             (
                 "Fart Leech (!fart_leech)",

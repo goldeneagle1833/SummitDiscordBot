@@ -13,16 +13,11 @@ from cogs.lfg.state import (
     LADDER_CHALLENGE_MAX_JOINERS,
     LADDER_CHALLENGE_TIMEOUT_SECONDS,
     pending_match_reports,
-    processed_matches,
 )
 from cogs.lfg.helpers import scrub_urls, send_milestone_announcement
-from cogs.lfg.match_reporting import LFGReportButtons
+from cogs.lfg.match_reporting import LFGReportButtons, _send_confirmation_to_opponent
+from cogs.lfg.persistent_confirm import create_confirmation_view
 from utils.database import (
-    winner_report,
-    losser_report,
-    update_elo_db,
-    update_elo_db_ladder,
-    complete_ladder_challenge,
     delete_ladder_challenge,
     get_user_event_elo,
     create_ladder_challenge_table,
@@ -322,9 +317,16 @@ class LadderChallengeReportButtons(discord.ui.View):
             "challenger_id": self.challenger_id,
         }
 
+        ladder_info = {
+            "challenge_id": self.challenge_id,
+            "elo_multiplier_winner": self.elo_multiplier_winner,
+            "elo_multiplier_loser": self.elo_multiplier_loser,
+            "challenger_id": self.challenger_id,
+            "guild_id": getattr(interaction.guild, "id", None),
+        }
         try:
             opponent_user = await self.bot.fetch_user(opponent_id)
-            confirmation_view = LadderMatchConfirmationButtons(
+            confirmation_view = create_confirmation_view(
                 reporter_id=reporter_id,
                 reporter_global=reporter_global,
                 opponent_id=opponent_id,
@@ -333,58 +335,26 @@ class LadderChallengeReportButtons(discord.ui.View):
                 winner_global=winner_global,
                 loser_id=loser_id,
                 loser_global=loser_global,
-                bot=self.bot,
-                challenge_id=self.challenge_id,
-                elo_multiplier_winner=self.elo_multiplier_winner,
-                elo_multiplier_loser=self.elo_multiplier_loser,
-                challenger_id=self.challenger_id,
+                is_winner=(opponent_id == winner_id),
                 match_start_time=self.match_start_time,
+                ladder_info=ladder_info,
+                guild_id=getattr(interaction.guild, "id", None),
             )
 
             result_text = "LOST" if reporter_id == winner_id else "WON"
-            await opponent_user.send(
+            confirm_msg = (
                 f"**Ladder Challenge Match Report**\n\n"
                 f"{reporter_global} reports that you **{result_text}** the ladder challenge match.\n\n"
-                f"Please confirm or dispute this result:",
-                view=confirmation_view,
+                f"Please confirm or dispute this result:"
             )
-            await interaction.response.send_message(
-                f"Match report sent to {opponent_global}. Waiting for confirmation...",
-                ephemeral=True,
+
+            # Need to defer first so _send_confirmation_to_opponent can use followup
+            await interaction.response.defer(ephemeral=True)
+            await _send_confirmation_to_opponent(
+                self.bot, opponent_user, opponent_id, opponent_global,
+                confirm_msg, confirmation_view,
+                interaction, getattr(interaction.guild, "id", None),
             )
-        except discord.Forbidden:
-            dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
-            if dm_channel:
-                opponent_user = await self.bot.fetch_user(opponent_id)
-                confirmation_view = LadderMatchConfirmationButtons(
-                    reporter_id=reporter_id,
-                    reporter_global=reporter_global,
-                    opponent_id=opponent_id,
-                    opponent_global=opponent_global,
-                    winner_id=winner_id,
-                    winner_global=winner_global,
-                    loser_id=loser_id,
-                    loser_global=loser_global,
-                    bot=self.bot,
-                    challenge_id=self.challenge_id,
-                    elo_multiplier_winner=self.elo_multiplier_winner,
-                    elo_multiplier_loser=self.elo_multiplier_loser,
-                    challenger_id=self.challenger_id,
-                    match_start_time=self.match_start_time,
-                )
-                result_text = "LOST" if reporter_id == winner_id else "WON"
-                await dm_channel.send(
-                    scrub_urls(
-                        f"{opponent_user.mention} **Ladder Challenge Match Report**\n\n"
-                        f"{reporter_global} reports that you **{result_text}** the ladder challenge match.\n\n"
-                        f"Please confirm or dispute this result:"
-                    ),
-                    view=confirmation_view,
-                )
-                await interaction.response.send_message(
-                    f"Match report sent to {opponent_global}. Waiting for confirmation...",
-                    ephemeral=True,
-                )
         except Exception as e:
             logger.error(f"Error sending ladder match confirmation: {e}")
             if not interaction.response.is_done():
@@ -452,9 +422,16 @@ class LadderChallengeReportButtons(discord.ui.View):
             "challenger_id": self.challenger_id,
         }
 
+        ladder_info = {
+            "challenge_id": self.challenge_id,
+            "elo_multiplier_winner": self.elo_multiplier_winner,
+            "elo_multiplier_loser": self.elo_multiplier_loser,
+            "challenger_id": self.challenger_id,
+            "guild_id": getattr(interaction.guild, "id", None),
+        }
         try:
             opponent_user = await self.bot.fetch_user(opponent_id)
-            confirmation_view = LadderMatchConfirmationButtons(
+            confirmation_view = create_confirmation_view(
                 reporter_id=reporter_id,
                 reporter_global=reporter_global,
                 opponent_id=opponent_id,
@@ -463,292 +440,32 @@ class LadderChallengeReportButtons(discord.ui.View):
                 winner_global=winner_global,
                 loser_id=loser_id,
                 loser_global=loser_global,
-                bot=self.bot,
-                challenge_id=self.challenge_id,
-                elo_multiplier_winner=self.elo_multiplier_winner,
-                elo_multiplier_loser=self.elo_multiplier_loser,
-                challenger_id=self.challenger_id,
+                is_winner=(opponent_id == winner_id),
                 match_start_time=self.match_start_time,
+                ladder_info=ladder_info,
+                guild_id=getattr(interaction.guild, "id", None),
             )
 
             result_text = "WON" if reporter_id != winner_id else "LOST"
-            await opponent_user.send(
+            confirm_msg = (
                 f"**Ladder Challenge Match Report**\n\n"
                 f"{reporter_global} reports that you **{result_text}** the ladder challenge match.\n\n"
-                f"Please confirm or dispute this result:",
-                view=confirmation_view,
+                f"Please confirm or dispute this result:"
             )
-            await interaction.response.send_message(
-                f"Match report sent to {opponent_global}. Waiting for confirmation...",
-                ephemeral=True,
+
+            # Need to defer first so _send_confirmation_to_opponent can use followup
+            await interaction.response.defer(ephemeral=True)
+            await _send_confirmation_to_opponent(
+                self.bot, opponent_user, opponent_id, opponent_global,
+                confirm_msg, confirmation_view,
+                interaction, getattr(interaction.guild, "id", None),
             )
-        except discord.Forbidden:
-            dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
-            if dm_channel:
-                opponent_user = await self.bot.fetch_user(opponent_id)
-                confirmation_view = LadderMatchConfirmationButtons(
-                    reporter_id=reporter_id,
-                    reporter_global=reporter_global,
-                    opponent_id=opponent_id,
-                    opponent_global=opponent_global,
-                    winner_id=winner_id,
-                    winner_global=winner_global,
-                    loser_id=loser_id,
-                    loser_global=loser_global,
-                    bot=self.bot,
-                    challenge_id=self.challenge_id,
-                    elo_multiplier_winner=self.elo_multiplier_winner,
-                    elo_multiplier_loser=self.elo_multiplier_loser,
-                    challenger_id=self.challenger_id,
-                    match_start_time=self.match_start_time,
-                )
-                result_text = "WON" if reporter_id != winner_id else "LOST"
-                await dm_channel.send(
-                    scrub_urls(
-                        f"{opponent_user.mention} **Ladder Challenge Match Report**\n\n"
-                        f"{reporter_global} reports that you **{result_text}** the ladder challenge match.\n\n"
-                        f"Please confirm or dispute this result:"
-                    ),
-                    view=confirmation_view,
-                )
-                await interaction.response.send_message(
-                    f"Match report sent to {opponent_global}. Waiting for confirmation...",
-                    ephemeral=True,
-                )
         except Exception as e:
             logger.error(f"Error sending ladder match confirmation: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(
                     "An error occurred sending the confirmation.", ephemeral=True
                 )
-
-
-class LadderMatchConfirmationButtons(discord.ui.View):
-    """Buttons for confirming a ladder challenge match report"""
-
-    def __init__(
-        self,
-        reporter_id: int,
-        reporter_global: str,
-        opponent_id: int,
-        opponent_global: str,
-        winner_id: int,
-        winner_global: str,
-        loser_id: int,
-        loser_global: str,
-        bot=None,
-        challenge_id: int = None,
-        elo_multiplier_winner: float = 1.0,
-        elo_multiplier_loser: float = 1.0,
-        challenger_id: int = None,
-        match_start_time=None,
-    ):
-        super().__init__(timeout=86400)
-        self.reporter_id = reporter_id
-        self.reporter_global = reporter_global
-        self.opponent_id = opponent_id
-        self.opponent_global = opponent_global
-        self.winner_id = winner_id
-        self.winner_global = winner_global
-        self.loser_id = loser_id
-        self.loser_global = loser_global
-        self.bot = bot
-        self.challenge_id = challenge_id
-        self.elo_multiplier_winner = elo_multiplier_winner
-        self.elo_multiplier_loser = elo_multiplier_loser
-        self.challenger_id = challenger_id
-        self.match_start_time = match_start_time or datetime.datetime.now()
-
-    @discord.ui.button(
-        label="Confirm",
-        style=discord.ButtonStyle.success,
-        custom_id="confirm_ladder_match",
-    )
-    async def confirm_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        # Disable buttons
-        for item in self.children:
-            item.disabled = True
-        try:
-            await interaction.message.edit(view=self)
-        except Exception:
-            pass
-
-        # Check for duplicate
-        match_key = frozenset({self.winner_id, self.loser_id})
-        now = datetime.datetime.now()
-        if match_key in processed_matches:
-            last_report_time = processed_matches[match_key]
-            if (now - last_report_time).total_seconds() < 300:
-                await interaction.response.send_message(
-                    "This match has already been recorded.", ephemeral=True
-                )
-                return
-
-        processed_matches[match_key] = now
-        await interaction.response.defer()
-
-        # Calculate match time
-        match_time = 0
-        if self.match_start_time:
-            time_diff = datetime.datetime.now() - self.match_start_time
-            match_time = int(time_diff.total_seconds() / 60)
-
-        # Record the match using winner_report
-        match_id, _, _, event_active = await winner_report(
-            self.reporter_id,
-            self.winner_id,
-            self.winner_global,
-            True,
-            self.loser_id,
-            self.loser_global,
-            "n",  # first_player not tracked for ladder challenges
-            match_time,
-            "No URL provided",
-            f"Ladder Challenge Match (Challenge #{self.challenge_id})",
-            self.winner_id,
-            self.winner_global,
-        )
-
-        # Now apply the special ladder ELO (undo the normal ELO update from winner_report and apply multiplied version)
-        # winner_report already called update_elo_db for the winner. We need to revert and re-apply with multiplier.
-        # Instead, we'll update the loser with multiplier too.
-
-        # The winner_report already updated winner's ELO normally.
-        # We need to revert that and apply multiplied versions.
-        # Simpler approach: just apply the multiplier difference on top.
-
-        # Actually let's just update loser ELO with the appropriate multiplier
-        # Winner ELO was already set by winner_report - we need to adjust it
-
-        # Determine multipliers based on who won
-        # challenger_id is the Top 16 player
-        if self.winner_id == self.challenger_id:
-            # Top 16 player won - normal ELO for both
-            winner_mult = 1.0
-            loser_mult = 1.0
-        else:
-            # Non-Top16 player won - they get 2x, Top16 loses only 0.5x
-            winner_mult = self.elo_multiplier_winner
-            loser_mult = self.elo_multiplier_loser
-
-        # Revert the winner's normal ELO update and apply multiplied version
-        if winner_mult != 1.0:
-            import sqlite3 as _sqlite3
-
-            # The winner_report used update_elo_db which already changed the winner's ELO
-            # Read what match_records recorded as the normal elo change and apply extra
-            conn_match = _sqlite3.connect("match_records.db")
-            cur_match = conn_match.cursor()
-            cur_match.execute(
-                "SELECT winner_elo_change, winner_lifetime_elo_change FROM match_records WHERE match_id=?",
-                (match_id,),
-            )
-            elo_row = cur_match.fetchone()
-            conn_match.close()
-
-            if elo_row:
-                event_change = elo_row[0] or 0
-                lifetime_change = elo_row[1] or 0
-                extra_event_change = round(event_change * (winner_mult - 1.0))
-                extra_lifetime_change = round(lifetime_change * (winner_mult - 1.0))
-                conn_fix = _sqlite3.connect("elo.db")
-                cur_fix = conn_fix.cursor()
-                cur_fix.execute(
-                    "UPDATE overall_standings SET online_elo = online_elo + ?, online_event_elo = online_event_elo + ?, "
-                    "elo = elo + ?, event_elo = event_elo + ? WHERE user_id = ?",
-                    (extra_lifetime_change, extra_event_change, extra_lifetime_change, extra_event_change, self.winner_id),
-                )
-                conn_fix.commit()
-                conn_fix.close()
-                logger.info(
-                    f"Ladder bonus: Winner {self.winner_id} gets extra lifetime {extra_lifetime_change:+d}, "
-                    f"event {extra_event_change:+d} ELO (mult={winner_mult})"
-                )
-
-        # Update loser ELO with multiplier
-        if loser_mult != 1.0:
-            # Normal update_elo_db would give full loss. Apply with multiplier.
-            update_elo_db_ladder(
-                self.loser_id,
-                self.loser_global,
-                False,
-                self.winner_id,
-                elo_multiplier=loser_mult,
-            )
-        else:
-            update_elo_db(self.loser_id, self.loser_global, False, self.winner_id)
-
-        # Complete the ladder challenge record
-        if self.challenge_id:
-            complete_ladder_challenge(self.challenge_id, self.winner_id, match_id)
-
-        # Build ELO info message
-        stakes_msg = ""
-        if winner_mult != 1.0 or loser_mult != 1.0:
-            if self.winner_id != self.challenger_id:
-                stakes_msg = "\n**Ladder Bonus:** Winner gained 2x ELO! Top 16 player lost only 0.5x ELO."
-            else:
-                stakes_msg = "\n*Normal ELO stakes (Top 16 player won)*"
-
-        elo_msg = "" if event_active else " *(No active event - ELO not affected)*"
-
-        await interaction.message.edit(
-            content=f"Ladder Challenge Match confirmed! **Match ID: #{match_id}** - {self.winner_global} won against {self.loser_global}.{elo_msg}{stakes_msg}",
-            view=None,
-        )
-
-        await interaction.followup.send(
-            f"Match confirmed! **Match ID: #{match_id}**\n**Winner:** {self.winner_global}\n**Loser:** {self.loser_global}{elo_msg}{stakes_msg}",
-            ephemeral=True,
-        )
-
-        # Notify reporter
-        try:
-            reporter = await self.bot.fetch_user(self.reporter_id)
-            await reporter.send(
-                f"Your ladder challenge match report has been confirmed! Match recorded.{stakes_msg}"
-            )
-        except Exception:
-            pass
-
-        pending_match_reports.pop((self.reporter_id, self.opponent_id), None)
-
-        # Update leaderboard
-        lfg_cog = self.bot.get_cog("LFGCog")
-        if lfg_cog:
-            await lfg_cog.update_leaderboard()
-
-        # Milestone check
-        await send_milestone_announcement(
-            self.bot, self.winner_id, self.loser_id, match_id
-        )
-
-    @discord.ui.button(
-        label="Dispute",
-        style=discord.ButtonStyle.danger,
-        custom_id="dispute_ladder_match",
-    )
-    async def dispute_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        await interaction.response.send_message(
-            "You have disputed the ladder challenge match report. No entry was logged.",
-            ephemeral=True,
-        )
-        await interaction.message.edit(
-            content=f"Ladder challenge match disputed by {self.opponent_global}. No entry logged.",
-            view=None,
-        )
-        try:
-            reporter = await self.bot.fetch_user(self.reporter_id)
-            await reporter.send(
-                f"{self.opponent_global} has disputed your ladder challenge match report. No entry was logged."
-            )
-        except Exception:
-            pass
-        pending_match_reports.pop((self.reporter_id, self.opponent_id), None)
 
 
 def _build_ladder_challenge_embed(challenger_global, joiners, challenger_id):

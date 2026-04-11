@@ -19,6 +19,11 @@ from cogs.reaction_roles import ReactionRolesCog
 from cogs.match_confirmation_jobs import MatchConfirmationJobs
 from cogs.pilots import PilotsCog
 from cogs.daily_summary import DailySummaryCog
+from cogs.lfg.persistent_confirm import (
+    PersistentConfirmButton,
+    PersistentDisputeButton,
+    ensure_pending_confirmations_table,
+)
 
 import config
 
@@ -153,6 +158,10 @@ async def setup_cogs():
 
 async def main():
     async with bot:
+        # Ensure DB table exists before bot starts handling interactions
+        ensure_pending_confirmations_table()
+        # Register DynamicItem buttons so Confirm/Dispute survive bot restarts
+        bot.add_dynamic_items(PersistentConfirmButton, PersistentDisputeButton)
         await setup_cogs()
         await bot.start(TOKEN)
 

@@ -64,7 +64,7 @@
 .distribution-controls select:focus,
 .distribution-controls input:focus {
   outline: none;
-  border-color: #4db8ff;
+  border-color: var(--color-primary);
 }
 
 .distribution-controls select option {
@@ -94,16 +94,16 @@
 /* Apply button for custom inputs */
 .btn-apply {
   padding: 0.5rem 1rem;
-  background: #4db8ff;
+  background: var(--color-primary);
   border: none;
   border-radius: 6px;
-  color: #000;
+  color: var(--color-bg-dark);
   cursor: pointer;
   font-weight: 500;
 }
 
 .btn-apply:hover {
-  background: #3da8ef;
+  background: var(--color-primary-light);
 }
 
 /* Table container */
@@ -156,15 +156,11 @@
 /* Special cell styles */
 .elo-range {
   font-weight: 600;
-  color: #4db8ff;
+  color: var(--color-info);
 }
 
 .player-count {
   color: #ffd700;
-}
-
-.rank-display {
-  font-weight: 600;
 }
 
 .player-link {
@@ -177,7 +173,7 @@
 }
 
 .lifetime-elo {
-  color: #4db8ff;
+  color: var(--color-info);
   font-weight: 600;
 }
 
@@ -242,7 +238,7 @@
 
 .season-search-input:focus {
   outline: none;
-  border-color: #4db8ff;
+  border-color: var(--color-primary);
 }
 
 /* Season result cards */
@@ -259,7 +255,7 @@
 }
 
 .season-card:hover {
-  border-color: #4db8ff;
+  border-color: var(--color-primary);
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -279,8 +275,8 @@
   font-size: 0.75rem;
   padding: 0.1rem 0.4rem;
   border-radius: 4px;
-  background: rgba(88, 166, 255, 0.15);
-  color: #4db8ff;
+  background: color-mix(in oklch, var(--color-info) 15%, transparent);
+  color: var(--color-info);
 }
 
 .season-card__badge--ended {

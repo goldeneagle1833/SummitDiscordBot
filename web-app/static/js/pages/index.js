@@ -160,13 +160,26 @@ function renderEventLeaderboard(eventData) {
     return;
   }
 
-  // Render all players
+  // Populate stat bar
+  const statsBar = document.getElementById("event-stats-bar");
+  const totalPlayers = eventData.leaderboard.length;
+  const topElo = eventData.leaderboard[0].event_elo;
+  const avgElo = Math.round(eventData.leaderboard.reduce((sum, p) => sum + p.event_elo, 0) / totalPlayers);
+
+  document.getElementById("stat-total-players").textContent = totalPlayers;
+  document.getElementById("stat-top-elo").textContent = topElo;
+  document.getElementById("stat-avg-elo").textContent = avgElo;
+  statsBar.style.display = "";
+
+  // Render all players with staggered animation
   eventData.leaderboard.forEach((player, index) => {
     const row = document.createElement("tr");
     const rank = index + 1;
-    let rankDisplay = rank;
+    let rankDisplay = `<span class="rank-display">${rank}</span>`;
     if (rank <= 3) {
-      rankDisplay = `<span class="rank-badge rank-${rank}">${rank}</span>`;
+      const romanRank = { 1: 'I', 2: 'II', 3: 'III' }[rank];
+      rankDisplay = `<span class="rank-badge rank-${rank}">${romanRank}</span>`;
+      row.classList.add(`rank-row-${rank}`);
     }
 
     row.innerHTML = `

@@ -1,3 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+ENV/
+
 # Ignore config files
 config.json
 config.js
@@ -40,6 +56,7 @@ discord-bot/test_data/
 web-app/curiosa-io-tools/
 
 # Tailwind CSS
+web-app/tailwindcss
 web-app/tailwindcss.exe
 web-app/tailwindcss-windows-x64.exe
 web-app/card_images/

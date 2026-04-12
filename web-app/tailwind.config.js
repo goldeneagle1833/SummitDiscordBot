@@ -7,40 +7,44 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // GitHub Dark Theme colors
+        // GitHub Dark palette (matches style.css)
         primary: {
           DEFAULT: '#58a6ff',
-          hover: '#79b8ff',
+          dark: '#388bfd',
+          light: '#79c0ff',
         },
         secondary: {
           DEFAULT: '#ffd700',
+          dark: '#e6c200',
+          light: '#ffed4e',
           hover: '#ffed4a',
         },
+        summit: {
+          DEFAULT: '#5b8db8',
+          light: '#7aaed4',
+          dark: '#3d6b8f',
+        },
         accent: {
-          green: '#238636',
-          red: '#f85149',
+          green: '#2a9c4a',
+          red: 'oklch(48% 0.190 22)',       // Deep crimson
         },
         bg: {
-          dark: '#0d1117',
-          surface: '#161b22',
-          elevated: '#21262d',
+          dark: 'oklch(18% 0.014 65)',      // Warm near-black
+          surface: 'oklch(24% 0.018 65)',   // Warm surface
+          elevated: 'oklch(32% 0.026 65)',  // Warm elevated
         },
         text: {
-          DEFAULT: '#f0f6fc',
-          muted: '#8b949e',
+          DEFAULT: 'oklch(95% 0.022 82)',   // Warm ivory
+          muted: 'oklch(65% 0.012 82)',     // Warm muted
         },
         border: {
           DEFAULT: '#30363d',
         },
-        // Legacy golden theme support
-        golden: {
-          DEFAULT: '#ffd700',
-          dark: '#1a1a2e',
-          surface: '#16213e',
-        },
       },
       fontFamily: {
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        display: ['Almendra', 'Georgia', 'Times New Roman', 'serif'],
+        sans: ['Figtree', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        mono: ['Fira Code', 'ui-monospace', 'Courier New', 'monospace'],
       },
       spacing: {
         // Match existing CSS variables

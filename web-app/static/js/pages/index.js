@@ -182,9 +182,6 @@ function renderEventLeaderboard(eventData) {
       row.classList.add(`rank-row-${rank}`);
     }
 
-    row.classList.add("row-animate");
-    row.style.animationDelay = `${index * 40}ms`;
-
     row.innerHTML = `
       <td>${rankDisplay}</td>
       <td><a href="/player/${player.id}" class="player-link">${player.name}</a></td>

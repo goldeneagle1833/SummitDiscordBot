@@ -206,21 +206,6 @@
   background: linear-gradient(90deg, oklch(65% 0.090 48 / 0.32), oklch(65% 0.090 48 / 0.08) 60%, transparent);
 }
 
-/* Row entrance animation */
-@keyframes row-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-#leaderboard-table tbody tr.row-animate {
-  animation: row-fade-in 0.3s ease-out both;
-}
 
 /* Empty state for leaderboard */
 .leaderboard-empty-state {

@@ -29,10 +29,10 @@ def get_last_unreported_pairing(user_id: int, guild_id: int):
     # Check regular pairings first
     cursor.execute(
         """
-        SELECT * FROM pairings
+        SELECT * FROM active_pairings
         WHERE guild_id = ?
           AND (player1_id = ? OR player2_id = ?)
-          AND reported = 0
+          AND status = 'active'
         ORDER BY created_at DESC
         LIMIT 1
         """,
@@ -52,10 +52,10 @@ def get_last_unreported_pairing(user_id: int, guild_id: int):
 
     cursor.execute(
         """
-        SELECT * FROM limited_pairings
+        SELECT * FROM limited_active_pairings
         WHERE guild_id = ?
           AND (player1_id = ? OR player2_id = ?)
-          AND reported = 0
+          AND status = 'active'
         ORDER BY created_at DESC
         LIMIT 1
         """,
@@ -507,6 +507,13 @@ class JoinQueueButtons(discord.ui.View):
     def __init__(self, bot):
         super().__init__(timeout=None)
         self.bot = bot
+        if not is_pilot_active("RankedQueue"):
+            self.remove_item(self.join_ranked_button)
+        if not is_pilot_active("CasualQueue"):
+            self.remove_item(self.join_testing_button)
+        # Join Both requires both Ranked and Casual to be active
+        if not (is_pilot_active("RankedQueue") and is_pilot_active("CasualQueue")):
+            self.remove_item(self.join_both_button)
         if not is_pilot_active("GrewWolves"):
             self.remove_item(self.join_limited_button)
 
@@ -528,6 +535,11 @@ class JoinQueueButtons(discord.ui.View):
     async def join_ranked_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        if not is_pilot_active("RankedQueue"):
+            await interaction.response.send_message(
+                "Ranked queue is not currently available.", ephemeral=True
+            )
+            return
         await self._handle_join(interaction, "ranked")
 
     @discord.ui.button(
@@ -538,6 +550,11 @@ class JoinQueueButtons(discord.ui.View):
     async def join_testing_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        if not is_pilot_active("CasualQueue"):
+            await interaction.response.send_message(
+                "Casual queue is not currently available.", ephemeral=True
+            )
+            return
         await self._handle_join(interaction, "testing")
 
     @discord.ui.button(
@@ -548,6 +565,11 @@ class JoinQueueButtons(discord.ui.View):
     async def join_both_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        if not (is_pilot_active("RankedQueue") and is_pilot_active("CasualQueue")):
+            await interaction.response.send_message(
+                "Both queues must be available to join both.", ephemeral=True
+            )
+            return
         await self._handle_join(interaction, "both")
 
     @discord.ui.button(

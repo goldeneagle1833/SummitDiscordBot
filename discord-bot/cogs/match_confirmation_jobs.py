@@ -176,8 +176,13 @@ class MatchConfirmationJobs(commands.Cog):
         submitter_id = confirmation["submitter_discord_id"]
         confirmation_id = confirmation["id"]
 
+        # Validate both IDs are valid Discord snowflakes (not Google OAuth IDs)
         if not self._is_valid_discord_id(opponent_id):
             logger.warning(f"Skipping reminder for confirmation {confirmation_id}: invalid opponent_id '{opponent_id}'")
+            return
+
+        if not self._is_valid_discord_id(submitter_id):
+            logger.warning(f"Skipping reminder for confirmation {confirmation_id}: invalid submitter_id '{submitter_id}'")
             return
 
         try:
@@ -190,11 +195,8 @@ class MatchConfirmationJobs(commands.Cog):
 
             # Get submitter user (for display name)
             try:
-                if self._is_valid_discord_id(submitter_id):
-                    submitter = await self.bot.fetch_user(int(submitter_id))
-                    submitter_name = submitter.display_name if submitter else f"User {submitter_id}"
-                else:
-                    submitter_name = f"User {submitter_id}"
+                submitter = await self.bot.fetch_user(int(submitter_id))
+                submitter_name = submitter.display_name if submitter else f"User {submitter_id}"
             except Exception:
                 submitter_name = f"User {submitter_id}"
 

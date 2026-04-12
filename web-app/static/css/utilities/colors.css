@@ -11,6 +11,7 @@
 .bg-error { background-color: var(--color-error); }
 .bg-warning { background-color: var(--color-warning); }
 .bg-info { background-color: var(--color-info); }
+.bg-accent { background-color: var(--color-accent); }
 .bg-transparent { background-color: transparent; }
 
 /* Text colors */
@@ -22,7 +23,8 @@
 .text-error { color: var(--color-error); }
 .text-warning { color: var(--color-warning); }
 .text-info { color: var(--color-info); }
-.text-white { color: #ffffff; }
+.text-accent { color: var(--color-accent); }
+.text-white { color: var(--color-text); }
 
 /* Border colors */
 .border-primary { border-color: var(--color-primary); }

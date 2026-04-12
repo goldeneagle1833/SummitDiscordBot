@@ -54,8 +54,8 @@
 }
 
 .event-card__badge--top8 {
-  background: rgba(0, 150, 255, 0.2);
-  color: #4db8ff;
+  background: color-mix(in oklch, var(--color-info) 18%, transparent);
+  color: var(--color-info);
 }
 
 /* Event list view */

@@ -55,7 +55,7 @@
 }
 
 #life-counter-icon:hover {
-  background-color: rgba(147, 51, 234, 0.2);
+  background-color: rgba(232, 168, 0, 0.2);
 }
 
 #life-counter-icon:active {
@@ -64,7 +64,7 @@
 
 /* Active state when on life counter page */
 #life-counter-icon.active {
-  background-color: rgba(147, 51, 234, 0.3);
+  background-color: rgba(232, 168, 0, 0.3);
   border-radius: 0.5rem;
 }
 

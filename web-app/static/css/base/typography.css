@@ -13,9 +13,18 @@ body {
   color: var(--color-text);
 }
 
-/* Headings */
-h1, h2, h3, h4, h5, h6 {
+/* Headings — display font for h1/h2, body font for h3–h6 */
+h1, h2 {
+  font-family: var(--font-display);
   font-weight: var(--font-weight-bold);
+  line-height: 1.2;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-md);
+  letter-spacing: 0.01em;
+}
+
+h3, h4, h5, h6 {
+  font-weight: var(--font-weight-semibold);
   line-height: var(--line-height-tight);
   color: var(--color-text-primary);
   margin-bottom: var(--spacing-md);
@@ -108,9 +117,10 @@ li {
 
 /* Blockquote */
 blockquote {
-  border-left: 4px solid var(--color-primary);
-  padding-left: var(--spacing-md);
+  background: oklch(15% 0.020 82 / 0.5);
+  padding: var(--spacing-md) var(--spacing-lg);
   margin: var(--spacing-lg) 0;
+  border-radius: var(--border-radius-md);
   font-style: italic;
   color: var(--color-text-muted);
 }

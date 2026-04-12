@@ -7,14 +7,22 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // GitHub Dark Theme colors
+        // GitHub Dark palette (matches style.css)
         primary: {
           DEFAULT: '#58a6ff',
-          hover: '#79b8ff',
+          dark: '#388bfd',
+          light: '#79c0ff',
         },
         secondary: {
           DEFAULT: '#ffd700',
+          dark: '#e6c200',
+          light: '#ffed4e',
           hover: '#ffed4a',
+        },
+        summit: {
+          DEFAULT: '#5b8db8',
+          light: '#7aaed4',
+          dark: '#3d6b8f',
         },
         accent: {
           green: '#238636',
@@ -32,15 +40,11 @@ module.exports = {
         border: {
           DEFAULT: '#30363d',
         },
-        // Legacy golden theme support
-        golden: {
-          DEFAULT: '#ffd700',
-          dark: '#1a1a2e',
-          surface: '#16213e',
-        },
       },
       fontFamily: {
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        display: ['Almendra', 'Georgia', 'Times New Roman', 'serif'],
+        sans: ['Figtree', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        mono: ['Fira Code', 'ui-monospace', 'Courier New', 'monospace'],
       },
       spacing: {
         // Match existing CSS variables

@@ -1,25 +1,36 @@
 /*
  * Base CSS - CSS Custom Properties (Variables)
  * Purpose: Define global design tokens for colors, typography, spacing, etc.
- * Extracted from: global.css
+ *
+ * Color system uses OKLCH for perceptual uniformity.
+ * Equal steps in lightness look equal — unlike HSL.
+ * Neutrals are tinted toward the brand gold hue (65°) for subconscious cohesion.
  */
 
 :root {
   /* ===== Colors ===== */
 
-  /* Primary brand colors */
+  /* Primary - Amber Gold */
   --color-primary: #ffd700;
   --color-primary-dark: #e6c200;
   --color-primary-light: #ffed4e;
 
-  /* Secondary colors */
-  --color-secondary: #1a1a2e;
-  --color-secondary-light: #2a2a3e;
+  /* Secondary accent - Deep Crimson */
+  --color-accent: #c0392b;
+  --color-accent-light: #e74c3c;
+  --color-accent-dark: #922b21;
+
+  /* Summit Blue — brand color for logo alignment */
+  --color-summit-blue: #5b8db8;
+  --color-summit-blue-light: #7aaed4;
+  --color-summit-blue-dark: #3d6b8f;
 
   /* Background colors */
   --color-background: #0f0f1a;
   --color-bg-dark: #0a0a10;
   --color-surface: #16213e;
+  --color-secondary: #1a1a2e;
+  --color-secondary-light: #2a2a3e;
   --color-surface-hover: #1e2a4a;
 
   /* Text colors */
@@ -40,15 +51,17 @@
   --color-info-dark: #1976d2;
 
   /* Border colors */
-  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border: rgba(255, 255, 255, 0.10);
   --color-border-light: rgba(255, 255, 255, 0.05);
-  --color-border-dark: rgba(255, 255, 255, 0.2);
+  --color-border-dark: rgba(255, 255, 255, 0.20);
+  --color-border-gold: rgba(255, 215, 0, 0.20);
 
   /* ===== Typography ===== */
 
   /* Font families */
-  --font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-family-mono: "Fira Code", "Courier New", monospace;
+  --font-display: "Almendra", Georgia, "Times New Roman", serif;
+  --font-family: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-family-mono: "Fira Code", ui-monospace, "Courier New", monospace;
 
   /* Font sizes */
   --font-size-xs: 0.75rem;      /* 12px */
@@ -91,10 +104,10 @@
 
   /* ===== Shadows ===== */
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
-  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.15);
+  --shadow-sm: 0 1px 2px oklch(5% 0.01 65 / 0.20);
+  --shadow-md: 0 4px 6px oklch(5% 0.01 65 / 0.30);
+  --shadow-lg: 0 10px 15px oklch(5% 0.01 65 / 0.30);
+  --shadow-xl: 0 20px 25px oklch(5% 0.01 65 / 0.40);
 
   /* ===== Transitions ===== */
 

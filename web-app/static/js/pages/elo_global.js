@@ -16,11 +16,12 @@ async function fetchLeaderboard() {
 
     data.forEach((player, i) => {
       const rank = i + 1;
-      let rankDisplay = rank;
+      let rankDisplay = `<span class="rank-display">${rank}</span>`;
 
       // Add rank badge for top 3
       if (rank <= 3) {
-        rankDisplay = `<span class="rank-badge rank-${rank}">${rank}</span>`;
+        const romanRank = { 1: 'I', 2: 'II', 3: 'III' }[rank];
+        rankDisplay = `<span class="rank-badge rank-${rank}">${romanRank}</span>`;
       }
 
       const row = document.createElement('tr');

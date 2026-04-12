@@ -33,8 +33,8 @@
     display: flex;
     align-items: center;
     gap: 5px;
-    background: rgba(147, 51, 234, 0.2);
-    border: 1px solid rgba(147, 51, 234, 0.4);
+    background: rgba(88, 166, 255, 0.15);
+    border: 1px solid rgba(88, 166, 255, 0.35);
     border-radius: 20px;
     padding: 3px 8px;
     text-decoration: none;
@@ -47,8 +47,8 @@
   }
 
   .navbar-streamer-chip:hover {
-    background: rgba(147, 51, 234, 0.35);
-    border-color: rgba(147, 51, 234, 0.6);
+    background: rgba(88, 166, 255, 0.25);
+    border-color: rgba(88, 166, 255, 0.5);
   }
 
   .navbar-live-dot {
@@ -90,7 +90,7 @@
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    border: 1px solid rgba(147, 51, 234, 0.5);
+    border: 1px solid rgba(232, 168, 0, 0.5);
     flex-shrink: 0;
   }
 
@@ -243,7 +243,7 @@
     {% else %}
     <a
       href="/auth/login"
-      class="inline-flex items-center justify-center px-4 py-2 rounded-md bg-[#5865f2] hover:bg-[#4752c4] text-white no-underline font-semibold transition-all hover:-translate-y-px">
+      class="btn btn--primary btn--sm">
       Login
     </a>
     {% endif %}
@@ -256,9 +256,9 @@
     const CHECK_INTERVAL = 60000;
 
     function getPlatformIcon(platform) {
-      if (platform === "Twitch") return "🟣";
-      if (platform === "YouTube") return "🔴";
-      return "📺";
+      if (platform === "Twitch") return '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="color: #fff"><path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/></svg>';
+      if (platform === "YouTube") return '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="color: #fff"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12z"/></svg>';
+      return '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="color: #fff"><path d="M21 6h-7.59l3.29-3.29L16 2l-4 4-4-4-.71.71L10.59 6H3a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8a2 2 0 0 0-2-2m0 14H3V8h18z"/></svg>';
     }
 
     function createStreamerChip(streamer) {
@@ -602,7 +602,7 @@
 <div
   id="notification-dropdown"
   class="hidden fixed top-16 w-80 max-h-96 bg-bg-elevated shadow-xl rounded-lg overflow-hidden z-[1001]"
-  style="right: 1rem; border: 1px solid rgba(147, 51, 234, 0.3);">
+  style="right: 1rem; border: 1px solid rgba(232, 168, 0, 0.3);">
   <div class="bg-secondary/20 px-4 py-3 border-b border-white/10">
     <h3 class="text-sm font-bold text-white uppercase tracking-wide">Match Confirmations</h3>
   </div>
@@ -665,7 +665,8 @@
       {% else %}
       <a
         href="/auth/login"
-        class="block mx-4 my-2 px-4 py-2 rounded-md bg-[#5865f2] hover:bg-[#4752c4] text-white text-center font-semibold transition-all">
+        class="btn btn--primary btn--sm btn--full"
+        style="margin: 0.5rem 1rem; width: calc(100% - 2rem);">
         Login
       </a>
       {% endif %}

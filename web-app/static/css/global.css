@@ -1,21 +1,24 @@
 /* Global CSS - CSS Custom Properties and Base Styles */
 
 :root {
-  /* Colors */
-  --color-primary: #ffd700;
-  --color-secondary: #1a1a2e;
-  --color-background: #0f0f1a;
-  --color-surface: #16213e;
-  --color-text: #ffffff;
-  --color-text-muted: #a0a0a0;
-  --color-success: #4caf50;
-  --color-error: #f44336;
-  --color-warning: #ff9800;
-  --color-info: #2196f3;
+  /* Colors - Sorcerers Summit warm dark arcane theme (OKLCH) */
+  --color-primary: oklch(82% 0.165 82);
+  --color-primary-dark: oklch(73% 0.165 82);
+  --color-primary-light: oklch(92% 0.100 85);
+  --color-secondary: oklch(13% 0.014 65);
+  --color-background: oklch(10% 0.012 65);
+  --color-surface: oklch(15% 0.016 65);
+  --color-text: oklch(96% 0.008 80);
+  --color-text-muted: oklch(62% 0.007 80);
+  --color-success: oklch(62% 0.155 148);
+  --color-error: oklch(55% 0.190 22);
+  --color-warning: oklch(80% 0.140 72);
+  --color-info: oklch(64% 0.130 240);
 
   /* Typography */
-  --font-family:
-    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Almendra", Georgia, "Times New Roman", serif;
+  --font-family: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-family-mono: "Fira Code", ui-monospace, "Courier New", monospace;
   --font-size-base: 16px;
   --font-size-sm: 0.875rem;
   --font-size-lg: 1.25rem;

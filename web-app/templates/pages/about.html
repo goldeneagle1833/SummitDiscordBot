@@ -55,12 +55,24 @@
       }
 
       .content ul {
-        margin-left: 2rem;
+        list-style: none;
+        padding-left: 0;
         margin-bottom: 1rem;
       }
 
       .content li {
         margin-bottom: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        background: oklch(15% 0.016 65 / 0.6);
+        border-radius: 6px;
+        color: var(--color-text);
+      }
+
+      .content li::before {
+        content: "✦";
+        color: var(--color-primary);
+        margin-right: 0.5rem;
+        font-size: 0.75rem;
       }
 
       .content a {
@@ -73,7 +85,7 @@
       }
     </style>
   </head>
-  <body>
+  <body class="md:ml-48">
     {% include 'components/navbar.html' %}
 
     <main>

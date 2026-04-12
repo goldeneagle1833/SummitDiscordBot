@@ -127,7 +127,7 @@
 
 .element-decrement:hover,
 .element-increment:hover {
-  background-color: rgba(147, 51, 234, 0.1);
+  background-color: rgba(232, 168, 0, 0.1);
 }
 
 .element-increment:active {
@@ -204,7 +204,7 @@
 
 .life-btn:hover,
 .life-btn:active {
-  background-color: rgba(147, 51, 234, 0.1);
+  background-color: rgba(232, 168, 0, 0.1);
 }
 
 .life-btn.increment:active {
@@ -271,7 +271,7 @@
   font-size: 1.125rem;
   font-weight: 700;
   min-height: 56px;
-  background-color: var(--secondary, #9333ea);
+  background-color: var(--secondary, #c89200);
   color: #ffffff;
   border: none;
   border-radius: 8px;
@@ -281,9 +281,9 @@
 
 #report-match-btn:hover,
 #report-match-btn:active {
-  background-color: var(--secondary-hover, #7c3aed);
+  background-color: var(--secondary-hover, #b07e00);
   transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(147, 51, 234, 0.3);
+  box-shadow: 0 4px 8px rgba(232, 168, 0, 0.3);
 }
 
 #report-match-btn.hidden {
@@ -307,13 +307,13 @@
 }
 
 .btn-primary {
-  background-color: var(--secondary, #9333ea);
+  background-color: var(--secondary, #c89200);
   color: #ffffff;
 }
 
 .btn-primary:hover,
 .btn-primary:active {
-  background-color: var(--secondary-hover, #7c3aed);
+  background-color: var(--secondary-hover, #b07e00);
   transform: scale(0.98);
 }
 
@@ -427,13 +427,13 @@
 }
 
 .btn-primary {
-  background-color: var(--secondary, #9333ea);
+  background-color: var(--secondary, #c89200);
   color: #ffffff;
 }
 
 .btn-primary:hover,
 .btn-primary:active {
-  background-color: var(--secondary-hover, #7c3aed);
+  background-color: var(--secondary-hover, #b07e00);
   transform: scale(0.98);
 }
 
@@ -571,8 +571,8 @@
 
 .form-control:focus {
   outline: none;
-  border-color: var(--secondary, #9333ea);
-  box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.1);
+  border-color: var(--secondary, #c89200);
+  box-shadow: 0 0 0 3px rgba(232, 168, 0, 0.1);
 }
 
 .form-control:disabled {
@@ -653,7 +653,7 @@
 
 .autocomplete-item:hover,
 .autocomplete-item.active {
-  background-color: rgba(147, 51, 234, 0.1);
+  background-color: rgba(232, 168, 0, 0.1);
 }
 
 .autocomplete-item img {
@@ -672,8 +672,8 @@
 .autocomplete-item-badge {
   font-size: 0.625rem;
   padding: 0.125rem 0.5rem;
-  background-color: rgba(147, 51, 234, 0.2);
-  color: #9333ea;
+  background-color: rgba(232, 168, 0, 0.2);
+  color: #c89200;
   border-radius: 12px;
   font-weight: 600;
   text-transform: uppercase;
@@ -692,8 +692,8 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0.75rem;
-  background-color: rgba(147, 51, 234, 0.1);
-  border: 1px solid rgba(147, 51, 234, 0.3);
+  background-color: rgba(232, 168, 0, 0.1);
+  border: 1px solid rgba(232, 168, 0, 0.3);
   border-radius: 6px;
   margin-top: 0.5rem;
 }
@@ -762,11 +762,11 @@
 }
 
 .btn-toggle:hover {
-  background-color: rgba(147, 51, 234, 0.1);
+  background-color: rgba(232, 168, 0, 0.1);
 }
 
 .btn-toggle.active {
-  background-color: var(--secondary, #9333ea);
+  background-color: var(--secondary, #c89200);
   color: #ffffff;
 }
 
@@ -811,7 +811,7 @@
   justify-content: center;
   gap: 0.75rem;
   padding: 1rem;
-  background-color: rgba(147, 51, 234, 0.1);
+  background-color: rgba(232, 168, 0, 0.1);
   border-radius: 6px;
   margin-bottom: 1rem;
 }
@@ -823,8 +823,8 @@
 .spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid rgba(147, 51, 234, 0.2);
-  border-top-color: var(--secondary, #9333ea);
+  border: 2px solid rgba(232, 168, 0, 0.2);
+  border-top-color: var(--secondary, #c89200);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -931,8 +931,8 @@
 }
 
 .pending-confirmation-item:hover {
-  background-color: rgba(147, 51, 234, 0.1);
-  border-color: var(--secondary, #9333ea);
+  background-color: rgba(232, 168, 0, 0.1);
+  border-color: var(--secondary, #c89200);
 }
 
 .pending-confirmation-item img {
@@ -991,8 +991,8 @@
   align-items: center;
   gap: 1rem;
   padding: 1rem;
-  background-color: rgba(147, 51, 234, 0.1);
-  border: 1px solid rgba(147, 51, 234, 0.3);
+  background-color: rgba(232, 168, 0, 0.1);
+  border: 1px solid rgba(232, 168, 0, 0.3);
   border-radius: 8px;
 }
 
@@ -1056,13 +1056,13 @@
 
 .deck-link {
   font-size: 0.875rem;
-  color: var(--secondary, #9333ea);
+  color: var(--secondary, #c89200);
   text-decoration: none;
   transition: color 0.2s ease;
 }
 
 .deck-link:hover {
-  color: #7c3aed;
+  color: #b07e00;
   text-decoration: underline;
 }
 

@@ -147,6 +147,81 @@
   overflow: hidden;
 }
 
+/* Event stats bar */
+.event-stats-bar {
+  display: flex;
+  justify-content: center;
+  gap: var(--spacing-2xl, 3rem);
+  padding: var(--spacing-md, 1rem) var(--spacing-lg, 1.5rem);
+  margin-bottom: var(--spacing-lg, 1.5rem);
+  background: oklch(13% 0.014 65 / 0.6);
+  border-radius: var(--radius-soft, 8px);
+  border: 1px solid oklch(96% 0.005 80 / 0.06);
+}
+
+.event-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.event-stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-primary, #e8a800);
+  font-variant-numeric: tabular-nums;
+}
+
+.event-stat-label {
+  font-size: 0.7rem;
+  color: var(--color-text-muted, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+}
+
+/* Top 3 row fade — gradient from rank color to transparent */
+#leaderboard-table tbody tr.rank-row-1 {
+  background: linear-gradient(90deg, oklch(82% 0.165 82 / 0.14), oklch(82% 0.165 82 / 0.03) 60%, transparent);
+}
+
+#leaderboard-table tbody tr.rank-row-1:hover {
+  background: linear-gradient(90deg, oklch(82% 0.165 82 / 0.22), oklch(82% 0.165 82 / 0.06) 60%, transparent);
+}
+
+#leaderboard-table tbody tr.rank-row-2 {
+  background: linear-gradient(90deg, oklch(80% 0.008 65 / 0.10), oklch(80% 0.008 65 / 0.02) 60%, transparent);
+}
+
+#leaderboard-table tbody tr.rank-row-2:hover {
+  background: linear-gradient(90deg, oklch(80% 0.008 65 / 0.18), oklch(80% 0.008 65 / 0.05) 60%, transparent);
+}
+
+#leaderboard-table tbody tr.rank-row-3 {
+  background: linear-gradient(90deg, oklch(65% 0.090 48 / 0.10), oklch(65% 0.090 48 / 0.02) 60%, transparent);
+}
+
+#leaderboard-table tbody tr.rank-row-3:hover {
+  background: linear-gradient(90deg, oklch(65% 0.090 48 / 0.18), oklch(65% 0.090 48 / 0.05) 60%, transparent);
+}
+
+/* Row entrance animation */
+@keyframes row-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+#leaderboard-table tbody tr.row-animate {
+  animation: row-fade-in 0.3s ease-out both;
+}
+
 /* Empty state for leaderboard */
 .leaderboard-empty-state {
   text-align: center;

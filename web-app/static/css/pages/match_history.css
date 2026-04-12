@@ -32,12 +32,12 @@
 
 /* === ELO Changes === */
 .elo-positive {
-  color: #3fb950;
+  color: var(--color-success);
   font-weight: 600;
 }
 
 .elo-negative {
-  color: #f85149;
+  color: var(--color-error);
   font-weight: 600;
 }
 
@@ -66,21 +66,21 @@
 
 .date-picker-container input[type="date"]:focus {
   outline: none;
-  border-color: #4db8ff;
+  border-color: var(--color-primary);
 }
 
 .date-picker-container button {
   padding: 0.5rem 1rem;
-  background: #4db8ff;
+  background: var(--color-primary);
   border: none;
   border-radius: 6px;
-  color: #000;
+  color: var(--color-bg-dark);
   cursor: pointer;
   font-weight: 500;
 }
 
 .date-picker-container button:hover {
-  background: #3da3e0;
+  background: var(--color-primary-light);
 }
 
 /* === Loading/Error States === */

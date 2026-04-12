@@ -58,7 +58,7 @@ async function fetchSeasonLeaderboard() {
 
       if (rank <= 3) {
         rankDisplay =
-          '<span class="rank-badge rank-' + rank + '">' + rank + "</span>";
+          '<span class="rank-badge rank-' + rank + '">' + { 1: 'I', 2: 'II', 3: 'III' }[rank] + "</span>";
       }
 
       var creatorBadge = member.is_creator
@@ -67,7 +67,7 @@ async function fetchSeasonLeaderboard() {
 
       var row = document.createElement("tr");
       row.innerHTML =
-        "<td>" + rankDisplay + "</td>" +
+        '<td class="col-rank">' + rankDisplay + "</td>" +
         '<td><a href="/player/' + member.user_id + '" class="player-link">' +
           member.display_name + "</a>" + creatorBadge + "</td>" +
         '<td class="col-align-right"><span class="win-loss">' +

@@ -7,40 +7,42 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // GitHub Dark Theme colors
+        // Sorcerers Summit — warm dark arcane theme
         primary: {
           DEFAULT: '#58a6ff',
           hover: '#79b8ff',
         },
         secondary: {
-          DEFAULT: '#ffd700',
-          hover: '#ffed4a',
+          DEFAULT: '#e8a800',  // Rich amber gold (warmer than flat #ffd700)
+          hover: '#f5c000',
         },
         accent: {
-          green: '#238636',
-          red: '#f85149',
+          green: '#2a9c4a',
+          red: '#a82828',     // Deep crimson (replaces bright #f85149)
         },
         bg: {
-          dark: '#0d1117',
-          surface: '#161b22',
-          elevated: '#21262d',
+          dark: '#0f0d0a',    // Warm near-black (was cold #0d1117)
+          surface: '#171411', // Warm surface (was cold #161b22)
+          elevated: '#201d17', // Warm elevated (was cold #21262d)
         },
         text: {
-          DEFAULT: '#f0f6fc',
-          muted: '#8b949e',
+          DEFAULT: '#f5f1ea',  // Warm off-white (was cool #f0f6fc)
+          muted: '#908c86',    // Warm muted (was cool #8b949e)
         },
         border: {
-          DEFAULT: '#30363d',
+          DEFAULT: '#2c2924',  // Warm border (was cool #30363d)
         },
         // Legacy golden theme support
         golden: {
-          DEFAULT: '#ffd700',
-          dark: '#1a1a2e',
-          surface: '#16213e',
+          DEFAULT: '#e8a800',
+          dark: '#100f0c',
+          surface: '#171411',
         },
       },
       fontFamily: {
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        display: ['Almendra', 'Georgia', 'Times New Roman', 'serif'],
+        sans: ['Figtree', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        mono: ['Fira Code', 'ui-monospace', 'Courier New', 'monospace'],
       },
       spacing: {
         // Match existing CSS variables

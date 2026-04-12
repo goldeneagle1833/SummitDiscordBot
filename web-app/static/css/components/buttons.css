@@ -27,7 +27,7 @@
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: #ffed4a;
+  background: var(--color-primary-light);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
@@ -77,7 +77,7 @@
 }
 
 .btn--danger:hover:not(:disabled) {
-  background: #d32f2f;
+  background: var(--color-error-dark);
 }
 
 /* Success button */
@@ -87,7 +87,7 @@
 }
 
 .btn--success:hover:not(:disabled) {
-  background: #45a049;
+  background: var(--color-success-dark);
 }
 
 /* Size variants */

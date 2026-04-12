@@ -11,34 +11,34 @@
   /* ===== Colors ===== */
 
   /* Primary - Amber Gold */
-  --color-primary: oklch(82% 0.165 82);
-  --color-primary-dark: oklch(73% 0.165 82);
-  --color-primary-light: oklch(92% 0.100 85);
+  --color-primary: #ffd700;
+  --color-primary-dark: #e6c200;
+  --color-primary-light: #ffed4e;
 
   /* Secondary accent - Deep Crimson */
-  --color-accent: oklch(48% 0.190 22);
-  --color-accent-light: oklch(60% 0.160 22);
-  --color-accent-dark: oklch(36% 0.160 22);
+  --color-accent: #c0392b;
+  --color-accent-light: #e74c3c;
+  --color-accent-dark: #922b21;
 
-  /* Summit Blue — brand color for logo alignment (alpine/mountain blue) */
-  --color-summit-blue: oklch(60% 0.085 222);
-  --color-summit-blue-light: oklch(72% 0.070 222);
-  --color-summit-blue-dark: oklch(46% 0.080 222);
+  /* Summit Blue — brand color for logo alignment */
+  --color-summit-blue: #5b8db8;
+  --color-summit-blue-light: #7aaed4;
+  --color-summit-blue-dark: #3d6b8f;
 
-  /* Background colors — warm dark (hue 65° gold tint, very low chroma) */
-  --color-background: oklch(18% 0.014 65);
-  --color-bg-dark: oklch(14% 0.012 65);
-  --color-surface: oklch(24% 0.018 65);
-  --color-secondary: oklch(22% 0.016 65);
-  --color-secondary-light: oklch(27% 0.022 65);
-  --color-surface-hover: oklch(32% 0.026 65);
+  /* Background colors */
+  --color-background: #0f0f1a;
+  --color-bg-dark: #0a0a10;
+  --color-surface: #16213e;
+  --color-secondary: #1a1a2e;
+  --color-secondary-light: #2a2a3e;
+  --color-surface-hover: #1e2a4a;
 
-  /* Text colors — warm ivory (hue 82°, more chroma for character) */
-  --color-text: oklch(95% 0.022 82);
-  --color-text-primary: oklch(95% 0.022 82);
-  --color-text-secondary: oklch(87% 0.016 82);
-  --color-text-muted: oklch(65% 0.012 82);
-  --color-text-disabled: oklch(44% 0.008 82);
+  /* Text colors */
+  --color-text: #ffffff;
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #e0e0e0;
+  --color-text-muted: #a0a0a0;
+  --color-text-disabled: #606060;
 
   /* Status colors */
   --color-success: oklch(62% 0.155 148);
@@ -51,10 +51,10 @@
   --color-info-dark: oklch(52% 0.120 240);
 
   /* Border colors */
-  --color-border: oklch(96% 0.005 80 / 0.10);
-  --color-border-light: oklch(96% 0.005 80 / 0.06);
-  --color-border-dark: oklch(96% 0.005 80 / 0.20);
-  --color-border-gold: oklch(82% 0.165 82 / 0.20);
+  --color-border: rgba(255, 255, 255, 0.10);
+  --color-border-light: rgba(255, 255, 255, 0.05);
+  --color-border-dark: rgba(255, 255, 255, 0.20);
+  --color-border-gold: rgba(255, 215, 0, 0.20);
 
   /* ===== Typography ===== */
 

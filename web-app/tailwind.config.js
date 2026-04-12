@@ -7,17 +7,22 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Sorcerers Summit — warm dark arcane theme
+        // GitHub Dark palette (matches style.css)
         primary: {
-          DEFAULT: 'oklch(82% 0.165 82)',   // Amber gold
-          dark: 'oklch(73% 0.165 82)',
-          light: 'oklch(92% 0.100 85)',
-          hover: 'oklch(92% 0.100 85)',
+          DEFAULT: '#58a6ff',
+          dark: '#388bfd',
+          light: '#79c0ff',
+        },
+        secondary: {
+          DEFAULT: '#ffd700',
+          dark: '#e6c200',
+          light: '#ffed4e',
+          hover: '#ffed4a',
         },
         summit: {
-          DEFAULT: 'oklch(60% 0.085 222)',  // Summit blue — alpine/mountain brand color
-          light: 'oklch(72% 0.070 222)',
-          dark: 'oklch(46% 0.080 222)',
+          DEFAULT: '#5b8db8',
+          light: '#7aaed4',
+          dark: '#3d6b8f',
         },
         accent: {
           green: '#2a9c4a',
@@ -33,7 +38,7 @@ module.exports = {
           muted: 'oklch(65% 0.012 82)',     // Warm muted
         },
         border: {
-          DEFAULT: 'oklch(96% 0.005 80 / 0.15)',
+          DEFAULT: '#30363d',
         },
       },
       fontFamily: {

@@ -153,10 +153,10 @@
   gap: var(--spacing-2xl, 3rem);
   padding: var(--spacing-md, 1rem) var(--spacing-lg, 1.5rem);
   margin-bottom: var(--spacing-lg, 1.5rem);
-  background: oklch(24% 0.018 65 / 0.7);
+  background: var(--color-bg-elevated, #21262d);
   border-radius: var(--radius-soft, 8px);
-  border: 1px solid oklch(82% 0.165 82 / 0.35);
-  box-shadow: 0 0 0 1px oklch(82% 0.165 82 / 0.08), inset 0 1px 0 oklch(82% 0.165 82 / 0.10);
+  border: 1px solid var(--color-border, #30363d);
+  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .event-stat {
@@ -169,7 +169,7 @@
 .event-stat-value {
   font-size: 1.25rem;
   font-weight: 700;
-  color: var(--color-primary, #e8a800);
+  color: var(--color-primary, #58a6ff);
   font-variant-numeric: tabular-nums;
 }
 
@@ -191,11 +191,11 @@
 }
 
 #leaderboard-table tbody tr.rank-row-2 {
-  background: linear-gradient(90deg, oklch(80% 0.018 65 / 0.22), oklch(80% 0.018 65 / 0.05) 60%, transparent);
+  background: linear-gradient(90deg, oklch(78% 0.038 222 / 0.22), oklch(78% 0.038 222 / 0.05) 60%, transparent);
 }
 
 #leaderboard-table tbody tr.rank-row-2:hover {
-  background: linear-gradient(90deg, oklch(80% 0.018 65 / 0.32), oklch(80% 0.018 65 / 0.08) 60%, transparent);
+  background: linear-gradient(90deg, oklch(78% 0.038 222 / 0.32), oklch(78% 0.038 222 / 0.08) 60%, transparent);
 }
 
 #leaderboard-table tbody tr.rank-row-3 {

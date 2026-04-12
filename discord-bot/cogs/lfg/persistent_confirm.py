@@ -33,6 +33,22 @@ DB_PATH = "match_records.db"
 
 
 # ──────────────────────────────────────────────
+#  Validation helpers
+# ──────────────────────────────────────────────
+
+def _is_valid_discord_id(value) -> bool:
+    """Check if a value is a valid Discord snowflake (numeric string or int).
+
+    Returns False for Google OAuth IDs like 'google_110599992080215394616'.
+    """
+    try:
+        int(value)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+# ──────────────────────────────────────────────
 #  Database helpers
 # ──────────────────────────────────────────────
 
@@ -655,6 +671,24 @@ def create_confirmation_view(
     loser_run_id=None,
 ) -> PersistentMatchConfirmView:
     """Persist confirmation data and return a view that works across restarts."""
+    # Validate that reporter_id and opponent_id are valid Discord snowflakes
+    # This prevents Google OAuth IDs from causing crashes in background jobs
+    if not _is_valid_discord_id(reporter_id):
+        logger.warning(
+            f"create_confirmation_view called with invalid reporter_id '{reporter_id}' "
+            f"(reporter: {reporter_global}, opponent: {opponent_global}). "
+            f"This likely indicates a web app user without a linked Discord account."
+        )
+        # Still create the view, but background jobs will skip invalid IDs
+
+    if not _is_valid_discord_id(opponent_id):
+        logger.warning(
+            f"create_confirmation_view called with invalid opponent_id '{opponent_id}' "
+            f"(reporter: {reporter_global}, opponent: {opponent_global}). "
+            f"This likely indicates a web app user without a linked Discord account."
+        )
+        # Still create the view, but background jobs will skip invalid IDs
+
     data = {
         "reporter_id": reporter_id,
         "opponent_id": opponent_id,

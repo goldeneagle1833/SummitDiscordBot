@@ -281,7 +281,7 @@ a.feature-card {
 #leaderboard-table th {
   padding: var(--spacing-md) var(--spacing-lg);
   text-align: left;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary, oklch(86% 0.008 80));
   font-weight: 600;
   text-transform: uppercase;
   font-size: 0.75rem;
@@ -312,12 +312,12 @@ a.feature-card {
 }
 
 #leaderboard-table tbody tr:nth-child(2) td:first-child {
-  color: #c9d1d9;
+  color: oklch(83% 0.008 65);
   font-weight: 700;
 }
 
 #leaderboard-table tbody tr:nth-child(3) td:first-child {
-  color: #da8b45;
+  color: oklch(72% 0.085 50);
   font-weight: 700;
 }
 
@@ -495,7 +495,7 @@ a.feature-card {
 
 .match-history-table th {
   background: var(--color-bg-elevated);
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary, oklch(86% 0.008 80));
   font-weight: 600;
   text-transform: uppercase;
   font-size: 0.7rem;

@@ -41,14 +41,14 @@
   --color-text-disabled: #606060;
 
   /* Status colors */
-  --color-success: #4caf50;
-  --color-success-dark: #388e3c;
-  --color-error: #f44336;
-  --color-error-dark: #d32f2f;
-  --color-warning: #ff9800;
-  --color-warning-dark: #f57c00;
-  --color-info: #2196f3;
-  --color-info-dark: #1976d2;
+  --color-success: oklch(62% 0.155 148);
+  --color-success-dark: oklch(50% 0.145 148);
+  --color-error: oklch(55% 0.190 22);
+  --color-error-dark: oklch(43% 0.170 22);
+  --color-warning: oklch(80% 0.140 72);
+  --color-warning-dark: oklch(68% 0.130 72);
+  --color-info: oklch(64% 0.130 240);
+  --color-info-dark: oklch(52% 0.120 240);
 
   /* Border colors */
   --color-border: rgba(255, 255, 255, 0.10);

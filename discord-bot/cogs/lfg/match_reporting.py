@@ -704,15 +704,39 @@ class MatchTypeSelectionView(discord.ui.View):
                 f"{match_type_emoji} **{match_type_label} Match** - You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\n**Did you go first?**",
                 view=went_first_view,
             )
+        except discord.NotFound as e:
+            # Interaction expired (10062) - fall back to DM-disabled channel
+            logger.warning(f"Interaction expired when sending went first view: {e}")
+            dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+            if dm_channel:
+                try:
+                    # Grant user permissions to see/use the channel
+                    if self.guild_id:
+                        guild = self.bot.get_guild(self.guild_id)
+                        if guild:
+                            member = guild.get_member(interaction.user.id)
+                            if member:
+                                await dm_channel.set_permissions(
+                                    member, read_messages=True, send_messages=True
+                                )
+
+                    await dm_channel.send(
+                        f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match** - You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\n**Did you go first?**",
+                        view=went_first_view,
+                    )
+                except Exception as channel_error:
+                    logger.error(f"Failed to send went first view to DM-disabled channel: {channel_error}")
         except Exception as e:
             logger.error(f"Error sending went first view after match type selection: {e}")
-            try:
-                await interaction.followup.send(
-                    "An error occurred. Please try again.",
-                    ephemeral=True,
-                )
-            except Exception:
-                pass
+            # Try to notify user via DM-disabled channel instead of followup
+            dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+            if dm_channel:
+                try:
+                    await dm_channel.send(
+                        f"{interaction.user.mention} An error occurred setting up your match. Please try again using `!lfg`.",
+                    )
+                except Exception:
+                    pass
 
 
 class WentFirstView(discord.ui.View):
@@ -827,15 +851,39 @@ class WentFirstView(discord.ui.View):
                 f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\nReport the match result below:",
                 view=view_reporter,
             )
+        except discord.NotFound as e:
+            # Interaction expired (10062) - fall back to DM-disabled channel
+            logger.warning(f"Interaction expired when sending report buttons: {e}")
+            dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+            if dm_channel:
+                try:
+                    # Grant user permissions to see/use the channel
+                    if self.guild_id:
+                        guild = self.bot.get_guild(self.guild_id)
+                        if guild:
+                            member = guild.get_member(interaction.user.id)
+                            if member:
+                                await dm_channel.set_permissions(
+                                    member, read_messages=True, send_messages=True
+                                )
+
+                    await dm_channel.send(
+                        f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match Found!** You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\nReport the match result below:",
+                        view=view_reporter,
+                    )
+                except Exception as channel_error:
+                    logger.error(f"Failed to send report buttons to DM-disabled channel: {channel_error}")
         except Exception as e:
             logger.error(f"Error sending report buttons after went first: {e}")
-            try:
-                await interaction.followup.send(
-                    "An error occurred. Please try again.",
-                    ephemeral=True,
-                )
-            except Exception:
-                pass
+            # Try to notify user via DM-disabled channel instead of followup
+            dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+            if dm_channel:
+                try:
+                    await dm_channel.send(
+                        f"{interaction.user.mention} An error occurred setting up your match. Please try again using `!lfg`.",
+                    )
+                except Exception:
+                    pass
 
 
 class LFGReportButtons(discord.ui.View):

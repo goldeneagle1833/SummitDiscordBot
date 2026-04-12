@@ -197,7 +197,7 @@ footer {
   width: 12rem;
   height: calc(100vh - 4rem);
   z-index: 950;
-  background-color: #21262d;
+  background-color: oklch(22% 0.016 65);
   box-shadow:
     0 10px 15px -3px rgba(0, 0, 0, 0.1),
     0 4px 6px -4px rgba(0, 0, 0, 0.1);

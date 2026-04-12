@@ -8,11 +8,11 @@
   --color-summit-blue: oklch(60% 0.085 222);
   --color-summit-blue-light: oklch(72% 0.070 222);
   --color-summit-blue-dark: oklch(46% 0.080 222);
-  --color-secondary: oklch(17% 0.014 65);
-  --color-background: oklch(13% 0.012 65);
-  --color-surface: oklch(19% 0.016 65);
-  --color-text: oklch(96% 0.008 80);
-  --color-text-muted: oklch(62% 0.007 80);
+  --color-secondary: oklch(22% 0.016 65);
+  --color-background: oklch(18% 0.014 65);
+  --color-surface: oklch(24% 0.018 65);
+  --color-text: oklch(95% 0.022 82);
+  --color-text-muted: oklch(65% 0.012 82);
   --color-success: oklch(62% 0.155 148);
   --color-error: oklch(55% 0.190 22);
   --color-warning: oklch(80% 0.140 72);
@@ -197,7 +197,7 @@ footer {
   width: 12rem;
   height: calc(100vh - 4rem);
   z-index: 950;
-  background-color: #21262d;
+  background-color: oklch(22% 0.016 65);
   box-shadow:
     0 10px 15px -3px rgba(0, 0, 0, 0.1),
     0 4px 6px -4px rgba(0, 0, 0, 0.1);

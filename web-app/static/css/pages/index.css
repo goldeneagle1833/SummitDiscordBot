@@ -55,8 +55,7 @@
 
 /* Event subtitle */
 .event-subtitle {
-  color: rgba(255, 255, 255, 0.6);
-  text-align: center;
+  color: var(--color-text-secondary, oklch(86% 0.008 80));
   font-size: 0.9rem;
 }
 
@@ -154,9 +153,10 @@
   gap: var(--spacing-2xl, 3rem);
   padding: var(--spacing-md, 1rem) var(--spacing-lg, 1.5rem);
   margin-bottom: var(--spacing-lg, 1.5rem);
-  background: oklch(13% 0.014 65 / 0.6);
+  background: oklch(24% 0.018 65 / 0.7);
   border-radius: var(--radius-soft, 8px);
-  border: 1px solid oklch(96% 0.005 80 / 0.06);
+  border: 1px solid oklch(82% 0.165 82 / 0.35);
+  box-shadow: 0 0 0 1px oklch(82% 0.165 82 / 0.08), inset 0 1px 0 oklch(82% 0.165 82 / 0.10);
 }
 
 .event-stat {
@@ -183,27 +183,27 @@
 
 /* Top 3 row fade — gradient from rank color to transparent */
 #leaderboard-table tbody tr.rank-row-1 {
-  background: linear-gradient(90deg, oklch(82% 0.165 82 / 0.14), oklch(82% 0.165 82 / 0.03) 60%, transparent);
+  background: linear-gradient(90deg, oklch(82% 0.165 82 / 0.26), oklch(82% 0.165 82 / 0.06) 60%, transparent);
 }
 
 #leaderboard-table tbody tr.rank-row-1:hover {
-  background: linear-gradient(90deg, oklch(82% 0.165 82 / 0.22), oklch(82% 0.165 82 / 0.06) 60%, transparent);
+  background: linear-gradient(90deg, oklch(82% 0.165 82 / 0.36), oklch(82% 0.165 82 / 0.10) 60%, transparent);
 }
 
 #leaderboard-table tbody tr.rank-row-2 {
-  background: linear-gradient(90deg, oklch(80% 0.008 65 / 0.10), oklch(80% 0.008 65 / 0.02) 60%, transparent);
+  background: linear-gradient(90deg, oklch(80% 0.018 65 / 0.22), oklch(80% 0.018 65 / 0.05) 60%, transparent);
 }
 
 #leaderboard-table tbody tr.rank-row-2:hover {
-  background: linear-gradient(90deg, oklch(80% 0.008 65 / 0.18), oklch(80% 0.008 65 / 0.05) 60%, transparent);
+  background: linear-gradient(90deg, oklch(80% 0.018 65 / 0.32), oklch(80% 0.018 65 / 0.08) 60%, transparent);
 }
 
 #leaderboard-table tbody tr.rank-row-3 {
-  background: linear-gradient(90deg, oklch(65% 0.090 48 / 0.10), oklch(65% 0.090 48 / 0.02) 60%, transparent);
+  background: linear-gradient(90deg, oklch(65% 0.090 48 / 0.22), oklch(65% 0.090 48 / 0.05) 60%, transparent);
 }
 
 #leaderboard-table tbody tr.rank-row-3:hover {
-  background: linear-gradient(90deg, oklch(65% 0.090 48 / 0.18), oklch(65% 0.090 48 / 0.05) 60%, transparent);
+  background: linear-gradient(90deg, oklch(65% 0.090 48 / 0.32), oklch(65% 0.090 48 / 0.08) 60%, transparent);
 }
 
 /* Row entrance animation */

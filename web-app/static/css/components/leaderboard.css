@@ -32,7 +32,7 @@
 .leaderboard__table th {
   padding: var(--spacing-md) var(--spacing-lg);
   text-align: left;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary, oklch(86% 0.008 80));
   font-weight: 600;
   font-size: var(--font-size-sm);
   text-transform: uppercase;

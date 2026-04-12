@@ -7,40 +7,39 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // GitHub Dark Theme colors
+        // Sorcerers Summit — warm dark arcane theme
         primary: {
-          DEFAULT: '#58a6ff',
-          hover: '#79b8ff',
+          DEFAULT: 'oklch(82% 0.165 82)',   // Amber gold
+          dark: 'oklch(73% 0.165 82)',
+          light: 'oklch(92% 0.100 85)',
+          hover: 'oklch(92% 0.100 85)',
         },
-        secondary: {
-          DEFAULT: '#ffd700',
-          hover: '#ffed4a',
+        summit: {
+          DEFAULT: 'oklch(60% 0.085 222)',  // Summit blue — alpine/mountain brand color
+          light: 'oklch(72% 0.070 222)',
+          dark: 'oklch(46% 0.080 222)',
         },
         accent: {
-          green: '#238636',
-          red: '#f85149',
+          green: '#2a9c4a',
+          red: 'oklch(48% 0.190 22)',       // Deep crimson
         },
         bg: {
-          dark: '#0d1117',
-          surface: '#161b22',
-          elevated: '#21262d',
+          dark: 'oklch(18% 0.014 65)',      // Warm near-black
+          surface: 'oklch(24% 0.018 65)',   // Warm surface
+          elevated: 'oklch(32% 0.026 65)',  // Warm elevated
         },
         text: {
-          DEFAULT: '#f0f6fc',
-          muted: '#8b949e',
+          DEFAULT: 'oklch(95% 0.022 82)',   // Warm ivory
+          muted: 'oklch(65% 0.012 82)',     // Warm muted
         },
         border: {
-          DEFAULT: '#30363d',
-        },
-        // Legacy golden theme support
-        golden: {
-          DEFAULT: '#ffd700',
-          dark: '#1a1a2e',
-          surface: '#16213e',
+          DEFAULT: 'oklch(96% 0.005 80 / 0.15)',
         },
       },
       fontFamily: {
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        display: ['Almendra', 'Georgia', 'Times New Roman', 'serif'],
+        sans: ['Figtree', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        mono: ['Fira Code', 'ui-monospace', 'Courier New', 'monospace'],
       },
       spacing: {
         // Match existing CSS variables

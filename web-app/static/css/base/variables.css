@@ -1,54 +1,67 @@
 /*
  * Base CSS - CSS Custom Properties (Variables)
  * Purpose: Define global design tokens for colors, typography, spacing, etc.
- * Extracted from: global.css
+ *
+ * Color system uses OKLCH for perceptual uniformity.
+ * Equal steps in lightness look equal — unlike HSL.
+ * Neutrals are tinted toward the brand gold hue (65°) for subconscious cohesion.
  */
 
 :root {
   /* ===== Colors ===== */
 
-  /* Primary brand colors */
-  --color-primary: #ffd700;
-  --color-primary-dark: #e6c200;
-  --color-primary-light: #ffed4e;
+  /* Primary - Amber Gold */
+  --color-primary: oklch(82% 0.165 82);
+  --color-primary-dark: oklch(73% 0.165 82);
+  --color-primary-light: oklch(92% 0.100 85);
 
-  /* Secondary colors */
-  --color-secondary: #1a1a2e;
-  --color-secondary-light: #2a2a3e;
+  /* Secondary accent - Deep Crimson */
+  --color-accent: oklch(48% 0.190 22);
+  --color-accent-light: oklch(60% 0.160 22);
+  --color-accent-dark: oklch(36% 0.160 22);
 
-  /* Background colors */
-  --color-background: #0f0f1a;
-  --color-bg-dark: #0a0a10;
-  --color-surface: #16213e;
-  --color-surface-hover: #1e2a4a;
+  /* Summit Blue — brand color for logo alignment (alpine/mountain blue) */
+  --color-summit-blue: oklch(60% 0.085 222);
+  --color-summit-blue-light: oklch(72% 0.070 222);
+  --color-summit-blue-dark: oklch(46% 0.080 222);
 
-  /* Text colors */
-  --color-text: #ffffff;
-  --color-text-primary: #ffffff;
-  --color-text-secondary: #e0e0e0;
-  --color-text-muted: #a0a0a0;
-  --color-text-disabled: #606060;
+  /* Background colors — warm dark (hue 65° gold tint, very low chroma) */
+  --color-background: oklch(18% 0.014 65);
+  --color-bg-dark: oklch(14% 0.012 65);
+  --color-surface: oklch(24% 0.018 65);
+  --color-secondary: oklch(22% 0.016 65);
+  --color-secondary-light: oklch(27% 0.022 65);
+  --color-surface-hover: oklch(32% 0.026 65);
+
+  /* Text colors — warm ivory (hue 82°, more chroma for character) */
+  --color-text: oklch(95% 0.022 82);
+  --color-text-primary: oklch(95% 0.022 82);
+  --color-text-secondary: oklch(87% 0.016 82);
+  --color-text-muted: oklch(65% 0.012 82);
+  --color-text-disabled: oklch(44% 0.008 82);
 
   /* Status colors */
-  --color-success: #4caf50;
-  --color-success-dark: #388e3c;
-  --color-error: #f44336;
-  --color-error-dark: #d32f2f;
-  --color-warning: #ff9800;
-  --color-warning-dark: #f57c00;
-  --color-info: #2196f3;
-  --color-info-dark: #1976d2;
+  --color-success: oklch(62% 0.155 148);
+  --color-success-dark: oklch(50% 0.145 148);
+  --color-error: oklch(55% 0.190 22);
+  --color-error-dark: oklch(43% 0.170 22);
+  --color-warning: oklch(80% 0.140 72);
+  --color-warning-dark: oklch(68% 0.130 72);
+  --color-info: oklch(64% 0.130 240);
+  --color-info-dark: oklch(52% 0.120 240);
 
   /* Border colors */
-  --color-border: rgba(255, 255, 255, 0.1);
-  --color-border-light: rgba(255, 255, 255, 0.05);
-  --color-border-dark: rgba(255, 255, 255, 0.2);
+  --color-border: oklch(96% 0.005 80 / 0.10);
+  --color-border-light: oklch(96% 0.005 80 / 0.06);
+  --color-border-dark: oklch(96% 0.005 80 / 0.20);
+  --color-border-gold: oklch(82% 0.165 82 / 0.20);
 
   /* ===== Typography ===== */
 
   /* Font families */
-  --font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-family-mono: "Fira Code", "Courier New", monospace;
+  --font-display: "Almendra", Georgia, "Times New Roman", serif;
+  --font-family: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-family-mono: "Fira Code", ui-monospace, "Courier New", monospace;
 
   /* Font sizes */
   --font-size-xs: 0.75rem;      /* 12px */
@@ -91,10 +104,10 @@
 
   /* ===== Shadows ===== */
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
-  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.15);
+  --shadow-sm: 0 1px 2px oklch(5% 0.01 65 / 0.20);
+  --shadow-md: 0 4px 6px oklch(5% 0.01 65 / 0.30);
+  --shadow-lg: 0 10px 15px oklch(5% 0.01 65 / 0.30);
+  --shadow-xl: 0 20px 25px oklch(5% 0.01 65 / 0.40);
 
   /* ===== Transitions ===== */
 

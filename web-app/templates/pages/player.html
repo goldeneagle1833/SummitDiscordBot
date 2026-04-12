@@ -105,7 +105,7 @@
 
       .pagination-btn:hover:not(:disabled) {
         background-color: var(--color-bg-hover, #3a3a4e);
-        border-color: var(--color-primary, #a855f7);
+        border-color: var(--color-primary, #e8a800);
         transform: translateY(-1px);
       }
 
@@ -147,8 +147,9 @@
       }
 
       .elo-source-btn.active {
-        background: var(--color-primary, #a855f7);
-        color: white;
+        background: var(--color-primary, #e8a800);
+        color: oklch(14% 0.012 65);
+        font-weight: 600;
         box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
       }
 
@@ -176,7 +177,7 @@
       }
     </style>
   </head>
-  <body>
+  <body class="md:ml-48">
     {% include 'components/navbar.html' %}
 
     <main>
@@ -311,10 +312,10 @@
             display: none;
             background: linear-gradient(
               135deg,
-              rgba(168, 85, 247, 0.15),
-              rgba(88, 166, 255, 0.1)
-            );
-            border: 1px solid rgba(168, 85, 247, 0.3);
+              rgba(232, 168, 0, 0.15),
+              rgba(200, 146, 0, 0.1)
+              );
+              border: 1px solid rgba(232, 168, 0, 0.3);
             border-radius: 8px;
             padding: 0.75rem 1rem;
             margin-bottom: 1rem;
@@ -2042,7 +2043,7 @@
                 tr.innerHTML = `
                   <td><strong>${run.wins}-${run.losses}</strong></td>
                   <td style="color: ${statusColor}">${statusLabel}</td>
-                  <td>${run.deck_url ? `<a href="${run.deck_url}" target="_blank" style="color: var(--color-primary, #a855f7)">View Deck</a>` : '-'}</td>
+                  <td>${run.deck_url ? `<a href="${run.deck_url}" target="_blank" style="color: var(--color-primary, #e8a800)">View Deck</a>` : '-'}</td>
                   <td>${run.starting_elo}</td>
                   <td>${run.created_at || '-'}</td>
                 `;
@@ -3528,7 +3529,7 @@
               </div>
               <div>
                 ${m.is_creator
-                  ? '<span style="font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 4px; background: rgba(168, 85, 247, 0.15); color: #a855f7;">Creator</span>'
+                  ? '<span style="font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 4px; background: rgba(232, 168, 0, 0.15); color: #e8a800;">Creator</span>'
                   : `<button class="btn btn--danger" style="font-size: 0.8rem; padding: 0.2rem 0.6rem;" onclick="kickMember('${m.user_id}', '${m.display_name}')">Kick</button>`
                 }
               </div>

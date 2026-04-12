@@ -1,18 +1,32 @@
-/* CSS Variables - GitHub Dark Theme */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+/* CSS Variables - Sorcerers Summit */
+@import url("https://fonts.googleapis.com/css2?family=Almendra:ital,wght@0,400;0,700;1,400;1,700&family=Figtree:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap");
 
 :root {
-  /* Colors - GitHub Dark Palette */
-  --color-primary: #58a6ff;
-  --color-secondary: #21262d;
-  --color-accent: #238636;
-  --color-danger: #f85149;
-  --color-bg-dark: #0d1117;
-  --color-bg-surface: #161b22;
-  --color-bg-elevated: #21262d;
-  --color-text: #f0f6fc;
-  --color-text-muted: #8b949e;
-  --color-border: #30363d;
+  /* Colors - Sorcerers Summit warm dark arcane theme (OKLCH) */
+  --color-primary: oklch(82% 0.165 82);
+  --color-primary-dark: oklch(73% 0.165 82);
+  --color-primary-light: oklch(92% 0.100 85);
+  --color-summit-blue: oklch(60% 0.085 222);
+  --color-summit-blue-light: oklch(72% 0.070 222);
+  --color-summit-blue-dark: oklch(46% 0.080 222);
+  --color-secondary: oklch(22% 0.016 65);
+  --color-accent: oklch(48% 0.190 22);
+  --color-danger: oklch(55% 0.190 22);
+  --color-bg-dark: oklch(18% 0.014 65);
+  --color-bg-surface: oklch(24% 0.018 65);
+  --color-bg-elevated: oklch(32% 0.026 65);
+  --color-text: oklch(95% 0.022 82);
+  --color-text-muted: oklch(65% 0.012 82);
+  --color-border: oklch(96% 0.005 80 / 0.15);
+  --color-success: oklch(62% 0.155 148);
+  --color-error: oklch(55% 0.190 22);
+  --color-warning: oklch(80% 0.140 72);
+  --color-info: oklch(60% 0.085 222);
+
+  /* Typography */
+  --font-display: "Almendra", Georgia, "Times New Roman", serif;
+  --font-family: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-family-mono: "Fira Code", ui-monospace, "Courier New", monospace;
 
   /* Spacing */
   --spacing-xs: 0.25rem;
@@ -44,8 +58,7 @@
 }
 
 body {
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
-    Arial, sans-serif;
+  font-family: var(--font-family);
   line-height: 1.5;
   color: var(--color-text);
   background: var(--color-bg-dark);
@@ -56,7 +69,7 @@ body {
 
 /* Main content - account for fixed navbar */
 main {
-  max-width: 1400px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 2rem;
   padding-top: 100px;
@@ -73,11 +86,12 @@ main {
 }
 
 .hero h1 {
-  font-family: "Inter", sans-serif;
-  font-size: clamp(1.5rem, 4vw, 2.5rem);
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  font-weight: 700;
   margin-bottom: var(--spacing-md);
-  letter-spacing: -0.02em;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
   color: var(--color-text);
 }
 
@@ -141,7 +155,7 @@ a.feature-card {
 }
 
 .feature-card h3 {
-  font-family: "Inter", sans-serif;
+  font-family: var(--font-display);
   font-size: 1.25rem;
   font-weight: 600;
   margin-bottom: var(--spacing-md);
@@ -164,23 +178,21 @@ a.feature-card {
 }
 
 .content h1 {
-  font-family: "Inter", sans-serif;
+  font-family: var(--font-display);
   font-size: 2rem;
-  font-weight: 600;
+  font-weight: 700;
   margin-bottom: var(--spacing-xl);
   color: var(--color-text);
-  letter-spacing: -0.02em;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
 }
 
 .content h2 {
-  font-family: "Inter", sans-serif;
+  font-family: var(--font-display);
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 700;
   margin: var(--spacing-2xl) 0 var(--spacing-lg);
   color: var(--color-text);
-  position: relative;
-  padding-left: var(--spacing-lg);
-  border-left: 3px solid var(--color-primary);
 }
 
 .content p {
@@ -237,11 +249,12 @@ a.feature-card {
 }
 
 .leaderboard-header h2 {
-  font-family: "Inter", sans-serif;
+  font-family: var(--font-display);
   color: var(--color-text);
   font-size: 1.5rem;
-  font-weight: 600;
-  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-bottom: 0.25rem;
 }
 
 .leaderboard-content {
@@ -260,17 +273,17 @@ a.feature-card {
 
 #leaderboard-table thead {
   background: var(--color-bg-elevated);
-  border-bottom: 1px solid var(--color-border);
 }
 
 #leaderboard-table th {
   padding: var(--spacing-md) var(--spacing-lg);
   text-align: left;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary, oklch(86% 0.008 80));
   font-weight: 600;
   text-transform: uppercase;
   font-size: 0.75rem;
   letter-spacing: 0.05em;
+  border-bottom: 1.5px solid oklch(95% 0.022 82 / 0.25);
 }
 
 #leaderboard-table td {
@@ -278,6 +291,7 @@ a.feature-card {
   color: var(--color-text);
   border-bottom: 1px solid var(--color-border);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 #leaderboard-table tbody tr {
@@ -290,17 +304,17 @@ a.feature-card {
 }
 
 #leaderboard-table tbody tr:nth-child(1) td:first-child {
-  color: #ffd33d;
+  color: oklch(90% 0.150 82);
   font-weight: 700;
 }
 
 #leaderboard-table tbody tr:nth-child(2) td:first-child {
-  color: #c9d1d9;
+  color: oklch(83% 0.008 65);
   font-weight: 700;
 }
 
 #leaderboard-table tbody tr:nth-child(3) td:first-child {
-  color: #da8b45;
+  color: oklch(72% 0.085 50);
   font-weight: 700;
 }
 
@@ -319,25 +333,46 @@ a.feature-card {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  font-weight: 600;
-  font-size: 0.875rem;
-  border-radius: 50%;
-  font-family: "Inter", sans-serif;
+  min-width: 28px;
+  height: 26px;
+  padding: 0 7px;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 0.85rem;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  letter-spacing: 0.04em;
 }
 
+.rank-display {
+  padding-left: 8.5px;
+  font-weight: 600;
+}
+
+/* Rank 1 — Amber gold: warm, luminous, a touch of glow */
 .rank-1 {
-  background: rgba(255, 211, 61, 0.2);
-  color: #ffd33d;
+  height: 28px;
+  font-size: 0.9rem;
+  background: oklch(82% 0.165 82 / 0.14);
+  color: oklch(90% 0.150 82);
+  border: 1.5px solid oklch(82% 0.165 82 / 0.55);
+  box-shadow: 0 0 10px oklch(82% 0.165 82 / 0.22);
 }
+
+/* Rank 2 — Warm silver: neutral but tinted toward brand hue, not cold */
 .rank-2 {
-  background: rgba(201, 209, 217, 0.2);
-  color: #c9d1d9;
+  background: oklch(80% 0.008 65 / 0.10);
+  color: oklch(83% 0.008 65);
+  border: 1.5px solid oklch(80% 0.008 65 / 0.42);
 }
+
+/* Rank 3 — Warm copper: rich and earthy, not washed orange */
 .rank-3 {
-  background: rgba(218, 139, 69, 0.2);
-  color: #da8b45;
+  background: oklch(65% 0.090 48 / 0.14);
+  color: oklch(72% 0.085 50);
+  border: 1.5px solid oklch(65% 0.090 48 / 0.50);
 }
 
 /* Player profile page */
@@ -355,13 +390,10 @@ a.feature-card {
   position: absolute;
   top: 0;
   left: 0;
-  width: 4px;
-  height: 100%;
-  background: linear-gradient(
-    180deg,
-    var(--color-primary),
-    var(--color-secondary)
-  );
+  width: 100%;
+  height: 2px;
+  background: var(--color-primary);
+  opacity: 0.5;
 }
 
 .player-header {
@@ -385,7 +417,7 @@ a.feature-card {
 }
 
 .player-name {
-  font-family: "Inter", sans-serif;
+  font-family: var(--font-display);
   font-size: clamp(1.25rem, 3vw, 2rem);
   font-weight: 600;
   color: var(--color-text);
@@ -393,10 +425,10 @@ a.feature-card {
 }
 
 .player-elo {
-  font-family: "Inter", sans-serif;
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 .player-stats {
@@ -420,12 +452,12 @@ a.feature-card {
 }
 
 .stat-value {
-  font-family: "Inter", sans-serif;
   font-size: 1.75rem;
   font-weight: 700;
   color: var(--color-text);
   display: block;
   margin-bottom: var(--spacing-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-label {
@@ -435,7 +467,6 @@ a.feature-card {
 }
 
 .match-history h3 {
-  font-family: "Inter", sans-serif;
   color: var(--color-text);
   margin-bottom: var(--spacing-md);
   font-size: 1.125rem;
@@ -461,7 +492,7 @@ a.feature-card {
 
 .match-history-table th {
   background: var(--color-bg-elevated);
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary, oklch(86% 0.008 80));
   font-weight: 600;
   text-transform: uppercase;
   font-size: 0.7rem;
@@ -520,7 +551,6 @@ a.feature-card {
 }
 
 .player-rank {
-  font-family: "Inter", sans-serif;
   font-size: 0.875rem;
   color: var(--color-text-muted);
   font-weight: 500;
@@ -528,7 +558,6 @@ a.feature-card {
 }
 
 .player-profile h3 {
-  font-family: "Inter", sans-serif;
   color: var(--color-text);
   margin: 0 0 var(--spacing-sm);
   font-size: 1.125rem;
@@ -583,7 +612,6 @@ a.feature-card {
 }
 
 .avatar-name {
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--color-text);
@@ -761,7 +789,6 @@ a.feature-card {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 1rem;
   font-weight: 700;
   color: var(--color-text);
@@ -793,9 +820,9 @@ a.feature-card {
 }
 
 .avatar-stats-winrate {
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 1.8rem;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
   margin: 0;
 }
@@ -942,14 +969,14 @@ a.feature-card {
 }
 
 .match-id {
-  font-family: "Lora", serif;
-  font-size: 0.85rem;
+  font-family: var(--font-family-mono);
+  font-size: 0.8rem;
   color: var(--color-text-muted);
   padding: 2px 6px;
   background: var(--color-bg-dark);
   border: 1px solid rgba(212, 175, 55, 0.15);
   border-radius: var(--radius-soft);
-  font-style: italic;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Recent Decks Section */
@@ -1020,7 +1047,6 @@ a.feature-card {
   font-size: 1rem;
   color: var(--color-text);
   font-weight: 500;
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 .deck-date {

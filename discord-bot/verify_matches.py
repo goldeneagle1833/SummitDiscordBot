@@ -39,11 +39,11 @@ def check_recent_matches():
 
         # Get recent matches (last 24 hours)
         cur.execute("""
-            SELECT match_id, winner_id, loser_id, timestamp,
+            SELECT rowid, winner_id, losser_id, timestamp,
                    winner_elo_change, loser_elo_change, match_type
             FROM match_records
             WHERE timestamp >= datetime('now', '-24 hours')
-            ORDER BY match_id DESC
+            ORDER BY rowid DESC
             LIMIT 20
         """)
         recent = cur.fetchall()
@@ -65,10 +65,10 @@ def check_recent_matches():
 
         if user_id:
             cur.execute("""
-                SELECT match_id, winner_id, loser_id, timestamp
+                SELECT rowid, winner_id, losser_id, timestamp
                 FROM match_records
-                WHERE winner_id = ? OR loser_id = ?
-                ORDER BY match_id DESC
+                WHERE winner_id = ? OR losser_id = ?
+                ORDER BY rowid DESC
                 LIMIT 10
             """, (user_id, user_id))
 

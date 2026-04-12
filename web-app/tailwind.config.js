@@ -24,13 +24,13 @@ module.exports = {
           red: 'oklch(48% 0.190 22)',       // Deep crimson
         },
         bg: {
-          dark: 'oklch(13% 0.012 65)',      // Lightened warm near-black
-          surface: 'oklch(19% 0.016 65)',   // Lightened warm surface
-          elevated: 'oklch(26% 0.024 65)',  // Lightened warm elevated
+          dark: 'oklch(18% 0.014 65)',      // Warm near-black
+          surface: 'oklch(24% 0.018 65)',   // Warm surface
+          elevated: 'oklch(32% 0.026 65)',  // Warm elevated
         },
         text: {
-          DEFAULT: 'oklch(96% 0.008 80)',   // Warm off-white
-          muted: 'oklch(62% 0.007 80)',     // Warm muted
+          DEFAULT: 'oklch(95% 0.022 82)',   // Warm ivory
+          muted: 'oklch(65% 0.012 82)',     // Warm muted
         },
         border: {
           DEFAULT: 'oklch(96% 0.005 80 / 0.15)',

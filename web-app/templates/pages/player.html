@@ -386,6 +386,25 @@
           </div>
         </div>
 
+        <!-- Winrate vs ELO Brackets -->
+        <div
+          class="elo-bracket-chart-section"
+          id="elo-bracket-chart-section"
+          style="display: none; margin-top: 2rem">
+          <h3
+            class="collapsible-header collapsed"
+            id="elo-bracket-chart-header">
+            <span class="chevron">▼</span>
+            🎯 Winrate vs Opponent ELO
+          </h3>
+          <div
+            class="elo-bracket-chart-wrapper collapsible-content collapsed"
+            id="elo-bracket-chart-container"
+            style="padding: 1.5rem; background: var(--color-bg-secondary); border-radius: 8px; margin-top: 0.5rem">
+            <canvas id="elo-bracket-chart" style="max-height: 400px"></canvas>
+          </div>
+        </div>
+
         <!-- ELO History Graph -->
         <div
           class="elo-chart-section"
@@ -1749,6 +1768,123 @@
         });
       }
 
+      let eloBracketChartInstance = null;
+
+      function renderEloBracketChart(bracketData) {
+        // Destroy existing chart if it exists
+        if (eloBracketChartInstance) {
+          eloBracketChartInstance.destroy();
+          eloBracketChartInstance = null;
+        }
+
+        // Filter out brackets with no matches
+        const filteredData = bracketData.filter(b => b.total > 0);
+
+        if (filteredData.length === 0) {
+          return; // No data to display
+        }
+
+        // Define bracket order (highest to lowest)
+        const bracketOrder = ["1700+", "1600-1699", "1500-1599", "1400-1499", "1300-1399", "1200-1299", "1199 or less"];
+
+        // Sort data by bracket order
+        filteredData.sort((a, b) => {
+          return bracketOrder.indexOf(a.bracket) - bracketOrder.indexOf(b.bracket);
+        });
+
+        const labels = filteredData.map(b => `${b.bracket}\n(${b.total} games)`);
+        const winRates = filteredData.map(b => b.win_rate);
+        const wins = filteredData.map(b => b.wins);
+        const losses = filteredData.map(b => b.losses);
+
+        const ctx = document.getElementById("elo-bracket-chart").getContext("2d");
+        eloBracketChartInstance = new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: labels,
+            datasets: [{
+              label: "Win Rate (%)",
+              data: winRates,
+              backgroundColor: winRates.map(wr => {
+                if (wr >= 60) return "rgba(34, 197, 94, 0.7)"; // Green for high winrate
+                if (wr >= 50) return "rgba(59, 130, 246, 0.7)"; // Blue for positive
+                if (wr >= 40) return "rgba(251, 191, 36, 0.7)"; // Yellow for below 50%
+                return "rgba(239, 68, 68, 0.7)"; // Red for low winrate
+              }),
+              borderColor: winRates.map(wr => {
+                if (wr >= 60) return "rgba(34, 197, 94, 1)";
+                if (wr >= 50) return "rgba(59, 130, 246, 1)";
+                if (wr >= 40) return "rgba(251, 191, 36, 1)";
+                return "rgba(239, 68, 68, 1)";
+              }),
+              borderWidth: 2,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+              legend: {
+                display: false
+              },
+              tooltip: {
+                backgroundColor: "rgba(0, 0, 0, 0.8)",
+                titleColor: "#fff",
+                bodyColor: "#fff",
+                callbacks: {
+                  label: function(context) {
+                    const index = context.dataIndex;
+                    const bracket = filteredData[index];
+                    return [
+                      `Win Rate: ${bracket.win_rate}%`,
+                      `Wins: ${bracket.wins}`,
+                      `Losses: ${bracket.losses}`,
+                      `Total: ${bracket.total} games`
+                    ];
+                  }
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                max: 100,
+                ticks: {
+                  color: "#8b949e",
+                  callback: function(value) {
+                    return value + "%";
+                  }
+                },
+                grid: {
+                  color: "rgba(139, 148, 158, 0.1)"
+                },
+                title: {
+                  display: true,
+                  text: "Win Rate (%)",
+                  color: "#c9d1d9"
+                }
+              },
+              x: {
+                ticks: {
+                  color: "#8b949e",
+                  font: {
+                    size: 11
+                  }
+                },
+                grid: {
+                  display: false
+                },
+                title: {
+                  display: true,
+                  text: "Opponent ELO Bracket",
+                  color: "#c9d1d9"
+                }
+              }
+            }
+          }
+        });
+      }
+
       function setupEloSliders() {
         const rangeSlider = document.getElementById("elo-range-slider");
         const rangeValue = document.getElementById("elo-range-value");
@@ -1937,6 +2073,14 @@
           } else {
             // Hide chart section if no matches for this filter
             document.getElementById("elo-chart-section").style.display = "none";
+          }
+
+          // Render ELO bracket chart (winrate vs opponent ELO levels)
+          if (data.elo_vs_brackets && data.elo_vs_brackets.length > 0) {
+            document.getElementById("elo-bracket-chart-section").style.display = "block";
+            renderEloBracketChart(data.elo_vs_brackets);
+          } else {
+            document.getElementById("elo-bracket-chart-section").style.display = "none";
           }
 
           // Update avatar performance

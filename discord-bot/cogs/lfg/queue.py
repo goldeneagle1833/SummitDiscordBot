@@ -387,7 +387,8 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             # Send "Did you go first?" question to the selected reporter
             try:
                 await reporter_user.send(
-                    f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Did you go first?**",
+                    f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Did you go first?**\n\n"
+                    f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** in the LFG channel for fresh buttons!",
                     view=went_first_view,
                 )
             except discord.Forbidden:
@@ -409,7 +410,8 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                         # Post without deck URL in public channel
                         await dm_channel.send(
                             scrub_urls(
-                                f"{reporter_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n**Did you go first?**"
+                                f"{reporter_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n**Did you go first?**\n\n"
+                                f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** for fresh buttons!"
                             ),
                             view=went_first_view,
                         )
@@ -425,7 +427,8 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             try:
                 await other_user.send(
                     f"🎮 **Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
-                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
+                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome.\n\n"
+                    f"💡 **Tip:** If buttons expire or you need fresh reporting buttons, click **'📋 Report Last Match'** in the LFG channel!"
                 )
             except discord.Forbidden:
                 try:
@@ -447,7 +450,8 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                         await dm_channel.send(
                             scrub_urls(
                                 f"{other_user.mention} 🎮 **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
-                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
+                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome.\n\n"
+                                f"💡 **Tip:** If buttons expire or you need fresh reporting buttons, click **'📋 Report Last Match'**!"
                             )
                         )
                 except Exception as e:
@@ -588,24 +592,17 @@ class JoinQueueButtons(discord.ui.View):
         await self._handle_join(interaction, "limited")
 
     @discord.ui.button(
-        label="📬 Resend Last Match",
-        style=discord.ButtonStyle.secondary,
-        custom_id="resend_last_match",
+        label="📋 Report Last Match",
+        style=discord.ButtonStyle.primary,
+        custom_id="report_last_match",
         row=1,
     )
-    async def resend_last_match_button(
+    async def report_last_match_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        """Resend the match reporting flow for the user's most recent unreported pairing"""
+        """Report the user's most recent unreported match (generates fresh reporting buttons)"""
         try:
             await interaction.response.defer(ephemeral=True)
-
-            # Debug message for specific user
-            if interaction.user.id == 296846802924208130:
-                try:
-                    await interaction.user.send("🔧 **Debug**: Resend Last Match button is working!")
-                except Exception:
-                    pass
 
             # Get guild ID from interaction
             if not interaction.guild:
@@ -616,23 +613,23 @@ class JoinQueueButtons(discord.ui.View):
                 return
 
             guild_id = interaction.guild.id
-            logger.info(f"Resend Last Match: User {interaction.user.id} ({interaction.user.global_name}) in guild {guild_id}")
+            logger.info(f"Report Last Match: User {interaction.user.id} ({interaction.user.global_name}) in guild {guild_id}")
 
             # Get the last unreported pairing
             try:
                 pairing = get_last_unreported_pairing(interaction.user.id, guild_id)
-                logger.info(f"Resend Last Match: Found pairing: {pairing is not None}")
+                logger.info(f"Report Last Match: Found pairing: {pairing is not None}")
             except Exception as e:
-                logger.error(f"Resend Last Match: Database error getting pairing: {e}", exc_info=True)
+                logger.error(f"Report Last Match: Database error getting pairing: {e}", exc_info=True)
                 await interaction.followup.send(
-                    "Database error occurred. Please contact an admin.",
+                    "❌ Database error occurred. Please contact an admin.",
                     ephemeral=True,
                 )
                 return
 
             if not pairing:
                 await interaction.followup.send(
-                    "No unreported matches found. Play a match first!",
+                    "❌ No unreported matches found.\n\n**Tip:** Join the queue and play a match first!",
                     ephemeral=True,
                 )
                 return
@@ -712,11 +709,11 @@ class JoinQueueButtons(discord.ui.View):
             # Try to send to DM first
             try:
                 await interaction.user.send(
-                    f"{match_type_emoji} **{match_type_label} Match** - You've been matched with {opponent_user.mention} (**{opponent_user.global_name or opponent_user.display_name}**)!{reporter_deck_text}\n\n**Did you go first?**",
+                    f"{match_type_emoji} **{match_type_label} Match Report**\n\n**Opponent:** {opponent_user.mention} (**{opponent_user.global_name or opponent_user.display_name}**){reporter_deck_text}\n\n**Did you go first?**",
                     view=went_first_view,
                 )
                 await interaction.followup.send(
-                    f"Match reporting flow resent! Check your DMs.",
+                    f"✅ Match reporting buttons sent! Check your DMs.",
                     ephemeral=True,
                 )
             except discord.Forbidden:
@@ -734,31 +731,31 @@ class JoinQueueButtons(discord.ui.View):
                                 )
 
                         await dm_channel.send(
-                            f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match** - You've been matched with {opponent_user.mention} (**{opponent_user.global_name or opponent_user.display_name}**)!{reporter_deck_text}\n\n**Did you go first?**",
+                            f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match Report**\n\n**Opponent:** {opponent_user.mention} (**{opponent_user.global_name or opponent_user.display_name}**){reporter_deck_text}\n\n**Did you go first?**",
                             view=went_first_view,
                         )
                         await interaction.followup.send(
-                            f"Match reporting flow sent to <#{config.DM_DISABLED_CHANNEL_ID}>!",
+                            f"✅ Match reporting buttons sent to <#{config.DM_DISABLED_CHANNEL_ID}>!",
                             ephemeral=True,
                         )
                     except Exception as e:
                         logger.error(f"Failed to send to DM-disabled channel: {e}")
                         await interaction.followup.send(
-                            "Failed to send match reporting flow. Please try again.",
+                            "❌ Failed to send match reporting buttons. Please try again.",
                             ephemeral=True,
                         )
                 else:
                     await interaction.followup.send(
-                        "Could not send DM and fallback channel not found. Please contact an admin.",
+                        "❌ Could not send DM and fallback channel not found. Please contact an admin.",
                         ephemeral=True,
                     )
 
         except Exception as e:
             # Catch-all for any unexpected errors
-            logger.error(f"Resend Last Match: Unexpected error for user {interaction.user.id}: {e}", exc_info=True)
+            logger.error(f"Report Last Match: Unexpected error for user {interaction.user.id}: {e}", exc_info=True)
             try:
                 await interaction.followup.send(
-                    f"An unexpected error occurred: {str(e)}\nPlease contact an admin.",
+                    f"❌ An unexpected error occurred: {str(e)}\nPlease contact an admin.",
                     ephemeral=True,
                 )
             except Exception:

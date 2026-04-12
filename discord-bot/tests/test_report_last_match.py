@@ -1,4 +1,4 @@
-"""Tests for the Resend Last Match button functionality."""
+"""Tests for the Report Last Match button functionality."""
 
 import pytest
 import sqlite3

@@ -1089,6 +1089,101 @@ def player_api(player_id):
         )
     avatar_matchups.sort(key=lambda x: x["total_games"], reverse=True)
 
+    # Winrate vs ELO brackets
+    # Calculate opponent ELO at match time and group by bracket
+    elo_bracket_stats = {
+        "1700+": {"wins": 0, "losses": 0},
+        "1600-1699": {"wins": 0, "losses": 0},
+        "1500-1599": {"wins": 0, "losses": 0},
+        "1400-1499": {"wins": 0, "losses": 0},
+        "1300-1399": {"wins": 0, "losses": 0},
+        "1200-1299": {"wins": 0, "losses": 0},
+        "1199 or less": {"wins": 0, "losses": 0},
+    }
+
+    # Get opponent ELOs from database
+    try:
+        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
+        elo_cur = elo_conn.cursor()
+
+        for row in all_rows:
+            did_win = row[0]
+            opponent_id = str(row[11]) if did_win else str(row[10])
+            winner_elo_change = row[7] if row[7] else 0
+            loser_elo_change = row[8] if row[8] else 0
+
+            # Get opponent's current ELO
+            opponent_elo = None
+            if source == "web":
+                # Query paper_standings for web matches
+                try:
+                    elo_cur.execute(
+                        "SELECT paper_elo FROM paper_standings WHERE user_id = ?",
+                        (opponent_id,)
+                    )
+                    opp_row = elo_cur.fetchone()
+                    if opp_row:
+                        opponent_elo = opp_row[0]
+                except sqlite3.OperationalError:
+                    pass
+            else:
+                # Query overall_standings for bot matches
+                # Normalize opponent_id for bot matches (remove google_ prefix if present)
+                opponent_id_normalized = opponent_id
+                if opponent_id.startswith("google_"):
+                    opponent_id_normalized = opponent_id[7:]
+
+                try:
+                    elo_cur.execute(
+                        "SELECT elo FROM overall_standings WHERE user_id = ?",
+                        (opponent_id_normalized,)
+                    )
+                    opp_row = elo_cur.fetchone()
+                    if opp_row:
+                        opponent_elo = opp_row[0]
+                except sqlite3.OperationalError:
+                    pass
+
+            # If we have opponent ELO, categorize by bracket
+            if opponent_elo is not None:
+                if opponent_elo >= 1700:
+                    bracket = "1700+"
+                elif opponent_elo >= 1600:
+                    bracket = "1600-1699"
+                elif opponent_elo >= 1500:
+                    bracket = "1500-1599"
+                elif opponent_elo >= 1400:
+                    bracket = "1400-1499"
+                elif opponent_elo >= 1300:
+                    bracket = "1300-1399"
+                elif opponent_elo >= 1200:
+                    bracket = "1200-1299"
+                else:
+                    bracket = "1199 or less"
+
+                if did_win:
+                    elo_bracket_stats[bracket]["wins"] += 1
+                else:
+                    elo_bracket_stats[bracket]["losses"] += 1
+
+        elo_conn.close()
+    except Exception as e:
+        logger.error(f"Error calculating ELO bracket stats: {e}", exc_info=True)
+
+    # Format ELO bracket stats for response
+    elo_vs_brackets = []
+    for bracket, stats in elo_bracket_stats.items():
+        total = stats["wins"] + stats["losses"]
+        if total > 0:
+            win_rate = (stats["wins"] / total * 100)
+            elo_vs_brackets.append({
+                "bracket": bracket,
+                "wins": stats["wins"],
+                "losses": stats["losses"],
+                "total": total,
+                "win_rate": round(win_rate, 1)
+            })
+
     # Check ownership
     # Normalize logged_in_user_id for comparison (strip 'google_' prefix if present)
     logged_in_user_id = session.get("user_id")
@@ -1371,6 +1466,7 @@ def player_api(player_id):
             "recorded_games": recorded_games if is_owner else [],
             "is_owner": is_owner,
             "has_custom_display_name": has_custom_display_name,
+            "elo_vs_brackets": elo_vs_brackets,
             "pagination": {
                 "current_page": page,
                 "per_page": per_page,

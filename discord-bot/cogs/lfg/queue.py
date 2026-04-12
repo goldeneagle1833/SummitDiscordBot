@@ -577,6 +577,13 @@ class JoinQueueButtons(discord.ui.View):
         """Resend the match reporting flow for the user's most recent unreported pairing"""
         await interaction.response.defer(ephemeral=True)
 
+        # Debug message for specific user
+        if interaction.user.id == 296846802924208130:
+            try:
+                await interaction.user.send("🔧 **Debug**: Resend Last Match button is working!")
+            except Exception:
+                pass
+
         # Get guild ID from interaction
         if not interaction.guild:
             await interaction.followup.send(

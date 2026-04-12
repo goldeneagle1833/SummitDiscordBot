@@ -32,38 +32,29 @@ async def _send_confirmation_to_opponent(
     confirm_msg, confirmation_view, reply_interaction, guild_id,
 ):
     """Send a confirmation view to the opponent via DM, falling back to a channel."""
-    opponent_has_dm_issue = False
-    guild = bot.get_guild(guild_id) if guild_id else None
-    if guild:
-        role = guild.get_role(config.DM_DISABLED_ROLE_ID)
-        member = guild.get_member(opponent_id)
-        if role and member and role in member.roles:
-            opponent_has_dm_issue = True
+    logger.info(f"Attempting to send confirmation to opponent {opponent_id} ({opponent_global})")
 
-    if opponent_has_dm_issue:
-        dm_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
-        if dm_channel:
-            await dm_channel.send(
-                scrub_urls(f"{opponent_user.mention} {confirm_msg}"),
-                view=confirmation_view,
-            )
-            await reply_interaction.followup.send(
-                f"Match report sent to {opponent_global}. Waiting for confirmation...",
-                ephemeral=True,
-            )
-        else:
-            await reply_interaction.followup.send(
-                f"Could not send confirmation to {opponent_global}.",
-                ephemeral=True,
-            )
-    else:
-        try:
-            await opponent_user.send(confirm_msg, view=confirmation_view)
-            await reply_interaction.followup.send(
-                f"Match report sent to {opponent_global}. Waiting for confirmation...",
-                ephemeral=True,
-            )
-        except discord.Forbidden:
+    # Always try DM first - don't skip based on role
+    # (User might have re-enabled DMs since role was added)
+    try:
+        logger.info(f"Sending confirmation DM to opponent {opponent_id} ({opponent_global})")
+        await opponent_user.send(confirm_msg, view=confirmation_view)
+        logger.info(f"✅ Successfully sent confirmation DM to opponent {opponent_id} ({opponent_global})")
+
+        # Remove DM_DISABLED_ROLE if they have it (DMs are working now)
+        guild = bot.get_guild(guild_id) if guild_id else None
+        if guild:
+            role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+            member = guild.get_member(opponent_id)
+            if role and member and role in member.roles:
+                await member.remove_roles(role)
+                logger.info(f"Removed DM_DISABLED_ROLE from {opponent_id} (DMs working)")
+
+        await reply_interaction.followup.send(
+            f"Match report sent to {opponent_global}. Waiting for confirmation...",
+            ephemeral=True,
+        )
+    except discord.Forbidden:
             try:
                 if guild:
                     role = guild.get_role(config.DM_DISABLED_ROLE_ID)
@@ -79,10 +70,12 @@ async def _send_confirmation_to_opponent(
                             await dm_channel.set_permissions(
                                 member, read_messages=True, send_messages=True
                             )
+                    logger.info(f"Sending confirmation to DM-disabled channel for opponent {opponent_id}")
                     await dm_channel.send(
                         scrub_urls(f"{opponent_user.mention} {confirm_msg}"),
                         view=confirmation_view,
                     )
+                    logger.info(f"✅ Successfully sent confirmation to channel for opponent {opponent_id}")
                     await reply_interaction.followup.send(
                         "Match report sent. Waiting for confirmation...",
                         ephemeral=True,

@@ -6,19 +6,22 @@
   --color-primary: oklch(82% 0.165 82);
   --color-primary-dark: oklch(73% 0.165 82);
   --color-primary-light: oklch(92% 0.100 85);
-  --color-secondary: oklch(13% 0.014 65);
+  --color-summit-blue: oklch(60% 0.085 222);
+  --color-summit-blue-light: oklch(72% 0.070 222);
+  --color-summit-blue-dark: oklch(46% 0.080 222);
+  --color-secondary: oklch(17% 0.014 65);
   --color-accent: oklch(48% 0.190 22);
   --color-danger: oklch(55% 0.190 22);
-  --color-bg-dark: oklch(10% 0.012 65);
-  --color-bg-surface: oklch(15% 0.016 65);
-  --color-bg-elevated: oklch(20% 0.024 65);
+  --color-bg-dark: oklch(13% 0.012 65);
+  --color-bg-surface: oklch(19% 0.016 65);
+  --color-bg-elevated: oklch(26% 0.024 65);
   --color-text: oklch(96% 0.008 80);
   --color-text-muted: oklch(62% 0.007 80);
   --color-border: oklch(96% 0.005 80 / 0.15);
   --color-success: oklch(62% 0.155 148);
   --color-error: oklch(55% 0.190 22);
   --color-warning: oklch(80% 0.140 72);
-  --color-info: oklch(64% 0.130 240);
+  --color-info: oklch(60% 0.085 222);
 
   /* Typography */
   --font-display: "Almendra", Georgia, "Times New Roman", serif;

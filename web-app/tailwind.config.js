@@ -9,34 +9,31 @@ module.exports = {
       colors: {
         // Sorcerers Summit — warm dark arcane theme
         primary: {
-          DEFAULT: '#58a6ff',
-          hover: '#79b8ff',
+          DEFAULT: 'oklch(82% 0.165 82)',   // Amber gold
+          dark: 'oklch(73% 0.165 82)',
+          light: 'oklch(92% 0.100 85)',
+          hover: 'oklch(92% 0.100 85)',
         },
-        secondary: {
-          DEFAULT: '#e8a800',  // Rich amber gold (warmer than flat #ffd700)
-          hover: '#f5c000',
+        summit: {
+          DEFAULT: 'oklch(60% 0.085 222)',  // Summit blue — alpine/mountain brand color
+          light: 'oklch(72% 0.070 222)',
+          dark: 'oklch(46% 0.080 222)',
         },
         accent: {
           green: '#2a9c4a',
-          red: '#a82828',     // Deep crimson (replaces bright #f85149)
+          red: 'oklch(48% 0.190 22)',       // Deep crimson
         },
         bg: {
-          dark: '#0f0d0a',    // Warm near-black (was cold #0d1117)
-          surface: '#171411', // Warm surface (was cold #161b22)
-          elevated: '#201d17', // Warm elevated (was cold #21262d)
+          dark: 'oklch(13% 0.012 65)',      // Lightened warm near-black
+          surface: 'oklch(19% 0.016 65)',   // Lightened warm surface
+          elevated: 'oklch(26% 0.024 65)',  // Lightened warm elevated
         },
         text: {
-          DEFAULT: '#f5f1ea',  // Warm off-white (was cool #f0f6fc)
-          muted: '#908c86',    // Warm muted (was cool #8b949e)
+          DEFAULT: 'oklch(96% 0.008 80)',   // Warm off-white
+          muted: 'oklch(62% 0.007 80)',     // Warm muted
         },
         border: {
-          DEFAULT: '#2c2924',  // Warm border (was cool #30363d)
-        },
-        // Legacy golden theme support
-        golden: {
-          DEFAULT: '#e8a800',
-          dark: '#100f0c',
-          surface: '#171411',
+          DEFAULT: 'oklch(96% 0.005 80 / 0.15)',
         },
       },
       fontFamily: {

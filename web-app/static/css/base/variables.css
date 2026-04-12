@@ -20,13 +20,18 @@
   --color-accent-light: oklch(60% 0.160 22);
   --color-accent-dark: oklch(36% 0.160 22);
 
+  /* Summit Blue — brand color for logo alignment (alpine/mountain blue) */
+  --color-summit-blue: oklch(60% 0.085 222);
+  --color-summit-blue-light: oklch(72% 0.070 222);
+  --color-summit-blue-dark: oklch(46% 0.080 222);
+
   /* Background colors — warm dark (hue 65° gold tint, very low chroma) */
-  --color-background: oklch(10% 0.012 65);
-  --color-bg-dark: oklch(7.5% 0.010 65);
-  --color-surface: oklch(15% 0.016 65);
-  --color-secondary: oklch(13% 0.014 65);
-  --color-secondary-light: oklch(18% 0.020 65);
-  --color-surface-hover: oklch(20% 0.024 65);
+  --color-background: oklch(13% 0.012 65);
+  --color-bg-dark: oklch(10% 0.010 65);
+  --color-surface: oklch(19% 0.016 65);
+  --color-secondary: oklch(17% 0.014 65);
+  --color-secondary-light: oklch(22% 0.020 65);
+  --color-surface-hover: oklch(26% 0.024 65);
 
   /* Text colors — warm off-whites (hue 80°) */
   --color-text: oklch(96% 0.008 80);

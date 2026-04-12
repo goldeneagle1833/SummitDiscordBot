@@ -1175,13 +1175,13 @@ def player_api(player_id):
     for bracket, stats in elo_bracket_stats.items():
         total = stats["wins"] + stats["losses"]
         if total > 0:
-            win_rate = (stats["wins"] / total * 100)
+            bracket_win_rate = (stats["wins"] / total * 100)
             elo_vs_brackets.append({
                 "bracket": bracket,
                 "wins": stats["wins"],
                 "losses": stats["losses"],
                 "total": total,
-                "win_rate": round(win_rate, 1)
+                "win_rate": round(bracket_win_rate, 1)
             })
 
     # Check ownership

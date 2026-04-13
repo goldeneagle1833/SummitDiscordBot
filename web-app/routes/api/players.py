@@ -864,20 +864,33 @@ def player_api(player_id):
     if not player_name:
         player_name = "Unknown Player"
 
-    # Calculate stats
-    total_matches = len(all_rows)
-    wins = sum(1 for row in all_rows if row[0])
+    # Split all_rows into ranked and casual for stats computation
+    def _is_casual_row(row):
+        return len(row) > 19 and row[19] == "casual"
+
+    ranked_stat_rows = [r for r in all_rows if not _is_casual_row(r)]
+    casual_stat_rows = [r for r in all_rows if _is_casual_row(r)]
+
+    # Calculate stats (ranked by default)
+    total_matches = len(ranked_stat_rows)
+    wins = sum(1 for row in ranked_stat_rows if row[0])
     losses = total_matches - wins
     win_rate = (wins / total_matches * 100) if total_matches > 0 else 0
 
+    # Casual stats
+    casual_total = len(casual_stat_rows)
+    casual_wins = sum(1 for row in casual_stat_rows if row[0])
+    casual_losses = casual_total - casual_wins
+    casual_win_rate = (casual_wins / casual_total * 100) if casual_total > 0 else 0
+
     # First player stats (on the play)
-    # Uses the same dataset as all other stats (all_rows includes current + archive + solo)
     # New columns: winner_went_first (index 17), loser_went_first (index 18)
     # did_win (index 0): 1 if viewed player is winner, 0 if loser
     # Matches without play/draw data are excluded (both functions return False)
     # Filter to only include matches from 2-7-2026 forward for play/draw stats
     cutoff_date = "2026-02-07"
-    play_draw_rows = [row for row in all_rows if row[6] and str(row[6]) >= cutoff_date]
+    play_draw_rows = [row for row in ranked_stat_rows if row[6] and str(row[6]) >= cutoff_date]
+    casual_play_draw_rows = [row for row in casual_stat_rows if row[6] and str(row[6]) >= cutoff_date]
 
     def player_was_on_play(row):
         did_win = row[0]
@@ -946,13 +959,29 @@ def player_api(player_id):
     draw_wins = sum(1 for row in play_draw_rows if row[0] and player_was_on_draw(row))
     draw_win_rate = (draw_wins / draw_matches * 100) if draw_matches > 0 else 0
 
-    # Average match time
+    # Casual play/draw stats
+    casual_fp_matches = sum(1 for row in casual_play_draw_rows if player_was_on_play(row))
+    casual_fp_wins = sum(1 for row in casual_play_draw_rows if row[0] and player_was_on_play(row))
+    casual_fp_win_rate = (casual_fp_wins / casual_fp_matches * 100) if casual_fp_matches > 0 else 0
+    casual_draw_matches = sum(1 for row in casual_play_draw_rows if player_was_on_draw(row))
+    casual_draw_wins = sum(1 for row in casual_play_draw_rows if row[0] and player_was_on_draw(row))
+    casual_draw_win_rate = (casual_draw_wins / casual_draw_matches * 100) if casual_draw_matches > 0 else 0
+
+    # Average match time (ranked)
     match_times = [
         float(row[3])
-        for row in all_rows
+        for row in ranked_stat_rows
         if row[3] and str(row[3]).replace(".", "").isdigit()
     ]
     avg_match_time = sum(match_times) / len(match_times) if match_times else 0
+
+    # Average match time (casual)
+    casual_match_times = [
+        float(row[3])
+        for row in casual_stat_rows
+        if row[3] and str(row[3]).replace(".", "").isdigit()
+    ]
+    casual_avg_match_time = sum(casual_match_times) / len(casual_match_times) if casual_match_times else 0
 
     # Avatar stats - only count the main avatar (type: "Avatar"), exclude sideboard
     avatar_stats = {}
@@ -1206,27 +1235,44 @@ def player_api(player_id):
         is_owner = True
 
     # Build match history with pagination
+    # Split rows into ranked and casual based on match_type column (index 19)
     match_history = []
+    casual_match_history = []
     sorted_rows = sorted(rows, key=lambda x: x[6] if x[6] else "", reverse=True)
+
+    ranked_rows = [r for r in sorted_rows if not (len(r) > 19 and r[19] == "casual")]
+    casual_rows = [r for r in sorted_rows if len(r) > 19 and r[19] == "casual"]
 
     # Get pagination parameters
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 50, type=int)
+    casual_page = request.args.get("casual_page", 1, type=int)
 
     # Validate pagination parameters
     page = max(1, page)  # Ensure page is at least 1
     per_page = min(max(10, per_page), 100)  # Limit per_page between 10 and 100
+    casual_page = max(1, casual_page)
 
-    # Calculate pagination
-    total_matches = len(sorted_rows)
-    total_pages = (total_matches + per_page - 1) // per_page if total_matches > 0 else 1
+    # Calculate ranked pagination
+    total_ranked_matches = len(ranked_rows)
+    total_pages = (total_ranked_matches + per_page - 1) // per_page if total_ranked_matches > 0 else 1
     page = min(page, total_pages)  # Ensure page doesn't exceed total pages
 
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
-    paginated_rows = sorted_rows[start_idx:end_idx]
+    paginated_rows = ranked_rows[start_idx:end_idx]
 
-    for row in paginated_rows:
+    # Calculate casual pagination
+    total_casual_matches = len(casual_rows)
+    total_casual_pages = (total_casual_matches + per_page - 1) // per_page if total_casual_matches > 0 else 1
+    casual_page = min(casual_page, total_casual_pages)
+
+    casual_start_idx = (casual_page - 1) * per_page
+    casual_end_idx = casual_start_idx + per_page
+    paginated_casual_rows = casual_rows[casual_start_idx:casual_end_idx]
+
+    def _build_match_entry(row):
+        """Convert a raw DB row into a match history dict."""
         did_win = row[0]
         opponent_name = row[5] if did_win else row[4]
         opponent_id = str(row[11]) if did_win else str(row[10])
@@ -1239,17 +1285,10 @@ def player_api(player_id):
         loser_deck_url = row[16] if len(row) > 16 else None
         winner_json = row[13] if len(row) > 13 else None
         loser_json = row[14] if len(row) > 14 else None
-        old_curiosa_url = row[9]
-        old_json_deck_data = row[2]
 
         player_deck_url_check = winner_deck_url if did_win else loser_deck_url
         player_deck_json = winner_json if did_win else loser_json
 
-        # Only count deck as submitted if the player-specific columns have data.
-        # We intentionally do NOT use old_curiosa_url or old_json_deck_data because
-        # those legacy columns belong to whoever reported the match, not necessarily
-        # the player being viewed. This prevents showing the opponent's deck submission
-        # status on your profile.
         has_deck = False
         has_deck_json = False
         if player_deck_url_check and player_deck_url_check not in (
@@ -1264,7 +1303,6 @@ def player_api(player_id):
             has_deck = True
             has_deck_json = True
 
-        # Extract avatar name and deck elements from deck JSON
         player_avatar_name, deck_elements = _extract_deck_info(player_deck_json)
 
         opponent_deck_json = loser_json if did_win else winner_json
@@ -1274,13 +1312,10 @@ def player_api(player_id):
             player_deck_url = winner_deck_url if did_win else loser_deck_url
             opponent_deck_url = loser_deck_url if did_win else winner_deck_url
 
-        # Determine if this player was on the play for this match
-        # New columns: winner_went_first (index 17), loser_went_first (index 18)
         winner_went_first = row[17] if len(row) > 17 else None
         loser_went_first = row[18] if len(row) > 18 else None
 
         if winner_went_first is not None or loser_went_first is not None:
-            # Use new explicit columns
             if did_win:
                 player_on_play = (
                     winner_went_first and "y" in str(winner_went_first).lower()
@@ -1290,45 +1325,46 @@ def player_api(player_id):
                     loser_went_first and "y" in str(loser_went_first).lower()
                 )
         else:
-            # Fallback to old first_player column
             first_player_val = row[1]
             if first_player_val:
                 fp_lower = str(first_player_val).lower()
                 if "y" in fp_lower:
-                    # Winner went first
                     player_on_play = did_win
                 else:
-                    # Loser went first
                     player_on_play = not did_win
             else:
                 player_on_play = None
 
-        match_history.append(
-            {
-                "match_id": row[12],
-                "opponent": opponent_name,
-                "opponent_id": opponent_id,
-                "result": "Win" if did_win else "Loss",
-                "elo_change": elo_change if elo_change else 0,
-                "date": row[6],
-                "first_player": "Play"
-                if player_on_play
-                else "Draw"
-                if player_on_play is False
-                else None,
-                "match_time": row[3] if row[3] else None,
-                "replay_url": row[9] if row[9] else None,
-                "player_deck_url": player_deck_url,
-                "opponent_deck_url": opponent_deck_url,
-                "has_deck": has_deck,
-                "has_deck_json": has_deck_json,
-                "match_type": row[19] if len(row) > 19 and row[19] else "ranked",
-                "player_avatar": player_avatar_name,
-                "deck_elements": deck_elements,
-                "opponent_avatar": opponent_avatar_name,
-                "opponent_elements": opponent_elements,
-            }
-        )
+        return {
+            "match_id": row[12],
+            "opponent": opponent_name,
+            "opponent_id": opponent_id,
+            "result": "Win" if did_win else "Loss",
+            "elo_change": elo_change if elo_change else 0,
+            "date": row[6],
+            "first_player": "Play"
+            if player_on_play
+            else "Draw"
+            if player_on_play is False
+            else None,
+            "match_time": row[3] if row[3] else None,
+            "replay_url": row[9] if row[9] else None,
+            "player_deck_url": player_deck_url,
+            "opponent_deck_url": opponent_deck_url,
+            "has_deck": has_deck,
+            "has_deck_json": has_deck_json,
+            "match_type": row[19] if len(row) > 19 and row[19] else "ranked",
+            "player_avatar": player_avatar_name,
+            "deck_elements": deck_elements,
+            "opponent_avatar": opponent_avatar_name,
+            "opponent_elements": opponent_elements,
+        }
+
+    for row in paginated_rows:
+        match_history.append(_build_match_entry(row))
+
+    for row in paginated_casual_rows:
+        casual_match_history.append(_build_match_entry(row))
 
     # Recent decks (owner only)
     # Group matches by deck URL to calculate win rates
@@ -1459,10 +1495,24 @@ def player_api(player_id):
             "on_draw_matches": draw_matches,
             "on_draw_win_rate": round(draw_win_rate, 1),
             "avg_match_time": round(avg_match_time, 1),
+            "casual_stats": {
+                "wins": casual_wins,
+                "losses": casual_losses,
+                "win_rate": round(casual_win_rate, 1),
+                "total": casual_total,
+                "avg_match_time": round(casual_avg_match_time, 1),
+                "on_play_wins": casual_fp_wins,
+                "on_play_matches": casual_fp_matches,
+                "on_play_win_rate": round(casual_fp_win_rate, 1),
+                "on_draw_wins": casual_draw_wins,
+                "on_draw_matches": casual_draw_matches,
+                "on_draw_win_rate": round(casual_draw_win_rate, 1),
+            },
             "avatar_performance": avatar_performance if is_owner else [],
             "avatar_matchups": avatar_matchups if is_owner else [],
             "recent_decks": recent_decks if is_owner else [],
             "matches": match_history,
+            "casual_matches": casual_match_history,
             "recorded_games": recorded_games if is_owner else [],
             "is_owner": is_owner,
             "has_custom_display_name": has_custom_display_name,
@@ -1470,10 +1520,18 @@ def player_api(player_id):
             "pagination": {
                 "current_page": page,
                 "per_page": per_page,
-                "total_matches": total_matches,
+                "total_matches": total_ranked_matches,
                 "total_pages": total_pages,
                 "has_previous": page > 1,
                 "has_next": page < total_pages,
+            },
+            "casual_pagination": {
+                "current_page": casual_page,
+                "per_page": per_page,
+                "total_matches": total_casual_matches,
+                "total_pages": total_casual_pages,
+                "has_previous": casual_page > 1,
+                "has_next": casual_page < total_casual_pages,
             },
             # Dual ELO system fields
             "elo_source": source,

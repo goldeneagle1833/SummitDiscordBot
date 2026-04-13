@@ -354,7 +354,13 @@
           style="display: none; margin-bottom: 1.5rem"></div>
 
         <!-- Overall Stats -->
-        <h3>📊 Overall Stats</h3>
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <h3 style="margin: 0;">📊 Overall Stats</h3>
+          <div class="elo-source-toggle" id="stats-type-toggle">
+            <button class="elo-source-btn active" data-stats="ranked" onclick="switchStatsType('ranked')">Ranked</button>
+            <button class="elo-source-btn" data-stats="casual" onclick="switchStatsType('casual')">Casual</button>
+          </div>
+        </div>
         <div class="player-stats" id="player-stats">
           <div class="stat-card">
             <div class="stat-value" id="stat-wins">-</div>
@@ -564,7 +570,7 @@
 
         <!-- Match History -->
         <div class="match-history">
-          <h3>📜 Match History</h3>
+          <h3>📜 Ranked Match History</h3>
           <div class="overflow-x-auto">
             <table
               class="match-history-table"
@@ -620,6 +626,74 @@
                 color: var(--color-text-muted);
               ">
               <span id="pagination-summary">Showing 0-0 of 0 matches</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Casual Match History -->
+        <div class="match-history" id="casual-matches-section" style="display: none;">
+          <h3>🎲 Casual Match History</h3>
+          <p
+            style="
+              color: var(--color-text-muted);
+              font-size: var(--font-size-sm);
+              margin-bottom: var(--spacing-md);
+            ">
+            Casual games do not affect ELO ratings.
+          </p>
+          <div class="overflow-x-auto">
+            <table
+              class="match-history-table"
+              style="width: 100%; min-width: 1200px">
+              <thead id="casual-match-history-thead">
+              </thead>
+              <tbody id="casual-match-history-tbody">
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Casual Pagination Controls -->
+          <div
+            id="casual-pagination-controls"
+            style="display: none; margin-top: 20px; text-align: center">
+            <div style="display: inline-flex; gap: 10px; align-items: center">
+              <button
+                id="casual-pagination-first"
+                class="pagination-btn"
+                style="padding: 8px 12px; cursor: pointer">
+                ⏮ First
+              </button>
+              <button
+                id="casual-pagination-prev"
+                class="pagination-btn"
+                style="padding: 8px 12px; cursor: pointer">
+                ← Previous
+              </button>
+              <span
+                id="casual-pagination-info"
+                style="padding: 0 15px; font-weight: bold">
+                Page 1 of 1
+              </span>
+              <button
+                id="casual-pagination-next"
+                class="pagination-btn"
+                style="padding: 8px 12px; cursor: pointer">
+                Next →
+              </button>
+              <button
+                id="casual-pagination-last"
+                class="pagination-btn"
+                style="padding: 8px 12px; cursor: pointer">
+                Last ⏭
+              </button>
+            </div>
+            <div
+              style="
+                margin-top: 10px;
+                font-size: 14px;
+                color: var(--color-text-muted);
+              ">
+              <span id="casual-pagination-summary">Showing 0-0 of 0 matches</span>
             </div>
           </div>
         </div>
@@ -1445,6 +1519,7 @@
       let currentMaxMatches = 50;
       let currentScale = 200;
       let storedPlayerData = null;
+      let currentStatsType = "ranked";
       let eventsData = null;
 
       // Immediately show season buttons for profile owner (don't wait for API)
@@ -1580,7 +1655,7 @@
 
         // Re-fetch all player data with the new filter (reset to page 1)
         // Pass current ELO source to maintain toggle state
-        await fetchPlayerData(eventParam, 1, currentEloSource);
+        await fetchPlayerData(eventParam, 1, currentEloSource, 1);
       }
 
       function renderEloChart(
@@ -1854,18 +1929,83 @@
         }
       }
 
+      // Render stats based on current toggle (ranked vs casual)
+      function renderStats(data, isLocalServer) {
+        const isCasual = currentStatsType === "casual";
+        const cs = data.casual_stats || {};
+
+        const w = isCasual ? (cs.wins || 0) : data.wins;
+        const l = isCasual ? (cs.losses || 0) : data.losses;
+        const wr = isCasual ? (cs.win_rate || 0) : data.win_rate;
+        const avgTime = isCasual ? (cs.avg_match_time || 0) : data.avg_match_time;
+
+        document.getElementById("stat-wins").textContent = w;
+        document.getElementById("stat-losses").textContent = l;
+        document.getElementById("stat-winrate").textContent = `${wr}%`;
+        document.getElementById("stat-matches").textContent = w + l;
+        document.getElementById("stat-avg-time").textContent =
+          avgTime > 0 ? `${avgTime} min` : "-";
+
+        const playCard = document.getElementById("stat-play-card");
+        const drawCard = document.getElementById("stat-draw-card");
+
+        if (data.is_owner || isLocalServer) {
+          const opw = isCasual ? (cs.on_play_wins || 0) : data.on_play_wins;
+          const opm = isCasual ? (cs.on_play_matches || 0) : data.on_play_matches;
+          const opwr = isCasual ? (cs.on_play_win_rate || 0) : data.on_play_win_rate;
+          const odw = isCasual ? (cs.on_draw_wins || 0) : data.on_draw_wins;
+          const odm = isCasual ? (cs.on_draw_matches || 0) : data.on_draw_matches;
+          const odwr = isCasual ? (cs.on_draw_win_rate || 0) : data.on_draw_win_rate;
+
+          if (playCard && opm > 0) {
+            playCard.style.display = "";
+            document.getElementById("stat-play-wr").textContent = `${opwr}%`;
+            playCard.querySelector(".stat-label").textContent =
+              `On the Play (${opw}-${opm - opw})`;
+          } else if (playCard) {
+            playCard.style.display = "none";
+          }
+          if (drawCard && odm > 0) {
+            drawCard.style.display = "";
+            document.getElementById("stat-draw-wr").textContent = `${odwr}%`;
+            drawCard.querySelector(".stat-label").textContent =
+              `On the Draw (${odw}-${odm - odw})`;
+          } else if (drawCard) {
+            drawCard.style.display = "none";
+          }
+        } else {
+          if (playCard) playCard.style.display = "none";
+          if (drawCard) drawCard.style.display = "none";
+        }
+      }
+
+      function switchStatsType(type) {
+        currentStatsType = type;
+        document.querySelectorAll('#stats-type-toggle .elo-source-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.stats === type);
+        });
+        if (storedPlayerData) {
+          const isLocalServer =
+            window.location.hostname === "localhost" ||
+            window.location.hostname === "127.0.0.1";
+          renderStats(storedPlayerData, isLocalServer);
+        }
+      }
+
       // Pagination state
       let currentPage = 1;
+      let currentCasualPage = 1;
       const perPage = 50;
 
-      async function fetchPlayerData(eventFilter = "lifetime", page = 1, eloSource = null) {
+      async function fetchPlayerData(eventFilter = "lifetime", page = 1, eloSource = null, casualPage = null) {
         try {
           currentPage = page;
+          if (casualPage !== null) currentCasualPage = casualPage;
 
           // Use provided source or current source, default to "bot" (where all matches are)
           if (!eloSource) eloSource = currentEloSource || "bot";
 
-          let url = `/api/player/${playerId}?page=${page}&per_page=${perPage}&source=${eloSource}`;
+          let url = `/api/player/${playerId}?page=${page}&per_page=${perPage}&casual_page=${currentCasualPage}&source=${eloSource}`;
           if (eventFilter && eventFilter !== "lifetime") {
             url += `&event=${eventFilter}`;
           }
@@ -1942,35 +2082,8 @@
           document.getElementById("player-rank").textContent = rankText;
           document.title = `${data.name} - Sorcerers Summit`;
 
-          // Update overall stats
-          document.getElementById("stat-wins").textContent = data.wins;
-          document.getElementById("stat-losses").textContent = data.losses;
-          document.getElementById("stat-winrate").textContent =
-            `${data.win_rate}%`;
-          document.getElementById("stat-matches").textContent =
-            data.wins + data.losses;
-          document.getElementById("stat-avg-time").textContent =
-            data.avg_match_time > 0 ? `${data.avg_match_time} min` : "-";
-
-          // Show play/draw winrate stats for owner
-          if (data.is_owner || isLocalServer) {
-            const playCard = document.getElementById("stat-play-card");
-            const drawCard = document.getElementById("stat-draw-card");
-            if (playCard && data.on_play_matches > 0) {
-              playCard.style.display = "";
-              document.getElementById("stat-play-wr").textContent =
-                `${data.on_play_win_rate}%`;
-              playCard.querySelector(".stat-label").textContent =
-                `On the Play (${data.on_play_wins}-${data.on_play_matches - data.on_play_wins})`;
-            }
-            if (drawCard && data.on_draw_matches > 0) {
-              drawCard.style.display = "";
-              document.getElementById("stat-draw-wr").textContent =
-                `${data.on_draw_win_rate}%`;
-              drawCard.querySelector(".stat-label").textContent =
-                `On the Draw (${data.on_draw_wins}-${data.on_draw_matches - data.on_draw_wins})`;
-            }
-          }
+          // Update overall stats (render based on current toggle)
+          renderStats(data, isLocalServer);
 
           // Show Record Game button for profile owner or localhost
           if (data.is_owner || isLocalServer) {
@@ -2196,10 +2309,9 @@
           const colspanCount = data.is_owner || isLocalServer ? 14 : 7;
           if (data.matches.length === 0) {
             const noMatchesMsg = data.is_owner
-              ? "No matches yet! Play games on Discord to start tracking your stats."
-              : "No matches recorded";
+              ? "No ranked matches yet! Play ranked games on Discord to start tracking your stats."
+              : "No ranked matches recorded";
             tbody.innerHTML = `<tr><td colspan="${colspanCount}" style="text-align: center; opacity: 0.6;">${noMatchesMsg}</td></tr>`;
-            return;
           }
 
           // Map element names to image filenames
@@ -2291,6 +2403,115 @@
             }
             tbody.appendChild(row);
           });
+
+          // Render casual match history
+          const casualSection = document.getElementById("casual-matches-section");
+          if (data.casual_matches && data.casual_matches.length > 0) {
+            casualSection.style.display = "block";
+
+            // Render casual table headers (same structure as ranked)
+            const casualThead = document.getElementById("casual-match-history-thead");
+            if (data.is_owner || isLocalServer) {
+              casualThead.innerHTML = `
+                <tr>
+                  <th style="width: 30px;"></th>
+                  <th>ID</th>
+                  <th>Result</th>
+                  <th>Your Avatar</th>
+                  <th>Your Elements</th>
+                  <th>Deck Link</th>
+                  <th>Snapshot</th>
+                  <th>Opponent</th>
+                  <th>Opp Avatar</th>
+                  <th>Opp Elements</th>
+                  <th>Play/Draw</th>
+                  <th>Time</th>
+                  <th>Date</th>
+                </tr>
+              `;
+            } else {
+              casualThead.innerHTML = `
+                <tr>
+                  <th>ID</th>
+                  <th>Result</th>
+                  <th>Opponent</th>
+                  <th>Play/Draw</th>
+                  <th>Time</th>
+                  <th>Date</th>
+                </tr>
+              `;
+            }
+
+            const casualTbody = document.getElementById("casual-match-history-tbody");
+            casualTbody.innerHTML = "";
+
+            data.casual_matches.forEach((match) => {
+              const row = document.createElement("tr");
+              const resultClass = match.result === "Win" ? "match-win" : "match-loss";
+              const date = new Date(match.date).toLocaleDateString();
+              const matchTime = match.match_time ? `${match.match_time} min` : "-";
+              const matchId = match.match_id ? `#${match.match_id}` : "-";
+              const avatarName = match.player_avatar || "-";
+              const elementsHtml = renderElementIcons(match.deck_elements);
+              const oppAvatarName = match.opponent_avatar || "-";
+              const oppElementsHtml = renderElementIcons(match.opponent_elements);
+
+              if (data.is_owner || isLocalServer) {
+                let deckLink = "-";
+                if (
+                  match.player_deck_url &&
+                  match.player_deck_url !== "No URL provided" &&
+                  match.player_deck_url !== "Admin reported match"
+                ) {
+                  deckLink = `<a href="${match.player_deck_url}" target="_blank" class="deck-link" title="View deck on Curiosa">🔗</a>`;
+                }
+
+                let snapshotLink = "-";
+                if (match.has_deck_json) {
+                  snapshotLink = `<a href="/deck-snapshot/${match.match_id}/${playerId}" class="snapshot-link" title="View deck snapshot">View</a>`;
+                }
+
+                const escapedDeckUrl = (match.player_deck_url || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const editBtn = match.match_id
+                  ? `<button class="edit-deck-btn" onclick="showEditDeckModal('${match.match_id}', '${escapedDeckUrl}')" title="Edit deck">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                    </button>`
+                  : '';
+                row.innerHTML = `
+                  <td style="text-align: center; padding: 4px;">
+                    ${editBtn}
+                  </td>
+                  <td class="match-id">${matchId}</td>
+                  <td class="${resultClass}">${match.result}</td>
+                  <td>${avatarName}</td>
+                  <td>${elementsHtml}</td>
+                  <td>${deckLink}</td>
+                  <td>${snapshotLink}</td>
+                  <td><a href="/player/${match.opponent_id}" class="opponent-link">${match.opponent}</a></td>
+                  <td>${oppAvatarName}</td>
+                  <td>${oppElementsHtml}</td>
+                  <td>${match.first_player || "-"}</td>
+                  <td>${matchTime}</td>
+                  <td>${date}</td>
+                `;
+              } else {
+                row.innerHTML = `
+                  <td class="match-id">${matchId}</td>
+                  <td class="${resultClass}">${match.result}</td>
+                  <td><a href="/player/${match.opponent_id}" class="opponent-link">${match.opponent}</a></td>
+                  <td>${match.first_player || "-"}</td>
+                  <td>${matchTime}</td>
+                  <td>${date}</td>
+                `;
+              }
+              casualTbody.appendChild(row);
+            });
+
+            // Update casual pagination controls
+            updateCasualPaginationControls(data.casual_pagination);
+          } else {
+            casualSection.style.display = "none";
+          }
 
           // Render self-reported games (only for profile owner or localhost)
           if (
@@ -2436,7 +2657,7 @@
       // Pagination button handlers
       function goToPage(page) {
         const eventFilter = document.getElementById("event-filter")?.value || "lifetime";
-        fetchPlayerData(eventFilter, page, currentEloSource);
+        fetchPlayerData(eventFilter, page, currentEloSource, currentCasualPage);
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
 
@@ -2449,6 +2670,51 @@
           // We'll get total pages from the last pagination update
           const totalPages = parseInt(document.getElementById("pagination-info").textContent.split("of ")[1]) || 1;
           goToPage(totalPages);
+        });
+      });
+
+      // Casual pagination controls
+      function updateCasualPaginationControls(pagination) {
+        if (!pagination || pagination.total_pages <= 1) {
+          document.getElementById("casual-pagination-controls").style.display = "none";
+          return;
+        }
+
+        document.getElementById("casual-pagination-controls").style.display = "block";
+
+        const firstBtn = document.getElementById("casual-pagination-first");
+        const prevBtn = document.getElementById("casual-pagination-prev");
+        const nextBtn = document.getElementById("casual-pagination-next");
+        const lastBtn = document.getElementById("casual-pagination-last");
+        const info = document.getElementById("casual-pagination-info");
+        const summary = document.getElementById("casual-pagination-summary");
+
+        firstBtn.disabled = !pagination.has_previous;
+        prevBtn.disabled = !pagination.has_previous;
+        nextBtn.disabled = !pagination.has_next;
+        lastBtn.disabled = !pagination.has_next;
+
+        info.textContent = `Page ${pagination.current_page} of ${pagination.total_pages}`;
+
+        const start = (pagination.current_page - 1) * pagination.per_page + 1;
+        const end = Math.min(pagination.current_page * pagination.per_page, pagination.total_matches);
+        summary.textContent = `Showing ${start}-${end} of ${pagination.total_matches} matches`;
+      }
+
+      function goToCasualPage(page) {
+        const eventFilter = document.getElementById("event-filter")?.value || "lifetime";
+        fetchPlayerData(eventFilter, currentPage, currentEloSource, page);
+        document.getElementById("casual-matches-section").scrollIntoView({ behavior: "smooth" });
+      }
+
+      // Add casual pagination event listeners
+      document.addEventListener("DOMContentLoaded", function() {
+        document.getElementById("casual-pagination-first").addEventListener("click", () => goToCasualPage(1));
+        document.getElementById("casual-pagination-prev").addEventListener("click", () => goToCasualPage(currentCasualPage - 1));
+        document.getElementById("casual-pagination-next").addEventListener("click", () => goToCasualPage(currentCasualPage + 1));
+        document.getElementById("casual-pagination-last").addEventListener("click", () => {
+          const totalPages = parseInt(document.getElementById("casual-pagination-info").textContent.split("of ")[1]) || 1;
+          goToCasualPage(totalPages);
         });
       });
 

@@ -866,7 +866,7 @@ def player_api(player_id):
 
     # Split all_rows into ranked and casual for stats computation
     def _is_casual_row(row):
-        return len(row) > 19 and row[19] == "casual"
+        return len(row) > 19 and row[19] in ("casual", "testing")
 
     ranked_stat_rows = [r for r in all_rows if not _is_casual_row(r)]
     casual_stat_rows = [r for r in all_rows if _is_casual_row(r)]
@@ -1240,8 +1240,8 @@ def player_api(player_id):
     casual_match_history = []
     sorted_rows = sorted(rows, key=lambda x: x[6] if x[6] else "", reverse=True)
 
-    ranked_rows = [r for r in sorted_rows if not (len(r) > 19 and r[19] == "casual")]
-    casual_rows = [r for r in sorted_rows if len(r) > 19 and r[19] == "casual"]
+    ranked_rows = [r for r in sorted_rows if not (len(r) > 19 and r[19] in ("casual", "testing"))]
+    casual_rows = [r for r in sorted_rows if len(r) > 19 and r[19] in ("casual", "testing")]
 
     # Get pagination parameters
     page = request.args.get("page", 1, type=int)

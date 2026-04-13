@@ -1534,7 +1534,10 @@
 
       // ELO source tracking
       // Check for saved preference, otherwise backend will auto-detect based on most recent match
-      let currentEloSource = localStorage.getItem('elo_source_preference') || 'bot';
+      let currentEloSource = (() => {
+        const saved = localStorage.getItem('elo_source_preference');
+        return (saved === 'web' || saved === 'bot') ? saved : 'bot';
+      })();
       let hasWebMatches = false;
       let hasBotMatches = false;
 
@@ -2003,7 +2006,9 @@
           if (casualPage !== null) currentCasualPage = casualPage;
 
           // Use provided source or current source, default to "bot" (where all matches are)
-          if (!eloSource) eloSource = currentEloSource || "bot";
+          if (!eloSource || (eloSource !== "web" && eloSource !== "bot")) {
+            eloSource = (currentEloSource === "web" || currentEloSource === "bot") ? currentEloSource : "bot";
+          }
 
           let url = `/api/player/${playerId}?page=${page}&per_page=${perPage}&casual_page=${currentCasualPage}&source=${eloSource}`;
           if (eventFilter && eventFilter !== "lifetime") {

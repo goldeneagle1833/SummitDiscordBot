@@ -70,34 +70,18 @@ GOOGLE_REDIRECT_URI = os.environ.get(
 )
 
 # Admin Discord IDs - full access to all features in production
-ADMINS = [
-    "296846802924208130",  # Owner
-    "146923845549424640",  # keven
-    "128690099432062976",  # ember
-    "212395045125357568",  # IRA
-    "292113529585008640",  # CJ
-    "845209838111031306",  # Kyle
-    "275995453957472257",  # Geoffrey
-    "google_113075264611538227218",  # Bruce Google
-    "219331660833882112",  # vitaninyon
-    "463501244674342955",  # Josh lord of itza
-]
+# Set via ADMIN_IDS env var as comma-separated list
+ADMINS = [id.strip() for id in os.environ.get("ADMIN_IDS", "").split(",") if id.strip()]
 
 # Curio Tracking editors - can add/edit/delete curio entries (no other admin access)
-CURIO_EDITORS = [
-    # Add Discord/Google IDs of trusted curio editors here
-    # Example: "123456789012345678",  # Username
-    "961211642216087552",
-    "690629397631467671",
-    "296846802924208130",
-]
+# Set via CURIO_EDITOR_IDS env var as comma-separated list
+CURIO_EDITORS = [id.strip() for id in os.environ.get("CURIO_EDITOR_IDS", "").split(",") if id.strip()]
 
 # API Key configuration for external integrations
 API_KEYS_ENV = os.environ.get("API_KEYS", os.environ.get("API_KEY", ""))
 VALID_API_KEYS = [key.strip() for key in API_KEYS_ENV.split(",") if key.strip()]
 
 # Draft Sorcery API key for server-to-server limited arena endpoints
-# d8396d08a94baea33331ec66709b5c7e3262928ff0d5ebdb1752bda9c21784d4
 DRAFT_SORCERY_API_KEY = os.environ.get("DRAFT_SORCERY_API_KEY", os.environ.get("REALMSDRAFT_API_KEY", ""))
 
 # Event star ratings (1-3 stars)

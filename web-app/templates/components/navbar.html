@@ -708,11 +708,13 @@
       class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       ELO Leaderboards
     </a>
+    {% if show_limited_leaderboard %}
     <a
       href="/elo/limited"
       class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       Limited Leaderboard
     </a>
+    {% endif %}
     <a
       href="/match-history"
       class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">

@@ -239,13 +239,14 @@ class EventRepository:
 
         return events
 
-    def get_recent_events(self, hours: int = 0) -> list[dict]:
-        """Get events whose folders were added within the last N hours."""
+    def get_recent_event(self, hours: int = 0) -> dict | None:
+        """Get the most recently added event within the last N hours."""
         if not self._events_dir.exists():
-            return []
+            return None
 
         cutoff = time.time() - (hours * 3600)
-        recent = []
+        best = None
+        best_mtime = 0
 
         for folder in self._events_dir.iterdir():
             if not folder.is_dir() or folder.name.startswith("_"):
@@ -257,15 +258,14 @@ class EventRepository:
                 if f.is_file():
                     newest_mtime = max(newest_mtime, f.stat().st_mtime)
 
-            if newest_mtime > cutoff:
-                recent.append(
-                    {
-                        "folder": folder.name,
-                        "name": format_event_name(folder.name),
-                    }
-                )
+            if newest_mtime > cutoff and newest_mtime > best_mtime:
+                best_mtime = newest_mtime
+                best = {
+                    "folder": folder.name,
+                    "name": format_event_name(folder.name),
+                }
 
-        return recent
+        return best
 
     def get_events_with_stats(self) -> list[dict]:
         """Get events that have CSV statistics files."""

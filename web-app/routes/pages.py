@@ -153,7 +153,13 @@ def elo():
 
 @pages_bp.route("/elo/limited")
 def elo_limited():
-    """Limited format ELO leaderboard page."""
+    """Limited format ELO leaderboard page. Requires pilot or admin."""
+    from services.pilots import is_pilot_active
+
+    if not is_admin() and not is_pilot_active("limited_leaderboard"):
+        return render_template(
+            "pages/error.html", error="Limited leaderboard is not currently available."
+        ), 403
     return render_template("pages/elo_limited.html")
 
 

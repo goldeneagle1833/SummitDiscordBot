@@ -79,11 +79,15 @@ def create_app() -> Flask:
     @app.context_processor
     def inject_globals():
         """Make current user and app version available to all templates."""
+        from services.pilots import is_pilot_active
+
+        admin = is_admin()
         return {
             "current_user": get_current_user(),
             "app_version": APP_VERSION,
-            "is_admin": is_admin(),
+            "is_admin": admin,
             "is_curio_editor": is_curio_editor(),
+            "show_limited_leaderboard": admin or is_pilot_active("limited_leaderboard"),
         }
 
     # Track page views (skip static files and API calls)

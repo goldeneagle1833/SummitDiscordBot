@@ -31,6 +31,7 @@ from utils.auth import get_current_user, is_admin, is_curio_editor
 from routes import register_blueprints
 from migrations.create_match_reports_web import create_match_reports_web_table
 from migrations.add_season_id_to_match_reports_web import migrate as migrate_season_id
+from migrations.create_analytics_tables import create_analytics_tables
 
 # Configure logging
 logging.basicConfig(
@@ -63,6 +64,11 @@ def create_app() -> Flask:
     except Exception as e:
         logger.error(f"Failed to ensure match_reports_web table: {e}")
 
+    try:
+        create_analytics_tables()
+    except Exception as e:
+        logger.error(f"Failed to ensure analytics tables: {e}")
+
     # Register all blueprints
     register_blueprints(app)
 
@@ -79,6 +85,23 @@ def create_app() -> Flask:
             "is_admin": is_admin(),
             "is_curio_editor": is_curio_editor(),
         }
+
+    # Track page views (skip static files and API calls)
+    @app.before_request
+    def track_page_view():
+        from flask import request as req
+        path = req.path
+        if path.startswith(("/static/", "/api/", "/avatar-images/", "/card-images/")):
+            return
+        try:
+            from repositories.analytics import AnalyticsRepository
+            AnalyticsRepository().log_page_view(
+                path,
+                req.headers.get("User-Agent"),
+                req.headers.get("Referer"),
+            )
+        except Exception:
+            pass  # Never break the request for analytics
 
     logger.info(f"Application initialized, version: {APP_VERSION}")
     return app

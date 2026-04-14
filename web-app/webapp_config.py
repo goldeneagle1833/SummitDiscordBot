@@ -27,6 +27,7 @@ FART_SCORES_DB_PATH = Path(
     os.environ.get("FART_SCORES_DB_PATH", BOT_DIR / "fart_scores.db")
 )
 COMMUNITY_DB_PATH = Path(os.environ.get("COMMUNITY_DB_PATH", BOT_DIR / "community.db"))
+ANALYTICS_DB_PATH = Path(os.environ.get("ANALYTICS_DB_PATH", BASE_DIR / "analytics.db"))
 
 # Curio tracking upload directory
 STATIC_DIR = BASE_DIR / "static"

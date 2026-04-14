@@ -12,6 +12,65 @@
   text-align: center;
 }
 
+/* New event banner */
+.new-event-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: linear-gradient(135deg, rgba(232, 168, 0, 0.15), rgba(255, 215, 0, 0.08));
+  border: 1px solid rgba(255, 215, 0, 0.5);
+  border-radius: 10px;
+  padding: 0.75rem 1.25rem;
+  margin: 1.25rem auto;
+  max-width: 800px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  animation: banner-glow 3s ease-in-out infinite alternate;
+}
+
+.new-event-banner:hover {
+  background: linear-gradient(135deg, rgba(232, 168, 0, 0.25), rgba(255, 215, 0, 0.15));
+  border-color: rgba(255, 215, 0, 0.8);
+}
+
+@keyframes banner-glow {
+  from { box-shadow: 0 0 8px rgba(255, 215, 0, 0.1); }
+  to   { box-shadow: 0 0 16px rgba(255, 215, 0, 0.25); }
+}
+
+.new-event-badge {
+  background: #ffd700;
+  color: #1a1a2e;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.new-event-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.new-event-text {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.95rem;
+}
+
+.new-event-arrow {
+  color: #ffd700;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.new-event-banner:hover .new-event-arrow {
+  transform: translateX(4px);
+}
+
 /* Community promo banner */
 .community-promo-banner {
   background: rgba(255, 255, 255, 0.05);

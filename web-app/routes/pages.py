@@ -18,7 +18,9 @@ pages_bp = Blueprint("pages", __name__)
 @pages_bp.route("/")
 def home():
     """Home page."""
-    return render_template("pages/index.html")
+    repo = EventRepository()
+    new_events = repo.get_recent_events(hours=48)
+    return render_template("pages/index.html", new_events=new_events)
 
 
 @pages_bp.route("/about")

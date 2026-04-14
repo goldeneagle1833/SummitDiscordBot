@@ -4,6 +4,7 @@ import json
 import csv
 import logging
 import re
+import time
 from pathlib import Path
 
 from webapp_config import TOP_8_DIR, EVENT_RATINGS
@@ -224,6 +225,32 @@ class EventRepository:
             )
 
         return events
+
+    def get_recent_events(self, hours: int = 48) -> list[dict]:
+        """Get events whose folders were added within the last N hours."""
+        if not self._events_dir.exists():
+            return []
+
+        cutoff = time.time() - (hours * 3600)
+        recent = []
+
+        for folder in self._events_dir.iterdir():
+            if not folder.is_dir() or folder.name.startswith("_"):
+                continue
+
+            # Use the newest file's mtime in the folder as the "added" time
+            newest_mtime = 0
+            for f in folder.iterdir():
+                if f.is_file():
+                    newest_mtime = max(newest_mtime, f.stat().st_mtime)
+
+            if newest_mtime > cutoff:
+                recent.append({
+                    "folder": folder.name,
+                    "name": format_event_name(folder.name),
+                })
+
+        return recent
 
     def get_events_with_stats(self) -> list[dict]:
         """Get events that have CSV statistics files."""

@@ -101,6 +101,43 @@
         </div>
       </section>
 
+      <section class="dashboard-section">
+        <h2>Site Analytics</h2>
+        <p class="section-subtitle">Page views and banner clicks</p>
+
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
+          <button class="btn btn-sm analytics-filter active" data-hours="">All Time</button>
+          <button class="btn btn-sm analytics-filter" data-hours="24">Last 24h</button>
+          <button class="btn btn-sm analytics-filter" data-hours="168">Last 7 days</button>
+          <button class="btn btn-sm analytics-filter" data-hours="720">Last 30 days</button>
+          <button class="btn btn-sm analytics-filter" data-hours="2160">Last 90 days</button>
+        </div>
+
+        <div class="dashboard-summary-cards">
+          <div class="summary-card">
+            <span class="summary-value" id="analytics-total-views">--</span>
+            <span class="summary-label">Page Views</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-value" id="analytics-banner-clicks">--</span>
+            <span class="summary-label">Banner Clicks</span>
+          </div>
+        </div>
+
+        <div class="dashboard-charts-grid">
+          <div class="chart-card">
+            <h3>Page Views (Daily)</h3>
+            <canvas id="analytics-views-chart"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Top Pages</h3>
+            <div id="analytics-top-pages" style="max-height:300px; overflow-y:auto;">
+              <p class="loading">Loading...</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="admin-actions-section">
         <h2>Admin Actions</h2>
         <p class="section-subtitle">Perform administrative operations</p>
@@ -668,6 +705,72 @@
       alert('❌ Network error: ' + error.message);
     });
   }
+
+  // === Site Analytics ===
+  let analyticsChart = null;
+
+  function loadAnalytics(hours) {
+    const url = hours ? `/api/analytics/stats?hours=${hours}` : '/api/analytics/stats';
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.success) return;
+
+        const pv = data.page_views;
+        const bc = data.banner_clicks;
+
+        document.getElementById('analytics-total-views').textContent = pv.total.toLocaleString();
+        document.getElementById('analytics-banner-clicks').textContent = bc.total.toLocaleString();
+
+        // Top pages table
+        const topEl = document.getElementById('analytics-top-pages');
+        if (pv.top_pages.length === 0) {
+          topEl.innerHTML = '<p class="empty-state">No data yet.</p>';
+        } else {
+          topEl.innerHTML = '<table class="dominance-table"><thead><tr><th>Page</th><th>Views</th></tr></thead><tbody>' +
+            pv.top_pages.map(p => `<tr><td>${p.path}</td><td>${p.count.toLocaleString()}</td></tr>`).join('') +
+            '</tbody></table>';
+        }
+
+        // Daily views chart
+        const daily = [...pv.daily].reverse(); // oldest first
+        if (analyticsChart) analyticsChart.destroy();
+        const ctx = document.getElementById('analytics-views-chart');
+        if (daily.length === 0) {
+          ctx.parentElement.querySelector('h3').insertAdjacentHTML('afterend', '<p class="empty-state">No data yet.</p>');
+          return;
+        }
+        analyticsChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: daily.map(d => d.date),
+            datasets: [{
+              label: 'Page Views',
+              data: daily.map(d => d.count),
+              backgroundColor: 'rgba(77, 184, 255, 0.7)',
+              borderRadius: 2,
+            }],
+          },
+          options: {
+            ...chartDefaults,
+            plugins: { legend: { display: false } },
+          },
+        });
+      })
+      .catch(err => console.error('Analytics load failed:', err));
+  }
+
+  // Filter buttons
+  document.querySelectorAll('.analytics-filter').forEach(btn => {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.analytics-filter').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      const hours = this.dataset.hours;
+      loadAnalytics(hours || null);
+    });
+  });
+
+  document.addEventListener('DOMContentLoaded', () => loadAnalytics(null));
 </script>
   </body>
 </html>

@@ -240,32 +240,35 @@ class EventRepository:
         return events
 
     def get_recent_event(self, hours: int = 0) -> dict | None:
-        """Get the most recently added event within the last N hours."""
-        if not self._events_dir.exists():
+        """Get the latest event if it was added within the last N hours."""
+        latest_file = self._events_dir / "latest_event.json"
+        if not latest_file.exists():
             return None
 
-        cutoff = time.time() - (hours * 3600)
-        best = None
-        best_mtime = 0
+        try:
+            with open(latest_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return None
 
-        for folder in self._events_dir.iterdir():
-            if not folder.is_dir() or folder.name.startswith("_"):
-                continue
+        added_at = data.get("added_at", "")
+        if not added_at:
+            return None
 
-            # Use the newest file's mtime in the folder as the "added" time
-            newest_mtime = 0
-            for f in folder.iterdir():
-                if f.is_file():
-                    newest_mtime = max(newest_mtime, f.stat().st_mtime)
+        # Parse ISO timestamp and check if within the time window
+        try:
+            added_ts = time.mktime(time.strptime(added_at, "%Y-%m-%dT%H:%M:%S"))
+        except ValueError:
+            return None
 
-            if newest_mtime > cutoff and newest_mtime > best_mtime:
-                best_mtime = newest_mtime
-                best = {
-                    "folder": folder.name,
-                    "name": format_event_name(folder.name),
-                }
+        if time.time() - added_ts > hours * 3600:
+            return None
 
-        return best
+        folder = data.get("folder", "")
+        return {
+            "folder": folder,
+            "name": format_event_name(folder),
+        }
 
     def get_events_with_stats(self) -> list[dict]:
         """Get events that have CSV statistics files."""

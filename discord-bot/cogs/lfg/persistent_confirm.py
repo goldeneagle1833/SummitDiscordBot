@@ -189,7 +189,7 @@ def update_confirmation_deck_url(confirmation_id: int, is_winner_deck: bool, dec
 async def _execute_match_confirmation(interaction: discord.Interaction, confirmation_id: int, data: dict):
     """Run the full confirm-and-record flow (called after defer)."""
     # Lazy import to avoid circular dependency
-    from cogs.lfg.match_reporting import _apply_ladder_elo, RunStatusView
+    from cogs.lfg.match_reporting import _apply_ladder_elo
 
     bot = interaction.client
 
@@ -393,10 +393,9 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 if run_complete:
                     await user.send(f"🏁 **Arena Run Complete!**\n\n{summary}")
                 else:
-                    view = RunStatusView(player_id, run_id, bot)
                     await user.send(
-                        f"🎲 **Limited Match Recorded**\n\n{summary}\n\nWhat would you like to do?",
-                        view=view,
+                        f"🎲 **Limited Match Recorded**\n\n{summary}\n\n"
+                        f"If you would like to forfeit the run, use `!forfeit`."
                     )
             except discord.Forbidden:
                 logger.warning("Could not DM limited run status to user %s", player_id)

@@ -73,6 +73,18 @@ def get_paper_event_leaderboard():
         return jsonify({"error": str(e)}), 500
 
 
+@leaderboard_bp.route("/leaderboard/limited")
+def get_limited_leaderboard():
+    """Get limited format ELO leaderboard."""
+    try:
+        service = LeaderboardService()
+        leaderboard_data = service.get_limited_leaderboard()
+        return jsonify(leaderboard_data)
+    except Exception as e:
+        logger.error(f"Error fetching limited leaderboard: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @leaderboard_bp.route("/elo-distribution")
 def get_elo_distribution():
     """Get ELO distribution across bands."""

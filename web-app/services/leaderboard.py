@@ -188,6 +188,31 @@ class LeaderboardService:
 
         return {"event": active_event, "leaderboard": leaderboard_data}
 
+    def get_limited_leaderboard(self) -> list[dict]:
+        """Get limited format ELO leaderboard with win/loss records."""
+        from repositories.limited_repo import (
+            get_all_limited_standings,
+            get_limited_wins_count,
+            get_limited_losses_count,
+        )
+
+        standings = get_all_limited_standings()
+        leaderboard_data = []
+        for standing in standings:
+            user_id = standing["user_id"]
+            wins = get_limited_wins_count(user_id)
+            losses = get_limited_losses_count(user_id)
+            leaderboard_data.append(
+                {
+                    "id": str(user_id),
+                    "name": standing["display_name"],
+                    "elo": standing["elo"],
+                    "wins": wins,
+                    "losses": losses,
+                }
+            )
+        return leaderboard_data
+
     def get_elo_distribution(self) -> dict:
         """Get ELO distribution across bands."""
         elos = self._elo_repo.get_all_elos()

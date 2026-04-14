@@ -151,6 +151,12 @@ def elo():
     return render_template("pages/elo.html")
 
 
+@pages_bp.route("/elo/limited")
+def elo_limited():
+    """Limited format ELO leaderboard page."""
+    return render_template("pages/elo_limited.html")
+
+
 @pages_bp.route("/elo/global")
 def elo_global():
     """Global ELO leaderboard."""

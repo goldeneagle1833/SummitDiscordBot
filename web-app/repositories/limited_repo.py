@@ -269,6 +269,50 @@ def insert_limited_match_record(
     return match_id
 
 
+def get_all_limited_standings():
+    """Get all limited ELO standings sorted by ELO descending."""
+    create_limited_tables()
+    conn = _elo_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT user_id, user_display_name, elo FROM limited_elo ORDER BY elo DESC"
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {"user_id": row[0], "display_name": row[1], "elo": row[2]}
+        for row in rows
+    ]
+
+
+def get_limited_wins_count(user_id):
+    """Get total limited match wins for a user."""
+    create_limited_tables()
+    conn = _match_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM limited_match_records WHERE winner_id = ?",
+        (user_id,),
+    )
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
+
+
+def get_limited_losses_count(user_id):
+    """Get total limited match losses for a user."""
+    create_limited_tables()
+    conn = _match_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM limited_match_records WHERE loser_id = ?",
+        (user_id,),
+    )
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
+
+
 def get_matches_for_run(run_id, user_id):
     """Get all match records for a specific arena run, ordered chronologically."""
     create_limited_tables()

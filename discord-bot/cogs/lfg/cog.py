@@ -50,7 +50,7 @@ from utils.constants import SORCERY_NICKNAMES
 from utils.text import find_best_command_match
 from utils.checks import is_bot_admin
 from services.pilots_service import is_pilot_active
-from services.limited_service import limited_winner_report, get_run_summary
+from services.limited_service import limited_winner_report, get_run_summary, forfeit_arena_run
 from repositories.limited_repo import get_active_arena_run, get_limited_elo
 
 logger = logging.getLogger("discord_bot")
@@ -3613,3 +3613,24 @@ class LFGCog(commands.Cog):
             )
             await ctx.send(embed=error_embed)
             logger.error(f"Game activity command failed: {e}")
+
+    @commands.command()
+    async def forfeit(self, ctx):
+        """Forfeit your active limited arena run. Usage: !forfeit"""
+        user_id = ctx.author.id
+
+        # Check if the user has an active arena run
+        active_run = get_active_arena_run(user_id)
+        if not active_run:
+            await ctx.send("You don't have an active limited arena run to forfeit.")
+            return
+
+        try:
+            forfeit_summary = forfeit_arena_run(user_id)
+            await ctx.send(f"💀 **Arena Run Forfeited**\n\n{forfeit_summary}")
+            logger.info(f"User {ctx.author} ({user_id}) forfeited their limited arena run")
+        except ValueError as e:
+            await ctx.send(f"Could not forfeit: {e}")
+        except Exception as e:
+            await ctx.send("An error occurred while forfeiting your run.")
+            logger.error(f"Forfeit command failed for {ctx.author} ({user_id}): {e}")

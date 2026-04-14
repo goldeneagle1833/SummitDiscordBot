@@ -19,7 +19,7 @@ from repositories.limited_repo import (
     get_limited_pairing_between_players,
     mark_limited_pairing_reported,
 )
-from services.limited_service import limited_winner_report, get_run_summary, forfeit_arena_run
+from services.limited_service import limited_winner_report, get_run_summary
 from cogs.lfg.persistent_confirm import create_confirmation_view
 
 logger = logging.getLogger("discord_bot")
@@ -1321,61 +1321,3 @@ class LFGReportButtons(discord.ui.View):
             pass
 
 
-class RunStatusView(discord.ui.View):
-    """Post-match DM view with Continue/Forfeit buttons for active limited arena runs."""
-
-    def __init__(self, user_id: int, run_id: int, bot):
-        super().__init__(timeout=3600)  # 60 minute timeout
-        self.user_id = user_id
-        self.run_id = run_id
-        self.bot = bot
-
-    @discord.ui.button(
-        label="Continue Run",
-        style=discord.ButtonStyle.success,
-        custom_id="limited_continue_run",
-    )
-    async def continue_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("This isn't your run.", ephemeral=True)
-            return
-
-        # Disable buttons
-        for item in self.children:
-            item.disabled = True
-
-        summary = get_run_summary(self.run_id)
-        await interaction.response.edit_message(
-            content=f"🎲 **Current Run Status**\n\n{summary}",
-            view=self,
-        )
-
-    @discord.ui.button(
-        label="Forfeit Run",
-        style=discord.ButtonStyle.danger,
-        custom_id="limited_forfeit_run",
-    )
-    async def forfeit_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("This isn't your run.", ephemeral=True)
-            return
-
-        # Disable buttons
-        for item in self.children:
-            item.disabled = True
-
-        try:
-            forfeit_summary = forfeit_arena_run(self.user_id)
-            await interaction.response.edit_message(
-                content=f"💀 **Arena Run Forfeited**\n\n{forfeit_summary}",
-                view=self,
-            )
-        except ValueError as e:
-            await interaction.response.edit_message(
-                content=f"Could not forfeit: {e}",
-                view=self,
-            )

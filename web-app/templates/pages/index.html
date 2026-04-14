@@ -81,20 +81,16 @@
         </p>
 
         {% if new_events %}
-        <!-- New Event Banner -->
-        <a href="/top-8" class="new-event-banner" id="new-event-banner">
+        <!-- New Event Banners -->
+        {% for event in new_events %}
+        <a href="/top-8/{{ event.folder }}" class="new-event-banner" data-banner-track>
           <span class="new-event-badge">NEW</span>
           <div class="new-event-content">
-            <span class="new-event-text">
-              {% if new_events|length == 1 %}
-                New Top 8 decklists added: {{ new_events[0].name }}
-              {% else %}
-                {{ new_events|length }} new Top 8 decklists added!
-              {% endif %}
-            </span>
+            <span class="new-event-text">New Top 8 decklists added: {{ event.name }}</span>
           </div>
           <span class="new-event-arrow">&rarr;</span>
         </a>
+        {% endfor %}
         {% endif %}
 
         <!-- Community Tab Promo Banner -->
@@ -187,9 +183,11 @@
     <script src="{{ url_for('static', filename='js/pages/index.js') }}?v={{ app_version }}" defer></script>
     {% if new_events %}
     <script>
-      document.getElementById('new-event-banner')?.addEventListener('click', function() {
-        navigator.sendBeacon('/api/analytics/banner-click',
-          new Blob([JSON.stringify({banner_type: 'new_event'})], {type: 'application/json'}));
+      document.querySelectorAll('[data-banner-track]').forEach(function(el) {
+        el.addEventListener('click', function() {
+          navigator.sendBeacon('/api/analytics/banner-click',
+            new Blob([JSON.stringify({banner_type: 'new_event'})], {type: 'application/json'}));
+        });
       });
     </script>
     {% endif %}

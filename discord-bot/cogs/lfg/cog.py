@@ -727,6 +727,14 @@ class LFGCog(commands.Cog):
                 )
                 return True
 
+            # Also check if player1 was in player2's last match (bidirectional check)
+            p2_opponents = {player2_last_match[0], player2_last_match[1]}
+            if player1_id in p2_opponents:
+                logger.info(
+                    f"Anti-rematch: {player1_id} and {player2_id} played each other in their last match"
+                )
+                return True
+
             return False
 
         finally:
@@ -1090,7 +1098,7 @@ class LFGCog(commands.Cog):
         matched_user_deck_url = None
         match_type = None
         challenge_id = None
-        guild_id = ctx.guild.id if ctx.guild else None
+        guild_id = ctx.guild.id if ctx.guild else config.GUILD_ID
         ladder_info = None
 
         async with lfg_queue_lock:
@@ -1340,7 +1348,8 @@ class LFGCog(commands.Cog):
                     "The next player to match with you will play for modified ELO:\n"
                     "**•** If they win: 2x ELO gain\n"
                     "**•** If you lose: 0.5x ELO loss\n"
-                    "**•** If ELO difference < 100: Normal stakes"
+                    "**•** If ELO difference < 100: Normal stakes\n\n"
+                    "💡 **Tip:** You can use `!issue_challenge` in DMs with the bot anytime!"
                 )
             except discord.Forbidden:
                 await ctx.send(

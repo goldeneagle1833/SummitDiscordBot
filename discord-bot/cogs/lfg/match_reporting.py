@@ -27,6 +27,22 @@ logger = logging.getLogger("discord_bot")
 LADDER_WINNER_ROLE_ID = 1472382884550803658
 
 
+async def _fallback_to_backup_channel(bot, user, message, view=None):
+    """Send message to backup channel when DM fails."""
+    try:
+        backup_channel = bot.get_channel(config.DM_BACKUP_CHANNEL_ID)
+        if backup_channel:
+            await backup_channel.send(
+                scrub_urls(f"{user.mention} {message}"),
+                view=view,
+            )
+            logger.info(f"Sent fallback message to backup channel for {user.id}")
+            return True
+    except Exception as e:
+        logger.error(f"Failed to send to backup channel: {e}")
+    return False
+
+
 async def _send_confirmation_to_opponent(
     bot, opponent_user, opponent_id, opponent_global,
     confirm_msg, confirmation_view, reply_interaction, guild_id,
@@ -81,16 +97,30 @@ async def _send_confirmation_to_opponent(
                         ephemeral=True,
                     )
                 else:
+                    # Fallback to backup channel if DM_DISABLED_CHANNEL_ID doesn't exist
+                    if await _fallback_to_backup_channel(bot, opponent_user, confirm_msg, confirmation_view):
+                        await reply_interaction.followup.send(
+                            "Match report sent. Waiting for confirmation...",
+                            ephemeral=True,
+                        )
+                    else:
+                        await reply_interaction.followup.send(
+                            f"Could not send confirmation to {opponent_global}.",
+                            ephemeral=True,
+                        )
+            except Exception as e:
+                logger.error(f"Failed to handle DM failure for opponent: {e}")
+                # Last resort: try backup channel
+                if await _fallback_to_backup_channel(bot, opponent_user, confirm_msg, confirmation_view):
+                    await reply_interaction.followup.send(
+                        "Match report sent. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                else:
                     await reply_interaction.followup.send(
                         f"Could not send confirmation to {opponent_global}.",
                         ephemeral=True,
                     )
-            except Exception as e:
-                logger.error(f"Failed to handle DM failure for opponent: {e}")
-                await reply_interaction.followup.send(
-                    f"Could not send confirmation to {opponent_global}.",
-                    ephemeral=True,
-                )
 
 
 async def _apply_ladder_elo(bot, ladder_info, winner_id, winner_global, loser_id, loser_global, match_id, event_active):
@@ -457,9 +487,9 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                         pass
 
             except discord.Forbidden:
-                logger.warning(f"Discord.Forbidden when sending confirmation to {opponent_id}")
+                logger.warning(f"Discord.Forbidden when sending confirmation to {opponent_id}, attempted backup channel")
                 await interaction.followup.send(
-                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    f"Attempted to send confirmation to {opponent_global} via backup channel.",
                     ephemeral=True,
                 )
             except Exception as e:
@@ -470,7 +500,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 )
 
         except Exception as e:
-            logger.error(f"Unexpected error in ReporterDeckURLModal win report: {e}", exc_info=True)
+            logger.error(f"Unexpected error in ReporterDeckURLModal loss report: {e}", exc_info=True)
             try:
                 await interaction.followup.send(
                     "An unexpected error occurred while processing your match report. Please try again.",
@@ -1103,9 +1133,9 @@ class LFGReportButtons(discord.ui.View):
                         pass
 
             except discord.Forbidden:
-                logger.warning(f"Discord.Forbidden when sending confirmation to {opponent_id}")
+                logger.warning(f"Discord.Forbidden when sending confirmation to {opponent_id}, attempted backup channel")
                 await interaction.followup.send(
-                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    f"Attempted to send confirmation to {opponent_global} via backup channel.",
                     ephemeral=True,
                 )
             except Exception as e:
@@ -1272,9 +1302,9 @@ class LFGReportButtons(discord.ui.View):
                         pass
 
             except discord.Forbidden:
-                logger.warning(f"Discord.Forbidden when sending confirmation to {opponent_id}")
+                logger.warning(f"Discord.Forbidden when sending confirmation to {opponent_id}, attempted backup channel")
                 await interaction.followup.send(
-                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    f"Attempted to send confirmation to {opponent_global} via backup channel.",
                     ephemeral=True,
                 )
             except Exception as e:

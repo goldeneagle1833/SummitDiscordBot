@@ -137,99 +137,99 @@ class DailySummaryCog(commands.Cog):
 
         # Commentary intro
         if gpt.get("COMMENTARY"):
-            embed.description = _truncate(gpt["COMMENTARY"], 500)
+            embed.description = _truncate(gpt["COMMENTARY"], 200)
 
         # Core stats — GPT-flavored values with raw fallbacks
         embed.add_field(
             name="⚔️ Matches Played",
-            value=_truncate(gpt.get("MATCHES_PLAYED", str(stats["total_matches"])), 100),
+            value=_truncate(gpt.get("MATCHES_PLAYED", str(stats["total_matches"])), 200),
             inline=True,
         )
 
         if stats.get("unique_players"):
             embed.add_field(
                 name="🎮 Unique Players",
-                value=_truncate(gpt.get("UNIQUE_PLAYERS", str(stats["unique_players"])), 100),
+                value=_truncate(gpt.get("UNIQUE_PLAYERS", str(stats["unique_players"])), 200),
                 inline=True,
             )
 
         if stats.get("most_active"):
-            name, count = stats["most_active"]
+            user_id, name, count = stats["most_active"]
             embed.add_field(
                 name="👑 Most Active Player",
-                value=_truncate(gpt.get("MOST_ACTIVE", f"{name} ({count} matches)"), 100),
+                value=_truncate(gpt.get("MOST_ACTIVE", f"<@{user_id}> ({count} matches)"), 200),
                 inline=False,
             )
 
         if stats.get("top_gainer"):
-            name, change = stats["top_gainer"]
+            user_id, name, change = stats["top_gainer"]
             embed.add_field(
                 name="📈 Top ELO Gainer",
-                value=_truncate(gpt.get("TOP_GAINER", f"{name} (+{change} ELO)"), 100),
+                value=_truncate(gpt.get("TOP_GAINER", f"<@{user_id}> (+{change} ELO)"), 200),
                 inline=True,
             )
 
         if stats.get("biggest_loser"):
-            name, change = stats["biggest_loser"]
+            user_id, name, change = stats["biggest_loser"]
             embed.add_field(
                 name="📉 Biggest ELO Drop",
-                value=_truncate(gpt.get("BIGGEST_LOSER", f"{name} ({change} ELO)"), 100),
+                value=_truncate(gpt.get("BIGGEST_LOSER", f"<@{user_id}> ({change} ELO)"), 200),
                 inline=True,
             )
 
         # Extended stats
         if stats.get("biggest_upset"):
-            winner, loser, change = stats["biggest_upset"]
+            winner_id, winner_name, loser_id, loser_name, change = stats["biggest_upset"]
             embed.add_field(
                 name="🎯 Biggest Upset",
-                value=_truncate(gpt.get("BIGGEST_UPSET", f"{winner} beat {loser} (+{change} ELO)"), 100),
+                value=_truncate(gpt.get("BIGGEST_UPSET", f"<@{winner_id}> beat <@{loser_id}> (+{change} ELO)"), 200),
                 inline=False,
             )
 
         if stats.get("rivalry"):
-            p1, p2, p1w, p2w, total = stats["rivalry"]
+            p1_id, p1, p2_id, p2, p1w, p2w, total = stats["rivalry"]
             embed.add_field(
                 name="⚔️ Rivalry of the Day",
                 value=_truncate(
-                    gpt.get("RIVALRY", f"{p1} vs {p2} — {p1w}-{p2w} ({total} games)"), 100
+                    gpt.get("RIVALRY", f"<@{p1_id}> vs <@{p2_id}> — {p1w}-{p2w} ({total} games)"), 200
                 ),
                 inline=False,
             )
 
         if stats.get("highest_rated"):
-            w_name, l_name, w_elo, l_elo = stats["highest_rated"]
+            w_id, w_name, l_id, l_name, w_elo, l_elo = stats["highest_rated"]
             embed.add_field(
                 name="🏆 Highest Rated Match",
                 value=_truncate(
-                    gpt.get("HIGHEST_RATED", f"{w_name} ({w_elo}) vs {l_name} ({l_elo})"), 100
+                    gpt.get("HIGHEST_RATED", f"<@{w_id}> ({w_elo}) vs <@{l_id}> ({l_elo})"), 200
                 ),
                 inline=False,
             )
 
         if stats.get("ironman"):
-            name, count, hours = stats["ironman"]
+            total_hours = stats["ironman"]
             embed.add_field(
-                name="🦾 Ironman",
+                name="🦾 Total Sorcery",
                 value=_truncate(
-                    gpt.get("IRONMAN", f"{name} — {count} matches over {hours} hours"), 100
+                    gpt.get("IRONMAN", f"{total_hours} hours of Sorcery have been played today"), 200
                 ),
                 inline=True,
             )
 
         if stats.get("deck_variety"):
-            name, count = stats["deck_variety"]
+            user_id, name, count = stats["deck_variety"]
             embed.add_field(
                 name="🎴 Deck Variety",
                 value=_truncate(
-                    gpt.get("DECK_VARIETY", f"{name} played {count} different decks"), 100
+                    gpt.get("DECK_VARIETY", f"<@{user_id}> played {count} different decks"), 200
                 ),
                 inline=True,
             )
 
         if stats.get("hot_streaks"):
             fallback_lines = []
-            for name, streak in stats["hot_streaks"][:5]:
-                fallback_lines.append(f"{name} is on a {streak}-win streak")
+            for user_id, name, streak in stats["hot_streaks"][:5]:
+                fallback_lines.append(f"<@{user_id}> is on a {streak}-win streak")
             if len(stats["hot_streaks"]) > 5:
                 fallback_lines.append(f"and {len(stats['hot_streaks']) - 5} more...")
             embed.add_field(
@@ -241,7 +241,7 @@ class DailySummaryCog(commands.Cog):
         if stats.get("broken_streaks"):
             fallback_lines = []
             for entry in stats["broken_streaks"][:5]:
-                fallback_lines.append(f"{entry['player']}'s {entry['streak']}-win streak was ended by {entry['broken_by']}")
+                fallback_lines.append(f"<@{entry['player_id']}>'s {entry['streak']}-win streak was ended by <@{entry['broken_by_id']}>")
             embed.add_field(
                 name="💔 Streak Broken",
                 value=_truncate(gpt.get("STREAK_BROKEN", "\n".join(fallback_lines)), 200),
@@ -251,7 +251,7 @@ class DailySummaryCog(commands.Cog):
         if stats.get("avg_duration") is not None:
             embed.add_field(
                 name="⏱️ Avg Match Duration",
-                value=_truncate(gpt.get("AVG_DURATION", f"{round(stats['avg_duration'])} min"), 100),
+                value=_truncate(gpt.get("AVG_DURATION", f"{round(stats['avg_duration'])} min"), 200),
                 inline=True,
             )
 
@@ -307,7 +307,7 @@ class DailySummaryCog(commands.Cog):
             )
             row = cur.fetchone()
             if row:
-                stats["most_active"] = (row[1], row[2])
+                stats["most_active"] = (row[0], row[1], row[2])  # (user_id, name, count)
 
             # 3. Top ELO gainer (net across all matches)
             cur.execute(
@@ -328,7 +328,7 @@ class DailySummaryCog(commands.Cog):
             )
             row = cur.fetchone()
             if row:
-                stats["top_gainer"] = (row[1], row[2])
+                stats["top_gainer"] = (row[0], row[1], row[2])  # (user_id, name, change)
 
             # 5. Biggest ELO loser
             cur.execute(
@@ -349,7 +349,7 @@ class DailySummaryCog(commands.Cog):
             )
             row = cur.fetchone()
             if row and row[2] < 0:
-                stats["biggest_loser"] = (row[1], row[2])
+                stats["biggest_loser"] = (row[0], row[1], row[2])  # (user_id, name, change)
 
             # 6. Unique players
             cur.execute(
@@ -378,7 +378,7 @@ class DailySummaryCog(commands.Cog):
             # 8. Biggest upset (highest winner_lifetime_elo_change = lower-rated winner)
             cur.execute(
                 """
-                SELECT winner_display_name, losser_display_name, winner_lifetime_elo_change
+                SELECT winner_id, winner_display_name, losser_id, losser_display_name, winner_lifetime_elo_change
                 FROM match_records
                 WHERE timestamp LIKE ? AND match_type = 'ranked'
                       AND winner_lifetime_elo_change IS NOT NULL
@@ -389,7 +389,7 @@ class DailySummaryCog(commands.Cog):
             )
             row = cur.fetchone()
             if row:
-                stats["biggest_upset"] = (row[0], row[1], row[2])
+                stats["biggest_upset"] = (row[0], row[1], row[2], row[3], row[4])  # (winner_id, winner_name, loser_id, loser_name, change)
 
             # 9. Rivalry of the Day (pair who played each other most, min 2)
             cur.execute(
@@ -429,14 +429,14 @@ class DailySummaryCog(commands.Cog):
                     (m[1] if m[0] == p2_id else m[2] for m in rivalry_matches), None
                 )
                 if p1_name and p2_name:
-                    stats["rivalry"] = (p1_name, p2_name, p1_wins, p2_wins, total)
+                    stats["rivalry"] = (p1_id, p1_name, p2_id, p2_name, p1_wins, p2_wins, total)
 
             # 10. Highest Rated Match (highest combined ELO)
             try:
                 cur.execute("ATTACH DATABASE 'elo.db' AS elo_db")
                 cur.execute(
                     """
-                    SELECT m.winner_display_name, m.losser_display_name,
+                    SELECT m.winner_id, m.winner_display_name, m.losser_id, m.losser_display_name,
                            COALESCE(w.online_elo, w.elo, 1500) as winner_elo,
                            COALESCE(l.online_elo, l.elo, 1500) as loser_elo
                     FROM match_records m
@@ -451,44 +451,28 @@ class DailySummaryCog(commands.Cog):
                 )
                 row = cur.fetchone()
                 if row:
-                    stats["highest_rated"] = (row[0], row[1], row[2], row[3])
+                    stats["highest_rated"] = (row[0], row[1], row[2], row[3], row[4], row[5])  # (w_id, w_name, l_id, l_name, w_elo, l_elo)
                 cur.execute("DETACH DATABASE elo_db")
             except Exception:
                 logger.debug("Could not query highest rated match", exc_info=True)
 
-            # 11. Ironman (longest play session, min 3 matches & 1 hour)
+            # 11. Ironman (total hours of Sorcery played today)
             cur.execute(
                 """
-                SELECT player_name, match_count, hours FROM (
-                    SELECT player_id, player_name, COUNT(*) as match_count,
-                           ROUND((julianday(MAX(timestamp))
-                                  - julianday(MIN(timestamp))) * 24, 1) as hours
-                    FROM (
-                        SELECT winner_id as player_id, winner_display_name as player_name,
-                               timestamp
-                        FROM match_records
-                        WHERE timestamp LIKE ? AND match_type = 'ranked'
-                        UNION ALL
-                        SELECT losser_id as player_id, losser_display_name as player_name,
-                               timestamp
-                        FROM match_records
-                        WHERE timestamp LIKE ? AND match_type = 'ranked'
-                    )
-                    GROUP BY player_id
-                    HAVING match_count >= 3 AND hours >= 1
-                    ORDER BY hours DESC LIMIT 1
-                )
+                SELECT ROUND(SUM(match_time) / 60.0, 1) as total_hours
+                FROM match_records
+                WHERE timestamp LIKE ? AND match_type = 'ranked' AND match_time > 0
                 """,
-                (date_prefix, date_prefix),
+                (date_prefix,),
             )
             row = cur.fetchone()
-            if row:
-                stats["ironman"] = (row[0], row[1], row[2])
+            if row and row[0]:
+                stats["ironman"] = row[0]  # total hours
 
             # 12. Deck Variety (most different decks used, min 2)
             cur.execute(
                 """
-                SELECT player_name, COUNT(DISTINCT deck_url) as deck_count FROM (
+                SELECT player_id, player_name, COUNT(DISTINCT deck_url) as deck_count FROM (
                     SELECT winner_id as player_id,
                            winner_display_name as player_name,
                            curiosa_url_winner as deck_url
@@ -513,7 +497,7 @@ class DailySummaryCog(commands.Cog):
             )
             row = cur.fetchone()
             if row:
-                stats["deck_variety"] = (row[0], row[1])
+                stats["deck_variety"] = (row[0], row[1], row[2])  # (user_id, name, count)
 
         finally:
             conn.close()
@@ -578,7 +562,7 @@ class DailySummaryCog(commands.Cog):
                         break
 
                 if current_streak >= 3:
-                    result["hot_streaks"].append((player_name, current_streak))
+                    result["hot_streaks"].append((player_id, player_name, current_streak))
 
                 # Broken streak: did this player lose today and have a 6+ streak before that loss?
                 # Find the first loss today
@@ -602,13 +586,14 @@ class DailySummaryCog(commands.Cog):
                     if pre_loss_streak >= 6:
                         # Who broke it? The winner of the loss match
                         loss_match = matches[first_loss_idx]
+                        broken_by_id = loss_match[0]  # winner_id
                         broken_by = loss_match[2]  # winner_display_name
                         result["broken_streaks"].append(
-                            {"player": player_name, "streak": pre_loss_streak, "broken_by": broken_by}
+                            {"player_id": player_id, "player": player_name, "streak": pre_loss_streak, "broken_by_id": broken_by_id, "broken_by": broken_by}
                         )
 
             # Sort hot streaks by length descending
-            result["hot_streaks"].sort(key=lambda x: x[1], reverse=True)
+            result["hot_streaks"].sort(key=lambda x: x[2], reverse=True)
 
         finally:
             conn.close()
@@ -633,39 +618,39 @@ class DailySummaryCog(commands.Cog):
             lines.append(f"- {stats['unique_players']} unique players")
 
         if stats.get("most_active"):
-            name, count = stats["most_active"]
+            user_id, name, count = stats["most_active"]
             lines.append(f"- Most active: {name} ({count} matches)")
 
         if stats.get("top_gainer"):
-            name, change = stats["top_gainer"]
+            user_id, name, change = stats["top_gainer"]
             lines.append(f"- Top ELO gainer: {name} (+{change})")
 
         if stats.get("biggest_loser"):
-            name, change = stats["biggest_loser"]
+            user_id, name, change = stats["biggest_loser"]
             lines.append(f"- Biggest ELO drop: {name} ({change})")
 
         if stats.get("biggest_upset"):
-            winner, loser, change = stats["biggest_upset"]
-            lines.append(f"- Biggest upset: {winner} beat {loser} (+{change} ELO gain)")
+            winner_id, winner_name, loser_id, loser_name, change = stats["biggest_upset"]
+            lines.append(f"- Biggest upset: {winner_name} beat {loser_name} (+{change} ELO gain)")
 
         if stats.get("rivalry"):
-            p1, p2, p1w, p2w, total = stats["rivalry"]
+            p1_id, p1, p2_id, p2, p1w, p2w, total = stats["rivalry"]
             lines.append(f"- Rivalry of the day: {p1} vs {p2}, {p1w}-{p2w} record ({total} games)")
 
         if stats.get("highest_rated"):
-            w_name, l_name, w_elo, l_elo = stats["highest_rated"]
+            w_id, w_name, l_id, l_name, w_elo, l_elo = stats["highest_rated"]
             lines.append(f"- Highest rated match: {w_name} ({w_elo} ELO) vs {l_name} ({l_elo} ELO)")
 
         if stats.get("ironman"):
-            name, count, hours = stats["ironman"]
-            lines.append(f"- Ironman: {name} played {count} matches over {hours} hours")
+            total_hours = stats["ironman"]
+            lines.append(f"- Total Sorcery: {total_hours} hours of gameplay today")
 
         if stats.get("deck_variety"):
-            name, count = stats["deck_variety"]
+            user_id, name, count = stats["deck_variety"]
             lines.append(f"- Deck variety: {name} played {count} different decks today")
 
         if stats.get("hot_streaks"):
-            streaks = ", ".join(f"{name} ({n}-win streak)" for name, n in stats["hot_streaks"][:5])
+            streaks = ", ".join(f"{name} ({n}-win streak)" for user_id, name, n in stats["hot_streaks"][:5])
             lines.append(f"- Hot streaks: {streaks}")
 
         if stats.get("broken_streaks"):

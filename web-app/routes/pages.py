@@ -133,6 +133,18 @@ def live_popular_cards():
     return render_template("pages/live_popular_cards.html")
 
 
+@pages_bp.route("/deck-rec")
+def deck_rec():
+    """Sorcery Deck Rec — archetype list page."""
+    return render_template("pages/deck_recommendations.html")
+
+
+@pages_bp.route("/deck-rec/<deck_id>")
+def deck_rec_detail(deck_id: str):
+    """Sorcery Deck Rec — archetype recommendation detail page."""
+    return render_template("pages/deck_recommendation.html", deck_id=deck_id)
+
+
 @pages_bp.route("/elements")
 def elements():
     """Elemental winrates page."""

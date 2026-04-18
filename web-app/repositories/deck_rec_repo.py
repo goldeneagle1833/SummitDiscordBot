@@ -74,6 +74,8 @@ class DeckRecord:
     card_quantities: dict = field(default_factory=dict)
     primer: str = ""          # short description shown on admin tile
     stars: int | None = None  # 1–3 star rating
+    wins: int = 0             # match wins tracked from match records
+    losses: int = 0           # match losses tracked from match records
 
 
 class DeckRecRepository:
@@ -111,10 +113,16 @@ class DeckRecRepository:
             if deck.deck_id and deck.deck_id not in seen_ids:
                 seen_ids[deck.deck_id] = deck
 
-        # 3. Match records — community decks, lower priority
+        # 3. Match records — community decks, lower priority.
+        # Always accumulate wins/losses even for already-seen deck_ids.
         for deck in self._load_match_decks():
-            if deck.deck_id and deck.deck_id not in seen_ids:
+            if not deck.deck_id:
+                continue
+            if deck.deck_id not in seen_ids:
                 seen_ids[deck.deck_id] = deck
+            else:
+                seen_ids[deck.deck_id].wins += deck.wins
+                seen_ids[deck.deck_id].losses += deck.losses
 
         return list(seen_ids.values())
 
@@ -305,6 +313,8 @@ class DeckRecRepository:
                 elements=_extract_elements(spellbook),
                 event_year=None,
                 card_quantities=_count_quantities(spellbook),
+                wins=1 if side == "winner" else 0,
+                losses=0 if side == "winner" else 1,
             )
         except Exception as e:
             logger.debug("Skipping malformed match deck (%s): %s", side, e)
@@ -467,39 +477,11 @@ class DeckRecRepository:
     def compute_cluster_win_rate(self, members: list) -> dict:
         """Return win/loss record for all decks in a cluster.
 
-        Scans match_records and match_records_archive for rows where the
-        winner or loser curiosa_url belongs to one of the cluster members.
+        Wins and losses are accumulated during deck loading (one per match row),
+        so this is a simple sum across all cluster members.
         """
-        if not members or not self._db_path.exists():
-            return {"wins": 0, "losses": 0, "win_rate": None}
-
-        deck_id_set = {m.deck_id for m in members}
-        wins = 0
-        losses = 0
-
-        try:
-            conn = sqlite3.connect(str(self._db_path))
-            cur = conn.cursor()
-
-            for table in ("match_records_archive", "match_records"):
-                try:
-                    cur.execute(
-                        f"SELECT curiosa_url_winner, curiosa_url_loser FROM {table}"
-                        " WHERE curiosa_url_winner IS NOT NULL OR curiosa_url_loser IS NOT NULL"
-                    )
-                    for url_w, url_l in cur.fetchall():
-                        if self._extract_deck_id(url_w or "") in deck_id_set:
-                            wins += 1
-                        if self._extract_deck_id(url_l or "") in deck_id_set:
-                            losses += 1
-                except sqlite3.OperationalError:
-                    pass
-
-            conn.close()
-        except Exception as e:
-            logger.error("Failed to compute cluster win rate: %s", e)
-            return {"wins": 0, "losses": 0, "win_rate": None}
-
+        wins = sum(m.wins for m in members)
+        losses = sum(m.losses for m in members)
         total = wins + losses
         win_rate = round(wins / total, 4) if total > 0 else None
         return {"wins": wins, "losses": losses, "win_rate": win_rate}

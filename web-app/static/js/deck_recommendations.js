@@ -635,9 +635,7 @@
 
     // Cluster stats
     const clusterSize = document.getElementById("cluster-size");
-    const avgSim = document.getElementById("avg-similarity");
     if (clusterSize) clusterSize.textContent = data.cluster_size;
-    if (avgSim) avgSim.textContent = `${Math.round(data.avg_similarity * 100)}%`;
 
     const winRateStat = document.getElementById("win-rate-stat");
     const winRateEl = document.getElementById("win-rate");

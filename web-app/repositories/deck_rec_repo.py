@@ -104,7 +104,14 @@ class DeckRecRepository:
             if deck.deck_id and deck.deck_id not in seen_ids:
                 seen_ids[deck.deck_id] = deck
         for deck in self._load_admin_decks():
-            if deck.deck_id and deck.deck_id not in seen_ids:
+            if not deck.deck_id:
+                continue
+            if deck.deck_id in seen_ids:
+                existing = seen_ids[deck.deck_id]
+                existing.is_admin_rec = True
+                existing.primer = deck.primer or existing.primer
+                existing.stars = deck.stars if deck.stars is not None else existing.stars
+            else:
                 seen_ids[deck.deck_id] = deck
         return list(seen_ids.values())
 
@@ -122,8 +129,17 @@ class DeckRecRepository:
                 seen_ids[deck.deck_id] = deck
 
         # 2. Admin recommended decks — also seeds
+        #    If the deck already exists (e.g. from tournament files), merge
+        #    admin metadata so it appears in the Staff Recommendations section.
         for deck in self._load_admin_decks():
-            if deck.deck_id and deck.deck_id not in seen_ids:
+            if not deck.deck_id:
+                continue
+            if deck.deck_id in seen_ids:
+                existing = seen_ids[deck.deck_id]
+                existing.is_admin_rec = True
+                existing.primer = deck.primer or existing.primer
+                existing.stars = deck.stars if deck.stars is not None else existing.stars
+            else:
                 seen_ids[deck.deck_id] = deck
 
         # 3. Match records — community decks, lower priority

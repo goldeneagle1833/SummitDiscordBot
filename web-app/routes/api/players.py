@@ -50,6 +50,77 @@ def _resolve_card_image(card_name: str) -> str | None:
     return mapping.get(key)
 
 
+# ---------------------------------------------------------------------------
+# Tournament seed cache for similar-deck lookups
+# ---------------------------------------------------------------------------
+
+_seed_decks: list | None = None
+
+
+def _get_seed_decks() -> list:
+    """Return cached list of tournament/admin seed DeckRecord objects."""
+    global _seed_decks
+    if _seed_decks is not None:
+        return _seed_decks
+    try:
+        from repositories.deck_rec_repo import DeckRecRepository
+        _seed_decks = DeckRecRepository().load_seed_decks()
+    except Exception as e:
+        logger.warning("Could not load seed decks for similarity: %s", e)
+        _seed_decks = []
+    return _seed_decks
+
+
+def _find_similar_seeds(deck: dict, top_n: int = 5) -> list[dict]:
+    """Return the top_n most similar tournament seed decks for a given player deck.
+
+    Uses Jaccard similarity on card name sets across spellbook + atlas sections.
+    """
+    from services.deck_similarity import jaccard
+
+    # Build card name set from the player's deck
+    player_cards: set[str] = set()
+    for section in ("spellbook", "atlas"):
+        for card in deck.get(section, []) or []:
+            if card and card.get("name"):
+                player_cards.add(card["name"].strip().lower())
+
+    if not player_cards:
+        return []
+
+    player_set = frozenset(player_cards)
+    image_map = _get_card_image_map()
+
+    scored = []
+    for seed in _get_seed_decks():
+        score = jaccard(player_set, seed.card_names)
+        if score > 0:
+            scored.append((score, seed))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    result = []
+    for score, seed in scored[:top_n]:
+        # Resolve avatar image
+        avatar_img = None
+        if seed.avatar_name:
+            avatar_key = seed.avatar_name.lower().replace(" ", "_").replace("'", "").replace(",", "")
+            avatar_img = image_map.get(avatar_key)
+
+        result.append({
+            "deck_id": seed.deck_id,
+            "deck_name": seed.deck_name,
+            "avatar_name": seed.avatar_name,
+            "player_name": seed.player_name,
+            "event_name": seed.event_name,
+            "curiosa_url": seed.curiosa_url,
+            "similarity": round(score, 3),
+            "avatar_image": avatar_img,
+        })
+
+    return result
+
+
 def _extract_deck_info(deck_json):
     """Extract avatar name and element list from a deck JSON string."""
     avatar_name = None
@@ -129,6 +200,9 @@ def deck_snapshot(match_id, player_id):
             for card in deck.get(section, []) or []:
                 if card and card.get("name"):
                     card["image"] = _resolve_card_image(card["name"])
+
+        # Find similar tournament decks
+        result["similar_decks"] = _find_similar_seeds(deck)
 
         return jsonify(result)
     except Exception as e:

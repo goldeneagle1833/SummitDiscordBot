@@ -107,6 +107,112 @@
   margin-left: auto;
 }
 
+/* Similar Tournament Decks */
+.similar-decks-section {
+  margin-top: var(--spacing-xl);
+  padding-top: var(--spacing-xl);
+  border-top: 1px solid var(--color-border);
+}
+
+.similar-decks-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: var(--spacing-md);
+}
+
+.similar-decks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.similar-deck-card {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-soft);
+  padding: var(--spacing-md);
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.similar-deck-card:hover {
+  border-color: var(--color-primary);
+  background: rgba(255, 215, 0, 0.04);
+}
+
+.similar-deck-avatar {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.similar-deck-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.similar-deck-avatar-placeholder {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.similar-deck-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.similar-deck-name {
+  color: var(--color-text);
+  font-weight: 500;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.similar-deck-meta {
+  color: var(--color-primary);
+  font-size: 0.78rem;
+  margin-top: 0.15rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.similar-deck-event {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  margin-top: 0.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.similar-deck-match {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: rgba(255, 255, 255, 0.07);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+}
+
 /* Card image preview popup */
 #deck-card-preview {
   position: fixed;

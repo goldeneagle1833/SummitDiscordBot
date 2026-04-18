@@ -181,6 +181,45 @@ function filterByType(cards, type) {
 }
 
 /**
+ * Render the similar tournament decks section
+ * @param {Array} decks - Array of similar deck objects from the API
+ */
+function renderSimilarDecks(decks) {
+  const section = document.getElementById('similar-decks-section');
+  const grid = document.getElementById('similar-decks-grid');
+
+  if (!decks || decks.length === 0) {
+    section.classList.add('hidden');
+    return;
+  }
+
+  grid.innerHTML = '';
+
+  decks.forEach((deck) => {
+    const pct = Math.round(deck.similarity * 100);
+    const avatarImg = deck.avatar_image
+      ? `<img class="similar-deck-avatar-img" src="/card-images/${deck.avatar_image}" alt="${deck.avatar_name}" onerror="this.style.display='none'">`
+      : `<span class="similar-deck-avatar-placeholder">${(deck.avatar_name || '?')[0]}</span>`;
+
+    const card = document.createElement('a');
+    card.className = 'similar-deck-card';
+    card.href = `/deck-rec/${deck.deck_id}`;
+    card.innerHTML = `
+      <div class="similar-deck-avatar">${avatarImg}</div>
+      <div class="similar-deck-info">
+        <div class="similar-deck-name">${deck.deck_name}</div>
+        <div class="similar-deck-meta">${deck.avatar_name} &bull; ${deck.player_name}</div>
+        <div class="similar-deck-event">${deck.event_name || ''}</div>
+      </div>
+      <div class="similar-deck-match">${pct}% match</div>
+    `;
+    grid.appendChild(card);
+  });
+
+  section.classList.remove('hidden');
+}
+
+/**
  * Fetch and display deck data from the API
  */
 async function fetchDeckData() {
@@ -228,6 +267,9 @@ async function fetchDeckData() {
     // Render other sections
     renderCardList(data.deck.atlas, 'sites-list', 'sites-section');
     renderCardList(data.deck.sideboard, 'collection-list', 'collection-section');
+
+    // Render similar tournament decks
+    renderSimilarDecks(data.similar_decks || []);
 
     // Show content
     document.getElementById('deck-content').classList.remove('hidden');

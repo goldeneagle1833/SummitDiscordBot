@@ -93,6 +93,21 @@ class DeckRecRepository:
     # Public API                                                           #
     # ------------------------------------------------------------------ #
 
+    def load_seed_decks(self) -> list[DeckRecord]:
+        """Load only tournament and admin seed decks (no community match records).
+
+        Faster than load_all_decks() — suitable for similarity lookups where
+        community decks aren't needed as reference points.
+        """
+        seen_ids: dict[str, DeckRecord] = {}
+        for deck in self._load_tournament_decks():
+            if deck.deck_id and deck.deck_id not in seen_ids:
+                seen_ids[deck.deck_id] = deck
+        for deck in self._load_admin_decks():
+            if deck.deck_id and deck.deck_id not in seen_ids:
+                seen_ids[deck.deck_id] = deck
+        return list(seen_ids.values())
+
     def load_all_decks(self) -> list[DeckRecord]:
         """Load decks from tournament files, admin recommendations, and match records DB.
 

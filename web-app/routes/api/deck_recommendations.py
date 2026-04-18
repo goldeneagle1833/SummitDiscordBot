@@ -133,6 +133,24 @@ def get_recommendations(deck_id: str):
         avg_sim = average_similarity(seed, members)
         win_data = repo.compute_cluster_win_rate(seed)
 
+        # Find similar tournament seed decks (>= 80% Jaccard similarity)
+        SIMILAR_SEED_THRESHOLD = 0.8
+        similar_seeds = []
+        for other in seeds:
+            if other.deck_id == seed.deck_id:
+                continue
+            score = jaccard(seed.card_names, other.card_names)
+            if score >= SIMILAR_SEED_THRESHOLD:
+                similar_seeds.append({
+                    "deck_id": other.deck_id,
+                    "deck_name": other.deck_name,
+                    "avatar_name": other.avatar_name,
+                    "player_name": other.player_name,
+                    "event_name": other.event_name,
+                    "similarity": round(score, 3),
+                })
+        similar_seeds.sort(key=lambda x: x["similarity"], reverse=True)
+
         return jsonify(
             {
                 "seed": {
@@ -153,6 +171,7 @@ def get_recommendations(deck_id: str):
                 "common_cards": _attach_images(tiers["common"]),
                 "tech_cards": _attach_images(tiers["tech"]),
                 "fringe_cards": _attach_images(tiers["fringe"]),
+                "similar_seeds": similar_seeds,
             }
         )
 

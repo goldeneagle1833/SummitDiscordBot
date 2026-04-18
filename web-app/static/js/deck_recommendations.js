@@ -763,6 +763,42 @@
     renderTier("tech-cards", data.tech_cards);
 
     initFringeToggle(data);
+    renderSimilarSeeds(data.similar_seeds || []);
+  }
+
+  function renderSimilarSeeds(seeds) {
+    const section = document.getElementById("similar-seeds-section");
+    const grid = document.getElementById("similar-seeds-grid");
+    if (!section || !grid) return;
+
+    if (!seeds || seeds.length === 0) {
+      section.style.display = "none";
+      return;
+    }
+
+    grid.innerHTML = "";
+    seeds.forEach((seed) => {
+      const pct = Math.round(seed.similarity * 100);
+      const imgPath = getAvatarImagePath(seed.avatar_name);
+      const avatarHtml = imgPath
+        ? `<img src="/avatar-images/${escHtml(imgPath)}" alt="${escHtml(seed.avatar_name)}" loading="lazy">`
+        : escHtml((seed.avatar_name || "?")[0]);
+
+      const card = document.createElement("a");
+      card.className = "similar-seed-card";
+      card.href = `/deck-rec/${encodeURIComponent(seed.deck_id)}`;
+      card.innerHTML = `
+        <div class="similar-seed-avatar">${avatarHtml}</div>
+        <div class="similar-seed-info">
+          <div class="similar-seed-name">${escHtml(seed.deck_name)}</div>
+          <div class="similar-seed-meta">${escHtml(seed.avatar_name)} &bull; ${escHtml(seed.event_name || "")}</div>
+        </div>
+        <div class="similar-seed-pct">${pct}% match</div>
+      `;
+      grid.appendChild(card);
+    });
+
+    section.style.display = "block";
   }
 
   function renderTier(sectionId, cards) {

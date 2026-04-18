@@ -795,6 +795,9 @@
         </span>
       `;
 
+      // Preload image into browser cache immediately when the list renders
+      if (card.image) _preload(card.image);
+
       // Always attach hover/click — show popup if image available
       li.style.cursor = card.image ? "pointer" : "default";
       if (card.image) {
@@ -856,6 +859,14 @@
 
   let _popup = null;
   let _pinnedRow = null;
+  const _imgCache = {}; // imageFile → HTMLImageElement (preloaded)
+
+  function _preload(imageFile) {
+    if (_imgCache[imageFile]) return;
+    const img = new Image();
+    img.src = `/card-images/${imageFile}`;
+    _imgCache[imageFile] = img;
+  }
 
   function _getOrCreatePopup() {
     if (!_popup) {

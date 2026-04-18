@@ -52,13 +52,13 @@ async def _send_confirmation_to_opponent(
 
     # Always try DM first - don't skip based on role
     # (User might have re-enabled DMs since role was added)
+    guild = bot.get_guild(guild_id) if guild_id else None
     try:
         logger.info(f"Sending confirmation DM to opponent {opponent_id} ({opponent_global})")
         await opponent_user.send(confirm_msg, view=confirmation_view)
         logger.info(f"✅ Successfully sent confirmation DM to opponent {opponent_id} ({opponent_global})")
 
         # Remove DM_DISABLED_ROLE if they have it (DMs are working now)
-        guild = bot.get_guild(guild_id) if guild_id else None
         if guild:
             role = guild.get_role(config.DM_DISABLED_ROLE_ID)
             member = guild.get_member(opponent_id)
@@ -647,9 +647,9 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                         pass
 
             except discord.Forbidden:
-                logger.warning(f"Discord.Forbidden when sending confirmation to {opponent_id}")
+                logger.warning(f"Discord.Forbidden when sending confirmation to {opponent_id}, attempted backup channel")
                 await interaction.followup.send(
-                    f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
+                    f"Attempted to send confirmation to {opponent_global} via backup channel.",
                     ephemeral=True,
                 )
             except Exception as e:

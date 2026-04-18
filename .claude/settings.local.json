@@ -52,7 +52,16 @@
       "Bash(cmd /c \"dir f:\\\\GitHub\\\\SummitDiscordBot\\\\web-app\\\\static\\\\js\\\\pages\\\\avatars.js\")",
       "Bash(python3:*)",
       "Bash(node -c:*)",
-      "Bash(git check-ignore:*)"
+      "Bash(git check-ignore:*)",
+      "Bash(pwsh -NoProfile -Command \".specify/scripts/powershell/create-new-feature.ps1 -Number 1 -ShortName ''deck-recommendations'' -Description ''Add deck recommendations page with similarity-based grouping''\")",
+      "Bash(/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell -NoProfile -Command \".specify/scripts/powershell/create-new-feature.ps1 -Number 1 -ShortName ''deck-recommendations'' -Description ''Add deck recommendations page with similarity-based grouping''\")",
+      "Bash(/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell -NoProfile -ExecutionPolicy Bypass -Command \".specify/scripts/powershell/setup-plan.ps1 -Json\")",
+      "Bash(/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell -NoProfile -ExecutionPolicy Bypass -Command \".specify/scripts/powershell/update-agent-context.ps1 -AgentType claude\")",
+      "Bash(/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell -NoProfile -ExecutionPolicy Bypass -Command \".specify/scripts/powershell/check-prerequisites.ps1 -Json\")",
+      "Bash(/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell -NoProfile -ExecutionPolicy Bypass -Command \".specify/scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks\")",
+      "Bash(/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell -NoProfile -Command \"& { $j = $input | ConvertFrom-Json; $j[0] | Select-Object -Property * | ConvertTo-Json -Depth 1 }\")",
+      "Bash(break done break done)",
+      "Bash(/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell -NoProfile -Command \"& { $py = Get-Command python3 -ErrorAction SilentlyContinue; if \\(-not $py\\) { $py = Get-Command python -ErrorAction SilentlyContinue }; if \\($py\\) { & $py.Source -c ''import ast, sys; files=[\"\"repositories/deck_rec_repo.py\"\",\"\"services/deck_similarity.py\"\",\"\"routes/api/deck_recommendations.py\"\"]; [print\\(f, \"\"OK\"\"\\) or None for f in files if not ast.parse\\(open\\(f\\).read\\(\\)\\)]'' } else { Write-Host \"\"Python not found\"\" } }\")"
     ]
   },
   "enabledPlugins": {

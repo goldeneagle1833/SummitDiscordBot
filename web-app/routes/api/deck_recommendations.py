@@ -37,15 +37,17 @@ def _get_card_image_map() -> dict[str, str]:
 
     mapping: dict[str, str] = {}
     if CARD_IMAGES_DIR.exists():
-        for fname in os.listdir(CARD_IMAGES_DIR):
-            if not fname.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                continue
-            # Filename format: {set}-{card_name_with_underscores}-{edition}.ext
-            # Strip extension, split on '-', drop first (set) and last (edition) segments
+        # Process png/jpg first, then webp so webp takes precedence
+        all_files = sorted(os.listdir(CARD_IMAGES_DIR))
+        png_files = [f for f in all_files if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+        webp_files = [f for f in all_files if f.lower().endswith(".webp")]
+        for fname in png_files + webp_files:
+            # Filename format: {set}-{card_name_slug}-{edition}-{rarity}.ext
+            # e.g. pro-witch-ai-f.webp → card name slug is parts[1] = "witch"
             base = re.sub(r"\.(png|jpg|jpeg|webp)$", "", fname, flags=re.IGNORECASE)
             parts = base.split("-")
-            if len(parts) >= 3:
-                name_key = "_".join(parts[1:-1])  # middle segments joined
+            if len(parts) >= 2:
+                name_key = parts[1]  # card name slug is always the second segment
                 mapping[name_key] = fname
     _card_image_map = mapping
     return mapping

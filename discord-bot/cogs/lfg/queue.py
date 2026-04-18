@@ -385,6 +385,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 match_type_label = "Casual"
 
             # Send "Did you go first?" question to the selected reporter
+            reporter_dm_failed = False
             try:
                 await reporter_user.send(
                     f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Did you go first?**\n\n"
@@ -392,10 +393,11 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                     view=went_first_view,
                 )
             except discord.Forbidden:
+                reporter_dm_failed = True
                 try:
                     dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
-                        # Grant channel access to user who can't receive DMs
+                        # Grant channel access and role to user who can't receive DMs
                         guild = self.bot.get_guild(config.GUILD_ID)
                         if guild:
                             member = guild.get_member(reporter_user.id)
@@ -403,6 +405,9 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                                 await dm_channel.set_permissions(
                                     member, read_messages=True, send_messages=True
                                 )
+                                role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+                                if role and role not in member.roles:
+                                    await member.add_roles(role)
                                 logger.info(
                                     f"Granted channel access to {reporter_user.global_name} (can't receive DMs)"
                                 )
@@ -434,7 +439,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 try:
                     dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
-                        # Grant channel access to user who can't receive DMs
+                        # Grant channel access and role to user who can't receive DMs
                         guild = self.bot.get_guild(config.GUILD_ID)
                         if guild:
                             member = guild.get_member(other_user.id)
@@ -442,6 +447,9 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                                 await dm_channel.set_permissions(
                                     member, read_messages=True, send_messages=True
                                 )
+                                role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+                                if role and role not in member.roles:
+                                    await member.add_roles(role)
                                 logger.info(
                                     f"Granted channel access to {other_user.global_name} (can't receive DMs)"
                                 )
@@ -479,10 +487,16 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
 
             await lfg_cog.update_lfg_status()
 
-            await interaction.followup.send(
-                f"{match_type_emoji} {match_type_label} match found! You've been paired with {matched_global}. Check your DMs!",
-                ephemeral=True,
-            )
+            if reporter_dm_failed:
+                await interaction.followup.send(
+                    f"{match_type_emoji} {match_type_label} match found! You've been paired with {matched_global}. Check <#{config.DM_DISABLED_CHANNEL_ID}>!",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    f"{match_type_emoji} {match_type_label} match found! You've been paired with {matched_global}. Check your DMs!",
+                    ephemeral=True,
+                )
         else:
             # Already added to queue inside the lock above
             queue_label = self.queue_type.capitalize()

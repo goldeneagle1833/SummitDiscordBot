@@ -121,7 +121,10 @@ def register_static_routes(app: Flask) -> None:
 
     @app.route("/card-images/<path:filename>")
     def card_images(filename):
-        return send_from_directory(webapp_config.CARD_IMAGES_DIR, filename)
+        response = send_from_directory(webapp_config.CARD_IMAGES_DIR, filename)
+        response.cache_control.max_age = 86400 * 30  # 30 days
+        response.cache_control.public = True
+        return response
 
 
 # Create the app instance

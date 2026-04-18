@@ -382,6 +382,10 @@ class DeckRecRepository:
                 if isinstance(c, dict) and c.get("name")
             )
 
+            if not card_names:
+                logger.warning("Admin deck %s has no card data — skipping as seed", deck_id)
+                return None
+
             avatar_name = row["avatar_name"] or "Unknown"
             if not avatar_name or avatar_name == "Unknown":
                 avatar_name = (deck_data.get("avatar") or [{}])[0].get("name", "Unknown")
@@ -459,6 +463,46 @@ class DeckRecRepository:
         except Exception as e:
             logger.error("Failed to get admin deck ids: %s", e)
             return []
+
+    def compute_cluster_win_rate(self, members: list) -> dict:
+        """Return win/loss record for all decks in a cluster.
+
+        Scans match_records and match_records_archive for rows where the
+        winner or loser curiosa_url belongs to one of the cluster members.
+        """
+        if not members or not self._db_path.exists():
+            return {"wins": 0, "losses": 0, "win_rate": None}
+
+        deck_id_set = {m.deck_id for m in members}
+        wins = 0
+        losses = 0
+
+        try:
+            conn = sqlite3.connect(str(self._db_path))
+            cur = conn.cursor()
+
+            for table in ("match_records_archive", "match_records"):
+                try:
+                    cur.execute(
+                        f"SELECT curiosa_url_winner, curiosa_url_loser FROM {table}"
+                        " WHERE curiosa_url_winner IS NOT NULL OR curiosa_url_loser IS NOT NULL"
+                    )
+                    for url_w, url_l in cur.fetchall():
+                        if self._extract_deck_id(url_w or "") in deck_id_set:
+                            wins += 1
+                        if self._extract_deck_id(url_l or "") in deck_id_set:
+                            losses += 1
+                except sqlite3.OperationalError:
+                    pass
+
+            conn.close()
+        except Exception as e:
+            logger.error("Failed to compute cluster win rate: %s", e)
+            return {"wins": 0, "losses": 0, "win_rate": None}
+
+        total = wins + losses
+        win_rate = round(wins / total, 4) if total > 0 else None
+        return {"wins": wins, "losses": losses, "win_rate": win_rate}
 
     def _extract_deck_id(self, url: str) -> str:
         """Extract Curiosa deck ID from a URL like https://curiosa.io/decks/abc123."""

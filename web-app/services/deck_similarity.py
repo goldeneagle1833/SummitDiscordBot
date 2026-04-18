@@ -136,7 +136,7 @@ def aggregate_archetype(members: list[DeckRecord]) -> dict:
         rate = count / n
         pct = f"{round(rate * 100)}%"
         total_copies = total_copies_counter.get(card_name, count)
-        avg_copies = round(total_copies / n, 2)
+        avg_copies = round(total_copies / count, 2)  # avg among decks that play it
 
         if rate >= 0.8:
             tier = TIER_CORE

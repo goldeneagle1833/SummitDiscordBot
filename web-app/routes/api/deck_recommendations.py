@@ -66,20 +66,20 @@ def _attach_images(cards: list[dict]) -> list[dict]:
 
 
 def _load_and_cluster():
-    """Load all decks and build clusters. Returns (seeds, community, clusters)."""
+    """Load all decks and build clusters. Returns (repo, seeds, community, clusters)."""
     repo = DeckRecRepository()
     all_decks = repo.load_all_decks()
     seeds = [d for d in all_decks if d.is_seed]
     community = [d for d in all_decks if not d.is_seed]
     clusters = build_clusters(seeds, community)
-    return seeds, community, clusters
+    return repo, seeds, community, clusters
 
 
 @deck_rec_bp.route("/decks")
 def get_decks():
     """Return all top-8 archetype seed decks with cluster size preview."""
     try:
-        seeds, _community, clusters = _load_and_cluster()
+        _repo, seeds, _community, clusters = _load_and_cluster()
 
         deck_list = []
         for seed in seeds:
@@ -116,7 +116,7 @@ def get_decks():
 def get_recommendations(deck_id: str):
     """Return aggregated archetype recommendation for a top-8 seed deck."""
     try:
-        seeds, _community, clusters = _load_and_cluster()
+        repo, seeds, _community, clusters = _load_and_cluster()
 
         # Find the seed
         seed = next((s for s in seeds if s.deck_id == deck_id), None)
@@ -126,6 +126,7 @@ def get_recommendations(deck_id: str):
         members = clusters.get(seed.deck_id, [])
         tiers = aggregate_archetype(members)
         avg_sim = average_similarity(seed, members)
+        win_data = repo.compute_cluster_win_rate(members)
 
         return jsonify(
             {
@@ -140,6 +141,9 @@ def get_recommendations(deck_id: str):
                 },
                 "cluster_size": len(members),
                 "avg_similarity": avg_sim,
+                "wins": win_data["wins"],
+                "losses": win_data["losses"],
+                "win_rate": win_data["win_rate"],
                 "core_cards": _attach_images(tiers["core"]),
                 "common_cards": _attach_images(tiers["common"]),
                 "tech_cards": _attach_images(tiers["tech"]),

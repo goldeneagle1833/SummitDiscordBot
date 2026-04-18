@@ -639,6 +639,15 @@
     if (clusterSize) clusterSize.textContent = data.cluster_size;
     if (avgSim) avgSim.textContent = `${Math.round(data.avg_similarity * 100)}%`;
 
+    const winRateStat = document.getElementById("win-rate-stat");
+    const winRateEl = document.getElementById("win-rate");
+    const winLossEl = document.getElementById("win-loss-record");
+    if (data.win_rate != null && winRateStat && winRateEl) {
+      winRateEl.textContent = `${Math.round(data.win_rate * 100)}%`;
+      if (winLossEl) winLossEl.textContent = `(${data.wins}W / ${data.losses}L)`;
+      winRateStat.style.display = "block";
+    }
+
     // Empty cluster message
     if (data.cluster_size === 0) {
       const emptyMsg = document.getElementById("empty-cluster-msg");

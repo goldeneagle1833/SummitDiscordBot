@@ -772,8 +772,11 @@
     const grid = document.getElementById("similar-seeds-grid");
     if (!section || !grid) return;
 
+    // Always show the section (title visible even with no matches)
+    section.style.display = "block";
+
     if (!seeds || seeds.length === 0) {
-      section.style.display = "none";
+      grid.innerHTML = '<div style="color:rgba(255,255,255,0.4);font-size:0.85rem;padding:0.5rem 0;">No similar tournament decks found.</div>';
       return;
     }
 

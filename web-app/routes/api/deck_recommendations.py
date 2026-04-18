@@ -133,8 +133,8 @@ def get_recommendations(deck_id: str):
         avg_sim = average_similarity(seed, members)
         win_data = repo.compute_cluster_win_rate(seed)
 
-        # Find similar tournament seed decks (>= 80% Jaccard similarity)
-        SIMILAR_SEED_THRESHOLD = 0.8
+        # Find similar tournament seed decks (>= 60% Jaccard similarity)
+        SIMILAR_SEED_THRESHOLD = 0.6
         similar_seeds = []
         for other in seeds:
             if other.deck_id == seed.deck_id:

@@ -507,6 +507,55 @@
         color: #f87171;
         border-color: rgba(248,113,113,0.5);
       }
+      /* Cache status bar */
+      #cache-status {
+        max-width: 1200px;
+        margin: -0.75rem auto 1rem;
+        padding: 0 var(--spacing-md);
+        font-size: 0.78rem;
+        color: rgba(255,255,255,0.4);
+        display: none;
+      }
+      .cache-refresh-btn {
+        background: none;
+        border: none;
+        color: rgba(255,255,255,0.55);
+        font-size: 0.78rem;
+        cursor: pointer;
+        padding: 0;
+        text-decoration: underline;
+      }
+      .cache-refresh-btn:hover { color: #fff; }
+      /* Pagination */
+      #deck-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+        padding: 1.5rem 0 2rem;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      .page-btn {
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 6px;
+        color: rgba(255,255,255,0.85);
+        font-size: 0.85rem;
+        padding: 0.4rem 1rem;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+      }
+      .page-btn:hover:not(:disabled) {
+        background: rgba(255,255,255,0.16);
+        border-color: rgba(255,255,255,0.4);
+      }
+      .page-btn:disabled { opacity: 0.3; cursor: default; }
+      .page-info {
+        font-size: 0.85rem;
+        color: rgba(255,255,255,0.75);
+      }
+      .page-count { color: rgba(255,255,255,0.4); }
     </style>
   </head>
   <body class="md:ml-48">
@@ -573,6 +622,8 @@
         <div class="admin-rec-grid" id="admin-rec-grid"></div>
       </div>
 
+      <div id="cache-status"></div>
+
       <div id="tournament-section" style="display:none;">
         <div class="admin-rec-section" style="display:block; margin-bottom:0.5rem;">
           <div class="admin-rec-section-header">
@@ -585,6 +636,7 @@
             No tournament deck data available.
           </div>
           <div class="deck-grid" id="deck-grid" style="display:none;"></div>
+          <div id="deck-pagination"></div>
         </div>
       </div>
     </main>

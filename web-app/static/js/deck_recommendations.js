@@ -56,7 +56,54 @@
   let _activeElements = new Set(); // empty = show all
   let _activeYear = "";
 
+  // Pagination state
+  let _filteredDecks = [];
+  let _currentPage = 1;
+  const PAGE_SIZE = 24;
+
   const _isAdmin = typeof USER_IS_ADMIN !== "undefined" ? USER_IS_ADMIN : false;
+
+  // ------------------------------------------------------------------ //
+  // LocalStorage cache                                                  //
+  // ------------------------------------------------------------------ //
+
+  const CACHE_KEY = "deck_rec_list_v1";
+  const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+  function _loadCache() {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      const cached = JSON.parse(raw);
+      if (Date.now() - cached.timestamp > CACHE_TTL) return null;
+      return cached;
+    } catch { return null; }
+  }
+
+  function _saveCache(decks) {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ decks, timestamp: Date.now() }));
+    } catch { /* quota exceeded or private browsing */ }
+  }
+
+  function _clearCache() {
+    try { localStorage.removeItem(CACHE_KEY); } catch { /* ignore */ }
+  }
+
+  function _updateCacheStatus(fromCache, timestamp) {
+    const el = document.getElementById("cache-status");
+    if (!el) return;
+    if (fromCache && timestamp) {
+      const mins = Math.round((Date.now() - timestamp) / 60000);
+      const label = mins < 1 ? "just now" : `${mins}m ago`;
+      el.innerHTML = `Loaded from cache (${label}) &mdash; <button id="cache-refresh-btn" class="cache-refresh-btn">Refresh</button>`;
+      el.style.display = "block";
+      const btn = document.getElementById("cache-refresh-btn");
+      if (btn) btn.addEventListener("click", () => { _clearCache(); fetchDeckList(); });
+    } else {
+      el.style.display = "none";
+    }
+  }
 
   async function fetchDeckList() {
     const grid = document.getElementById("deck-grid");
@@ -64,6 +111,15 @@
     const errorState = document.getElementById("error-state");
 
     if (!grid) return; // Not on the list page
+
+    // Try local cache first
+    const cached = _loadCache();
+    if (cached) {
+      if (loading) loading.style.display = "none";
+      _processDecks(cached.decks);
+      _updateCacheStatus(true, cached.timestamp);
+      return;
+    }
 
     try {
       const res = await fetch("/api/deck-rec/decks");
@@ -76,26 +132,34 @@
         return;
       }
 
-      // Separate admin recs from regular seeds
-      _adminDecks = data.decks.filter((d) => d.is_admin_rec);
-      _allDecks   = data.decks.filter((d) => !d.is_admin_rec);
-
-      renderAdminSection(_adminDecks);
-
-      // Show tournament section
-      const tournamentSection = document.getElementById("tournament-section");
-      if (tournamentSection) tournamentSection.style.display = "block";
-
-      buildAvatarFilter(_allDecks);
-      buildYearFilter(_allDecks);
-      initElementFilter();
-      applyFilters();
-      grid.style.display = "grid";
+      _saveCache(data.decks);
+      _updateCacheStatus(false, null);
+      _processDecks(data.decks);
     } catch (err) {
       console.error("Failed to load deck list:", err);
       if (loading) loading.style.display = "none";
       if (errorState) errorState.style.display = "block";
     }
+  }
+
+  function _processDecks(decks) {
+    const grid = document.getElementById("deck-grid");
+
+    // Separate admin recs from regular seeds
+    _adminDecks = decks.filter((d) => d.is_admin_rec);
+    _allDecks   = decks.filter((d) => !d.is_admin_rec);
+
+    renderAdminSection(_adminDecks);
+
+    // Show tournament section
+    const tournamentSection = document.getElementById("tournament-section");
+    if (tournamentSection) tournamentSection.style.display = "block";
+
+    buildAvatarFilter(_allDecks);
+    buildYearFilter(_allDecks);
+    initElementFilter();
+    applyFilters();
+    if (grid) grid.style.display = "grid";
   }
 
   // ------------------------------------------------------------------ //
@@ -182,6 +246,7 @@
         return;
       }
       cardEl.remove();
+      _clearCache();
       _adminDecks = _adminDecks.filter((d) => d.deck_id !== deckId);
       const section = document.getElementById("admin-rec-section");
       const grid = document.getElementById("admin-rec-grid");
@@ -300,6 +365,7 @@
           const data = await res.json();
           if (!res.ok) { showModalError(data.error || "Failed to save."); return; }
           closeModal();
+          _clearCache();
           await fetchDeckList();
         } catch (err) {
           console.error("Failed to update deck:", err);
@@ -326,6 +392,7 @@
         const data = await res.json();
         if (!res.ok) { showModalError(data.error || "Failed to add deck."); return; }
         closeModal();
+        _clearCache();
         await fetchDeckList();
       } catch (err) {
         console.error("Failed to add deck:", err);
@@ -527,7 +594,42 @@
       filtered = filtered.filter((d) => String(d.event_year) === String(_activeYear));
     }
 
-    renderDeckGrid(filtered, grid);
+    _filteredDecks = filtered;
+    _currentPage = 1;
+    renderPage();
+  }
+
+  function renderPage() {
+    const grid = document.getElementById("deck-grid");
+    if (!grid) return;
+    const start = (_currentPage - 1) * PAGE_SIZE;
+    renderDeckGrid(_filteredDecks.slice(start, start + PAGE_SIZE), grid);
+    renderPagination();
+  }
+
+  function renderPagination() {
+    const el = document.getElementById("deck-pagination");
+    if (!el) return;
+    const total = Math.max(1, Math.ceil(_filteredDecks.length / PAGE_SIZE));
+    if (total <= 1) { el.innerHTML = ""; return; }
+
+    el.innerHTML = `
+      <button class="page-btn" id="page-prev" ${_currentPage <= 1 ? "disabled" : ""}>&#8592; Prev</button>
+      <span class="page-info">Page ${_currentPage} of ${total} <span class="page-count">(${_filteredDecks.length} decks)</span></span>
+      <button class="page-btn" id="page-next" ${_currentPage >= total ? "disabled" : ""}>Next &#8594;</button>
+    `;
+
+    el.querySelector("#page-prev").addEventListener("click", () => {
+      if (_currentPage > 1) { _currentPage--; renderPage(); _scrollToGrid(); }
+    });
+    el.querySelector("#page-next").addEventListener("click", () => {
+      if (_currentPage < total) { _currentPage++; renderPage(); _scrollToGrid(); }
+    });
+  }
+
+  function _scrollToGrid() {
+    const wrapper = document.getElementById("deck-grid-wrapper");
+    if (wrapper) wrapper.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function renderDeckGrid(decks, container) {

@@ -126,7 +126,7 @@ def get_recommendations(deck_id: str):
         members = clusters.get(seed.deck_id, [])
         tiers = aggregate_archetype(members)
         avg_sim = average_similarity(seed, members)
-        win_data = repo.compute_cluster_win_rate(members)
+        win_data = repo.compute_cluster_win_rate(seed)
 
         return jsonify(
             {

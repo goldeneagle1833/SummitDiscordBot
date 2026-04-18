@@ -74,8 +74,6 @@ class DeckRecord:
     card_quantities: dict = field(default_factory=dict)
     primer: str = ""          # short description shown on admin tile
     stars: int | None = None  # 1–3 star rating
-    wins: int = 0             # match wins tracked from match records
-    losses: int = 0           # match losses tracked from match records
 
 
 class DeckRecRepository:
@@ -113,16 +111,10 @@ class DeckRecRepository:
             if deck.deck_id and deck.deck_id not in seen_ids:
                 seen_ids[deck.deck_id] = deck
 
-        # 3. Match records — community decks, lower priority.
-        # Always accumulate wins/losses even for already-seen deck_ids.
+        # 3. Match records — community decks, lower priority
         for deck in self._load_match_decks():
-            if not deck.deck_id:
-                continue
-            if deck.deck_id not in seen_ids:
+            if deck.deck_id and deck.deck_id not in seen_ids:
                 seen_ids[deck.deck_id] = deck
-            else:
-                seen_ids[deck.deck_id].wins += deck.wins
-                seen_ids[deck.deck_id].losses += deck.losses
 
         return list(seen_ids.values())
 
@@ -313,8 +305,6 @@ class DeckRecRepository:
                 elements=_extract_elements(spellbook),
                 event_year=None,
                 card_quantities=_count_quantities(spellbook),
-                wins=1 if side == "winner" else 0,
-                losses=0 if side == "winner" else 1,
             )
         except Exception as e:
             logger.debug("Skipping malformed match deck (%s): %s", side, e)
@@ -474,17 +464,71 @@ class DeckRecRepository:
             logger.error("Failed to get admin deck ids: %s", e)
             return []
 
-    def compute_cluster_win_rate(self, members: list) -> dict:
-        """Return win/loss record for all decks in a cluster.
+    def compute_cluster_win_rate(self, seed, threshold: float = 0.3) -> dict:
+        """Scan every match row and count wins/losses for decks similar to seed.
 
-        Wins and losses are accumulated during deck loading (one per match row),
-        so this is a simple sum across all cluster members.
+        For each row in match_records and match_records_archive, the winner and
+        loser deck JSON is parsed and its Jaccard similarity against the seed is
+        computed. Rows at or above threshold contribute a win or loss.
         """
-        wins = sum(m.wins for m in members)
-        losses = sum(m.losses for m in members)
+        if not self._db_path.exists():
+            return {"wins": 0, "losses": 0, "win_rate": None}
+
+        seed_cards = seed.card_names
+        wins = 0
+        losses = 0
+
+        try:
+            conn = sqlite3.connect(str(self._db_path))
+            cur = conn.cursor()
+
+            for table in ("match_records_archive", "match_records"):
+                try:
+                    cur.execute(f"""
+                        SELECT json_deck_data_winner, json_deck_data_loser
+                        FROM {table}
+                        WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner NOT IN ('', '{{}}'))
+                           OR (json_deck_data_loser  IS NOT NULL AND json_deck_data_loser  NOT IN ('', '{{}}'))
+                    """)
+                    for json_w, json_l in cur.fetchall():
+                        if json_w and json_w not in ("", "{}"):
+                            w_cards = self._parse_spellbook_names(json_w)
+                            if w_cards and self._jaccard(w_cards, seed_cards) >= threshold:
+                                wins += 1
+                        if json_l and json_l not in ("", "{}"):
+                            l_cards = self._parse_spellbook_names(json_l)
+                            if l_cards and self._jaccard(l_cards, seed_cards) >= threshold:
+                                losses += 1
+                except sqlite3.OperationalError:
+                    pass
+
+            conn.close()
+        except Exception as e:
+            logger.error("Failed to compute cluster win rate: %s", e)
+            return {"wins": 0, "losses": 0, "win_rate": None}
+
         total = wins + losses
         win_rate = round(wins / total, 4) if total > 0 else None
         return {"wins": wins, "losses": losses, "win_rate": win_rate}
+
+    @staticmethod
+    def _parse_spellbook_names(json_str: str) -> frozenset:
+        """Parse deck JSON and return frozenset of lowercase card names."""
+        try:
+            data = json.loads(json_str)
+            spellbook = data.get("spellbook", [])
+            return frozenset(
+                c["name"].strip().lower()
+                for c in spellbook
+                if isinstance(c, dict) and c.get("name")
+            )
+        except Exception:
+            return frozenset()
+
+    @staticmethod
+    def _jaccard(a: frozenset, b: frozenset) -> float:
+        union = len(a | b)
+        return len(a & b) / union if union else 0.0
 
     def _extract_deck_id(self, url: str) -> str:
         """Extract Curiosa deck ID from a URL like https://curiosa.io/decks/abc123."""

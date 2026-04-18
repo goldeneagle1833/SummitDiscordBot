@@ -56,6 +56,7 @@ class DeckRecord:
     curiosa_url: str
     elements: frozenset = field(default_factory=frozenset)
     event_year: int | None = None
+    is_admin_rec: bool = False
 
 
 class DeckRecRepository:
@@ -76,10 +77,10 @@ class DeckRecRepository:
     # ------------------------------------------------------------------ #
 
     def load_all_decks(self) -> list[DeckRecord]:
-        """Load decks from both tournament files and match records DB.
+        """Load decks from tournament files, admin recommendations, and match records DB.
 
-        Tournament seeds take precedence when the same Curiosa deck ID appears
-        in both sources. Returns deduplicated list of DeckRecord objects.
+        Priority order: tournament seeds > admin recs > community match decks.
+        Returns deduplicated list of DeckRecord objects.
         """
         seen_ids: dict[str, DeckRecord] = {}
 
@@ -88,7 +89,12 @@ class DeckRecRepository:
             if deck.deck_id and deck.deck_id not in seen_ids:
                 seen_ids[deck.deck_id] = deck
 
-        # 2. Match records — community decks, lower priority
+        # 2. Admin recommended decks — also seeds
+        for deck in self._load_admin_decks():
+            if deck.deck_id and deck.deck_id not in seen_ids:
+                seen_ids[deck.deck_id] = deck
+
+        # 3. Match records — community decks, lower priority
         for deck in self._load_match_decks():
             if deck.deck_id and deck.deck_id not in seen_ids:
                 seen_ids[deck.deck_id] = deck
@@ -184,6 +190,13 @@ class DeckRecRepository:
     # Match records DB loading                                             #
     # ------------------------------------------------------------------ #
 
+    # Column names in match_records/archive — display name uses "losser" (bot typo),
+    # but deck data columns use "loser" (single s).
+    _MATCH_SIDE_COLS = {
+        "winner": ("json_deck_data_winner", "curiosa_url_winner", "winner_display_name"),
+        "losser": ("json_deck_data_loser",  "curiosa_url_loser",  "losser_display_name"),
+    }
+
     def _load_match_decks(self) -> list[DeckRecord]:
         """Query match_records and match_records_archive for community decks."""
         decks = []
@@ -236,9 +249,7 @@ class DeckRecRepository:
     def _parse_match_deck(self, row: sqlite3.Row, side: str) -> DeckRecord | None:
         """Parse winner or loser deck from a match record row."""
         try:
-            json_col = f"json_deck_data_{side}"
-            url_col = f"curiosa_url_{side}"
-            name_col = f"{side}_display_name"
+            json_col, url_col, name_col = self._MATCH_SIDE_COLS[side]
 
             deck_json_str = row[json_col] if json_col in row.keys() else None
             if not deck_json_str or deck_json_str in ("", "{}"):
@@ -277,6 +288,131 @@ class DeckRecRepository:
         except Exception as e:
             logger.debug("Skipping malformed match deck (%s): %s", side, e)
             return None
+
+    # ------------------------------------------------------------------ #
+    # Admin recommended decks                                              #
+    # ------------------------------------------------------------------ #
+
+    def _ensure_admin_table(self, conn: sqlite3.Connection) -> None:
+        """Create admin_recommended_decks table if it doesn't exist."""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS admin_recommended_decks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                deck_id TEXT UNIQUE NOT NULL,
+                curiosa_url TEXT NOT NULL,
+                deck_name TEXT,
+                avatar_name TEXT,
+                json_deck_data TEXT,
+                added_by TEXT,
+                added_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+
+    def _load_admin_decks(self) -> list[DeckRecord]:
+        """Load admin-recommended decks from the DB, marked as seeds."""
+        decks = []
+        if not self._db_path.exists():
+            return decks
+        try:
+            conn = sqlite3.connect(str(self._db_path))
+            conn.row_factory = sqlite3.Row
+            self._ensure_admin_table(conn)
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT deck_id, curiosa_url, deck_name, avatar_name, json_deck_data
+                FROM admin_recommended_decks
+            """)
+            rows = cur.fetchall()
+            conn.close()
+
+            for row in rows:
+                deck = self._parse_admin_deck(row)
+                if deck:
+                    decks.append(deck)
+        except Exception as e:
+            logger.error("Failed to load admin decks: %s", e)
+
+        logger.info("Loaded %d admin recommended decks", len(decks))
+        return decks
+
+    def _parse_admin_deck(self, row: sqlite3.Row) -> DeckRecord | None:
+        """Parse an admin recommended deck row into a DeckRecord."""
+        try:
+            deck_id = row["deck_id"]
+            if not deck_id:
+                return None
+
+            deck_json_str = row["json_deck_data"] or "{}"
+            deck_data = json.loads(deck_json_str) if deck_json_str not in ("", "{}") else {}
+
+            card_names = frozenset(
+                c["name"].strip().lower()
+                for c in deck_data.get("spellbook", [])
+                if isinstance(c, dict) and c.get("name")
+            )
+
+            avatar_name = row["avatar_name"] or "Unknown"
+            if not avatar_name or avatar_name == "Unknown":
+                avatar_name = (deck_data.get("avatar") or [{}])[0].get("name", "Unknown")
+
+            curiosa_url = row["curiosa_url"] or f"{self.CURIOSA_BASE}{deck_id}"
+
+            return DeckRecord(
+                deck_id=deck_id,
+                deck_name=row["deck_name"] or deck_data.get("name", "Admin Pick"),
+                avatar_name=avatar_name,
+                player_name=deck_data.get("username", "Admin Pick"),
+                event_name="Admin Pick",
+                is_seed=True,
+                card_names=card_names,
+                card_count=len(card_names),
+                curiosa_url=curiosa_url,
+                elements=_extract_elements(deck_data.get("spellbook", [])),
+                event_year=None,
+                is_admin_rec=True,
+            )
+        except Exception as e:
+            logger.debug("Skipping malformed admin deck: %s", e)
+            return None
+
+    def save_admin_deck(self, deck_id: str, curiosa_url: str, deck_name: str,
+                        avatar_name: str, json_deck_data: str, added_by: str) -> None:
+        """Insert or replace an admin recommended deck."""
+        conn = sqlite3.connect(str(self._db_path))
+        self._ensure_admin_table(conn)
+        conn.execute("""
+            INSERT OR REPLACE INTO admin_recommended_decks
+                (deck_id, curiosa_url, deck_name, avatar_name, json_deck_data, added_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (deck_id, curiosa_url, deck_name, avatar_name, json_deck_data, added_by))
+        conn.commit()
+        conn.close()
+
+    def delete_admin_deck(self, deck_id: str) -> bool:
+        """Delete an admin recommended deck. Returns True if a row was deleted."""
+        conn = sqlite3.connect(str(self._db_path))
+        self._ensure_admin_table(conn)
+        cur = conn.execute("DELETE FROM admin_recommended_decks WHERE deck_id = ?", (deck_id,))
+        deleted = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return deleted
+
+    def get_admin_deck_ids(self) -> list[str]:
+        """Return all admin recommended deck IDs."""
+        if not self._db_path.exists():
+            return []
+        try:
+            conn = sqlite3.connect(str(self._db_path))
+            self._ensure_admin_table(conn)
+            cur = conn.execute("SELECT deck_id FROM admin_recommended_decks")
+            ids = [row[0] for row in cur.fetchall()]
+            conn.close()
+            return ids
+        except Exception as e:
+            logger.error("Failed to get admin deck ids: %s", e)
+            return []
 
     def _extract_deck_id(self, url: str) -> str:
         """Extract Curiosa deck ID from a URL like https://curiosa.io/decks/abc123."""

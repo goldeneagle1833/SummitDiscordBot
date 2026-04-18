@@ -267,6 +267,176 @@
         padding: 3rem 0;
         font-size: 0.95rem;
       }
+      /* Admin recommendations section */
+      .admin-rec-section {
+        max-width: 1200px;
+        margin: 0 auto 2rem;
+        padding: 0 var(--spacing-md);
+        display: none;
+      }
+      .admin-rec-section-header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1rem;
+      }
+      .admin-rec-section-title {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #fff;
+        letter-spacing: 0.02em;
+      }
+      .admin-rec-badge {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: rgba(255,215,0,0.9);
+        background: rgba(255,215,0,0.12);
+        border: 1px solid rgba(255,215,0,0.35);
+        border-radius: 4px;
+        padding: 0.15rem 0.5rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .admin-rec-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 1rem;
+      }
+      .admin-rec-card {
+        background: rgba(255, 215, 0, 0.07);
+        border: 1px solid rgba(255, 215, 0, 0.25);
+        border-radius: 8px;
+        padding: 1.25rem;
+        text-decoration: none;
+        color: inherit;
+        display: block;
+        transition: background 0.2s, border-color 0.2s, transform 0.15s;
+      }
+      .admin-rec-card:hover {
+        background: rgba(255, 215, 0, 0.14);
+        border-color: rgba(255, 215, 0, 0.5);
+        transform: translateY(-2px);
+      }
+      /* Add deck button */
+      .add-deck-btn {
+        margin-left: auto;
+        background: rgba(255,215,0,0.12);
+        border: 1px solid rgba(255,215,0,0.35);
+        border-radius: 6px;
+        color: rgba(255,215,0,0.9);
+        font-size: 0.82rem;
+        font-weight: 600;
+        padding: 0.35rem 0.75rem;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+        white-space: nowrap;
+      }
+      .add-deck-btn:hover {
+        background: rgba(255,215,0,0.22);
+        border-color: rgba(255,215,0,0.6);
+      }
+      /* Modal */
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.65);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s;
+      }
+      .modal-overlay.open {
+        opacity: 1;
+        pointer-events: all;
+      }
+      .modal-box {
+        background: #1e1e2e;
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 10px;
+        padding: 1.75rem;
+        width: 420px;
+        max-width: 90vw;
+      }
+      .modal-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 1.25rem;
+      }
+      .modal-field label {
+        display: block;
+        font-size: 0.82rem;
+        color: rgba(255,255,255,0.65);
+        margin-bottom: 0.35rem;
+      }
+      .modal-field input {
+        width: 100%;
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.25);
+        border-radius: 6px;
+        color: #fff;
+        font-size: 0.9rem;
+        padding: 0.45rem 0.75rem;
+        outline: none;
+        box-sizing: border-box;
+        transition: border-color 0.15s;
+      }
+      .modal-field input:focus {
+        border-color: rgba(255,215,0,0.5);
+      }
+      .modal-field input::placeholder { color: rgba(255,255,255,0.3); }
+      .modal-actions {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: flex-end;
+        margin-top: 1.25rem;
+      }
+      .modal-cancel {
+        background: none;
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 6px;
+        color: rgba(255,255,255,0.65);
+        font-size: 0.85rem;
+        padding: 0.45rem 1rem;
+        cursor: pointer;
+      }
+      .modal-cancel:hover { border-color: rgba(255,255,255,0.4); color: #fff; }
+      .modal-submit {
+        background: rgba(255,215,0,0.15);
+        border: 1px solid rgba(255,215,0,0.4);
+        border-radius: 6px;
+        color: rgba(255,215,0,0.95);
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 0.45rem 1.25rem;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .modal-submit:hover { background: rgba(255,215,0,0.25); }
+      .modal-submit:disabled { opacity: 0.5; cursor: default; }
+      .modal-error {
+        margin-top: 0.75rem;
+        font-size: 0.82rem;
+        color: #f87171;
+        display: none;
+      }
+      .admin-remove-btn {
+        background: none;
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 4px;
+        color: rgba(255,255,255,0.45);
+        font-size: 0.72rem;
+        padding: 0.15rem 0.4rem;
+        cursor: pointer;
+        transition: color 0.1s, border-color 0.1s;
+      }
+      .admin-remove-btn:hover {
+        color: #f87171;
+        border-color: rgba(248,113,113,0.5);
+      }
     </style>
   </head>
   <body class="md:ml-48">
@@ -321,6 +491,18 @@
 
       </div>
 
+      <!-- Summit Admin Recommendations section (shown when admin decks exist) -->
+      <div class="admin-rec-section" id="admin-rec-section">
+        <div class="admin-rec-section-header">
+          <span class="admin-rec-section-title">Summit Admin Recommendations</span>
+          <span class="admin-rec-badge">Staff Pick</span>
+          {% if user_is_admin %}
+          <button class="add-deck-btn" id="add-deck-btn">+ Add Deck</button>
+          {% endif %}
+        </div>
+        <div class="admin-rec-grid" id="admin-rec-grid"></div>
+      </div>
+
       <div id="deck-grid-wrapper">
         <div id="loading" class="spinner"></div>
         <div id="error-state" class="error-msg" style="display:none;">
@@ -330,9 +512,30 @@
       </div>
     </main>
 
+    {% if user_is_admin %}
+    <!-- Add Deck Modal -->
+    <div class="modal-overlay" id="add-deck-modal">
+      <div class="modal-box">
+        <div class="modal-title">Add Admin Recommendation</div>
+        <div class="modal-field">
+          <label for="modal-url-input">Curiosa Deck URL</label>
+          <input type="text" id="modal-url-input" placeholder="https://curiosa.io/decks/…" autocomplete="off" />
+        </div>
+        <div class="modal-error" id="modal-error"></div>
+        <div class="modal-actions">
+          <button class="modal-cancel" id="modal-cancel">Cancel</button>
+          <button class="modal-submit" id="modal-submit">Add Deck</button>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     {% include 'components/footer.html' %}
     <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
-    <script>const AVATAR_IMAGE_FILES = {{ avatar_image_files | tojson | safe }};</script>
+    <script>
+      const AVATAR_IMAGE_FILES = {{ avatar_image_files | tojson | safe }};
+      const USER_IS_ADMIN = {{ user_is_admin | tojson }};
+    </script>
     <script
       src="{{ url_for('static', filename='js/deck_recommendations.js') }}?v={{ app_version }}">
     </script>

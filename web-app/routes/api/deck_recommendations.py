@@ -5,14 +5,17 @@ Endpoints:
   GET /api/deck-rec/<deck_id>/recommendations    — archetype aggregation for a seed
 """
 
+import json
 import logging
 import os
 import re
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request, session
 
 from repositories.deck_rec_repo import DeckRecRepository
+from services.curiosa import CuriosaService
 from services.deck_similarity import aggregate_archetype, average_similarity, build_clusters
+from utils.auth import is_admin, require_admin
 from webapp_config import CARD_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
@@ -35,11 +38,11 @@ def _get_card_image_map() -> dict[str, str]:
     mapping: dict[str, str] = {}
     if CARD_IMAGES_DIR.exists():
         for fname in os.listdir(CARD_IMAGES_DIR):
-            if not fname.lower().endswith((".png", ".jpg", ".jpeg")):
+            if not fname.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
                 continue
             # Filename format: {set}-{card_name_with_underscores}-{edition}.ext
             # Strip extension, split on '-', drop first (set) and last (edition) segments
-            base = re.sub(r"\.(png|jpg|jpeg)$", "", fname, flags=re.IGNORECASE)
+            base = re.sub(r"\.(png|jpg|jpeg|webp)$", "", fname, flags=re.IGNORECASE)
             parts = base.split("-")
             if len(parts) >= 3:
                 name_key = "_".join(parts[1:-1])  # middle segments joined
@@ -93,6 +96,7 @@ def get_decks():
                     "cluster_size": len(cluster_members),
                     "elements": sorted(seed.elements),
                     "event_year": seed.event_year,
+                    "is_admin_rec": seed.is_admin_rec,
                 }
             )
 
@@ -144,3 +148,66 @@ def get_recommendations(deck_id: str):
     except Exception as e:
         logger.exception("Error in get_recommendations for %s: %s", deck_id, e)
         return jsonify({"error": "Failed to compute recommendations"}), 500
+
+
+@deck_rec_bp.route("/admin/add-deck", methods=["POST"])
+@require_admin
+def admin_add_deck():
+    """Add an admin-recommended deck by Curiosa URL. Admin only."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        curiosa_url = (data.get("curiosa_url") or "").strip()
+        if not curiosa_url:
+            return jsonify({"error": "curiosa_url is required"}), 400
+
+        svc = CuriosaService()
+        deck_id = svc.get_deck_id_from_url(curiosa_url)
+        if not deck_id:
+            return jsonify({"error": "Could not extract deck ID from URL"}), 400
+
+        json_deck_data = svc.fetch_deck_data(curiosa_url)
+        deck_data = json.loads(json_deck_data) if json_deck_data not in ("{}", "") else {}
+
+        deck_name = deck_data.get("name", "") or ""
+        avatar_name = (deck_data.get("avatar") or [{}])[0].get("name", "") or ""
+        added_by = session.get("username") or str(session.get("user_id", "admin"))
+
+        repo = DeckRecRepository()
+        repo.save_admin_deck(
+            deck_id=deck_id,
+            curiosa_url=curiosa_url,
+            deck_name=deck_name,
+            avatar_name=avatar_name,
+            json_deck_data=json_deck_data,
+            added_by=added_by,
+        )
+
+        # Invalidate card image cache so new deck renders correctly
+        global _card_image_map
+        _card_image_map = None
+
+        return jsonify({
+            "ok": True,
+            "deck_id": deck_id,
+            "deck_name": deck_name,
+            "avatar_name": avatar_name,
+        })
+
+    except Exception as e:
+        logger.exception("Error in admin_add_deck: %s", e)
+        return jsonify({"error": "Failed to add deck"}), 500
+
+
+@deck_rec_bp.route("/admin/remove-deck/<deck_id>", methods=["DELETE"])
+@require_admin
+def admin_remove_deck(deck_id: str):
+    """Remove an admin-recommended deck. Admin only."""
+    try:
+        repo = DeckRecRepository()
+        deleted = repo.delete_admin_deck(deck_id)
+        if not deleted:
+            return jsonify({"error": "Deck not found"}), 404
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.exception("Error in admin_remove_deck for %s: %s", deck_id, e)
+        return jsonify({"error": "Failed to remove deck"}), 500

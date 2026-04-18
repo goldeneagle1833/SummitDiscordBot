@@ -18,13 +18,13 @@
     if (!avatarName || _avatarImages.length === 0) return null;
     const norm = _normalize(avatarName);
     for (const img of _avatarImages) {
-      if (_normalize(img.replace(/\.(png|jpg|jpeg)$/i, "")) === norm) return img;
+      if (_normalize(img.replace(/\.(png|jpg|jpeg|webp)$/i, "")) === norm) return img;
     }
     for (const img of _avatarImages) {
-      if (_normalize(img.replace(/\.(png|jpg|jpeg)$/i, "")).includes(norm)) return img;
+      if (_normalize(img.replace(/\.(png|jpg|jpeg|webp)$/i, "")).includes(norm)) return img;
     }
     for (const img of _avatarImages) {
-      if (norm.includes(_normalize(img.replace(/\.(png|jpg|jpeg)$/i, "")))) return img;
+      if (norm.includes(_normalize(img.replace(/\.(png|jpg|jpeg|webp)$/i, "")))) return img;
     }
     return null;
   }
@@ -50,10 +50,13 @@
   }
 
   // All decks cached after first fetch, used for client-side filtering
-  let _allDecks = [];
+  let _allDecks = [];        // non-admin tournament/community seeds
+  let _adminDecks = [];      // admin recommended decks
   let _activeAvatar = "all";
   let _activeElements = new Set(); // empty = show all
   let _activeYear = "";
+
+  const _isAdmin = typeof USER_IS_ADMIN !== "undefined" ? USER_IS_ADMIN : false;
 
   async function fetchDeckList() {
     const grid = document.getElementById("deck-grid");
@@ -73,7 +76,12 @@
         return;
       }
 
-      _allDecks = data.decks;
+      // Separate admin recs from regular seeds
+      _adminDecks = data.decks.filter((d) => d.is_admin_rec);
+      _allDecks   = data.decks.filter((d) => !d.is_admin_rec);
+
+      renderAdminSection(_adminDecks);
+
       buildAvatarFilter(_allDecks);
       buildYearFilter(_allDecks);
       initElementFilter();
@@ -83,6 +91,162 @@
       console.error("Failed to load deck list:", err);
       if (loading) loading.style.display = "none";
       if (errorState) errorState.style.display = "block";
+    }
+  }
+
+  // ------------------------------------------------------------------ //
+  // Admin recommendations section                                       //
+  // ------------------------------------------------------------------ //
+
+  function renderAdminSection(decks) {
+    const section = document.getElementById("admin-rec-section");
+    const grid = document.getElementById("admin-rec-grid");
+    if (!section || !grid) return;
+
+    // Show section if there are admin decks OR if current user is admin
+    if (decks.length === 0 && !_isAdmin) return;
+    section.style.display = "block";
+
+    grid.innerHTML = "";
+    decks.forEach((deck) => {
+      const a = document.createElement("a");
+      a.href = `/deck-rec/${encodeURIComponent(deck.deck_id)}`;
+      a.className = "deck-card admin-rec-card";
+
+      const clusterLabel =
+        deck.cluster_size === 1 ? "1 similar build" : `${deck.cluster_size} similar builds`;
+
+      const avatarImg = getAvatarImagePath(deck.avatar_name);
+      const avatarImgHtml = avatarImg
+        ? `<img class="deck-card-avatar-img" src="/avatar-images/${escHtml(avatarImg)}" alt="${escHtml(deck.avatar_name)}" loading="lazy">`
+        : "";
+
+      const elementIconsHtml = renderElementIcons(deck.elements);
+
+      a.innerHTML = `
+        <div class="deck-card-header">
+          ${avatarImgHtml}
+          <div class="deck-card-name" title="${escHtml(deck.deck_name)}">${escHtml(deck.deck_name)}</div>
+        </div>
+        <div class="deck-card-meta">${escHtml(deck.avatar_name)}</div>
+        ${elementIconsHtml ? `<div class="deck-card-elements">${elementIconsHtml}</div>` : ""}
+        <div class="deck-card-cluster">Community: <span>${escHtml(clusterLabel)}</span></div>
+        ${_isAdmin ? `<div style="margin-top:0.5rem;text-align:right;"><button class="admin-remove-btn" data-deck-id="${escHtml(deck.deck_id)}" title="Remove">✕ Remove</button></div>` : ""}
+      `;
+
+      if (_isAdmin) {
+        const removeBtn = a.querySelector(".admin-remove-btn");
+        if (removeBtn) {
+          removeBtn.addEventListener("click", async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!confirm(`Remove "${deck.deck_name}" from admin recommendations?`)) return;
+            await removeAdminDeck(deck.deck_id, a);
+          });
+        }
+      }
+
+      grid.appendChild(a);
+    });
+  }
+
+  async function removeAdminDeck(deckId, cardEl) {
+    try {
+      const res = await fetch(`/api/deck-rec/admin/remove-deck/${encodeURIComponent(deckId)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Failed to remove deck");
+        return;
+      }
+      cardEl.remove();
+      _adminDecks = _adminDecks.filter((d) => d.deck_id !== deckId);
+      const section = document.getElementById("admin-rec-section");
+      const grid = document.getElementById("admin-rec-grid");
+      if (section && grid && grid.children.length === 0 && !_isAdmin) {
+        section.style.display = "none";
+      }
+    } catch (err) {
+      console.error("Failed to remove admin deck:", err);
+      alert("Failed to remove deck");
+    }
+  }
+
+  // ------------------------------------------------------------------ //
+  // Add Deck Modal (admin only)                                         //
+  // ------------------------------------------------------------------ //
+
+  function initAddDeckModal() {
+    const btn = document.getElementById("add-deck-btn");
+    const modal = document.getElementById("add-deck-modal");
+    const cancelBtn = document.getElementById("modal-cancel");
+    const submitBtn = document.getElementById("modal-submit");
+    const urlInput = document.getElementById("modal-url-input");
+    const errorEl = document.getElementById("modal-error");
+
+    if (!btn || !modal) return;
+
+    function openModal() {
+      modal.classList.add("open");
+      urlInput.value = "";
+      if (errorEl) { errorEl.style.display = "none"; errorEl.textContent = ""; }
+      setTimeout(() => urlInput.focus(), 50);
+    }
+
+    function closeModal() {
+      modal.classList.remove("open");
+    }
+
+    btn.addEventListener("click", openModal);
+    cancelBtn.addEventListener("click", closeModal);
+    modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+
+    submitBtn.addEventListener("click", async () => {
+      const url = (urlInput.value || "").trim();
+      if (!url) {
+        showModalError("Please enter a Curiosa deck URL.");
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Adding…";
+      if (errorEl) { errorEl.style.display = "none"; errorEl.textContent = ""; }
+
+      try {
+        const res = await fetch("/api/deck-rec/admin/add-deck", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ curiosa_url: url }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showModalError(data.error || "Failed to add deck.");
+          return;
+        }
+
+        closeModal();
+        // Reload the full deck list to show the new deck
+        await fetchDeckList();
+      } catch (err) {
+        console.error("Failed to add deck:", err);
+        showModalError("Network error. Please try again.");
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Add Deck";
+      }
+    });
+
+    urlInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") submitBtn.click();
+    });
+
+    function showModalError(msg) {
+      if (!errorEl) return;
+      errorEl.textContent = msg;
+      errorEl.style.display = "block";
     }
   }
 
@@ -566,5 +730,6 @@
   document.addEventListener("DOMContentLoaded", () => {
     fetchDeckList();
     fetchRecommendations();
+    initAddDeckModal();
   });
 })();

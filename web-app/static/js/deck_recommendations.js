@@ -896,6 +896,9 @@
 
   let _popup = null;
   let _pinnedRow = null;
+  let _popupHover = false;
+  let _popupScale = 1.0;
+  const _POPUP_BASE_W = 220;
   const _imgCache = {}; // imageFile → HTMLImageElement (preloaded)
 
   function _preload(imageFile) {
@@ -918,6 +921,19 @@
           _pinnedRow = null;
         }
       });
+      _popup.addEventListener("wheel", (e) => {
+        if (!_popup.classList.contains("visible")) return;
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        _popupScale = Math.min(3.0, Math.max(0.4, _popupScale + delta));
+        _popup.querySelector("img").style.width = `${Math.round(_POPUP_BASE_W * _popupScale)}px`;
+      }, { passive: false });
+      // Keep popup visible while hovering over it
+      _popup.addEventListener("mouseenter", () => { _popupHover = true; });
+      _popup.addEventListener("mouseleave", () => {
+        _popupHover = false;
+        if (!_pinnedRow) hideCardPopup();
+      });
     }
     return _popup;
   }
@@ -925,13 +941,15 @@
   function showCardPopup(imageFile, anchorEl) {
     if (_pinnedRow) return; // don't override a pinned popup
     const popup = _getOrCreatePopup();
-    popup.querySelector("img").src = `/card-images/${imageFile}`;
+    const img = popup.querySelector("img");
+    img.src = `/card-images/${imageFile}`;
+    img.style.width = `${Math.round(_POPUP_BASE_W * _popupScale)}px`;
     _positionPopup(popup, anchorEl);
     popup.classList.add("visible");
   }
 
   function hideCardPopup() {
-    if (_pinnedRow) return;
+    if (_pinnedRow || _popupHover) return;
     if (_popup) _popup.classList.remove("visible");
   }
 
@@ -947,7 +965,9 @@
     if (_pinnedRow) _pinnedRow.classList.remove("card-selected");
     _pinnedRow = anchorEl;
     _pinnedRow.classList.add("card-selected");
-    popup.querySelector("img").src = `/card-images/${imageFile}`;
+    const img = popup.querySelector("img");
+    img.src = `/card-images/${imageFile}`;
+    img.style.width = `${Math.round(_POPUP_BASE_W * _popupScale)}px`;
     _positionPopup(popup, anchorEl);
     popup.classList.add("visible", "pinned");
   }

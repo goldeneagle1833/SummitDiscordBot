@@ -114,9 +114,16 @@ def aggregate_archetype(members: list[DeckRecord]) -> dict:
         return empty
 
     n = len(members)
-    counter: Counter = Counter()
+    # presence_counter: how many decks include each card (for inclusion rate)
+    presence_counter: Counter = Counter()
+    # total_copies_counter: total copies summed across all decks
+    total_copies_counter: Counter = Counter()
     for deck in members:
-        counter.update(deck.card_names)
+        presence_counter.update(deck.card_names)  # frozenset — each card once per deck
+        if deck.card_quantities:
+            total_copies_counter.update(deck.card_quantities)
+        else:
+            total_copies_counter.update(deck.card_names)  # fallback: 1 copy per deck
 
     tiers: dict[str, list] = {
         TIER_CORE: [],
@@ -125,9 +132,11 @@ def aggregate_archetype(members: list[DeckRecord]) -> dict:
         TIER_FRINGE: [],
     }
 
-    for card_name, count in counter.items():
+    for card_name, count in presence_counter.items():
         rate = count / n
         pct = f"{round(rate * 100)}%"
+        total_copies = total_copies_counter.get(card_name, count)
+        avg_copies = round(total_copies / n, 2)
 
         if rate >= 0.8:
             tier = TIER_CORE
@@ -144,6 +153,7 @@ def aggregate_archetype(members: list[DeckRecord]) -> dict:
                 "count": count,
                 "inclusion_rate": round(rate, 4),
                 "inclusion_pct": pct,
+                "avg_copies": avg_copies,
                 "tier": tier,
             }
         )

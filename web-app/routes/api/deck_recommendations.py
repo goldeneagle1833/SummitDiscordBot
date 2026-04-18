@@ -97,6 +97,8 @@ def get_decks():
                     "elements": sorted(seed.elements),
                     "event_year": seed.event_year,
                     "is_admin_rec": seed.is_admin_rec,
+                    "primer": seed.primer or "",
+                    "stars": seed.stars,
                 }
             )
 
@@ -160,6 +162,10 @@ def admin_add_deck():
         if not curiosa_url:
             return jsonify({"error": "curiosa_url is required"}), 400
 
+        primer = (data.get("primer") or "").strip()
+        raw_stars = data.get("stars")
+        stars = int(raw_stars) if raw_stars in (1, 2, 3, "1", "2", "3") else None
+
         svc = CuriosaService()
         deck_id = svc.get_deck_id_from_url(curiosa_url)
         if not deck_id:
@@ -180,6 +186,8 @@ def admin_add_deck():
             avatar_name=avatar_name,
             json_deck_data=json_deck_data,
             added_by=added_by,
+            primer=primer,
+            stars=stars,
         )
 
         # Invalidate card image cache so new deck renders correctly
@@ -196,6 +204,26 @@ def admin_add_deck():
     except Exception as e:
         logger.exception("Error in admin_add_deck: %s", e)
         return jsonify({"error": "Failed to add deck"}), 500
+
+
+@deck_rec_bp.route("/admin/update-deck/<deck_id>", methods=["PATCH"])
+@require_admin
+def admin_update_deck(deck_id: str):
+    """Update primer and stars for an existing admin deck. Admin only."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        primer = (data.get("primer") or "").strip()
+        raw_stars = data.get("stars")
+        stars = int(raw_stars) if raw_stars in (1, 2, 3, "1", "2", "3") else None
+
+        repo = DeckRecRepository()
+        updated = repo.update_admin_deck_meta(deck_id, primer, stars)
+        if not updated:
+            return jsonify({"error": "Deck not found"}), 404
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.exception("Error in admin_update_deck for %s: %s", deck_id, e)
+        return jsonify({"error": "Failed to update deck"}), 500
 
 
 @deck_rec_bp.route("/admin/remove-deck/<deck_id>", methods=["DELETE"])

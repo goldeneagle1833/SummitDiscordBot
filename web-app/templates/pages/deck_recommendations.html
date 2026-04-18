@@ -372,7 +372,9 @@
         color: rgba(255,255,255,0.65);
         margin-bottom: 0.35rem;
       }
-      .modal-field input {
+      .modal-field + .modal-field { margin-top: 0.9rem; }
+      .modal-field input,
+      .modal-field textarea {
         width: 100%;
         background: rgba(255,255,255,0.08);
         border: 1px solid rgba(255,255,255,0.25);
@@ -383,11 +385,79 @@
         outline: none;
         box-sizing: border-box;
         transition: border-color 0.15s;
+        font-family: inherit;
       }
-      .modal-field input:focus {
+      .modal-field textarea {
+        resize: vertical;
+        min-height: 72px;
+      }
+      .modal-field input:focus,
+      .modal-field textarea:focus {
         border-color: rgba(255,215,0,0.5);
       }
-      .modal-field input::placeholder { color: rgba(255,255,255,0.3); }
+      .modal-field input::placeholder,
+      .modal-field textarea::placeholder { color: rgba(255,255,255,0.3); }
+      /* Star picker */
+      .star-picker {
+        display: flex;
+        gap: 0.35rem;
+        margin-top: 0.25rem;
+      }
+      .star-picker button {
+        background: none;
+        border: none;
+        font-size: 1.4rem;
+        cursor: pointer;
+        color: rgba(255,255,255,0.2);
+        line-height: 1;
+        padding: 0;
+        transition: color 0.1s, transform 0.1s;
+      }
+      .star-picker button:hover,
+      .star-picker button.active {
+        color: #fbbf24;
+        transform: scale(1.15);
+      }
+      .star-picker-hint {
+        font-size: 0.75rem;
+        color: rgba(255,255,255,0.35);
+        margin-top: 0.2rem;
+      }
+      /* Star display on tile */
+      .deck-card-stars {
+        margin-top: 0.45rem;
+        font-size: 1rem;
+        line-height: 1;
+        color: #fbbf24;
+        letter-spacing: 0.05em;
+      }
+      .deck-card-primer {
+        margin-top: 0.4rem;
+        font-size: 0.78rem;
+        color: rgba(255,255,255,0.55);
+        font-style: italic;
+        line-height: 1.4;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+      }
+      /* Edit button on admin tile */
+      .admin-edit-btn {
+        background: none;
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 4px;
+        color: rgba(255,255,255,0.4);
+        font-size: 0.72rem;
+        padding: 0.15rem 0.4rem;
+        cursor: pointer;
+        transition: color 0.1s, border-color 0.1s;
+        margin-right: 0.35rem;
+      }
+      .admin-edit-btn:hover {
+        color: rgba(255,215,0,0.85);
+        border-color: rgba(255,215,0,0.4);
+      }
       .modal-actions {
         display: flex;
         gap: 0.75rem;
@@ -503,23 +573,43 @@
         <div class="admin-rec-grid" id="admin-rec-grid"></div>
       </div>
 
-      <div id="deck-grid-wrapper">
-        <div id="loading" class="spinner"></div>
-        <div id="error-state" class="error-msg" style="display:none;">
-          No tournament deck data available.
+      <div id="tournament-section" style="display:none;">
+        <div class="admin-rec-section" style="display:block; margin-bottom:0.5rem;">
+          <div class="admin-rec-section-header">
+            <span class="admin-rec-section-title">Tournament Archetypes</span>
+          </div>
         </div>
-        <div class="deck-grid" id="deck-grid" style="display:none;"></div>
+        <div id="deck-grid-wrapper">
+          <div id="loading" class="spinner"></div>
+          <div id="error-state" class="error-msg" style="display:none;">
+            No tournament deck data available.
+          </div>
+          <div class="deck-grid" id="deck-grid" style="display:none;"></div>
+        </div>
       </div>
     </main>
 
     {% if user_is_admin %}
-    <!-- Add Deck Modal -->
+    <!-- Add / Edit Deck Modal -->
     <div class="modal-overlay" id="add-deck-modal">
       <div class="modal-box">
-        <div class="modal-title">Add Admin Recommendation</div>
-        <div class="modal-field">
+        <div class="modal-title" id="modal-title">Add Admin Recommendation</div>
+        <div class="modal-field" id="modal-url-field">
           <label for="modal-url-input">Curiosa Deck URL</label>
           <input type="text" id="modal-url-input" placeholder="https://curiosa.io/decks/…" autocomplete="off" />
+        </div>
+        <div class="modal-field">
+          <label for="modal-primer-input">Short Description / Primer <span style="color:rgba(255,255,255,0.3);font-weight:400;">(optional)</span></label>
+          <textarea id="modal-primer-input" placeholder="Why you should try this deck…" rows="3"></textarea>
+        </div>
+        <div class="modal-field">
+          <label>Star Rating <span style="color:rgba(255,255,255,0.3);font-weight:400;">(optional)</span></label>
+          <div class="star-picker" id="modal-star-picker">
+            <button type="button" data-star="1" title="1 star">★</button>
+            <button type="button" data--star="2" data-star="2" title="2 stars">★</button>
+            <button type="button" data-star="3" title="3 stars">★</button>
+          </div>
+          <div class="star-picker-hint">Click again to clear</div>
         </div>
         <div class="modal-error" id="modal-error"></div>
         <div class="modal-actions">

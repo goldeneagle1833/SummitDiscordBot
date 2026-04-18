@@ -129,8 +129,10 @@
       .card-row { cursor: default; }
       .card-row[data-card-image] { cursor: pointer; }
       .card-row:hover { background: rgba(255, 255, 255, 0.08); }
-      .card-row-name { color: rgba(255, 255, 255, 0.85); }
+      .card-row-name { color: rgba(255, 255, 255, 0.85); flex: 1; }
+      .card-row-stats { display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0; }
       .card-row-pct  { color: rgba(255, 255, 255, 0.4); font-size: 0.78rem; }
+      .card-row-avg  { color: rgba(255, 255, 255, 0.3); font-size: 0.72rem; }
 
       /* Avatar image in seed header */
       .seed-avatar-img {
@@ -145,8 +147,8 @@
 
       /* Card image popup */
       #card-img-popup {
-        position: absolute;
-        z-index: 500;
+        position: fixed;
+        z-index: 9000;
         pointer-events: none;
         opacity: 0;
         transition: opacity 0.15s;

@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import sqlite3
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -35,6 +36,18 @@ def _extract_elements(spellbook: list) -> frozenset:
     return frozenset(elements)
 
 
+def _count_quantities(spellbook: list) -> dict[str, int]:
+    """Return a {normalized_card_name: copy_count} dict from a spellbook list."""
+    counts: Counter = Counter()
+    for card in spellbook:
+        if not isinstance(card, dict):
+            continue
+        name = card.get("name", "")
+        if name:
+            counts[name.strip().lower()] += 1
+    return dict(counts)
+
+
 def _extract_year(text: str) -> int | None:
     """Return the first 20xx year found in text, or None."""
     m = _YEAR_RE.search(text)
@@ -57,6 +70,10 @@ class DeckRecord:
     elements: frozenset = field(default_factory=frozenset)
     event_year: int | None = None
     is_admin_rec: bool = False
+    # card_name (lowercase) → number of copies in the deck
+    card_quantities: dict = field(default_factory=dict)
+    primer: str = ""          # short description shown on admin tile
+    stars: int | None = None  # 1–3 star rating
 
 
 class DeckRecRepository:
@@ -160,15 +177,16 @@ class DeckRecRepository:
             if not deck_id:
                 return None
 
+            spellbook = raw.get("spellbook", [])
             card_names = frozenset(
                 c["name"].strip().lower()
-                for c in raw.get("spellbook", [])
+                for c in spellbook
                 if isinstance(c, dict) and c.get("name")
             )
             if not card_names:
                 return None
 
-            spellbook = raw.get("spellbook", [])
+            card_quantities = _count_quantities(spellbook)
             return DeckRecord(
                 deck_id=deck_id,
                 deck_name=raw.get("name", "Unnamed Deck") or "Unnamed Deck",
@@ -181,6 +199,7 @@ class DeckRecRepository:
                 curiosa_url=f"{self.CURIOSA_BASE}{deck_id}",
                 elements=_extract_elements(spellbook),
                 event_year=_extract_year(event_name),
+                card_quantities=card_quantities,
             )
         except Exception as e:
             logger.debug("Skipping malformed tournament deck: %s", e)
@@ -261,9 +280,10 @@ class DeckRecRepository:
                 return None
 
             deck_data = json.loads(deck_json_str)
+            spellbook = deck_data.get("spellbook", [])
             card_names = frozenset(
                 c["name"].strip().lower()
-                for c in deck_data.get("spellbook", [])
+                for c in spellbook
                 if isinstance(c, dict) and c.get("name")
             )
             if not card_names:
@@ -282,8 +302,9 @@ class DeckRecRepository:
                 card_names=card_names,
                 card_count=len(card_names),
                 curiosa_url=curiosa_url or f"{self.CURIOSA_BASE}{deck_id}",
-                elements=_extract_elements(deck_data.get("spellbook", [])),
+                elements=_extract_elements(spellbook),
                 event_year=None,
+                card_quantities=_count_quantities(spellbook),
             )
         except Exception as e:
             logger.debug("Skipping malformed match deck (%s): %s", side, e)
@@ -294,7 +315,7 @@ class DeckRecRepository:
     # ------------------------------------------------------------------ #
 
     def _ensure_admin_table(self, conn: sqlite3.Connection) -> None:
-        """Create admin_recommended_decks table if it doesn't exist."""
+        """Create admin_recommended_decks table and migrate missing columns."""
         conn.execute("""
             CREATE TABLE IF NOT EXISTS admin_recommended_decks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -304,9 +325,17 @@ class DeckRecRepository:
                 avatar_name TEXT,
                 json_deck_data TEXT,
                 added_by TEXT,
-                added_at TEXT DEFAULT CURRENT_TIMESTAMP
+                added_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                primer TEXT,
+                stars INTEGER
             )
         """)
+        # Migrate existing installs that predate these columns
+        for col, definition in (("primer", "TEXT"), ("stars", "INTEGER")):
+            try:
+                conn.execute(f"ALTER TABLE admin_recommended_decks ADD COLUMN {col} {definition}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
         conn.commit()
 
     def _load_admin_decks(self) -> list[DeckRecord]:
@@ -320,7 +349,7 @@ class DeckRecRepository:
             self._ensure_admin_table(conn)
             cur = conn.cursor()
             cur.execute("""
-                SELECT deck_id, curiosa_url, deck_name, avatar_name, json_deck_data
+                SELECT deck_id, curiosa_url, deck_name, avatar_name, json_deck_data, primer, stars
                 FROM admin_recommended_decks
             """)
             rows = cur.fetchall()
@@ -346,9 +375,10 @@ class DeckRecRepository:
             deck_json_str = row["json_deck_data"] or "{}"
             deck_data = json.loads(deck_json_str) if deck_json_str not in ("", "{}") else {}
 
+            spellbook = deck_data.get("spellbook", [])
             card_names = frozenset(
                 c["name"].strip().lower()
-                for c in deck_data.get("spellbook", [])
+                for c in spellbook
                 if isinstance(c, dict) and c.get("name")
             )
 
@@ -368,26 +398,42 @@ class DeckRecRepository:
                 card_names=card_names,
                 card_count=len(card_names),
                 curiosa_url=curiosa_url,
-                elements=_extract_elements(deck_data.get("spellbook", [])),
+                elements=_extract_elements(spellbook),
                 event_year=None,
                 is_admin_rec=True,
+                card_quantities=_count_quantities(spellbook),
+                primer=row["primer"] or "",
+                stars=row["stars"],
             )
         except Exception as e:
             logger.debug("Skipping malformed admin deck: %s", e)
             return None
 
     def save_admin_deck(self, deck_id: str, curiosa_url: str, deck_name: str,
-                        avatar_name: str, json_deck_data: str, added_by: str) -> None:
+                        avatar_name: str, json_deck_data: str, added_by: str,
+                        primer: str = "", stars: int | None = None) -> None:
         """Insert or replace an admin recommended deck."""
         conn = sqlite3.connect(str(self._db_path))
         self._ensure_admin_table(conn)
         conn.execute("""
             INSERT OR REPLACE INTO admin_recommended_decks
-                (deck_id, curiosa_url, deck_name, avatar_name, json_deck_data, added_by)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (deck_id, curiosa_url, deck_name, avatar_name, json_deck_data, added_by))
+                (deck_id, curiosa_url, deck_name, avatar_name, json_deck_data, added_by, primer, stars)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (deck_id, curiosa_url, deck_name, avatar_name, json_deck_data, added_by, primer or None, stars))
         conn.commit()
         conn.close()
+
+    def update_admin_deck_meta(self, deck_id: str, primer: str, stars: int | None) -> bool:
+        """Update just the primer and stars for an existing admin deck."""
+        conn = sqlite3.connect(str(self._db_path))
+        self._ensure_admin_table(conn)
+        cur = conn.execute("""
+            UPDATE admin_recommended_decks SET primer = ?, stars = ? WHERE deck_id = ?
+        """, (primer or None, stars, deck_id))
+        updated = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return updated
 
     def delete_admin_deck(self, deck_id: str) -> bool:
         """Delete an admin recommended deck. Returns True if a row was deleted."""

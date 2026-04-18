@@ -82,6 +82,10 @@
 
       renderAdminSection(_adminDecks);
 
+      // Show tournament section
+      const tournamentSection = document.getElementById("tournament-section");
+      if (tournamentSection) tournamentSection.style.display = "block";
+
       buildAvatarFilter(_allDecks);
       buildYearFilter(_allDecks);
       initElementFilter();
@@ -122,6 +126,13 @@
         : "";
 
       const elementIconsHtml = renderElementIcons(deck.elements);
+      const starsHtml = deck.stars ? "★".repeat(deck.stars) + "☆".repeat(3 - deck.stars) : "";
+      const primerHtml = deck.primer ? `<div class="deck-card-primer">${escHtml(deck.primer)}</div>` : "";
+      const adminActionsHtml = _isAdmin
+        ? `<div style="margin-top:0.5rem;text-align:right;">
+             <button class="admin-edit-btn" title="Edit">✎ Edit</button><button class="admin-remove-btn" data-deck-id="${escHtml(deck.deck_id)}" title="Remove">✕ Remove</button>
+           </div>`
+        : "";
 
       a.innerHTML = `
         <div class="deck-card-header">
@@ -129,12 +140,22 @@
           <div class="deck-card-name" title="${escHtml(deck.deck_name)}">${escHtml(deck.deck_name)}</div>
         </div>
         <div class="deck-card-meta">${escHtml(deck.avatar_name)}</div>
+        ${starsHtml ? `<div class="deck-card-stars">${escHtml(starsHtml)}</div>` : ""}
         ${elementIconsHtml ? `<div class="deck-card-elements">${elementIconsHtml}</div>` : ""}
+        ${primerHtml}
         <div class="deck-card-cluster">Community: <span>${escHtml(clusterLabel)}</span></div>
-        ${_isAdmin ? `<div style="margin-top:0.5rem;text-align:right;"><button class="admin-remove-btn" data-deck-id="${escHtml(deck.deck_id)}" title="Remove">✕ Remove</button></div>` : ""}
+        ${adminActionsHtml}
       `;
 
       if (_isAdmin) {
+        const editBtn = a.querySelector(".admin-edit-btn");
+        if (editBtn) {
+          editBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (window._openAdminEditModal) window._openAdminEditModal(deck);
+          });
+        }
         const removeBtn = a.querySelector(".admin-remove-btn");
         if (removeBtn) {
           removeBtn.addEventListener("click", async (e) => {
@@ -177,58 +198,134 @@
   // Add Deck Modal (admin only)                                         //
   // ------------------------------------------------------------------ //
 
+  // Track modal mode: "add" or "edit" (and which deck_id when editing)
+  let _modalMode = "add";
+  let _modalEditDeckId = null;
+
   function initAddDeckModal() {
-    const btn = document.getElementById("add-deck-btn");
+    const addBtn = document.getElementById("add-deck-btn");
     const modal = document.getElementById("add-deck-modal");
     const cancelBtn = document.getElementById("modal-cancel");
     const submitBtn = document.getElementById("modal-submit");
     const urlInput = document.getElementById("modal-url-input");
+    const primerInput = document.getElementById("modal-primer-input");
+    const urlField = document.getElementById("modal-url-field");
+    const titleEl = document.getElementById("modal-title");
     const errorEl = document.getElementById("modal-error");
 
-    if (!btn || !modal) return;
+    if (!modal) return;
 
-    function openModal() {
-      modal.classList.add("open");
-      urlInput.value = "";
+    // ---- Star picker ----
+    let _selectedStars = null;
+    const starBtns = modal.querySelectorAll(".star-picker button[data-star]");
+
+    function renderStars(val) {
+      starBtns.forEach((b) => {
+        b.classList.toggle("active", Number(b.dataset.star) <= val);
+      });
+    }
+
+    starBtns.forEach((b) => {
+      b.addEventListener("click", () => {
+        const val = Number(b.dataset.star);
+        if (_selectedStars === val) {
+          // click again → clear
+          _selectedStars = null;
+          renderStars(0);
+        } else {
+          _selectedStars = val;
+          renderStars(val);
+        }
+      });
+    });
+
+    function resetModal() {
+      if (urlInput) urlInput.value = "";
+      if (primerInput) primerInput.value = "";
+      _selectedStars = null;
+      renderStars(0);
       if (errorEl) { errorEl.style.display = "none"; errorEl.textContent = ""; }
-      setTimeout(() => urlInput.focus(), 50);
+    }
+
+    function openAddModal() {
+      _modalMode = "add";
+      _modalEditDeckId = null;
+      resetModal();
+      if (titleEl) titleEl.textContent = "Add Admin Recommendation";
+      if (urlField) urlField.style.display = "block";
+      if (submitBtn) submitBtn.textContent = "Add Deck";
+      modal.classList.add("open");
+      setTimeout(() => urlInput && urlInput.focus(), 50);
+    }
+
+    function openEditModal(deck) {
+      _modalMode = "edit";
+      _modalEditDeckId = deck.deck_id;
+      resetModal();
+      if (titleEl) titleEl.textContent = `Edit — ${deck.deck_name || deck.deck_id}`;
+      if (urlField) urlField.style.display = "none"; // URL can't change
+      if (primerInput) primerInput.value = deck.primer || "";
+      _selectedStars = deck.stars || null;
+      renderStars(_selectedStars || 0);
+      if (submitBtn) submitBtn.textContent = "Save Changes";
+      modal.classList.add("open");
+      setTimeout(() => primerInput && primerInput.focus(), 50);
     }
 
     function closeModal() {
       modal.classList.remove("open");
     }
 
-    btn.addEventListener("click", openModal);
-    cancelBtn.addEventListener("click", closeModal);
+    // Expose openEditModal globally so renderAdminSection can call it
+    window._openAdminEditModal = openEditModal;
+
+    if (addBtn) addBtn.addEventListener("click", openAddModal);
+    if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
     modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && modal.classList.contains("open")) closeModal(); });
 
     submitBtn.addEventListener("click", async () => {
-      const url = (urlInput.value || "").trim();
-      if (!url) {
-        showModalError("Please enter a Curiosa deck URL.");
+      if (errorEl) { errorEl.style.display = "none"; errorEl.textContent = ""; }
+      const primer = (primerInput ? primerInput.value : "").trim();
+
+      if (_modalMode === "edit") {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Saving…";
+        try {
+          const res = await fetch(`/api/deck-rec/admin/update-deck/${encodeURIComponent(_modalEditDeckId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ primer, stars: _selectedStars }),
+          });
+          const data = await res.json();
+          if (!res.ok) { showModalError(data.error || "Failed to save."); return; }
+          closeModal();
+          await fetchDeckList();
+        } catch (err) {
+          console.error("Failed to update deck:", err);
+          showModalError("Network error. Please try again.");
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Save Changes";
+        }
         return;
       }
 
+      // Add mode
+      const url = (urlInput ? urlInput.value : "").trim();
+      if (!url) { showModalError("Please enter a Curiosa deck URL."); return; }
+
       submitBtn.disabled = true;
       submitBtn.textContent = "Adding…";
-      if (errorEl) { errorEl.style.display = "none"; errorEl.textContent = ""; }
-
       try {
         const res = await fetch("/api/deck-rec/admin/add-deck", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ curiosa_url: url }),
+          body: JSON.stringify({ curiosa_url: url, primer, stars: _selectedStars }),
         });
         const data = await res.json();
-
-        if (!res.ok) {
-          showModalError(data.error || "Failed to add deck.");
-          return;
-        }
-
+        if (!res.ok) { showModalError(data.error || "Failed to add deck."); return; }
         closeModal();
-        // Reload the full deck list to show the new deck
         await fetchDeckList();
       } catch (err) {
         console.error("Failed to add deck:", err);
@@ -239,9 +336,7 @@
       }
     });
 
-    urlInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") submitBtn.click();
-    });
+    if (urlInput) urlInput.addEventListener("keydown", (e) => { if (e.key === "Enter") submitBtn.click(); });
 
     function showModalError(msg) {
       if (!errorEl) return;
@@ -578,10 +673,21 @@
       const li = document.createElement("li");
       li.className = "card-row";
       if (card.image) li.dataset.cardImage = card.image;
+
+      const avgHtml = card.avg_copies != null
+        ? `<span class="card-row-avg" title="avg copies per deck">×${card.avg_copies.toFixed(2)}</span>`
+        : "";
+
       li.innerHTML = `
         <span class="card-row-name">${escHtml(card.card_name)}</span>
-        <span class="card-row-pct">${escHtml(card.inclusion_pct)}</span>
+        <span class="card-row-stats">
+          ${avgHtml}
+          <span class="card-row-pct">${escHtml(card.inclusion_pct)}</span>
+        </span>
       `;
+
+      // Always attach hover/click — show popup if image available
+      li.style.cursor = card.image ? "pointer" : "default";
       if (card.image) {
         li.addEventListener("mouseenter", (e) => showCardPopup(card.image, e.currentTarget));
         li.addEventListener("mouseleave", hideCardPopup);
@@ -686,14 +792,18 @@
   }
 
   function _positionPopup(popup, anchorEl) {
+    // popup uses position:fixed — viewport coords only, no scroll offset needed
     const rect = anchorEl.getBoundingClientRect();
     const popupW = 220;
     const spaceRight = window.innerWidth - rect.right;
     const left = spaceRight >= popupW + 12
-      ? rect.right + 8 + window.scrollX
-      : rect.left - popupW - 8 + window.scrollX;
-    popup.style.left = `${left}px`;
-    popup.style.top = `${rect.top + window.scrollY}px`;
+      ? rect.right + 8
+      : rect.left - popupW - 8;
+    // Keep popup within viewport vertically
+    const maxTop = window.innerHeight - 320; // approx popup height
+    const top = Math.min(rect.top, Math.max(0, maxTop));
+    popup.style.left = `${Math.max(4, left)}px`;
+    popup.style.top = `${top}px`;
   }
 
   // ------------------------------------------------------------------ //

@@ -14,7 +14,7 @@ from flask import Blueprint, jsonify, request, session
 
 from repositories.deck_rec_repo import DeckRecRepository
 from services.curiosa import CuriosaService
-from services.deck_similarity import aggregate_archetype, average_similarity, build_clusters
+from services.deck_similarity import SIMILARITY_THRESHOLD, aggregate_archetype, average_similarity, build_clusters, jaccard
 from utils.auth import is_admin, require_admin
 from webapp_config import CARD_IMAGES_DIR
 
@@ -118,14 +118,17 @@ def get_decks():
 def get_recommendations(deck_id: str):
     """Return aggregated archetype recommendation for a top-8 seed deck."""
     try:
-        repo, seeds, _community, clusters = _load_and_cluster()
+        repo, seeds, community, _clusters = _load_and_cluster()
 
         # Find the seed
         seed = next((s for s in seeds if s.deck_id == deck_id), None)
         if seed is None:
             return jsonify({"error": f"Deck '{deck_id}' not found among archetype seeds"}), 404
 
-        members = clusters.get(seed.deck_id, [])
+        # Use inclusive matching so admin picks and tournament seeds are treated
+        # identically — show all community decks above the threshold, not just
+        # those whose single best-match seed happens to be this one.
+        members = [d for d in community if jaccard(seed.card_names, d.card_names) >= SIMILARITY_THRESHOLD]
         tiers = aggregate_archetype(members)
         avg_sim = average_similarity(seed, members)
         win_data = repo.compute_cluster_win_rate(seed)

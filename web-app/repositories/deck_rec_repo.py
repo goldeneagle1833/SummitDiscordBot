@@ -6,6 +6,7 @@ similarity-based archetype recommendations.
 
 import json
 import logging
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,6 +14,31 @@ from pathlib import Path
 from webapp_config import MATCH_RECORDS_DB_PATH, TOP_8_DIR
 
 logger = logging.getLogger(__name__)
+
+
+_VALID_ELEMENTS = frozenset({"Earth", "Fire", "Water", "Air"})
+_YEAR_RE = re.compile(r"\b(20\d{2})\b")
+
+
+def _extract_elements(spellbook: list) -> frozenset:
+    """Return frozenset of valid element strings present in the spellbook."""
+    elements = set()
+    for card in spellbook:
+        if not isinstance(card, dict):
+            continue
+        val = card.get("elements", "")
+        if isinstance(val, str):
+            for part in val.split(","):
+                part = part.strip()
+                if part in _VALID_ELEMENTS:
+                    elements.add(part)
+    return frozenset(elements)
+
+
+def _extract_year(text: str) -> int | None:
+    """Return the first 20xx year found in text, or None."""
+    m = _YEAR_RE.search(text)
+    return int(m.group(1)) if m else None
 
 
 @dataclass
@@ -28,6 +54,8 @@ class DeckRecord:
     card_names: frozenset
     card_count: int
     curiosa_url: str
+    elements: frozenset = field(default_factory=frozenset)
+    event_year: int | None = None
 
 
 class DeckRecRepository:
@@ -134,6 +162,7 @@ class DeckRecRepository:
             if not card_names:
                 return None
 
+            spellbook = raw.get("spellbook", [])
             return DeckRecord(
                 deck_id=deck_id,
                 deck_name=raw.get("name", "Unnamed Deck") or "Unnamed Deck",
@@ -144,6 +173,8 @@ class DeckRecRepository:
                 card_names=card_names,
                 card_count=len(card_names),
                 curiosa_url=f"{self.CURIOSA_BASE}{deck_id}",
+                elements=_extract_elements(spellbook),
+                event_year=_extract_year(event_name),
             )
         except Exception as e:
             logger.debug("Skipping malformed tournament deck: %s", e)
@@ -240,6 +271,8 @@ class DeckRecRepository:
                 card_names=card_names,
                 card_count=len(card_names),
                 curiosa_url=curiosa_url or f"{self.CURIOSA_BASE}{deck_id}",
+                elements=_extract_elements(deck_data.get("spellbook", [])),
+                event_year=None,
             )
         except Exception as e:
             logger.debug("Skipping malformed match deck (%s): %s", side, e)

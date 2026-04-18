@@ -133,16 +133,22 @@ def live_popular_cards():
     return render_template("pages/live_popular_cards.html")
 
 
+def _avatar_image_files():
+    if not AVATAR_IMAGES_DIR.exists():
+        return []
+    return [f for f in os.listdir(AVATAR_IMAGES_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+
+
 @pages_bp.route("/deck-rec")
 def deck_rec():
     """Sorcery Deck Rec — archetype list page."""
-    return render_template("pages/deck_recommendations.html")
+    return render_template("pages/deck_recommendations.html", avatar_image_files=_avatar_image_files())
 
 
 @pages_bp.route("/deck-rec/<deck_id>")
 def deck_rec_detail(deck_id: str):
     """Sorcery Deck Rec — archetype recommendation detail page."""
-    return render_template("pages/deck_recommendation.html", deck_id=deck_id)
+    return render_template("pages/deck_recommendation.html", deck_id=deck_id, avatar_image_files=_avatar_image_files())
 
 
 @pages_bp.route("/elements")

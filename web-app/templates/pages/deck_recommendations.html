@@ -47,11 +47,25 @@
         border-color: rgba(255, 255, 255, 0.4);
         transform: translateY(-2px);
       }
+      .deck-card-header {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        margin-bottom: 0.35rem;
+      }
+      .deck-card-avatar-img {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        object-fit: cover;
+        object-position: top center;
+        flex-shrink: 0;
+        background: rgba(255,255,255,0.08);
+      }
       .deck-card-name {
         font-size: 1rem;
         font-weight: 600;
         color: #fff;
-        margin-bottom: 0.35rem;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -73,13 +87,74 @@
         color: rgba(255, 255, 255, 0.9);
         font-weight: 600;
       }
-      .avatar-filter-bar {
+      .deck-card-elements {
+        display: flex;
+        gap: 3px;
+        align-items: center;
+        margin-top: 0.5rem;
+      }
+      .deck-card-elements img {
+        width: 18px;
+        height: 18px;
+      }
+      .filter-bar {
         max-width: 1200px;
         margin: 0 auto 1.5rem;
         padding: 0 var(--spacing-md);
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 0.75rem;
+        gap: 1rem;
+      }
+      .filter-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-shrink: 0;
+      }
+      .filter-group label {
+        font-size: 0.82rem;
+        color: rgba(255, 255, 255, 0.7);
+        white-space: nowrap;
+      }
+      /* year select */
+      #year-select {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 6px;
+        color: #fff;
+        font-size: 0.85rem;
+        padding: 0.35rem 0.6rem;
+        outline: none;
+        cursor: pointer;
+      }
+      #year-select option { background: #1e1e2e; }
+      /* element toggle buttons */
+      .el-btn {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 5px;
+        padding: 0.25rem 0.5rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        font-size: 0.78rem;
+        color: rgba(255, 255, 255, 0.7);
+        transition: background 0.15s, border-color 0.15s, color 0.15s;
+        white-space: nowrap;
+      }
+      .el-btn img { width: 16px; height: 16px; }
+      .el-btn:hover { background: rgba(255,255,255,0.14); color: #fff; }
+      .el-btn.active {
+        background: rgba(255,255,255,0.22);
+        border-color: rgba(255,255,255,0.5);
+        color: #fff;
+        font-weight: 600;
+      }
+      /* keep the avatar search wrap styles below */
+      .avatar-filter-bar {
+        display: contents; /* absorbed into .filter-bar */
       }
       .avatar-filter-bar label {
         font-size: 0.82rem;
@@ -206,14 +281,44 @@
         </p>
       </section>
 
-      <div class="avatar-filter-bar" id="avatar-filter-bar" style="display:none;">
-        <label for="avatar-search">Avatar:</label>
-        <div class="avatar-search-wrap">
-          <input id="avatar-search" type="text" placeholder="Search avatars…" autocomplete="off" />
-          <button class="avatar-search-clear" id="avatar-search-clear" aria-label="Clear">✕</button>
-          <div class="avatar-dropdown" id="avatar-dropdown"></div>
+      <div class="filter-bar" id="filter-bar" style="display:none;">
+
+        <!-- Avatar search -->
+        <div class="filter-group">
+          <label for="avatar-search">Avatar:</label>
+          <div class="avatar-search-wrap">
+            <input id="avatar-search" type="text" placeholder="Search avatars…" autocomplete="off" />
+            <button class="avatar-search-clear" id="avatar-search-clear" aria-label="Clear">✕</button>
+            <div class="avatar-dropdown" id="avatar-dropdown"></div>
+          </div>
+          <div id="avatar-active-tag"></div>
         </div>
-        <div id="avatar-active-tag"></div>
+
+        <!-- Element filter -->
+        <div class="filter-group" id="element-filter-group">
+          <label>Elements:</label>
+          <button class="el-btn" data-element="Fire">
+            <img src="/avatar-images/fire.png" alt="Fire"> Fire
+          </button>
+          <button class="el-btn" data-element="Water">
+            <img src="/avatar-images/water.png" alt="Water"> Water
+          </button>
+          <button class="el-btn" data-element="Earth">
+            <img src="/avatar-images/earth.png" alt="Earth"> Earth
+          </button>
+          <button class="el-btn" data-element="Air">
+            <img src="/avatar-images/wind.png" alt="Air"> Air
+          </button>
+        </div>
+
+        <!-- Year filter -->
+        <div class="filter-group" id="year-filter-group" style="display:none;">
+          <label for="year-select">Year:</label>
+          <select id="year-select">
+            <option value="">All years</option>
+          </select>
+        </div>
+
       </div>
 
       <div id="deck-grid-wrapper">
@@ -227,6 +332,7 @@
 
     {% include 'components/footer.html' %}
     <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
+    <script>const AVATAR_IMAGE_FILES = {{ avatar_image_files | tojson | safe }};</script>
     <script
       src="{{ url_for('static', filename='js/deck_recommendations.js') }}?v={{ app_version }}">
     </script>

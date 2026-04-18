@@ -5,12 +5,55 @@
   "use strict";
 
   // ------------------------------------------------------------------ //
+  // Avatar image helpers (shared by both pages)                        //
+  // ------------------------------------------------------------------ //
+
+  const _avatarImages = typeof AVATAR_IMAGE_FILES !== "undefined" ? AVATAR_IMAGE_FILES : [];
+
+  function _normalize(str) {
+    return str.toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  function getAvatarImagePath(avatarName) {
+    if (!avatarName || _avatarImages.length === 0) return null;
+    const norm = _normalize(avatarName);
+    for (const img of _avatarImages) {
+      if (_normalize(img.replace(/\.(png|jpg|jpeg)$/i, "")) === norm) return img;
+    }
+    for (const img of _avatarImages) {
+      if (_normalize(img.replace(/\.(png|jpg|jpeg)$/i, "")).includes(norm)) return img;
+    }
+    for (const img of _avatarImages) {
+      if (norm.includes(_normalize(img.replace(/\.(png|jpg|jpeg)$/i, "")))) return img;
+    }
+    return null;
+  }
+
+  // ------------------------------------------------------------------ //
   // List page: /deck-rec                                                //
   // ------------------------------------------------------------------ //
+
+  // Element icon map (same files used in player match history)
+  const ELEMENT_ICONS = {
+    Fire:  "fire.png",
+    Water: "water.png",
+    Earth: "earth.png",
+    Air:   "wind.png",
+  };
+
+  function renderElementIcons(elements) {
+    if (!elements || elements.length === 0) return "";
+    return elements
+      .filter((el) => ELEMENT_ICONS[el])
+      .map((el) => `<img src="/avatar-images/${ELEMENT_ICONS[el]}" alt="${escHtml(el)}" title="${escHtml(el)}" width="18" height="18">`)
+      .join("");
+  }
 
   // All decks cached after first fetch, used for client-side filtering
   let _allDecks = [];
   let _activeAvatar = "all";
+  let _activeElements = new Set(); // empty = show all
+  let _activeYear = "";
 
   async function fetchDeckList() {
     const grid = document.getElementById("deck-grid");
@@ -32,7 +75,9 @@
 
       _allDecks = data.decks;
       buildAvatarFilter(_allDecks);
-      applyAvatarFilter();
+      buildYearFilter(_allDecks);
+      initElementFilter();
+      applyFilters();
       grid.style.display = "grid";
     } catch (err) {
       console.error("Failed to load deck list:", err);
@@ -42,7 +87,7 @@
   }
 
   function buildAvatarFilter(decks) {
-    const bar = document.getElementById("avatar-filter-bar");
+    const bar = document.getElementById("filter-bar");
     const input = document.getElementById("avatar-search");
     const clearBtn = document.getElementById("avatar-search-clear");
     const dropdown = document.getElementById("avatar-dropdown");
@@ -109,7 +154,7 @@
         </span>`;
       activeTag.querySelector("button").addEventListener("click", clearFilter);
 
-      applyAvatarFilter();
+      applyFilters();
     }
 
     function clearFilter() {
@@ -118,7 +163,7 @@
       clearBtn.style.display = "none";
       activeTag.innerHTML = "";
       closeDropdown();
-      applyAvatarFilter();
+      applyFilters();
     }
 
     input.addEventListener("input", () => {
@@ -164,14 +209,64 @@
     bar.style.display = "flex";
   }
 
-  function applyAvatarFilter() {
+  function buildYearFilter(decks) {
+    const group = document.getElementById("year-filter-group");
+    const sel = document.getElementById("year-select");
+    if (!group || !sel) return;
+
+    const years = [...new Set(decks.map((d) => d.event_year).filter(Boolean))].sort((a, b) => b - a);
+    if (years.length === 0) return;
+
+    years.forEach((yr) => {
+      const opt = document.createElement("option");
+      opt.value = yr;
+      opt.textContent = yr;
+      sel.appendChild(opt);
+    });
+
+    sel.addEventListener("change", () => {
+      _activeYear = sel.value;
+      applyFilters();
+    });
+
+    group.style.display = "flex";
+  }
+
+  function initElementFilter() {
+    document.querySelectorAll(".el-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const el = btn.dataset.element;
+        if (_activeElements.has(el)) {
+          _activeElements.delete(el);
+          btn.classList.remove("active");
+        } else {
+          _activeElements.add(el);
+          btn.classList.add("active");
+        }
+        applyFilters();
+      });
+    });
+  }
+
+  function applyFilters() {
     const grid = document.getElementById("deck-grid");
     if (!grid) return;
 
-    const filtered =
-      _activeAvatar === "all"
-        ? _allDecks
-        : _allDecks.filter((d) => d.avatar_name === _activeAvatar);
+    let filtered = _allDecks;
+
+    if (_activeAvatar !== "all") {
+      filtered = filtered.filter((d) => d.avatar_name === _activeAvatar);
+    }
+
+    if (_activeElements.size > 0) {
+      filtered = filtered.filter((d) =>
+        d.elements && [..._activeElements].every((el) => d.elements.includes(el))
+      );
+    }
+
+    if (_activeYear) {
+      filtered = filtered.filter((d) => String(d.event_year) === String(_activeYear));
+    }
 
     renderDeckGrid(filtered, grid);
   }
@@ -194,10 +289,21 @@
           ? "1 similar build"
           : `${deck.cluster_size} similar builds`;
 
+      const avatarImg = getAvatarImagePath(deck.avatar_name);
+      const avatarImgHtml = avatarImg
+        ? `<img class="deck-card-avatar-img" src="/avatar-images/${escHtml(avatarImg)}" alt="${escHtml(deck.avatar_name)}" loading="lazy">`
+        : "";
+
+      const elementIconsHtml = renderElementIcons(deck.elements);
+
       a.innerHTML = `
-        <div class="deck-card-name" title="${escHtml(deck.deck_name)}">${escHtml(deck.deck_name)}</div>
+        <div class="deck-card-header">
+          ${avatarImgHtml}
+          <div class="deck-card-name" title="${escHtml(deck.deck_name)}">${escHtml(deck.deck_name)}</div>
+        </div>
         <div class="deck-card-meta">${escHtml(deck.avatar_name)}</div>
         <div class="deck-card-meta">${escHtml(deck.event_name)}</div>
+        ${elementIconsHtml ? `<div class="deck-card-elements">${elementIconsHtml}</div>` : ""}
         <div class="deck-card-cluster">Community: <span>${escHtml(clusterLabel)}</span></div>
       `;
       container.appendChild(a);
@@ -255,7 +361,12 @@
     const seedLink = document.getElementById("seed-link");
 
     if (seedName) seedName.textContent = data.seed.deck_name || "Unnamed Deck";
-    if (seedAvatar) seedAvatar.textContent = data.seed.avatar_name;
+    if (seedAvatar) {
+      const imgPath = getAvatarImagePath(data.seed.avatar_name);
+      seedAvatar.innerHTML = imgPath
+        ? `<img class="seed-avatar-img" src="/avatar-images/${escHtml(imgPath)}" alt="${escHtml(data.seed.avatar_name)}" loading="lazy"> ${escHtml(data.seed.avatar_name)}`
+        : escHtml(data.seed.avatar_name);
+    }
     if (seedEvent) seedEvent.textContent = data.seed.event_name;
     if (seedPlayer) seedPlayer.textContent = data.seed.player_name;
     if (seedLink) {
@@ -302,10 +413,16 @@
     cards.forEach((card) => {
       const li = document.createElement("li");
       li.className = "card-row";
+      if (card.image) li.dataset.cardImage = card.image;
       li.innerHTML = `
         <span class="card-row-name">${escHtml(card.card_name)}</span>
         <span class="card-row-pct">${escHtml(card.inclusion_pct)}</span>
       `;
+      if (card.image) {
+        li.addEventListener("mouseenter", (e) => showCardPopup(card.image, e.currentTarget));
+        li.addEventListener("mouseleave", hideCardPopup);
+        li.addEventListener("click", (e) => toggleCardPopupPin(card.image, e.currentTarget));
+      }
       list.appendChild(li);
     });
 
@@ -352,6 +469,67 @@
 
       btn.textContent = visible ? "Hide Fringe Cards" : "Show Fringe Cards";
     });
+  }
+
+  // ------------------------------------------------------------------ //
+  // Card image popup                                                   //
+  // ------------------------------------------------------------------ //
+
+  let _popup = null;
+  let _pinnedRow = null;
+
+  function _getOrCreatePopup() {
+    if (!_popup) {
+      _popup = document.createElement("div");
+      _popup.id = "card-img-popup";
+      _popup.innerHTML = `<img alt="Card image">`;
+      document.body.appendChild(_popup);
+      document.addEventListener("click", (e) => {
+        if (_pinnedRow && !_pinnedRow.contains(e.target)) {
+          hideCardPopup();
+          _pinnedRow = null;
+        }
+      });
+    }
+    return _popup;
+  }
+
+  function showCardPopup(imageFile, anchorEl) {
+    if (_pinnedRow) return; // don't override a pinned popup
+    const popup = _getOrCreatePopup();
+    popup.querySelector("img").src = `/card-images/${imageFile}`;
+    _positionPopup(popup, anchorEl);
+    popup.classList.add("visible");
+  }
+
+  function hideCardPopup() {
+    if (_pinnedRow) return;
+    if (_popup) _popup.classList.remove("visible");
+  }
+
+  function toggleCardPopupPin(imageFile, anchorEl) {
+    const popup = _getOrCreatePopup();
+    if (_pinnedRow === anchorEl) {
+      // Unpin
+      _pinnedRow = null;
+      popup.classList.remove("visible", "pinned");
+      return;
+    }
+    _pinnedRow = anchorEl;
+    popup.querySelector("img").src = `/card-images/${imageFile}`;
+    _positionPopup(popup, anchorEl);
+    popup.classList.add("visible", "pinned");
+  }
+
+  function _positionPopup(popup, anchorEl) {
+    const rect = anchorEl.getBoundingClientRect();
+    const popupW = 220;
+    const spaceRight = window.innerWidth - rect.right;
+    const left = spaceRight >= popupW + 12
+      ? rect.right + 8 + window.scrollX
+      : rect.left - popupW - 8 + window.scrollX;
+    popup.style.left = `${left}px`;
+    popup.style.top = `${rect.top + window.scrollY}px`;
   }
 
   // ------------------------------------------------------------------ //

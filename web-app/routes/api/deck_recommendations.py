@@ -6,15 +6,60 @@ Endpoints:
 """
 
 import logging
+import os
+import re
 
 from flask import Blueprint, jsonify
 
 from repositories.deck_rec_repo import DeckRecRepository
 from services.deck_similarity import aggregate_archetype, average_similarity, build_clusters
+from webapp_config import CARD_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
 
 deck_rec_bp = Blueprint("deck_rec", __name__)
+
+# ---------------------------------------------------------------------------
+# Card image lookup — built once, cached at module level
+# ---------------------------------------------------------------------------
+
+_card_image_map: dict[str, str] | None = None
+
+
+def _get_card_image_map() -> dict[str, str]:
+    """Return a {normalized_card_name: filename} dict built from CARD_IMAGES_DIR."""
+    global _card_image_map
+    if _card_image_map is not None:
+        return _card_image_map
+
+    mapping: dict[str, str] = {}
+    if CARD_IMAGES_DIR.exists():
+        for fname in os.listdir(CARD_IMAGES_DIR):
+            if not fname.lower().endswith((".png", ".jpg", ".jpeg")):
+                continue
+            # Filename format: {set}-{card_name_with_underscores}-{edition}.ext
+            # Strip extension, split on '-', drop first (set) and last (edition) segments
+            base = re.sub(r"\.(png|jpg|jpeg)$", "", fname, flags=re.IGNORECASE)
+            parts = base.split("-")
+            if len(parts) >= 3:
+                name_key = "_".join(parts[1:-1])  # middle segments joined
+                mapping[name_key] = fname
+    _card_image_map = mapping
+    return mapping
+
+
+def _resolve_card_image(card_name: str) -> str | None:
+    """Return image filename for a card name, or None if not found."""
+    mapping = _get_card_image_map()
+    key = card_name.lower().replace(" ", "_").replace("'", "").replace(",", "")
+    return mapping.get(key)
+
+
+def _attach_images(cards: list[dict]) -> list[dict]:
+    """Add 'image' field to each card dict."""
+    for card in cards:
+        card["image"] = _resolve_card_image(card["card_name"])
+    return cards
 
 
 def _load_and_cluster():
@@ -46,6 +91,8 @@ def get_decks():
                     "card_count": seed.card_count,
                     "curiosa_url": seed.curiosa_url,
                     "cluster_size": len(cluster_members),
+                    "elements": sorted(seed.elements),
+                    "event_year": seed.event_year,
                 }
             )
 
@@ -87,10 +134,10 @@ def get_recommendations(deck_id: str):
                 },
                 "cluster_size": len(members),
                 "avg_similarity": avg_sim,
-                "core_cards": tiers["core"],
-                "common_cards": tiers["common"],
-                "tech_cards": tiers["tech"],
-                "fringe_cards": tiers["fringe"],
+                "core_cards": _attach_images(tiers["core"]),
+                "common_cards": _attach_images(tiers["common"]),
+                "tech_cards": _attach_images(tiers["tech"]),
+                "fringe_cards": _attach_images(tiers["fringe"]),
             }
         )
 

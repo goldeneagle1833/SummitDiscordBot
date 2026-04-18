@@ -754,6 +754,7 @@
       if (emptyMsg) emptyMsg.style.display = "block";
       hideTierSections();
       initFringeToggle(data); // still init (will hide button)
+      renderSimilarSeeds(data.similar_seeds || []);
       return;
     }
 
@@ -912,6 +913,7 @@
       document.body.appendChild(_popup);
       document.addEventListener("click", (e) => {
         if (_pinnedRow && !_pinnedRow.contains(e.target)) {
+          _pinnedRow.classList.remove("card-selected");
           hideCardPopup();
           _pinnedRow = null;
         }
@@ -937,11 +939,14 @@
     const popup = _getOrCreatePopup();
     if (_pinnedRow === anchorEl) {
       // Unpin
+      _pinnedRow.classList.remove("card-selected");
       _pinnedRow = null;
       popup.classList.remove("visible", "pinned");
       return;
     }
+    if (_pinnedRow) _pinnedRow.classList.remove("card-selected");
     _pinnedRow = anchorEl;
+    _pinnedRow.classList.add("card-selected");
     popup.querySelector("img").src = `/card-images/${imageFile}`;
     _positionPopup(popup, anchorEl);
     popup.classList.add("visible", "pinned");

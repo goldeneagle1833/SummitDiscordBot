@@ -161,6 +161,7 @@ def get_recommendations(deck_id: str):
                     "event_name": seed.event_name,
                     "card_count": seed.card_count,
                     "curiosa_url": seed.curiosa_url,
+                    "primer": seed.primer or "",
                 },
                 "cluster_size": len(members),
                 "avg_similarity": avg_sim,

@@ -40,6 +40,18 @@
   color: #fff;
 }
 
+.archetype-primer {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  background: rgba(255, 215, 0, 0.06);
+  border-left: 3px solid rgba(255, 215, 0, 0.35);
+  border-radius: 0 4px 4px 0;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 .cluster-stats {
   display: flex;
   gap: 2rem;

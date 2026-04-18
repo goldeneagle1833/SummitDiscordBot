@@ -858,6 +858,13 @@
       seedLink.style.display = data.seed.curiosa_url ? "inline" : "none";
     }
 
+    // Primer / short description
+    const seedPrimer = document.getElementById("seed-primer");
+    if (seedPrimer && data.seed.primer) {
+      seedPrimer.textContent = data.seed.primer;
+      seedPrimer.style.display = "block";
+    }
+
     // Cluster stats
     const clusterSize = document.getElementById("cluster-size");
     if (clusterSize) clusterSize.textContent = data.cluster_size;

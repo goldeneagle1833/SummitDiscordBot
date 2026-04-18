@@ -722,6 +722,30 @@ def delete_ladder_challenge(challenge_id: int):
     conn.close()
 
 
+def reset_ladder_challenge_today(user_id: int) -> int:
+    """Delete all of a user's ladder challenges from today, allowing them to issue a new one.
+
+    Args:
+        user_id: The Discord user ID
+
+    Returns:
+        Number of challenges deleted
+    """
+    create_ladder_challenge_table()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    cur.execute(
+        "DELETE FROM ladder_challenges WHERE challenger_id = ? AND created_at LIKE ?",
+        (user_id, f"{today}%"),
+    )
+    deleted = cur.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+
+
 def complete_ladder_challenge(challenge_id: int, winner_id: int, match_id: int = None):
     """Mark a ladder challenge as completed."""
     create_ladder_challenge_table()

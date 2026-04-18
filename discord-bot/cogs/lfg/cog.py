@@ -1494,7 +1494,10 @@ class LFGCog(commands.Cog):
                 "`!admin_challenge_report @winner @loser @challenger`\n"
                 "Manually report a ladder challenge match. `@challenger` is the Top 16 player.\n"
                 "**When to use:** When a challenge match wasn't reported correctly or the challenge feature broke. "
-                "Applies the same ELO rules as normal challenges (2x/0.5x if 100+ ELO apart)."
+                "Applies the same ELO rules as normal challenges (2x/0.5x if 100+ ELO apart).\n\n"
+                "`!reset_challenge @user`\n"
+                "Reset a player's daily ladder challenge so they can use `!issue_challenge` again.\n"
+                "**When to use:** When a player's challenge was wasted due to a bug or other issue."
             ),
             inline=False,
         )
@@ -2146,6 +2149,39 @@ class LFGCog(commands.Cog):
         else:
             logger.error(f"admin_challenge_report error: {error}")
             await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def reset_challenge(self, ctx, member: discord.Member = None):
+        """Reset a player's daily ladder challenge so they can use !issue_challenge again.
+        Usage: !reset_challenge @user
+        """
+        if member is None:
+            await ctx.send("Usage: `!reset_challenge @user`")
+            return
+
+        from utils.database import reset_ladder_challenge_today
+
+        deleted = reset_ladder_challenge_today(member.id)
+
+        if deleted > 0:
+            user_global = member.global_name or member.display_name
+            await ctx.send(
+                f"Reset {deleted} ladder challenge(s) for **{user_global}**. They can now use `!issue_challenge` again today."
+            )
+            log_admin_action(
+                admin_id=ctx.author.id,
+                admin_name=ctx.author.global_name or ctx.author.display_name,
+                action="reset_challenge",
+                details=f"Reset {deleted} ladder challenge(s) for {user_global} (ID: {member.id})",
+            )
+            logger.info(
+                f"Admin {ctx.author.id} reset ladder challenge for {member.id} ({user_global}), deleted {deleted} record(s)"
+            )
+        else:
+            await ctx.send(
+                f"**{member.global_name or member.display_name}** has no ladder challenges today to reset."
+            )
 
     @commands.command()
     @is_bot_admin()

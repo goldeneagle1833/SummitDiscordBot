@@ -98,7 +98,7 @@ def aggregate_archetype(members: list[DeckRecord]) -> dict:
       - core   : >= 80%
       - common : 50–79%
       - tech   : 20–49%
-      - fringe : < 20%
+      - fringe : 5–19%  (cards below 5% are excluded)
 
     Args:
         members: Community decks in the cluster (excludes the seed itself).
@@ -144,8 +144,10 @@ def aggregate_archetype(members: list[DeckRecord]) -> dict:
             tier = TIER_COMMON
         elif rate >= 0.2:
             tier = TIER_TECH
-        else:
+        elif rate >= 0.05:
             tier = TIER_FRINGE
+        else:
+            continue  # skip cards below 5% inclusion
 
         tiers[tier].append(
             {

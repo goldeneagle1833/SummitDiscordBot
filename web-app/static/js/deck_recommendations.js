@@ -55,6 +55,7 @@
   let _activeAvatar = "all";
   let _activeElements = new Set(); // empty = show all
   let _activeYear = "";
+  let _activeSort = "popular";
 
   // Pagination state
   let _filteredDecks = [];
@@ -62,6 +63,92 @@
   const PAGE_SIZE = 24;
 
   const _isAdmin = typeof USER_IS_ADMIN !== "undefined" ? USER_IS_ADMIN : false;
+
+  // ------------------------------------------------------------------ //
+  // URL parameter sharing                                               //
+  // ------------------------------------------------------------------ //
+
+  function _readUrlParams() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("avatar")) _activeAvatar = params.get("avatar");
+    if (params.get("element")) {
+      params.get("element").split(",").forEach((el) => {
+        if (["Fire", "Water", "Earth", "Air"].includes(el)) _activeElements.add(el);
+      });
+    }
+    if (params.get("year")) _activeYear = params.get("year");
+    if (params.get("sort")) _activeSort = params.get("sort");
+  }
+
+  function _pushUrlParams() {
+    const params = new URLSearchParams();
+    if (_activeAvatar !== "all") params.set("avatar", _activeAvatar);
+    if (_activeElements.size > 0) params.set("element", [..._activeElements].sort().join(","));
+    if (_activeYear) params.set("year", _activeYear);
+    if (_activeSort !== "popular") params.set("sort", _activeSort);
+    const qs = params.toString();
+    const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    history.replaceState(null, "", url);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Sort helpers                                                        //
+  // ------------------------------------------------------------------ //
+
+  function _sortDecks(decks) {
+    const sorted = [...decks];
+    switch (_activeSort) {
+      case "newest":
+        sorted.sort((a, b) => (b.event_year || 0) - (a.event_year || 0) || b.cluster_size - a.cluster_size);
+        break;
+      case "oldest":
+        sorted.sort((a, b) => (a.event_year || 9999) - (b.event_year || 9999) || b.cluster_size - a.cluster_size);
+        break;
+      case "alpha":
+        sorted.sort((a, b) => (a.deck_name || "").localeCompare(b.deck_name || ""));
+        break;
+      default: // "popular"
+        sorted.sort((a, b) => b.cluster_size - a.cluster_size || (a.deck_name || "").localeCompare(b.deck_name || ""));
+        break;
+    }
+    return sorted;
+  }
+
+  // ------------------------------------------------------------------ //
+  // Mobile filter drawer                                                //
+  // ------------------------------------------------------------------ //
+
+  function initMobileFilterDrawer() {
+    const toggleWrap = document.getElementById("filter-toggle-btn");
+    const toggleBtn = document.getElementById("filter-toggle-action");
+    const filterBar = document.getElementById("filter-bar");
+    const arrow = document.getElementById("filter-arrow");
+    if (!toggleWrap || !toggleBtn || !filterBar) return;
+
+    // Show the toggle button (CSS hides it on desktop via media query)
+    toggleWrap.style.display = "";
+
+    toggleBtn.addEventListener("click", () => {
+      const isOpen = filterBar.classList.toggle("mobile-open");
+      if (arrow) arrow.classList.toggle("open", isOpen);
+    });
+  }
+
+  function _updateFilterBadge() {
+    const badge = document.getElementById("filter-count-badge");
+    if (!badge) return;
+    let count = 0;
+    if (_activeAvatar !== "all") count++;
+    count += _activeElements.size;
+    if (_activeYear) count++;
+    if (_activeSort !== "popular") count++;
+    if (count > 0) {
+      badge.textContent = count;
+      badge.style.display = "";
+    } else {
+      badge.style.display = "none";
+    }
+  }
 
   // ------------------------------------------------------------------ //
   // LocalStorage cache                                                  //
@@ -145,6 +232,9 @@
   function _processDecks(decks) {
     const grid = document.getElementById("deck-grid");
 
+    // Read URL params before building filters so state is restored
+    _readUrlParams();
+
     // Separate admin recs from regular seeds
     _adminDecks = decks.filter((d) => d.is_admin_rec);
     _allDecks   = decks.filter((d) => !d.is_admin_rec);
@@ -158,6 +248,8 @@
     buildAvatarFilter(_allDecks);
     buildYearFilter(_allDecks);
     initElementFilter();
+    initSortFilter();
+    initMobileFilterDrawer();
     applyFilters();
     if (grid) grid.style.display = "grid";
   }
@@ -532,6 +624,16 @@
       input.focus();
     });
 
+    // Restore avatar from URL params
+    if (_activeAvatar !== "all" && avatars.includes(_activeAvatar)) {
+      activeTag.innerHTML = `
+        <span class="avatar-active-tag">
+          ${escHtml(_activeAvatar)}
+          <button aria-label="Clear filter">✕</button>
+        </span>`;
+      activeTag.querySelector("button").addEventListener("click", clearFilter);
+    }
+
     bar.style.display = "flex";
   }
 
@@ -550,6 +652,9 @@
       sel.appendChild(opt);
     });
 
+    // Restore year from URL params
+    if (_activeYear) sel.value = _activeYear;
+
     sel.addEventListener("change", () => {
       _activeYear = sel.value;
       applyFilters();
@@ -560,8 +665,11 @@
 
   function initElementFilter() {
     document.querySelectorAll(".el-btn").forEach((btn) => {
+      const el = btn.dataset.element;
+      // Restore active state from URL params
+      if (_activeElements.has(el)) btn.classList.add("active");
+
       btn.addEventListener("click", () => {
-        const el = btn.dataset.element;
         if (_activeElements.has(el)) {
           _activeElements.delete(el);
           btn.classList.remove("active");
@@ -571,6 +679,19 @@
         }
         applyFilters();
       });
+    });
+  }
+
+  function initSortFilter() {
+    const sel = document.getElementById("sort-select");
+    if (!sel) return;
+
+    // Restore from URL params
+    if (_activeSort) sel.value = _activeSort;
+
+    sel.addEventListener("change", () => {
+      _activeSort = sel.value;
+      applyFilters();
     });
   }
 
@@ -594,8 +715,10 @@
       filtered = filtered.filter((d) => String(d.event_year) === String(_activeYear));
     }
 
-    _filteredDecks = filtered;
+    _filteredDecks = _sortDecks(filtered);
     _currentPage = 1;
+    _pushUrlParams();
+    _updateFilterBadge();
     renderPage();
   }
 

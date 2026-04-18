@@ -91,6 +91,16 @@
         </a>
         {% endif %}
 
+        <!-- Deck Recommendations Promo Banner (auto-expires 48h after deploy) -->
+        <a href="/deck-rec" class="deck-rec-banner" id="deck-rec-banner" data-expires="2026-04-20T12:00:00Z">
+          <span class="deck-rec-badge">NEW</span>
+          <div class="deck-rec-content">
+            <span class="deck-rec-title">Deck Recommendations are here!</span>
+            <span class="deck-rec-text">Browse tournament decks and top player recommendations, see what cards top players are running.</span>
+          </div>
+          <span class="deck-rec-arrow">&rarr;</span>
+        </a>
+
         <!-- Community Tab Promo Banner -->
         <div id="community-promo-banner" class="community-promo-banner">
           <h2 class="community-promo-title">New Community Tab is Live!</h2>
@@ -198,5 +208,17 @@
       });
     </script>
     {% endif %}
+    <script>
+      // Auto-expire deck-rec banner after 48 hours
+      (function() {
+        var banner = document.getElementById('deck-rec-banner');
+        if (banner) {
+          var expires = new Date(banner.getAttribute('data-expires'));
+          if (Date.now() > expires.getTime()) {
+            banner.style.display = 'none';
+          }
+        }
+      })();
+    </script>
   </body>
 </html>

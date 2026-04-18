@@ -184,9 +184,16 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                     self.queue_type, matched_queue_type
                 )
 
-                # If matched user has ladder_info, adjust multipliers based on ELO difference
+                # If matched user has ladder_info, save the challenge now (counts against daily limit)
                 if matched_ladder_info:
-                    from utils.database import get_user_event_elo
+                    from utils.database import get_user_event_elo, save_ladder_challenge
+
+                    if not matched_ladder_info.get("challenge_id"):
+                        challenge_id = save_ladder_challenge(matched_ladder_info["challenger_id"])
+                        matched_ladder_info["challenge_id"] = challenge_id
+                        logger.info(
+                            f"Ladder challenge saved on match for challenger {matched_ladder_info['challenger_id']}, challenge_id: {challenge_id}"
+                        )
 
                     challenger_elo = get_user_event_elo(
                         matched_ladder_info["challenger_id"]

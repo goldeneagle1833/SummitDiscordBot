@@ -1041,28 +1041,43 @@ class LFGCog(commands.Cog):
         """Issue a ladder challenge (Top 16 event players or admins, once per day).
 
         Adds you to the ranked queue. The next person who matches with you will play
-        for modified ELO stakes.
+        for modified ELO stakes. Can be used in DMs with the bot.
+        The challenge only counts against your daily limit when a match is found.
 
         Stakes:
         - If the non-Top 16 player WINS: 2x ELO gain
         - If the Top 16 player LOSES: 0.5x ELO loss
         - If ELO difference < 100: Normal stakes
         """
-        # Delete command message
-        try:
-            await ctx.message.delete()
-        except Exception:
-            pass
+        # Delete command message (only works in guild channels)
+        if ctx.guild:
+            try:
+                await ctx.message.delete()
+            except Exception:
+                pass
 
         user_id = ctx.author.id
         user_global = ctx.author.global_name or ctx.author.display_name
 
+        # Resolve guild and member for permission checks (works in DMs too)
+        guild_id = ctx.guild.id if ctx.guild else config.GUILD_ID
+        guild_obj = ctx.guild or self.bot.get_guild(config.GUILD_ID)
+        member = None
+        if guild_obj:
+            member = guild_obj.get_member(user_id)
+            if member is None:
+                try:
+                    member = await guild_obj.fetch_member(user_id)
+                except discord.NotFound:
+                    pass
+
         # Check if user is an admin (admins can always issue challenges)
         is_admin = False
-        if ctx.author.guild_permissions.administrator:
-            is_admin = True
-        elif any(role.id == config.BOT_ADMIN_ROLE_ID for role in ctx.author.roles):
-            is_admin = True
+        if member:
+            if member.guild_permissions.administrator:
+                is_admin = True
+            elif any(role.id == config.BOT_ADMIN_ROLE_ID for role in member.roles):
+                is_admin = True
 
         # Check if user is in Top 16 of current event (unless they're an admin)
         if not is_admin:
@@ -1074,23 +1089,25 @@ class LFGCog(commands.Cog):
                         "Check `!event_leaderboard` to see the current event rankings."
                     )
                 except discord.Forbidden:
-                    await ctx.send(
-                        f"{ctx.author.mention}, only Top 16 event players can issue challenges!",
-                        delete_after=10,
-                    )
+                    if ctx.guild:
+                        await ctx.send(
+                            f"{ctx.author.mention}, only Top 16 event players can issue challenges!",
+                            delete_after=10,
+                        )
                 return
 
-        # Check if already used today
+        # Check if already used today (only counts matched challenges)
         if get_ladder_challenge_today(user_id):
             try:
                 await ctx.author.send(
-                    "You've already issued a ladder challenge today. Try again tomorrow!"
+                    "You've already issued a ladder challenge today that was matched. Try again tomorrow!"
                 )
             except discord.Forbidden:
-                await ctx.send(
-                    f"{ctx.author.mention}, you've already issued a ladder challenge today!",
-                    delete_after=10,
-                )
+                if ctx.guild:
+                    await ctx.send(
+                        f"{ctx.author.mention}, you've already issued a ladder challenge today!",
+                        delete_after=10,
+                    )
             return
 
         # Check if already in queue + attempt to match
@@ -1098,7 +1115,6 @@ class LFGCog(commands.Cog):
         matched_user_deck_url = None
         match_type = None
         challenge_id = None
-        guild_id = ctx.guild.id if ctx.guild else config.GUILD_ID
         ladder_info = None
 
         async with lfg_queue_lock:
@@ -1106,19 +1122,18 @@ class LFGCog(commands.Cog):
                 try:
                     await ctx.author.send("You're already in the LFG queue!")
                 except discord.Forbidden:
-                    await ctx.send(
-                        f"{ctx.author.mention}, you're already in the queue!",
-                        delete_after=10,
-                    )
+                    if ctx.guild:
+                        await ctx.send(
+                            f"{ctx.author.mention}, you're already in the queue!",
+                            delete_after=10,
+                        )
                 return
 
-            # Save challenge to DB
-            challenge_id = save_ladder_challenge(user_id)
-
-            # Create ladder_info with placeholder multipliers (will be determined on match)
+            # Create ladder_info with placeholder multipliers and no challenge_id yet
+            # challenge_id will be set only when a match is found
             ladder_info = {
                 "challenger_id": user_id,
-                "challenge_id": challenge_id,
+                "challenge_id": None,
                 "elo_multiplier_winner": 2.0,  # Non-Top16 winner gets 2x
                 "elo_multiplier_loser": 0.5,  # Top16 loser gets 0.5x
                 "guild_id": guild_id,
@@ -1129,6 +1144,10 @@ class LFGCog(commands.Cog):
             matched_user_id = self.check_if_someone_is_lfg(ctx, "ranked")
 
             if matched_user_id:
+                # Match found - NOW save the challenge to DB (counts against daily limit)
+                challenge_id = save_ladder_challenge(user_id)
+                ladder_info["challenge_id"] = challenge_id
+
                 # Get matched user info before removing from queue
                 matched_user_info = lfg_queue.get(matched_user_id, {})
                 matched_user_deck_url = matched_user_info.get("deck_url")
@@ -1158,7 +1177,7 @@ class LFGCog(commands.Cog):
                     f"Lock acquired: Matching challenger {user_id} with {matched_user_id} (match_type={match_type})"
                 )
             else:
-                # No match found - add to queue
+                # No match found - add to queue (does NOT count against daily limit)
                 self.add_to_lfg_queue(
                     ctx,
                     timeframe=30,
@@ -1342,6 +1361,7 @@ class LFGCog(commands.Cog):
             )
         else:
             # No match - user was added to queue, notify them
+            # Challenge is NOT saved to DB yet - doesn't count against daily limit
             try:
                 await ctx.author.send(
                     "You've been added to the ranked queue with ladder challenge stakes!\n"
@@ -1349,19 +1369,22 @@ class LFGCog(commands.Cog):
                     "**•** If they win: 2x ELO gain\n"
                     "**•** If you lose: 0.5x ELO loss\n"
                     "**•** If ELO difference < 100: Normal stakes\n\n"
+                    "⏳ **Note:** This does not count as your daily challenge until a match is found. "
+                    "If no one matches before the queue expires, you can use `!issue_challenge` again!\n"
                     "💡 **Tip:** You can use `!issue_challenge` in DMs with the bot anytime!"
                 )
             except discord.Forbidden:
-                await ctx.send(
-                    f"{ctx.author.mention}, you've joined the ranked queue with ladder challenge stakes!",
-                    delete_after=10,
-                )
+                if ctx.guild:
+                    await ctx.send(
+                        f"{ctx.author.mention}, you've joined the ranked queue with ladder challenge stakes!",
+                        delete_after=10,
+                    )
 
             # Update status
             await self.update_lfg_status()
 
             logger.info(
-                f"Ladder challenge issued by {user_global} (ID: {user_id}), challenge_id: {challenge_id} - added to ranked queue"
+                f"Ladder challenge issued by {user_global} (ID: {user_id}) - added to ranked queue (not yet counted)"
             )
 
     @commands.command()

@@ -198,16 +198,60 @@
             if (!data.success || !data.banners.length) return;
             var container = document.getElementById('promo-banners-container');
             data.banners.forEach(function(b) {
+              var images = b.images || [];
+              var hasImages = images.length > 0;
+
               var a = document.createElement('a');
               a.href = b.link;
-              a.className = 'promo-banner promo-banner--' + (b.color || 'blue');
+              a.className = 'promo-banner promo-banner--' + (b.color || 'blue') +
+                (hasImages ? ' promo-banner--has-images' : '');
+
+              // Build image carousel HTML
+              var imgHtml = '';
+              if (hasImages) {
+                imgHtml = '<div class="promo-banner__carousel">';
+                images.forEach(function(url, i) {
+                  imgHtml += '<img src="' + escAttr(url) + '" class="promo-banner__img' +
+                    (i === 0 ? ' active' : '') + '" alt="" loading="lazy">';
+                });
+                if (images.length > 1) {
+                  imgHtml += '<div class="promo-banner__dots">';
+                  images.forEach(function(_, i) {
+                    imgHtml += '<span class="promo-banner__dot' + (i === 0 ? ' active' : '') + '"></span>';
+                  });
+                  imgHtml += '</div>';
+                }
+                imgHtml += '</div>';
+              }
+
               a.innerHTML =
-                '<span class="promo-banner__badge">' + escHtml(b.badge_text) + '</span>' +
-                '<div class="promo-banner__content">' +
-                  '<span class="promo-banner__title">' + escHtml(b.title) + '</span>' +
-                  (b.subtitle ? '<span class="promo-banner__text">' + escHtml(b.subtitle) + '</span>' : '') +
-                '</div>' +
-                '<span class="promo-banner__arrow">&rarr;</span>';
+                imgHtml +
+                '<div class="promo-banner__body">' +
+                  '<span class="promo-banner__badge">' + escHtml(b.badge_text) + '</span>' +
+                  '<div class="promo-banner__content">' +
+                    '<span class="promo-banner__title">' + escHtml(b.title) + '</span>' +
+                    (b.subtitle ? '<span class="promo-banner__text">' + escHtml(b.subtitle) + '</span>' : '') +
+                  '</div>' +
+                  '<span class="promo-banner__arrow">&rarr;</span>' +
+                '</div>';
+
+              // Auto-scroll carousel every 10 seconds
+              if (images.length > 1) {
+                (function(el) {
+                  var idx = 0;
+                  var total = images.length;
+                  setInterval(function() {
+                    var imgs = el.querySelectorAll('.promo-banner__img');
+                    var dots = el.querySelectorAll('.promo-banner__dot');
+                    imgs[idx].classList.remove('active');
+                    dots[idx].classList.remove('active');
+                    idx = (idx + 1) % total;
+                    imgs[idx].classList.add('active');
+                    dots[idx].classList.add('active');
+                  }, 10000);
+                })(a);
+              }
+
               a.addEventListener('click', function() {
                 navigator.sendBeacon('/api/analytics/banner-click',
                   new Blob([JSON.stringify({banner_type: 'promo_' + b.id})], {type: 'application/json'}));
@@ -221,6 +265,9 @@
           var d = document.createElement('div');
           d.textContent = s;
           return d.innerHTML;
+        }
+        function escAttr(s) {
+          return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
       })();
     </script>

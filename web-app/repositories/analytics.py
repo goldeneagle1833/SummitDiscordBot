@@ -1,5 +1,6 @@
 """Repository for site analytics data access."""
 
+import json
 import sqlite3
 import logging
 from datetime import datetime, timedelta
@@ -96,7 +97,7 @@ class AnalyticsRepository:
     # --- Promo Banners ---
 
     def _ensure_promo_table(self):
-        """Create promo_banners table if it doesn't exist."""
+        """Create promo_banners table if it doesn't exist, and add images column if missing."""
         conn = self._connect()
         conn.execute("""
             CREATE TABLE IF NOT EXISTS promo_banners (
@@ -109,23 +110,33 @@ class AnalyticsRepository:
                 created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
                 expires_at TEXT NOT NULL,
                 active INTEGER NOT NULL DEFAULT 1,
-                created_by TEXT
+                created_by TEXT,
+                images TEXT
             )
         """)
+        # Add images column if table existed before this migration
+        cur = conn.execute("PRAGMA table_info(promo_banners)")
+        columns = {row[1] for row in cur.fetchall()}
+        if "images" not in columns:
+            conn.execute("ALTER TABLE promo_banners ADD COLUMN images TEXT")
         conn.commit()
         conn.close()
 
     def create_banner(self, title: str, link: str, expires_at: str,
                       subtitle: str | None = None, badge_text: str = "NEW",
-                      color: str = "blue", created_by: str | None = None) -> int:
-        """Create a new promo banner. Returns the banner ID."""
+                      color: str = "blue", created_by: str | None = None,
+                      images: str | None = None) -> int:
+        """Create a new promo banner. Returns the banner ID.
+
+        images: JSON array string of image URLs, e.g. '["url1","url2"]'
+        """
         self._ensure_promo_table()
         conn = self._connect()
         cur = conn.cursor()
         cur.execute(
-            """INSERT INTO promo_banners (title, subtitle, link, badge_text, color, expires_at, created_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (title, subtitle, link, badge_text, color, expires_at, created_by),
+            """INSERT INTO promo_banners (title, subtitle, link, badge_text, color, expires_at, created_by, images)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (title, subtitle, link, badge_text, color, expires_at, created_by, images),
         )
         conn.commit()
         banner_id = cur.lastrowid
@@ -138,18 +149,19 @@ class AnalyticsRepository:
         conn = self._connect()
         cur = conn.cursor()
         cur.execute(
-            """SELECT id, title, subtitle, link, badge_text, color, created_at, expires_at
+            """SELECT id, title, subtitle, link, badge_text, color, created_at, expires_at, images
                FROM promo_banners
                WHERE active = 1 AND expires_at > strftime('%Y-%m-%d %H:%M:%S', 'now')
                ORDER BY created_at DESC""",
         )
-        banners = [
-            {
+        banners = []
+        for r in cur.fetchall():
+            images = json.loads(r[8]) if r[8] else []
+            banners.append({
                 "id": r[0], "title": r[1], "subtitle": r[2], "link": r[3],
                 "badge_text": r[4], "color": r[5], "created_at": r[6], "expires_at": r[7],
-            }
-            for r in cur.fetchall()
-        ]
+                "images": images,
+            })
         conn.close()
         return banners
 
@@ -159,17 +171,17 @@ class AnalyticsRepository:
         conn = self._connect()
         cur = conn.cursor()
         cur.execute(
-            """SELECT id, title, subtitle, link, badge_text, color, created_at, expires_at, active, created_by
+            """SELECT id, title, subtitle, link, badge_text, color, created_at, expires_at, active, created_by, images
                FROM promo_banners ORDER BY created_at DESC""",
         )
-        banners = [
-            {
+        banners = []
+        for r in cur.fetchall():
+            images = json.loads(r[10]) if r[10] else []
+            banners.append({
                 "id": r[0], "title": r[1], "subtitle": r[2], "link": r[3],
                 "badge_text": r[4], "color": r[5], "created_at": r[6], "expires_at": r[7],
-                "active": bool(r[8]), "created_by": r[9],
-            }
-            for r in cur.fetchall()
-        ]
+                "active": bool(r[8]), "created_by": r[9], "images": images,
+            })
         conn.close()
         return banners
 

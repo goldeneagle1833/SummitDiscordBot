@@ -62,7 +62,8 @@ def create_analytics_tables():
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
             expires_at TEXT NOT NULL,
             active INTEGER NOT NULL DEFAULT 1,
-            created_by TEXT
+            created_by TEXT,
+            images TEXT
         )
     """)
 

@@ -29,10 +29,12 @@ FART_SCORES_DB_PATH = Path(
 COMMUNITY_DB_PATH = Path(os.environ.get("COMMUNITY_DB_PATH", BOT_DIR / "community.db"))
 ANALYTICS_DB_PATH = Path(os.environ.get("ANALYTICS_DB_PATH", BASE_DIR / "analytics.db"))
 
-# Curio tracking upload directory
+# Upload directories
 STATIC_DIR = BASE_DIR / "static"
 CURIO_UPLOADS_DIR = STATIC_DIR / "uploads" / "curios"
 CURIO_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+BANNER_UPLOADS_DIR = STATIC_DIR / "uploads" / "banners"
+BANNER_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Flask configuration
 # SECURITY: SECRET_KEY must be set in production via environment variable

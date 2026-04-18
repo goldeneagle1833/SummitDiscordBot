@@ -1,10 +1,19 @@
 """Analytics API routes for banner click tracking, site stats, and promo banners."""
 
+import json
+import os
+import uuid
+
 from flask import Blueprint, jsonify, request, session
+from werkzeug.utils import secure_filename
 
 from repositories.analytics import AnalyticsRepository
 from repositories.audit import AuditRepository
 from utils.auth import require_admin
+from webapp_config import BANNER_UPLOADS_DIR
+
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
 
 analytics_bp = Blueprint("analytics", __name__)
 
@@ -29,6 +38,33 @@ def analytics_stats():
         "page_views": repo.get_page_view_stats(hours=hours),
         "banner_clicks": repo.get_banner_click_stats(),
     })
+
+
+# --- Banner Image Upload ---
+
+@analytics_bp.route("/analytics/banners/upload-image", methods=["POST"])
+@require_admin
+def upload_banner_image():
+    """Upload a banner image. Returns the URL path."""
+    file = request.files.get("image")
+    if not file or not file.filename:
+        return jsonify({"success": False, "error": "No image file provided"}), 400
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        return jsonify({"success": False, "error": f"Invalid format. Allowed: {', '.join(ALLOWED_IMAGE_EXTENSIONS)}"}), 400
+
+    file.seek(0, os.SEEK_END)
+    size = file.tell()
+    file.seek(0)
+    if size > MAX_IMAGE_SIZE:
+        return jsonify({"success": False, "error": "Image too large. Maximum 5MB"}), 400
+
+    filename = f"{uuid.uuid4()}{ext}"
+    file.save(str(BANNER_UPLOADS_DIR / filename))
+
+    url = f"/static/uploads/banners/{filename}"
+    return jsonify({"success": True, "url": url})
 
 
 # --- Promo Banners ---
@@ -60,6 +96,11 @@ def create_banner():
     if not title or not link or not expires_at:
         return jsonify({"success": False, "error": "title, link, and expires_at are required"}), 400
 
+    # Parse images list - filter out empty strings
+    raw_images = data.get("images") or []
+    images = [url.strip() for url in raw_images if url and url.strip()]
+    images_json = json.dumps(images) if images else None
+
     repo = AnalyticsRepository()
     admin_name = session.get("username", "API/localhost")
     banner_id = repo.create_banner(
@@ -70,13 +111,14 @@ def create_banner():
         badge_text=(data.get("badge_text") or "NEW").strip(),
         color=(data.get("color") or "blue").strip(),
         created_by=admin_name,
+        images=images_json,
     )
 
     AuditRepository().log_action(
         session.get("user_id", 0), admin_name, "create_promo_banner",
         target_id=str(banner_id),
-        new_state={"title": title, "link": link, "expires_at": expires_at},
-        details=f"Created promo banner '{title}' -> {link} (expires {expires_at})",
+        new_state={"title": title, "link": link, "expires_at": expires_at, "images": len(images)},
+        details=f"Created promo banner '{title}' -> {link} (expires {expires_at}, {len(images)} images)",
     )
 
     return jsonify({"success": True, "id": banner_id}), 201

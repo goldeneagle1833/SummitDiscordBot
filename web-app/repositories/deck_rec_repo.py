@@ -398,8 +398,7 @@ class DeckRecRepository:
             )
 
             if not card_names:
-                logger.warning("Admin deck %s has no card data — skipping as seed", deck_id)
-                return None
+                logger.warning("Admin deck %s has no card data — will show but without recommendations", deck_id)
 
             avatar_name = row["avatar_name"] or "Unknown"
             if not avatar_name or avatar_name == "Unknown":

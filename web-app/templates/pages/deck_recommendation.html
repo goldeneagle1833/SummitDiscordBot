@@ -35,7 +35,9 @@
         width: 100%;
         padding-left: var(--spacing-md);
       }
-      .back-link:hover { color: rgba(255, 255, 255, 0.85); }
+      .back-link:hover {
+        color: rgba(255, 255, 255, 0.85);
+      }
 
       .archetype-header {
         max-width: 1200px;
@@ -58,7 +60,9 @@
         color: rgba(255, 255, 255, 0.65);
         text-decoration: underline;
       }
-      .curiosa-link:hover { color: #fff; }
+      .curiosa-link:hover {
+        color: #fff;
+      }
 
       .cluster-stats {
         display: flex;
@@ -104,10 +108,22 @@
         margin-left: 0.5rem;
         vertical-align: middle;
       }
-      .badge-core    { background: rgba(100, 210, 100, 0.2); color: #7dde7d; }
-      .badge-common  { background: rgba(100, 160, 255, 0.2); color: #7eb8ff; }
-      .badge-tech    { background: rgba(255, 200, 80,  0.2); color: #ffc84a; }
-      .badge-fringe  { background: rgba(180, 120, 255, 0.2); color: #c49cff; }
+      .badge-core {
+        background: rgba(100, 210, 100, 0.2);
+        color: #7dde7d;
+      }
+      .badge-common {
+        background: rgba(100, 160, 255, 0.2);
+        color: #7eb8ff;
+      }
+      .badge-tech {
+        background: rgba(255, 200, 80, 0.2);
+        color: #ffc84a;
+      }
+      .badge-fringe {
+        background: rgba(180, 120, 255, 0.2);
+        color: #c49cff;
+      }
 
       .card-list {
         list-style: none;
@@ -126,13 +142,33 @@
         border-radius: 4px;
         font-size: 0.85rem;
       }
-      .card-row { cursor: default; }
-      .card-row[data-card-image] { cursor: pointer; }
-      .card-row:hover { background: rgba(255, 255, 255, 0.08); }
-      .card-row-name { color: rgba(255, 255, 255, 0.85); flex: 1; }
-      .card-row-stats { display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0; }
-      .card-row-pct  { color: rgba(255, 255, 255, 0.4); font-size: 0.78rem; }
-      .card-row-avg  { color: rgba(255, 255, 255, 0.3); font-size: 0.72rem; }
+      .card-row {
+        cursor: default;
+      }
+      .card-row[data-card-image] {
+        cursor: pointer;
+      }
+      .card-row:hover {
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .card-row-name {
+        color: rgba(255, 255, 255, 0.85);
+        flex: 1;
+      }
+      .card-row-stats {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        flex-shrink: 0;
+      }
+      .card-row-pct {
+        color: rgba(255, 255, 255, 0.4);
+        font-size: 0.78rem;
+      }
+      .card-row-avg {
+        color: rgba(255, 255, 255, 0.3);
+        font-size: 0.72rem;
+      }
 
       /* Avatar image in seed header */
       .seed-avatar-img {
@@ -152,10 +188,14 @@
         pointer-events: none;
         opacity: 0;
         transition: opacity 0.15s;
-        filter: drop-shadow(0 4px 16px rgba(0,0,0,0.7));
+        filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.7));
       }
-      #card-img-popup.visible { opacity: 1; }
-      #card-img-popup.pinned { pointer-events: auto; }
+      #card-img-popup.visible {
+        opacity: 1;
+      }
+      #card-img-popup.pinned {
+        pointer-events: auto;
+      }
       #card-img-popup img {
         width: 220px;
         border-radius: 8px;
@@ -206,7 +246,11 @@
         border-radius: 50%;
         animation: spin 0.7s linear infinite;
       }
-      @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
       .error-msg {
         text-align: center;
         color: rgba(255, 255, 255, 0.5);
@@ -222,19 +266,38 @@
     {% include 'components/navbar.html' %}
 
     <main>
-      <a class="back-link" href="/deck-rec">← Back to Sorcery Deck Rec</a>
+      <a class="back-link" href="/deck-rec">← Back to Sorcery Deck Recs</a>
 
       <div id="loading" class="spinner"></div>
       <div id="error-state" class="error-msg"></div>
 
-      <div id="archetype-content" style="display:none;">
+      <div id="archetype-content" style="display: none">
         <!-- Seed deck header -->
         <div class="archetype-header">
           <div class="archetype-title" id="seed-name"></div>
-          <div class="archetype-meta" style="display:flex;align-items:center;gap:0.4rem;">Avatar: <span id="seed-avatar" style="display:inline-flex;align-items:center;gap:0.35rem;font-weight:600;"></span></div>
+          <div
+            class="archetype-meta"
+            style="display: flex; align-items: center; gap: 0.4rem">
+            Avatar:
+            <span
+              id="seed-avatar"
+              style="
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35rem;
+                font-weight: 600;
+              "></span>
+          </div>
           <div class="archetype-meta">Event: <span id="seed-event"></span></div>
-          <div class="archetype-meta">Player: <span id="seed-player"></span></div>
-          <a class="curiosa-link" id="seed-link" href="#" target="_blank" rel="noopener">
+          <div class="archetype-meta">
+            Player: <span id="seed-player"></span>
+          </div>
+          <a
+            class="curiosa-link"
+            id="seed-link"
+            href="#"
+            target="_blank"
+            rel="noopener">
             View on Curiosa ↗
           </a>
         </div>
@@ -244,16 +307,24 @@
           <div class="stat-item">
             Community builds matched: <strong id="cluster-size">—</strong>
           </div>
-          <div class="stat-item" id="win-rate-stat" style="display:none;">
+          <div class="stat-item" id="win-rate-stat" style="display: none">
             Summit win rate: <strong id="win-rate">—</strong>
-            <span id="win-loss-record" style="font-size:0.78rem;color:rgba(255,255,255,0.45);margin-left:0.4rem;"></span>
+            <span
+              id="win-loss-record"
+              style="
+                font-size: 0.78rem;
+                color: rgba(255, 255, 255, 0.45);
+                margin-left: 0.4rem;
+              "></span>
           </div>
         </div>
 
         <!-- Empty cluster message -->
         <div class="empty-cluster-msg" id="empty-cluster-msg">
-          No community builds found matching this archetype at the current threshold.<br />
-          This seed deck may be highly unique or the archive may not yet have similar builds.
+          No community builds found matching this archetype at the current
+          threshold.<br />
+          This seed deck may be highly unique or the archive may not yet have
+          similar builds.
         </div>
 
         <!-- Core cards: >= 80% inclusion -->
@@ -301,9 +372,9 @@
 
     {% include 'components/footer.html' %}
     <script src="{{ url_for('static', filename='js/components/navbar.js') }}"></script>
-    <script>const AVATAR_IMAGE_FILES = {{ avatar_image_files | tojson | safe }};</script>
-    <script
-      src="{{ url_for('static', filename='js/deck_recommendations.js') }}?v={{ app_version }}">
+    <script>
+      const AVATAR_IMAGE_FILES = {{ avatar_image_files | tojson | safe }};
     </script>
+    <script src="{{ url_for('static', filename='js/deck_recommendations.js') }}?v={{ app_version }}"></script>
   </body>
 </html>

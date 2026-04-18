@@ -8,7 +8,13 @@ logger = logging.getLogger(__name__)
 
 
 def get_app_version() -> str:
-    """Get application version from git commit hash or fallback to timestamp."""
+    """Get application version from git commit hash combined with static file mtimes.
+
+    The git hash ensures cache busting on deploy; the mtime suffix ensures
+    cache busting whenever any JS or CSS file is modified without a commit
+    (useful during local development).
+    """
+    git_hash = None
     try:
         git_dir = Path(__file__).parent.parent.parent / ".git"
         if git_dir.exists():
@@ -20,17 +26,34 @@ def get_app_version() -> str:
                     ref_path = git_dir / ref[5:]
                     if ref_path.exists():
                         with open(ref_path, "r") as f:
-                            return f.read().strip()[:8]
+                            git_hash = f.read().strip()[:8]
                 else:
-                    return ref[:8]
+                    git_hash = ref[:8]
     except Exception as e:
         logger.warning(f"Could not get git version: {e}")
 
+    # Find the most recent modification time across all JS and CSS static files
+    latest_mtime = 0
+    try:
+        static_dir = Path(__file__).parent.parent / "static"
+        for pattern in ("**/*.js", "**/*.css"):
+            for f in static_dir.glob(pattern):
+                mtime = f.stat().st_mtime
+                if mtime > latest_mtime:
+                    latest_mtime = mtime
+    except Exception:
+        pass
+
+    mtime_suffix = str(int(latest_mtime))[-6:] if latest_mtime else "0"
+
+    if git_hash:
+        return f"{git_hash}-{mtime_suffix}"
+
     try:
         mtime = os.path.getmtime(Path(__file__).parent.parent / "app.py")
-        return str(int(mtime))
+        return f"{int(mtime)}-{mtime_suffix}"
     except Exception:
-        return "1.0.0"
+        return f"1.0.0-{mtime_suffix}"
 
 
 APP_VERSION = get_app_version()

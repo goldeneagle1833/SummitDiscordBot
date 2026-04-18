@@ -91,27 +91,8 @@
         </a>
         {% endif %}
 
-        <!-- Deck Recommendations Promo Banner (auto-expires 48h after deploy) -->
-        <a href="/deck-rec" class="deck-rec-banner" id="deck-rec-banner" data-expires="2026-04-20T12:00:00Z">
-          <span class="deck-rec-badge">NEW</span>
-          <div class="deck-rec-content">
-            <span class="deck-rec-title">Deck Recommendations are here!</span>
-            <span class="deck-rec-text">Browse tournament decks and top player recommendations, see what cards top players are running.</span>
-          </div>
-          <span class="deck-rec-arrow">&rarr;</span>
-        </a>
-
-        <!-- Community Tab Promo Banner -->
-        <div id="community-promo-banner" class="community-promo-banner">
-          <h2 class="community-promo-title">New Community Tab is Live!</h2>
-          <p class="community-promo-text">
-            Discover Discord servers, YouTube channels, and Sorcery resources
-            all in one place!
-          </p>
-          <a href="/community" class="community-promo-link">
-            Explore Community Tab →
-          </a>
-        </div>
+        <!-- Dynamic Promo Banners (loaded from admin panel) -->
+        <div id="promo-banners-container"></div>
       </section>
 
       <!-- Active Event Leaderboard Section -->
@@ -209,14 +190,37 @@
     </script>
     {% endif %}
     <script>
-      // Auto-expire deck-rec banner after 48 hours
+      // Load dynamic promo banners
       (function() {
-        var banner = document.getElementById('deck-rec-banner');
-        if (banner) {
-          var expires = new Date(banner.getAttribute('data-expires'));
-          if (Date.now() > expires.getTime()) {
-            banner.style.display = 'none';
-          }
+        fetch('/api/analytics/banners/active')
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (!data.success || !data.banners.length) return;
+            var container = document.getElementById('promo-banners-container');
+            data.banners.forEach(function(b) {
+              var a = document.createElement('a');
+              a.href = b.link;
+              a.className = 'promo-banner promo-banner--' + (b.color || 'blue');
+              a.innerHTML =
+                '<span class="promo-banner__badge">' + escHtml(b.badge_text) + '</span>' +
+                '<div class="promo-banner__content">' +
+                  '<span class="promo-banner__title">' + escHtml(b.title) + '</span>' +
+                  (b.subtitle ? '<span class="promo-banner__text">' + escHtml(b.subtitle) + '</span>' : '') +
+                '</div>' +
+                '<span class="promo-banner__arrow">&rarr;</span>';
+              a.addEventListener('click', function() {
+                navigator.sendBeacon('/api/analytics/banner-click',
+                  new Blob([JSON.stringify({banner_type: 'promo_' + b.id})], {type: 'application/json'}));
+              });
+              container.appendChild(a);
+            });
+          })
+          .catch(function() {});
+
+        function escHtml(s) {
+          var d = document.createElement('div');
+          d.textContent = s;
+          return d.innerHTML;
         }
       })();
     </script>

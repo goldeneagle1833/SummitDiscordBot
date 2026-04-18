@@ -92,3 +92,110 @@ class AnalyticsRepository:
 
         conn.close()
         return {"total": total, "by_type": by_type}
+
+    # --- Promo Banners ---
+
+    def _ensure_promo_table(self):
+        """Create promo_banners table if it doesn't exist."""
+        conn = self._connect()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS promo_banners (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                subtitle TEXT,
+                link TEXT NOT NULL,
+                badge_text TEXT NOT NULL DEFAULT 'NEW',
+                color TEXT NOT NULL DEFAULT 'blue',
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+                expires_at TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_by TEXT
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+    def create_banner(self, title: str, link: str, expires_at: str,
+                      subtitle: str | None = None, badge_text: str = "NEW",
+                      color: str = "blue", created_by: str | None = None) -> int:
+        """Create a new promo banner. Returns the banner ID."""
+        self._ensure_promo_table()
+        conn = self._connect()
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO promo_banners (title, subtitle, link, badge_text, color, expires_at, created_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (title, subtitle, link, badge_text, color, expires_at, created_by),
+        )
+        conn.commit()
+        banner_id = cur.lastrowid
+        conn.close()
+        return banner_id
+
+    def get_active_banners(self) -> list[dict]:
+        """Get all active, non-expired banners."""
+        self._ensure_promo_table()
+        conn = self._connect()
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT id, title, subtitle, link, badge_text, color, created_at, expires_at
+               FROM promo_banners
+               WHERE active = 1 AND expires_at > strftime('%Y-%m-%d %H:%M:%S', 'now')
+               ORDER BY created_at DESC""",
+        )
+        banners = [
+            {
+                "id": r[0], "title": r[1], "subtitle": r[2], "link": r[3],
+                "badge_text": r[4], "color": r[5], "created_at": r[6], "expires_at": r[7],
+            }
+            for r in cur.fetchall()
+        ]
+        conn.close()
+        return banners
+
+    def get_all_banners(self) -> list[dict]:
+        """Get all banners (for admin view)."""
+        self._ensure_promo_table()
+        conn = self._connect()
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT id, title, subtitle, link, badge_text, color, created_at, expires_at, active, created_by
+               FROM promo_banners ORDER BY created_at DESC""",
+        )
+        banners = [
+            {
+                "id": r[0], "title": r[1], "subtitle": r[2], "link": r[3],
+                "badge_text": r[4], "color": r[5], "created_at": r[6], "expires_at": r[7],
+                "active": bool(r[8]), "created_by": r[9],
+            }
+            for r in cur.fetchall()
+        ]
+        conn.close()
+        return banners
+
+    def delete_banner(self, banner_id: int) -> bool:
+        """Delete a banner by ID. Returns True if found and deleted."""
+        self._ensure_promo_table()
+        conn = self._connect()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM promo_banners WHERE id = ?", (banner_id,))
+        conn.commit()
+        deleted = cur.rowcount > 0
+        conn.close()
+        return deleted
+
+    def toggle_banner(self, banner_id: int) -> bool | None:
+        """Toggle a banner's active state. Returns new state or None if not found."""
+        self._ensure_promo_table()
+        conn = self._connect()
+        cur = conn.cursor()
+        cur.execute("SELECT active FROM promo_banners WHERE id = ?", (banner_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return None
+        new_state = 0 if row[0] else 1
+        cur.execute("UPDATE promo_banners SET active = ? WHERE id = ?", (new_state, banner_id))
+        conn.commit()
+        conn.close()
+        return bool(new_state)

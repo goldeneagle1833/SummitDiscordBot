@@ -12,6 +12,7 @@
 
     <link rel="stylesheet" href="{{ url_for('static', filename='css/components/footer.css') }}?v={{ app_version }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pages/admin_audit_log.css') }}?v={{ app_version }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/pages/index.css') }}?v={{ app_version }}" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body class="md:ml-48">
@@ -135,6 +136,66 @@
               <p class="loading">Loading...</p>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section class="dashboard-section">
+        <h2>Promo Banners</h2>
+        <p class="section-subtitle">Manage home page promotional banners</p>
+
+        <!-- Create banner form -->
+        <div class="admin-action-card" style="margin-bottom: 1.5rem;">
+          <h3>Create New Banner</h3>
+          <div class="form-group">
+            <label for="banner-title">Title *</label>
+            <input type="text" id="banner-title" placeholder="e.g. Deck Recommendations are here!" class="form-input" maxlength="100">
+          </div>
+          <div class="form-group">
+            <label for="banner-subtitle">Subtitle (optional)</label>
+            <input type="text" id="banner-subtitle" placeholder="e.g. Browse tournament decks and top player recommendations." class="form-input" maxlength="200">
+          </div>
+          <div class="form-group">
+            <label for="banner-link">Link *</label>
+            <input type="text" id="banner-link" placeholder="e.g. /deck-rec" class="form-input" maxlength="200">
+          </div>
+          <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <div class="form-group" style="flex: 1; min-width: 120px;">
+              <label for="banner-badge">Badge Text</label>
+              <input type="text" id="banner-badge" value="NEW" class="form-input" maxlength="20">
+            </div>
+            <div class="form-group" style="flex: 1; min-width: 120px;">
+              <label for="banner-color">Color</label>
+              <select id="banner-color" class="form-input">
+                <option value="blue">Blue</option>
+                <option value="gold">Gold</option>
+                <option value="green">Green</option>
+                <option value="purple">Purple</option>
+                <option value="red">Red</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex: 1; min-width: 120px;">
+              <label for="banner-duration">Duration</label>
+              <select id="banner-duration" class="form-input">
+                <option value="24">24 hours</option>
+                <option value="48" selected>48 hours</option>
+                <option value="72">72 hours</option>
+                <option value="168">1 week</option>
+                <option value="336">2 weeks</option>
+                <option value="720">30 days</option>
+              </select>
+            </div>
+          </div>
+          <!-- Banner preview -->
+          <div style="margin: 1rem 0;">
+            <label style="color: rgba(255,255,255,0.6); font-size: 0.85rem; margin-bottom: 0.5rem; display: block;">Preview</label>
+            <div id="banner-preview" style="pointer-events: none;"></div>
+          </div>
+          <button class="btn btn-success" onclick="createBanner()">Create Banner</button>
+        </div>
+
+        <!-- Active banners list -->
+        <div id="banners-list">
+          <p class="loading">Loading banners...</p>
         </div>
       </section>
 
@@ -771,6 +832,134 @@
   });
 
   document.addEventListener('DOMContentLoaded', () => loadAnalytics(null));
+
+  // === Promo Banners ===
+  function loadBanners() {
+    fetch('/api/analytics/banners')
+      .then(r => r.json())
+      .then(data => {
+        if (!data.success) return;
+        const el = document.getElementById('banners-list');
+        if (!data.banners.length) {
+          el.innerHTML = '<p class="empty-state">No banners yet. Create one above.</p>';
+          return;
+        }
+        const now = new Date();
+        el.innerHTML = '<table class="dominance-table"><thead><tr>' +
+          '<th>Title</th><th>Link</th><th>Color</th><th>Expires</th><th>Status</th><th>Clicks</th><th>Actions</th>' +
+          '</tr></thead><tbody>' +
+          data.banners.map(b => {
+            const expired = new Date(b.expires_at + 'Z') < now;
+            const status = !b.active ? '<span style="color:#f85149;">Inactive</span>'
+              : expired ? '<span style="color:#8b949e;">Expired</span>'
+              : '<span style="color:#3fb950;">Live</span>';
+            return `<tr>
+              <td><strong>${esc(b.title)}</strong>${b.subtitle ? '<br><small style="color:rgba(255,255,255,0.5);">' + esc(b.subtitle) + '</small>' : ''}</td>
+              <td><a href="${esc(b.link)}" style="color:#58a6ff;">${esc(b.link)}</a></td>
+              <td><span class="action-badge create">${b.color}</span></td>
+              <td class="nowrap">${b.expires_at.replace('T',' ').slice(0,16)}</td>
+              <td>${status}</td>
+              <td id="banner-clicks-${b.id}">--</td>
+              <td class="nowrap">
+                <button class="btn btn-sm btn-primary" onclick="toggleBanner(${b.id})">${b.active ? 'Disable' : 'Enable'}</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteBanner(${b.id})">Delete</button>
+              </td>
+            </tr>`;
+          }).join('') +
+          '</tbody></table>';
+
+        // Load click stats
+        fetch('/api/analytics/stats')
+          .then(r => r.json())
+          .then(stats => {
+            if (!stats.success) return;
+            const clickMap = {};
+            (stats.banner_clicks.by_type || []).forEach(c => { clickMap[c.banner_type] = c.count; });
+            data.banners.forEach(b => {
+              const cell = document.getElementById('banner-clicks-' + b.id);
+              if (cell) cell.textContent = (clickMap['promo_' + b.id] || 0).toLocaleString();
+            });
+          });
+      });
+  }
+
+  function createBanner() {
+    const title = document.getElementById('banner-title').value.trim();
+    const link = document.getElementById('banner-link').value.trim();
+    if (!title || !link) { alert('Title and Link are required.'); return; }
+
+    const hours = parseInt(document.getElementById('banner-duration').value);
+    const expires = new Date(Date.now() + hours * 3600000);
+    const expiresStr = expires.toISOString().slice(0, 19).replace('T', ' ');
+
+    fetch('/api/analytics/banners', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: title,
+        subtitle: document.getElementById('banner-subtitle').value.trim() || null,
+        link: link,
+        badge_text: document.getElementById('banner-badge').value.trim() || 'NEW',
+        color: document.getElementById('banner-color').value,
+        expires_at: expiresStr,
+      }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        document.getElementById('banner-title').value = '';
+        document.getElementById('banner-subtitle').value = '';
+        document.getElementById('banner-link').value = '';
+        document.getElementById('banner-badge').value = 'NEW';
+        loadBanners();
+        updatePreview();
+      } else {
+        alert('Error: ' + data.error);
+      }
+    });
+  }
+
+  function toggleBanner(id) {
+    fetch('/api/analytics/banners/' + id + '/toggle', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => { if (data.success) loadBanners(); else alert('Error: ' + data.error); });
+  }
+
+  function deleteBanner(id) {
+    if (!confirm('Delete this banner?')) return;
+    fetch('/api/analytics/banners/' + id, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(data => { if (data.success) loadBanners(); else alert('Error: ' + data.error); });
+  }
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  }
+
+  // Live preview
+  function updatePreview() {
+    const title = document.getElementById('banner-title').value.trim() || 'Banner Title';
+    const subtitle = document.getElementById('banner-subtitle').value.trim();
+    const badge = document.getElementById('banner-badge').value.trim() || 'NEW';
+    const color = document.getElementById('banner-color').value;
+    document.getElementById('banner-preview').innerHTML =
+      '<a class="promo-banner promo-banner--' + color + '" style="pointer-events:none;">' +
+        '<span class="promo-banner__badge">' + esc(badge) + '</span>' +
+        '<div class="promo-banner__content">' +
+          '<span class="promo-banner__title">' + esc(title) + '</span>' +
+          (subtitle ? '<span class="promo-banner__text">' + esc(subtitle) + '</span>' : '') +
+        '</div>' +
+        '<span class="promo-banner__arrow">&rarr;</span>' +
+      '</a>';
+  }
+
+  ['banner-title', 'banner-subtitle', 'banner-badge', 'banner-color'].forEach(id => {
+    document.getElementById(id).addEventListener('input', updatePreview);
+  });
+
+  document.addEventListener('DOMContentLoaded', () => { loadBanners(); updatePreview(); });
 </script>
   </body>
 </html>

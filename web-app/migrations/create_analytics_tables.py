@@ -51,6 +51,21 @@ def create_analytics_tables():
         ON banner_clicks(timestamp DESC)
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS promo_banners (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            subtitle TEXT,
+            link TEXT NOT NULL,
+            badge_text TEXT NOT NULL DEFAULT 'NEW',
+            color TEXT NOT NULL DEFAULT 'blue',
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+            expires_at TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_by TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
     print("analytics tables ready")

@@ -332,6 +332,9 @@ def ensure_event_elo_column():
     conn.close()
 
 
+_dual_elo_migrated = False
+
+
 def migrate_to_dual_elo_system():
     """
     Migrate to dual ELO system (paper vs online games).
@@ -341,7 +344,12 @@ def migrate_to_dual_elo_system():
     (since all existing matches are from Discord bot).
 
     This migration is idempotent - safe to run multiple times.
+    Uses a module-level flag to only run once per process.
     """
+    global _dual_elo_migrated
+    if _dual_elo_migrated:
+        return
+
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
 
@@ -388,6 +396,7 @@ def migrate_to_dual_elo_system():
 
     conn.commit()
     conn.close()
+    _dual_elo_migrated = True
     logger.info("Dual ELO system migration completed successfully")
 
 

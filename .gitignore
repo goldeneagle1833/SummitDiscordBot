@@ -27,7 +27,7 @@ bot.log
 *.cache
 
 # Script configurations and downloaded logs
-scripts/server_config.json
+scripts/*
 server/email_config.json
 logs/
 
@@ -79,3 +79,9 @@ OPPONENT_SEARCH_500_ERROR_FIX.md
 specs/*
 specs/main/*
 
+scripts/backup_logs.ps1
+scripts/pull_logs.ps1
+scripts/pull_logs.py
+BUSINESS_DOC.md
+SALES_DOC.md
+scripts/pull_logs.ps1

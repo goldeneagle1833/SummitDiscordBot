@@ -186,8 +186,12 @@ def update_confirmation_deck_url(confirmation_id: int, is_winner_deck: bool, dec
 #  Shared confirmation / dispute logic
 # ──────────────────────────────────────────────
 
-async def _execute_match_confirmation(interaction: discord.Interaction, confirmation_id: int, data: dict):
-    """Run the full confirm-and-record flow (called after defer)."""
+async def _execute_match_confirmation(interaction: discord.Interaction, confirmation_id: int, data: dict, *, interaction_valid: bool = True):
+    """Run the full confirm-and-record flow (called after defer).
+
+    If interaction_valid is False, skips all interaction.followup/message.edit
+    calls since the webhook is dead (expired interaction).
+    """
     # Lazy import to avoid circular dependency
     from cogs.lfg.match_reporting import _apply_ladder_elo
 
@@ -199,16 +203,20 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
     if match_key in processed_matches:
         last_report_time = processed_matches[match_key]
         if (now - last_report_time).total_seconds() < 300:
-            await interaction.followup.send(
-                "This match has already been recorded. Duplicate report prevented.",
-                ephemeral=True,
-            )
-            try:
-                await interaction.message.edit(
-                    content="Match already recorded (duplicate prevented).", view=None
-                )
-            except Exception:
-                pass
+            if interaction_valid:
+                try:
+                    await interaction.followup.send(
+                        "This match has already been recorded. Duplicate report prevented.",
+                        ephemeral=True,
+                    )
+                except Exception:
+                    pass
+                try:
+                    await interaction.message.edit(
+                        content="Match already recorded (duplicate prevented).", view=None
+                    )
+                except Exception:
+                    pass
             delete_pending_confirmation(confirmation_id)
             return
 
@@ -323,31 +331,32 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
     )
 
     # ── update confirmation message ──
-    try:
-        await interaction.message.edit(
-            content=(
-                f"Match confirmed! **Match ID: #{match_id}** - "
-                f"{data['winner_global']} won against {data['loser_global']}.{elo_msg}{stakes_msg}"
-            ),
-            view=None,
-        )
-    except Exception as e:
-        logger.warning(f"Could not edit confirmation message: {e}")
-
-    # ── feedback to confirmer ──
-    try:
-        # Only try to send followup if interaction was successfully deferred
-        if interaction.response.is_done():
-            await interaction.followup.send(
-                f"Match report confirmed and submitted! **Match ID: #{match_id}**\n"
-                f"**Winner:** {data['winner_global']}\n**Loser:** {data['loser_global']}{elo_msg}{stakes_msg}",
-                ephemeral=True,
+    if interaction_valid:
+        try:
+            await interaction.message.edit(
+                content=(
+                    f"Match confirmed! **Match ID: #{match_id}** - "
+                    f"{data['winner_global']} won against {data['loser_global']}.{elo_msg}{stakes_msg}"
+                ),
+                view=None,
             )
-    except discord.errors.NotFound as e:
-        # Interaction expired - user won't get direct feedback, but match is still saved
-        logger.warning(f"Could not send confirmation followup (interaction expired): {e}")
-    except Exception as e:
-        logger.warning(f"Could not send confirmation followup: {e}")
+        except Exception as e:
+            logger.warning(f"Could not edit confirmation message: {e}")
+
+        # ── feedback to confirmer ──
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(
+                    f"Match report confirmed and submitted! **Match ID: #{match_id}**\n"
+                    f"**Winner:** {data['winner_global']}\n**Loser:** {data['loser_global']}{elo_msg}{stakes_msg}",
+                    ephemeral=True,
+                )
+        except discord.errors.NotFound as e:
+            logger.warning(f"Could not send confirmation followup (interaction expired): {e}")
+        except Exception as e:
+            logger.warning(f"Could not send confirmation followup: {e}")
+    else:
+        logger.info(f"Interaction expired for confirmation {confirmation_id} — match #{match_id} saved successfully, skipping UI updates")
 
     # ── notify reporter ──
     try:
@@ -530,16 +539,16 @@ class PersistentConfirmButton(
                 return
 
             # Try to defer, but handle expired interactions gracefully
+            interaction_valid = True
             try:
                 await interaction.response.defer()
             except discord.errors.NotFound:
                 # Interaction expired (>15 minutes old) - still process the confirmation
-                logger.warning(f"Interaction expired for confirmation {self.confirmation_id}, processing anyway")
-                # We can't use followup after a failed defer, so we'll just process silently
-                pass
+                logger.warning(f"Interaction expired for confirmation {self.confirmation_id}, processing match without UI feedback")
+                interaction_valid = False
 
-            # Disable buttons
-            if self.view:
+            # Disable buttons (only if interaction is valid)
+            if interaction_valid and self.view:
                 for child in self.view.children:
                     child.disabled = True
                 try:
@@ -548,12 +557,7 @@ class PersistentConfirmButton(
                     pass
 
             # Execute the confirmation (this saves the match and updates ELO)
-            # This works even if the interaction expired above
-            await _execute_match_confirmation(interaction, self.confirmation_id, data)
-
-        except discord.errors.NotFound as e:
-            # Entire button interaction failed - log but don't crash
-            logger.error(f"Button interaction failed for confirmation {self.confirmation_id}: {e}")
+            await _execute_match_confirmation(interaction, self.confirmation_id, data, interaction_valid=interaction_valid)
         except Exception as e:
             logger.error(f"Error in PersistentConfirmButton: {e}", exc_info=True)
             try:

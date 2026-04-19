@@ -135,7 +135,6 @@ SummitDiscordBot/
 │   ├── config.py        # Configuration (gitignored)
 │   └── main.py          # Entry point
 ├── web-app/             # Flask web application
-├── SorceryAI/           # RAG rules assistant
 ├── CLAUDE.md            # Project documentation
 └── TESTING.md           # Testing guide
 ```

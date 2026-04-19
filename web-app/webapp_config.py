@@ -11,7 +11,6 @@ load_dotenv(_env_path)
 # Base paths
 BASE_DIR = Path(__file__).parent
 BOT_DIR = BASE_DIR.parent / "discord-bot"
-SORCERY_AI_DIR = BASE_DIR.parent / "SorceryAI"
 TOP_8_DIR = BASE_DIR / "top-8-decks-by-event"
 CARD_IMAGES_DIR = BASE_DIR / "card_images"
 AVATAR_IMAGES_DIR = BASE_DIR / "templates" / "avatar_imgs"

@@ -8,7 +8,6 @@ Summit Discord Bot is a community bot for "Sorcery: Contested Realm" card game. 
 
 - **discord-bot/** - Python Discord bot (discord.py 2.3+) for matchmaking, ELO ranking, and community features
 - **web-app/** - Flask web application for leaderboards, stats, deck viewing, and API
-- **SorceryAI/** - RAG-based rules assistant using ChromaDB and OpenAI
 
 ## Common Commands
 
@@ -28,14 +27,6 @@ python web-app/app.py                    # Development
 gunicorn -c web-app/gunicorn_config.py   # Production
 ```
 
-### SorceryAI
-```bash
-pip install -r SorceryAI/requirements.txt
-python SorceryAI/scripts/index_knowledge_base.py  # Re-index knowledge base
-python SorceryAI/scripts/test_queries.py          # Test RAG system
-pytest SorceryAI/tests/
-```
-
 ## Architecture
 
 ### Discord Bot Cog System
@@ -46,7 +37,6 @@ Commands are organized into Cogs (modular command handlers) in `discord-bot/cogs
 - `fun.py` - Fart game with OpenAI responses
 - `shop.py` - In-game shop and purchases
 - `utility.py` - Help, deck checking
-- `rules_assistant.py` - SorceryAI integration
 - `anti_spam.py` - Spam protection system
 - `streaming.py` - Streaming detection and announcements
 - `purchase_tracking.py` - Discord monetization/purchase tracking
@@ -74,7 +64,7 @@ The web app uses a layered architecture:
 **Routes** (`web-app/routes/`):
 - `pages.py` - Page routes (HTML views)
 - `auth.py` - Authentication routes (Discord OAuth)
-- `api/` - REST API endpoints: `avatars.py`, `cards.py`, `games.py`, `leaderboard.py`, `matches.py`, `players.py`, `rules.py`, `streamers.py`, `misc.py`
+- `api/` - REST API endpoints: `avatars.py`, `cards.py`, `games.py`, `leaderboard.py`, `matches.py`, `players.py`, `streamers.py`, `misc.py`
 
 **Services** (`web-app/services/`):
 - `curiosa.py` - Curiosa API integration
@@ -91,36 +81,12 @@ The web app uses a layered architecture:
 
 **Frontend**: Jinja2 templates in `web-app/templates/` with static CSS/JS in `web-app/static/`.
 
-### RAG System Flow (SorceryAI)
-
-```
-User Query -> Embedding (text-embedding-3-small) -> Vector Search (ChromaDB)
-           -> Context Assembly -> LLM Generation (GPT) -> Response with Sources
-```
-
-The system auto-initializes on first use - no manual indexing required.
-
-Core modules in `SorceryAI/core/`:
-- `embeddings.py` - OpenAI embedding integration
-- `generator.py` - LLM response generation
-- `retriever.py` - Vector retrieval from ChromaDB
-- `vector_store.py` - ChromaDB vector store management
-- `prompts.py` - System prompts
-
-Knowledge base in `SorceryAI/knowledge_base/`:
-- `comprehensive_rules_formatted.md` - Full rulebook
-- `quick_start_rules.md` - Quick start guide
-- `faq.md` - FAQ
-- Card rulings by type: `artifact_cards.md`, `aura_cards.md`, `avatar_cards.md`, `magic_cards.md`, `minion_cards.md`, `site_cards.md`
-
-Data conversion scripts in `SorceryAI/scripts/` convert raw data (CSV, JSON, DOCX) into markdown for indexing.
-
 ## Key Configuration
 
-- `discord-bot/config.py` - Centralized bot config (gitignored, contains secrets): API keys, channel/guild/role IDs, SorceryAI paths, RAG parameters
+- `discord-bot/config.py` - Centralized bot config (gitignored, contains secrets): API keys, channel/guild/role IDs
 - `web-app/webapp_config.py` - Web app configuration
 - `web-app/gunicorn_config.py` - Production WSGI server config
-- `.env` - Environment variables (TOKEN, OPENAI_API_KEY) - gitignored
+- `.env` - Environment variables (TOKEN) - gitignored
 
 ## Database
 
@@ -136,19 +102,17 @@ The Discord bot accesses databases directly via `discord-bot/utils/database.py`.
 **GitHub Actions** (`.github/workflows/`):
 - `deploy-bot.yml` - Discord bot deployment
 - `deploy-web.yml` - Web app deployment
-- `deploy-ai.yml` - SorceryAI deployment
 
 **Production**: systemd services behind Nginx with Cloudflare. Config files in:
 - `web-app/systemd/summit-web.service`
 - `web-app/nginx/summit-web.conf` / `summit-web-cloudflare.conf`
-- See `web-app/DEPLOYMENT.md` and `SorceryAI/DEPLOYMENT.md`
+- See `web-app/DEPLOYMENT.md`
 
 ## External Integrations
 
 - **Discord API** - via discord.py (prefix `!` and slash `/` commands)
-- **OpenAI API** - GPT models for LLM, text-embedding-3-small for embeddings
+- **OpenAI API** - GPT models for fun cog responses
 - **Curiosa API** - Deck/card data via `utils/deck_checker.py` and `web-app/services/curiosa.py`
-- **ChromaDB** - Vector store at `SorceryAI/data/chroma_db/`
 - **YouTube API** - Streaming integration via `web-app/services/youtube.py`
 - **Discord OAuth** - Web app authentication via `web-app/routes/auth.py`
 

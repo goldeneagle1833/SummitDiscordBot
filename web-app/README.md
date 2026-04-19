@@ -135,7 +135,6 @@ web-app/
 │       ├── matches.py              # Match history
 │       ├── misc.py                 # Health check, debug
 │       ├── players.py              # Player profiles & stats
-│       ├── rules.py                # SorceryAI integration
 │       ├── seasons.py              # Custom season management
 │       └── streamers.py            # Active streamer detection
 │
@@ -318,4 +317,3 @@ Check that databases have data. Run `python scripts/seed_databases.py` or use th
 - [API_DOCUMENTATION.md](API_DOCUMENTATION.md) - Full API reference
 - [DEPLOYMENT.md](DEPLOYMENT.md) - Detailed deployment guide
 - [../discord-bot/](../discord-bot/) - Discord bot
-- [../SorceryAI/](../SorceryAI/) - Rules assistant RAG system

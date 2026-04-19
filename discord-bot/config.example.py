@@ -58,39 +58,3 @@ SUMMIT_DISCORD_INVITE = "https://discord.gg/sorcererssummit"
 
 # File names
 DECK_DATA_FILE = "deck_data_test.json"
-
-
-"""
-Configuration for SorceryAI RAG System
-"""
-# SorceryAI paths - point to the SorceryAI directory
-SORCERY_AI_DIR = Path(__file__).parent.parent / "SorceryAI"
-KNOWLEDGE_BASE_DIR = SORCERY_AI_DIR / "knowledge_base"
-DATA_DIR = SORCERY_AI_DIR / "data"
-CHROMA_DB_DIR = DATA_DIR / "chroma_db"
-
-# Ensure directories exist
-DATA_DIR.mkdir(exist_ok=True)
-CHROMA_DB_DIR.mkdir(exist_ok=True)
-
-# OpenAI Configuration (OPENAI_API_KEY is set at top of file from .env)
-EMBEDDING_MODEL = "text-embedding-3-small"
-LLM_MODEL = "gpt-4o-mini"  # Use cheaper model for testing
-
-# Embedding Configuration
-EMBEDDING_DIMENSIONS = 1536  # for text-embedding-3-small
-CHUNK_SIZE = 750  # tokens per chunk
-CHUNK_OVERLAP = 100  # token overlap between chunks
-
-# Retrieval Configuration
-TOP_K_RESULTS = 10  # Number of chunks to retrieve
-SIMILARITY_THRESHOLD = 0.7  # Minimum similarity score
-
-# Generation Configuration
-MAX_CONTEXT_LENGTH = 4000  # Max tokens for context
-MAX_RESPONSE_LENGTH = 500  # Max tokens for response
-TEMPERATURE = 0.2  # Lower = more consistent responses
-
-# ChromaDB Configuration
-COLLECTION_NAME = "sorcery_rules"
-DISTANCE_METRIC = "cosine"  # or "l2", "ip"

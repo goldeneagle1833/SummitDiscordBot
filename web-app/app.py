@@ -21,11 +21,6 @@ _bot_path = str(Path(__file__).parent.parent / "discord-bot")
 if _bot_path not in sys.path:
     sys.path.append(_bot_path)  # append, not insert, to keep web-app priority
 
-# Add SorceryAI to path
-_sorcery_ai_path = str(Path(__file__).parent.parent / "SorceryAI")
-if _sorcery_ai_path not in sys.path:
-    sys.path.append(_sorcery_ai_path)
-
 from utils.version import APP_VERSION
 from utils.auth import get_current_user, is_admin, is_curio_editor
 from routes import register_blueprints

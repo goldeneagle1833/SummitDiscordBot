@@ -61,7 +61,11 @@
       "Bash(/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell -NoProfile -ExecutionPolicy Bypass -Command \".specify/scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks\")",
       "Bash(/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell -NoProfile -Command \"& { $j = $input | ConvertFrom-Json; $j[0] | Select-Object -Property * | ConvertTo-Json -Depth 1 }\")",
       "Bash(break done break done)",
-      "Bash(/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell -NoProfile -Command \"& { $py = Get-Command python3 -ErrorAction SilentlyContinue; if \\(-not $py\\) { $py = Get-Command python -ErrorAction SilentlyContinue }; if \\($py\\) { & $py.Source -c ''import ast, sys; files=[\"\"repositories/deck_rec_repo.py\"\",\"\"services/deck_similarity.py\"\",\"\"routes/api/deck_recommendations.py\"\"]; [print\\(f, \"\"OK\"\"\\) or None for f in files if not ast.parse\\(open\\(f\\).read\\(\\)\\)]'' } else { Write-Host \"\"Python not found\"\" } }\")"
+      "Bash(/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell -NoProfile -Command \"& { $py = Get-Command python3 -ErrorAction SilentlyContinue; if \\(-not $py\\) { $py = Get-Command python -ErrorAction SilentlyContinue }; if \\($py\\) { & $py.Source -c ''import ast, sys; files=[\"\"repositories/deck_rec_repo.py\"\",\"\"services/deck_similarity.py\"\",\"\"routes/api/deck_recommendations.py\"\"]; [print\\(f, \"\"OK\"\"\\) or None for f in files if not ast.parse\\(open\\(f\\).read\\(\\)\\)]'' } else { Write-Host \"\"Python not found\"\" } }\")",
+      "Bash(xargs -I {} basename {})",
+      "Bash(scp \"root@50.116.43.215:/root/Summit/log_report.log\" \"F:\\\\GitHub\\\\SummitDiscordBot\\\\discord-bot\\\\pull_from_server\"\")",
+      "Bash(scp root@50.116.43.215:/root/Summit/log_report.log F:/GitHub/SummitDiscordBot/discord-bot/pull_from_server/)",
+      "Bash(ssh root@50.116.43.215 \"cat /root/Summit/scripts/daily_log_report.py\")"
     ]
   },
   "enabledPlugins": {

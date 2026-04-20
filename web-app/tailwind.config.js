@@ -29,13 +29,13 @@ module.exports = {
           red: 'oklch(48% 0.190 22)',       // Deep crimson
         },
         bg: {
-          dark: 'oklch(18% 0.014 65)',      // Warm near-black
-          surface: 'oklch(24% 0.018 65)',   // Warm surface
-          elevated: 'oklch(32% 0.026 65)',  // Warm elevated
+          dark: '#0d1117',
+          surface: '#161b22',
+          elevated: '#21262d',
         },
         text: {
-          DEFAULT: 'oklch(95% 0.022 82)',   // Warm ivory
-          muted: 'oklch(65% 0.012 82)',     // Warm muted
+          DEFAULT: '#f0f6fc',
+          muted: '#8b949e',
         },
         border: {
           DEFAULT: '#30363d',

@@ -167,9 +167,6 @@ SummitDiscordBot/
 ├── 🌐 web-app/                      ← Flask web app
 │   └── [Web app files]
 │
-├── 🧠 SorceryAI/                    ← RAG system
-│   └── [AI system files]
-│
 └── ⚙️ .github/
     └── workflows/
         ├── pr-test-bot.yml          ← PR testing

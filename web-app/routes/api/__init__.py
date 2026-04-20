@@ -11,7 +11,6 @@ from routes.api.players import players_bp
 from routes.api.avatars import avatars_bp
 from routes.api.cards import cards_bp
 from routes.api.games import games_bp
-from routes.api.rules import rules_bp
 from routes.api.misc import misc_bp
 from routes.api.streamers import streamers_bp
 from routes.api.external_matches import external_matches_bp
@@ -22,6 +21,8 @@ from routes.api.seasons import seasons_bp
 from routes.api.limited import limited_bp
 from routes.api.fun_stats import fun_stats_bp
 from routes.api.events import events_bp
+from routes.api.analytics import analytics_bp
+from routes.api.deck_recommendations import deck_rec_bp
 
 api_bp.register_blueprint(leaderboard_bp)
 api_bp.register_blueprint(matches_bp)
@@ -29,7 +30,6 @@ api_bp.register_blueprint(players_bp)
 api_bp.register_blueprint(avatars_bp)
 api_bp.register_blueprint(cards_bp)
 api_bp.register_blueprint(games_bp)
-api_bp.register_blueprint(rules_bp)
 api_bp.register_blueprint(misc_bp)
 api_bp.register_blueprint(streamers_bp)
 api_bp.register_blueprint(external_matches_bp)
@@ -40,3 +40,5 @@ api_bp.register_blueprint(seasons_bp)
 api_bp.register_blueprint(limited_bp, url_prefix="/limited")
 api_bp.register_blueprint(fun_stats_bp)
 api_bp.register_blueprint(events_bp)
+api_bp.register_blueprint(analytics_bp)
+api_bp.register_blueprint(deck_rec_bp, url_prefix="/deck-rec")

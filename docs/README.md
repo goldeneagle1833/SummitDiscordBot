@@ -38,10 +38,6 @@ These files are kept for historical reference and to help understand past decisi
 ### Web Application
 - **[../web-app/DEPLOYMENT.md](../web-app/DEPLOYMENT.md)** - Web app deployment guide
 
-### SorceryAI
-- **[../SorceryAI/DEPLOYMENT.md](../SorceryAI/DEPLOYMENT.md)** - AI system deployment
-- Knowledge base documentation in `SorceryAI/knowledge_base/`
-
 ## Quick Links
 
 ### For Contributors

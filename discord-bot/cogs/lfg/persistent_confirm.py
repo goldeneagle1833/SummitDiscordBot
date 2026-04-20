@@ -186,10 +186,14 @@ def update_confirmation_deck_url(confirmation_id: int, is_winner_deck: bool, dec
 #  Shared confirmation / dispute logic
 # ──────────────────────────────────────────────
 
-async def _execute_match_confirmation(interaction: discord.Interaction, confirmation_id: int, data: dict):
-    """Run the full confirm-and-record flow (called after defer)."""
+async def _execute_match_confirmation(interaction: discord.Interaction, confirmation_id: int, data: dict, *, interaction_valid: bool = True):
+    """Run the full confirm-and-record flow (called after defer).
+
+    If interaction_valid is False, skips all interaction.followup/message.edit
+    calls since the webhook is dead (expired interaction).
+    """
     # Lazy import to avoid circular dependency
-    from cogs.lfg.match_reporting import _apply_ladder_elo, RunStatusView
+    from cogs.lfg.match_reporting import _apply_ladder_elo
 
     bot = interaction.client
 
@@ -199,16 +203,20 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
     if match_key in processed_matches:
         last_report_time = processed_matches[match_key]
         if (now - last_report_time).total_seconds() < 300:
-            await interaction.followup.send(
-                "This match has already been recorded. Duplicate report prevented.",
-                ephemeral=True,
-            )
-            try:
-                await interaction.message.edit(
-                    content="Match already recorded (duplicate prevented).", view=None
-                )
-            except Exception:
-                pass
+            if interaction_valid:
+                try:
+                    await interaction.followup.send(
+                        "This match has already been recorded. Duplicate report prevented.",
+                        ephemeral=True,
+                    )
+                except Exception:
+                    pass
+                try:
+                    await interaction.message.edit(
+                        content="Match already recorded (duplicate prevented).", view=None
+                    )
+                except Exception:
+                    pass
             delete_pending_confirmation(confirmation_id)
             return
 
@@ -238,6 +246,11 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
         loser_went_first = "y" if reporter_went_first else "n"
 
     # ── record the match ──
+    logger.info(
+        f"Recording match confirmation: {data['winner_global']} (ID: {data['winner_id']}) "
+        f"vs {data['loser_global']} (ID: {data['loser_id']}), Type: {data.get('match_type', 'ranked')}"
+    )
+
     winner_run_complete = False
     loser_run_complete = False
     stakes_msg = ""
@@ -312,27 +325,38 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
         elif not event_active:
             elo_msg = " *(No active event - ELO not affected)*"
 
-    # ── update confirmation message ──
-    try:
-        await interaction.message.edit(
-            content=(
-                f"Match confirmed! **Match ID: #{match_id}** - "
-                f"{data['winner_global']} won against {data['loser_global']}.{elo_msg}{stakes_msg}"
-            ),
-            view=None,
-        )
-    except Exception as e:
-        logger.warning(f"Could not edit confirmation message: {e}")
+    # Log successful match save
+    logger.info(
+        f"Match #{match_id} successfully saved: {data['winner_global']} defeated {data['loser_global']}"
+    )
 
-    # ── feedback to confirmer ──
-    try:
-        await interaction.followup.send(
-            f"Match report confirmed and submitted! **Match ID: #{match_id}**\n"
-            f"**Winner:** {data['winner_global']}\n**Loser:** {data['loser_global']}{elo_msg}{stakes_msg}",
-            ephemeral=True,
-        )
-    except Exception as e:
-        logger.warning(f"Could not send confirmation followup: {e}")
+    # ── update confirmation message ──
+    if interaction_valid:
+        try:
+            await interaction.message.edit(
+                content=(
+                    f"Match confirmed! **Match ID: #{match_id}** - "
+                    f"{data['winner_global']} won against {data['loser_global']}.{elo_msg}{stakes_msg}"
+                ),
+                view=None,
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit confirmation message: {e}")
+
+        # ── feedback to confirmer ──
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(
+                    f"Match report confirmed and submitted! **Match ID: #{match_id}**\n"
+                    f"**Winner:** {data['winner_global']}\n**Loser:** {data['loser_global']}{elo_msg}{stakes_msg}",
+                    ephemeral=True,
+                )
+        except discord.errors.NotFound as e:
+            logger.warning(f"Could not send confirmation followup (interaction expired): {e}")
+        except Exception as e:
+            logger.warning(f"Could not send confirmation followup: {e}")
+    else:
+        logger.info(f"Interaction expired for confirmation {confirmation_id} — match #{match_id} saved successfully, skipping UI updates")
 
     # ── notify reporter ──
     try:
@@ -378,10 +402,9 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 if run_complete:
                     await user.send(f"🏁 **Arena Run Complete!**\n\n{summary}")
                 else:
-                    view = RunStatusView(player_id, run_id, bot)
                     await user.send(
-                        f"🎲 **Limited Match Recorded**\n\n{summary}\n\nWhat would you like to do?",
-                        view=view,
+                        f"🎲 **Limited Match Recorded**\n\n{summary}\n\n"
+                        f"If you would like to forfeit the run, use `!forfeit`."
                     )
             except discord.Forbidden:
                 logger.warning("Could not DM limited run status to user %s", player_id)
@@ -515,10 +538,17 @@ class PersistentConfirmButton(
                 await interaction.response.send_modal(modal)
                 return
 
-            await interaction.response.defer()
+            # Try to defer, but handle expired interactions gracefully
+            interaction_valid = True
+            try:
+                await interaction.response.defer()
+            except discord.errors.NotFound:
+                # Interaction expired (>15 minutes old) - still process the confirmation
+                logger.warning(f"Interaction expired for confirmation {self.confirmation_id}, processing match without UI feedback")
+                interaction_valid = False
 
-            # Disable buttons
-            if self.view:
+            # Disable buttons (only if interaction is valid)
+            if interaction_valid and self.view:
                 for child in self.view.children:
                     child.disabled = True
                 try:
@@ -526,8 +556,8 @@ class PersistentConfirmButton(
                 except Exception:
                     pass
 
-            await _execute_match_confirmation(interaction, self.confirmation_id, data)
-
+            # Execute the confirmation (this saves the match and updates ELO)
+            await _execute_match_confirmation(interaction, self.confirmation_id, data, interaction_valid=interaction_valid)
         except Exception as e:
             logger.error(f"Error in PersistentConfirmButton: {e}", exc_info=True)
             try:
@@ -609,29 +639,49 @@ class PersistentConfirmDeckModal(discord.ui.Modal, title="Enter Your Deck"):
         self.is_winner = is_winner
 
     async def on_submit(self, interaction: discord.Interaction):
-        deck_url = self.deck_url.value.strip() if self.deck_url.value else None
-
-        if deck_url:
-            update_confirmation_deck_url(self.confirmation_id, self.is_winner, deck_url)
-
-        data = load_pending_confirmation(self.confirmation_id)
-        if not data:
-            await interaction.response.send_message(
-                "This match confirmation has expired or was already processed.",
-                ephemeral=True,
-            )
-            return
-
-        await interaction.response.defer()
-
-        # Try to disable buttons on the original message
         try:
-            if interaction.message:
-                await interaction.message.edit(view=None)
-        except Exception:
-            pass
+            logger.info(f"Processing deck URL modal submission for confirmation {self.confirmation_id}")
 
-        await _execute_match_confirmation(interaction, self.confirmation_id, data)
+            deck_url = self.deck_url.value.strip() if self.deck_url.value else None
+
+            if deck_url:
+                update_confirmation_deck_url(self.confirmation_id, self.is_winner, deck_url)
+                logger.info(f"Updated deck URL for confirmation {self.confirmation_id}")
+
+            data = load_pending_confirmation(self.confirmation_id)
+            if not data:
+                await interaction.response.send_message(
+                    "This match confirmation has expired or was already processed.",
+                    ephemeral=True,
+                )
+                return
+
+            await interaction.response.defer()
+
+            # Try to disable buttons on the original message
+            try:
+                if interaction.message:
+                    await interaction.message.edit(view=None)
+            except Exception as edit_error:
+                logger.warning(f"Could not edit message to disable buttons: {edit_error}")
+
+            await _execute_match_confirmation(interaction, self.confirmation_id, data)
+
+        except Exception as e:
+            logger.error(f"Unexpected error in PersistentConfirmDeckModal: {e}", exc_info=True)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "An unexpected error occurred while processing your confirmation. Please try again.",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "An unexpected error occurred while processing your confirmation. Please try again.",
+                        ephemeral=True,
+                    )
+            except Exception:
+                logger.error("Failed to send error message to user")
 
 
 # ──────────────────────────────────────────────

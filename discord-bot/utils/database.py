@@ -35,6 +35,7 @@ from repositories.elo_repo import (  # noqa: F401
     save_ladder_challenge,
     complete_ladder_challenge,
     delete_ladder_challenge,
+    reset_ladder_challenge_today,
     save_challenge_match,
     # Pairing functions
     save_pairing,
@@ -52,6 +53,7 @@ from services.elo_service import (  # noqa: F401
     update_elo,
     calculate_event_k_value,
     update_elo_db,
+    update_elo_db_lifetime_only,
     update_elo_db_ladder,
     winner_report,
     losser_report,

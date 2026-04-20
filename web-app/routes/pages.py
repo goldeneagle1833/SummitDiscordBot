@@ -18,7 +18,9 @@ pages_bp = Blueprint("pages", __name__)
 @pages_bp.route("/")
 def home():
     """Home page."""
-    return render_template("pages/index.html")
+    repo = EventRepository()
+    new_event = repo.get_recent_event(hours=48)
+    return render_template("pages/index.html", new_event=new_event)
 
 
 @pages_bp.route("/about")
@@ -131,6 +133,28 @@ def live_popular_cards():
     return render_template("pages/live_popular_cards.html")
 
 
+def _avatar_image_files():
+    if not AVATAR_IMAGES_DIR.exists():
+        return []
+    return [f for f in os.listdir(AVATAR_IMAGES_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))]
+
+
+@pages_bp.route("/deck-rec")
+def deck_rec():
+    """Sorcery Deck Rec — archetype list page."""
+    return render_template(
+        "pages/deck_recommendations.html",
+        avatar_image_files=_avatar_image_files(),
+        user_is_admin=is_admin(),
+    )
+
+
+@pages_bp.route("/deck-rec/<deck_id>")
+def deck_rec_detail(deck_id: str):
+    """Sorcery Deck Rec — archetype recommendation detail page."""
+    return render_template("pages/deck_recommendation.html", deck_id=deck_id, avatar_image_files=_avatar_image_files())
+
+
 @pages_bp.route("/elements")
 def elements():
     """Elemental winrates page."""
@@ -147,6 +171,18 @@ def fun_stats():
 def elo():
     """ELO leaderboards page."""
     return render_template("pages/elo.html")
+
+
+@pages_bp.route("/elo/limited")
+def elo_limited():
+    """Limited format ELO leaderboard page. Requires pilot or admin."""
+    from services.pilots import is_pilot_active
+
+    if not is_admin() and not is_pilot_active("limited_leaderboard"):
+        return render_template(
+            "pages/error.html", error="Limited leaderboard is not currently available."
+        ), 403
+    return render_template("pages/elo_limited.html")
 
 
 @pages_bp.route("/elo/global")

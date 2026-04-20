@@ -4,6 +4,7 @@ import json
 import csv
 import logging
 import re
+import time
 from pathlib import Path
 
 from webapp_config import TOP_8_DIR, EVENT_RATINGS
@@ -71,7 +72,9 @@ class EventRepository:
 
         return {"top8": top8_json, "full": full_json}
 
-    def reorder_event_decks(self, event_folder: str, table_type: str, new_order: list[int]) -> dict:
+    def reorder_event_decks(
+        self, event_folder: str, table_type: str, new_order: list[int]
+    ) -> dict:
         """Reorder decks in a JSON file by rearranging the array.
 
         Args:
@@ -113,10 +116,16 @@ class EventRepository:
 
         # Validate order array
         if len(new_order) != len(reorder_slice):
-            return {"success": False, "error": f"Order length {len(new_order)} doesn't match deck count {len(reorder_slice)}"}
+            return {
+                "success": False,
+                "error": f"Order length {len(new_order)} doesn't match deck count {len(reorder_slice)}",
+            }
 
         if sorted(new_order) != list(range(len(reorder_slice))):
-            return {"success": False, "error": "Invalid order: must contain each index exactly once"}
+            return {
+                "success": False,
+                "error": "Invalid order: must contain each index exactly once",
+            }
 
         # Apply reorder
         reordered = [reorder_slice[i] for i in new_order]
@@ -187,7 +196,10 @@ class EventRepository:
             full_json = None
 
             for json_file in json_files:
-                if "top8" in json_file.name.lower() or "top 8" in json_file.name.lower():
+                if (
+                    "top8" in json_file.name.lower()
+                    or "top 8" in json_file.name.lower()
+                ):
                     top8_json = json_file
                 elif json_file.name.lower().startswith(folder.name.lower()):
                     full_json = json_file
@@ -198,14 +210,16 @@ class EventRepository:
                 try:
                     with open(json_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
-                        events.append({
-                            "folder": folder.name,
-                            "name": format_event_name(folder.name),
-                            "player_count": len(data),
-                            "has_top8": top8_json is not None,
-                            "has_full": full_json is not None,
-                            "rating": EVENT_RATINGS.get(folder.name, 1),
-                        })
+                        events.append(
+                            {
+                                "folder": folder.name,
+                                "name": format_event_name(folder.name),
+                                "player_count": len(data),
+                                "has_top8": top8_json is not None,
+                                "has_full": full_json is not None,
+                                "rating": EVENT_RATINGS.get(folder.name, 1),
+                            }
+                        )
                 except Exception:
                     pass
 
@@ -225,6 +239,37 @@ class EventRepository:
 
         return events
 
+    def get_recent_event(self, hours: int = 0) -> dict | None:
+        """Get the latest event if it was added within the last N hours."""
+        latest_file = self._events_dir / "latest_event.json"
+        if not latest_file.exists():
+            return None
+
+        try:
+            with open(latest_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return None
+
+        added_at = data.get("added_at", "")
+        if not added_at:
+            return None
+
+        # Parse ISO timestamp and check if within the time window
+        try:
+            added_ts = time.mktime(time.strptime(added_at, "%Y-%m-%dT%H:%M:%S"))
+        except ValueError:
+            return None
+
+        if time.time() - added_ts > hours * 3600:
+            return None
+
+        folder = data.get("folder", "")
+        return {
+            "folder": folder,
+            "name": format_event_name(folder),
+        }
+
     def get_events_with_stats(self) -> list[dict]:
         """Get events that have CSV statistics files."""
         events = []
@@ -243,16 +288,20 @@ class EventRepository:
             for csv_file in csv_files:
                 if "element" in csv_file.name.lower():
                     elements_csv = csv_file
-                elif not any(x in csv_file.name.lower() for x in ["element", "top8", "top 8"]):
+                elif not any(
+                    x in csv_file.name.lower() for x in ["element", "top8", "top 8"]
+                ):
                     cards_csv = csv_file
 
             if elements_csv or cards_csv:
-                events.append({
-                    "folder": folder.name,
-                    "name": format_event_name(folder.name),
-                    "has_elements": elements_csv is not None,
-                    "has_cards": cards_csv is not None,
-                })
+                events.append(
+                    {
+                        "folder": folder.name,
+                        "name": format_event_name(folder.name),
+                        "has_elements": elements_csv is not None,
+                        "has_cards": cards_csv is not None,
+                    }
+                )
 
         events.sort(
             key=lambda e: (
@@ -289,12 +338,16 @@ class EventRepository:
                 with open(top8_json, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     for deck in data[:8]:
-                        top8_decks.append({
-                            "player": deck.get("username", "Unknown"),
-                            "avatar": deck.get("avatar", [{}])[0].get("name", "Unknown"),
-                            "deck_name": deck.get("name", "Unnamed Deck"),
-                            "deck_id": deck.get("id", ""),
-                        })
+                        top8_decks.append(
+                            {
+                                "player": deck.get("username", "Unknown"),
+                                "avatar": deck.get("avatar", [{}])[0].get(
+                                    "name", "Unknown"
+                                ),
+                                "deck_name": deck.get("name", "Unnamed Deck"),
+                                "deck_id": deck.get("id", ""),
+                            }
+                        )
             except Exception:
                 pass
 
@@ -303,12 +356,16 @@ class EventRepository:
                 with open(full_json, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     for deck in data:
-                        all_decks.append({
-                            "player": deck.get("username", "Unknown"),
-                            "avatar": deck.get("avatar", [{}])[0].get("name", "Unknown"),
-                            "deck_name": deck.get("name", "Unnamed Deck"),
-                            "deck_id": deck.get("id", ""),
-                        })
+                        all_decks.append(
+                            {
+                                "player": deck.get("username", "Unknown"),
+                                "avatar": deck.get("avatar", [{}])[0].get(
+                                    "name", "Unknown"
+                                ),
+                                "deck_name": deck.get("name", "Unnamed Deck"),
+                                "deck_id": deck.get("id", ""),
+                            }
+                        )
             except Exception:
                 pass
 
@@ -413,7 +470,9 @@ class EventRepository:
         for csv_file in csv_files:
             if "element" in csv_file.name.lower():
                 elements_csv = csv_file
-            elif not any(x in csv_file.name.lower() for x in ["element", "top8", "top 8"]):
+            elif not any(
+                x in csv_file.name.lower() for x in ["element", "top8", "top 8"]
+            ):
                 cards_csv = csv_file
 
         element_data = []
@@ -424,10 +483,14 @@ class EventRepository:
                 with open(elements_csv, "r", encoding="utf-8") as f:
                     reader = csv.DictReader(f)
                     for row in reader:
-                        element_data.append({
-                            "elements": row.get("Deck Elements", "").strip("\"()' "),
-                            "count": row.get(" Count", row.get("Count", "0")),
-                        })
+                        element_data.append(
+                            {
+                                "elements": row.get("Deck Elements", "").strip(
+                                    "\"()' "
+                                ),
+                                "count": row.get(" Count", row.get("Count", "0")),
+                            }
+                        )
             except Exception:
                 pass
 
@@ -438,17 +501,19 @@ class EventRepository:
                     for row in reader:
                         count = int(row.get("Count", 0))
                         if count > 0:
-                            card_data.append({
-                                "name": row.get("Name", "Unknown"),
-                                "type": row.get("Type", "Unknown"),
-                                "element": row.get("Element", "Unknown"),
-                                "count": count,
-                                "rarity": row.get("Rarity", "Unknown"),
-                                "avg_played": row.get("Average_Played", "0"),
-                                "deck_percent": row.get(
-                                    "Percent_of_Decks_with_at_least_one_copy", "0"
-                                ),
-                            })
+                            card_data.append(
+                                {
+                                    "name": row.get("Name", "Unknown"),
+                                    "type": row.get("Type", "Unknown"),
+                                    "element": row.get("Element", "Unknown"),
+                                    "count": count,
+                                    "rarity": row.get("Rarity", "Unknown"),
+                                    "avg_played": row.get("Average_Played", "0"),
+                                    "deck_percent": row.get(
+                                        "Percent_of_Decks_with_at_least_one_copy", "0"
+                                    ),
+                                }
+                            )
                 card_data.sort(key=lambda x: x["count"], reverse=True)
             except Exception:
                 pass

@@ -332,6 +332,9 @@ def ensure_event_elo_column():
     conn.close()
 
 
+_dual_elo_migrated = False
+
+
 def migrate_to_dual_elo_system():
     """
     Migrate to dual ELO system (paper vs online games).
@@ -341,7 +344,12 @@ def migrate_to_dual_elo_system():
     (since all existing matches are from Discord bot).
 
     This migration is idempotent - safe to run multiple times.
+    Uses a module-level flag to only run once per process.
     """
+    global _dual_elo_migrated
+    if _dual_elo_migrated:
+        return
+
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
 
@@ -388,6 +396,7 @@ def migrate_to_dual_elo_system():
 
     conn.commit()
     conn.close()
+    _dual_elo_migrated = True
     logger.info("Dual ELO system migration completed successfully")
 
 
@@ -720,6 +729,30 @@ def delete_ladder_challenge(challenge_id: int):
     cur.execute("DELETE FROM ladder_challenges WHERE challenge_id = ?", (challenge_id,))
     conn.commit()
     conn.close()
+
+
+def reset_ladder_challenge_today(user_id: int) -> int:
+    """Delete all of a user's ladder challenges from today, allowing them to issue a new one.
+
+    Args:
+        user_id: The Discord user ID
+
+    Returns:
+        Number of challenges deleted
+    """
+    create_ladder_challenge_table()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    cur.execute(
+        "DELETE FROM ladder_challenges WHERE challenger_id = ? AND created_at LIKE ?",
+        (user_id, f"{today}%"),
+    )
+    deleted = cur.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
 
 
 def complete_ladder_challenge(challenge_id: int, winner_id: int, match_id: int = None):

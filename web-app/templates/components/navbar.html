@@ -671,10 +671,22 @@
       </a>
       {% endif %}
     </div>
+    {% if is_admin %}
+    <a
+      href="/admin/audit-log"
+      class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
+      Admin Log
+    </a>
+    {% endif %}
     <a
       href="/avatars"
       class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       Avatar Winrates
+    </a>
+    <a
+      href="/deck-rec"
+      class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
+      Sorcery Deck Rec
     </a>
     <a
       href="/elements"
@@ -697,26 +709,23 @@
       class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       Live Popular Cards
     </a>
-    <a
-      href="/admin/audit-log"
-      class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
-      Admin Log
-    </a>
     {% endif %}
     <a
       href="/elo"
       class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       ELO Leaderboards
     </a>
+    {% if show_limited_leaderboard %}
+    <a
+      href="/elo/limited"
+      class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
+      Limited Leaderboard
+    </a>
+    {% endif %}
     <a
       href="/match-history"
       class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
       Match History
-    </a>
-    <a
-      href="/deck-help"
-      class="block px-4 py-3 text-text hover:bg-secondary/10 hover:text-secondary transition-colors font-medium">
-      Deck Help
     </a>
     <a
       href="/top-8"

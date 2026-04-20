@@ -9,10 +9,14 @@ from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH
 class MatchRepository:
     """Data access for match_records.db."""
 
+    _columns_ensured = False
+
     def __init__(self, db_path: Path | str | None = None):
         self._db_path = str(db_path or MATCH_RECORDS_DB_PATH)
         self._elo_db_path = str(ELO_DB_PATH)
-        self._ensure_columns()
+        if not MatchRepository._columns_ensured:
+            self._ensure_columns()
+            MatchRepository._columns_ensured = True
 
     def _get_connection(self) -> sqlite3.Connection:
         return sqlite3.connect(self._db_path)

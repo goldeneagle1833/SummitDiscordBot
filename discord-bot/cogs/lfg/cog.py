@@ -42,6 +42,7 @@ from utils.database import (
     get_user_elo,
     get_user_event_elo,
     update_elo_db,
+    update_elo_db_lifetime_only,
     log_admin_action,
     cleanup_old_pairings,
     save_pairing,
@@ -50,7 +51,7 @@ from utils.constants import SORCERY_NICKNAMES
 from utils.text import find_best_command_match
 from utils.checks import is_bot_admin
 from services.pilots_service import is_pilot_active
-from services.limited_service import limited_winner_report, get_run_summary
+from services.limited_service import limited_winner_report, get_run_summary, forfeit_arena_run
 from repositories.limited_repo import get_active_arena_run, get_limited_elo
 
 logger = logging.getLogger("discord_bot")
@@ -727,6 +728,14 @@ class LFGCog(commands.Cog):
                 )
                 return True
 
+            # Also check if player1 was in player2's last match (bidirectional check)
+            p2_opponents = {player2_last_match[0], player2_last_match[1]}
+            if player1_id in p2_opponents:
+                logger.info(
+                    f"Anti-rematch: {player1_id} and {player2_id} played each other in their last match"
+                )
+                return True
+
             return False
 
         finally:
@@ -1033,28 +1042,43 @@ class LFGCog(commands.Cog):
         """Issue a ladder challenge (Top 16 event players or admins, once per day).
 
         Adds you to the ranked queue. The next person who matches with you will play
-        for modified ELO stakes.
+        for modified ELO stakes. Can be used in DMs with the bot.
+        The challenge only counts against your daily limit when a match is found.
 
         Stakes:
         - If the non-Top 16 player WINS: 2x ELO gain
         - If the Top 16 player LOSES: 0.5x ELO loss
         - If ELO difference < 100: Normal stakes
         """
-        # Delete command message
-        try:
-            await ctx.message.delete()
-        except Exception:
-            pass
+        # Delete command message (only works in guild channels)
+        if ctx.guild:
+            try:
+                await ctx.message.delete()
+            except Exception:
+                pass
 
         user_id = ctx.author.id
         user_global = ctx.author.global_name or ctx.author.display_name
 
+        # Resolve guild and member for permission checks (works in DMs too)
+        guild_id = ctx.guild.id if ctx.guild else config.GUILD_ID
+        guild_obj = ctx.guild or self.bot.get_guild(config.GUILD_ID)
+        member = None
+        if guild_obj:
+            member = guild_obj.get_member(user_id)
+            if member is None:
+                try:
+                    member = await guild_obj.fetch_member(user_id)
+                except discord.NotFound:
+                    pass
+
         # Check if user is an admin (admins can always issue challenges)
         is_admin = False
-        if ctx.author.guild_permissions.administrator:
-            is_admin = True
-        elif any(role.id == config.BOT_ADMIN_ROLE_ID for role in ctx.author.roles):
-            is_admin = True
+        if member:
+            if member.guild_permissions.administrator:
+                is_admin = True
+            elif any(role.id == config.BOT_ADMIN_ROLE_ID for role in member.roles):
+                is_admin = True
 
         # Check if user is in Top 16 of current event (unless they're an admin)
         if not is_admin:
@@ -1066,23 +1090,25 @@ class LFGCog(commands.Cog):
                         "Check `!event_leaderboard` to see the current event rankings."
                     )
                 except discord.Forbidden:
-                    await ctx.send(
-                        f"{ctx.author.mention}, only Top 16 event players can issue challenges!",
-                        delete_after=10,
-                    )
+                    if ctx.guild:
+                        await ctx.send(
+                            f"{ctx.author.mention}, only Top 16 event players can issue challenges!",
+                            delete_after=10,
+                        )
                 return
 
-        # Check if already used today
+        # Check if already used today (only counts matched challenges)
         if get_ladder_challenge_today(user_id):
             try:
                 await ctx.author.send(
-                    "You've already issued a ladder challenge today. Try again tomorrow!"
+                    "You've already issued a ladder challenge today that was matched. Try again tomorrow!"
                 )
             except discord.Forbidden:
-                await ctx.send(
-                    f"{ctx.author.mention}, you've already issued a ladder challenge today!",
-                    delete_after=10,
-                )
+                if ctx.guild:
+                    await ctx.send(
+                        f"{ctx.author.mention}, you've already issued a ladder challenge today!",
+                        delete_after=10,
+                    )
             return
 
         # Check if already in queue + attempt to match
@@ -1090,7 +1116,6 @@ class LFGCog(commands.Cog):
         matched_user_deck_url = None
         match_type = None
         challenge_id = None
-        guild_id = ctx.guild.id if ctx.guild else None
         ladder_info = None
 
         async with lfg_queue_lock:
@@ -1098,19 +1123,18 @@ class LFGCog(commands.Cog):
                 try:
                     await ctx.author.send("You're already in the LFG queue!")
                 except discord.Forbidden:
-                    await ctx.send(
-                        f"{ctx.author.mention}, you're already in the queue!",
-                        delete_after=10,
-                    )
+                    if ctx.guild:
+                        await ctx.send(
+                            f"{ctx.author.mention}, you're already in the queue!",
+                            delete_after=10,
+                        )
                 return
 
-            # Save challenge to DB
-            challenge_id = save_ladder_challenge(user_id)
-
-            # Create ladder_info with placeholder multipliers (will be determined on match)
+            # Create ladder_info with placeholder multipliers and no challenge_id yet
+            # challenge_id will be set only when a match is found
             ladder_info = {
                 "challenger_id": user_id,
-                "challenge_id": challenge_id,
+                "challenge_id": None,
                 "elo_multiplier_winner": 2.0,  # Non-Top16 winner gets 2x
                 "elo_multiplier_loser": 0.5,  # Top16 loser gets 0.5x
                 "guild_id": guild_id,
@@ -1121,6 +1145,10 @@ class LFGCog(commands.Cog):
             matched_user_id = self.check_if_someone_is_lfg(ctx, "ranked")
 
             if matched_user_id:
+                # Match found - NOW save the challenge to DB (counts against daily limit)
+                challenge_id = save_ladder_challenge(user_id)
+                ladder_info["challenge_id"] = challenge_id
+
                 # Get matched user info before removing from queue
                 matched_user_info = lfg_queue.get(matched_user_id, {})
                 matched_user_deck_url = matched_user_info.get("deck_url")
@@ -1150,7 +1178,7 @@ class LFGCog(commands.Cog):
                     f"Lock acquired: Matching challenger {user_id} with {matched_user_id} (match_type={match_type})"
                 )
             else:
-                # No match found - add to queue
+                # No match found - add to queue (does NOT count against daily limit)
                 self.add_to_lfg_queue(
                     ctx,
                     timeframe=30,
@@ -1334,25 +1362,30 @@ class LFGCog(commands.Cog):
             )
         else:
             # No match - user was added to queue, notify them
+            # Challenge is NOT saved to DB yet - doesn't count against daily limit
             try:
                 await ctx.author.send(
                     "You've been added to the ranked queue with ladder challenge stakes!\n"
                     "The next player to match with you will play for modified ELO:\n"
                     "**•** If they win: 2x ELO gain\n"
                     "**•** If you lose: 0.5x ELO loss\n"
-                    "**•** If ELO difference < 100: Normal stakes"
+                    "**•** If ELO difference < 100: Normal stakes\n\n"
+                    "⏳ **Note:** This does not count as your daily challenge until a match is found. "
+                    "If no one matches before the queue expires, you can use `!issue_challenge` again!\n"
+                    "💡 **Tip:** You can use `!issue_challenge` in DMs with the bot anytime!"
                 )
             except discord.Forbidden:
-                await ctx.send(
-                    f"{ctx.author.mention}, you've joined the ranked queue with ladder challenge stakes!",
-                    delete_after=10,
-                )
+                if ctx.guild:
+                    await ctx.send(
+                        f"{ctx.author.mention}, you've joined the ranked queue with ladder challenge stakes!",
+                        delete_after=10,
+                    )
 
             # Update status
             await self.update_lfg_status()
 
             logger.info(
-                f"Ladder challenge issued by {user_global} (ID: {user_id}), challenge_id: {challenge_id} - added to ranked queue"
+                f"Ladder challenge issued by {user_global} (ID: {user_id}) - added to ranked queue (not yet counted)"
             )
 
     @commands.command()
@@ -1462,7 +1495,13 @@ class LFGCog(commands.Cog):
                 "`!admin_challenge_report @winner @loser @challenger`\n"
                 "Manually report a ladder challenge match. `@challenger` is the Top 16 player.\n"
                 "**When to use:** When a challenge match wasn't reported correctly or the challenge feature broke. "
-                "Applies the same ELO rules as normal challenges (2x/0.5x if 100+ ELO apart)."
+                "Applies the same ELO rules as normal challenges (2x/0.5x if 100+ ELO apart).\n\n"
+                "`!top_cut_report @winner @loser`\n"
+                "Report a top cut match that only affects lifetime ELO (event ELO unchanged).\n"
+                "**When to use:** For top cut matches where only lifetime ELO should be updated.\n\n"
+                "`!reset_challenge @user`\n"
+                "Reset a player's daily ladder challenge so they can use `!issue_challenge` again.\n"
+                "**When to use:** When a player's challenge was wasted due to a bug or other issue."
             ),
             inline=False,
         )
@@ -1830,6 +1869,118 @@ class LFGCog(commands.Cog):
             await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
+    @is_bot_admin()
+    async def top_cut_report(
+        self, ctx, winner: discord.Member = None, loser: discord.Member = None
+    ):
+        """Admin command to report a top cut match. Only affects lifetime ELO. Usage: !top_cut_report @winner @loser"""
+
+        # Validate arguments
+        if winner is None or loser is None:
+            await ctx.send(
+                "Please mention both players. Usage: `!top_cut_report @winner @loser`"
+            )
+            return
+
+        if winner.id == loser.id:
+            await ctx.send("Winner and loser cannot be the same player!")
+            return
+
+        if winner.bot or loser.bot:
+            await ctx.send("Cannot report matches for bots!")
+            return
+
+        try:
+            # Get display names with fallback
+            winner_name = winner.global_name or winner.display_name
+            loser_name = loser.global_name or loser.display_name
+
+            # Record the match in match_records
+            match_id, _, _, _ = await winner_report(
+                ctx.author.id,
+                winner.id,
+                winner_name,
+                True,
+                loser.id,
+                loser_name,
+                "n",
+                0,
+                "Top cut match",
+                "Top cut match reported by admin",
+                winner.id,
+                winner_name,
+                winner_deck_url=None,
+                loser_deck_url=None,
+                winner_went_first=None,
+                loser_went_first=None,
+                match_type="testing",  # Prevent winner_report from updating ELO
+            )
+
+            # Update only lifetime ELO for both players
+            new_winner_elo, winner_change = update_elo_db_lifetime_only(
+                winner.id, winner_name, True, loser.id
+            )
+            new_loser_elo, loser_change = update_elo_db_lifetime_only(
+                loser.id, loser_name, False, winner.id
+            )
+
+            # Update leaderboard
+            await self.update_leaderboard()
+
+            # Get event ELOs (unchanged) for display
+            winner_event_elo = get_user_event_elo(winner.id)
+            loser_event_elo = get_user_event_elo(loser.id)
+
+            description = (
+                f"**Match ID:** #{match_id}\n"
+                f"**Winner:** {winner.mention} ({winner_name})\n"
+                f"**Loser:** {loser.mention} ({loser_name})\n"
+                f"**Type:** Top Cut (lifetime ELO only)\n\n"
+                f"**Updated Ranks:**\n"
+                f"{winner_name}: **{new_winner_elo}** lifetime ({winner_change:+d}) / **{winner_event_elo}** event (unchanged)\n"
+                f"{loser_name}: **{new_loser_elo}** lifetime ({loser_change:+d}) / **{loser_event_elo}** event (unchanged)"
+            )
+            success_embed = discord.Embed(
+                title="Top Cut Match Reported",
+                description=description,
+                color=discord.Color.gold(),
+            )
+            success_embed.set_footer(text=f"Reported by {ctx.author.display_name}")
+            await ctx.send(embed=success_embed)
+
+            log_admin_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "top_cut_report",
+                target_id=winner.id,
+                target_name=winner_name,
+                previous_state={"winner_id": winner.id, "loser_id": loser.id},
+                new_state={"match_id": match_id, "lifetime_only": True},
+                details=f"Top cut match #{match_id}: {winner_name} beat {loser_name} (lifetime ELO only)",
+            )
+
+            logger.info(
+                f"Admin {ctx.author} reported top cut match: {winner_name} beat {loser_name} (lifetime only)"
+            )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Top Cut Report Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Top cut report failed: {e}")
+
+    @top_cut_report.error
+    async def top_cut_report_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"top_cut_report error: {error}")
+            await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
     async def admin_limited_report(
         self, ctx, winner: discord.Member = None, loser: discord.Member = None
     ):
@@ -2114,6 +2265,39 @@ class LFGCog(commands.Cog):
         else:
             logger.error(f"admin_challenge_report error: {error}")
             await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def reset_challenge(self, ctx, member: discord.Member = None):
+        """Reset a player's daily ladder challenge so they can use !issue_challenge again.
+        Usage: !reset_challenge @user
+        """
+        if member is None:
+            await ctx.send("Usage: `!reset_challenge @user`")
+            return
+
+        from utils.database import reset_ladder_challenge_today
+
+        deleted = reset_ladder_challenge_today(member.id)
+
+        if deleted > 0:
+            user_global = member.global_name or member.display_name
+            await ctx.send(
+                f"Reset {deleted} ladder challenge(s) for **{user_global}**. They can now use `!issue_challenge` again today."
+            )
+            log_admin_action(
+                admin_id=ctx.author.id,
+                admin_name=ctx.author.global_name or ctx.author.display_name,
+                action="reset_challenge",
+                details=f"Reset {deleted} ladder challenge(s) for {user_global} (ID: {member.id})",
+            )
+            logger.info(
+                f"Admin {ctx.author.id} reset ladder challenge for {member.id} ({user_global}), deleted {deleted} record(s)"
+            )
+        else:
+            await ctx.send(
+                f"**{member.global_name or member.display_name}** has no ladder challenges today to reset."
+            )
 
     @commands.command()
     @is_bot_admin()
@@ -3613,3 +3797,24 @@ class LFGCog(commands.Cog):
             )
             await ctx.send(embed=error_embed)
             logger.error(f"Game activity command failed: {e}")
+
+    @commands.command()
+    async def forfeit(self, ctx):
+        """Forfeit your active limited arena run. Usage: !forfeit"""
+        user_id = ctx.author.id
+
+        # Check if the user has an active arena run
+        active_run = get_active_arena_run(user_id)
+        if not active_run:
+            await ctx.send("You don't have an active limited arena run to forfeit.")
+            return
+
+        try:
+            forfeit_summary = forfeit_arena_run(user_id)
+            await ctx.send(f"💀 **Arena Run Forfeited**\n\n{forfeit_summary}")
+            logger.info(f"User {ctx.author} ({user_id}) forfeited their limited arena run")
+        except ValueError as e:
+            await ctx.send(f"Could not forfeit: {e}")
+        except Exception as e:
+            await ctx.send("An error occurred while forfeiting your run.")
+            logger.error(f"Forfeit command failed for {ctx.author} ({user_id}): {e}")

@@ -4,7 +4,7 @@
 [![discord.py](https://img.shields.io/badge/discord.py-2.3+-blue.svg)](https://github.com/Rapptz/discord.py)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A comprehensive Discord bot for the **Sorcery: Contested Realm** card game community, featuring matchmaking, ELO rankings, tournament tracking, and AI-powered rules assistance.
+A comprehensive Discord bot for the **Sorcery: Contested Realm** card game community, featuring matchmaking, ELO rankings, and tournament tracking.
 
 ## 🌟 Features
 
@@ -13,7 +13,6 @@ A comprehensive Discord bot for the **Sorcery: Contested Realm** card game commu
 - **🎮 LFG (Looking For Game) System** - Queue-based matchmaking with challenge support
 - **📊 ELO Ranking System** - Competitive player rankings with win/loss tracking
 - **🏆 Tournament Management** - Event tracking and leaderboards
-- **🤖 AI Rules Assistant** - RAG-powered rules queries using ChromaDB and OpenAI
 - **🎲 Fun Mini-Games** - Community engagement features
 - **🛡️ Anti-Spam Protection** - Rate limiting and spam detection
 - **📡 Streaming Integration** - Auto-announcements for streamers
@@ -26,20 +25,12 @@ A comprehensive Discord bot for the **Sorcery: Contested Realm** card game commu
 - **🔍 Card Database** - Searchable card database via Curiosa API
 - **🎥 YouTube Integration** - Featured content and streaming
 
-### SorceryAI - Rules Assistant
-
-- **🧠 RAG System** - Vector-based retrieval with ChromaDB
-- **📚 Comprehensive Knowledge Base** - Full rulebook, FAQs, card rulings
-- **🔍 Smart Search** - Natural language rules queries
-- **✨ OpenAI Integration** - GPT-powered response generation
-
 ## 🚀 Quick Start
 
 ### Prerequisites
 
 - Python 3.10+
 - Discord Bot Token ([Create one here](https://discord.com/developers/applications))
-- OpenAI API Key (for rules assistant)
 
 ### Installation
 
@@ -64,7 +55,6 @@ A comprehensive Discord bot for the **Sorcery: Contested Realm** card game commu
 
    ```env
    TOKEN=your_discord_bot_token_here
-   OPENAI_API_KEY=your_openai_api_key_here
    ```
 
    Edit `discord-bot/config.py` with your Discord server IDs.
@@ -110,12 +100,6 @@ SummitDiscordBot/
 │   ├── static/             # CSS, JS, images
 │   └── app.py              # Flask app entry point
 │
-├── SorceryAI/               # RAG-based rules assistant
-│   ├── core/               # RAG system (embeddings, retrieval, generation)
-│   ├── knowledge_base/     # Rules and card data (markdown)
-│   ├── scripts/            # Data processing scripts
-│   └── tests/              # AI system tests
-│
 ├── docs/                    # Documentation
 ├── CLAUDE.md               # Project architecture guide
 ├── CONTRIBUTING.md         # Contribution guidelines
@@ -134,7 +118,6 @@ SummitDiscordBot/
 - `!stats [@user]` - View player statistics
 - `!match_history [@user]` - View recent matches
 - `!deck <url>` - Check deck validity
-- `!rules <query>` - Ask the AI rules assistant
 
 ### Slash Commands (/)
 
@@ -150,8 +133,7 @@ SummitDiscordBot/
 
 - **discord.py** - Discord API wrapper
 - **SQLite** - Database (match records, ELO, scores)
-- **OpenAI API** - GPT for AI features
-- **ChromaDB** - Vector database for RAG
+- **OpenAI API** - GPT for fun cog responses
 - **pytest** - Testing framework
 
 ### Web Application
@@ -215,7 +197,6 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 - **[TESTING.md](TESTING.md)** - Testing strategies and setup
 - **[GITHUB_SETUP_GUIDE.md](GITHUB_SETUP_GUIDE.md)** - Repository configuration
 - **[web-app/DEPLOYMENT.md](web-app/DEPLOYMENT.md)** - Web app deployment
-- **[SorceryAI/DEPLOYMENT.md](SorceryAI/DEPLOYMENT.md)** - AI system deployment
 
 ## 🔧 Configuration
 
@@ -240,7 +221,6 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 Required API keys (add to `.env`):
 
 - `TOKEN` - Discord bot token
-- `OPENAI_API_KEY` - OpenAI API key (for rules assistant)
 
 ## 🌐 Web Application
 
@@ -264,36 +244,11 @@ gunicorn -c gunicorn_config.py
 
 See [web-app/DEPLOYMENT.md](web-app/DEPLOYMENT.md) for full deployment guide.
 
-## 🤖 SorceryAI - Rules Assistant
-
-RAG-powered system for answering Sorcery rules questions.
-
-### How It Works
-
-1. User asks a question
-2. Query embedded using OpenAI embeddings
-3. Relevant chunks retrieved from ChromaDB
-4. Context + query sent to GPT
-5. Response generated with sources
-
-### Indexing Knowledge Base
-
-```bash
-cd SorceryAI
-python scripts/index_knowledge_base.py
-```
-
-### Testing Queries
-
-```bash
-python scripts/test_queries.py
-```
-
 ## 📊 Statistics
 
 - **87+ tests** with 100% pass rate
 - **10,000+ lines** of Python code
-- **3 integrated systems** (bot, web, AI)
+- **2 integrated systems** (bot, web)
 - **1,000+ users** served (production stats)
 
 ## 🔐 Security
@@ -349,7 +304,6 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install all dependencies
 pip install -r discord-bot/requirements.txt
 pip install -r web-app/requirements.txt
-pip install -r SorceryAI/requirements.txt
 
 # Set up test databases
 python discord-bot/scripts/create_test_databases.py

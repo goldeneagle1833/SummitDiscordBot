@@ -234,18 +234,22 @@ function renderLifetimeLeaderboard(players) {
       ? '<span class="mode-badge mode-paper" title="Paper games ELO is higher">📄 Paper</span>'
       : '<span class="mode-badge mode-online" title="Online games ELO is higher">🎮 Online</span>';
 
+    const totalGames = player.wins + player.losses;
+    const winPct = totalGames > 0 ? ((player.wins / totalGames) * 100).toFixed(1) : '0.0';
+
     row.innerHTML = `
       <td class="rank-display">${rankDisplay}</td>
       <td><a href="/player/${player.id}" class="player-link">${player.name}</a></td>
       <td class="col-align-right lifetime-elo">${player.elo}</td>
       <td class="col-align-center">${modeBadge}</td>
       <td class="col-align-right win-loss">${player.wins}-${player.losses}</td>
+      <td class="col-align-right win-pct">${winPct}%</td>
     `;
     tbody.appendChild(row);
   });
 
   if (players.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No players yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No players yet</td></tr>';
   }
 }
 

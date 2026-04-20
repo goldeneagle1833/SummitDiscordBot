@@ -5,7 +5,6 @@ Covers:
 - Limited ELO calculation (K=32, start at 1500)
 - Forfeit ELO penalty (phantom losses against starting ELO)
 - Starting new run after completed/forfeited run (US-6)
-- Deck URL required validation for limited queue type
 - Queue isolation (limited only matches limited)
 """
 

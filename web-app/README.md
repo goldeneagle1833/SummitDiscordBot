@@ -1,34 +1,37 @@
 # Summit Web App
 
-A Flask web application providing leaderboards, statistics, match history, deck viewing, and REST API for the Summit Sorcery: Contested Realm community.
+A Flask web application providing leaderboards, player stats, match history, deck viewing, curio tracking, and a REST API for the Summit Sorcery: Contested Realm community.
 
 ## Features
 
-- **Leaderboards**: View ELO rankings with filtering by format and event tier
-- **Player Stats**: Detailed player profiles with match history and deck usage
-- **Deck Browser**: Browse top-performing decks from major tournaments
-- **Match Reports**: Web-based match reporting with deck validation
-- **REST API**: Comprehensive API for players, matches, cards, and statistics
-- **Discord OAuth**: Secure authentication via Discord
-- **Rules Assistant**: Integration with SorceryAI RAG system
+- **Leaderboards** - ELO rankings: lifetime, event, paper, online, combined, and limited arena
+- **Player Profiles** - Detailed stats, match history, win/loss by source, deck usage
+- **Match Reporting** - Web-based match reporting with 48-hour opponent confirmation workflow
+- **Deck Browser** - Top 8 decks from 40+ tournaments (Gen Con, SCG Con, Sorcery Con, etc.)
+- **Card & Avatar Stats** - Metagame analytics, card usage, avatar popularity
+- **Custom Seasons** - User-created mini-leaderboards with separate ELO tracking
+- **Limited Arena** - Separate ELO and arena run tracking for limited format
+- **Curio Tracking** - Community-driven booster box pull tracking with image uploads
+- **REST API** - Comprehensive endpoints for all data
+- **Multi-Provider OAuth** - Discord and Google authentication
+- **Admin Tools** - Match deletion, ELO management, full audit logging
 
 ## Prerequisites
 
-- **Python 3.8+** (Python 3.12+ recommended)
+- **Python 3.10+** (3.12+ recommended, uses `X | Y` union type syntax)
 - **pip** (Python package installer)
 - **Git** (for cloning the repository)
-- **Discord Bot** databases (the web app reads from shared SQLite databases)
 
 ## Quick Start
 
-### 1. Clone the Repository
+### 1. Clone and Navigate
 
 ```bash
 git clone https://github.com/yourusername/SummitDiscordBot.git
 cd SummitDiscordBot/web-app
 ```
 
-### 2. Create Virtual Environment (Recommended)
+### 2. Create Virtual Environment
 
 **Windows:**
 ```bash
@@ -48,185 +51,163 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Set Up Environment Variables (Optional for Basic Usage)
+### 4. Create Test Databases
 
-The web app shares the `.env` file with the Discord bot. For basic local testing, you can run without any `.env` file - the app will use development defaults.
+The web app reads from SQLite databases normally created by the Discord bot. For local development without the bot, run the seed script to create databases with sample data:
 
-**For full functionality**, create `discord-bot/.env` with:
+```bash
+python scripts/seed_databases.py
+```
+
+This creates all four databases in `../discord-bot/` with the correct schemas and sample data:
+- `elo.db` - Player ELO ratings, events, paper standings, limited ELO
+- `match_records.db` - Match history, match confirmations, user profiles, seasons, audit log
+- `fart_scores.db` - Fart game scores
+- `community.db` - Community links, curio tracking
+
+If you already have databases from the Discord bot, the seed script will skip them (no data is overwritten).
+
+### 5. Set Up Environment Variables (Optional)
+
+For basic local development, no `.env` file is needed. The app auto-generates a session key and runs without OAuth.
+
+For full functionality, create `../discord-bot/.env`:
 
 ```env
-# Optional: Discord OAuth (required for login features)
-DISCORD_CLIENT_ID=your_discord_client_id
-DISCORD_CLIENT_SECRET=your_discord_client_secret
+# Discord OAuth (for login)
+DISCORD_CLIENT_ID=your_client_id
+DISCORD_CLIENT_SECRET=your_client_secret
 DISCORD_REDIRECT_URI=http://localhost:5000/auth/discord/callback
 
-# Optional: Secret key for sessions (auto-generated in dev mode if not set)
+# Google OAuth (alternative login)
+GOOGLE_CLIENT_ID=your_client_id
+GOOGLE_CLIENT_SECRET=your_client_secret
+GOOGLE_REDIRECT_URI=http://localhost:5000/auth/google/callback
+
+# Flask session key (auto-generated in dev if not set)
 SECRET_KEY=your_secret_key_here
 
-# Optional: OpenAI API Key (for SorceryAI integration)
-OPENAI_API_KEY=your_openai_api_key
+# API keys for external integrations (comma-separated)
+API_KEYS=key1,key2
 
-# Optional: External API keys (comma-separated)
-API_KEYS=key1,key2,key3
+# Draft Sorcery API key for limited arena
+DRAFT_SORCERY_API_KEY=your_key
 ```
-
-**Generate a secret key** (for production):
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
-**Get Discord OAuth credentials**:
-1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
-2. Create or select your application
-3. Go to OAuth2 settings
-4. Copy Client ID and Client Secret
-5. Add redirect URI: `http://localhost:5000/auth/discord/callback`
-
-### 5. Set Up Databases
-
-The web app reads from SQLite databases created by the Discord bot. You have two options:
-
-**Option A: Use Existing Bot Databases (Recommended)**
-
-If you're running the Discord bot, the databases already exist in `discord-bot/`:
-- `elo.db` - Player ELO ratings
-- `match_records.db` - Match history with deck data
-- `fart_scores.db` - Fart game scores
-- `community.db` - Community data
-
-The web app will automatically read from these files.
-
-**Option B: Create Empty Test Databases**
-
-For testing without the bot, create empty databases:
-
-```bash
-cd ../discord-bot
-python scripts/create_test_databases.py
-cd ../web-app
-```
-
-This creates minimal schema databases you can populate manually or via the API.
 
 ### 6. Run the Application
 
-**Development Mode** (auto-reloads on code changes):
 ```bash
 python app.py
 ```
 
-The app will be available at: `http://localhost:5000`
-
-**Production Mode** (with Gunicorn):
-```bash
-gunicorn -c gunicorn_config.py app:app
-```
-
-Production mode requires `SECRET_KEY` to be set in environment variables.
-
-### 7. Verify Installation
-
-Open your browser and navigate to:
-- **Home**: http://localhost:5000
-- **Leaderboard**: http://localhost:5000/leaderboard
-- **API Status**: http://localhost:5000/api/status
+Open http://localhost:5000. Key pages to verify:
+- http://localhost:5000/leaderboard - ELO leaderboard
+- http://localhost:5000/match-history - Match history
+- http://localhost:5000/api/status - API health check
 
 ## Project Structure
 
 ```
 web-app/
-├── app.py                      # Application factory and entry point
-├── webapp_config.py            # Configuration (paths, OAuth, admins)
-├── gunicorn_config.py          # Production WSGI server config
-├── requirements.txt            # Python dependencies
-├── README.md                   # This file
+├── app.py                          # Application factory, Flask setup, migrations
+├── webapp_config.py                # Configuration (DB paths, OAuth, admins, events)
+├── gunicorn_config.py              # Production WSGI config (Unix socket, workers)
+├── requirements.txt                # Dependencies
+├── scripts/
+│   └── seed_databases.py           # Create test databases for local development
 │
-├── routes/                     # Route handlers (API layer)
-│   ├── __init__.py
-│   ├── pages.py               # HTML page routes
-│   ├── auth.py                # Discord/Google OAuth routes
-│   └── api/                   # REST API endpoints
-│       ├── avatars.py
-│       ├── cards.py
-│       ├── games.py
-│       ├── leaderboard.py
-│       ├── matches.py
-│       ├── players.py
-│       ├── rules.py
-│       ├── streamers.py
-│       └── misc.py
+├── routes/                         # HTTP handlers
+│   ├── __init__.py                 # Route registration
+│   ├── pages.py                    # 50+ HTML page routes
+│   ├── auth.py                     # Discord & Google OAuth flows
+│   └── api/                        # REST API endpoints
+│       ├── admin.py                # Admin operations, audit log
+│       ├── avatars.py              # Avatar statistics
+│       ├── cards.py                # Card database & search
+│       ├── curios.py               # Curio tracking CRUD
+│       ├── events.py               # Tournament events & archives
+│       ├── external_matches.py     # External match reporting
+│       ├── fun_stats.py            # Fart leaderboard
+│       ├── games.py                # Game statistics
+│       ├── leaderboard.py          # 7 leaderboard types
+│       ├── limited.py              # Limited arena endpoints
+│       ├── match_reporting.py      # Match confirmation workflow
+│       ├── matches.py              # Match history
+│       ├── misc.py                 # Health check, debug
+│       ├── players.py              # Player profiles & stats
+│       ├── seasons.py              # Custom season management
+│       └── streamers.py            # Active streamer detection
 │
-├── services/                   # Business logic layer
-│   ├── curiosa.py             # Curiosa API integration
-│   ├── leaderboard.py         # Leaderboard calculations
-│   ├── match.py               # Match processing
-│   ├── player.py              # Player data aggregation
-│   └── youtube.py             # YouTube API integration
+├── services/                       # Business logic
+│   ├── admin.py                    # Admin operations
+│   ├── curiosa.py                  # Curiosa API integration
+│   ├── external_match.py           # External match processing
+│   ├── leaderboard.py              # Leaderboard calculations (7 types)
+│   ├── limited_service.py          # Limited arena logic
+│   ├── match.py                    # Match processing
+│   ├── match_confirmation.py       # 48-hour confirmation workflow
+│   ├── paper_elo.py                # Paper-only ELO tracking
+│   ├── player.py                   # Player data aggregation
+│   ├── seasons.py                  # Season management
+│   └── youtube.py                  # YouTube API integration
 │
-├── repositories/               # Data access layer
-│   ├── elo.py                 # ELO database operations
-│   ├── events.py              # Event/tournament data
-│   ├── fart.py                # Fart game data
-│   └── matches.py             # Match history queries
+├── repositories/                   # Data access (SQLite)
+│   ├── audit.py                    # Admin audit log (match_records.db)
+│   ├── community.py                # Community links (community.db)
+│   ├── curios.py                   # Curio tracking (community.db)
+│   ├── elo.py                      # ELO standings, events, paper (elo.db)
+│   ├── events.py                   # Tournament decks from JSON files
+│   ├── fart.py                     # Fart scores (fart_scores.db)
+│   ├── limited_repo.py             # Limited arena tables (match_records.db + elo.db)
+│   ├── match_confirmation.py       # Match confirmations (match_records.db)
+│   ├── matches.py                  # Match history queries (match_records.db)
+│   ├── seasons.py                  # Season tables (match_records.db)
+│   └── user_profiles.py            # OAuth profiles (match_records.db)
 │
-├── utils/                      # Shared utilities
-│   ├── auth.py                # Authentication helpers
-│   ├── decorators.py          # Route decorators (API key, admin)
-│   └── version.py             # App version constant
+├── utils/                          # Shared utilities
+│   ├── auth.py                     # Auth decorators: require_auth, require_api_key, is_admin
+│   ├── api_auth.py                 # Draft Sorcery API key validation
+│   ├── formatting.py               # Event name formatting, pseudonyms
+│   └── version.py                  # App version tracking
 │
-├── templates/                  # Jinja2 HTML templates
-│   ├── index.html
-│   ├── leaderboard.html
-│   ├── player_profile.html
-│   ├── match_report.html
-│   ├── deck_view.html
-│   └── ...
+├── templates/                      # Jinja2 templates
+│   ├── base.html                   # Master template
+│   ├── components/                 # Navbar, footer, streaming banner
+│   ├── errors/                     # 404, 500 pages
+│   └── pages/                      # 30+ page templates
 │
-├── static/                     # Static assets
+├── static/                         # CSS, JS, uploads
 │   ├── css/
+│   │   ├── base/                   # layout, reset, typography, variables
+│   │   ├── components/             # 15+ component stylesheets
+│   │   ├── pages/                  # 30+ page-specific styles
+│   │   ├── utilities/              # colors, flexbox, spacing, visibility
+│   │   └── tailwind.output.css     # Tailwind CSS output
 │   ├── js/
-│   └── images/
+│   │   ├── core/main.js            # App initialization
+│   │   ├── components/             # Navbar, leaderboard, chat, deck-viewer
+│   │   └── pages/                  # 20+ page-specific scripts
+│   └── uploads/curios/             # Curio image uploads
 │
-├── top-8-decks-by-event/      # Tournament deck JSON files
-├── card_images/               # Card image cache
-├── migrations/                # Database migration scripts
-└── systemd/                   # Production deployment configs
+├── top-8-decks-by-event/           # Tournament deck JSON files (40+ events)
+├── card_images/                    # Card image cache
+├── migrations/                     # Database migration scripts
+├── systemd/                        # systemd service file
+└── nginx/                          # Nginx configs (standard + Cloudflare)
 ```
 
-## API Documentation
+## Databases
 
-The web app provides a comprehensive REST API. See [API_DOCUMENTATION.md](API_DOCUMENTATION.md) for details.
+The web app uses 4 SQLite databases (default paths relative to `../discord-bot/`):
 
-**Key Endpoints:**
-- `GET /api/leaderboard` - ELO rankings with filtering
-- `GET /api/players/{discord_id}` - Player profile and stats
-- `GET /api/matches` - Match history with deck data
-- `GET /api/cards` - Card database with stats
-- `GET /api/avatars` - Avatar statistics and meta analysis
-- `POST /api/report-match` - Submit match results (requires API key)
+| Database | Config Variable | Key Tables |
+|----------|----------------|------------|
+| `elo.db` | `ELO_DB_PATH` | `overall_standings`, `events`, `event_standings_archive`, `paper_standings`, `limited_elo` |
+| `match_records.db` | `MATCH_RECORDS_DB_PATH` | `match_records`, `match_records_archive`, `match_reports_web`, `match_confirmations`, `user_profiles`, `seasons`, `season_members`, `season_match_elo`, `limited_arena_runs`, `limited_match_records`, `admin_audit_log` |
+| `fart_scores.db` | `FART_SCORES_DB_PATH` | `fart_scores` |
+| `community.db` | `COMMUNITY_DB_PATH` | `discord_servers`, `youtube_channels`, `websites`, `curio_sets`, `curio_entries` |
 
-## Configuration
-
-### Environment Variables
-
-All environment variables are **optional** for local development:
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `DISCORD_CLIENT_ID` | No | None | Discord OAuth client ID |
-| `DISCORD_CLIENT_SECRET` | No | None | Discord OAuth secret |
-| `DISCORD_REDIRECT_URI` | No | `http://localhost:5000/auth/discord/callback` | OAuth callback URL |
-| `SECRET_KEY` | Production only | Auto-generated | Flask session secret key |
-| `OPENAI_API_KEY` | No | None | OpenAI API key for rules assistant |
-| `API_KEYS` | No | Empty | Comma-separated API keys for external integrations |
-| `ELO_DB_PATH` | No | `../discord-bot/elo.db` | Custom ELO database path |
-| `MATCH_RECORDS_DB_PATH` | No | `../discord-bot/match_records.db` | Custom match database path |
-| `FART_SCORES_DB_PATH` | No | `../discord-bot/fart_scores.db` | Custom fart database path |
-
-### Database Configuration
-
-By default, the web app reads databases from `../discord-bot/`. To use custom database locations, set environment variables:
-
+Override paths via environment variables:
 ```env
 ELO_DB_PATH=/path/to/elo.db
 MATCH_RECORDS_DB_PATH=/path/to/match_records.db
@@ -234,147 +215,105 @@ FART_SCORES_DB_PATH=/path/to/fart_scores.db
 COMMUNITY_DB_PATH=/path/to/community.db
 ```
 
-### Admin Configuration
+## API Overview
 
-Admin Discord IDs are configured in `webapp_config.py`. Admins have full access to all features including match editing and deletion.
+See [API_DOCUMENTATION.md](API_DOCUMENTATION.md) for full details.
 
-## Development
+**Key Endpoints:**
 
-### Auto-Reload
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/status` | Health check (no auth) |
+| `GET /api/leaderboard` | Lifetime ELO rankings |
+| `GET /api/leaderboard/event` | Current event ELO |
+| `GET /api/leaderboard/combined` | Lifetime + event |
+| `GET /api/leaderboard/paper` | Paper-only ELO |
+| `GET /api/players/<id>` | Player profile & stats |
+| `GET /api/players/<id>/matches` | Player match history |
+| `GET /api/match-history` | Match history (date filter) |
+| `GET /api/cards` | Card database |
+| `GET /api/avatars` | Avatar statistics |
+| `GET /api/events` | Tournament events |
+| `GET /api/seasons` | Custom seasons |
+| `GET /api/limited/leaderboard` | Limited arena ELO |
+| `POST /api/match-report/submit` | Submit match (auth required) |
 
-The app runs in debug mode by default, which means:
-- **Templates auto-reload** - Changes to HTML/CSS reflect immediately
-- **Python auto-reload** - Changes to Python files restart the server
-- **Detailed error pages** - Stack traces displayed in browser
+**Authentication:** Session (OAuth login) or API key (`X-API-Key` header).
 
-### Running Tests
+## Configuration
 
-```bash
-cd ../discord-bot
-pytest tests/ -v
-```
+### Environment Variables
 
-The test suite covers shared utilities and database operations used by both the bot and web app.
+All optional for local development:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SECRET_KEY` | Auto-generated | Flask session key (required in production) |
+| `DISCORD_CLIENT_ID` | None | Discord OAuth |
+| `DISCORD_CLIENT_SECRET` | None | Discord OAuth |
+| `GOOGLE_CLIENT_ID` | None | Google OAuth |
+| `GOOGLE_CLIENT_SECRET` | None | Google OAuth |
+| `API_KEYS` | Empty | Comma-separated API keys |
+| `DRAFT_SORCERY_API_KEY` | Empty | Limited arena API key |
+| `ADMIN_IDS` | Empty | Comma-separated admin Discord/Google IDs |
+| `CURIO_EDITOR_IDS` | Empty | Comma-separated curio editor IDs |
+| `ELO_DB_PATH` | `../discord-bot/elo.db` | ELO database path |
+| `MATCH_RECORDS_DB_PATH` | `../discord-bot/match_records.db` | Match database path |
+| `FART_SCORES_DB_PATH` | `../discord-bot/fart_scores.db` | Fart database path |
+| `COMMUNITY_DB_PATH` | `../discord-bot/community.db` | Community database path |
+
+### Admin Access
+
+Admin and curio editor IDs are configured via `ADMIN_IDS` and `CURIO_EDITOR_IDS` environment variables (comma-separated). Admins can delete matches, reset ELO, rename players, and view the audit log. Requests from localhost are also treated as admin.
 
 ## Production Deployment
 
-### Using Gunicorn
+### Gunicorn
 
 ```bash
 gunicorn -c gunicorn_config.py app:app
 ```
 
-Configuration in `gunicorn_config.py`:
-- **Workers**: 4 (adjust based on CPU cores)
-- **Bind**: `0.0.0.0:8000`
-- **Timeout**: 120 seconds
-- **Access logs**: Enabled
+Uses Unix socket (`/tmp/summit-web.sock`), `cpu_count * 2 + 1` workers, 120s timeout.
 
-### Using systemd (Linux)
-
-See [systemd/summit-web.service](systemd/summit-web.service) for the service configuration.
+### systemd
 
 ```bash
 sudo cp systemd/summit-web.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable summit-web
-sudo systemctl start summit-web
+sudo systemctl enable --now summit-web
 ```
 
-### Nginx Configuration
+### Nginx
 
-See [nginx/summit-web.conf](nginx/summit-web.conf) for reverse proxy setup.
+See [nginx/summit-web.conf](nginx/summit-web.conf) or [nginx/summit-web-cloudflare.conf](nginx/summit-web-cloudflare.conf).
 
-### Security Checklist
+### Production Checklist
 
-- [ ] Set `SECRET_KEY` environment variable
-- [ ] Use HTTPS in production (Nginx + Cloudflare recommended)
-- [ ] Restrict database file permissions (`chmod 600 *.db`)
-- [ ] Never commit `.env` or `webapp_config.py` with secrets
-- [ ] Set up rate limiting (Cloudflare or Nginx)
-- [ ] Enable CORS only for trusted origins
-- [ ] Validate all API inputs
+- Set `SECRET_KEY` environment variable
+- Use HTTPS (Nginx + Let's Encrypt or Cloudflare)
+- Restrict database file permissions
+- Never commit `.env` or secrets
+- Set up rate limiting (Cloudflare or Nginx)
 
 ## Troubleshooting
 
 ### "Database file not found"
-
-**Problem**: Web app can't find Discord bot databases.
-
-**Solution**:
-1. Ensure you're running from `web-app/` directory
-2. Check that databases exist in `../discord-bot/`
-3. Or create test databases: `python discord-bot/scripts/create_test_databases.py`
+Ensure you're running from `web-app/` and databases exist in `../discord-bot/`. Run `python scripts/seed_databases.py` to create test databases.
 
 ### "SECRET_KEY must be set in production"
-
-**Problem**: Running in production mode without `SECRET_KEY` environment variable.
-
-**Solution**:
 ```bash
 export SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
 ```
 
-Or add to `discord-bot/.env`:
-```env
-SECRET_KEY=your_generated_key_here
-```
-
 ### Discord OAuth "Invalid Redirect URI"
-
-**Problem**: OAuth callback fails with redirect URI error.
-
-**Solution**:
-1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
-2. Select your application → OAuth2 → Redirects
-3. Add: `http://localhost:5000/auth/discord/callback` (development) or your production URL
-
-### Templates Not Updating
-
-**Problem**: HTML changes don't reflect in browser.
-
-**Solution**:
-1. Hard refresh browser: `Ctrl+F5` (Windows) or `Cmd+Shift+R` (Mac)
-2. Check `app.config['TEMPLATES_AUTO_RELOAD'] = True` is set (enabled by default)
-3. Restart the Flask app
+Add `http://localhost:5000/auth/discord/callback` to your Discord app's OAuth2 redirect URIs in the [Developer Portal](https://discord.com/developers/applications).
 
 ### API Returns Empty Data
-
-**Problem**: API endpoints return empty arrays or `null`.
-
-**Solution**: Ensure databases have data:
-- Run the Discord bot to populate databases with match data
-- Or manually insert test data via SQL
-- Check database paths in `webapp_config.py`
+Check that databases have data. Run `python scripts/seed_databases.py` or use the Discord bot to populate real data.
 
 ## Additional Resources
 
-- **API Documentation**: [API_DOCUMENTATION.md](API_DOCUMENTATION.md)
-- **Tailwind CSS Guide**: [TAILWIND.md](TAILWIND.md)
-- **Discord Bot Setup**: [../discord-bot/README.md](../discord-bot/README.md)
-- **SorceryAI Setup**: [../SorceryAI/README.md](../SorceryAI/README.md)
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Make your changes and test locally
-4. Run tests: `pytest tests/ -v`
-5. Commit changes: `git commit -m "Add your feature"`
-6. Push to branch: `git push origin feature/your-feature`
-7. Open a Pull Request
-
-## License
-
-See [LICENSE](../LICENSE) for details.
-
-## Support
-
-For issues, questions, or contributions:
-- **GitHub Issues**: https://github.com/yourusername/SummitDiscordBot/issues
-- **Discord**: Join the Summit community server
-
----
-
-**Version**: 2.0.0
-**Last Updated**: 2026-03-12
+- [API_DOCUMENTATION.md](API_DOCUMENTATION.md) - Full API reference
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Detailed deployment guide
+- [../discord-bot/](../discord-bot/) - Discord bot

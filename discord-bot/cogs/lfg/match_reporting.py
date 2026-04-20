@@ -19,7 +19,7 @@ from repositories.limited_repo import (
     get_limited_pairing_between_players,
     mark_limited_pairing_reported,
 )
-from services.limited_service import limited_winner_report, get_run_summary, forfeit_arena_run
+from services.limited_service import limited_winner_report, get_run_summary
 from cogs.lfg.persistent_confirm import create_confirmation_view
 
 logger = logging.getLogger("discord_bot")
@@ -27,43 +27,50 @@ logger = logging.getLogger("discord_bot")
 LADDER_WINNER_ROLE_ID = 1472382884550803658
 
 
+async def _fallback_to_backup_channel(bot, user, message, view=None):
+    """Send message to backup channel when DM fails."""
+    try:
+        backup_channel = bot.get_channel(config.DM_BACKUP_CHANNEL_ID)
+        if backup_channel:
+            await backup_channel.send(
+                scrub_urls(f"{user.mention} {message}"),
+                view=view,
+            )
+            logger.info(f"Sent fallback message to backup channel for {user.id}")
+            return True
+    except Exception as e:
+        logger.error(f"Failed to send to backup channel: {e}")
+    return False
+
+
 async def _send_confirmation_to_opponent(
     bot, opponent_user, opponent_id, opponent_global,
     confirm_msg, confirmation_view, reply_interaction, guild_id,
 ):
     """Send a confirmation view to the opponent via DM, falling back to a channel."""
-    opponent_has_dm_issue = False
-    guild = bot.get_guild(guild_id) if guild_id else None
-    if guild:
-        role = guild.get_role(config.DM_DISABLED_ROLE_ID)
-        member = guild.get_member(opponent_id)
-        if role and member and role in member.roles:
-            opponent_has_dm_issue = True
+    logger.info(f"Attempting to send confirmation to opponent {opponent_id} ({opponent_global})")
 
-    if opponent_has_dm_issue:
-        dm_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
-        if dm_channel:
-            await dm_channel.send(
-                scrub_urls(f"{opponent_user.mention} {confirm_msg}"),
-                view=confirmation_view,
-            )
-            await reply_interaction.followup.send(
-                f"Match report sent to {opponent_global}. Waiting for confirmation...",
-                ephemeral=True,
-            )
-        else:
-            await reply_interaction.followup.send(
-                f"Could not send confirmation to {opponent_global}.",
-                ephemeral=True,
-            )
-    else:
-        try:
-            await opponent_user.send(confirm_msg, view=confirmation_view)
-            await reply_interaction.followup.send(
-                f"Match report sent to {opponent_global}. Waiting for confirmation...",
-                ephemeral=True,
-            )
-        except discord.Forbidden:
+    # Always try DM first - don't skip based on role
+    # (User might have re-enabled DMs since role was added)
+    guild = bot.get_guild(guild_id) if guild_id else None
+    try:
+        logger.info(f"Sending confirmation DM to opponent {opponent_id} ({opponent_global})")
+        await opponent_user.send(confirm_msg, view=confirmation_view)
+        logger.info(f"✅ Successfully sent confirmation DM to opponent {opponent_id} ({opponent_global})")
+
+        # Remove DM_DISABLED_ROLE if they have it (DMs are working now)
+        if guild:
+            role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+            member = guild.get_member(opponent_id)
+            if role and member and role in member.roles:
+                await member.remove_roles(role)
+                logger.info(f"Removed DM_DISABLED_ROLE from {opponent_id} (DMs working)")
+
+        await reply_interaction.followup.send(
+            f"Match report sent to {opponent_global}. Waiting for confirmation...",
+            ephemeral=True,
+        )
+    except discord.Forbidden:
             try:
                 if guild:
                     role = guild.get_role(config.DM_DISABLED_ROLE_ID)
@@ -79,10 +86,32 @@ async def _send_confirmation_to_opponent(
                             await dm_channel.set_permissions(
                                 member, read_messages=True, send_messages=True
                             )
+                    logger.info(f"Sending confirmation to DM-disabled channel for opponent {opponent_id}")
                     await dm_channel.send(
                         scrub_urls(f"{opponent_user.mention} {confirm_msg}"),
                         view=confirmation_view,
                     )
+                    logger.info(f"✅ Successfully sent confirmation to channel for opponent {opponent_id}")
+                    await reply_interaction.followup.send(
+                        "Match report sent. Waiting for confirmation...",
+                        ephemeral=True,
+                    )
+                else:
+                    # Fallback to backup channel if DM_DISABLED_CHANNEL_ID doesn't exist
+                    if await _fallback_to_backup_channel(bot, opponent_user, confirm_msg, confirmation_view):
+                        await reply_interaction.followup.send(
+                            "Match report sent. Waiting for confirmation...",
+                            ephemeral=True,
+                        )
+                    else:
+                        await reply_interaction.followup.send(
+                            f"Could not send confirmation to {opponent_global}.",
+                            ephemeral=True,
+                        )
+            except Exception as e:
+                logger.error(f"Failed to handle DM failure for opponent: {e}")
+                # Last resort: try backup channel
+                if await _fallback_to_backup_channel(bot, opponent_user, confirm_msg, confirmation_view):
                     await reply_interaction.followup.send(
                         "Match report sent. Waiting for confirmation...",
                         ephemeral=True,
@@ -92,12 +121,6 @@ async def _send_confirmation_to_opponent(
                         f"Could not send confirmation to {opponent_global}.",
                         ephemeral=True,
                     )
-            except Exception as e:
-                logger.error(f"Failed to handle DM failure for opponent: {e}")
-                await reply_interaction.followup.send(
-                    f"Could not send confirmation to {opponent_global}.",
-                    ephemeral=True,
-                )
 
 
 async def _apply_ladder_elo(bot, ladder_info, winner_id, winner_global, loser_id, loser_global, match_id, event_active):
@@ -334,138 +357,157 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         # Acknowledge interaction immediately to prevent 3-second timeout
         await interaction.response.defer(ephemeral=True)
 
-        # Disable buttons immediately to prevent double-clicks
-        for item in view.children:
-            item.disabled = True
         try:
-            await original_interaction.message.edit(view=view)
-        except Exception:
-            pass
+            logger.info(f"Processing win report with deck URL for user {original_interaction.user.id}")
 
-        # Get opponent from view player IDs
-        opponent_id = (
-            view.player2_id
-            if original_interaction.user.id == view.player1_id
-            else view.player1_id
-        )
+            # Disable buttons immediately to prevent double-clicks
+            for item in view.children:
+                item.disabled = True
+            try:
+                await original_interaction.message.edit(view=view)
+            except Exception:
+                pass
 
-        # Soft-validate pairing exists in DB (warn but don't block the report)
-        if not view.ladder_info:
-            if not view.guild_id:
-                logger.warning(
-                    f"guild_id is None during match report for user {original_interaction.user.id} — skipping pairing validation"
-                )
-            else:
-                if view.match_type == "limited":
-                    pairing = get_limited_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
-                else:
-                    pairing = get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
-                if not pairing:
+            # Get opponent from view player IDs
+            opponent_id = (
+                view.player2_id
+                if original_interaction.user.id == view.player1_id
+                else view.player1_id
+            )
+            logger.info(f"Opponent ID: {opponent_id}")
+
+            # Soft-validate pairing exists in DB (warn but don't block the report)
+            if not view.ladder_info:
+                if not view.guild_id:
                     logger.warning(
-                        f"No active pairing found in guild {view.guild_id} between "
-                        f"user {original_interaction.user.id} and opponent {opponent_id} — proceeding anyway"
+                        f"guild_id is None during match report for user {original_interaction.user.id} — skipping pairing validation"
                     )
                 else:
-                    logger.info(
-                        f"Validated pairing {pairing['pairing_id']} for match report in guild {view.guild_id}: "
-                        f"user {original_interaction.user.id} vs opponent {opponent_id}"
-                    )
+                    try:
+                        if view.match_type == "limited":
+                            pairing = get_limited_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
+                        else:
+                            pairing = get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
+                        if not pairing:
+                            logger.warning(
+                                f"No active pairing found in guild {view.guild_id} between "
+                                f"user {original_interaction.user.id} and opponent {opponent_id} — proceeding anyway"
+                            )
+                        else:
+                            logger.info(
+                                f"Validated pairing {pairing['pairing_id']} for match report in guild {view.guild_id}: "
+                                f"user {original_interaction.user.id} vs opponent {opponent_id}"
+                            )
+                    except Exception as pairing_error:
+                        logger.error(f"Error checking pairing: {pairing_error}")
 
-        # Fetch opponent to get their global name
-        try:
-            opponent = await view.bot.fetch_user(opponent_id)
-            opponent_global = opponent.global_name or opponent.display_name
+            # Fetch opponent to get their global name
+            try:
+                opponent = await view.bot.fetch_user(opponent_id)
+                opponent_global = opponent.global_name or opponent.display_name
+            except Exception as e:
+                logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
+                await interaction.followup.send(
+                    "Failed to fetch opponent information.",
+                    ephemeral=True,
+                )
+                return
+
+            # Check if a report is already pending for this match
+            if (original_interaction.user.id, opponent_id) in pending_match_reports or (
+                opponent_id,
+                original_interaction.user.id,
+            ) in pending_match_reports:
+                await interaction.followup.send(
+                    "A report for this match is already pending confirmation.",
+                    ephemeral=True,
+                )
+                return
+
+            # Store pending report with deck URLs
+            pending_match_reports[(original_interaction.user.id, opponent_id)] = {
+                "winner_id": original_interaction.user.id,
+                "winner_global": original_interaction.user.global_name
+                or original_interaction.user.display_name,
+                "loser_id": opponent_id,
+                "loser_global": opponent_global,
+                "reporter_id": original_interaction.user.id,
+                "reporter_global": original_interaction.user.global_name
+                or original_interaction.user.display_name,
+                "is_winner": True,
+                "opponent_message": None,
+                "match_start_time": view.match_start_time,
+                "reporter_deck_url": view.reporter_deck_url,
+                "opponent_deck_url": view.opponent_deck_url,
+                "first_player": view.first_player,
+                "guild_id": view.guild_id,
+                "ladder_info": view.ladder_info,
+                "match_type": view.match_type,
+            }
+            logger.info(f"Stored pending report for match between {original_interaction.user.id} and {opponent_id}")
+
+            # Send confirmation to opponent
+            try:
+                opponent = await view.bot.fetch_user(opponent_id)
+
+                reporter_global_name = original_interaction.user.global_name or original_interaction.user.display_name
+                confirmation_view = create_confirmation_view(
+                    reporter_id=original_interaction.user.id,
+                    reporter_global=reporter_global_name,
+                    opponent_id=opponent_id,
+                    opponent_global=opponent_global,
+                    winner_id=original_interaction.user.id,
+                    winner_global=reporter_global_name,
+                    loser_id=opponent_id,
+                    loser_global=opponent_global,
+                    is_winner=False,
+                    match_start_time=view.match_start_time,
+                    first_player=view.first_player,
+                    winner_deck_url=view.reporter_deck_url,
+                    loser_deck_url=view.opponent_deck_url,
+                    ladder_info=view.ladder_info,
+                    match_type=view.match_type,
+                    guild_id=view.guild_id,
+                    winner_run_id=view.reporter_run_id,  # Reporter won
+                    loser_run_id=view.opponent_run_id,
+                )
+
+                confirm_msg = f"**Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                await _send_confirmation_to_opponent(
+                    view.bot, opponent, opponent_id, opponent_global,
+                    confirm_msg, confirmation_view,
+                    interaction, view.guild_id,
+                )
+
+                # Remove buttons from original message
+                if original_interaction.message:
+                    try:
+                        await original_interaction.message.edit(view=None)
+                    except Exception:
+                        pass
+
+            except discord.Forbidden:
+                logger.warning(f"Discord.Forbidden when sending confirmation to {opponent_id}, attempted backup channel")
+                await interaction.followup.send(
+                    f"Attempted to send confirmation to {opponent_global} via backup channel.",
+                    ephemeral=True,
+                )
+            except Exception as e:
+                logger.error(f"Error sending confirmation to opponent: {e}", exc_info=True)
+                await interaction.followup.send(
+                    "An error occurred while sending confirmation to your opponent.",
+                    ephemeral=True,
+                )
+
         except Exception as e:
-            logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
-            await interaction.followup.send(
-                "Failed to fetch opponent information.",
-                ephemeral=True,
-            )
-            return
-
-        # Check if a report is already pending for this match
-        if (original_interaction.user.id, opponent_id) in pending_match_reports or (
-            opponent_id,
-            original_interaction.user.id,
-        ) in pending_match_reports:
-            await interaction.followup.send(
-                "A report for this match is already pending confirmation.",
-                ephemeral=True,
-            )
-            return
-
-        # Store pending report with deck URLs
-        pending_match_reports[(original_interaction.user.id, opponent_id)] = {
-            "winner_id": original_interaction.user.id,
-            "winner_global": original_interaction.user.global_name
-            or original_interaction.user.display_name,
-            "loser_id": opponent_id,
-            "loser_global": opponent_global,
-            "reporter_id": original_interaction.user.id,
-            "reporter_global": original_interaction.user.global_name
-            or original_interaction.user.display_name,
-            "is_winner": True,
-            "opponent_message": None,
-            "match_start_time": view.match_start_time,
-            "reporter_deck_url": view.reporter_deck_url,
-            "opponent_deck_url": view.opponent_deck_url,
-            "first_player": view.first_player,
-            "guild_id": view.guild_id,
-            "ladder_info": view.ladder_info,
-            "match_type": view.match_type,
-        }
-
-        # Send confirmation to opponent
-        try:
-            opponent = await view.bot.fetch_user(opponent_id)
-
-            reporter_global_name = original_interaction.user.global_name or original_interaction.user.display_name
-            confirmation_view = create_confirmation_view(
-                reporter_id=original_interaction.user.id,
-                reporter_global=reporter_global_name,
-                opponent_id=opponent_id,
-                opponent_global=opponent_global,
-                winner_id=original_interaction.user.id,
-                winner_global=reporter_global_name,
-                loser_id=opponent_id,
-                loser_global=opponent_global,
-                is_winner=False,
-                match_start_time=view.match_start_time,
-                first_player=view.first_player,
-                winner_deck_url=view.reporter_deck_url,
-                loser_deck_url=view.opponent_deck_url,
-                ladder_info=view.ladder_info,
-                match_type=view.match_type,
-                guild_id=view.guild_id,
-                winner_run_id=view.reporter_run_id,  # Reporter won
-                loser_run_id=view.opponent_run_id,
-            )
-
-            confirm_msg = f"**Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
-            await _send_confirmation_to_opponent(
-                view.bot, opponent, opponent_id, opponent_global,
-                confirm_msg, confirmation_view,
-                interaction, view.guild_id,
-            )
-
-            # Remove buttons from original message
-            if original_interaction.message:
-                try:
-                    await original_interaction.message.edit(view=None)
-                except Exception:
-                    pass
-
-        except discord.Forbidden:
-            await interaction.followup.send(
-                f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
-                ephemeral=True,
-            )
-        except Exception as e:
-            logger.error(f"Error in ReporterDeckURLModal win report: {e}")
-            await interaction.followup.send(
-                "An error occurred while processing your match report.",
-                ephemeral=True,
-            )
+            logger.error(f"Unexpected error in ReporterDeckURLModal loss report: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(
+                    "An unexpected error occurred while processing your match report. Please try again.",
+                    ephemeral=True,
+                )
+            except Exception:
+                logger.error("Failed to send error followup message")
 
     async def _process_loss_report(self, interaction: discord.Interaction):
         """Process loss report after collecting deck URL"""
@@ -475,138 +517,157 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         # Acknowledge interaction immediately to prevent 3-second timeout
         await interaction.response.defer(ephemeral=True)
 
-        # Disable buttons immediately to prevent double-clicks
-        for item in view.children:
-            item.disabled = True
         try:
-            await original_interaction.message.edit(view=view)
-        except Exception:
-            pass
+            logger.info(f"Processing loss report with deck URL for user {original_interaction.user.id}")
 
-        # Get opponent from view player IDs
-        opponent_id = (
-            view.player2_id
-            if original_interaction.user.id == view.player1_id
-            else view.player1_id
-        )
+            # Disable buttons immediately to prevent double-clicks
+            for item in view.children:
+                item.disabled = True
+            try:
+                await original_interaction.message.edit(view=view)
+            except Exception:
+                pass
 
-        # Soft-validate pairing exists in DB (warn but don't block the report)
-        if not view.ladder_info:
-            if not view.guild_id:
-                logger.warning(
-                    f"guild_id is None during match report for user {original_interaction.user.id} — skipping pairing validation"
-                )
-            else:
-                if view.match_type == "limited":
-                    pairing = get_limited_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
-                else:
-                    pairing = get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
-                if not pairing:
+            # Get opponent from view player IDs
+            opponent_id = (
+                view.player2_id
+                if original_interaction.user.id == view.player1_id
+                else view.player1_id
+            )
+            logger.info(f"Opponent ID: {opponent_id}")
+
+            # Soft-validate pairing exists in DB (warn but don't block the report)
+            if not view.ladder_info:
+                if not view.guild_id:
                     logger.warning(
-                        f"No active pairing found in guild {view.guild_id} between "
-                        f"user {original_interaction.user.id} and opponent {opponent_id} — proceeding anyway"
+                        f"guild_id is None during match report for user {original_interaction.user.id} — skipping pairing validation"
                     )
                 else:
-                    logger.info(
-                        f"Validated pairing {pairing['pairing_id']} for match report in guild {view.guild_id}: "
-                        f"user {original_interaction.user.id} vs opponent {opponent_id}"
-                    )
+                    try:
+                        if view.match_type == "limited":
+                            pairing = get_limited_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
+                        else:
+                            pairing = get_pairing_between_players(view.guild_id, original_interaction.user.id, opponent_id)
+                        if not pairing:
+                            logger.warning(
+                                f"No active pairing found in guild {view.guild_id} between "
+                                f"user {original_interaction.user.id} and opponent {opponent_id} — proceeding anyway"
+                            )
+                        else:
+                            logger.info(
+                                f"Validated pairing {pairing['pairing_id']} for match report in guild {view.guild_id}: "
+                                f"user {original_interaction.user.id} vs opponent {opponent_id}"
+                            )
+                    except Exception as pairing_error:
+                        logger.error(f"Error checking pairing: {pairing_error}")
 
-        # Fetch opponent to get their global name
-        try:
-            opponent = await view.bot.fetch_user(opponent_id)
-            opponent_global = opponent.global_name or opponent.display_name
+            # Fetch opponent to get their global name
+            try:
+                opponent = await view.bot.fetch_user(opponent_id)
+                opponent_global = opponent.global_name or opponent.display_name
+            except Exception as e:
+                logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
+                await interaction.followup.send(
+                    "Failed to fetch opponent information.",
+                    ephemeral=True,
+                )
+                return
+
+            # Check if a report is already pending for this match
+            if (original_interaction.user.id, opponent_id) in pending_match_reports or (
+                opponent_id,
+                original_interaction.user.id,
+            ) in pending_match_reports:
+                await interaction.followup.send(
+                    "A report for this match is already pending confirmation.",
+                    ephemeral=True,
+                )
+                return
+
+            # Store pending report with deck URLs
+            pending_match_reports[(original_interaction.user.id, opponent_id)] = {
+                "winner_id": opponent_id,
+                "winner_global": opponent_global,
+                "loser_id": original_interaction.user.id,
+                "loser_global": original_interaction.user.global_name
+                or original_interaction.user.display_name,
+                "reporter_id": original_interaction.user.id,
+                "reporter_global": original_interaction.user.global_name
+                or original_interaction.user.display_name,
+                "is_winner": False,
+                "opponent_message": None,
+                "match_start_time": view.match_start_time,
+                "reporter_deck_url": view.reporter_deck_url,
+                "opponent_deck_url": view.opponent_deck_url,
+                "first_player": view.first_player,
+                "guild_id": view.guild_id,
+                "ladder_info": view.ladder_info,
+                "match_type": view.match_type,
+            }
+            logger.info(f"Stored pending report for match between {original_interaction.user.id} and {opponent_id}")
+
+            # Send confirmation to opponent
+            try:
+                opponent = await view.bot.fetch_user(opponent_id)
+
+                reporter_global_name = original_interaction.user.global_name or original_interaction.user.display_name
+                confirmation_view = create_confirmation_view(
+                    reporter_id=original_interaction.user.id,
+                    reporter_global=reporter_global_name,
+                    opponent_id=opponent_id,
+                    opponent_global=opponent_global,
+                    winner_id=opponent_id,
+                    winner_global=opponent_global,
+                    loser_id=original_interaction.user.id,
+                    loser_global=reporter_global_name,
+                    is_winner=True,
+                    match_start_time=view.match_start_time,
+                    first_player=view.first_player,
+                    winner_deck_url=view.opponent_deck_url,
+                    loser_deck_url=view.reporter_deck_url,
+                    ladder_info=view.ladder_info,
+                    match_type=view.match_type,
+                    guild_id=view.guild_id,
+                    winner_run_id=view.opponent_run_id,  # Opponent won
+                    loser_run_id=view.reporter_run_id,
+                )
+
+                confirm_msg = f"**Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                await _send_confirmation_to_opponent(
+                    view.bot, opponent, opponent_id, opponent_global,
+                    confirm_msg, confirmation_view,
+                    interaction, view.guild_id,
+                )
+
+                # Remove buttons from original message
+                if original_interaction.message:
+                    try:
+                        await original_interaction.message.edit(view=None)
+                    except Exception:
+                        pass
+
+            except discord.Forbidden:
+                logger.warning(f"Discord.Forbidden when sending confirmation to {opponent_id}, attempted backup channel")
+                await interaction.followup.send(
+                    f"Attempted to send confirmation to {opponent_global} via backup channel.",
+                    ephemeral=True,
+                )
+            except Exception as e:
+                logger.error(f"Error sending confirmation to opponent: {e}", exc_info=True)
+                await interaction.followup.send(
+                    "An error occurred while sending confirmation to your opponent.",
+                    ephemeral=True,
+                )
+
         except Exception as e:
-            logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
-            await interaction.followup.send(
-                "Failed to fetch opponent information.",
-                ephemeral=True,
-            )
-            return
-
-        # Check if a report is already pending for this match
-        if (original_interaction.user.id, opponent_id) in pending_match_reports or (
-            opponent_id,
-            original_interaction.user.id,
-        ) in pending_match_reports:
-            await interaction.followup.send(
-                "A report for this match is already pending confirmation.",
-                ephemeral=True,
-            )
-            return
-
-        # Store pending report with deck URLs
-        pending_match_reports[(original_interaction.user.id, opponent_id)] = {
-            "winner_id": opponent_id,
-            "winner_global": opponent_global,
-            "loser_id": original_interaction.user.id,
-            "loser_global": original_interaction.user.global_name
-            or original_interaction.user.display_name,
-            "reporter_id": original_interaction.user.id,
-            "reporter_global": original_interaction.user.global_name
-            or original_interaction.user.display_name,
-            "is_winner": False,
-            "opponent_message": None,
-            "match_start_time": view.match_start_time,
-            "reporter_deck_url": view.reporter_deck_url,
-            "opponent_deck_url": view.opponent_deck_url,
-            "first_player": view.first_player,
-            "guild_id": view.guild_id,
-            "ladder_info": view.ladder_info,
-            "match_type": view.match_type,
-        }
-
-        # Send confirmation to opponent
-        try:
-            opponent = await view.bot.fetch_user(opponent_id)
-
-            reporter_global_name = original_interaction.user.global_name or original_interaction.user.display_name
-            confirmation_view = create_confirmation_view(
-                reporter_id=original_interaction.user.id,
-                reporter_global=reporter_global_name,
-                opponent_id=opponent_id,
-                opponent_global=opponent_global,
-                winner_id=opponent_id,
-                winner_global=opponent_global,
-                loser_id=original_interaction.user.id,
-                loser_global=reporter_global_name,
-                is_winner=True,
-                match_start_time=view.match_start_time,
-                first_player=view.first_player,
-                winner_deck_url=view.opponent_deck_url,
-                loser_deck_url=view.reporter_deck_url,
-                ladder_info=view.ladder_info,
-                match_type=view.match_type,
-                guild_id=view.guild_id,
-                winner_run_id=view.opponent_run_id,  # Opponent won
-                loser_run_id=view.reporter_run_id,
-            )
-
-            confirm_msg = f"**Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
-            await _send_confirmation_to_opponent(
-                view.bot, opponent, opponent_id, opponent_global,
-                confirm_msg, confirmation_view,
-                interaction, view.guild_id,
-            )
-
-            # Remove buttons from original message
-            if original_interaction.message:
-                try:
-                    await original_interaction.message.edit(view=None)
-                except Exception:
-                    pass
-
-        except discord.Forbidden:
-            await interaction.followup.send(
-                f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
-                ephemeral=True,
-            )
-        except Exception as e:
-            logger.error(f"Error in ReporterDeckURLModal loss report: {e}")
-            await interaction.followup.send(
-                "An error occurred while processing your match report.",
-                ephemeral=True,
-            )
+            logger.error(f"Unexpected error in ReporterDeckURLModal loss report: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(
+                    "An unexpected error occurred while processing your match report. Please try again.",
+                    ephemeral=True,
+                )
+            except Exception:
+                logger.error("Failed to send error followup message")
 
 
 class MatchTypeSelectionView(discord.ui.View):
@@ -941,139 +1002,158 @@ class LFGReportButtons(discord.ui.View):
         # Acknowledge interaction immediately to prevent 3-second timeout
         await interaction.response.defer(ephemeral=True)
 
-        # Disable buttons immediately to prevent double-clicks
-        for item in self.children:
-            item.disabled = True
         try:
-            await interaction.message.edit(view=self)
-        except Exception:
-            pass
+            logger.info(f"Processing 'I Won' button for user {interaction.user.id}")
 
-        # Get opponent from view player IDs
-        opponent_id = (
-            self.player2_id
-            if interaction.user.id == self.player1_id
-            else self.player1_id
-        )
+            # Disable buttons immediately to prevent double-clicks
+            for item in self.children:
+                item.disabled = True
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                pass
 
-        # Soft-validate pairing exists in DB (warn but don't block the report)
-        if not self.ladder_info:
-            if not self.guild_id:
-                logger.warning(
-                    f"guild_id is None during match report for user {interaction.user.id} — skipping pairing validation"
-                )
-            else:
-                if self.match_type == "limited":
-                    pairing = get_limited_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
-                else:
-                    pairing = get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
-                if not pairing:
+            # Get opponent from view player IDs
+            opponent_id = (
+                self.player2_id
+                if interaction.user.id == self.player1_id
+                else self.player1_id
+            )
+            logger.info(f"Opponent ID: {opponent_id}")
+
+            # Soft-validate pairing exists in DB (warn but don't block the report)
+            if not self.ladder_info:
+                if not self.guild_id:
                     logger.warning(
-                        f"No active pairing found in guild {self.guild_id} between "
-                        f"user {interaction.user.id} and opponent {opponent_id} — proceeding anyway"
+                        f"guild_id is None during match report for user {interaction.user.id} — skipping pairing validation"
                     )
                 else:
-                    logger.info(
-                        f"Validated pairing {pairing['pairing_id']} for match report in guild {self.guild_id}: "
-                        f"user {interaction.user.id} vs opponent {opponent_id}"
-                    )
+                    try:
+                        if self.match_type == "limited":
+                            pairing = get_limited_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
+                        else:
+                            pairing = get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
+                        if not pairing:
+                            logger.warning(
+                                f"No active pairing found in guild {self.guild_id} between "
+                                f"user {interaction.user.id} and opponent {opponent_id} — proceeding anyway"
+                            )
+                        else:
+                            logger.info(
+                                f"Validated pairing {pairing['pairing_id']} for match report in guild {self.guild_id}: "
+                                f"user {interaction.user.id} vs opponent {opponent_id}"
+                            )
+                    except Exception as pairing_error:
+                        logger.error(f"Error checking pairing: {pairing_error}")
 
-        # Fetch opponent to get their global name
-        try:
-            opponent = await self.bot.fetch_user(opponent_id)
-            opponent_global = opponent.global_name or opponent.display_name
+            # Fetch opponent to get their global name
+            try:
+                opponent = await self.bot.fetch_user(opponent_id)
+                opponent_global = opponent.global_name or opponent.display_name
+            except Exception as e:
+                logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
+                await interaction.followup.send(
+                    "Failed to fetch opponent information.",
+                    ephemeral=True,
+                )
+                return
+
+            # Check if a report is already pending for this match
+            if (interaction.user.id, opponent_id) in pending_match_reports or (
+                opponent_id,
+                interaction.user.id,
+            ) in pending_match_reports:
+                await interaction.followup.send(
+                    "A report for this match is already pending confirmation.",
+                    ephemeral=True,
+                )
+                return
+
+            # Store pending report with deck URLs
+            pending_match_reports[(interaction.user.id, opponent_id)] = {
+                "winner_id": interaction.user.id,
+                "winner_global": interaction.user.global_name
+                or interaction.user.display_name,
+                "loser_id": opponent_id,
+                "loser_global": opponent_global,
+                "reporter_id": interaction.user.id,
+                "reporter_global": interaction.user.global_name
+                or interaction.user.display_name,
+                "is_winner": True,
+                "opponent_message": None,
+                "match_start_time": self.match_start_time,
+                "reporter_deck_url": self.reporter_deck_url,
+                "opponent_deck_url": self.opponent_deck_url,
+                "first_player": self.first_player,
+                "guild_id": self.guild_id,
+                "ladder_info": self.ladder_info,
+                "match_type": self.match_type,
+            }
+            logger.info(f"Stored pending report for match between {interaction.user.id} and {opponent_id}")
+
+            # Send confirmation to opponent
+            try:
+                opponent = await self.bot.fetch_user(opponent_id)
+
+                # Reporter won, so reporter's deck is winner's deck, opponent's deck is loser's deck
+                reporter_global_name = interaction.user.global_name or interaction.user.display_name
+                confirmation_view = create_confirmation_view(
+                    reporter_id=interaction.user.id,
+                    reporter_global=reporter_global_name,
+                    opponent_id=opponent_id,
+                    opponent_global=opponent_global,
+                    winner_id=interaction.user.id,
+                    winner_global=reporter_global_name,
+                    loser_id=opponent_id,
+                    loser_global=opponent_global,
+                    is_winner=False,  # For opponent, they lost
+                    match_start_time=self.match_start_time,
+                    first_player=self.first_player,
+                    winner_deck_url=self.reporter_deck_url,  # Reporter won, so their deck is winner's
+                    loser_deck_url=self.opponent_deck_url,  # Opponent lost, so their deck is loser's
+                    ladder_info=self.ladder_info,
+                    match_type=self.match_type,
+                    guild_id=self.guild_id,
+                    winner_run_id=self.reporter_run_id,  # Reporter won
+                    loser_run_id=self.opponent_run_id,
+                )
+
+                confirm_msg = f"**Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                await _send_confirmation_to_opponent(
+                    self.bot, opponent, opponent_id, opponent_global,
+                    confirm_msg, confirmation_view,
+                    interaction, self.guild_id,
+                )
+
+                # Remove buttons from this user's message
+                if interaction.message:
+                    try:
+                        await interaction.message.edit(view=None)
+                    except Exception:
+                        pass
+
+            except discord.Forbidden:
+                logger.warning(f"Discord.Forbidden when sending confirmation to {opponent_id}, attempted backup channel")
+                await interaction.followup.send(
+                    f"Attempted to send confirmation to {opponent_global} via backup channel.",
+                    ephemeral=True,
+                )
+            except Exception as e:
+                logger.error(f"Error sending confirmation to opponent: {e}", exc_info=True)
+                await interaction.followup.send(
+                    "An error occurred while sending confirmation to your opponent.",
+                    ephemeral=True,
+                )
+
         except Exception as e:
-            logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
-            await interaction.followup.send(
-                "Failed to fetch opponent information.",
-                ephemeral=True,
-            )
-            return
-
-        # Check if a report is already pending for this match
-        if (interaction.user.id, opponent_id) in pending_match_reports or (
-            opponent_id,
-            interaction.user.id,
-        ) in pending_match_reports:
-            await interaction.followup.send(
-                "A report for this match is already pending confirmation.",
-                ephemeral=True,
-            )
-            return
-
-        # Store pending report with deck URLs
-        pending_match_reports[(interaction.user.id, opponent_id)] = {
-            "winner_id": interaction.user.id,
-            "winner_global": interaction.user.global_name
-            or interaction.user.display_name,
-            "loser_id": opponent_id,
-            "loser_global": opponent_global,
-            "reporter_id": interaction.user.id,
-            "reporter_global": interaction.user.global_name
-            or interaction.user.display_name,
-            "is_winner": True,
-            "opponent_message": None,
-            "match_start_time": self.match_start_time,
-            "reporter_deck_url": self.reporter_deck_url,
-            "opponent_deck_url": self.opponent_deck_url,
-            "first_player": self.first_player,
-            "guild_id": self.guild_id,
-            "ladder_info": self.ladder_info,
-            "match_type": self.match_type,
-        }
-
-        # Send confirmation to opponent
-        try:
-            opponent = await self.bot.fetch_user(opponent_id)
-
-            # Reporter won, so reporter's deck is winner's deck, opponent's deck is loser's deck
-            reporter_global_name = interaction.user.global_name or interaction.user.display_name
-            confirmation_view = create_confirmation_view(
-                reporter_id=interaction.user.id,
-                reporter_global=reporter_global_name,
-                opponent_id=opponent_id,
-                opponent_global=opponent_global,
-                winner_id=interaction.user.id,
-                winner_global=reporter_global_name,
-                loser_id=opponent_id,
-                loser_global=opponent_global,
-                is_winner=False,  # For opponent, they lost
-                match_start_time=self.match_start_time,
-                first_player=self.first_player,
-                winner_deck_url=self.reporter_deck_url,  # Reporter won, so their deck is winner's
-                loser_deck_url=self.opponent_deck_url,  # Opponent lost, so their deck is loser's
-                ladder_info=self.ladder_info,
-                match_type=self.match_type,
-                guild_id=self.guild_id,
-                winner_run_id=self.reporter_run_id,  # Reporter won
-                loser_run_id=self.opponent_run_id,
-            )
-
-            confirm_msg = f"**Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
-            await _send_confirmation_to_opponent(
-                self.bot, opponent, opponent_id, opponent_global,
-                confirm_msg, confirmation_view,
-                interaction, self.guild_id,
-            )
-
-            # Remove buttons from this user's message
-            if interaction.message:
-                try:
-                    await interaction.message.edit(view=None)
-                except Exception:
-                    pass
-
-        except discord.Forbidden:
-            await interaction.followup.send(
-                f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
-                ephemeral=True,
-            )
-        except Exception as e:
-            logger.error(f"Error in won_button: {e}")
-            await interaction.followup.send(
-                "An error occurred while processing your match report.",
-                ephemeral=True,
-            )
+            logger.error(f"Unexpected error in won_button: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(
+                    "An unexpected error occurred while processing your match report. Please try again.",
+                    ephemeral=True,
+                )
+            except Exception:
+                logger.error("Failed to send error followup message")
 
     @discord.ui.button(
         label="I Lost", style=discord.ButtonStyle.danger, custom_id="lose_button"
@@ -1091,139 +1171,158 @@ class LFGReportButtons(discord.ui.View):
         # Acknowledge interaction immediately to prevent 3-second timeout
         await interaction.response.defer(ephemeral=True)
 
-        # Disable buttons immediately to prevent double-clicks
-        for item in self.children:
-            item.disabled = True
         try:
-            await interaction.message.edit(view=self)
-        except Exception:
-            pass
+            logger.info(f"Processing 'I Lost' button for user {interaction.user.id}")
 
-        # Get opponent from view player IDs
-        opponent_id = (
-            self.player2_id
-            if interaction.user.id == self.player1_id
-            else self.player1_id
-        )
+            # Disable buttons immediately to prevent double-clicks
+            for item in self.children:
+                item.disabled = True
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                pass
 
-        # Soft-validate pairing exists in DB (warn but don't block the report)
-        if not self.ladder_info:
-            if not self.guild_id:
-                logger.warning(
-                    f"guild_id is None during match report for user {interaction.user.id} — skipping pairing validation"
-                )
-            else:
-                if self.match_type == "limited":
-                    pairing = get_limited_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
-                else:
-                    pairing = get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
-                if not pairing:
+            # Get opponent from view player IDs
+            opponent_id = (
+                self.player2_id
+                if interaction.user.id == self.player1_id
+                else self.player1_id
+            )
+            logger.info(f"Opponent ID: {opponent_id}")
+
+            # Soft-validate pairing exists in DB (warn but don't block the report)
+            if not self.ladder_info:
+                if not self.guild_id:
                     logger.warning(
-                        f"No active pairing found in guild {self.guild_id} between "
-                        f"user {interaction.user.id} and opponent {opponent_id} — proceeding anyway"
+                        f"guild_id is None during match report for user {interaction.user.id} — skipping pairing validation"
                     )
                 else:
-                    logger.info(
-                        f"Validated pairing {pairing['pairing_id']} for match report in guild {self.guild_id}: "
-                        f"user {interaction.user.id} vs opponent {opponent_id}"
-                    )
+                    try:
+                        if self.match_type == "limited":
+                            pairing = get_limited_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
+                        else:
+                            pairing = get_pairing_between_players(self.guild_id, interaction.user.id, opponent_id)
+                        if not pairing:
+                            logger.warning(
+                                f"No active pairing found in guild {self.guild_id} between "
+                                f"user {interaction.user.id} and opponent {opponent_id} — proceeding anyway"
+                            )
+                        else:
+                            logger.info(
+                                f"Validated pairing {pairing['pairing_id']} for match report in guild {self.guild_id}: "
+                                f"user {interaction.user.id} vs opponent {opponent_id}"
+                            )
+                    except Exception as pairing_error:
+                        logger.error(f"Error checking pairing: {pairing_error}")
 
-        # Fetch opponent to get their global name
-        try:
-            opponent = await self.bot.fetch_user(opponent_id)
-            opponent_global = opponent.global_name or opponent.display_name
+            # Fetch opponent to get their global name
+            try:
+                opponent = await self.bot.fetch_user(opponent_id)
+                opponent_global = opponent.global_name or opponent.display_name
+            except Exception as e:
+                logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
+                await interaction.followup.send(
+                    "Failed to fetch opponent information.",
+                    ephemeral=True,
+                )
+                return
+
+            # Check if a report is already pending for this match
+            if (interaction.user.id, opponent_id) in pending_match_reports or (
+                opponent_id,
+                interaction.user.id,
+            ) in pending_match_reports:
+                await interaction.followup.send(
+                    "A report for this match is already pending confirmation.",
+                    ephemeral=True,
+                )
+                return
+
+            # Store pending report with deck URLs
+            pending_match_reports[(interaction.user.id, opponent_id)] = {
+                "winner_id": opponent_id,
+                "winner_global": opponent_global,
+                "loser_id": interaction.user.id,
+                "loser_global": interaction.user.global_name
+                or interaction.user.display_name,
+                "reporter_id": interaction.user.id,
+                "reporter_global": interaction.user.global_name
+                or interaction.user.display_name,
+                "is_winner": False,
+                "opponent_message": None,
+                "match_start_time": self.match_start_time,
+                "reporter_deck_url": self.reporter_deck_url,
+                "opponent_deck_url": self.opponent_deck_url,
+                "first_player": self.first_player,
+                "guild_id": self.guild_id,
+                "ladder_info": self.ladder_info,
+                "match_type": self.match_type,
+            }
+            logger.info(f"Stored pending report for match between {interaction.user.id} and {opponent_id}")
+
+            # Send confirmation to opponent
+            try:
+                opponent = await self.bot.fetch_user(opponent_id)
+
+                # Reporter lost, so opponent's deck is winner's deck, reporter's deck is loser's deck
+                reporter_global_name = interaction.user.global_name or interaction.user.display_name
+                confirmation_view = create_confirmation_view(
+                    reporter_id=interaction.user.id,
+                    reporter_global=reporter_global_name,
+                    opponent_id=opponent_id,
+                    opponent_global=opponent_global,
+                    winner_id=opponent_id,
+                    winner_global=opponent_global,
+                    loser_id=interaction.user.id,
+                    loser_global=reporter_global_name,
+                    is_winner=True,  # For opponent, they won
+                    match_start_time=self.match_start_time,
+                    first_player=self.first_player,
+                    winner_deck_url=self.opponent_deck_url,  # Opponent won, so their deck is winner's
+                    loser_deck_url=self.reporter_deck_url,  # Reporter lost, so their deck is loser's
+                    ladder_info=self.ladder_info,
+                    match_type=self.match_type,
+                    guild_id=self.guild_id,
+                    winner_run_id=self.opponent_run_id,  # Opponent won
+                    loser_run_id=self.reporter_run_id,
+                )
+
+                confirm_msg = f"**Match Report Confirmation**\n\nYou **WON** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                await _send_confirmation_to_opponent(
+                    self.bot, opponent, opponent_id, opponent_global,
+                    confirm_msg, confirmation_view,
+                    interaction, self.guild_id,
+                )
+
+                # Remove buttons from this user's message
+                if interaction.message:
+                    try:
+                        await interaction.message.edit(view=None)
+                    except Exception:
+                        pass
+
+            except discord.Forbidden:
+                logger.warning(f"Discord.Forbidden when sending confirmation to {opponent_id}, attempted backup channel")
+                await interaction.followup.send(
+                    f"Attempted to send confirmation to {opponent_global} via backup channel.",
+                    ephemeral=True,
+                )
+            except Exception as e:
+                logger.error(f"Error sending confirmation to opponent: {e}", exc_info=True)
+                await interaction.followup.send(
+                    "An error occurred while sending confirmation to your opponent.",
+                    ephemeral=True,
+                )
+
         except Exception as e:
-            logger.error(f"Failed to fetch opponent user {opponent_id}: {e}")
-            await interaction.followup.send(
-                "Failed to fetch opponent information.",
-                ephemeral=True,
-            )
-            return
-
-        # Check if a report is already pending for this match
-        if (interaction.user.id, opponent_id) in pending_match_reports or (
-            opponent_id,
-            interaction.user.id,
-        ) in pending_match_reports:
-            await interaction.followup.send(
-                "A report for this match is already pending confirmation.",
-                ephemeral=True,
-            )
-            return
-
-        # Store pending report with deck URLs
-        pending_match_reports[(interaction.user.id, opponent_id)] = {
-            "winner_id": opponent_id,
-            "winner_global": opponent_global,
-            "loser_id": interaction.user.id,
-            "loser_global": interaction.user.global_name
-            or interaction.user.display_name,
-            "reporter_id": interaction.user.id,
-            "reporter_global": interaction.user.global_name
-            or interaction.user.display_name,
-            "is_winner": False,
-            "opponent_message": None,
-            "match_start_time": self.match_start_time,
-            "reporter_deck_url": self.reporter_deck_url,
-            "opponent_deck_url": self.opponent_deck_url,
-            "first_player": self.first_player,
-            "guild_id": self.guild_id,
-            "ladder_info": self.ladder_info,
-            "match_type": self.match_type,
-        }
-
-        # Send confirmation to opponent
-        try:
-            opponent = await self.bot.fetch_user(opponent_id)
-
-            # Reporter lost, so opponent's deck is winner's deck, reporter's deck is loser's deck
-            reporter_global_name = interaction.user.global_name or interaction.user.display_name
-            confirmation_view = create_confirmation_view(
-                reporter_id=interaction.user.id,
-                reporter_global=reporter_global_name,
-                opponent_id=opponent_id,
-                opponent_global=opponent_global,
-                winner_id=opponent_id,
-                winner_global=opponent_global,
-                loser_id=interaction.user.id,
-                loser_global=reporter_global_name,
-                is_winner=True,  # For opponent, they won
-                match_start_time=self.match_start_time,
-                first_player=self.first_player,
-                winner_deck_url=self.opponent_deck_url,  # Opponent won, so their deck is winner's
-                loser_deck_url=self.reporter_deck_url,  # Reporter lost, so their deck is loser's
-                ladder_info=self.ladder_info,
-                match_type=self.match_type,
-                guild_id=self.guild_id,
-                winner_run_id=self.opponent_run_id,  # Opponent won
-                loser_run_id=self.reporter_run_id,
-            )
-
-            confirm_msg = f"**Match Report Confirmation**\n\nYou **WON** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
-            await _send_confirmation_to_opponent(
-                self.bot, opponent, opponent_id, opponent_global,
-                confirm_msg, confirmation_view,
-                interaction, self.guild_id,
-            )
-
-            # Remove buttons from this user's message
-            if interaction.message:
-                try:
-                    await interaction.message.edit(view=None)
-                except Exception:
-                    pass
-
-        except discord.Forbidden:
-            await interaction.followup.send(
-                f"Could not send confirmation to {opponent_global}. They might have DMs disabled.",
-                ephemeral=True,
-            )
-        except Exception as e:
-            logger.error(f"Error in lost_button: {e}")
-            await interaction.followup.send(
-                "An error occurred while processing your match report.",
-                ephemeral=True,
-            )
+            logger.error(f"Unexpected error in lost_button: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(
+                    "An unexpected error occurred while processing your match report. Please try again.",
+                    ephemeral=True,
+                )
+            except Exception:
+                logger.error("Failed to send error followup message")
 
     @discord.ui.button(
         label="Cancel match",
@@ -1252,61 +1351,3 @@ class LFGReportButtons(discord.ui.View):
             pass
 
 
-class RunStatusView(discord.ui.View):
-    """Post-match DM view with Continue/Forfeit buttons for active limited arena runs."""
-
-    def __init__(self, user_id: int, run_id: int, bot):
-        super().__init__(timeout=3600)  # 60 minute timeout
-        self.user_id = user_id
-        self.run_id = run_id
-        self.bot = bot
-
-    @discord.ui.button(
-        label="Continue Run",
-        style=discord.ButtonStyle.success,
-        custom_id="limited_continue_run",
-    )
-    async def continue_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("This isn't your run.", ephemeral=True)
-            return
-
-        # Disable buttons
-        for item in self.children:
-            item.disabled = True
-
-        summary = get_run_summary(self.run_id)
-        await interaction.response.edit_message(
-            content=f"🎲 **Current Run Status**\n\n{summary}",
-            view=self,
-        )
-
-    @discord.ui.button(
-        label="Forfeit Run",
-        style=discord.ButtonStyle.danger,
-        custom_id="limited_forfeit_run",
-    )
-    async def forfeit_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("This isn't your run.", ephemeral=True)
-            return
-
-        # Disable buttons
-        for item in self.children:
-            item.disabled = True
-
-        try:
-            forfeit_summary = forfeit_arena_run(self.user_id)
-            await interaction.response.edit_message(
-                content=f"💀 **Arena Run Forfeited**\n\n{forfeit_summary}",
-                view=self,
-            )
-        except ValueError as e:
-            await interaction.response.edit_message(
-                content=f"Could not forfeit: {e}",
-                view=self,
-            )

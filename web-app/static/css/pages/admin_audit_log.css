@@ -479,6 +479,28 @@
   font-style: italic;
 }
 
+/* Analytics filter buttons */
+.analytics-filter {
+  width: auto;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: none;
+}
+
+.analytics-filter:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.analytics-filter.active {
+  background: rgba(77, 184, 255, 0.2);
+  border-color: rgba(77, 184, 255, 0.5);
+  color: #4db8ff;
+}
+
 .error {
   color: #f85149;
 }

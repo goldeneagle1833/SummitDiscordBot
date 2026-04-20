@@ -114,14 +114,6 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
 
         deck_url = self.deck_url.value.strip() if self.deck_url.value else None
 
-        # Limited queue requires a deck URL
-        if self.queue_type == "limited" and not deck_url:
-            await interaction.followup.send(
-                "A Curiosa deck URL is **required** for Limited queue. Please provide your draft deck URL.",
-                ephemeral=True,
-            )
-            return
-
         # For limited queue, player must have an active arena run (created via Draft Sorcery)
         run_id = None
         if self.queue_type == "limited":

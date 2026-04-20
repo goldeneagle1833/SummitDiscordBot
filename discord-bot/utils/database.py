@@ -53,6 +53,7 @@ from services.elo_service import (  # noqa: F401
     update_elo,
     calculate_event_k_value,
     update_elo_db,
+    update_elo_db_lifetime_only,
     update_elo_db_ladder,
     winner_report,
     losser_report,

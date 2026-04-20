@@ -157,6 +157,74 @@ def update_elo_db(user_id, user_display_name, did_win, opponent_id):
     return (new_online_elo, online_change, new_online_event_elo, online_event_change, True)
 
 
+def update_elo_db_lifetime_only(user_id, user_display_name, did_win, opponent_id):
+    """
+    Update only the lifetime (online_elo) for a player, leaving event ELO unchanged.
+
+    Used for top cut matches where only lifetime ELO should be affected.
+
+    Returns:
+        Tuple of (new_online_elo, online_change)
+    """
+    migrate_to_dual_elo_system()
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS overall_standings
+                   (user_id INTEGER PRIMARY KEY,
+                    user_display_name TEXT,
+                    elo INTEGER DEFAULT 1500,
+                    event_elo INTEGER DEFAULT 1500,
+                    paper_elo INTEGER DEFAULT 1500,
+                    online_elo INTEGER DEFAULT 1500,
+                    paper_event_elo INTEGER DEFAULT 1500,
+                    online_event_elo INTEGER DEFAULT 1500
+                   )""")
+
+    # Get player's current online lifetime ELO (or insert if new)
+    cur.execute(
+        "SELECT online_elo FROM overall_standings WHERE user_id=?", (user_id,)
+    )
+    player_row = cur.fetchone()
+
+    if player_row:
+        player_online_elo = player_row[0] if player_row[0] else 1500
+    else:
+        player_online_elo = 1500
+        cur.execute(
+            """INSERT OR IGNORE INTO overall_standings
+               (user_id, user_display_name, online_elo, online_event_elo) VALUES (?, ?, ?, 1500)""",
+            (user_id, user_display_name, player_online_elo),
+        )
+
+    # Get opponent's online lifetime ELO
+    cur.execute(
+        "SELECT online_elo FROM overall_standings WHERE user_id=?", (opponent_id,)
+    )
+    opponent_row = cur.fetchone()
+    opponent_online_elo = (opponent_row[0] if opponent_row[0] else 1500) if opponent_row else 1500
+
+    # Calculate new online lifetime ELO (K=32)
+    new_online_elo = update_elo(player_online_elo, opponent_online_elo, did_win, k=32)
+    online_change = new_online_elo - player_online_elo
+
+    logger.info(
+        "Player %s top-cut lifetime ELO updated: %d -> %d (%+d)",
+        user_id, player_online_elo, new_online_elo, online_change,
+    )
+
+    # Update only online_elo and legacy elo, leave event ELOs untouched
+    cur.execute(
+        "UPDATE overall_standings SET online_elo = ?, elo = ? WHERE user_id = ?",
+        (new_online_elo, new_online_elo, user_id),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return (new_online_elo, online_change)
+
+
 def update_elo_db_ladder(
     user_id, user_display_name, did_win, opponent_id, elo_multiplier=1.0
 ):

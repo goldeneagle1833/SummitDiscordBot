@@ -42,6 +42,7 @@ from utils.database import (
     get_user_elo,
     get_user_event_elo,
     update_elo_db,
+    update_elo_db_lifetime_only,
     log_admin_action,
     cleanup_old_pairings,
     save_pairing,
@@ -1495,6 +1496,9 @@ class LFGCog(commands.Cog):
                 "Manually report a ladder challenge match. `@challenger` is the Top 16 player.\n"
                 "**When to use:** When a challenge match wasn't reported correctly or the challenge feature broke. "
                 "Applies the same ELO rules as normal challenges (2x/0.5x if 100+ ELO apart).\n\n"
+                "`!top_cut_report @winner @loser`\n"
+                "Report a top cut match that only affects lifetime ELO (event ELO unchanged).\n"
+                "**When to use:** For top cut matches where only lifetime ELO should be updated.\n\n"
                 "`!reset_challenge @user`\n"
                 "Reset a player's daily ladder challenge so they can use `!issue_challenge` again.\n"
                 "**When to use:** When a player's challenge was wasted due to a bug or other issue."
@@ -1862,6 +1866,118 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
         else:
             logger.error(f"admin_report error: {error}")
+            await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def top_cut_report(
+        self, ctx, winner: discord.Member = None, loser: discord.Member = None
+    ):
+        """Admin command to report a top cut match. Only affects lifetime ELO. Usage: !top_cut_report @winner @loser"""
+
+        # Validate arguments
+        if winner is None or loser is None:
+            await ctx.send(
+                "Please mention both players. Usage: `!top_cut_report @winner @loser`"
+            )
+            return
+
+        if winner.id == loser.id:
+            await ctx.send("Winner and loser cannot be the same player!")
+            return
+
+        if winner.bot or loser.bot:
+            await ctx.send("Cannot report matches for bots!")
+            return
+
+        try:
+            # Get display names with fallback
+            winner_name = winner.global_name or winner.display_name
+            loser_name = loser.global_name or loser.display_name
+
+            # Record the match in match_records
+            match_id, _, _, _ = await winner_report(
+                ctx.author.id,
+                winner.id,
+                winner_name,
+                True,
+                loser.id,
+                loser_name,
+                "n",
+                0,
+                "Top cut match",
+                "Top cut match reported by admin",
+                winner.id,
+                winner_name,
+                winner_deck_url=None,
+                loser_deck_url=None,
+                winner_went_first=None,
+                loser_went_first=None,
+                match_type="testing",  # Prevent winner_report from updating ELO
+            )
+
+            # Update only lifetime ELO for both players
+            new_winner_elo, winner_change = update_elo_db_lifetime_only(
+                winner.id, winner_name, True, loser.id
+            )
+            new_loser_elo, loser_change = update_elo_db_lifetime_only(
+                loser.id, loser_name, False, winner.id
+            )
+
+            # Update leaderboard
+            await self.update_leaderboard()
+
+            # Get event ELOs (unchanged) for display
+            winner_event_elo = get_user_event_elo(winner.id)
+            loser_event_elo = get_user_event_elo(loser.id)
+
+            description = (
+                f"**Match ID:** #{match_id}\n"
+                f"**Winner:** {winner.mention} ({winner_name})\n"
+                f"**Loser:** {loser.mention} ({loser_name})\n"
+                f"**Type:** Top Cut (lifetime ELO only)\n\n"
+                f"**Updated Ranks:**\n"
+                f"{winner_name}: **{new_winner_elo}** lifetime ({winner_change:+d}) / **{winner_event_elo}** event (unchanged)\n"
+                f"{loser_name}: **{new_loser_elo}** lifetime ({loser_change:+d}) / **{loser_event_elo}** event (unchanged)"
+            )
+            success_embed = discord.Embed(
+                title="Top Cut Match Reported",
+                description=description,
+                color=discord.Color.gold(),
+            )
+            success_embed.set_footer(text=f"Reported by {ctx.author.display_name}")
+            await ctx.send(embed=success_embed)
+
+            log_admin_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "top_cut_report",
+                target_id=winner.id,
+                target_name=winner_name,
+                previous_state={"winner_id": winner.id, "loser_id": loser.id},
+                new_state={"match_id": match_id, "lifetime_only": True},
+                details=f"Top cut match #{match_id}: {winner_name} beat {loser_name} (lifetime ELO only)",
+            )
+
+            logger.info(
+                f"Admin {ctx.author} reported top cut match: {winner_name} beat {loser_name} (lifetime only)"
+            )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Top Cut Report Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Top cut report failed: {e}")
+
+    @top_cut_report.error
+    async def top_cut_report_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"top_cut_report error: {error}")
             await ctx.send(f"An error occurred: {error}")
 
     @commands.command()

@@ -19,9 +19,12 @@ Write-Host "Date: $dateFolder"
 Write-Host "Destination: $dest"
 Write-Host ""
 
+$REMOTE_REPORT = "/root/Summit/log_report.log"
+
 $files = @(
     @{ remote = "$REMOTE_BOT/bot.log";        label = "bot.log" },
-    @{ remote = "$REMOTE_WEB/error.log";      label = "error.log" }
+    @{ remote = "$REMOTE_WEB/error.log";      label = "error.log" },
+    @{ remote = "$REMOTE_REPORT";             label = "log_report.log" }
 )
 
 $downloaded = @()

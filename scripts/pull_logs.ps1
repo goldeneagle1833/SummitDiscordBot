@@ -9,11 +9,12 @@ param(
 
 # Default configuration
 $defaultConfig = @{
-    server_host = "your-server-ip"
-    server_user = "your-username"
+    server_host = "50.116.43.215"
+    server_user = "root"
     server_key = $null
-    remote_bot_path = "/home/ubuntu/SummitDiscordBot/discord-bot"
-    remote_web_path = "/home/ubuntu/SummitDiscordBot/web-app"
+    remote_bot_path = "/root/Summit/SummitDiscordBot/discord-bot"
+    remote_web_path = "/var/log/summit-web"
+    remote_report_log = "/root/Summit/log_report.log"
     local_logs_dir = "logs"
 }
 
@@ -121,9 +122,7 @@ function Pull-AllLogs {
     if (-not $BotOnly) {
         Write-Host "`n=== Pulling Web App Logs ===" -ForegroundColor Cyan
         $webLogs = @(
-            "$($Config.remote_web_path)/app.log",
-            "$($Config.remote_web_path)/error.log",
-            "$($Config.remote_web_path)/access.log"
+            "$($Config.remote_web_path)/error.log"
         )
 
         foreach ($logFile in $webLogs) {
@@ -132,6 +131,14 @@ function Pull-AllLogs {
                 $successCount++
             }
         }
+    }
+
+    # System logs (log report, etc.)
+    Write-Host "`n=== Pulling System Logs ===" -ForegroundColor Cyan
+    $reportLog = if ($Config.remote_report_log) { $Config.remote_report_log } else { "/root/Summit/log_report.log" }
+    $totalCount++
+    if (Pull-LogFile -Config $Config -RemoteFile $reportLog -LocalSubDir "system") {
+        $successCount++
     }
 
     Write-Host "`n=== Summary ===" -ForegroundColor Cyan

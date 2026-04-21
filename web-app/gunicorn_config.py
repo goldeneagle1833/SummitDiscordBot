@@ -12,7 +12,7 @@ bind = "unix:/tmp/summit-web.sock"
 backlog = 2048
 
 # Worker processes
-workers = multiprocessing.cpu_count() * 2 + 1  # Recommended formula
+workers = 2
 worker_class = "sync"
 worker_connections = 1000
 timeout = 120

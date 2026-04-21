@@ -26,11 +26,12 @@ from pathlib import Path
 
 
 DEFAULT_CONFIG = {
-    "server_host": "your-server-ip",
-    "server_user": "your-username",
+    "server_host": "50.116.43.215",
+    "server_user": "root",
     "server_key": None,  # Uses default SSH key
-    "remote_bot_path": "/home/ubuntu/SummitDiscordBot/discord-bot",
-    "remote_web_path": "/home/ubuntu/SummitDiscordBot/web-app",
+    "remote_bot_path": "/root/Summit/SummitDiscordBot/discord-bot",
+    "remote_web_path": "/var/log/summit-web",
+    "remote_report_log": "/root/Summit/log_report.log",
     "local_logs_dir": "logs"
 }
 
@@ -139,15 +140,20 @@ def pull_all_logs(config: dict, bot_only: bool = False, web_only: bool = False):
     if not bot_only:
         print("\n=== Pulling Web App Logs ===")
         web_logs = [
-            f"{config['remote_web_path']}/app.log",
             f"{config['remote_web_path']}/error.log",
-            f"{config['remote_web_path']}/access.log",
         ]
 
         for log_file in web_logs:
             total_count += 1
             if pull_log_file(config, log_file, "web-app"):
                 success_count += 1
+
+    # System logs (log report, etc.)
+    print("\n=== Pulling System Logs ===")
+    report_log = config.get("remote_report_log", "/root/Summit/log_report.log")
+    total_count += 1
+    if pull_log_file(config, report_log, "system"):
+        success_count += 1
 
     print(f"\n=== Summary ===")
     print(f"Successfully pulled {success_count}/{total_count} log files")

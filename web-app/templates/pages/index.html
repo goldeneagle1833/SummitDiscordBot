@@ -116,6 +116,11 @@
               <button class="elo-source-btn" data-source="paper" title="Paper matches (web-reported)">
                 Paper
               </button>
+              {% if show_limited_leaderboard %}
+              <a href="/elo/limited" class="elo-source-btn" title="Limited (Arena Draft) leaderboard">
+                Limited
+              </a>
+              {% endif %}
             </div>
           </div>
         </div>
@@ -151,14 +156,6 @@
         </div>
       </section>
 
-      {% if show_limited_leaderboard %}
-      <!-- Limited Leaderboard Link -->
-      <div style="text-align: center; margin: 1.5rem 0;">
-        <a href="/elo/limited" class="btn btn--primary btn--sm">
-          View Limited Format Leaderboard
-        </a>
-      </div>
-      {% endif %}
 
       <!-- No Active Event Section (hidden by default) -->
       <section id="no-event-section" class="no-event-section hidden">

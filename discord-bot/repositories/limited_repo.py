@@ -517,3 +517,207 @@ def cleanup_old_limited_pairings(hours: int = 24):
 
     conn.commit()
     conn.close()
+
+
+# --- Limited Archive Tables ---
+
+
+def create_limited_archive_tables():
+    """Create archive tables for limited event data. Idempotent."""
+    # limited_event_standings_archive in elo.db
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+    cur.execute("""CREATE TABLE IF NOT EXISTS limited_event_standings_archive (
+        archive_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL,
+        event_name TEXT,
+        user_id INTEGER NOT NULL,
+        user_display_name TEXT,
+        final_elo INTEGER,
+        final_rank INTEGER,
+        archived_at TEXT
+    )""")
+    conn.commit()
+    conn.close()
+
+    # limited_match_records_archive and limited_arena_runs_archive in match_records.db
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute("""CREATE TABLE IF NOT EXISTS limited_match_records_archive (
+        archive_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL,
+        original_match_id INTEGER,
+        reporter_id INTEGER,
+        winner_id INTEGER,
+        winner_display_name TEXT,
+        loser_id INTEGER,
+        loser_display_name TEXT,
+        did_win BOOLEAN,
+        timestamp TEXT,
+        first_player TEXT,
+        match_time INTEGER,
+        curiosa_url_winner TEXT,
+        curiosa_url_loser TEXT,
+        match_comment TEXT,
+        json_deck_data_winner TEXT,
+        json_deck_data_loser TEXT,
+        winner_elo_change INTEGER,
+        loser_elo_change INTEGER,
+        winner_went_first TEXT,
+        loser_went_first TEXT,
+        winner_run_id INTEGER,
+        loser_run_id INTEGER,
+        archived_at TEXT
+    )""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS limited_arena_runs_archive (
+        archive_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL,
+        original_run_id INTEGER,
+        user_id INTEGER,
+        user_display_name TEXT,
+        deck_url TEXT,
+        wins INTEGER,
+        losses INTEGER,
+        starting_elo INTEGER,
+        status TEXT,
+        created_at TEXT,
+        completed_at TEXT,
+        archived_at TEXT
+    )""")
+    conn.commit()
+    conn.close()
+    logger.info("Limited archive tables created/verified successfully")
+
+
+# --- Limited Archive Operations ---
+
+
+def archive_limited_standings(event_id: int, event_name: str, archived_at: str) -> list:
+    """Copy current limited_elo standings into the archive. Returns list of (user_id, name, elo)."""
+    create_limited_archive_tables()
+
+    conn_elo = sqlite3.connect("elo.db")
+    cur = conn_elo.cursor()
+    cur.execute("SELECT user_id, user_display_name, elo FROM limited_elo ORDER BY elo DESC")
+    rows = cur.fetchall()
+
+    for rank, (user_id, display_name, elo) in enumerate(rows, start=1):
+        cur.execute(
+            """INSERT INTO limited_event_standings_archive
+               (event_id, event_name, user_id, user_display_name, final_elo, final_rank, archived_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (event_id, event_name, user_id, display_name, elo, rank, archived_at),
+        )
+
+    conn_elo.commit()
+    conn_elo.close()
+    logger.info("Archived %d limited standings for event %d", len(rows), event_id)
+    return [(uid, name, elo) for uid, name, elo in rows]
+
+
+def archive_limited_matches(event_id: int, archived_at: str) -> int:
+    """Copy limited_match_records into the archive and clear the live table. Returns count."""
+    create_limited_archive_tables()
+
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM limited_match_records")
+    matches = cur.fetchall()
+    cur.execute("PRAGMA table_info(limited_match_records)")
+    columns = [col[1] for col in cur.fetchall()]
+
+    for match in matches:
+        d = dict(zip(columns, match))
+        cur.execute(
+            """INSERT INTO limited_match_records_archive
+               (event_id, original_match_id, reporter_id, winner_id, winner_display_name,
+                loser_id, loser_display_name, did_win, timestamp, first_player, match_time,
+                curiosa_url_winner, curiosa_url_loser, match_comment,
+                json_deck_data_winner, json_deck_data_loser,
+                winner_elo_change, loser_elo_change,
+                winner_went_first, loser_went_first,
+                winner_run_id, loser_run_id, archived_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                event_id,
+                d.get("match_id"),
+                d.get("reporter_id"),
+                d.get("winner_id"),
+                d.get("winner_display_name"),
+                d.get("loser_id"),
+                d.get("loser_display_name"),
+                d.get("did_win"),
+                d.get("timestamp"),
+                d.get("first_player"),
+                d.get("match_time"),
+                d.get("curiosa_url_winner"),
+                d.get("curiosa_url_loser"),
+                d.get("match_comment"),
+                d.get("json_deck_data_winner"),
+                d.get("json_deck_data_loser"),
+                d.get("winner_elo_change"),
+                d.get("loser_elo_change"),
+                d.get("winner_went_first"),
+                d.get("loser_went_first"),
+                d.get("winner_run_id"),
+                d.get("loser_run_id"),
+                archived_at,
+            ),
+        )
+
+    cur.execute("DELETE FROM limited_match_records")
+    conn.commit()
+    conn.close()
+    logger.info("Archived %d limited match records for event %d", len(matches), event_id)
+    return len(matches)
+
+
+def archive_limited_arena_runs(event_id: int, archived_at: str) -> int:
+    """Copy limited_arena_runs into the archive and clear the live table. Returns count."""
+    create_limited_archive_tables()
+
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM limited_arena_runs")
+    runs = cur.fetchall()
+    cur.execute("PRAGMA table_info(limited_arena_runs)")
+    columns = [col[1] for col in cur.fetchall()]
+
+    for run in runs:
+        d = dict(zip(columns, run))
+        cur.execute(
+            """INSERT INTO limited_arena_runs_archive
+               (event_id, original_run_id, user_id, user_display_name, deck_url,
+                wins, losses, starting_elo, status, created_at, completed_at, archived_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                event_id,
+                d.get("run_id"),
+                d.get("user_id"),
+                d.get("user_display_name"),
+                d.get("deck_url"),
+                d.get("wins"),
+                d.get("losses"),
+                d.get("starting_elo"),
+                d.get("status"),
+                d.get("created_at"),
+                d.get("completed_at"),
+                archived_at,
+            ),
+        )
+
+    cur.execute("DELETE FROM limited_arena_runs")
+    cur.execute("DELETE FROM limited_active_pairings")
+    conn.commit()
+    conn.close()
+    logger.info("Archived %d limited arena runs for event %d", len(runs), event_id)
+    return len(runs)
+
+
+def reset_limited_elo_to_default():
+    """Reset all limited_elo entries to 1500."""
+    conn = sqlite3.connect("elo.db")
+    conn.execute("UPDATE limited_elo SET elo = 1500")
+    conn.commit()
+    conn.close()
+    logger.info("Reset all limited ELO ratings to 1500")

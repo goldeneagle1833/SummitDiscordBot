@@ -145,7 +145,7 @@ async def _apply_ladder_elo(bot, ladder_info, winner_id, winner_global, loser_id
         conn_match = _sqlite3.connect("match_records.db")
         cur_match = conn_match.cursor()
         cur_match.execute(
-            "SELECT winner_elo_change, winner_lifetime_elo_change FROM match_records WHERE match_id=?",
+            "SELECT winner_elo_change, winner_lifetime_elo_change FROM match_records WHERE rowid=?",
             (match_id,),
         )
         elo_row = cur_match.fetchone()

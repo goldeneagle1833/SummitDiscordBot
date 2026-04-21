@@ -18,6 +18,10 @@ from repositories.limited_repo import (
     update_arena_run_record,
     complete_arena_run,
     insert_limited_match_record,
+    archive_limited_standings,
+    archive_limited_matches,
+    archive_limited_arena_runs,
+    reset_limited_elo_to_default,
 )
 
 logger = logging.getLogger("discord_bot")
@@ -248,3 +252,41 @@ def forfeit_arena_run(user_id: int) -> str:
     complete_arena_run(run_id, "forfeited")
 
     return get_run_summary(run_id)
+
+
+# --- Event Archive / Reset ---
+
+
+def archive_limited_for_event(event_id: int, event_name: str) -> dict:
+    """Archive all limited data at the end of an event.
+
+    Copies standings, match records, and arena runs into their archive tables,
+    then clears the live tables.
+
+    Returns:
+        dict with total_players, total_matches, total_runs, top_players (list of (name, elo))
+    """
+    import datetime as dt
+    archived_at = dt.datetime.now().isoformat()
+
+    standings = archive_limited_standings(event_id, event_name, archived_at)
+    total_matches = archive_limited_matches(event_id, archived_at)
+    total_runs = archive_limited_arena_runs(event_id, archived_at)
+
+    top_3 = standings[:3]
+    logger.info(
+        "Limited event archive complete for event %d (%s): %d players, %d matches, %d runs",
+        event_id, event_name, len(standings), total_matches, total_runs,
+    )
+    return {
+        "total_players": len(standings),
+        "total_matches": total_matches,
+        "total_runs": total_runs,
+        "top_players": [(name, elo) for _, name, elo in top_3],
+    }
+
+
+def reset_limited_for_new_event():
+    """Reset limited ELO to 1500 for all players when a new event starts."""
+    reset_limited_elo_to_default()
+    logger.info("Limited ELO reset to 1500 for new event")

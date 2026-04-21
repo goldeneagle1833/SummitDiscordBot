@@ -525,17 +525,23 @@ class PersistentConfirmButton(
         try:
             data = load_pending_confirmation(self.confirmation_id)
             if not data:
-                await interaction.response.send_message(
-                    "This match confirmation has expired or was already processed.",
-                    ephemeral=True,
-                )
+                try:
+                    await interaction.response.send_message(
+                        "This match confirmation has expired or was already processed.",
+                        ephemeral=True,
+                    )
+                except discord.errors.NotFound:
+                    pass
                 return
 
             # If confirmer still needs a deck URL, show the modal
             confirmer_deck_url = data["winner_deck_url"] if data["is_winner"] else data["loser_deck_url"]
             if not confirmer_deck_url and data.get("match_type") != "testing":
                 modal = PersistentConfirmDeckModal(self.confirmation_id, data["is_winner"])
-                await interaction.response.send_modal(modal)
+                try:
+                    await interaction.response.send_modal(modal)
+                except discord.errors.NotFound:
+                    pass
                 return
 
             # Try to defer, but handle expired interactions gracefully

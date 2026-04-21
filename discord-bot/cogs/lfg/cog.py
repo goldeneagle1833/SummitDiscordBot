@@ -2355,7 +2355,7 @@ class LFGCog(commands.Cog):
                 )
 
                 embed.add_field(
-                    name=f"Previous Event Archived: {prev['event_name']}",
+                    name=f"Previous Event Archived: {prev['event_name']} (Constructed)",
                     value=(
                         f"**Total Matches:** {prev['total_matches']}\n"
                         f"**Ranked Players:** {prev['total_players']}\n"
@@ -2363,6 +2363,24 @@ class LFGCog(commands.Cog):
                     ),
                     inline=False,
                 )
+
+                limited_prev = prev.get("limited_summary")
+                if limited_prev:
+                    limited_top_str = (
+                        "\n".join(
+                            [f"  {i+1}. {name} ({elo} ELO)" for i, (name, elo) in enumerate(limited_prev["top_players"])]
+                        ) or "No ranked players"
+                    )
+                    embed.add_field(
+                        name=f"Previous Event Archived: {prev['event_name']} (Limited)",
+                        value=(
+                            f"**Total Matches:** {limited_prev['total_matches']}\n"
+                            f"**Arena Runs:** {limited_prev['total_runs']}\n"
+                            f"**Ranked Players:** {limited_prev['total_players']}\n"
+                            f"**Top 3:**\n{limited_top_str}"
+                        ),
+                        inline=False,
+                    )
 
             embed.set_footer(text=f"Started by {ctx.author.display_name}")
             await ctx.send(embed=embed)
@@ -2445,7 +2463,7 @@ class LFGCog(commands.Cog):
                 top_players_str = "No ranked players"
 
             embed.add_field(
-                name="Final Results",
+                name="Constructed Final Results",
                 value=(
                     f"**Total Matches:** {summary['total_matches']}\n"
                     f"**Ranked Players:** {summary['total_players']}\n"
@@ -2453,6 +2471,23 @@ class LFGCog(commands.Cog):
                 ),
                 inline=False,
             )
+
+            # Limited summary
+            limited = summary.get("limited_summary")
+            if limited:
+                limited_top_str = "\n".join(
+                    [f"  {i+1}. {name} ({elo} ELO)" for i, (name, elo) in enumerate(limited["top_players"])]
+                ) or "No ranked players"
+                embed.add_field(
+                    name="Limited Final Results",
+                    value=(
+                        f"**Total Matches:** {limited['total_matches']}\n"
+                        f"**Arena Runs:** {limited['total_runs']}\n"
+                        f"**Ranked Players:** {limited['total_players']}\n"
+                        f"**Top 3:**\n{limited_top_str}"
+                    ),
+                    inline=False,
+                )
 
             embed.add_field(
                 name="What's Next?",
@@ -3401,6 +3436,237 @@ class LFGCog(commands.Cog):
             await ctx.send("Invalid match ID. Please provide a valid number.")
         else:
             logger.error(f"remove_match error: {error}")
+            await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def remove_limited_match(self, ctx, match_id: int = None):
+        """Admin command to remove a limited match report and revert limited ELO changes. Usage: !remove_limited_match <match_id>"""
+        if match_id is None:
+            await ctx.send(
+                "Please provide a match ID. Usage: `!remove_limited_match <match_id>`"
+            )
+            return
+
+        try:
+            match_conn = sqlite3.connect("match_records.db")
+            match_cursor = match_conn.cursor()
+
+            match_cursor.execute(
+                """SELECT match_id, winner_id, winner_display_name, loser_id, loser_display_name,
+                          winner_elo_change, loser_elo_change, timestamp, winner_run_id, loser_run_id
+                   FROM limited_match_records WHERE match_id = ?""",
+                (match_id,),
+            )
+            match = match_cursor.fetchone()
+
+            if not match:
+                await ctx.send(f"Limited match ID #{match_id} not found.")
+                match_conn.close()
+                return
+
+            (
+                match_id_db, winner_id, winner_name, loser_id, loser_name,
+                winner_elo_change, loser_elo_change, timestamp, winner_run_id, loser_run_id,
+            ) = match
+
+            # Revert limited ELO
+            elo_conn = sqlite3.connect("elo.db")
+            elo_cursor = elo_conn.cursor()
+
+            reverted_info = []
+            if winner_elo_change:
+                elo_cursor.execute(
+                    "UPDATE limited_elo SET elo = elo - ? WHERE user_id = ?",
+                    (winner_elo_change, winner_id),
+                )
+                reverted_info.append(f"**{winner_name}**: -{winner_elo_change} Limited ELO")
+
+            if loser_elo_change:
+                elo_cursor.execute(
+                    "UPDATE limited_elo SET elo = elo - ? WHERE user_id = ?",
+                    (loser_elo_change, loser_id),
+                )
+                reverted_info.append(
+                    f"**{loser_name}**: +{-loser_elo_change} Limited ELO"
+                )
+
+            elo_conn.commit()
+            elo_conn.close()
+
+            # Revert arena run W/L records
+            run_revert_info = []
+            for run_id, player_name, won in [
+                (winner_run_id, winner_name, True),
+                (loser_run_id, loser_name, False),
+            ]:
+                if run_id:
+                    match_cursor.execute(
+                        "SELECT wins, losses, status FROM limited_arena_runs WHERE run_id = ?",
+                        (run_id,),
+                    )
+                    run_row = match_cursor.fetchone()
+                    if run_row:
+                        wins, losses, status = run_row
+                        if won:
+                            new_wins = max(0, wins - 1)
+                            match_cursor.execute(
+                                "UPDATE limited_arena_runs SET wins = ? WHERE run_id = ?",
+                                (new_wins, run_id),
+                            )
+                            run_revert_info.append(f"**{player_name}** run #{run_id}: wins {wins} → {new_wins}")
+                        else:
+                            new_losses = max(0, losses - 1)
+                            match_cursor.execute(
+                                "UPDATE limited_arena_runs SET losses = ? WHERE run_id = ?",
+                                (new_losses, run_id),
+                            )
+                            run_revert_info.append(f"**{player_name}** run #{run_id}: losses {losses} → {new_losses}")
+
+            # Delete the limited match record
+            match_cursor.execute(
+                "DELETE FROM limited_match_records WHERE match_id = ?", (match_id,)
+            )
+            match_conn.commit()
+            match_conn.close()
+
+            description = (
+                f"**Match ID:** #{match_id}\n"
+                f"**Winner:** {winner_name}\n"
+                f"**Loser:** {loser_name}\n"
+                f"**Date:** {timestamp}\n\n"
+                f"**Limited ELO Reverted:**\n" + "\n".join(reverted_info)
+            )
+            if run_revert_info:
+                description += "\n\n**Arena Run Records Reverted:**\n" + "\n".join(run_revert_info)
+
+            success_embed = discord.Embed(
+                title="Limited Match Removed",
+                description=description,
+                color=discord.Color.orange(),
+            )
+            success_embed.set_footer(text=f"Removed by {ctx.author.display_name}")
+            await ctx.send(embed=success_embed)
+
+            log_admin_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "remove_limited_match",
+                target_id=match_id,
+                previous_state={
+                    "match_id": match_id,
+                    "winner_id": winner_id,
+                    "winner_name": winner_name,
+                    "loser_id": loser_id,
+                    "loser_name": loser_name,
+                    "timestamp": timestamp,
+                },
+                new_state={"result": "limited match deleted"},
+                details=f"Removed limited match #{match_id}: {winner_name} vs {loser_name} ({timestamp})",
+            )
+
+            logger.info(
+                f"Admin {ctx.author} (ID: {ctx.author.id}) removed limited match #{match_id}: {winner_name} vs {loser_name}"
+            )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Limited Match Removal Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"remove_limited_match failed: {e}")
+
+    @remove_limited_match.error
+    async def remove_limited_match_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send("Invalid match ID. Please provide a valid number.")
+        else:
+            logger.error(f"remove_limited_match error: {error}")
+            await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def reset_limited_elo(self, ctx):
+        """Admin command to reset all limited ELO ratings, match records, and arena runs."""
+        try:
+            # Capture counts for audit log
+            elo_conn = sqlite3.connect("elo.db")
+            elo_cur = elo_conn.cursor()
+            elo_cur.execute("SELECT COUNT(*) FROM limited_elo")
+            total_players = elo_cur.fetchone()[0]
+            elo_conn.close()
+
+            match_conn = sqlite3.connect("match_records.db")
+            match_cur = match_conn.cursor()
+            match_cur.execute("SELECT COUNT(*) FROM limited_match_records")
+            total_matches = match_cur.fetchone()[0]
+            match_cur.execute("SELECT COUNT(*) FROM limited_arena_runs")
+            total_runs = match_cur.fetchone()[0]
+            match_conn.close()
+
+            # Wipe limited ELO
+            elo_conn = sqlite3.connect("elo.db")
+            elo_conn.execute("DELETE FROM limited_elo")
+            elo_conn.commit()
+            elo_conn.close()
+
+            # Wipe limited match records and arena runs
+            match_conn = sqlite3.connect("match_records.db")
+            match_conn.execute("DELETE FROM limited_match_records")
+            match_conn.execute("DELETE FROM limited_arena_runs")
+            match_conn.execute("DELETE FROM limited_active_pairings")
+            match_conn.commit()
+            match_conn.close()
+
+            log_admin_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "reset_limited_elo",
+                previous_state={
+                    "total_players": total_players,
+                    "total_matches": total_matches,
+                    "total_runs": total_runs,
+                },
+                new_state={"result": "all limited data wiped"},
+                details=f"Limited reset: {total_players} players, {total_matches} matches, {total_runs} runs deleted",
+            )
+
+            success_embed = discord.Embed(
+                title="Limited Data Reset Complete",
+                description=(
+                    f"All limited format data has been cleared:\n"
+                    f"• **{total_players}** limited ELO ratings reset\n"
+                    f"• **{total_matches}** limited match records deleted\n"
+                    f"• **{total_runs}** arena runs deleted\n"
+                    f"• Active limited pairings cleared\n\n"
+                    f"All limited tables are ready to use."
+                ),
+                color=discord.Color.green(),
+            )
+            await ctx.send(embed=success_embed)
+            logger.info(
+                f"Limited data reset completed by {ctx.author} (ID: {ctx.author.id})"
+            )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Limited Reset Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"reset_limited_elo failed: {e}")
+
+    @reset_limited_elo.error
+    async def reset_limited_elo_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"reset_limited_elo error: {error}")
             await ctx.send(f"An error occurred: {error}")
 
     @commands.command()

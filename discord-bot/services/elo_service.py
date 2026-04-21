@@ -585,6 +585,13 @@ def start_new_event(event_name):
     conn.commit()
     conn.close()
 
+    # Reset limited ELO for the new event
+    try:
+        from services.limited_service import reset_limited_for_new_event
+        reset_limited_for_new_event()
+    except Exception as e:
+        logger.error("Failed to reset limited ELO for new event: %s", e)
+
     return {
         "event_id": event_id,
         "event_name": event_name,
@@ -725,6 +732,14 @@ def end_current_event():
     conn_match.commit()
     conn_match.close()
 
+    # Archive limited format data for this event
+    try:
+        from services.limited_service import archive_limited_for_event
+        limited_summary = archive_limited_for_event(event_id, event_name)
+    except Exception as e:
+        logger.error("Failed to archive limited data for event %d: %s", event_id, e)
+        limited_summary = None
+
     # Return summary
     top_3 = standings[:3] if len(standings) >= 3 else standings
     return {
@@ -733,6 +748,7 @@ def end_current_event():
         "total_matches": match_count,
         "total_players": len(standings),
         "top_players": [(name, elo) for _, name, elo in top_3],
+        "limited_summary": limited_summary,
     }
 
 

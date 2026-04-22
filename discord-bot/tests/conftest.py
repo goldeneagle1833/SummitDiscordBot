@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import repositories.elo_repo as elo_repo
+
 from utils.database import create_db
 
 
@@ -29,6 +31,8 @@ def event_loop():
 @pytest.fixture(autouse=True)
 def setup_test_databases():
     """Setup and cleanup test databases before each test."""
+    elo_repo._dual_elo_migrated = False
+
     # Remove any existing test databases
     for db_path in ["match_records.db", "elo.db"]:
         if os.path.exists(db_path):
@@ -47,7 +51,43 @@ def setup_test_databases():
         """CREATE TABLE IF NOT EXISTS overall_standings
            (user_id INTEGER PRIMARY KEY,
             user_display_name TEXT,
-            elo INTEGER DEFAULT 1500)"""
+            elo INTEGER DEFAULT 1500,
+            event_elo INTEGER DEFAULT 1500,
+            paper_elo INTEGER DEFAULT 1500,
+            online_elo INTEGER DEFAULT 1500,
+            paper_event_elo INTEGER DEFAULT 1500,
+            online_event_elo INTEGER DEFAULT 1500)"""
+    )
+    cur.execute(
+        """CREATE TABLE IF NOT EXISTS events (
+           event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+           event_name TEXT NOT NULL,
+           start_date TEXT NOT NULL,
+           end_date TEXT,
+           is_active BOOLEAN DEFAULT 1)"""
+    )
+    conn.commit()
+    conn.close()
+
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute(
+        """CREATE TABLE IF NOT EXISTS ladder_challenges (
+           challenge_id INTEGER PRIMARY KEY AUTOINCREMENT,
+           challenger_id INTEGER NOT NULL,
+           challenged_id INTEGER NOT NULL,
+           challenger_rank INTEGER,
+           challenged_rank INTEGER,
+           stakes_multiplier TEXT DEFAULT 'Normal',
+           status TEXT DEFAULT 'pending',
+           created_at TEXT NOT NULL,
+           expires_at TEXT NOT NULL,
+           responded_at TEXT,
+           accepted_at TEXT,
+           completed_at TEXT,
+           winner_id INTEGER,
+           match_id INTEGER,
+           guild_id INTEGER)"""
     )
     conn.commit()
     conn.close()

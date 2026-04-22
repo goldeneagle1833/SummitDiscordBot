@@ -8,6 +8,7 @@ import random
 
 import config
 from cogs.lfg import LFGReportButtons
+from utils.database import get_current_event_match_elo_snapshot
 from utils.text import find_best_command_match
 
 logger = logging.getLogger("discord_bot")
@@ -118,6 +119,11 @@ class EloCog(commands.Cog):
             "event": "!event_status",
             "currentevent": "!event_status",
             "season": "!event_status",
+            # Match ELO lookup variations
+            "matchelo": "!match_elo",
+            "matchrating": "!match_elo",
+            "gameelo": "!match_elo",
+            "eloaftermatch": "!match_elo",
         }
 
         actual_commands = {
@@ -128,6 +134,7 @@ class EloCog(commands.Cog):
             "mystats": "!mystats",
             "event_leaderboard": "!event_leaderboard",
             "event_status": "!event_status",
+            "match_elo": "!match_elo",
         }
 
         suggestion = find_best_command_match(failed_command, command_suggestions, actual_commands)
@@ -299,6 +306,8 @@ class EloCog(commands.Cog):
     async def mystats(self, ctx):
         """Check your match statistics. Includes win rate, first player win rate,
         avatar performance, and Elo."""
+        conn = None
+        conn_elo = None
         try:
             conn = sqlite3.connect("match_records.db")
             cur = conn.cursor()
@@ -478,9 +487,9 @@ class EloCog(commands.Cog):
             )
 
         finally:
-            if "conn" in locals():
+            if conn is not None:
                 conn.close()
-            if "conn_elo" in locals():
+            if conn_elo is not None:
                 conn_elo.close()
 
     @commands.command()
@@ -562,8 +571,65 @@ class EloCog(commands.Cog):
         conn.close()
 
     @commands.command()
+    async def match_elo(self, ctx, match_id=None):
+        """Show lifetime and event Elo before and after a specific current-event match."""
+        if match_id is None:
+            await ctx.send("Please provide a match ID. Usage: `!match_elo <match_id>`")
+            return
+
+        try:
+            parsed_match_id = int(match_id)
+        except (TypeError, ValueError):
+            await ctx.send("Invalid match ID. Usage: `!match_elo <match_id>`")
+            return
+
+        try:
+            snapshot = get_current_event_match_elo_snapshot(parsed_match_id)
+        except ValueError as exc:
+            await ctx.send(str(exc))
+            return
+        except sqlite3.Error as exc:
+            logger.error(f"Database error in match_elo command: {exc}")
+            await ctx.send(
+                "There was an error retrieving that match's Elo details. Please try again later."
+            )
+            return
+        except Exception as exc:
+            logger.error(f"Unexpected error in match_elo command: {exc}", exc_info=True)
+            await ctx.send("An unexpected error occurred. Please try again later.")
+            return
+
+        timestamp_str = snapshot["match_timestamp"].strftime("%Y-%m-%d %H:%M")
+        lines = [
+            f"**Match #{snapshot['match_id']} Elo Snapshot**",
+            f"**Event:** {snapshot['event_name']}",
+            f"**Played:** {timestamp_str}",
+            f"**Winner:** {snapshot['winner_display_name']}",
+            (
+                f"Lifetime: {snapshot['winner']['lifetime_before']} -> {snapshot['winner']['lifetime_after']}"
+                if snapshot["winner"]["lifetime_before"] is not None
+                else "Lifetime: unavailable"
+            ),
+            f"Event: {snapshot['winner']['event_before']} -> {snapshot['winner']['event_after']}",
+            f"**Loser:** {snapshot['loser_display_name']}",
+            (
+                f"Lifetime: {snapshot['loser']['lifetime_before']} -> {snapshot['loser']['lifetime_after']}"
+                if snapshot["loser"]["lifetime_before"] is not None
+                else "Lifetime: unavailable"
+            ),
+            f"Event: {snapshot['loser']['event_before']} -> {snapshot['loser']['event_after']}",
+        ]
+
+        if snapshot["notes"]:
+            lines.append("**Notes:**")
+            lines.extend(f"- {note}" for note in snapshot["notes"])
+
+        await ctx.send("\n".join(lines))
+
+    @commands.command()
     async def mygames(self, ctx):
         """View your match history with details for games you reported."""
+        conn = None
         try:
             # Check if command is used in a DM
             is_dm = isinstance(ctx.channel, discord.DMChannel)
@@ -577,6 +643,7 @@ class EloCog(commands.Cog):
                 cur.execute(
                     """
                     SELECT 
+                        match_id,
                         winner_display_name as winner,
                         losser_display_name as loser,
                         CASE 
@@ -597,6 +664,7 @@ class EloCog(commands.Cog):
                     WHERE winner_id = ? OR losser_id = ?
                     UNION ALL
                     SELECT 
+                        NULL as match_id,
                         CASE 
                             WHEN is_winner = 1 THEN reporter_name 
                             ELSE opponent_name 
@@ -656,6 +724,7 @@ class EloCog(commands.Cog):
                 for i, row in enumerate(rows, 1):
                     try:
                         (
+                            match_id,
                             winner,
                             loser,
                             did_win,
@@ -689,7 +758,8 @@ class EloCog(commands.Cog):
                         else:
                             elo_display = ""
 
-                        game_line = f"{result_emoji} **Game {i}** ({formatted_date})"
+                        match_id_label = f"Match #{match_id}" if match_id else f"Game {i}"
+                        game_line = f"{result_emoji} **{match_id_label}** ({formatted_date})"
                         if elo_display:
                             game_line += f" {elo_display}"
                         game_line += "\n"
@@ -739,7 +809,7 @@ class EloCog(commands.Cog):
             await ctx.send("An unexpected error occurred. Please try again later.")
 
         finally:
-            if "conn" in locals():
+            if conn is not None:
                 conn.close()
 
 

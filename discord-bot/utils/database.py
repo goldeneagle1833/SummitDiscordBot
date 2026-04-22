@@ -55,6 +55,7 @@ from services.elo_service import (  # noqa: F401
     update_elo_db,
     update_elo_db_lifetime_only,
     update_elo_db_ladder,
+    get_current_event_match_elo_snapshot,
     winner_report,
     losser_report,
     start_new_event,

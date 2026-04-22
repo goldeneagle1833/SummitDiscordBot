@@ -14,6 +14,7 @@ import sqlite3
 import os
 import sys
 import asyncio
+import datetime
 from unittest.mock import patch, MagicMock
 
 # Add parent directory to path for imports
@@ -25,7 +26,10 @@ from utils.database import (
     solo_match_report,
     create_db,
     update_elo_db,
+    get_current_event_match_elo_snapshot,
 )
+from repositories.audit_repo import log_admin_action
+import repositories.elo_repo as elo_repo
 
 
 # Test database path
@@ -36,6 +40,7 @@ TEST_ELO_DB_PATH = "test_elo.db"
 @pytest.fixture(autouse=True)
 def setup_and_teardown():
     """Setup test database before each test and cleanup after."""
+    elo_repo._dual_elo_migrated = False
     # Setup: Remove any existing test databases
     for db_path in [TEST_DB_PATH, TEST_ELO_DB_PATH, "match_records.db", "elo.db"]:
         if os.path.exists(db_path):
@@ -52,8 +57,40 @@ def setup_and_teardown():
     cur = conn.cursor()
     cur.execute("""CREATE TABLE IF NOT EXISTS overall_standings
                    (user_id INTEGER PRIMARY KEY, 
-                    user_display_name TEXT,
-                    elo INTEGER DEFAULT 1500)""")
+                     user_display_name TEXT,
+                     elo INTEGER DEFAULT 1500,
+                     event_elo INTEGER DEFAULT 1500,
+                     paper_elo INTEGER DEFAULT 1500,
+                     online_elo INTEGER DEFAULT 1500,
+                     paper_event_elo INTEGER DEFAULT 1500,
+                     online_event_elo INTEGER DEFAULT 1500)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS events (
+                   event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   event_name TEXT NOT NULL,
+                   start_date TEXT NOT NULL,
+                   end_date TEXT,
+                   is_active BOOLEAN DEFAULT 1)""")
+    conn.commit()
+    conn.close()
+
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute("""CREATE TABLE IF NOT EXISTS ladder_challenges (
+                   challenge_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   challenger_id INTEGER NOT NULL,
+                   challenged_id INTEGER NOT NULL,
+                   challenger_rank INTEGER,
+                   challenged_rank INTEGER,
+                   stakes_multiplier TEXT DEFAULT 'Normal',
+                   status TEXT DEFAULT 'pending',
+                   created_at TEXT NOT NULL,
+                   expires_at TEXT NOT NULL,
+                   responded_at TEXT,
+                   accepted_at TEXT,
+                   completed_at TEXT,
+                   winner_id INTEGER,
+                   match_id INTEGER,
+                   guild_id INTEGER)""")
     conn.commit()
     conn.close()
 
@@ -116,7 +153,7 @@ class TestWinnerReport:
         }
         with patch("services.elo_service.scrape_Curosa", return_value="{}"), \
              patch("services.elo_service.get_active_event", return_value=fake_event):
-            await winner_report(
+            result = await winner_report(
                 reporter_id=123456789,
                 user_id=111111111,
                 user_display_name="Winner",
@@ -148,20 +185,22 @@ class TestWinnerReport:
         with patch("services.elo_service.scrape_Curosa", return_value="{}"):
             # This should NOT raise TypeError about argument count
             try:
-                await winner_report(
-                    123456789,  # reporter_id
-                    111111111,  # user_id
-                    "Winner",  # user_display_name
-                    True,  # did_win
-                    222222222,  # opponent_id
-                    "Loser",  # opponent_display_name
-                    "y",  # first_player
-                    30,  # match_time
-                    "",  # curiosa_link
-                    "",  # match_comment
-                    111111111,  # interaction_user_id
-                    "Winner",  # interaction_global
-                )
+                with patch("services.elo_service.get_active_event", return_value=None):
+                    result = await winner_report(
+                        123456789,  # reporter_id
+                        111111111,  # user_id
+                        "Winner",  # user_display_name
+                        True,  # did_win
+                        222222222,  # opponent_id
+                        "Loser",  # opponent_display_name
+                        "y",  # first_player
+                        30,  # match_time
+                        "",  # curiosa_link
+                        "",  # match_comment
+                        111111111,  # interaction_user_id
+                        "Winner",  # interaction_global
+                    )
+                    assert result[0] is not None
             except TypeError as e:
                 if "positional arguments" in str(e):
                     pytest.fail(f"winner_report has wrong number of parameters: {e}")
@@ -175,20 +214,21 @@ class TestLosserReport:
     async def test_losser_report_creates_record(self):
         """Test that losser_report creates a match record in the database."""
         with patch("services.elo_service.scrape_Curosa", return_value="{}"):
-            result = await losser_report(
-                reporter_id=123456789,
-                user_id=111111111,
-                user_display_name="Winner",
-                did_win=False,
-                opponent_id=222222222,
-                opponent_display_name="Loser",
-                first_player="n",
-                match_time=45,
-                curiosa_link="https://curiosa.io/test",
-                match_comment="Test loss report",
-                interaction_user_id=222222222,
-                interaction_global="Loser",
-            )
+            with patch("services.elo_service.get_active_event", return_value=None):
+                result = await losser_report(
+                    reporter_id=123456789,
+                    user_id=111111111,
+                    user_display_name="Winner",
+                    did_win=False,
+                    opponent_id=222222222,
+                    opponent_display_name="Loser",
+                    first_player="n",
+                    match_time=45,
+                    curiosa_link="https://curiosa.io/test",
+                    match_comment="Test loss report",
+                    interaction_user_id=222222222,
+                    interaction_global="Loser",
+                )
 
         # Verify return value: (match_id, winner_id, loser_id, event_active)
         match_id, winner_id, loser_id, event_active = result
@@ -210,24 +250,247 @@ class TestLosserReport:
         """Test that losser_report accepts exactly 12 parameters."""
         with patch("services.elo_service.scrape_Curosa", return_value="{}"):
             try:
-                await losser_report(
-                    123456789,  # reporter_id
-                    111111111,  # user_id
-                    "Winner",  # user_display_name
-                    False,  # did_win
-                    222222222,  # opponent_id
-                    "Loser",  # opponent_display_name
-                    "n",  # first_player
-                    30,  # match_time
-                    "",  # curiosa_link
-                    "",  # match_comment
-                    222222222,  # interaction_user_id
-                    "Loser",  # interaction_global
-                )
+                with patch("services.elo_service.get_active_event", return_value=None):
+                    result = await losser_report(
+                        123456789,  # reporter_id
+                        111111111,  # user_id
+                        "Winner",  # user_display_name
+                        False,  # did_win
+                        222222222,  # opponent_id
+                        "Loser",  # opponent_display_name
+                        "n",  # first_player
+                        30,  # match_time
+                        "",  # curiosa_link
+                        "",  # match_comment
+                        222222222,  # interaction_user_id
+                        "Loser",  # interaction_global
+                    )
+                    assert result[0] is not None
             except TypeError as e:
                 if "positional arguments" in str(e):
                     pytest.fail(f"losser_report has wrong number of parameters: {e}")
                 raise
+
+
+class TestMatchEloSnapshot:
+    @pytest.mark.asyncio
+    async def test_snapshot_returns_before_after_for_ranked_match(self):
+        import datetime
+
+        elo_repo._dual_elo_migrated = False
+
+        fake_event = {
+            "event_name": "Test Event",
+            "start_date": datetime.datetime.now() - datetime.timedelta(days=1),
+        }
+
+        with patch("services.elo_service.scrape_Curosa", return_value="{}"), \
+             patch("services.elo_service.get_active_event", return_value=fake_event):
+            result = await winner_report(
+                reporter_id=123456789,
+                user_id=111111111,
+                user_display_name="Winner",
+                did_win=True,
+                opponent_id=222222222,
+                opponent_display_name="Loser",
+                first_player="n",
+                match_time=25,
+                curiosa_link="",
+                match_comment="",
+                interaction_user_id=111111111,
+                interaction_global="Winner",
+            )
+            assert result[0] is not None
+            match_id = result[0]
+            assert match_id is not None
+            update_elo_db(222222222, "Loser", False, 111111111)
+
+            snapshot = get_current_event_match_elo_snapshot(match_id)
+
+        assert snapshot["winner"]["lifetime_before"] == 1500
+        assert snapshot["winner"]["lifetime_after"] > 1500
+        assert snapshot["loser"]["lifetime_before"] == 1500
+        assert snapshot["loser"]["lifetime_after"] < 1500
+        assert snapshot["winner"]["event_before"] == 1500
+        assert snapshot["winner"]["event_after"] > 1500
+        assert snapshot["loser"]["event_before"] == 1500
+        assert snapshot["loser"]["event_after"] < 1500
+
+    @pytest.mark.asyncio
+    async def test_snapshot_works_without_ladder_table(self):
+        import datetime
+
+        elo_repo._dual_elo_migrated = False
+        fake_event = {
+            "event_name": "Test Event",
+            "start_date": datetime.datetime.now() - datetime.timedelta(days=1),
+        }
+
+        conn = sqlite3.connect("match_records.db")
+        cur = conn.cursor()
+        cur.execute("DROP TABLE IF EXISTS ladder_challenges")
+        conn.commit()
+        conn.close()
+
+        with patch("services.elo_service.scrape_Curosa", return_value="{}"), \
+             patch("services.elo_service.get_active_event", return_value=fake_event):
+            result = await winner_report(
+                reporter_id=123456789,
+                user_id=111111111,
+                user_display_name="Winner",
+                did_win=True,
+                opponent_id=222222222,
+                opponent_display_name="Loser",
+                first_player="n",
+                match_time=25,
+                curiosa_link="",
+                match_comment="",
+                interaction_user_id=111111111,
+                interaction_global="Winner",
+            )
+            match_id = result[0]
+            assert match_id is not None
+            update_elo_db(222222222, "Loser", False, 111111111)
+
+            snapshot = get_current_event_match_elo_snapshot(match_id)
+
+        assert snapshot["winner"]["event_before"] == 1500
+        assert snapshot["winner"]["lifetime_before"] == 1500
+
+    @pytest.mark.asyncio
+    async def test_snapshot_accounts_for_spot_reset_before_match(self):
+        import datetime
+
+        elo_repo._dual_elo_migrated = False
+
+        fake_event = {
+            "event_name": "Test Event",
+            "start_date": datetime.datetime.now() - datetime.timedelta(days=1),
+        }
+
+        with patch("services.elo_service.scrape_Curosa", return_value="{}"), \
+             patch("services.elo_service.get_active_event", return_value=fake_event):
+            first_result = await winner_report(
+                reporter_id=123456789,
+                user_id=111111111,
+                user_display_name="Winner",
+                did_win=True,
+                opponent_id=222222222,
+                opponent_display_name="Loser",
+                first_player="n",
+                match_time=25,
+                curiosa_link="",
+                match_comment="",
+                interaction_user_id=111111111,
+                interaction_global="Winner",
+            )
+            update_elo_db(222222222, "Loser", False, 111111111)
+
+            log_admin_action(
+                999,
+                "Admin",
+                "spot_elo_reset",
+                target_id=111111111,
+                target_name="Winner",
+                previous_state={"event_elo": 1508},
+                new_state={"event_elo": 1600},
+            )
+
+            conn = sqlite3.connect("elo.db")
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE overall_standings SET event_elo = 1600, online_event_elo = 1600 WHERE user_id = ?",
+                (111111111,),
+            )
+            conn.commit()
+            conn.close()
+
+            second_result = await winner_report(
+                reporter_id=123456789,
+                user_id=111111111,
+                user_display_name="Winner",
+                did_win=True,
+                opponent_id=222222222,
+                opponent_display_name="Loser",
+                first_player="n",
+                match_time=25,
+                curiosa_link="",
+                match_comment="",
+                interaction_user_id=111111111,
+                interaction_global="Winner",
+            )
+            second_match_id = second_result[0]
+            assert second_match_id is not None
+            update_elo_db(222222222, "Loser", False, 111111111)
+
+            snapshot = get_current_event_match_elo_snapshot(second_match_id)
+
+        assert snapshot["winner"]["event_before"] == 1600
+        assert snapshot["winner"]["event_after"] > 1600
+        assert any("manual event Elo reset" in note for note in snapshot["notes"])
+
+    @pytest.mark.asyncio
+    async def test_snapshot_marks_top_cut_lifetime_unavailable(self):
+        import datetime
+
+        elo_repo._dual_elo_migrated = False
+        fake_event = {
+            "event_name": "Test Event",
+            "start_date": datetime.datetime.now() - datetime.timedelta(days=1),
+        }
+
+        with patch("services.elo_service.scrape_Curosa", return_value="{}"), \
+             patch("services.elo_service.get_active_event", return_value=fake_event):
+            result = await winner_report(
+                reporter_id=123456789,
+                user_id=111111111,
+                user_display_name="Winner",
+                did_win=True,
+                opponent_id=222222222,
+                opponent_display_name="Loser",
+                first_player="n",
+                match_time=25,
+                curiosa_link="",
+                match_comment="",
+                interaction_user_id=111111111,
+                interaction_global="Winner",
+                match_type="testing",
+            )
+            match_id = result[0]
+            assert match_id is not None
+            conn = sqlite3.connect("elo.db")
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE overall_standings SET elo = ?, online_elo = ? WHERE user_id = ?",
+                (1516, 1516, 111111111),
+            )
+            cur.execute(
+                "INSERT OR IGNORE INTO overall_standings (user_id, user_display_name, elo, event_elo, online_elo, online_event_elo) VALUES (?, ?, ?, ?, ?, ?)",
+                (222222222, "Loser", 1500, 1500, 1500, 1500),
+            )
+            cur.execute(
+                "UPDATE overall_standings SET elo = ?, online_elo = ? WHERE user_id = ?",
+                (1485, 1485, 222222222),
+            )
+            conn.commit()
+            conn.close()
+            log_admin_action(
+                999,
+                "Admin",
+                "top_cut_report",
+                target_id=111111111,
+                target_name="Winner",
+                previous_state={"winner_id": 111111111, "loser_id": 222222222},
+                new_state={"match_id": match_id, "lifetime_only": True},
+            )
+
+            snapshot = get_current_event_match_elo_snapshot(match_id)
+
+        assert snapshot["winner"]["lifetime_before"] is None
+        assert snapshot["loser"]["lifetime_before"] is None
+        assert any("Lifetime Elo unavailable" in note for note in snapshot["notes"])
+
+
 
 
 class TestSoloMatchReport:

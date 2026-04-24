@@ -13,7 +13,13 @@ from repositories.limited_repo import (
     get_limited_elo,
     get_matches_for_run,
 )
-from services.limited_service import forfeit_arena_run, report_match, start_arena_run
+from services.limited_service import (
+    MAX_ARENA_LOSSES,
+    MAX_ARENA_WINS,
+    forfeit_arena_run,
+    report_match,
+    start_arena_run,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +57,7 @@ def get_user_status(user_id):
 
         if active_run:
             has_active = True
-            can_queue = active_run["wins"] < 5 and active_run["losses"] < 3
+            can_queue = active_run["wins"] < MAX_ARENA_WINS and active_run["losses"] < MAX_ARENA_LOSSES
             run_data = _run_to_dict(active_run)
             match_history = get_matches_for_run(active_run["run_id"], uid)
         else:
@@ -129,6 +135,9 @@ def post_user_run(user_id):
             except ValueError as e:
                 return jsonify({"success": False, "error": str(e)}), 400
 
+            if run is None:
+                return jsonify({"success": False, "error": "Failed to create run"}), 500
+
             elo = get_limited_elo(uid)
 
             logger.info("POST run created for user %s: run_id=%s", uid, run["run_id"])
@@ -163,7 +172,7 @@ def post_report_match():
     winner_display_name = body.get("winner_display_name")
     loser_display_name = body.get("loser_display_name")
 
-    if not all([winner_id, loser_id, winner_display_name, loser_display_name]):
+    if winner_id is None or loser_id is None or not winner_display_name or not loser_display_name:
         return jsonify({
             "success": False,
             "error": "winner_id, loser_id, winner_display_name, and loser_display_name are required",
@@ -220,7 +229,7 @@ def post_end_run(user_id):
         if not active_run:
             return jsonify({"success": False, "error": "No active run to end"}), 400
 
-        losses_applied = 3 - active_run["losses"]
+        losses_applied = MAX_ARENA_LOSSES - active_run["losses"]
 
         try:
             summary = forfeit_arena_run(uid)

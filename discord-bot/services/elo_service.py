@@ -2,6 +2,7 @@
 
 import sqlite3
 import datetime
+import json
 import logging
 
 from utils.deck_checker import scrape_Curosa
@@ -331,6 +332,505 @@ def update_elo_db_ladder(
     conn.close()
 
     return (new_online_elo, online_change, new_online_event_elo, online_event_change, True)
+
+
+def _load_json_object(raw_value):
+    """Safely parse a JSON object field from the audit log."""
+    if not raw_value:
+        return {}
+
+    try:
+        parsed = json.loads(raw_value)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _table_exists(cursor, table_name):
+    """Return True when a table exists in the current SQLite database."""
+    cursor.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table_name,),
+    )
+    return cursor.fetchone() is not None
+
+
+def _calculate_event_k_value_for_time(start_date, current_time):
+    """Calculate the event K-value at a specific point in time."""
+    days_elapsed = (current_time - start_date).days
+    k_value = 16 + (days_elapsed * 2)
+    return min(k_value, 32)
+
+
+def _apply_standard_match_flow(winner_before, loser_before, k_value):
+    """Apply the standard sequential winner-then-loser Elo update flow."""
+    winner_after = update_elo(winner_before, loser_before, True, k=k_value)
+    loser_after = update_elo(loser_before, winner_after, False, k=k_value)
+    return {
+        "winner_before": winner_before,
+        "winner_after": winner_after,
+        "loser_before": loser_before,
+        "loser_after": loser_after,
+        "winner_change": winner_after - winner_before,
+        "loser_change": loser_after - loser_before,
+    }
+
+
+def _apply_special_ladder_flow(winner_before, loser_before, k_value):
+    """Apply the special ladder stakes flow (2x winner, 0.5x challenger loss)."""
+    base_result = _apply_standard_match_flow(winner_before, loser_before, k_value)
+    winner_after = base_result["winner_after"] + round(base_result["winner_change"] * (2.0 - 1.0))
+    loser_base_after = update_elo(loser_before, winner_after, False, k=k_value)
+    loser_change = round((loser_base_after - loser_before) * 0.5)
+    loser_after = loser_before + loser_change
+    return {
+        "winner_before": winner_before,
+        "winner_after": winner_after,
+        "loser_before": loser_before,
+        "loser_after": loser_after,
+        "winner_change": winner_after - winner_before,
+        "loser_change": loser_change,
+        "winner_base_change": base_result["winner_change"],
+    }
+
+
+def _resolve_match_from_exact_winner(
+    winner_after,
+    loser_after,
+    exact_winner_change,
+    k_value,
+    special_ladder=False,
+):
+    """Resolve a match when the winner's exact total change is known."""
+    winner_before = winner_after - exact_winner_change
+    if winner_before < 1:
+        raise ValueError("Invalid historical winner rating while reconstructing lifetime Elo.")
+
+    candidates = []
+    loser_min = max(1, loser_after)
+    loser_max = loser_after + 64
+    for loser_before in range(loser_min, loser_max + 1):
+        if special_ladder:
+            result = _apply_special_ladder_flow(winner_before, loser_before, k_value)
+        else:
+            result = _apply_standard_match_flow(winner_before, loser_before, k_value)
+
+        if (
+            result["winner_after"] == winner_after
+            and result["loser_after"] == loser_after
+            and result["winner_change"] == exact_winner_change
+        ):
+            candidates.append(result)
+
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise ValueError("Could not reconstruct historical lifetime Elo for this match.")
+    raise ValueError("Lifetime Elo reconstruction is ambiguous for this match.")
+
+
+def _resolve_match_from_exact_loser(
+    winner_after,
+    loser_after,
+    exact_loser_change,
+    k_value,
+    special_ladder=False,
+):
+    """Resolve a match when the loser's exact total change is known."""
+    loser_before = loser_after - exact_loser_change
+    if loser_before < 1:
+        raise ValueError("Invalid historical loser rating while reconstructing lifetime Elo.")
+
+    candidates = []
+    winner_min = max(1, winner_after - (64 if special_ladder else 32))
+    winner_max = winner_after
+    for winner_before in range(winner_min, winner_max + 1):
+        if special_ladder:
+            result = _apply_special_ladder_flow(winner_before, loser_before, k_value)
+        else:
+            result = _apply_standard_match_flow(winner_before, loser_before, k_value)
+
+        if (
+            result["winner_after"] == winner_after
+            and result["loser_after"] == loser_after
+            and result["loser_change"] == exact_loser_change
+        ):
+            candidates.append(result)
+
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise ValueError("Could not reconstruct historical lifetime Elo for this match.")
+    raise ValueError("Lifetime Elo reconstruction is ambiguous for this match.")
+
+
+def _resolve_lifetime_match_result(row, winner_after, loser_after, ladder_special=False):
+    """Resolve one match's lifetime before/after ratings when exact deltas are available."""
+    if row.get("is_top_cut"):
+        raise ValueError(
+            "Lifetime Elo cannot be reconstructed exactly for top cut matches because historical lifetime deltas were not stored."
+        )
+
+    if row.get("match_type") == "testing":
+        return {
+            "winner_before": winner_after,
+            "winner_after": winner_after,
+            "loser_before": loser_after,
+            "loser_after": loser_after,
+        }
+
+    k_value = 32
+    exact_winner_change = row.get("winner_lifetime_elo_change")
+    exact_loser_change = row.get("loser_lifetime_elo_change")
+
+    if ladder_special and exact_winner_change is not None and row.get("did_win"):
+        exact_winner_change = exact_winner_change + round(exact_winner_change)
+
+    if row.get("did_win"):
+        if exact_winner_change is None:
+            raise ValueError("Missing winner lifetime delta for this match.")
+        return _resolve_match_from_exact_winner(
+            winner_after,
+            loser_after,
+            exact_winner_change,
+            k_value,
+            special_ladder=ladder_special,
+        )
+
+    if exact_loser_change is None:
+        raise ValueError("Missing loser lifetime delta for this match.")
+    return _resolve_match_from_exact_loser(
+        winner_after,
+        loser_after,
+        exact_loser_change,
+        k_value,
+        special_ladder=ladder_special,
+    )
+
+
+def get_current_event_match_elo_snapshot(match_id: int):
+    """Return before/after lifetime and event ELO for a current-event match."""
+    active_event = get_active_event()
+    if not active_event:
+        raise ValueError("No active event is running right now.")
+
+    event_start = active_event["start_date"]
+    event_start_str = event_start.isoformat()
+
+    match_conn = sqlite3.connect("match_records.db")
+    match_conn.row_factory = sqlite3.Row
+    match_cur = match_conn.cursor()
+
+    match_cur.execute(
+        """
+        SELECT match_id, winner_id, winner_display_name, losser_id, losser_display_name,
+               timestamp, match_type, did_win,
+               winner_elo_change, loser_elo_change,
+               winner_lifetime_elo_change, loser_lifetime_elo_change
+        FROM match_records
+        WHERE timestamp >= ?
+        ORDER BY timestamp ASC, match_id ASC
+        """,
+        (event_start_str,),
+    )
+    match_rows = [dict(row) for row in match_cur.fetchall()]
+    target_match = next((row for row in match_rows if row["match_id"] == match_id), None)
+    if not target_match:
+        match_conn.close()
+        raise ValueError(
+            f"Match #{match_id} was not found in the current active event."
+        )
+
+    participant_ids = set()
+    for row in match_rows:
+        participant_ids.add(row["winner_id"])
+        participant_ids.add(row["losser_id"])
+
+    ladder_challengers = {}
+    if _table_exists(match_cur, "ladder_challenges"):
+        match_cur.execute(
+            """
+            SELECT challenge_id, challenger_id, match_id
+            FROM ladder_challenges
+            WHERE match_id IS NOT NULL
+            """
+        )
+        ladder_challengers = {
+            row[2]: {"challenge_id": row[0], "challenger_id": row[1]}
+            for row in match_cur.fetchall()
+            if row[2] is not None
+        }
+
+    spot_reset_events = []
+    top_cut_match_ids = set()
+    if _table_exists(match_cur, "admin_audit_log"):
+        match_cur.execute(
+            """
+            SELECT id, timestamp, target_id, previous_state, new_state
+            FROM admin_audit_log
+            WHERE action = 'spot_elo_reset' AND timestamp >= ?
+            ORDER BY timestamp ASC, id ASC
+            """,
+            (event_start_str,),
+        )
+        for audit_row in match_cur.fetchall():
+            previous_state = _load_json_object(audit_row[3])
+            new_state = _load_json_object(audit_row[4])
+            if "event_elo" not in new_state:
+                continue
+
+            try:
+                target_user_id = int(audit_row[2]) if audit_row[2] is not None else None
+            except (TypeError, ValueError):
+                target_user_id = None
+
+            if target_user_id is None:
+                continue
+
+            participant_ids.add(target_user_id)
+            spot_reset_events.append(
+                {
+                    "id": audit_row[0],
+                    "timestamp": datetime.datetime.fromisoformat(audit_row[1]),
+                    "target_id": target_user_id,
+                    "previous_event_elo": previous_state.get("event_elo", 1500),
+                    "new_event_elo": new_state["event_elo"],
+                }
+            )
+
+        match_cur.execute(
+            """
+            SELECT new_state
+            FROM admin_audit_log
+            WHERE action = 'top_cut_report' AND timestamp >= ?
+            ORDER BY id ASC
+            """,
+            (event_start_str,),
+        )
+        for (new_state_raw,) in match_cur.fetchall():
+            new_state = _load_json_object(new_state_raw)
+            logged_match_id = new_state.get("match_id")
+            if logged_match_id is not None:
+                top_cut_match_ids.add(logged_match_id)
+
+    match_conn.close()
+
+    elo_conn = sqlite3.connect("elo.db")
+    elo_conn.row_factory = sqlite3.Row
+    elo_cur = elo_conn.cursor()
+
+    current_lifetime_state = {user_id: 1500 for user_id in participant_ids}
+    current_event_state = {user_id: 1500 for user_id in participant_ids}
+    if participant_ids:
+        placeholders = ", ".join("?" for _ in participant_ids)
+        elo_cur.execute(
+            f"""
+            SELECT user_id,
+                   COALESCE(online_elo, elo, 1500) AS current_lifetime_elo,
+                   COALESCE(online_event_elo, event_elo, 1500) AS current_event_elo
+            FROM overall_standings
+            WHERE user_id IN ({placeholders})
+            """,
+            tuple(participant_ids),
+        )
+        for row in elo_cur.fetchall():
+            current_lifetime_state[row["user_id"]] = row["current_lifetime_elo"]
+            current_event_state[row["user_id"]] = row["current_event_elo"]
+
+    elo_conn.close()
+
+    operations = []
+    for row in match_rows:
+        operations.append(
+            {
+                "kind": "match",
+                "timestamp": datetime.datetime.fromisoformat(row["timestamp"]),
+                "sort_id": row["match_id"],
+                "match": row,
+            }
+        )
+    for reset in spot_reset_events:
+        operations.append(
+            {
+                "kind": "spot_reset",
+                "timestamp": reset["timestamp"],
+                "sort_id": reset["id"],
+                "reset": reset,
+            }
+        )
+
+    operations.sort(
+        key=lambda op: (
+            op["timestamp"],
+            0 if op["kind"] == "spot_reset" else 1,
+            op["sort_id"],
+        )
+    )
+
+    event_state = {user_id: 1500 for user_id in participant_ids}
+    event_snapshots = {}
+
+    for operation in operations:
+        if operation["kind"] == "spot_reset":
+            reset = operation["reset"]
+            event_state[reset["target_id"]] = reset["new_event_elo"]
+            continue
+
+        row = operation["match"]
+        match_id_value = row["match_id"]
+        winner_id = row["winner_id"]
+        loser_id = row["losser_id"]
+        match_timestamp = operation["timestamp"]
+        event_k = _calculate_event_k_value_for_time(event_start, match_timestamp)
+        challenger_info = ladder_challengers.get(match_id_value)
+        challenger_id = challenger_info["challenger_id"] if challenger_info else None
+        winner_before_event = event_state.get(winner_id, 1500)
+        loser_before_event = event_state.get(loser_id, 1500)
+
+        is_top_cut = match_id_value in top_cut_match_ids
+        is_testing = row.get("match_type") == "testing"
+        is_casual = is_testing and not is_top_cut
+        ladder_special = False
+
+        if is_casual:
+            event_result = {
+                "winner_before": winner_before_event,
+                "winner_after": winner_before_event,
+                "loser_before": loser_before_event,
+                "loser_after": loser_before_event,
+            }
+        elif is_top_cut:
+            event_result = {
+                "winner_before": winner_before_event,
+                "winner_after": winner_before_event,
+                "loser_before": loser_before_event,
+                "loser_after": loser_before_event,
+            }
+        else:
+            if challenger_id and challenger_id != winner_id:
+                if abs(winner_before_event - loser_before_event) >= 100:
+                    ladder_special = True
+
+            if ladder_special:
+                event_result = _apply_special_ladder_flow(
+                    winner_before_event,
+                    loser_before_event,
+                    event_k,
+                )
+            else:
+                event_result = _apply_standard_match_flow(
+                    winner_before_event,
+                    loser_before_event,
+                    event_k,
+                )
+
+        event_state[winner_id] = event_result["winner_after"]
+        event_state[loser_id] = event_result["loser_after"]
+
+        event_snapshots[match_id_value] = {
+            "winner_before": event_result["winner_before"],
+            "winner_after": event_result["winner_after"],
+            "loser_before": event_result["loser_before"],
+            "loser_after": event_result["loser_after"],
+            "is_top_cut": is_top_cut,
+            "is_casual": is_casual,
+            "is_ladder_match": challenger_id is not None,
+            "ladder_special": ladder_special,
+            "event_k": event_k,
+            "timestamp": match_timestamp,
+        }
+
+    lifetime_state = dict(current_lifetime_state)
+    lifetime_snapshot = None
+    lifetime_unavailable_reason = None
+
+    for row in reversed(match_rows):
+        match_id_value = row["match_id"]
+        winner_id = row["winner_id"]
+        loser_id = row["losser_id"]
+        event_snapshot = event_snapshots[match_id_value]
+        row["is_top_cut"] = event_snapshot["is_top_cut"]
+
+        winner_after_lifetime = lifetime_state.get(winner_id, 1500)
+        loser_after_lifetime = lifetime_state.get(loser_id, 1500)
+
+        try:
+            resolved_lifetime = _resolve_lifetime_match_result(
+                row,
+                winner_after_lifetime,
+                loser_after_lifetime,
+                ladder_special=event_snapshot["ladder_special"],
+            )
+        except ValueError as exc:
+            lifetime_unavailable_reason = str(exc)
+            if match_id_value == match_id:
+                break
+            lifetime_snapshot = None
+            break
+
+        lifetime_state[winner_id] = resolved_lifetime["winner_before"]
+        lifetime_state[loser_id] = resolved_lifetime["loser_before"]
+
+        if match_id_value == match_id:
+            lifetime_snapshot = resolved_lifetime
+            break
+
+    snapshot = event_snapshots.get(match_id)
+    if not snapshot:
+        raise ValueError(
+            f"Could not reconstruct Elo history for match #{match_id}."
+        )
+
+    target_timestamp = snapshot["timestamp"]
+    prior_player_resets = [
+        reset
+        for reset in spot_reset_events
+        if reset["timestamp"] <= target_timestamp
+        and reset["target_id"] in (target_match["winner_id"], target_match["losser_id"])
+    ]
+
+    notes = []
+    if prior_player_resets:
+        notes.append(
+            f"Accounts for {len(prior_player_resets)} prior manual event Elo reset(s) affecting these players."
+        )
+    if snapshot["is_casual"]:
+        notes.append("Casual/testing match: no Elo changed.")
+    elif snapshot["is_top_cut"]:
+        notes.append("Top cut match: event Elo stayed unchanged.")
+    elif snapshot["ladder_special"]:
+        notes.append("Ladder challenge with special stakes: winner gained 2x and challenger lost 0.5x.")
+    elif snapshot["is_ladder_match"]:
+        notes.append("Ladder challenge match with normal stakes.")
+    if lifetime_snapshot is None and lifetime_unavailable_reason:
+        notes.append(f"Lifetime Elo unavailable: {lifetime_unavailable_reason}")
+
+    return {
+        "event_name": active_event["event_name"],
+        "event_start": event_start,
+        "event_k": snapshot["event_k"],
+        "match_id": match_id,
+        "match_timestamp": target_timestamp,
+        "match_type": target_match.get("match_type") or "ranked",
+        "winner_id": target_match["winner_id"],
+        "winner_display_name": target_match["winner_display_name"],
+        "loser_id": target_match["losser_id"],
+        "loser_display_name": target_match["losser_display_name"],
+        "winner": {
+            "lifetime_before": lifetime_snapshot["winner_before"] if lifetime_snapshot else None,
+            "lifetime_after": lifetime_snapshot["winner_after"] if lifetime_snapshot else None,
+            "event_before": snapshot["winner_before"],
+            "event_after": snapshot["winner_after"],
+        },
+        "loser": {
+            "lifetime_before": lifetime_snapshot["loser_before"] if lifetime_snapshot else None,
+            "lifetime_after": lifetime_snapshot["loser_after"] if lifetime_snapshot else None,
+            "event_before": snapshot["loser_before"],
+            "event_after": snapshot["loser_after"],
+        },
+        "notes": notes,
+    }
 
 
 # --- Match Reporting ---

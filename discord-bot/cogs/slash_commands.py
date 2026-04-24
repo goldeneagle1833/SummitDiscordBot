@@ -113,6 +113,9 @@ class SlashCommandsCog(commands.Cog):
             app_commands.Choice(
                 name="🎮 My recent games (/stats mygames)", value="mygames"
             ),
+            app_commands.Choice(
+                name="🔎 Match Elo details (/stats match_elo)", value="match_elo"
+            ),
         ]
     )
     async def stats_slash(self, interaction: discord.Interaction, action: str):
@@ -135,6 +138,11 @@ class SlashCommandsCog(commands.Cog):
             await elo_cog.mystats(ctx)
         elif action == "mygames":
             await elo_cog.mygames(ctx)
+        elif action == "match_elo":
+            await interaction.followup.send(
+                "Use `!match_elo <match_id>` for now. You can find match IDs in `/stats mygames`.",
+                ephemeral=True,
+            )
 
     @app_commands.command(
         name="masters_bracket",

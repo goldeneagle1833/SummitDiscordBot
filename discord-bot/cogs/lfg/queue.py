@@ -7,12 +7,33 @@ import sqlite3
 import config
 from cogs.lfg.state import lfg_queue, lfg_queue_lock
 from cogs.lfg.helpers import scrub_urls
+from cogs.lfg.match_reporting import LFGReportButtons
 from utils.constants import SORCERY_NICKNAMES
 from utils.database import save_pairing
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
 from services.pilots_service import is_pilot_active
 
 logger = logging.getLogger("discord_bot")
+
+LIMITED_RUN_REQUIRED_MESSAGE = (
+    "You need an active Limited run to join the queue. "
+    "Start a new run by drafting at https://draftsorcery.com/."
+)
+
+
+def parse_queue_timeframe(raw_value):
+    """Parse and clamp queue timeframe values."""
+
+    try:
+        timeframe_value = int(raw_value) if raw_value else 30
+        if timeframe_value < 5:
+            timeframe_value = 5
+        elif timeframe_value > 120:
+            timeframe_value = 120
+    except ValueError:
+        timeframe_value = 30
+
+    return timeframe_value
 
 
 def get_last_unreported_pairing(user_id: int, guild_id: int):
@@ -102,15 +123,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
-        # Parse timeframe
-        try:
-            timeframe_value = int(self.timeframe.value) if self.timeframe.value else 30
-            if timeframe_value < 5:
-                timeframe_value = 5
-            elif timeframe_value > 120:
-                timeframe_value = 120
-        except ValueError:
-            timeframe_value = 30
+        timeframe_value = parse_queue_timeframe(self.timeframe.value)
 
         deck_url = self.deck_url.value.strip() if self.deck_url.value else None
 
@@ -122,400 +135,393 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
                 run_id = active_run["run_id"]
                 deck_url = active_run["deck_url"]
             else:
-                if active_run and active_run["status"] != "active":
-                    msg = "Your current Limited run is over. Start a new run at https://draftsorcery.com/ to continue playing Limited."
-                else:
-                    msg = "You need an active arena run to join the Limited queue. Start one at https://draftsorcery.com/ first."
-                await interaction.followup.send(msg, ephemeral=True)
+                await interaction.followup.send(
+                    LIMITED_RUN_REQUIRED_MESSAGE,
+                    ephemeral=True,
+                )
                 return
 
-        # Create a fake context for compatibility
-        class FakeContext:
-            def __init__(self, bot, interaction):
-                self.bot = bot
-                self.author = interaction.user
-                self.guild = interaction.guild
-                self.channel = interaction.channel
-                self.message = None
+        await _process_queue_join(
+            self.bot,
+            interaction,
+            self.queue_type,
+            timeframe_value,
+            deck_url,
+            run_id,
+        )
 
-            async def send(self, *args, **kwargs):
-                pass
 
-        ctx = FakeContext(self.bot, interaction)
-        lfg_cog = self.bot.get_cog("LFGCog")
+class LimitedQueueModal(discord.ui.Modal, title="Join Limited Queue"):
+    """Modal for joining the Limited queue with only a duration."""
 
-        if not lfg_cog:
+    timeframe = discord.ui.TextInput(
+        label="Queue Duration (minutes)",
+        placeholder="30",
+        required=False,
+        default="30",
+        max_length=3,
+    )
+
+    def __init__(self, bot):
+        super().__init__()
+        self.bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        timeframe_value = parse_queue_timeframe(self.timeframe.value)
+
+        active_run = get_active_arena_run(interaction.user.id)
+        if not (
+            active_run
+            and active_run["status"] == "active"
+            and active_run["wins"] < 5
+            and active_run["losses"] < 3
+        ):
             await interaction.followup.send(
-                "LFG system is not available.", ephemeral=True
+                LIMITED_RUN_REQUIRED_MESSAGE,
+                ephemeral=True,
             )
             return
 
-        # Use lock to prevent race conditions - check, match, OR add must be atomic
-        async with lfg_queue_lock:
-            # Check if user is already in queue
-            if interaction.user.id in lfg_queue:
-                await interaction.followup.send(
-                    "You're already in the queue!", ephemeral=True
-                )
-                return
+        queue_type = "limited"
+        run_id = int(active_run["run_id"])
+        deck_url = active_run["deck_url"]
 
-            # Check for a match
-            lfg_cog.clean_expired_lfg()
-            matched_user_id = lfg_cog.check_if_someone_is_lfg(ctx, self.queue_type)
+        await _process_queue_join(
+            self.bot,
+            interaction,
+            queue_type,
+            timeframe_value,
+            deck_url,
+            run_id,
+        )
 
-            if matched_user_id and matched_user_id != interaction.user.id:
-                # Get matched user's info before removing from queue
-                matched_user_info = lfg_queue.get(matched_user_id, {})
-                matched_user_deck_url = matched_user_info.get("deck_url")
-                matched_queue_type = matched_user_info.get("queue_type", "ranked")
-                matched_ladder_info = matched_user_info.get("ladder_info")
-                matched_run_id = matched_user_info.get("run_id")
 
-                # Determine match type based on both players' queue types
-                match_type = lfg_cog.resolve_match_type(
-                    self.queue_type, matched_queue_type
-                )
+async def _process_queue_join(bot, interaction, queue_type, timeframe_value, deck_url, run_id=None):
+    """Handle queue join flow after modal validation."""
 
-                # If matched user has ladder_info, save the challenge now (counts against daily limit)
-                if matched_ladder_info:
-                    from utils.database import get_user_event_elo, save_ladder_challenge
+    class FakeContext:
+        def __init__(self, bot, interaction):
+            self.bot = bot
+            self.author = interaction.user
+            self.guild = interaction.guild
+            self.channel = interaction.channel
+            self.message = None
 
-                    if not matched_ladder_info.get("challenge_id"):
-                        challenge_id = save_ladder_challenge(matched_ladder_info["challenger_id"])
-                        matched_ladder_info["challenge_id"] = challenge_id
-                        logger.info(
-                            f"Ladder challenge saved on match for challenger {matched_ladder_info['challenger_id']}, challenge_id: {challenge_id}"
-                        )
+        async def send(self, *args, **kwargs):
+            pass
 
-                    challenger_elo = get_user_event_elo(
-                        matched_ladder_info["challenger_id"]
-                    )
-                    opponent_elo = get_user_event_elo(interaction.user.id)
-                    elo_diff = abs(challenger_elo - opponent_elo)
+    ctx = FakeContext(bot, interaction)
+    lfg_cog = bot.get_cog("LFGCog")
 
-                    if elo_diff < 100:
-                        # Normal stakes - set multipliers to 1.0
-                        matched_ladder_info["elo_multiplier_winner"] = 1.0
-                        matched_ladder_info["elo_multiplier_loser"] = 1.0
-                        logger.info(
-                            f"Ladder challenge match: ELO diff {elo_diff} < 100 - using normal stakes"
-                        )
-                    else:
-                        # Keep special stakes (2.0 for winner, 0.5 for loser)
-                        logger.info(
-                            f"Ladder challenge match: ELO diff {elo_diff} >= 100 - using special stakes (2x/0.5x)"
-                        )
+    if not lfg_cog:
+        await interaction.followup.send(
+            "LFG system is not available.", ephemeral=True
+        )
+        return
 
-                # Remove matched user from queue
-                lfg_queue.pop(matched_user_id, None)
-                logger.info(
-                    f"Lock acquired: Matching {interaction.user.id} with {matched_user_id} (match_type={match_type})"
-                )
-            else:
-                # No match found - add to queue while still holding the lock
-                matched_user_id = None
-                matched_user_deck_url = None
-                matched_ladder_info = None
-                matched_run_id = None
-                match_type = None
-                lfg_cog.add_to_lfg_queue(
-                    ctx,
-                    timeframe_value,
-                    deck_url,
-                    self.queue_type,
-                    run_id=run_id,
-                )
-
-        # Handle the result outside the lock
-        if matched_user_id:
-            if match_type == "limited":
-                match_type_emoji = "🎲"
-                match_type_label = "Limited"
-            elif match_type == "ranked":
-                match_type_emoji = "⚔️"
-                match_type_label = "Ranked"
-            else:
-                match_type_emoji = "⭐"
-                match_type_label = "Casual"
-            # Match found!
-            matched_user = await self.bot.fetch_user(matched_user_id)
-            lfg_channel = self.bot.get_channel(lfg_cog.lfg_channel_id)
-            joiner_global = (
-                interaction.user.global_name or interaction.user.display_name
-            )
-            matched_global = matched_user.global_name or matched_user.display_name
-
-            # Record match start time
-            match_start_time = datetime.datetime.now()
-
-            # Validate guild_id before saving pairing
-            if not interaction.guild or not interaction.guild.id:
-                logger.error(
-                    f"Cannot save pairing: guild_id is None for users {interaction.user.id} and {matched_user_id}"
-                )
-                await interaction.followup.send(
-                    "Error: Could not save match pairing. Please try using !lfg command instead.",
-                    ephemeral=True,
-                )
-                return
-
-            # Save pairing to database for validation during match reporting
-            try:
-                if match_type == "limited":
-                    pairing_id = save_limited_pairing(
-                        guild_id=interaction.guild.id,
-                        player1_id=interaction.user.id,
-                        player2_id=matched_user_id,
-                        player1_deck_url=deck_url,
-                        player2_deck_url=matched_user_deck_url,
-                        player1_run_id=run_id,
-                        player2_run_id=matched_run_id,
-                    )
-                else:
-                    pairing_id = save_pairing(
-                        guild_id=interaction.guild.id,
-                        player1_id=interaction.user.id,
-                        player2_id=matched_user_id,
-                        player1_deck_url=deck_url,
-                        player2_deck_url=matched_user_deck_url,
-                    )
-                logger.info(
-                    f"Saved {'limited ' if match_type == 'limited' else ''}pairing {pairing_id} in guild {interaction.guild.id}: "
-                    f"{interaction.user.id} ({joiner_global}) vs {matched_user_id} ({matched_global})"
-                )
-            except Exception as e:
-                logger.error(
-                    f"Failed to save pairing for users {interaction.user.id} and {matched_user_id}: {e}",
-                    exc_info=True,
-                )
-                await interaction.followup.send(
-                    "Error: Could not save match pairing to database. Please contact an admin.",
-                    ephemeral=True,
-                )
-                return
-
-            # Assign active player role to both players if they don't have it
-            try:
-                guild = self.bot.get_guild(config.GUILD_ID)
-                if guild:
-                    active_role = guild.get_role(config.ACTIVE_PLAYER_ROLE_ID)
-                    if active_role:
-                        for player_id in (interaction.user.id, matched_user_id):
-                            member = guild.get_member(player_id)
-                            if member and active_role not in member.roles:
-                                await member.add_roles(active_role)
-                                logger.info(f"Added active player role to {member.display_name} ({player_id})")
-            except Exception as e:
-                logger.error(f"Failed to assign active player role: {e}")
-
-            # Randomly select which player gets the report buttons
-            players = [
-                (interaction.user.id, joiner_global, interaction.user, deck_url, True),
-                (
-                    matched_user_id,
-                    matched_global,
-                    matched_user,
-                    matched_user_deck_url,
-                    False,
-                ),
-            ]
-            reporter_player, other_player = random.sample(players, 2)
-            (
-                reporter_id,
-                reporter_global,
-                reporter_user,
-                reporter_deck_url,
-                reporter_is_joiner,
-            ) = reporter_player
-            other_id, other_global, other_user, other_deck_url, other_is_joiner = (
-                other_player
-            )
-
-            # Build match message with deck info
-            reporter_deck_text = (
-                f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
-            )
-
-            # Create "Did you go first?" view with the pre-determined match type
-            # (Skip match type selection since we already know it from queue types)
-            from cogs.lfg.match_reporting import WentFirstView
-
-            # Determine run_ids for reporter and other player
-            if match_type == "limited":
-                if reporter_is_joiner:
-                    reporter_run_id = run_id
-                    other_run_id = matched_run_id
-                else:
-                    reporter_run_id = matched_run_id
-                    other_run_id = run_id
-            else:
-                reporter_run_id = None
-                other_run_id = None
-
-            went_first_view = WentFirstView(
-                reporter_id,
-                reporter_id,
-                reporter_global,
-                other_id,
-                other_global,
-                self.bot,
-                lfg_channel,
-                match_start_time=match_start_time,
-                reporter_deck_url=reporter_deck_url,
-                opponent_deck_url=other_deck_url,
-                opponent_user=other_user,
-                reporter_deck_text=reporter_deck_text,
-                guild_id=interaction.guild.id,
-                ladder_info=matched_ladder_info,
-                match_type=match_type,
-                reporter_run_id=reporter_run_id,
-                opponent_run_id=other_run_id,
-            )
-
-            # Build match type label for message
-            if match_type == "limited":
-                match_type_emoji = "🎲"
-                match_type_label = "Limited"
-            elif match_type == "ranked":
-                match_type_emoji = "⚔️"
-                match_type_label = "Ranked"
-            else:
-                match_type_emoji = "⭐"
-                match_type_label = "Casual"
-
-            # Send "Did you go first?" question to the selected reporter
-            reporter_dm_failed = False
-            try:
-                await reporter_user.send(
-                    f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Did you go first?**\n\n"
-                    f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** in the LFG channel for fresh buttons!",
-                    view=went_first_view,
-                )
-            except discord.Forbidden:
-                reporter_dm_failed = True
-                try:
-                    dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
-                    if dm_channel:
-                        # Grant channel access and role to user who can't receive DMs
-                        guild = self.bot.get_guild(config.GUILD_ID)
-                        if guild:
-                            member = guild.get_member(reporter_user.id)
-                            if member:
-                                await dm_channel.set_permissions(
-                                    member, read_messages=True, send_messages=True
-                                )
-                                role = guild.get_role(config.DM_DISABLED_ROLE_ID)
-                                if role and role not in member.roles:
-                                    await member.add_roles(role)
-                                logger.info(
-                                    f"Granted channel access to {reporter_user.global_name} (can't receive DMs)"
-                                )
-
-                        # Post without deck URL in public channel
-                        await dm_channel.send(
-                            scrub_urls(
-                                f"{reporter_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n**Did you go first?**\n\n"
-                                f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** for fresh buttons!"
-                            ),
-                            view=went_first_view,
-                        )
-                except Exception as e:
-                    logger.error(f"Failed to handle DM failure for reporter: {e}")
-
-            # Build match info message for the other player
-            other_own_deck_text = (
-                f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
-            )
-
-            # Send informational message to the other player (no buttons)
-            try:
-                await other_user.send(
-                    f"🎮 **Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
-                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome.\n\n"
-                    f"💡 **Tip:** If buttons expire or you need fresh reporting buttons, click **'📋 Report Last Match'** in the LFG channel!"
-                )
-            except discord.Forbidden:
-                try:
-                    dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
-                    if dm_channel:
-                        # Grant channel access and role to user who can't receive DMs
-                        guild = self.bot.get_guild(config.GUILD_ID)
-                        if guild:
-                            member = guild.get_member(other_user.id)
-                            if member:
-                                await dm_channel.set_permissions(
-                                    member, read_messages=True, send_messages=True
-                                )
-                                role = guild.get_role(config.DM_DISABLED_ROLE_ID)
-                                if role and role not in member.roles:
-                                    await member.add_roles(role)
-                                logger.info(
-                                    f"Granted channel access to {other_user.global_name} (can't receive DMs)"
-                                )
-
-                        # Post without deck URL in public channel
-                        await dm_channel.send(
-                            scrub_urls(
-                                f"{other_user.mention} 🎮 **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
-                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome.\n\n"
-                                f"💡 **Tip:** If buttons expire or you need fresh reporting buttons, click **'📋 Report Last Match'**!"
-                            )
-                        )
-                except Exception as e:
-                    logger.error(f"Failed to handle DM failure for other player: {e}")
-
-            # Announce match in LFG channel
-            if lfg_channel:
-                # Add ladder challenge info if applicable
-                ladder_note = ""
-                if matched_ladder_info:
-                    from utils.database import get_user_event_elo
-
-                    elo_diff = abs(
-                        get_user_event_elo(matched_ladder_info["challenger_id"])
-                        - get_user_event_elo(interaction.user.id)
-                    )
-                    if elo_diff >= 100:
-                        ladder_note = " 🏆 **Ladder Challenge!** Top 16 player - Special stakes (2x/0.5x ELO)!"
-                    else:
-                        ladder_note = " 🏆 **Ladder Challenge!** Top 16 player (normal stakes - ELO diff < 100)"
-
-                await lfg_channel.send(
-                    f"{match_type_emoji} **{match_type_label} Match Found!** {interaction.user.mention} matched with {matched_user.mention}!{ladder_note}"
-                )
-
-            await lfg_cog.update_lfg_status()
-
-            if reporter_dm_failed:
-                await interaction.followup.send(
-                    f"{match_type_emoji} {match_type_label} match found! You've been paired with {matched_global}. Check <#{config.DM_DISABLED_CHANNEL_ID}>!",
-                    ephemeral=True,
-                )
-            else:
-                await interaction.followup.send(
-                    f"{match_type_emoji} {match_type_label} match found! You've been paired with {matched_global}. Check your DMs!",
-                    ephemeral=True,
-                )
-        else:
-            # Already added to queue inside the lock above
-            queue_label = self.queue_type.capitalize()
-            deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
-            try:
-                await interaction.user.send(
-                    f"You have been added to the **{queue_label}** queue for {timeframe_value} minutes.{deck_msg}"
-                )
-            except Exception:
-                pass
-
-            try:
-                await lfg_cog.update_lfg_status()
-            except Exception as e:
-                logger.error(f"Failed to update LFG status after queue join: {e}")
-
+    async with lfg_queue_lock:
+        if interaction.user.id in lfg_queue:
             await interaction.followup.send(
-                f"You've joined the **{queue_label}** queue for {timeframe_value} minutes!{deck_msg}",
+                "You're already in the queue!", ephemeral=True
+            )
+            return
+
+        lfg_cog.clean_expired_lfg()
+        matched_user_id = lfg_cog.check_if_someone_is_lfg(ctx, queue_type)
+
+        if matched_user_id and matched_user_id != interaction.user.id:
+            matched_user_info = lfg_queue.get(matched_user_id, {})
+            matched_user_deck_url = matched_user_info.get("deck_url")
+            matched_queue_type = matched_user_info.get("queue_type", "ranked")
+            matched_ladder_info = matched_user_info.get("ladder_info")
+            matched_run_id = int(matched_user_info.get("run_id") or 0)
+            match_type = lfg_cog.resolve_match_type(queue_type, matched_queue_type)
+
+            if matched_ladder_info:
+                from utils.database import get_user_event_elo, save_ladder_challenge
+
+                if not matched_ladder_info.get("challenge_id"):
+                    challenge_id = save_ladder_challenge(matched_ladder_info["challenger_id"])
+                    matched_ladder_info["challenge_id"] = challenge_id
+                    logger.info(
+                        f"Ladder challenge saved on match for challenger {matched_ladder_info['challenger_id']}, challenge_id: {challenge_id}"
+                    )
+
+                challenger_elo = get_user_event_elo(
+                    matched_ladder_info["challenger_id"]
+                )
+                opponent_elo = get_user_event_elo(interaction.user.id)
+                elo_diff = abs(challenger_elo - opponent_elo)
+
+                if elo_diff < 100:
+                    matched_ladder_info["elo_multiplier_winner"] = 1.0
+                    matched_ladder_info["elo_multiplier_loser"] = 1.0
+                    logger.info(
+                        f"Ladder challenge match: ELO diff {elo_diff} < 100 - using normal stakes"
+                    )
+                else:
+                    logger.info(
+                        f"Ladder challenge match: ELO diff {elo_diff} >= 100 - using special stakes (2x/0.5x)"
+                    )
+
+            lfg_queue.pop(matched_user_id, None)
+            logger.info(
+                f"Lock acquired: Matching {interaction.user.id} with {matched_user_id} (match_type={match_type})"
+            )
+        else:
+            matched_user_id = None
+            matched_user_deck_url = None
+            matched_ladder_info = None
+            matched_run_id = None
+            match_type = None
+            lfg_cog.add_to_lfg_queue(
+                ctx,
+                timeframe_value,
+                deck_url,
+                queue_type,
+                run_id=run_id,
+            )
+
+    if matched_user_id:
+        if match_type == "limited":
+            match_type_emoji = "🎲"
+            match_type_label = "Limited"
+        elif match_type == "ranked":
+            match_type_emoji = "⚔️"
+            match_type_label = "Ranked"
+        else:
+            match_type_emoji = "⭐"
+            match_type_label = "Casual"
+
+        matched_user = await bot.fetch_user(matched_user_id)
+        lfg_channel = bot.get_channel(lfg_cog.lfg_channel_id)
+        joiner_global = interaction.user.global_name or interaction.user.display_name
+        matched_global = matched_user.global_name or matched_user.display_name
+        match_start_time = datetime.datetime.now()
+
+        if not interaction.guild or not interaction.guild.id:
+            logger.error(
+                f"Cannot save pairing: guild_id is None for users {interaction.user.id} and {matched_user_id}"
+            )
+            await interaction.followup.send(
+                "Error: Could not save match pairing. Please try using !lfg command instead.",
                 ephemeral=True,
             )
+            return
+
+        try:
+            if match_type == "limited":
+                pairing_id = save_limited_pairing(
+                    guild_id=interaction.guild.id,
+                    player1_id=interaction.user.id,
+                    player2_id=matched_user_id,
+                    player1_deck_url=deck_url or "",
+                    player2_deck_url=matched_user_deck_url or "",
+                    player1_run_id=run_id or 0,
+                    player2_run_id=matched_run_id or 0,
+                )
+            else:
+                pairing_id = save_pairing(
+                    guild_id=interaction.guild.id,
+                    player1_id=interaction.user.id,
+                    player2_id=matched_user_id,
+                    player1_deck_url=deck_url or "",
+                    player2_deck_url=matched_user_deck_url or "",
+                )
+            logger.info(
+                f"Saved {'limited ' if match_type == 'limited' else ''}pairing {pairing_id} in guild {interaction.guild.id}: "
+                f"{interaction.user.id} ({joiner_global}) vs {matched_user_id} ({matched_global})"
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to save pairing for users {interaction.user.id} and {matched_user_id}: {e}",
+                exc_info=True,
+            )
+            await interaction.followup.send(
+                "Error: Could not save match pairing to database. Please contact an admin.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            guild = bot.get_guild(config.GUILD_ID)
+            if guild:
+                active_role = guild.get_role(config.ACTIVE_PLAYER_ROLE_ID)
+                if active_role:
+                    for player_id in (interaction.user.id, matched_user_id):
+                        member = guild.get_member(player_id)
+                        if member and active_role not in member.roles:
+                            await member.add_roles(active_role)
+                            logger.info(f"Added active player role to {member.display_name} ({player_id})")
+        except Exception as e:
+            logger.error(f"Failed to assign active player role: {e}")
+
+        players = [
+            (interaction.user.id, joiner_global, interaction.user, deck_url, True),
+            (matched_user_id, matched_global, matched_user, matched_user_deck_url, False),
+        ]
+        reporter_player, other_player = random.sample(players, 2)
+        reporter_id, reporter_global, reporter_user, reporter_deck_url, reporter_is_joiner = reporter_player
+        other_id, other_global, other_user, other_deck_url, _ = other_player
+
+        reporter_deck_text = f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
+
+        from cogs.lfg.match_reporting import WentFirstView
+
+        if match_type == "limited":
+            if reporter_is_joiner:
+                reporter_run_id = int(run_id or 0)
+                other_run_id = int(matched_run_id or 0)
+            else:
+                reporter_run_id = int(matched_run_id or 0)
+                other_run_id = int(run_id or 0)
+        else:
+            reporter_run_id = int(0)
+            other_run_id = int(0)
+
+        went_first_view = WentFirstView(
+            reporter_id,
+            reporter_id,
+            reporter_global,
+            other_id,
+            other_global,
+            bot,
+            lfg_channel,
+            match_start_time=match_start_time,
+            reporter_deck_url=reporter_deck_url,
+            opponent_deck_url=other_deck_url,
+            opponent_user=other_user,
+            reporter_deck_text=reporter_deck_text,
+            guild_id=interaction.guild.id,
+            ladder_info=matched_ladder_info or {},
+            match_type=match_type or "ranked",
+            reporter_run_id=reporter_run_id,
+            opponent_run_id=other_run_id,
+        )
+
+        reporter_dm_failed = False
+        try:
+            await reporter_user.send(
+                f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Did you go first?**\n\n"
+                f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** in the LFG channel for fresh buttons!",
+                view=went_first_view,
+            )
+        except discord.Forbidden:
+            reporter_dm_failed = True
+            try:
+                dm_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+                if dm_channel:
+                    guild = bot.get_guild(config.GUILD_ID)
+                    if guild:
+                        member = guild.get_member(reporter_user.id)
+                        if member:
+                            await dm_channel.set_permissions(
+                                member, read_messages=True, send_messages=True
+                            )
+                            role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+                            if role and role not in member.roles:
+                                await member.add_roles(role)
+                            logger.info(
+                                f"Granted channel access to {reporter_user.global_name} (can't receive DMs)"
+                            )
+
+                    await dm_channel.send(
+                        scrub_urls(
+                            f"{reporter_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n**Did you go first?**\n\n"
+                            f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** for fresh buttons!"
+                        ),
+                        view=went_first_view,
+                    )
+            except Exception as e:
+                logger.error(f"Failed to handle DM failure for reporter: {e}")
+
+        other_own_deck_text = f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
+
+        try:
+            await other_user.send(
+                f"🎮 **Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
+                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome.\n\n"
+                f"💡 **Tip:** If buttons expire or you need fresh reporting buttons, click **'📋 Report Last Match'** in the LFG channel!"
+            )
+        except discord.Forbidden:
+            try:
+                dm_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+                if dm_channel:
+                    guild = bot.get_guild(config.GUILD_ID)
+                    if guild:
+                        member = guild.get_member(other_user.id)
+                        if member:
+                            await dm_channel.set_permissions(
+                                member, read_messages=True, send_messages=True
+                            )
+                            role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+                            if role and role not in member.roles:
+                                await member.add_roles(role)
+                            logger.info(
+                                f"Granted channel access to {other_user.global_name} (can't receive DMs)"
+                            )
+
+                    await dm_channel.send(
+                        scrub_urls(
+                            f"{other_user.mention} 🎮 **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
+                            f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome.\n\n"
+                            f"💡 **Tip:** If buttons expire or you need fresh reporting buttons, click **'📋 Report Last Match'**!"
+                        )
+                    )
+            except Exception as e:
+                logger.error(f"Failed to handle DM failure for other player: {e}")
+
+        if lfg_channel:
+            ladder_note = ""
+            if matched_ladder_info:
+                from utils.database import get_user_event_elo
+
+                elo_diff = abs(
+                    get_user_event_elo(matched_ladder_info["challenger_id"])
+                    - get_user_event_elo(interaction.user.id)
+                )
+                if elo_diff >= 100:
+                    ladder_note = " 🏆 **Ladder Challenge!** Top 16 player - Special stakes (2x/0.5x ELO)!"
+                else:
+                    ladder_note = " 🏆 **Ladder Challenge!** Top 16 player (normal stakes - ELO diff < 100)"
+
+            await lfg_channel.send(
+                f"{match_type_emoji} **{match_type_label} Match Found!** {interaction.user.mention} matched with {matched_user.mention}!{ladder_note}"
+            )
+
+        await lfg_cog.update_lfg_status()
+
+        if reporter_dm_failed:
+            await interaction.followup.send(
+                f"{match_type_emoji} {match_type_label} match found! You've been paired with {matched_global}. Check <#{config.DM_DISABLED_CHANNEL_ID}>!",
+                ephemeral=True,
+            )
+        else:
+            await interaction.followup.send(
+                f"{match_type_emoji} {match_type_label} match found! You've been paired with {matched_global}. Check your DMs!",
+                ephemeral=True,
+            )
+    else:
+        queue_label = queue_type.capitalize()
+        deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
+        try:
+            await interaction.user.send(
+                f"You have been added to the **{queue_label}** queue for {timeframe_value} minutes.{deck_msg}"
+            )
+        except Exception:
+            pass
+
+        try:
+            await lfg_cog.update_lfg_status()
+        except Exception as e:
+            logger.error(f"Failed to update LFG status after queue join: {e}")
+
+        await interaction.followup.send(
+            f"You've joined the **{queue_label}** queue for {timeframe_value} minutes!{deck_msg}",
+            ephemeral=True,
+        )
 
 
 class JoinQueueButtons(discord.ui.View):
@@ -541,7 +547,10 @@ class JoinQueueButtons(discord.ui.View):
                 "You're already in the queue!", ephemeral=True
             )
             return
-        modal = DeckURLModal(self.bot, is_button_join=True, queue_type=queue_type)
+        if queue_type == "limited":
+            modal = LimitedQueueModal(self.bot)
+        else:
+            modal = DeckURLModal(self.bot, is_button_join=True, queue_type=queue_type)
         await interaction.response.send_modal(modal)
 
     @discord.ui.button(
@@ -675,13 +684,13 @@ class JoinQueueButtons(discord.ui.View):
             match_type = pairing.get('match_type', 'ranked')
 
             # Get run IDs for limited matches
-            reporter_run_id = None
-            opponent_run_id = None
+            reporter_run_id = 0
+            opponent_run_id = 0
             if match_type == 'limited':
                 reporter_run = get_active_arena_run(interaction.user.id)
                 opponent_run = get_active_arena_run(opponent_id)
-                reporter_run_id = reporter_run['run_id'] if reporter_run else None
-                opponent_run_id = opponent_run['run_id'] if opponent_run else None
+                reporter_run_id = int(reporter_run['run_id']) if reporter_run else 0
+                opponent_run_id = int(opponent_run['run_id']) if opponent_run else 0
 
             # Build deck text
             reporter_deck_text = ""

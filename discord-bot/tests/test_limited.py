@@ -12,9 +12,26 @@ import pytest
 import sqlite3
 import os
 import sys
+import types
 from unittest.mock import MagicMock, AsyncMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+if "config" not in sys.modules:
+    fake_config = types.ModuleType("config")
+    defaults = {
+        "OPENAI_API_KEY": "test-key",
+        "DM_BACKUP_CHANNEL_ID": 0,
+        "DM_DISABLED_ROLE_ID": 0,
+        "DM_DISABLED_CHANNEL_ID": 0,
+        "GUILD_ID": 0,
+        "ACTIVE_PLAYER_ROLE_ID": 0,
+        "MILESTONE_CHANNEL_ID": 0,
+        "LFG_CHANNEL_ID": 0,
+    }
+    for key, value in defaults.items():
+        setattr(fake_config, key, value)
+    sys.modules["config"] = fake_config
 
 from repositories.limited_repo import (
     create_limited_tables,
@@ -40,6 +57,12 @@ from services.limited_service import (
     limited_winner_report,
 )
 from services.elo_service import update_elo
+from cogs.lfg.state import lfg_queue
+from cogs.lfg.queue import (
+    JoinQueueButtons,
+    LimitedQueueModal,
+    LIMITED_RUN_REQUIRED_MESSAGE,
+)
 
 
 # --- Fixtures ---
@@ -462,3 +485,93 @@ class TestRunSummary:
     def test_get_run_summary_not_found(self):
         summary = get_run_summary(99999)
         assert "not found" in summary.lower()
+
+
+class TestLimitedQueueJoinModal:
+    """Test Limited queue modal behavior."""
+
+    @pytest.fixture(autouse=True)
+    def clear_lfg_queue(self):
+        lfg_queue.clear()
+        yield
+        lfg_queue.clear()
+
+    @pytest.mark.asyncio
+    async def test_join_limited_button_uses_limited_modal(self, mock_bot, mock_interaction):
+        view = JoinQueueButtons(mock_bot)
+
+        with patch("cogs.lfg.queue.is_pilot_active", return_value=True):
+            await view._handle_join(mock_interaction, "limited")
+
+        modal = mock_interaction.response.send_modal.await_args.args[0]
+        assert isinstance(modal, LimitedQueueModal)
+        assert len(modal.children) == 1
+        assert len(modal.children) == 1
+
+    @pytest.mark.asyncio
+    async def test_limited_modal_queues_with_active_run_data(self, mock_bot, mock_interaction):
+        create_arena_run(
+            mock_interaction.user.id,
+            "TestUser",
+            "https://curiosa.io/deck/limited-run",
+            "{}",
+            1500,
+        )
+
+        lfg_cog = MagicMock()
+        lfg_cog.clean_expired_lfg = MagicMock()
+        lfg_cog.check_if_someone_is_lfg = MagicMock(return_value=None)
+        lfg_cog.add_to_lfg_queue = MagicMock()
+        lfg_cog.update_lfg_status = AsyncMock()
+        mock_bot.get_cog.return_value = lfg_cog
+
+        modal = LimitedQueueModal(mock_bot)
+        modal.timeframe._value = "45"
+
+        await modal.on_submit(mock_interaction)
+
+        lfg_cog.add_to_lfg_queue.assert_called_once()
+        _, timeframe_value, deck_url, queue_type = lfg_cog.add_to_lfg_queue.call_args.args[:4]
+        assert timeframe_value == 45
+        assert deck_url == "https://curiosa.io/deck/limited-run"
+        assert queue_type == "limited"
+        assert lfg_cog.add_to_lfg_queue.call_args.kwargs["run_id"] > 0
+        mock_interaction.followup.send.assert_awaited_with(
+            "You've joined the **Limited** queue for 45 minutes!\n**Deck:** https://curiosa.io/deck/limited-run",
+            ephemeral=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_limited_modal_requires_active_run(self, mock_bot, mock_interaction):
+        mock_bot.get_cog.return_value = MagicMock()
+        modal = LimitedQueueModal(mock_bot)
+        modal.timeframe._value = "30"
+
+        await modal.on_submit(mock_interaction)
+
+        mock_interaction.followup.send.assert_awaited_with(
+            LIMITED_RUN_REQUIRED_MESSAGE,
+            ephemeral=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_limited_modal_requires_new_run_after_completed_run(self, mock_bot, mock_interaction):
+        run_id = create_arena_run(
+            mock_interaction.user.id,
+            "TestUser",
+            "https://curiosa.io/deck/completed-run",
+            "{}",
+            1500,
+        )
+        complete_arena_run(run_id, "completed")
+
+        mock_bot.get_cog.return_value = MagicMock()
+        modal = LimitedQueueModal(mock_bot)
+        modal.timeframe._value = "30"
+
+        await modal.on_submit(mock_interaction)
+
+        mock_interaction.followup.send.assert_awaited_with(
+            LIMITED_RUN_REQUIRED_MESSAGE,
+            ephemeral=True,
+        )

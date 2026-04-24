@@ -20,6 +20,9 @@ from repositories.limited_repo import (
 
 logger = logging.getLogger(__name__)
 
+MAX_ARENA_WINS = 4
+MAX_ARENA_LOSSES = 2
+
 create_limited_tables()
 
 
@@ -51,16 +54,19 @@ def start_arena_run(user_id, display_name, deck_url):
         logger.warning("Failed to scrape deck data for arena run: %s", e)
 
     run_id = _create_arena_run(user_id, display_name, deck_url, json_deck_data, starting_elo)
-    return get_arena_run(run_id)
+    run = get_arena_run(run_id)
+    if run is None:
+        raise RuntimeError(f"Failed to load arena run {run_id} after creation")
+    return run
 
 
 def _check_run_complete(run_id):
-    """Check if an arena run has reached completion (5W or 3L). Auto-completes if so."""
+    """Check if an arena run has reached completion (4W or 2L). Auto-completes if so."""
     run = get_arena_run(run_id)
     if not run or run["status"] != "active":
         return run is not None and run["status"] != "active"
 
-    if run["wins"] >= 5 or run["losses"] >= 3:
+    if run["wins"] >= MAX_ARENA_WINS or run["losses"] >= MAX_ARENA_LOSSES:
         complete_arena_run(run_id, "completed")
         logger.info("Arena run %d completed: %d-%d", run_id, run["wins"], run["losses"])
         return True
@@ -73,7 +79,7 @@ def report_match(winner_id, winner_display_name, loser_id, loser_display_name,
 
     Both players must have active arena runs. Updates limited ELO for both,
     inserts a match record, increments run win/loss counts, and auto-completes
-    runs that hit thresholds (5W or 3L).
+    runs that hit thresholds (4W or 2L).
 
     Returns dict with match_id, ELO changes, and run statuses.
     Raises ValueError if either player lacks an active run.
@@ -178,7 +184,7 @@ def forfeit_arena_run(user_id):
         raise ValueError(f"User {user_id} has no active arena run to forfeit")
 
     run_id = run["run_id"]
-    losses_to_apply = 3 - run["losses"]
+    losses_to_apply = MAX_ARENA_LOSSES - run["losses"]
 
     if losses_to_apply > 0:
         current_elo = get_limited_elo(user_id)
@@ -194,11 +200,13 @@ def forfeit_arena_run(user_id):
 
         upsert_limited_elo(user_id, run["user_display_name"], current_elo)
 
-    update_arena_run_record(run_id, run["wins"], 3)
+    update_arena_run_record(run_id, run["wins"], MAX_ARENA_LOSSES)
     complete_arena_run(run_id, "forfeited")
 
     # Build summary
     completed_run = get_arena_run(run_id)
+    if completed_run is None:
+        raise RuntimeError(f"Failed to load arena run {run_id} after forfeit")
     current_elo = get_limited_elo(user_id)
     elo_change = current_elo - run["starting_elo"]
     sign = "+" if elo_change >= 0 else ""

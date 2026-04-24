@@ -1,7 +1,7 @@
 """Tests for Limited queue (arena draft mode) system.
 
 Covers:
-- Arena run lifecycle (create → update → complete at 3L and 5W)
+- Arena run lifecycle (create → update → complete at 2L and 4W)
 - Limited ELO calculation (K=32, start at 1500)
 - Forfeit ELO penalty (phantom losses against starting ELO)
 - Starting new run after completed/forfeited run (US-6)
@@ -85,6 +85,7 @@ class TestArenaRunLifecycle:
         run_id = create_arena_run(100, "Player1", "https://curiosa.io/deck/123", "{}", 1500)
         assert run_id is not None
         run = get_arena_run(run_id)
+        assert run is not None
         assert run["user_id"] == 100
         assert run["wins"] == 0
         assert run["losses"] == 0
@@ -105,37 +106,41 @@ class TestArenaRunLifecycle:
         run_id = create_arena_run(300, "Player3", "https://curiosa.io/deck/789", "{}", 1500)
         update_arena_run_record(run_id, 2, 1)
         run = get_arena_run(run_id)
+        assert run is not None
         assert run["wins"] == 2
         assert run["losses"] == 1
 
-    def test_complete_at_three_losses(self):
+    def test_complete_at_two_losses(self):
         run_id = create_arena_run(400, "Player4", "https://curiosa.io/deck/a", "{}", 1500)
-        update_arena_run_record(run_id, 1, 3)
+        update_arena_run_record(run_id, 1, 2)
         completed = check_run_complete(run_id)
         assert completed is True
         run = get_arena_run(run_id)
+        assert run is not None
         assert run["status"] == "completed"
 
-    def test_complete_at_five_wins(self):
+    def test_complete_at_four_wins(self):
         run_id = create_arena_run(500, "Player5", "https://curiosa.io/deck/b", "{}", 1500)
-        update_arena_run_record(run_id, 5, 2)
+        update_arena_run_record(run_id, 4, 1)
         completed = check_run_complete(run_id)
         assert completed is True
         run = get_arena_run(run_id)
+        assert run is not None
         assert run["status"] == "completed"
 
-    def test_not_complete_at_two_losses(self):
+    def test_not_complete_at_one_loss(self):
         run_id = create_arena_run(600, "Player6", "https://curiosa.io/deck/c", "{}", 1500)
-        update_arena_run_record(run_id, 2, 2)
+        update_arena_run_record(run_id, 2, 1)
         completed = check_run_complete(run_id)
         assert completed is False
         run = get_arena_run(run_id)
+        assert run is not None
         assert run["status"] == "active"
 
     def test_start_new_run_after_completed(self):
         """US-6: Can start a new run after previous one completes."""
         run_id_1 = create_arena_run(700, "Player7", "https://curiosa.io/deck/d1", "{}", 1500)
-        update_arena_run_record(run_id_1, 5, 0)
+        update_arena_run_record(run_id_1, 4, 0)
         complete_arena_run(run_id_1, "completed")
 
         # Should be able to start a new run
@@ -216,29 +221,30 @@ class TestForfeit:
     """Test forfeit mechanics and ELO penalty."""
 
     def test_forfeit_applies_remaining_losses(self):
-        """Forfeit with 1 loss should apply 2 more phantom losses."""
+        """Forfeit with 1 loss should apply 1 more phantom loss."""
         run_id = create_arena_run(4001, "ForfeitP", "https://curiosa.io/deck/f1", "{}", 1500)
         update_arena_run_record(run_id, 2, 1)
 
         summary = forfeit_arena_run(4001)
         run = get_arena_run(run_id)
+        assert run is not None
 
         assert run["status"] == "forfeited"
-        assert run["losses"] == 3  # Updated to 3
+        assert run["losses"] == 2  # Updated to 2
         assert "Forfeited" in summary
 
-        # ELO should have dropped (2 phantom losses)
+        # ELO should have dropped (1 phantom loss)
         elo = get_limited_elo(4001)
         assert elo < 1500
 
     def test_forfeit_with_zero_losses(self):
-        """Forfeit with 0 losses applies 3 phantom losses."""
+        """Forfeit with 0 losses applies 2 phantom losses."""
         run_id = create_arena_run(4002, "ForfeitP2", "https://curiosa.io/deck/f2", "{}", 1500)
 
         forfeit_arena_run(4002)
         elo = get_limited_elo(4002)
 
-        # 3 phantom losses from 1500 vs 1500 starting
+        # 2 phantom losses from 1500 vs 1500 starting
         assert elo < 1500
 
     def test_forfeit_no_active_run_raises(self):
@@ -266,7 +272,7 @@ class TestForfeit:
         forfeit_arena_run(4005)
         final_elo = get_limited_elo(4005)
 
-        # Should be less than 1548 (3 phantom losses applied)
+        # Should be less than 1548 (2 phantom losses applied)
         assert final_elo < 1548
 
 
@@ -395,18 +401,20 @@ class TestLimitedWinnerReport:
 
         w_run_data = get_arena_run(w_run)
         l_run_data = get_arena_run(l_run)
+        assert w_run_data is not None
+        assert l_run_data is not None
         assert w_run_data["wins"] == 1
         assert l_run_data["losses"] == 1
 
     def test_limited_winner_report_completes_at_threshold(self):
-        """Run should auto-complete when hitting 5W or 3L threshold."""
+        """Run should auto-complete when hitting 4W or 2L threshold."""
         w_run = create_arena_run(7003, "W2", "url_w2", "{}", 1500)
         l_run = create_arena_run(7004, "L2", "url_l2", "{}", 1500)
 
-        # Set winner to 4 wins (will become 5 after report)
-        update_arena_run_record(w_run, 4, 0)
-        # Set loser to 2 losses (will become 3 after report)
-        update_arena_run_record(l_run, 1, 2)
+        # Set winner to 3 wins (will become 4 after report)
+        update_arena_run_record(w_run, 3, 0)
+        # Set loser to 1 loss (will become 2 after report)
+        update_arena_run_record(l_run, 1, 1)
 
         _, w_complete, l_complete = limited_winner_report(
             reporter_id=7003,
@@ -476,10 +484,10 @@ class TestRunSummary:
 
     def test_get_run_summary_completed(self):
         run_id = create_arena_run(8002, "SumP2", "https://curiosa.io/deck/s2", "{}", 1500)
-        update_arena_run_record(run_id, 5, 2)
+        update_arena_run_record(run_id, 4, 1)
         complete_arena_run(run_id, "completed")
         summary = get_run_summary(run_id)
-        assert "5-2" in summary
+        assert "4-1" in summary
         assert "Completed" in summary
 
     def test_get_run_summary_not_found(self):

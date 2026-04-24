@@ -26,6 +26,9 @@ from repositories.limited_repo import (
 
 logger = logging.getLogger("discord_bot")
 
+MAX_ARENA_WINS = 4
+MAX_ARENA_LOSSES = 2
+
 # Ensure tables exist on import
 create_limited_tables()
 
@@ -83,12 +86,15 @@ def start_arena_run(user_id: int, display_name: str, deck_url: str) -> dict:
         logger.warning("Failed to scrape deck data for arena run: %s", e)
 
     run_id = _create_arena_run(user_id, display_name, deck_url, json_deck_data, starting_elo)
+    run = get_arena_run(run_id)
+    if run is None:
+        raise RuntimeError(f"Failed to load arena run {run_id} after creation")
 
-    return get_arena_run(run_id)
+    return run
 
 
 def check_run_complete(run_id: int) -> bool:
-    """Check if an arena run has reached completion (3L or 5W).
+    """Check if an arena run has reached completion (2L or 4W).
 
     Auto-completes the run if thresholds are met.
 
@@ -99,7 +105,7 @@ def check_run_complete(run_id: int) -> bool:
     if not run or run["status"] != "active":
         return run is not None and run["status"] != "active"
 
-    if run["wins"] >= 5 or run["losses"] >= 3:
+    if run["wins"] >= MAX_ARENA_WINS or run["losses"] >= MAX_ARENA_LOSSES:
         complete_arena_run(run_id, "completed")
         logger.info(
             "Arena run %d completed: %d-%d",
@@ -231,7 +237,7 @@ def forfeit_arena_run(user_id: int) -> str:
         raise ValueError(f"User {user_id} has no active arena run to forfeit")
 
     run_id = run["run_id"]
-    losses_to_apply = 3 - run["losses"]
+    losses_to_apply = MAX_ARENA_LOSSES - run["losses"]
 
     if losses_to_apply > 0:
         current_elo = get_limited_elo(user_id)
@@ -247,8 +253,8 @@ def forfeit_arena_run(user_id: int) -> str:
 
         upsert_limited_elo(user_id, run["user_display_name"], current_elo)
 
-    # Update run record to show full 3 losses and mark as forfeited
-    update_arena_run_record(run_id, run["wins"], 3)
+    # Update run record to show full loss cap and mark as forfeited
+    update_arena_run_record(run_id, run["wins"], MAX_ARENA_LOSSES)
     complete_arena_run(run_id, "forfeited")
 
     return get_run_summary(run_id)

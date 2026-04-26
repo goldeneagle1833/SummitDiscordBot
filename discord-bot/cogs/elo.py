@@ -157,16 +157,16 @@ class EloCog(commands.Cog):
 
         # Get both lifetime and event ELO
         cur.execute(
-            "SELECT elo, event_elo FROM overall_standings WHERE user_id=?", (target_user.id,)
+            "SELECT online_elo, online_event_elo FROM overall_standings WHERE user_id=?", (target_user.id,)
         )
         row = cur.fetchone()
 
         if row:
-            lifetime_elo = row[0]
+            lifetime_elo = row[0] if row[0] else 1500
             event_elo = row[1] if row[1] else 1500
 
             # Get lifetime rank
-            cur.execute("SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (lifetime_elo,))
+            cur.execute("SELECT COUNT(*) FROM overall_standings WHERE online_elo > ?", (lifetime_elo,))
             lifetime_rank = cur.fetchone()[0] + 1
 
             # Check if there's an active event
@@ -180,7 +180,7 @@ class EloCog(commands.Cog):
                 has_event_games = has_player_played_event(target_user.id, event_start_str)
                 # Get event rank (only count players who have played event matches)
                 event_participants = get_event_participant_ids(event_start_str)
-                cur.execute("SELECT user_id, event_elo FROM overall_standings WHERE event_elo > ?", (event_elo,))
+                cur.execute("SELECT user_id, online_event_elo FROM overall_standings WHERE online_event_elo > ?", (event_elo,))
                 event_rank = sum(1 for r in cur.fetchall() if r[0] in event_participants) + 1
 
             if is_self:
@@ -218,7 +218,7 @@ class EloCog(commands.Cog):
         conn = sqlite3.connect("elo.db")
         cur = conn.cursor()
         cur.execute(
-            "SELECT user_display_name, elo FROM overall_standings ORDER BY elo DESC LIMIT 16"
+            "SELECT user_display_name, online_elo FROM overall_standings ORDER BY online_elo DESC LIMIT 16"
         )
         rows = cur.fetchall()
         if rows:
@@ -246,8 +246,8 @@ class EloCog(commands.Cog):
         conn = sqlite3.connect("elo.db")
         cur = conn.cursor()
         cur.execute(
-            """SELECT user_id, user_display_name, event_elo FROM overall_standings
-               ORDER BY event_elo DESC"""
+            """SELECT user_id, user_display_name, online_event_elo FROM overall_standings
+               ORDER BY online_event_elo DESC"""
         )
         all_rows = cur.fetchall()
         conn.close()
@@ -272,7 +272,7 @@ class EloCog(commands.Cog):
         conn = sqlite3.connect("elo.db")
         cur = conn.cursor()
         cur.execute(
-            "SELECT user_id, user_display_name, elo FROM overall_standings ORDER BY elo DESC"
+            "SELECT user_id, user_display_name, online_elo FROM overall_standings ORDER BY online_elo DESC"
         )
         all_players = cur.fetchall()
         conn.close()
@@ -457,14 +457,14 @@ class EloCog(commands.Cog):
                     )
                 else:
                     cur_elo.execute(
-                        "SELECT elo FROM overall_standings WHERE user_id=?",
+                        "SELECT online_elo FROM overall_standings WHERE user_id=?",
                         (ctx.author.id,),
                     )
                     elo_row = cur_elo.fetchone()
                     if elo_row:
                         elo = elo_row[0]
                         cur_elo.execute(
-                            "SELECT COUNT(*) FROM overall_standings WHERE elo > ?",
+                            "SELECT COUNT(*) FROM overall_standings WHERE online_elo > ?",
                             (elo,),
                         )
                         rank = cur_elo.fetchone()[0] + 1

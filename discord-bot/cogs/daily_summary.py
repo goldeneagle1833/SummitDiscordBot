@@ -35,7 +35,7 @@ DAILY_SUMMARY_PROMPT = (
     "BIGGEST_UPSET: [Flavored version, must include both player names and ELO change]\n"
     "RIVALRY: [Flavored version, must include both player names and the record]\n"
     "HIGHEST_RATED: [Flavored version, must include both player names and combined ELO]\n"
-    "IRONMAN: [Flavored version, must include player name, match count, and hours]\n"
+    "IRONMAN: [Flavored version, must include the total hours — this is the combined gameplay time across ALL players today, not a single player]\n"
     "DECK_VARIETY: [Flavored version, must include player name and deck count]\n"
     "HOT_STREAKS: [Flavored version, must include player names and streak counts]\n"
     "STREAK_BROKEN: [Flavored version, must include player names and streak count]\n"

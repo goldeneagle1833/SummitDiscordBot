@@ -13,12 +13,10 @@ continue to work unchanged.
 from repositories.elo_repo import (  # noqa: F401
     get_db_connection,
     create_db,
-    create_challenge_db,
     create_events_table,
     create_match_records_archive,
     create_ladder_challenge_table,
     create_active_pairings_table,
-    ensure_event_elo_column,
     migrate_to_dual_elo_system,
     get_active_event,
     get_user_elo,
@@ -36,7 +34,6 @@ from repositories.elo_repo import (  # noqa: F401
     complete_ladder_challenge,
     delete_ladder_challenge,
     reset_ladder_challenge_today,
-    save_challenge_match,
     # Pairing functions
     save_pairing,
     get_active_pairing_for_user,
@@ -56,13 +53,19 @@ from services.elo_service import (  # noqa: F401
     update_elo_db_lifetime_only,
     update_elo_db_ladder,
     get_current_event_match_elo_snapshot,
-    winner_report,
-    losser_report,
+    record_match,
     start_new_event,
     end_current_event,
     check_milestone,
     solo_match_report,
+    recalculate_event_elo,
+    correct_match_record,
+    remove_match_record,
+    remove_player as remove_player_service,
 )
+
+# Admin repo functions
+from repositories.elo_repo import set_player_event_elo  # noqa: F401
 
 # Limited queue (arena draft mode) data access
 from repositories.limited_repo import (  # noqa: F401

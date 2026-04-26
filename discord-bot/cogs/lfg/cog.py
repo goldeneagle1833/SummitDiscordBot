@@ -20,7 +20,7 @@ from cogs.lfg.state import (
     LADDER_CHALLENGE_MAX_JOINERS,
 )
 from cogs.lfg.helpers import scrub_urls, send_milestone_announcement
-from cogs.lfg.match_reporting import WentFirstView, LFGReportButtons, _apply_ladder_elo
+from cogs.lfg.match_reporting import MatchCardView, LFGReportButtons, _apply_ladder_elo
 from cogs.lfg.challenge import ChallengeInitView, ChallengerDeckModal
 from cogs.lfg.ladder import (
     LadderChallengeJoinButton,
@@ -31,21 +31,23 @@ from cogs.lfg.ladder import (
 )
 from cogs.lfg.queue import DeckURLModal, JoinQueueButtons, ActiveQueueButtons
 from utils.database import (
-    winner_report,
-    losser_report,
+    record_match,
     check_milestone,
     get_top_16_user_ids,
     get_ladder_challenge_today,
     save_ladder_challenge,
     complete_ladder_challenge,
-    update_elo_db_ladder,
     get_user_elo,
     get_user_event_elo,
-    update_elo_db,
     update_elo_db_lifetime_only,
     log_admin_action,
     cleanup_old_pairings,
     save_pairing,
+    recalculate_event_elo,
+    correct_match_record,
+    remove_match_record,
+    remove_player_service,
+    set_player_event_elo,
 )
 from utils.constants import SORCERY_NICKNAMES
 from utils.text import find_best_command_match
@@ -185,9 +187,9 @@ class LFGCog(commands.Cog):
                 event_participants = get_event_participant_ids(event_start_str)
 
                 cursor_elo.execute("""
-                    SELECT user_id, user_display_name, event_elo
+                    SELECT user_id, user_display_name, online_event_elo
                     FROM overall_standings
-                    ORDER BY event_elo DESC
+                    ORDER BY online_event_elo DESC
                 """)
                 # Filter to only players who have played event matches
                 all_players = [row for row in cursor_elo.fetchall() if row[0] in event_participants]
@@ -1255,33 +1257,29 @@ class LFGCog(commands.Cog):
                 f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
             )
 
-            # Create "Did you go first?" view
-            went_first_view = WentFirstView(
-                reporter_id,
-                reporter_id,
-                reporter_global,
-                other_id,
-                other_global,
-                self.bot,
-                lfg_channel,
+            match_type_emoji = "⚔️" if match_type == "ranked" else "⭐"
+            match_type_label = "Ranked" if match_type == "ranked" else "Casual"
+
+            match_card_view = MatchCardView(
+                bot=self.bot,
+                pairing_id=pairing_id,
+                player1_id=reporter_id,
+                player1_global=reporter_global,
+                player2_id=other_id,
+                player2_global=other_global,
+                player1_deck_url=reporter_deck_url,
+                player2_deck_url=other_deck_url,
                 match_start_time=match_start_time,
-                reporter_deck_url=reporter_deck_url,
-                opponent_deck_url=other_deck_url,
-                opponent_user=other_user,
-                reporter_deck_text=reporter_deck_text,
                 guild_id=guild_id,
                 ladder_info=ladder_info,
                 match_type=match_type,
             )
 
-            match_type_emoji = "⚔️" if match_type == "ranked" else "⭐"
-            match_type_label = "Ranked" if match_type == "ranked" else "Casual"
-
-            # Send "Did you go first?" question to the selected reporter
             try:
                 await reporter_user.send(
-                    f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Did you go first?**",
-                    view=went_first_view,
+                    f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n"
+                    f"Use the button below to report the result when your match is done.",
+                    view=match_card_view,
                 )
             except discord.Forbidden:
                 try:
@@ -1299,21 +1297,21 @@ class LFGCog(commands.Cog):
 
                         await dm_channel.send(
                             scrub_urls(
-                                f"{reporter_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n**Did you go first?**"
+                                f"{reporter_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n"
+                                f"Use the button below to report the result when your match is done."
                             ),
-                            view=went_first_view,
+                            view=match_card_view,
                         )
                 except Exception as e:
                     logger.error(f"Failed to handle DM failure for reporter: {e}")
 
-            # Send informational message to the other player (no buttons)
             other_own_deck_text = (
                 f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
             )
             try:
                 await other_user.send(
                     f"🎮 **Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
-                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
+                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome."
                 )
             except discord.Forbidden:
                 try:
@@ -1332,7 +1330,7 @@ class LFGCog(commands.Cog):
                         await dm_channel.send(
                             scrub_urls(
                                 f"{other_user.mention} 🎮 **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
-                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome."
+                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome."
                             )
                         )
                 except Exception as e:
@@ -1492,8 +1490,8 @@ class LFGCog(commands.Cog):
                 "Manually report a match result between two players.\n"
                 "**When to use:** When a match wasn't reported through normal channels, "
                 "or to correct a missed game.\n\n"
-                "`!admin_challenge_report @winner @loser @challenger`\n"
-                "Manually report a ladder challenge match. `@challenger` is the Top 16 player.\n"
+                "`!admin_challenge_report @winner @loser @top16_player`\n"
+                "Manually report a ladder challenge match. `@top16_player` is the **Top 16 player who issued `!issue_challenge`** (NOT the non-Top16 player).\n"
                 "**When to use:** When a challenge match wasn't reported correctly or the challenge feature broke. "
                 "Applies the same ELO rules as normal challenges (2x/0.5x if 100+ ELO apart).\n\n"
                 "`!top_cut_report @winner @loser`\n"
@@ -1675,11 +1673,8 @@ class LFGCog(commands.Cog):
             conn_matches = sqlite3.connect("match_records.db")
             cur_matches = conn_matches.cursor()
 
-            # Drop all tables
+            # Drop and recreate match_records table
             cur_matches.execute("DROP TABLE IF EXISTS match_records")
-            cur_matches.execute("DROP TABLE IF EXISTS challenge_matches")
-
-            # Recreate match_records table
             cur_matches.execute("""CREATE TABLE match_records
                                    (reporter_id INTEGER,
                                     winner_id INTEGER,
@@ -1690,19 +1685,6 @@ class LFGCog(commands.Cog):
                                     timestamp TEXT,
                                     first_player TEXT,
                                     match_time INTEGER,
-                                    curiosa_url TEXT,
-                                    match_comment TEXT,
-                                    json_deck_data TEXT
-                                   )""")
-
-            # Recreate challenge_matches table
-            cur_matches.execute("""CREATE TABLE challenge_matches
-                                   (match_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                    challenger_id INTEGER NOT NULL,
-                                    challenged_id INTEGER NOT NULL,
-                                    status TEXT NOT NULL,
-                                    match_time DATETIME NOT NULL,
-                                    winner_id INTEGER,
                                     curiosa_url TEXT,
                                     match_comment TEXT,
                                     json_deck_data TEXT
@@ -1725,7 +1707,7 @@ class LFGCog(commands.Cog):
 
             success_embed = discord.Embed(
                 title="Database Reset Complete",
-                description="All databases have been dropped and recreated:\n\u2022 ELO database reset\n\u2022 Match records cleared\n\u2022 Challenge matches cleared\n\nAll tables are ready to use.",
+                description="All databases have been dropped and recreated:\n\u2022 ELO database reset\n\u2022 Match records cleared\n\nAll tables are ready to use.",
                 color=discord.Color.green(),
             )
             await ctx.send(embed=success_embed)
@@ -1777,28 +1759,20 @@ class LFGCog(commands.Cog):
             winner_name = winner.global_name or winner.display_name
             loser_name = loser.global_name or loser.display_name
 
-            # Report the match using the existing database functions
-            match_id, _, _, event_active = await winner_report(
-                ctx.author.id,  # reporter_id (admin who is reporting)
-                winner.id,
-                winner_name,
-                True,
-                loser.id,
-                loser_name,
-                "n",  # first_player default
-                0,  # match_time default
-                "Admin reported match",  # curiosa_link
-                "Match reported by admin",  # match_comment
-                winner.id,  # interaction_user_id
-                winner_name,  # interaction_global
+            match_id, _, _, _, _, event_active = await record_match(
+                reporter_id=ctx.author.id,
+                winner_id=winner.id,
+                winner_global=winner_name,
+                loser_id=loser.id,
+                loser_global=loser_name,
+                first_player="n",
+                match_time=0,
+                match_comment="Match reported by admin",
                 winner_deck_url=None,
                 loser_deck_url=None,
-                winner_went_first=None,  # Not specified for admin reports
+                winner_went_first=None,
                 loser_went_first=None,
             )
-
-            # Update ELO for the loser as well
-            update_elo_db(loser.id, loser_name, False, winner.id)
 
             # Update leaderboard
             await self.update_leaderboard()
@@ -1895,25 +1869,21 @@ class LFGCog(commands.Cog):
             winner_name = winner.global_name or winner.display_name
             loser_name = loser.global_name or loser.display_name
 
-            # Record the match in match_records
-            match_id, _, _, _ = await winner_report(
-                ctx.author.id,
-                winner.id,
-                winner_name,
-                True,
-                loser.id,
-                loser_name,
-                "n",
-                0,
-                "Top cut match",
-                "Top cut match reported by admin",
-                winner.id,
-                winner_name,
+            # Record the match (match_type="testing" skips event ELO; lifetime handled below)
+            match_id, _, _, _, _, _ = await record_match(
+                reporter_id=ctx.author.id,
+                winner_id=winner.id,
+                winner_global=winner_name,
+                loser_id=loser.id,
+                loser_global=loser_name,
+                first_player="n",
+                match_time=0,
+                match_comment="Top cut match reported by admin",
                 winner_deck_url=None,
                 loser_deck_url=None,
                 winner_went_first=None,
                 loser_went_first=None,
-                match_type="testing",  # Prevent winner_report from updating ELO
+                match_type="testing",
             )
 
             # Update only lifetime ELO for both players
@@ -2111,15 +2081,15 @@ class LFGCog(commands.Cog):
     @commands.command()
     @is_bot_admin()
     async def admin_challenge_report(
-        self, ctx, winner: discord.Member = None, loser: discord.Member = None, challenger: discord.Member = None
+        self, ctx, winner: discord.Member = None, loser: discord.Member = None, top16_player: discord.Member = None
     ):
-        """Admin command to manually report a ladder challenge result. Usage: !admin_challenge_report @winner @loser @challenger"""
+        """Admin command to manually report a ladder challenge result. Usage: !admin_challenge_report @winner @loser @top16_player"""
 
         # Validate arguments
-        if winner is None or loser is None or challenger is None:
+        if winner is None or loser is None or top16_player is None:
             await ctx.send(
-                "Please mention all three players. Usage: `!admin_challenge_report @winner @loser @challenger`\n"
-                "`@challenger` is the Top 16 player who issued the challenge."
+                "Please mention all three players. Usage: `!admin_challenge_report @winner @loser @top16_player`\n"
+                "`@top16_player` is the **Top 16 player** who issued the `!issue_challenge` (NOT the non-Top16 challenger)."
             )
             return
 
@@ -2131,8 +2101,8 @@ class LFGCog(commands.Cog):
             await ctx.send("Cannot report matches for bots!")
             return
 
-        if challenger.id != winner.id and challenger.id != loser.id:
-            await ctx.send("The challenger must be either the winner or the loser!")
+        if top16_player.id != winner.id and top16_player.id != loser.id:
+            await ctx.send("The Top 16 player must be either the winner or the loser!")
             return
 
         try:
@@ -2140,8 +2110,8 @@ class LFGCog(commands.Cog):
             loser_name = loser.global_name or loser.display_name
 
             # Check ELO difference to determine multipliers
-            challenger_elo = get_user_event_elo(challenger.id)
-            opponent_id = loser.id if challenger.id == winner.id else winner.id
+            challenger_elo = get_user_event_elo(top16_player.id)
+            opponent_id = loser.id if top16_player.id == winner.id else winner.id
             opponent_elo = get_user_event_elo(opponent_id)
             elo_diff = abs(challenger_elo - opponent_elo)
 
@@ -2157,34 +2127,38 @@ class LFGCog(commands.Cog):
             guild_id = ctx.guild.id if ctx.guild else None
 
             ladder_info = {
-                "challenger_id": challenger.id,
+                "challenger_id": top16_player.id,
                 "challenge_id": None,  # No DB challenge record for admin reports
                 "elo_multiplier_winner": elo_multiplier_winner,
                 "elo_multiplier_loser": elo_multiplier_loser,
                 "guild_id": guild_id,
             }
 
-            # Report the match (handles winner ELO)
-            match_id, _, _, event_active = await winner_report(
-                ctx.author.id,  # reporter_id (admin)
-                winner.id,
-                winner_name,
-                True,
-                loser.id,
-                loser_name,
-                "n",  # first_player default
-                0,  # match_time default
-                "Admin reported challenge match",  # curiosa_link
-                "Challenge match reported by admin",  # match_comment
-                winner.id,  # interaction_user_id
-                winner_name,  # interaction_global
+            # Determine ELO multipliers (non-Top16 wins → stakes apply)
+            challenge_elo_mult_winner = 1.0
+            challenge_elo_mult_loser = 1.0
+            if winner.id != top16_player.id:
+                challenge_elo_mult_winner = elo_multiplier_winner
+                challenge_elo_mult_loser = elo_multiplier_loser
+
+            match_id, _, _, _, _, event_active = await record_match(
+                reporter_id=ctx.author.id,
+                winner_id=winner.id,
+                winner_global=winner_name,
+                loser_id=loser.id,
+                loser_global=loser_name,
+                first_player="n",
+                match_time=0,
+                match_comment="Challenge match reported by admin",
                 winner_deck_url=None,
                 loser_deck_url=None,
                 winner_went_first=None,
                 loser_went_first=None,
+                elo_multiplier_winner=challenge_elo_mult_winner,
+                elo_multiplier_loser=challenge_elo_mult_loser,
             )
 
-            # Apply ladder ELO logic (handles loser ELO, multipliers, role assignment)
+            # Assign role if non-Top16 won; complete challenge record
             stakes_msg = await _apply_ladder_elo(
                 self.bot, ladder_info,
                 winner.id, winner_name,
@@ -2212,7 +2186,7 @@ class LFGCog(commands.Cog):
                 f"**Match ID:** #{match_id}\n"
                 f"**Winner:** {winner.mention} ({winner_name})\n"
                 f"**Loser:** {loser.mention} ({loser_name})\n"
-                f"**Challenger (Top 16):** {challenger.mention}\n"
+                f"**Top 16 Player:** {top16_player.mention}\n"
                 f"**Stakes:** {stakes_label}\n"
                 f"**Status:** {elo_status}"
             )
@@ -2239,14 +2213,14 @@ class LFGCog(commands.Cog):
                 "admin_challenge_report",
                 target_id=winner.id,
                 target_name=winner_name,
-                previous_state={"winner_id": winner.id, "loser_id": loser.id, "challenger_id": challenger.id},
+                previous_state={"winner_id": winner.id, "loser_id": loser.id, "top16_player_id": top16_player.id},
                 new_state={"match_id": match_id, "elo_status": elo_status, "stakes": stakes_label},
-                details=f"Admin reported challenge match #{match_id}: {winner_name} beat {loser_name} (challenger: {challenger.display_name})",
+                details=f"Admin reported challenge match #{match_id}: {winner_name} beat {loser_name} (top16_player: {top16_player.display_name})",
             )
 
             logger.info(
                 f"Admin {ctx.author} (ID: {ctx.author.id}) reported challenge match: "
-                f"{winner_name} beat {loser_name} (challenger: {challenger.display_name}, {stakes_label})"
+                f"{winner_name} beat {loser_name} (top16_player: {top16_player.display_name}, {stakes_label})"
             )
 
         except Exception as e:
@@ -2609,144 +2583,49 @@ class LFGCog(commands.Cog):
     @commands.command()
     @is_bot_admin()
     async def recalculate_event_elo(self, ctx):
-        """
-        Recalculate all event ELO from scratch based on match records.
-        This fixes any event_elo discrepancies by replaying all matches since event start.
-        Usage: !recalculate_event_elo
-        """
-        from utils.database import get_active_event, update_elo, calculate_event_k_value
-        import sqlite3
-
-        active_event = get_active_event()
-        if not active_event:
-            await ctx.send("No active event. Nothing to recalculate.")
-            return
-
-        event_start = active_event["start_date"]
-        event_start_str = event_start.isoformat()
-        event_name = active_event["event_name"]
-
-        await ctx.send(
-            f"\U0001f504 Recalculating event ELO for **{event_name}**... This may take a moment."
-        )
-
+        """Recalculate all event ELO from scratch by replaying match records. Usage: !recalculate_event_elo"""
+        await ctx.send("\U0001f504 Recalculating event ELO... This may take a moment.")
         try:
-            # Connect to databases
-            elo_conn = sqlite3.connect("elo.db")
-            elo_cur = elo_conn.cursor()
+            result = recalculate_event_elo()
 
-            match_conn = sqlite3.connect("match_records.db")
-            match_cur = match_conn.cursor()
-
-            # Step 1: Reset all event_elo to 1500
-            elo_cur.execute("UPDATE overall_standings SET event_elo = 1500")
-            reset_count = elo_cur.rowcount
-            elo_conn.commit()
-
-            # Step 2: Get all matches since event started
-            match_cur.execute(
-                """
-                SELECT rowid, winner_id, winner_display_name, losser_id, losser_display_name, timestamp
-                FROM match_records
-                WHERE timestamp >= ?
-                ORDER BY timestamp ASC
-            """,
-                (event_start_str,),
-            )
-            matches = match_cur.fetchall()
-
-            # Step 3: Replay each match
-            player_elos = {}  # user_id -> event_elo
-
-            for match in matches:
-                _, winner_id, _, loser_id, _, _ = match
-                k_value = calculate_event_k_value(event_start)
-
-                winner_elo = player_elos.get(winner_id, 1500)
-                loser_elo = player_elos.get(loser_id, 1500)
-
-                new_winner_elo = update_elo(winner_elo, loser_elo, True, k=k_value)
-                new_loser_elo = update_elo(loser_elo, winner_elo, False, k=k_value)
-
-                player_elos[winner_id] = new_winner_elo
-                player_elos[loser_id] = new_loser_elo
-
-            # Step 4: Write updated event_elos to database (always write, even if 1500)
-            updates = 0
-            for user_id, event_elo in player_elos.items():
-                elo_cur.execute(
-                    "UPDATE overall_standings SET event_elo = ? WHERE user_id = ?",
-                    (event_elo, user_id),
-                )
-                updates += 1
-
-            elo_conn.commit()
-
-            # Get top players (those who participated in event matches)
-            participant_ids = set(player_elos.keys())
-            elo_cur.execute("""
-                SELECT user_id, user_display_name, event_elo
-                FROM overall_standings
-                ORDER BY event_elo DESC
-            """)
-            top_players = [(name, elo) for uid, name, elo in elo_cur.fetchall()
-                           if uid in participant_ids][:5]
-
-            elo_conn.close()
-            match_conn.close()
-
-            # Build response
             embed = discord.Embed(
                 title="Event ELO Recalculated",
-                description=f"Successfully recalculated ELO for **{event_name}**",
+                description=f"Successfully recalculated ELO for **{result['event_name']}**",
                 color=discord.Color.green(),
             )
-
             embed.add_field(
                 name="Summary",
                 value=(
-                    f"**Players Reset:** {reset_count}\n"
-                    f"**Matches Replayed:** {len(matches)}\n"
-                    f"**Players Updated:** {updates}"
+                    f"**Players Reset:** {result['players_reset']}\n"
+                    f"**Matches Replayed:** {result['matches_replayed']}\n"
+                    f"**Players Updated:** {result['players_updated']}"
                 ),
                 inline=False,
             )
-
-            if top_players:
+            if result["top_players"]:
                 top_str = "\n".join(
-                    [
-                        f"{i + 1}. {name} ({elo})"
-                        for i, (name, elo) in enumerate(top_players)
-                    ]
+                    f"{i + 1}. {name} ({elo})"
+                    for i, (name, elo) in enumerate(result["top_players"])
                 )
-                embed.add_field(
-                    name="Top 5 Players",
-                    value=top_str,
-                    inline=False,
-                )
+                embed.add_field(name="Top 5 Players", value=top_str, inline=False)
 
             embed.set_footer(text=f"Recalculated by {ctx.author.display_name}")
             await ctx.send(embed=embed)
-
-            # Update leaderboard
             await self.update_leaderboard()
 
             log_admin_action(
                 ctx.author.id,
                 ctx.author.display_name,
                 "recalculate_event_elo",
-                previous_state={"players_reset": reset_count},
+                previous_state={"players_reset": result["players_reset"]},
                 new_state={
-                    "matches_replayed": len(matches),
-                    "players_updated": updates,
+                    "matches_replayed": result["matches_replayed"],
+                    "players_updated": result["players_updated"],
                 },
-                details=f"Recalculated event ELO for '{event_name}': {len(matches)} matches replayed, {updates} players updated",
+                details=f"Recalculated event ELO for '{result['event_name']}': {result['matches_replayed']} matches replayed, {result['players_updated']} players updated",
             )
-
-            logger.info(
-                f"Event ELO recalculated by {ctx.author} - {len(matches)} matches replayed"
-            )
-
+        except ValueError as e:
+            await ctx.send(str(e))
         except Exception as e:
             await ctx.send(f"\u274c Error recalculating ELO: {str(e)}")
             logger.error(f"Failed to recalculate event ELO: {e}")
@@ -2763,70 +2642,32 @@ class LFGCog(commands.Cog):
     @is_bot_admin()
     async def spot_elo_reset(self, ctx, user: discord.Member = None, elo: int = None):
         """Admin command to set a specific user's event ELO. Usage: !spot_elo_reset @user 1500"""
-        import sqlite3
         from utils.database import get_active_event
 
-        # Validate arguments
         if user is None:
             await ctx.send("Please mention a user. Usage: `!spot_elo_reset @user 1500`")
             return
-
         if elo is None:
-            await ctx.send(
-                "Please specify an ELO value. Usage: `!spot_elo_reset @user 1500`"
-            )
+            await ctx.send("Please specify an ELO value. Usage: `!spot_elo_reset @user 1500`")
             return
-
         if elo < 0 or elo > 5000:
             await ctx.send("ELO must be between 0 and 5000.")
             return
-
         if user.bot:
             await ctx.send("Cannot set ELO for bots!")
             return
 
-        # Require an active event
         active_event = get_active_event()
         if not active_event:
             await ctx.send("No active event. Start an event first before updating ELO.")
             return
 
         try:
-            # Get display name with fallback
             user_name = user.global_name or user.display_name
+            old_elo = set_player_event_elo(user.id, user_name, elo)
 
-            # Connect to database
-            conn = sqlite3.connect("elo.db")
-            cursor = conn.cursor()
-
-            # Check if user exists in database
-            cursor.execute(
-                "SELECT online_event_elo FROM overall_standings WHERE user_id = ?", (user.id,)
-            )
-            result = cursor.fetchone()
-
-            old_elo = result[0] if result else None
-
-            if result:
-                # Update existing user's event ELO (both legacy and dual-ELO columns)
-                cursor.execute(
-                    "UPDATE overall_standings SET event_elo = ?, online_event_elo = ?, user_display_name = ? WHERE user_id = ?",
-                    (elo, elo, user_name, user.id),
-                )
-            else:
-                # Insert new user with event ELO (both legacy and dual-ELO columns)
-                cursor.execute(
-                    "INSERT INTO overall_standings (user_id, user_display_name, elo, event_elo, online_elo, online_event_elo) VALUES (?, ?, 1500, ?, 1500, ?)",
-                    (user.id, user_name, elo, elo),
-                )
-
-            conn.commit()
-            conn.close()
-
-            # Update leaderboard
             await self.update_leaderboard()
 
-            # Send confirmation
             if old_elo is not None:
                 success_embed = discord.Embed(
                     title="Event ELO Updated",
@@ -2854,10 +2695,6 @@ class LFGCog(commands.Cog):
                 details=f"Set {user_name}'s event ELO from {old_elo} to {elo} during '{active_event['event_name']}'",
             )
 
-            logger.info(
-                f"Admin {ctx.author} (ID: {ctx.author.id}) set event ELO for {user_name} (ID: {user.id}) to {elo} (was: {old_elo}) during event '{active_event['event_name']}'"
-            )
-
         except Exception as e:
             error_embed = discord.Embed(
                 title="ELO Update Failed",
@@ -2878,318 +2715,36 @@ class LFGCog(commands.Cog):
     @commands.command()
     @is_bot_admin()
     async def correct_match(self, ctx, match_id: int = None):
-        """Admin command to correct a match by flipping the outcome and recalculating all affected ELO.
-        Usage: !correct_match <match_id>
-
-        This command will:
-        1. Flip the winner/loser of the specified match
-        2. Recalculate ELO for all matches that happened after it involving either player
-        """
-        import sqlite3
-        from utils.database import update_elo
-
-        # Validate arguments
+        """Correct a match by flipping outcome and cascade-recalculating ELO. Usage: !correct_match <match_id>"""
         if match_id is None:
-            await ctx.send(
-                "Please provide a match ID. Usage: `!correct_match <match_id>`"
-            )
+            await ctx.send("Please provide a match ID. Usage: `!correct_match <match_id>`")
             return
 
+        status_msg = await ctx.send("Analyzing match history...")
         try:
-            # Send initial status message
-            status_msg = await ctx.send("Analyzing match history...")
+            result = correct_match_record(match_id)
 
-            # Connect to databases
-            elo_conn = sqlite3.connect("elo.db")
-            elo_cursor = elo_conn.cursor()
-
-            match_conn = sqlite3.connect("match_records.db")
-            match_cursor = match_conn.cursor()
-
-            # Get the match to correct
-            match_cursor.execute(
-                """
-                SELECT rowid, winner_id, losser_id, winner_display_name, losser_display_name,
-                       timestamp, winner_elo_change, loser_elo_change
-                FROM match_records
-                WHERE rowid = ?
-                """,
-                (match_id,),
-            )
-            target_match = match_cursor.fetchone()
-
-            if not target_match:
-                await status_msg.edit(content=f"Match ID #{match_id} not found.")
-                elo_conn.close()
-                match_conn.close()
-                return
-
-            (
-                target_match_id,
-                original_winner_id,
-                original_loser_id,
-                original_winner_name,
-                original_loser_name,
-                target_timestamp,
-                target_winner_elo_change,
-                target_loser_elo_change,
-            ) = target_match
-
-            # Get all affected players (both from the target match)
-            affected_players = {original_winner_id, original_loser_id}
-
-            # Find ALL matches after this one that involve either player
-            # We need to recalculate these in order
-            match_cursor.execute(
-                """
-                SELECT rowid, winner_id, losser_id, winner_display_name, losser_display_name,
-                       timestamp, winner_elo_change, loser_elo_change
-                FROM match_records
-                WHERE timestamp > ?
-                AND (winner_id IN (?, ?) OR losser_id IN (?, ?))
-                ORDER BY timestamp ASC
-                """,
-                (
-                    target_timestamp,
-                    original_winner_id,
-                    original_loser_id,
-                    original_winner_id,
-                    original_loser_id,
-                ),
-            )
-            subsequent_matches = match_cursor.fetchall()
-
-            await status_msg.edit(
-                content=f"Found {len(subsequent_matches)} matches to recalculate..."
-            )
-
-            # Collect all players that will be affected (cascade effect)
-            all_affected_matches = [target_match] + list(subsequent_matches)
-            for match in subsequent_matches:
-                affected_players.add(match[1])  # winner_id
-                affected_players.add(match[2])  # loser_id
-
-            # Step 1: Revert ELO for all affected matches (in REVERSE order)
-            await status_msg.edit(content="Reverting ELO changes...")
-
-            # First, revert subsequent matches in reverse chronological order
-            for match in reversed(subsequent_matches):
-                m_id, w_id, l_id, w_name, l_name, ts, w_elo_change, l_elo_change = match
-
-                if w_elo_change:
-                    elo_cursor.execute(
-                        "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ? WHERE user_id = ?",
-                        (w_elo_change, w_elo_change, w_id),
-                    )
-                if l_elo_change:
-                    elo_cursor.execute(
-                        "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ? WHERE user_id = ?",
-                        (l_elo_change, l_elo_change, l_id),
-                    )
-
-            # Then revert the target match
-            if target_winner_elo_change:
-                elo_cursor.execute(
-                    "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ? WHERE user_id = ?",
-                    (
-                        target_winner_elo_change,
-                        target_winner_elo_change,
-                        original_winner_id,
-                    ),
-                )
-            if target_loser_elo_change:
-                elo_cursor.execute(
-                    "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ? WHERE user_id = ?",
-                    (
-                        target_loser_elo_change,
-                        target_loser_elo_change,
-                        original_loser_id,
-                    ),
-                )
-
-            elo_conn.commit()
-
-            # Step 2: Flip the target match outcome in the database
-            await status_msg.edit(content="Flipping match outcome...")
-
-            # Swap winner and loser
-            new_winner_id = original_loser_id
-            new_winner_name = original_loser_name
-            new_loser_id = original_winner_id
-            new_loser_name = original_winner_name
-
-            # Step 3: Recalculate ELO for the corrected match
-            # Get current ELO for both players
-            elo_cursor.execute(
-                "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?",
-                (new_winner_id,),
-            )
-            row = elo_cursor.fetchone()
-            new_winner_elo_before = row[0] if row else 1500
-            new_winner_event_elo_before = row[1] if row and row[1] else 1500
-
-            elo_cursor.execute(
-                "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?",
-                (new_loser_id,),
-            )
-            row = elo_cursor.fetchone()
-            new_loser_elo_before = row[0] if row else 1500
-            new_loser_event_elo_before = row[1] if row and row[1] else 1500
-
-            # Calculate new ELO changes (lifetime K=32)
-            new_winner_elo_after = update_elo(
-                new_winner_elo_before, new_loser_elo_before, True
-            )
-            new_loser_elo_after = update_elo(
-                new_loser_elo_before, new_winner_elo_before, False
-            )
-
-            # Calculate new event ELO changes
-            new_winner_event_elo_after = update_elo(
-                new_winner_event_elo_before, new_loser_event_elo_before, True
-            )
-            new_loser_event_elo_after = update_elo(
-                new_loser_event_elo_before, new_winner_event_elo_before, False
-            )
-
-            new_winner_elo_change = new_winner_elo_after - new_winner_elo_before
-            new_loser_elo_change = new_loser_elo_after - new_loser_elo_before
-
-            # Update both lifetime and event ELO in database
-            elo_cursor.execute(
-                "UPDATE overall_standings SET elo = ?, event_elo = ? WHERE user_id = ?",
-                (new_winner_elo_after, new_winner_event_elo_after, new_winner_id),
-            )
-            elo_cursor.execute(
-                "UPDATE overall_standings SET elo = ?, event_elo = ? WHERE user_id = ?",
-                (new_loser_elo_after, new_loser_event_elo_after, new_loser_id),
-            )
-
-            # Update the match record with flipped outcome
-            match_cursor.execute(
-                """
-                UPDATE match_records
-                SET winner_id = ?, winner_display_name = ?,
-                    losser_id = ?, losser_display_name = ?,
-                    winner_elo_change = ?, loser_elo_change = ?
-                WHERE rowid = ?
-                """,
-                (
-                    new_winner_id,
-                    new_winner_name,
-                    new_loser_id,
-                    new_loser_name,
-                    new_winner_elo_change,
-                    new_loser_elo_change,
-                    match_id,
-                ),
-            )
-
-            elo_conn.commit()
-            match_conn.commit()
-
-            # Step 4: Recalculate ELO for all subsequent matches in chronological order
-            await status_msg.edit(
-                content=f"Recalculating {len(subsequent_matches)} subsequent matches..."
-            )
-
-            recalculated_count = 0
-            for match in subsequent_matches:
-                (
-                    m_id,
-                    w_id,
-                    l_id,
-                    w_name,
-                    l_name,
-                    ts,
-                    old_w_elo_change,
-                    old_l_elo_change,
-                ) = match
-
-                # Get current ELO for both players
-                elo_cursor.execute(
-                    "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?",
-                    (w_id,),
-                )
-                row = elo_cursor.fetchone()
-                winner_elo_before = row[0] if row else 1500
-                winner_event_elo_before = row[1] if row and row[1] else 1500
-
-                elo_cursor.execute(
-                    "SELECT elo, event_elo FROM overall_standings WHERE user_id = ?",
-                    (l_id,),
-                )
-                row = elo_cursor.fetchone()
-                loser_elo_before = row[0] if row else 1500
-                loser_event_elo_before = row[1] if row and row[1] else 1500
-
-                # Calculate new lifetime ELO
-                winner_elo_after = update_elo(winner_elo_before, loser_elo_before, True)
-                loser_elo_after = update_elo(loser_elo_before, winner_elo_before, False)
-
-                # Calculate new event ELO
-                winner_event_elo_after = update_elo(
-                    winner_event_elo_before, loser_event_elo_before, True
-                )
-                loser_event_elo_after = update_elo(
-                    loser_event_elo_before, winner_event_elo_before, False
-                )
-
-                w_elo_change = winner_elo_after - winner_elo_before
-                l_elo_change = loser_elo_after - loser_elo_before
-
-                # Update both lifetime and event ELO in database
-                elo_cursor.execute(
-                    "UPDATE overall_standings SET elo = ?, event_elo = ? WHERE user_id = ?",
-                    (winner_elo_after, winner_event_elo_after, w_id),
-                )
-                elo_cursor.execute(
-                    "UPDATE overall_standings SET elo = ?, event_elo = ? WHERE user_id = ?",
-                    (loser_elo_after, loser_event_elo_after, l_id),
-                )
-
-                # Update the match record with new ELO changes
-                match_cursor.execute(
-                    """
-                    UPDATE match_records
-                    SET winner_elo_change = ?, loser_elo_change = ?
-                    WHERE rowid = ?
-                    """,
-                    (w_elo_change, l_elo_change, m_id),
-                )
-
-                recalculated_count += 1
-
-            elo_conn.commit()
-            match_conn.commit()
-            elo_conn.close()
-            match_conn.close()
-
-            # Update leaderboard
-            await self.update_leaderboard()
-
-            # Send confirmation
             success_embed = discord.Embed(
                 title="Match Corrected",
                 description=(
                     f"**Match ID:** #{match_id}\n\n"
                     f"**Original Result:**\n"
-                    f"~~Winner: {original_winner_name}~~\n"
-                    f"~~Loser: {original_loser_name}~~\n\n"
+                    f"~~Winner: {result['original_winner_name']}~~\n"
+                    f"~~Loser: {result['original_loser_name']}~~\n\n"
                     f"**Corrected Result:**\n"
-                    f"Winner: **{new_winner_name}** ({new_winner_elo_change:+d} ELO)\n"
-                    f"Loser: **{new_loser_name}** ({new_loser_elo_change:+d} ELO)"
+                    f"Winner: **{result['new_winner_name']}** ({result['new_winner_elo_change']:+d} ELO)\n"
+                    f"Loser: **{result['new_loser_name']}** ({result['new_loser_elo_change']:+d} ELO)"
                 ),
                 color=discord.Color.green(),
             )
             success_embed.add_field(
                 name="Cascade Recalculation",
-                value=f"Recalculated **{recalculated_count}** subsequent matches\nAffected **{len(affected_players)}** players",
+                value=f"Recalculated **{result['recalculated_count']}** subsequent matches\nAffected **{len(result['affected_players'])}** players",
                 inline=False,
             )
             success_embed.set_footer(text=f"Corrected by {ctx.author.display_name}")
-
             await status_msg.edit(content=None, embed=success_embed)
+            await self.update_leaderboard()
 
             log_admin_action(
                 ctx.author.id,
@@ -3197,38 +2752,26 @@ class LFGCog(commands.Cog):
                 "correct_match",
                 target_id=match_id,
                 previous_state={
-                    "winner_id": original_winner_id,
-                    "winner_name": original_winner_name,
-                    "loser_id": original_loser_id,
-                    "loser_name": original_loser_name,
+                    "winner_name": result["original_winner_name"],
+                    "loser_name": result["original_loser_name"],
                 },
                 new_state={
-                    "winner_id": new_winner_id,
-                    "winner_name": new_winner_name,
-                    "loser_id": new_loser_id,
-                    "loser_name": new_loser_name,
-                    "recalculated_matches": recalculated_count,
+                    "winner_name": result["new_winner_name"],
+                    "loser_name": result["new_loser_name"],
+                    "recalculated_matches": result["recalculated_count"],
                 },
-                details=f"Corrected match #{match_id}: winner flipped from {original_winner_name} to {new_winner_name}, {recalculated_count} subsequent matches recalculated",
+                details=f"Corrected match #{match_id}: winner flipped from {result['original_winner_name']} to {result['new_winner_name']}, {result['recalculated_count']} subsequent matches recalculated",
             )
-
-            logger.info(
-                f"Admin {ctx.author} (ID: {ctx.author.id}) corrected match #{match_id}: "
-                f"{original_winner_name} -> {new_winner_name} (winner). "
-                f"Recalculated {recalculated_count} subsequent matches."
-            )
-
+        except ValueError as e:
+            await status_msg.edit(content=str(e))
         except Exception as e:
             error_embed = discord.Embed(
                 title="Match Correction Failed",
                 description=f"An error occurred: {str(e)}",
                 color=discord.Color.red(),
             )
-            await ctx.send(embed=error_embed)
+            await status_msg.edit(content=None, embed=error_embed)
             logger.error(f"Match correction failed: {e}")
-            import traceback
-
-            traceback.print_exc()
 
     @correct_match.error
     async def correct_match_error(self, ctx, error):
@@ -3243,160 +2786,28 @@ class LFGCog(commands.Cog):
     @commands.command()
     @is_bot_admin()
     async def remove_match(self, ctx, match_id: int = None):
-        """Admin command to remove a match report and revert ELO changes. Usage: !remove_match <match_id>"""
-        import sqlite3
-
-        # Validate arguments
+        """Remove a match report and revert ELO changes. Usage: !remove_match <match_id>"""
         if match_id is None:
-            await ctx.send(
-                "Please provide a match ID. Usage: `!remove_match <match_id>`"
-            )
+            await ctx.send("Please provide a match ID. Usage: `!remove_match <match_id>`")
             return
 
         try:
-            # Connect to databases
-            elo_conn = sqlite3.connect("elo.db")
-            elo_cursor = elo_conn.cursor()
+            result = remove_match_record(match_id)
 
-            match_conn = sqlite3.connect("match_records.db")
-            match_cursor = match_conn.cursor()
-
-            # Get the match record (use ROWID as fallback if match_id column doesn't exist)
-            try:
-                match_cursor.execute(
-                    """
-                    SELECT match_id, winner_id, losser_id, winner_display_name, losser_display_name,
-                           winner_elo_change, loser_elo_change,
-                           winner_lifetime_elo_change, loser_lifetime_elo_change, timestamp
-                    FROM match_records
-                    WHERE match_id = ?
-                    """,
-                    (match_id,),
-                )
-            except sqlite3.OperationalError:
-                # Fallback: column might be named differently or use ROWID, or old schema without lifetime columns
-                match_cursor.execute(
-                    """
-                    SELECT ROWID, winner_id, losser_id, winner_display_name, losser_display_name,
-                           winner_elo_change, loser_elo_change, timestamp
-                    FROM match_records
-                    WHERE ROWID = ?
-                    """,
-                    (match_id,),
-                )
-            match = match_cursor.fetchone()
-
-            if not match:
-                await ctx.send(f"Match ID #{match_id} not found.")
-                elo_conn.close()
-                match_conn.close()
-                return
-
-            # Parse match data based on number of columns returned
-            if len(match) == 10:  # New schema with lifetime changes
-                (
-                    match_id_db,
-                    winner_id,
-                    loser_id,
-                    winner_name,
-                    loser_name,
-                    winner_elo_change,
-                    loser_elo_change,
-                    winner_lifetime_elo_change,
-                    loser_lifetime_elo_change,
-                    timestamp,
-                ) = match
-            else:  # Old schema without lifetime changes
-                (
-                    match_id_db,
-                    winner_id,
-                    loser_id,
-                    winner_name,
-                    loser_name,
-                    winner_elo_change,
-                    loser_elo_change,
-                    timestamp,
-                ) = match
-                # Fallback: use event change for lifetime (same as old behavior)
-                winner_lifetime_elo_change = winner_elo_change
-                loser_lifetime_elo_change = loser_elo_change
-
-            # Revert ELO changes using separate lifetime and event changes
-            reverted_info = []
-
-            # Revert winner's ELO
-            if winner_lifetime_elo_change or winner_elo_change:
-                # Revert lifetime ELO (using online_elo and elo for backwards compat)
-                lifetime_revert = (
-                    winner_lifetime_elo_change if winner_lifetime_elo_change else 0
-                )
-                # Revert event ELO
-                event_revert = winner_elo_change if winner_elo_change else 0
-
-                elo_cursor.execute(
-                    "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ?, online_elo = online_elo - ?, online_event_elo = online_event_elo - ? WHERE user_id = ?",
-                    (
-                        lifetime_revert,
-                        event_revert,
-                        lifetime_revert,
-                        event_revert,
-                        winner_id,
-                    ),
-                )
-                reverted_info.append(
-                    f"**{winner_name}**: Lifetime -{lifetime_revert}, Event -{event_revert} ELO"
-                )
-
-            # Revert loser's ELO
-            if loser_lifetime_elo_change or loser_elo_change:
-                # Revert lifetime ELO (loser_lifetime_elo_change is negative, so subtracting adds it back)
-                lifetime_revert = (
-                    loser_lifetime_elo_change if loser_lifetime_elo_change else 0
-                )
-                # Revert event ELO (loser_elo_change is negative, so subtracting adds it back)
-                event_revert = loser_elo_change if loser_elo_change else 0
-
-                elo_cursor.execute(
-                    "UPDATE overall_standings SET elo = elo - ?, event_elo = event_elo - ?, online_elo = online_elo - ?, online_event_elo = online_event_elo - ? WHERE user_id = ?",
-                    (
-                        lifetime_revert,
-                        event_revert,
-                        lifetime_revert,
-                        event_revert,
-                        loser_id,
-                    ),
-                )
-                reverted_info.append(
-                    f"**{loser_name}**: Lifetime +{-lifetime_revert if lifetime_revert else 0}, Event +{-event_revert if event_revert else 0} ELO"
-                )
-
-            # Delete the match record (use ROWID to be compatible with older schema)
-            try:
-                match_cursor.execute(
-                    "DELETE FROM match_records WHERE match_id = ?", (match_id,)
-                )
-            except sqlite3.OperationalError:
-                match_cursor.execute(
-                    "DELETE FROM match_records WHERE ROWID = ?", (match_id,)
-                )
-
-            elo_conn.commit()
-            match_conn.commit()
-            elo_conn.close()
-            match_conn.close()
-
-            # Update leaderboard
-            await self.update_leaderboard()
-
-            # Send confirmation
             success_embed = discord.Embed(
                 title="Match Removed",
-                description=f"**Match ID:** #{match_id}\n**Winner:** {winner_name}\n**Loser:** {loser_name}\n**Date:** {timestamp}\n\n**ELO Reverted:**\n"
-                + "\n".join(reverted_info),
+                description=(
+                    f"**Match ID:** #{match_id}\n"
+                    f"**Winner:** {result['winner_name']}\n"
+                    f"**Loser:** {result['loser_name']}\n"
+                    f"**Date:** {result['timestamp']}\n\n"
+                    f"**ELO Reverted:**\n" + "\n".join(result["reverted_info"])
+                ),
                 color=discord.Color.orange(),
             )
             success_embed.set_footer(text=f"Removed by {ctx.author.display_name}")
             await ctx.send(embed=success_embed)
+            await self.update_leaderboard()
 
             log_admin_action(
                 ctx.author.id,
@@ -3404,21 +2815,15 @@ class LFGCog(commands.Cog):
                 "remove_match",
                 target_id=match_id,
                 previous_state={
-                    "match_id": match_id,
-                    "winner_id": winner_id,
-                    "winner_name": winner_name,
-                    "loser_id": loser_id,
-                    "loser_name": loser_name,
-                    "timestamp": timestamp,
+                    "winner_name": result["winner_name"],
+                    "loser_name": result["loser_name"],
+                    "timestamp": result["timestamp"],
                 },
                 new_state={"result": "match deleted"},
-                details=f"Removed match #{match_id}: {winner_name} vs {loser_name} ({timestamp})",
+                details=f"Removed match #{match_id}: {result['winner_name']} vs {result['loser_name']} ({result['timestamp']})",
             )
-
-            logger.info(
-                f"Admin {ctx.author} (ID: {ctx.author.id}) removed match #{match_id}: {winner_name} vs {loser_name}"
-            )
-
+        except ValueError as e:
+            await ctx.send(str(e))
         except Exception as e:
             error_embed = discord.Embed(
                 title="Match Removal Failed",
@@ -3684,7 +3089,7 @@ class LFGCog(commands.Cog):
             conn = sqlite3.connect("elo.db")
             cur = conn.cursor()
             cur.execute(
-                "SELECT user_id, user_display_name, elo FROM overall_standings ORDER BY elo DESC"
+                "SELECT user_id, user_display_name, online_elo FROM overall_standings ORDER BY online_elo DESC"
             )
             rows = cur.fetchall()
             conn.close()
@@ -3736,7 +3141,7 @@ class LFGCog(commands.Cog):
             conn = sqlite3.connect("elo.db")
             cur = conn.cursor()
             cur.execute(
-                "SELECT user_id, user_display_name, elo FROM overall_standings ORDER BY elo DESC"
+                "SELECT user_id, user_display_name, online_elo FROM overall_standings ORDER BY online_elo DESC"
             )
             rows = cur.fetchall()
             conn.close()
@@ -3790,112 +3195,18 @@ class LFGCog(commands.Cog):
     @commands.command()
     @is_bot_admin()
     async def remove_player(self, ctx, user: discord.Member = None):
-        """Admin command to remove a player and revert all ELO changes from their matches. Usage: !remove_player @user"""
-        import sqlite3
-
-        # Validate arguments
+        """Remove a player and revert all ELO changes from their matches. Usage: !remove_player @user"""
         if user is None:
             await ctx.send("Please mention a user. Usage: `!remove_player @user`")
             return
-
         if user.bot:
             await ctx.send("Cannot remove bots!")
             return
 
         try:
             user_name = user.global_name or user.display_name
+            result = remove_player_service(user.id, user_name)
 
-            # Connect to databases
-            elo_conn = sqlite3.connect("elo.db")
-            elo_cursor = elo_conn.cursor()
-
-            match_conn = sqlite3.connect("match_records.db")
-            match_cursor = match_conn.cursor()
-
-            # Get all matches involving this player
-            match_cursor.execute(
-                """
-                SELECT winner_id, losser_id, winner_elo_change, loser_elo_change, winner_display_name, losser_display_name
-                FROM match_records
-                WHERE winner_id = ? OR losser_id = ?
-                """,
-                (user.id, user.id),
-            )
-            matches = match_cursor.fetchall()
-
-            if not matches:
-                await ctx.send(
-                    f"No matches found for {user.mention}. Nothing to remove."
-                )
-                elo_conn.close()
-                match_conn.close()
-                return
-
-            # Track ELO adjustments for opponents
-            elo_adjustments = {}  # {user_id: (adjustment, display_name)}
-
-            for (
-                winner_id,
-                loser_id,
-                winner_elo_change,
-                loser_elo_change,
-                winner_name,
-                loser_name,
-            ) in matches:
-                if winner_id == user.id:
-                    # User won this match - revert ELO gain for opponent (loser)
-                    if loser_id and loser_elo_change:
-                        if loser_id not in elo_adjustments:
-                            elo_adjustments[loser_id] = (0, loser_name)
-                        current_adj, name = elo_adjustments[loser_id]
-                        elo_adjustments[loser_id] = (
-                            current_adj - loser_elo_change,
-                            name,
-                        )
-                else:
-                    # User lost this match - revert ELO gain for opponent (winner)
-                    if winner_id and winner_elo_change:
-                        if winner_id not in elo_adjustments:
-                            elo_adjustments[winner_id] = (0, winner_name)
-                        current_adj, name = elo_adjustments[winner_id]
-                        elo_adjustments[winner_id] = (
-                            current_adj - winner_elo_change,
-                            name,
-                        )
-
-            # Apply ELO adjustments to opponents (both lifetime and event)
-            adjustments_made = []
-            for opponent_id, (adjustment, opponent_name) in elo_adjustments.items():
-                if adjustment != 0:
-                    elo_cursor.execute(
-                        "UPDATE overall_standings SET elo = elo + ?, event_elo = event_elo + ? WHERE user_id = ?",
-                        (adjustment, adjustment, opponent_id),
-                    )
-                    adjustments_made.append(f"{opponent_name}: {adjustment:+d}")
-
-            # Delete all matches involving this player from match_records
-            match_cursor.execute(
-                "DELETE FROM match_records WHERE winner_id = ? OR losser_id = ?",
-                (user.id, user.id),
-            )
-            matches_deleted = match_cursor.rowcount
-
-            # Remove player from ELO standings
-            elo_cursor.execute(
-                "DELETE FROM overall_standings WHERE user_id = ?", (user.id,)
-            )
-            player_removed = elo_cursor.rowcount > 0
-
-            # Commit changes
-            elo_conn.commit()
-            match_conn.commit()
-            elo_conn.close()
-            match_conn.close()
-
-            # Update leaderboard
-            await self.update_leaderboard()
-
-            # Send confirmation
             embed = discord.Embed(
                 title="Player Removed",
                 description=f"**Player:** {user.mention} ({user_name})",
@@ -3903,17 +3214,16 @@ class LFGCog(commands.Cog):
             )
             embed.add_field(
                 name="Matches Deleted",
-                value=f"{matches_deleted} ranked match(es)",
+                value=f"{result['matches_deleted']} ranked match(es)",
                 inline=False,
             )
 
+            adjustments_made = result["adjustments_made"]
             if adjustments_made:
                 adjustments_text = "\n".join(adjustments_made[:10])
                 if len(adjustments_made) > 10:
                     adjustments_text += f"\n... and {len(adjustments_made) - 10} more"
-                embed.add_field(
-                    name="ELO Adjustments", value=adjustments_text, inline=False
-                )
+                embed.add_field(name="ELO Adjustments", value=adjustments_text, inline=False)
             else:
                 embed.add_field(
                     name="ELO Adjustments",
@@ -3923,12 +3233,12 @@ class LFGCog(commands.Cog):
 
             embed.add_field(
                 name="Player ELO Removed",
-                value="Yes" if player_removed else "Player was not in ELO standings",
+                value="Yes" if result["player_removed"] else "Player was not in ELO standings",
                 inline=False,
             )
-
             embed.set_footer(text=f"Removed by {ctx.author.display_name}")
             await ctx.send(embed=embed)
+            await self.update_leaderboard()
 
             log_admin_action(
                 ctx.author.id,
@@ -3937,19 +3247,14 @@ class LFGCog(commands.Cog):
                 target_id=user.id,
                 target_name=user_name,
                 previous_state={
-                    "matches": matches_deleted,
+                    "matches": result["matches_deleted"],
                     "opponents_adjusted": len(adjustments_made),
                 },
                 new_state={"result": "player removed"},
-                details=f"Removed player {user_name}: {matches_deleted} matches deleted, {len(adjustments_made)} opponents adjusted",
+                details=f"Removed player {user_name}: {result['matches_deleted']} matches deleted, {len(adjustments_made)} opponents adjusted",
             )
-
-            logger.info(
-                f"Admin {ctx.author} (ID: {ctx.author.id}) removed player {user_name} (ID: {user.id}). "
-                f"Deleted {matches_deleted} matches. "
-                f"ELO adjustments: {elo_adjustments}"
-            )
-
+        except ValueError as e:
+            await ctx.send(str(e))
         except Exception as e:
             error_embed = discord.Embed(
                 title="Player Removal Failed",

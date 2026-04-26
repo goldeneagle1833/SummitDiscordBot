@@ -1,5 +1,5 @@
 from cogs.lfg.cog import LFGCog
-from cogs.lfg.match_reporting import LFGReportButtons
+from cogs.lfg.match_reporting import LFGReportButtons, MatchCardView
 from cogs.lfg.persistent_confirm import PersistentMatchConfirmView
 
 

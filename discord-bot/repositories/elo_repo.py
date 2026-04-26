@@ -145,26 +145,6 @@ def create_db():
     create_user_links_table()
 
 
-def create_challenge_db():
-    """Create the challenge_matches table if it doesn't exist."""
-    conn = sqlite3.connect("match_records.db")
-    cur = conn.cursor()
-
-    cur.execute("""CREATE TABLE IF NOT EXISTS challenge_matches
-                   (match_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    challenger_id INTEGER NOT NULL,
-                    challenged_id INTEGER NOT NULL,
-                    status TEXT NOT NULL,
-                    match_time DATETIME NOT NULL,
-                    winner_id INTEGER,
-                    curiosa_url TEXT,
-                    match_comment TEXT,
-                    json_deck_data TEXT
-                   )""")
-
-    conn.commit()
-    conn.close()
-
 
 def create_events_table():
     """Create the events table for tracking event-based ELO seasons."""
@@ -316,35 +296,15 @@ def create_active_pairings_table():
     conn.close()
 
 
-def ensure_event_elo_column():
-    """Add event_elo column to overall_standings if it doesn't exist."""
-    conn = sqlite3.connect("elo.db")
-    cur = conn.cursor()
-
-    try:
-        cur.execute(
-            "ALTER TABLE overall_standings ADD COLUMN event_elo INTEGER DEFAULT 1500"
-        )
-    except sqlite3.OperationalError:
-        pass  # Column already exists
-
-    conn.commit()
-    conn.close()
-
-
 _dual_elo_migrated = False
 
 
 def migrate_to_dual_elo_system():
-    """
-    Migrate to dual ELO system (paper vs online games).
+    """Ensure overall_standings has all required ELO columns.
 
-    Adds paper_elo, online_elo, paper_event_elo, online_event_elo columns.
-    Migrates existing data: elo → online_elo, event_elo → online_event_elo
-    (since all existing matches are from Discord bot).
-
-    This migration is idempotent - safe to run multiple times.
-    Uses a module-level flag to only run once per process.
+    Creates the table on first run (without legacy elo/event_elo columns).
+    Idempotent — safe to call on every startup.  Uses a module-level flag
+    to skip the PRAGMA check after the first successful run.
     """
     global _dual_elo_migrated
     if _dual_elo_migrated:
@@ -353,51 +313,35 @@ def migrate_to_dual_elo_system():
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
 
-    # Ensure overall_standings table exists
+    # Create table without legacy columns for new databases
     cur.execute("""CREATE TABLE IF NOT EXISTS overall_standings
-                   (user_id INTEGER PRIMARY KEY,
+                   (user_id           INTEGER PRIMARY KEY,
                     user_display_name TEXT,
-                    elo INTEGER DEFAULT 1500,
-                    event_elo INTEGER DEFAULT 1500
+                    online_elo        INTEGER DEFAULT 1500,
+                    online_event_elo  INTEGER DEFAULT 1500,
+                    paper_elo         INTEGER DEFAULT 1500,
+                    paper_event_elo   INTEGER DEFAULT 1500
                    )""")
 
-    # Check which columns exist
-    cur.execute("PRAGMA table_info(overall_standings)")
-    existing_columns = {col[1] for col in cur.fetchall()}
-
-    # Add paper_elo column
-    if "paper_elo" not in existing_columns:
-        logger.info("Adding paper_elo column to overall_standings")
-        cur.execute("ALTER TABLE overall_standings ADD COLUMN paper_elo INTEGER DEFAULT 1500")
-
-    # Add online_elo column
-    if "online_elo" not in existing_columns:
-        logger.info("Adding online_elo column to overall_standings")
-        cur.execute("ALTER TABLE overall_standings ADD COLUMN online_elo INTEGER DEFAULT 1500")
-
-        # Migrate existing elo data to online_elo (all current matches are Discord/online)
-        logger.info("Migrating existing elo data to online_elo")
-        cur.execute("UPDATE overall_standings SET online_elo = elo WHERE online_elo = 1500")
-
-    # Add paper_event_elo column
-    if "paper_event_elo" not in existing_columns:
-        logger.info("Adding paper_event_elo column to overall_standings")
-        cur.execute("ALTER TABLE overall_standings ADD COLUMN paper_event_elo INTEGER DEFAULT 1500")
-
-    # Add online_event_elo column
-    if "online_event_elo" not in existing_columns:
-        logger.info("Adding online_event_elo column to overall_standings")
-        cur.execute("ALTER TABLE overall_standings ADD COLUMN online_event_elo INTEGER DEFAULT 1500")
-
-        # Migrate existing event_elo data to online_event_elo (all current matches are Discord/online)
-        if "event_elo" in existing_columns:
-            logger.info("Migrating existing event_elo data to online_event_elo")
-            cur.execute("UPDATE overall_standings SET online_event_elo = event_elo WHERE online_event_elo = 1500")
+    # Add any missing columns to existing databases (ALTER TABLE is idempotent via try/except)
+    for col, default in (
+        ("paper_elo", 1500),
+        ("online_elo", 1500),
+        ("paper_event_elo", 1500),
+        ("online_event_elo", 1500),
+    ):
+        try:
+            cur.execute(
+                f"ALTER TABLE overall_standings ADD COLUMN {col} INTEGER DEFAULT {default}"
+            )
+            logger.info("Added %s column to overall_standings", col)
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
     conn.commit()
     conn.close()
     _dual_elo_migrated = True
-    logger.info("Dual ELO system migration completed successfully")
+    logger.info("overall_standings schema verified")
 
 
 def create_user_links_table():
@@ -771,36 +715,85 @@ def complete_ladder_challenge(challenge_id: int, winner_id: int, match_id: int =
     conn.close()
 
 
-async def save_challenge_match(
-    challenger_id: int, challenged_id: int, status: str, winner_id: int = None
+def update_both_player_elos(
+    winner_id: int,
+    winner_display_name: str,
+    new_winner_elo: int,
+    new_winner_event_elo: int,
+    loser_id: int,
+    loser_display_name: str,
+    new_loser_elo: int,
+    new_loser_event_elo: int,
 ):
-    """
-    Save a challenge match to the database.
+    """Update winner and loser ELO in elo.db in a single transaction.
 
-    Args:
-        challenger_id: ID of the player who initiated the challenge
-        challenged_id: ID of the player who was challenged
-        status: Match status ('pending', 'completed', 'declined', 'cancelled')
-        winner_id: ID of the winning player (if match is completed)
-    """
-    create_challenge_db()
-    conn = sqlite3.connect("match_records.db")
-    cursor = conn.cursor()
+    Handles new-player INSERT and existing-player UPDATE for both players
+    without opening a second connection.
 
+    Raises sqlite3.Error on failure (caller should not swallow it).
+    """
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
     try:
-        cursor.execute(
-            """
-            INSERT INTO challenge_matches
-            (challenger_id, challenged_id, status, match_time, winner_id)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
-        """,
-            (challenger_id, challenged_id, status, winner_id),
-        )
+        for uid, name, new_elo, new_event_elo in (
+            (winner_id, winner_display_name, new_winner_elo, new_winner_event_elo),
+            (loser_id, loser_display_name, new_loser_elo, new_loser_event_elo),
+        ):
+            cur.execute("SELECT 1 FROM overall_standings WHERE user_id=?", (uid,))
+            if cur.fetchone():
+                cur.execute(
+                    "UPDATE overall_standings "
+                    "SET online_elo=?, online_event_elo=?, user_display_name=? "
+                    "WHERE user_id=?",
+                    (new_elo, new_event_elo, name, uid),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO overall_standings "
+                    "(user_id, user_display_name, online_elo, online_event_elo) "
+                    "VALUES (?,?,?,?)",
+                    (uid, name, new_elo, new_event_elo),
+                )
         conn.commit()
-    except Exception as e:
-        logger.error(f"Error saving challenge match: {e}")
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
+
+
+def set_player_event_elo(user_id: int, user_display_name: str, elo: int) -> int | None:
+    """Set a player's event ELO to a specific value.
+
+    Inserts the player with default lifetime ELO if they don't exist yet.
+
+    Returns:
+        Previous online_event_elo value (None if player was newly created).
+    """
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT online_event_elo FROM overall_standings WHERE user_id = ?", (user_id,)
+    )
+    result = cur.fetchone()
+    old_elo = result[0] if result else None
+
+    if result:
+        cur.execute(
+            "UPDATE overall_standings SET online_event_elo = ?, user_display_name = ? WHERE user_id = ?",
+            (elo, user_display_name, user_id),
+        )
+    else:
+        cur.execute(
+            "INSERT INTO overall_standings (user_id, user_display_name, online_elo, online_event_elo) "
+            "VALUES (?, ?, 1500, ?)",
+            (user_id, user_display_name, elo),
+        )
+
+    conn.commit()
+    conn.close()
+    return old_elo
 
 
 # --- Active Pairings Operations ---

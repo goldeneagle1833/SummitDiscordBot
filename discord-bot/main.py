@@ -23,6 +23,7 @@ from cogs.lfg.persistent_confirm import (
     PersistentDisputeButton,
     ensure_pending_confirmations_table,
 )
+from repositories.elo_repo import migrate_to_dual_elo_system
 
 import config
 
@@ -156,7 +157,8 @@ async def setup_cogs():
 
 async def main():
     async with bot:
-        # Ensure DB table exists before bot starts handling interactions
+        # Run DB schema migrations before handling any interactions
+        migrate_to_dual_elo_system()
         ensure_pending_confirmations_table()
         # Register DynamicItem buttons so Confirm/Dispute survive bot restarts
         bot.add_dynamic_items(PersistentConfirmButton, PersistentDisputeButton)

@@ -20,151 +20,64 @@ class EloRepository:
         conn = self._get_connection()
         cur = conn.cursor()
 
-        # Ensure columns exist
-        cur.execute("PRAGMA table_info(overall_standings)")
-        columns = {col[1] for col in cur.fetchall()}
+        cur.execute("""
+            SELECT user_id, user_display_name, online_elo, paper_elo
+            FROM overall_standings
+            ORDER BY online_elo DESC
+        """)
+        rows = cur.fetchall()
+        conn.close()
 
-        has_dual_elo = "paper_elo" in columns and "online_elo" in columns
-
-        if has_dual_elo:
-            cur.execute("""
-                SELECT user_id, user_display_name, elo, paper_elo, online_elo
-                FROM overall_standings
-                ORDER BY elo DESC
-            """)
-            rows = cur.fetchall()
-            conn.close()
-
-            return [
-                {
-                    "user_id": row[0],
-                    "display_name": row[1],
-                    "elo": row[2],
-                    "paper_elo": row[3] if row[3] else 1500,
-                    "online_elo": row[4] if row[4] else 1500,
-                    "primary_mode": "Paper" if (row[3] or 1500) > (row[4] or 1500) else "Online",
-                }
-                for row in rows
-            ]
-        else:
-            # Fallback for old schema
-            cur.execute("""
-                SELECT user_id, user_display_name, elo
-                FROM overall_standings
-                ORDER BY elo DESC
-            """)
-            rows = cur.fetchall()
-            conn.close()
-
-            return [
-                {
-                    "user_id": row[0],
-                    "display_name": row[1],
-                    "elo": row[2],
-                    "paper_elo": 1500,
-                    "online_elo": row[2],  # Assume existing is online
-                    "primary_mode": "Online",
-                }
-                for row in rows
-            ]
+        return [
+            {
+                "user_id": row[0],
+                "display_name": row[1],
+                "elo": row[2] if row[2] else 1500,
+                "online_elo": row[2] if row[2] else 1500,
+                "paper_elo": row[3] if row[3] else 1500,
+                "primary_mode": "Paper" if (row[3] or 1500) > (row[2] or 1500) else "Online",
+            }
+            for row in rows
+        ]
 
     def get_all_standings_with_event(self) -> list[dict]:
         """Get all ELO standings including event ELOs (both paper and online)."""
         conn = self._get_connection()
         cur = conn.cursor()
-        # Check which columns exist
-        cur.execute("PRAGMA table_info(overall_standings)")
-        columns = {col[1] for col in cur.fetchall()}
-
-        has_dual_elo = "paper_elo" in columns and "online_elo" in columns
-        has_dual_event = "paper_event_elo" in columns and "online_event_elo" in columns
-
-        if has_dual_elo and has_dual_event:
-            cur.execute("""
-                SELECT user_id, user_display_name, elo, event_elo,
-                       paper_elo, online_elo, paper_event_elo, online_event_elo
-                FROM overall_standings
-                ORDER BY elo DESC
-            """)
-            rows = cur.fetchall()
-            conn.close()
-            return [
-                {
-                    "user_id": row[0],
-                    "display_name": row[1],
-                    "elo": row[2],
-                    "event_elo": row[3] if row[3] else 1500,
-                    "paper_elo": row[4] if row[4] else 1500,
-                    "online_elo": row[5] if row[5] else 1500,
-                    "paper_event_elo": row[6] if row[6] else 1500,
-                    "online_event_elo": row[7] if row[7] else 1500,
-                    "primary_mode": "Paper" if (row[4] or 1500) > (row[5] or 1500) else "Online",
-                }
-                for row in rows
-            ]
-        elif "event_elo" in columns:
-            # Fallback for old schema with event_elo but not dual ELO
-            cur.execute("""
-                SELECT user_id, user_display_name, elo, event_elo
-                FROM overall_standings
-                ORDER BY elo DESC
-            """)
-            rows = cur.fetchall()
-            conn.close()
-            return [
-                {
-                    "user_id": row[0],
-                    "display_name": row[1],
-                    "elo": row[2],
-                    "event_elo": row[3] if row[3] else 1500,
-                    "paper_elo": 1500,
-                    "online_elo": row[2],  # Assume existing is online
-                    "paper_event_elo": 1500,
-                    "online_event_elo": row[3] if row[3] else 1500,
-                    "primary_mode": "Online",
-                }
-                for row in rows
-            ]
-        else:
-            # Fallback if no event columns exist
-            cur.execute("""
-                SELECT user_id, user_display_name, elo
-                FROM overall_standings
-                ORDER BY elo DESC
-            """)
-            rows = cur.fetchall()
-            conn.close()
-            return [
-                {
-                    "user_id": row[0],
-                    "display_name": row[1],
-                    "elo": row[2],
-                    "event_elo": 1500,
-                    "paper_elo": 1500,
-                    "online_elo": row[2],
-                    "paper_event_elo": 1500,
-                    "online_event_elo": 1500,
-                    "primary_mode": "Online",
-                }
-                for row in rows
-            ]
-
-    def get_event_standings(self) -> list[dict]:
-        """Get event ELO standings ordered by event_elo descending."""
-        conn = self._get_connection()
-        cur = conn.cursor()
-        # Check if event_elo column exists
-        cur.execute("PRAGMA table_info(overall_standings)")
-        columns = [col[1] for col in cur.fetchall()]
-
-        if "event_elo" not in columns:
-            conn.close()
-            return []
 
         cur.execute("""
-            SELECT user_id, user_display_name, event_elo
+            SELECT user_id, user_display_name,
+                   online_elo, online_event_elo,
+                   paper_elo, paper_event_elo
             FROM overall_standings
-            ORDER BY event_elo DESC
+            ORDER BY online_elo DESC
+        """)
+        rows = cur.fetchall()
+        conn.close()
+        return [
+            {
+                "user_id": row[0],
+                "display_name": row[1],
+                "elo": row[2] if row[2] else 1500,
+                "event_elo": row[3] if row[3] else 1500,
+                "online_elo": row[2] if row[2] else 1500,
+                "online_event_elo": row[3] if row[3] else 1500,
+                "paper_elo": row[4] if row[4] else 1500,
+                "paper_event_elo": row[5] if row[5] else 1500,
+                "primary_mode": "Paper" if (row[4] or 1500) > (row[2] or 1500) else "Online",
+            }
+            for row in rows
+        ]
+
+    def get_event_standings(self) -> list[dict]:
+        """Get event ELO standings ordered by online_event_elo descending."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT user_id, user_display_name, online_event_elo
+            FROM overall_standings
+            ORDER BY online_event_elo DESC
         """)
         rows = cur.fetchall()
         conn.close()
@@ -205,7 +118,7 @@ class EloRepository:
         """Get all lifetime ELO values for distribution calculation."""
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT elo FROM overall_standings")
+        cur.execute("SELECT online_elo FROM overall_standings")
         elos = [row[0] for row in cur.fetchall()]
         conn.close()
         return elos
@@ -214,7 +127,7 @@ class EloRepository:
         """Get ELO for a specific user (handles both int and str to support large Google IDs)."""
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT elo FROM overall_standings WHERE user_id = ?", (user_id,))
+        cur.execute("SELECT online_elo FROM overall_standings WHERE user_id = ?", (user_id,))
         row = cur.fetchone()
         conn.close()
         return row[0] if row else None
@@ -224,10 +137,10 @@ class EloRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            """INSERT INTO overall_standings (user_id, user_display_name, elo)
+            """INSERT INTO overall_standings (user_id, user_display_name, online_elo)
                VALUES (?, ?, ?)
                ON CONFLICT(user_id)
-               DO UPDATE SET elo = ?, user_display_name = ?""",
+               DO UPDATE SET online_elo = ?, user_display_name = ?""",
             (user_id, display_name, new_elo, new_elo, display_name),
         )
         conn.commit()
@@ -346,33 +259,12 @@ class EloRepository:
         return deleted
 
     def reset_player_elo(self, user_id: int, default_elo: int = 1500) -> bool:
-        """Reset a player's ELO to default. Returns True if updated.
-
-        Updates both legacy columns (elo, event_elo) and dual-ELO columns
-        (online_elo, online_event_elo) to match bot !spot_elo_reset behavior.
-        """
+        """Reset a player's online ELO to default. Returns True if updated."""
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute("PRAGMA table_info(overall_standings)")
-        columns = {col[1] for col in cur.fetchall()}
-
-        set_clauses = ["elo = ?"]
-        params = [default_elo]
-
-        if "event_elo" in columns:
-            set_clauses.append("event_elo = ?")
-            params.append(default_elo)
-        if "online_elo" in columns:
-            set_clauses.append("online_elo = ?")
-            params.append(default_elo)
-        if "online_event_elo" in columns:
-            set_clauses.append("online_event_elo = ?")
-            params.append(default_elo)
-
-        params.append(user_id)
         cur.execute(
-            f"UPDATE overall_standings SET {', '.join(set_clauses)} WHERE user_id = ?",
-            params,
+            "UPDATE overall_standings SET online_elo = ?, online_event_elo = ? WHERE user_id = ?",
+            (default_elo, default_elo, user_id),
         )
         updated = cur.rowcount > 0
         conn.commit()

@@ -7,7 +7,7 @@ import sqlite3
 import config
 from cogs.lfg.state import lfg_queue, lfg_queue_lock
 from cogs.lfg.helpers import scrub_urls
-from cogs.lfg.match_reporting import LFGReportButtons
+from cogs.lfg.match_reporting import MatchCardView
 from utils.constants import SORCERY_NICKNAMES
 from utils.database import save_pairing
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
@@ -368,8 +368,6 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
 
         reporter_deck_text = f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
 
-        from cogs.lfg.match_reporting import WentFirstView
-
         if match_type == "limited":
             if reporter_is_joiner:
                 reporter_run_id = int(run_id or 0)
@@ -381,32 +379,30 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             reporter_run_id = int(0)
             other_run_id = int(0)
 
-        went_first_view = WentFirstView(
-            reporter_id,
-            reporter_id,
-            reporter_global,
-            other_id,
-            other_global,
-            bot,
-            lfg_channel,
+        match_card_view = MatchCardView(
+            bot=bot,
+            pairing_id=pairing_id,
+            player1_id=reporter_id,
+            player1_global=reporter_global,
+            player2_id=other_id,
+            player2_global=other_global,
+            player1_deck_url=reporter_deck_url,
+            player2_deck_url=other_deck_url,
             match_start_time=match_start_time,
-            reporter_deck_url=reporter_deck_url,
-            opponent_deck_url=other_deck_url,
-            opponent_user=other_user,
-            reporter_deck_text=reporter_deck_text,
             guild_id=interaction.guild.id,
             ladder_info=matched_ladder_info or {},
             match_type=match_type or "ranked",
-            reporter_run_id=reporter_run_id,
-            opponent_run_id=other_run_id,
+            player1_run_id=reporter_run_id,
+            player2_run_id=other_run_id,
         )
 
         reporter_dm_failed = False
         try:
             await reporter_user.send(
-                f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Did you go first?**\n\n"
-                f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** in the LFG channel for fresh buttons!",
-                view=went_first_view,
+                f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n"
+                f"Use the button below to report the result when your match is done.\n\n"
+                f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** in the LFG channel for fresh ones!",
+                view=match_card_view,
             )
         except discord.Forbidden:
             reporter_dm_failed = True
@@ -429,10 +425,11 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
 
                     await dm_channel.send(
                         scrub_urls(
-                            f"{reporter_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n**Did you go first?**\n\n"
-                            f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** for fresh buttons!"
+                            f"{reporter_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n"
+                            f"Use the button below to report the result when your match is done.\n\n"
+                            f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** for fresh ones!"
                         ),
-                        view=went_first_view,
+                        view=match_card_view,
                     )
             except Exception as e:
                 logger.error(f"Failed to handle DM failure for reporter: {e}")
@@ -442,8 +439,8 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
         try:
             await other_user.send(
                 f"🎮 **Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
-                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome.\n\n"
-                f"💡 **Tip:** If buttons expire or you need fresh reporting buttons, click **'📋 Report Last Match'** in the LFG channel!"
+                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome.\n\n"
+                f"💡 **Tip:** If you need fresh reporting buttons, click **'📋 Report Last Match'** in the LFG channel!"
             )
         except discord.Forbidden:
             try:
@@ -466,8 +463,8 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                     await dm_channel.send(
                         scrub_urls(
                             f"{other_user.mention} 🎮 **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
-                            f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button to verify the outcome.\n\n"
-                            f"💡 **Tip:** If buttons expire or you need fresh reporting buttons, click **'📋 Report Last Match'**!"
+                            f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome.\n\n"
+                            f"💡 **Tip:** If you need fresh reporting buttons, click **'📋 Report Last Match'**!"
                         )
                     )
             except Exception as e:
@@ -677,9 +674,6 @@ class JoinQueueButtons(discord.ui.View):
                 )
                 return
 
-            # Import WentFirstView here to avoid circular import
-            from cogs.lfg.match_reporting import WentFirstView
-
             # Determine match type
             match_type = pairing.get('match_type', 'ranked')
 
@@ -692,32 +686,8 @@ class JoinQueueButtons(discord.ui.View):
                 reporter_run_id = int(reporter_run['run_id']) if reporter_run else 0
                 opponent_run_id = int(opponent_run['run_id']) if opponent_run else 0
 
-            # Build deck text
-            reporter_deck_text = ""
-            if reporter_deck_url:
-                reporter_deck_text = f"\n**Your Deck:** {reporter_deck_url}"
+            reporter_deck_text = f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
 
-            # Create the WentFirstView
-            went_first_view = WentFirstView(
-                match_id=0,  # Not needed for existing pairings
-                player1_id=interaction.user.id,
-                player1_global=interaction.user.global_name or interaction.user.display_name,
-                player2_id=opponent_id,
-                player2_global=opponent_user.global_name or opponent_user.display_name,
-                bot=self.bot,
-                channel=None,  # Will use DM fallback
-                match_start_time=datetime.datetime.now(),
-                reporter_deck_url=reporter_deck_url,
-                opponent_deck_url=opponent_deck_url,
-                opponent_user=opponent_user,
-                reporter_deck_text=reporter_deck_text,
-                guild_id=guild_id,
-                match_type=match_type,
-                reporter_run_id=reporter_run_id,
-                opponent_run_id=opponent_run_id,
-            )
-
-            # Determine match type emoji and label
             if match_type == "limited":
                 match_type_emoji = "🎲"
                 match_type_label = "Limited"
@@ -728,14 +698,31 @@ class JoinQueueButtons(discord.ui.View):
                 match_type_emoji = "⭐"
                 match_type_label = "Casual"
 
+            pairing_id = pairing.get('pairing_id', 0)
+            match_card_view = MatchCardView(
+                bot=self.bot,
+                pairing_id=pairing_id,
+                player1_id=interaction.user.id,
+                player1_global=interaction.user.global_name or interaction.user.display_name,
+                player2_id=opponent_id,
+                player2_global=opponent_user.global_name or opponent_user.display_name,
+                player1_deck_url=reporter_deck_url,
+                player2_deck_url=opponent_deck_url,
+                match_start_time=datetime.datetime.now(),
+                guild_id=guild_id,
+                match_type=match_type,
+                player1_run_id=reporter_run_id,
+                player2_run_id=opponent_run_id,
+            )
+
             # Try to send to DM first
             try:
                 await interaction.user.send(
-                    f"{match_type_emoji} **{match_type_label} Match Report**\n\n**Opponent:** {opponent_user.mention} (**{opponent_user.global_name or opponent_user.display_name}**){reporter_deck_text}\n\n**Did you go first?**",
-                    view=went_first_view,
+                    f"{match_type_emoji} **{match_type_label} Match Report**\n\n**Opponent:** {opponent_user.mention} (**{opponent_user.global_name or opponent_user.display_name}**){reporter_deck_text}\n\nUse the button below to report the result.",
+                    view=match_card_view,
                 )
                 await interaction.followup.send(
-                    f"✅ Match reporting buttons sent! Check your DMs.",
+                    "✅ Match reporting buttons sent! Check your DMs.",
                     ephemeral=True,
                 )
             except discord.Forbidden:
@@ -753,8 +740,8 @@ class JoinQueueButtons(discord.ui.View):
                                 )
 
                         await dm_channel.send(
-                            f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match Report**\n\n**Opponent:** {opponent_user.mention} (**{opponent_user.global_name or opponent_user.display_name}**){reporter_deck_text}\n\n**Did you go first?**",
-                            view=went_first_view,
+                            f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match Report**\n\n**Opponent:** {opponent_user.mention} (**{opponent_user.global_name or opponent_user.display_name}**){reporter_deck_text}\n\nUse the button below to report the result.",
+                            view=match_card_view,
                         )
                         await interaction.followup.send(
                             f"✅ Match reporting buttons sent to <#{config.DM_DISABLED_CHANNEL_ID}>!",

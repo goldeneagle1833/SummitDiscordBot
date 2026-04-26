@@ -51,12 +51,10 @@ def setup_test_databases():
         """CREATE TABLE IF NOT EXISTS overall_standings
            (user_id INTEGER PRIMARY KEY,
             user_display_name TEXT,
-            elo INTEGER DEFAULT 1500,
-            event_elo INTEGER DEFAULT 1500,
-            paper_elo INTEGER DEFAULT 1500,
             online_elo INTEGER DEFAULT 1500,
-            paper_event_elo INTEGER DEFAULT 1500,
-            online_event_elo INTEGER DEFAULT 1500)"""
+            online_event_elo INTEGER DEFAULT 1500,
+            paper_elo INTEGER DEFAULT 1500,
+            paper_event_elo INTEGER DEFAULT 1500)"""
     )
     cur.execute(
         """CREATE TABLE IF NOT EXISTS events (

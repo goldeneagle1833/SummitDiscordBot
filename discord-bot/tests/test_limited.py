@@ -196,7 +196,7 @@ class TestLimitedElo:
         conn = sqlite3.connect("elo.db")
         cur = conn.cursor()
         cur.execute(
-            "INSERT OR REPLACE INTO overall_standings (user_id, user_display_name, elo) VALUES (?, ?, ?)",
+            "INSERT OR REPLACE INTO overall_standings (user_id, user_display_name, online_elo) VALUES (?, ?, ?)",
             (3001, "MainPlayer", 1700),
         )
         conn.commit()
@@ -208,7 +208,7 @@ class TestLimitedElo:
         # Main ELO should be unchanged
         conn = sqlite3.connect("elo.db")
         cur = conn.cursor()
-        cur.execute("SELECT elo FROM overall_standings WHERE user_id = ?", (3001,))
+        cur.execute("SELECT online_elo FROM overall_standings WHERE user_id = ?", (3001,))
         main_elo = cur.fetchone()[0]
         conn.close()
         assert main_elo == 1700

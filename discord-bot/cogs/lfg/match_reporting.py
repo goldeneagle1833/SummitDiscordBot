@@ -7,10 +7,7 @@ import config
 from cogs.lfg.state import pending_match_reports, processed_matches
 from cogs.lfg.helpers import scrub_urls, send_milestone_announcement, generate_ladder_challenge_announcement
 from utils.database import (
-    winner_report,
-    losser_report,
-    update_elo_db,
-    update_elo_db_ladder,
+    record_match,
     complete_ladder_challenge,
     mark_pairing_reported,
     get_pairing_between_players,
@@ -124,65 +121,18 @@ async def _send_confirmation_to_opponent(
 
 
 async def _apply_ladder_elo(bot, ladder_info, winner_id, winner_global, loser_id, loser_global, match_id, event_active):
-    """Apply ladder challenge ELO modifications, complete challenge, and assign role if non-top-16 won."""
-    import sqlite3 as _sqlite3
+    """Complete a ladder challenge: record result, assign role if non-Top16 won, return stakes message.
 
+    ELO has already been calculated and applied atomically by record_match().
+    This function handles only the side-effects specific to ladder challenges.
+    """
     challenger_id = ladder_info["challenger_id"]
-
-    # Determine multipliers based on who won
-    if winner_id == challenger_id:
-        # Top 16 player won - normal ELO for both
-        winner_mult = 1.0
-        loser_mult = 1.0
-    else:
-        # Non-Top16 player won - they get boosted, Top16 gets reduced loss
-        winner_mult = ladder_info["elo_multiplier_winner"]
-        loser_mult = ladder_info["elo_multiplier_loser"]
-
-    # Adjust winner ELO if multiplier != 1.0
-    # winner_report already applied a normal ELO update for the winner
-    if winner_mult != 1.0 and event_active:
-        conn_match = _sqlite3.connect("match_records.db")
-        cur_match = conn_match.cursor()
-        cur_match.execute(
-            "SELECT winner_elo_change, winner_lifetime_elo_change FROM match_records WHERE rowid=?",
-            (match_id,),
-        )
-        elo_row = cur_match.fetchone()
-        conn_match.close()
-
-        if elo_row:
-            event_change = elo_row[0] or 0
-            lifetime_change = elo_row[1] or 0
-            extra_event_change = round(event_change * (winner_mult - 1.0))
-            extra_lifetime_change = round(lifetime_change * (winner_mult - 1.0))
-            conn_fix = _sqlite3.connect("elo.db")
-            cur_fix = conn_fix.cursor()
-            cur_fix.execute(
-                "UPDATE overall_standings SET online_elo = online_elo + ?, online_event_elo = online_event_elo + ?, "
-                "elo = elo + ?, event_elo = event_elo + ? WHERE user_id = ?",
-                (extra_lifetime_change, extra_event_change, extra_lifetime_change, extra_event_change, winner_id),
-            )
-            conn_fix.commit()
-            conn_fix.close()
-            logger.info(
-                f"Ladder bonus: Winner {winner_id} gets extra lifetime {extra_lifetime_change:+d}, "
-                f"event {extra_event_change:+d} ELO (mult={winner_mult})"
-            )
-
-    # Update loser ELO with multiplier
-    if loser_mult != 1.0:
-        update_elo_db_ladder(
-            loser_id, loser_global, False, winner_id, elo_multiplier=loser_mult
-        )
-    else:
-        update_elo_db(loser_id, loser_global, False, winner_id)
 
     # Complete the ladder challenge record
     if ladder_info.get("challenge_id"):
         complete_ladder_challenge(ladder_info["challenge_id"], winner_id, match_id)
 
-    # If non-top-16 player won, assign role
+    # If non-Top16 player won, assign role and compose stakes message
     stakes_msg = ""
     if winner_id != challenger_id:
         try:
@@ -196,6 +146,7 @@ async def _apply_ladder_elo(bot, ladder_info, winner_id, winner_global, loser_id
         except Exception as e:
             logger.error(f"Failed to assign ladder winner role: {e}")
 
+        winner_mult = ladder_info.get("elo_multiplier_winner", 1.0)
         if winner_mult != 1.0:
             stakes_msg = "\n**Ladder Bonus:** Winner gained 2x ELO! Top 16 player lost only 0.5x ELO."
 
@@ -263,49 +214,30 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
         reporter_went_first = "y" in str(first_player).lower()
 
         if self.is_winner:
-            # Reporter is the winner
             winner_went_first = "y" if reporter_went_first else "n"
             loser_went_first = "n" if reporter_went_first else "y"
-            match_id, _, _, event_active = await winner_report(
-                interaction_user_id,
-                self.winner_id,
-                self.winner_global,
-                True,
-                self.loser_id,
-                self.loser_global,
-                first_player,
-                match_time,
-                curiosa_link,
-                match_comment,
-                interaction_user_id,
-                interaction_global,
-                winner_deck_url=curiosa_link,
-                loser_deck_url=None,
-                winner_went_first=winner_went_first,
-                loser_went_first=loser_went_first,
-            )
+            winner_deck_url = curiosa_link
+            loser_deck_url = None
         else:
-            # Reporter is the loser
             winner_went_first = "n" if reporter_went_first else "y"
             loser_went_first = "y" if reporter_went_first else "n"
-            match_id, _, _, event_active = await losser_report(
-                interaction_user_id,
-                self.winner_id,
-                self.winner_global,
-                False,
-                self.loser_id,
-                self.loser_global,
-                first_player,
-                match_time,
-                curiosa_link,
-                match_comment,
-                interaction_user_id,
-                interaction_global,
-                winner_deck_url=None,
-                loser_deck_url=curiosa_link,
-                winner_went_first=winner_went_first,
-                loser_went_first=loser_went_first,
-            )
+            winner_deck_url = None
+            loser_deck_url = curiosa_link
+
+        match_id, _, _, _, _, event_active = await record_match(
+            reporter_id=interaction_user_id,
+            winner_id=self.winner_id,
+            winner_global=self.winner_global,
+            loser_id=self.loser_id,
+            loser_global=self.loser_global,
+            first_player=first_player,
+            match_time=match_time,
+            match_comment=match_comment,
+            winner_deck_url=winner_deck_url,
+            loser_deck_url=loser_deck_url,
+            winner_went_first=winner_went_first,
+            loser_went_first=loser_went_first,
+        )
 
         elo_msg = "" if event_active else "\n*(No active event - ELO not affected)*"
         await interaction.followup.send(
@@ -1349,5 +1281,370 @@ class LFGReportButtons(discord.ui.View):
             pass
         except discord.NotFound:
             pass
+
+
+# ──────────────────────────────────────────────
+#  New DM Dropdown Report Flow
+# ──────────────────────────────────────────────
+
+class MatchCardView(discord.ui.View):
+    """Match card view sent via DM when a match is found.
+    Uses pairing_id in custom_ids so multiple active matches don't conflict.
+    Reporter clicks 'Report Result' to get ephemeral select-menu dropdowns.
+    """
+
+    def __init__(
+        self,
+        bot,
+        pairing_id: int,
+        player1_id: int,
+        player1_global: str,
+        player2_id: int,
+        player2_global: str,
+        player1_deck_url: str = None,
+        player2_deck_url: str = None,
+        match_start_time=None,
+        guild_id: int = None,
+        ladder_info: dict = None,
+        match_type: str = "ranked",
+        player1_run_id: int = 0,
+        player2_run_id: int = 0,
+    ):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.pairing_id = pairing_id
+        self.player1_id = player1_id
+        self.player1_global = player1_global
+        self.player2_id = player2_id
+        self.player2_global = player2_global
+        self.player1_deck_url = player1_deck_url
+        self.player2_deck_url = player2_deck_url
+        self.match_start_time = match_start_time or datetime.datetime.now()
+        self.guild_id = guild_id
+        self.ladder_info = ladder_info or {}
+        self.match_type = match_type
+        self.player1_run_id = player1_run_id
+        self.player2_run_id = player2_run_id
+
+        report_btn = discord.ui.Button(
+            label="Report Result",
+            style=discord.ButtonStyle.primary,
+            custom_id=f"match_card_report:{pairing_id}",
+        )
+        report_btn.callback = self.report_result
+        self.add_item(report_btn)
+
+        cancel_btn = discord.ui.Button(
+            label="Cancel Match",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"match_card_cancel:{pairing_id}",
+        )
+        cancel_btn.callback = self.cancel_match
+        self.add_item(cancel_btn)
+
+    async def report_result(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        reporter_id = interaction.user.id
+        if reporter_id not in (self.player1_id, self.player2_id):
+            await interaction.followup.send("You're not part of this match.", ephemeral=True)
+            return
+
+        opponent_id = self.player2_id if reporter_id == self.player1_id else self.player1_id
+        if (reporter_id, opponent_id) in pending_match_reports or (opponent_id, reporter_id) in pending_match_reports:
+            await interaction.followup.send(
+                "A report for this match is already pending confirmation.", ephemeral=True
+            )
+            return
+
+        reporter_global = interaction.user.global_name or interaction.user.display_name
+        opponent_global = self.player2_global if reporter_id == self.player1_id else self.player1_global
+        reporter_deck_url = self.player1_deck_url if reporter_id == self.player1_id else self.player2_deck_url
+        opponent_deck_url = self.player2_deck_url if reporter_id == self.player1_id else self.player1_deck_url
+        reporter_run_id = self.player1_run_id if reporter_id == self.player1_id else self.player2_run_id
+        opponent_run_id = self.player2_run_id if reporter_id == self.player1_id else self.player1_run_id
+
+        # Disable buttons while reporter fills in the dropdowns
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
+        # Notify opponent that reporting has started
+        try:
+            opponent_user = await self.bot.fetch_user(opponent_id)
+            try:
+                await opponent_user.send(
+                    f"**{reporter_global}** is reporting the result for your match. "
+                    f"You'll receive a confirmation request shortly."
+                )
+            except discord.Forbidden:
+                pass
+        except Exception:
+            pass
+
+        view = ReportResultSelectView(
+            bot=self.bot,
+            reporter_id=reporter_id,
+            reporter_global=reporter_global,
+            reporter_deck_url=reporter_deck_url,
+            opponent_id=opponent_id,
+            opponent_global=opponent_global,
+            opponent_deck_url=opponent_deck_url,
+            player1_id=self.player1_id,
+            player1_global=self.player1_global,
+            player2_id=self.player2_id,
+            player2_global=self.player2_global,
+            match_start_time=self.match_start_time,
+            guild_id=self.guild_id,
+            ladder_info=self.ladder_info,
+            match_type=self.match_type,
+            reporter_run_id=reporter_run_id,
+            opponent_run_id=opponent_run_id,
+        )
+
+        msg = "**Report Match Result:**\nSelect the winner and who went first."
+        if not reporter_deck_url and self.match_type != "testing":
+            msg += "\nYou'll be asked for your deck URL after selecting."
+
+        await interaction.followup.send(msg, view=view, ephemeral=True)
+
+    async def cancel_match(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        if interaction.user.id not in (self.player1_id, self.player2_id):
+            await interaction.followup.send("You're not part of this match.", ephemeral=True)
+            return
+
+        canceler_global = interaction.user.global_name or interaction.user.display_name
+        other_id = self.player2_id if interaction.user.id == self.player1_id else self.player1_id
+
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.message.edit(content="**Match Cancelled**", view=self)
+        except Exception:
+            pass
+
+        try:
+            other_user = await self.bot.fetch_user(other_id)
+            try:
+                await other_user.send(
+                    f"Your match against **{canceler_global}** has been cancelled.\n"
+                    f"If this was a mistake, use the **📋 Report Last Match** button in the LFG channel."
+                )
+            except discord.Forbidden:
+                pass
+        except Exception:
+            pass
+
+        await interaction.followup.send(
+            "Match cancelled. If this was a mistake, use **📋 Report Last Match** in the LFG channel.",
+            ephemeral=True,
+        )
+
+
+class ReportResultSelectView(discord.ui.View):
+    """Ephemeral view with select menus: who won and who went first."""
+
+    def __init__(
+        self,
+        bot,
+        reporter_id: int,
+        reporter_global: str,
+        reporter_deck_url: str,
+        opponent_id: int,
+        opponent_global: str,
+        opponent_deck_url: str,
+        player1_id: int,
+        player1_global: str,
+        player2_id: int,
+        player2_global: str,
+        match_start_time,
+        guild_id: int,
+        ladder_info: dict = None,
+        match_type: str = "ranked",
+        reporter_run_id: int = 0,
+        opponent_run_id: int = 0,
+    ):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.reporter_id = reporter_id
+        self.reporter_global = reporter_global
+        self.reporter_deck_url = reporter_deck_url
+        self.opponent_id = opponent_id
+        self.opponent_global = opponent_global
+        self.opponent_deck_url = opponent_deck_url
+        self.player1_id = player1_id
+        self.player1_global = player1_global
+        self.player2_id = player2_id
+        self.player2_global = player2_global
+        self.match_start_time = match_start_time
+        self.guild_id = guild_id
+        self.ladder_info = ladder_info or {}
+        self.match_type = match_type
+        self.reporter_run_id = reporter_run_id
+        self.opponent_run_id = opponent_run_id
+        self.selected_winner_id = None
+        self.selected_first_id = None
+
+        self.winner_select = discord.ui.Select(
+            placeholder="Who won?",
+            options=[
+                discord.SelectOption(label=player1_global, value=str(player1_id)),
+                discord.SelectOption(label=player2_global, value=str(player2_id)),
+            ],
+        )
+        self.winner_select.callback = self._on_winner_select
+        self.add_item(self.winner_select)
+
+        self.first_select = discord.ui.Select(
+            placeholder="Who went first?",
+            options=[
+                discord.SelectOption(label=player1_global, value=str(player1_id)),
+                discord.SelectOption(label=player2_global, value=str(player2_id)),
+            ],
+        )
+        self.first_select.callback = self._on_first_select
+        self.add_item(self.first_select)
+
+    async def _on_winner_select(self, interaction: discord.Interaction):
+        self.selected_winner_id = int(self.winner_select.values[0])
+        if self.selected_winner_id is not None and self.selected_first_id is not None:
+            await self._both_selected(interaction)
+        else:
+            await interaction.response.defer()
+
+    async def _on_first_select(self, interaction: discord.Interaction):
+        self.selected_first_id = int(self.first_select.values[0])
+        if self.selected_winner_id is not None and self.selected_first_id is not None:
+            await self._both_selected(interaction)
+        else:
+            await interaction.response.defer()
+
+    async def _both_selected(self, interaction: discord.Interaction):
+        if not self.reporter_deck_url and self.match_type != "testing":
+            modal = MatchReportDeckModal(self)
+            await interaction.response.send_modal(modal)
+        else:
+            await interaction.response.defer()
+            await self._submit(interaction)
+
+    async def _submit(self, interaction: discord.Interaction, deck_url: str = None):
+        if deck_url:
+            self.reporter_deck_url = deck_url
+
+        winner_id = self.selected_winner_id
+        loser_id = self.player2_id if winner_id == self.player1_id else self.player1_id
+        winner_global = self.player1_global if winner_id == self.player1_id else self.player2_global
+        loser_global = self.player2_global if winner_id == self.player1_id else self.player1_global
+
+        # Slot the reporter's deck URL into the correct player slot
+        p1_deck = self.player1_deck_url
+        p2_deck = self.player2_deck_url
+        if self.reporter_id == self.player1_id:
+            p1_deck = self.reporter_deck_url or p1_deck
+        else:
+            p2_deck = self.reporter_deck_url or p2_deck
+
+        winner_deck_url = p1_deck if winner_id == self.player1_id else p2_deck
+        loser_deck_url = p2_deck if winner_id == self.player1_id else p1_deck
+
+        # "y" means the reporter went first (consistent with existing convention)
+        first_player = "y" if self.selected_first_id == self.reporter_id else "n"
+        is_reporter_winner = (winner_id == self.reporter_id)
+
+        # Duplicate guard
+        if (self.reporter_id, self.opponent_id) in pending_match_reports or \
+                (self.opponent_id, self.reporter_id) in pending_match_reports:
+            await interaction.followup.send(
+                "A report for this match is already pending confirmation.", ephemeral=True
+            )
+            return
+
+        pending_match_reports[(self.reporter_id, self.opponent_id)] = {
+            "winner_id": winner_id,
+            "winner_global": winner_global,
+            "loser_id": loser_id,
+            "loser_global": loser_global,
+            "reporter_id": self.reporter_id,
+            "reporter_global": self.reporter_global,
+            "is_winner": is_reporter_winner,
+            "opponent_message": None,
+            "match_start_time": self.match_start_time,
+            "reporter_deck_url": self.reporter_deck_url,
+            "opponent_deck_url": self.opponent_deck_url,
+            "first_player": first_player,
+            "guild_id": self.guild_id,
+            "ladder_info": self.ladder_info,
+            "match_type": self.match_type,
+        }
+
+        winner_run_id = self.reporter_run_id if is_reporter_winner else self.opponent_run_id
+        loser_run_id = self.opponent_run_id if is_reporter_winner else self.reporter_run_id
+
+        try:
+            opponent_user = await self.bot.fetch_user(self.opponent_id)
+        except Exception as e:
+            logger.error(f"Failed to fetch opponent {self.opponent_id}: {e}")
+            pending_match_reports.pop((self.reporter_id, self.opponent_id), None)
+            await interaction.followup.send("Failed to fetch opponent information.", ephemeral=True)
+            return
+
+        confirmation_view = create_confirmation_view(
+            reporter_id=self.reporter_id,
+            reporter_global=self.reporter_global,
+            opponent_id=self.opponent_id,
+            opponent_global=self.opponent_global,
+            winner_id=winner_id,
+            winner_global=winner_global,
+            loser_id=loser_id,
+            loser_global=loser_global,
+            is_winner=(winner_id == self.opponent_id),
+            match_start_time=self.match_start_time,
+            first_player=first_player,
+            winner_deck_url=winner_deck_url,
+            loser_deck_url=loser_deck_url,
+            ladder_info=self.ladder_info,
+            match_type=self.match_type,
+            guild_id=self.guild_id,
+            winner_run_id=winner_run_id,
+            loser_run_id=loser_run_id,
+        )
+
+        opponent_won = (winner_id == self.opponent_id)
+        confirm_msg = (
+            f"**Match Report Confirmation**\n\n"
+            f"You **{'WON' if opponent_won else 'LOST'}** against {self.reporter_global}\n\n"
+            f"Please confirm or dispute this result:"
+        )
+
+        await _send_confirmation_to_opponent(
+            self.bot, opponent_user, self.opponent_id, self.opponent_global,
+            confirm_msg, confirmation_view, interaction, self.guild_id,
+        )
+
+        self.stop()
+
+
+class MatchReportDeckModal(discord.ui.Modal, title="Enter Your Deck"):
+    """Collects an optional deck URL before submitting the match report."""
+
+    deck_url = discord.ui.TextInput(
+        label="Curiosa Deck URL",
+        placeholder="https://curiosa.io/decks/... (optional)",
+        required=False,
+    )
+
+    def __init__(self, report_view: "ReportResultSelectView"):
+        super().__init__()
+        self.report_view = report_view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        url = self.deck_url.value.strip() if self.deck_url.value else None
+        await self.report_view._submit(interaction, deck_url=url or None)
 
 

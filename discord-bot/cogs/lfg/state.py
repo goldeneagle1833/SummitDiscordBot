@@ -27,6 +27,9 @@ pending_match_reports = {}
 # Key: frozenset({player1_id, player2_id}), Value: timestamp
 processed_matches = {}
 
+# Lock to prevent race conditions when checking/recording processed matches
+processed_matches_lock = asyncio.Lock()
+
 # Store the persistent status message ID
 lfg_status_message_id = None
 

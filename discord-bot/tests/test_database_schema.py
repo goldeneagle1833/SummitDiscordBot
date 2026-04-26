@@ -269,12 +269,10 @@ class TestELOSchema:
         required_columns = {
             'user_id',
             'user_display_name',
-            'elo',  # Legacy lifetime ELO
-            'event_elo',  # Legacy event ELO
-            'paper_elo',
             'online_elo',
-            'paper_event_elo',
             'online_event_elo',
+            'paper_elo',
+            'paper_event_elo',
         }
 
         missing = required_columns - columns
@@ -294,8 +292,6 @@ class TestELOSchema:
         update_columns = {
             'online_elo',
             'online_event_elo',
-            'elo',  # Legacy column for backward compat
-            'event_elo',  # Legacy column for backward compat
         }
 
         missing = update_columns - table_columns

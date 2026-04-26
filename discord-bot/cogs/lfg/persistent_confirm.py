@@ -13,15 +13,14 @@ import logging
 import sqlite3
 
 import config
-from cogs.lfg.state import pending_match_reports, processed_matches
+from cogs.lfg.state import pending_match_reports, processed_matches, processed_matches_lock
 from cogs.lfg.helpers import (
     scrub_urls,
     send_milestone_announcement,
     generate_ladder_challenge_announcement,
 )
 from utils.database import (
-    winner_report,
-    update_elo_db,
+    record_match,
     mark_pairing_reported,
 )
 from repositories.limited_repo import mark_limited_pairing_reported
@@ -197,30 +196,31 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
 
     bot = interaction.client
 
-    # ── duplicate guard ──
+    # ── duplicate guard (atomic check-and-set under lock) ──
     match_key = frozenset({data["winner_id"], data["loser_id"]})
     now = datetime.datetime.now()
-    if match_key in processed_matches:
-        last_report_time = processed_matches[match_key]
-        if (now - last_report_time).total_seconds() < 300:
-            if interaction_valid:
-                try:
-                    await interaction.followup.send(
-                        "This match has already been recorded. Duplicate report prevented.",
-                        ephemeral=True,
-                    )
-                except Exception:
-                    pass
-                try:
-                    await interaction.message.edit(
-                        content="Match already recorded (duplicate prevented).", view=None
-                    )
-                except Exception:
-                    pass
-            delete_pending_confirmation(confirmation_id)
-            return
+    async with processed_matches_lock:
+        if match_key in processed_matches:
+            last_report_time = processed_matches[match_key]
+            if (now - last_report_time).total_seconds() < 300:
+                if interaction_valid:
+                    try:
+                        await interaction.followup.send(
+                            "This match has already been recorded. Duplicate report prevented.",
+                            ephemeral=True,
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        await interaction.message.edit(
+                            content="Match already recorded (duplicate prevented).", view=None
+                        )
+                    except Exception:
+                        pass
+                delete_pending_confirmation(confirmation_id)
+                return
 
-    processed_matches[match_key] = now
+        processed_matches[match_key] = now
 
     # ── match time ──
     match_time = data.get("match_time", 0)
@@ -284,32 +284,39 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
             return
         elo_msg = " *(🎲 Limited match - Limited ELO updated)*"
     else:
-        match_id, _, _, event_active = await winner_report(
-            data["reporter_id"],
-            data["winner_id"],
-            data["winner_global"],
-            True,
-            data["loser_id"],
-            data["loser_global"],
-            data.get("first_player", "n"),
-            match_time,
-            winner_deck,
-            combined_comment,
-            data["winner_id"],
-            data["winner_global"],
+        # Determine ELO multipliers upfront for ladder matches
+        elo_multiplier_winner = 1.0
+        elo_multiplier_loser = 1.0
+        ladder_info = data.get("ladder_info")
+        if ladder_info and data.get("match_type") not in ("testing", "limited"):
+            challenger_id = ladder_info["challenger_id"]
+            if data["winner_id"] != challenger_id:
+                # Non-Top16 player won — apply stakes multipliers
+                elo_multiplier_winner = ladder_info.get("elo_multiplier_winner", 1.0)
+                elo_multiplier_loser = ladder_info.get("elo_multiplier_loser", 1.0)
+
+        match_id, _, _, _, _, event_active = await record_match(
+            reporter_id=data["reporter_id"],
+            winner_id=data["winner_id"],
+            winner_global=data["winner_global"],
+            loser_id=data["loser_id"],
+            loser_global=data["loser_global"],
+            first_player=data.get("first_player", "n"),
+            match_time=match_time,
+            match_comment=combined_comment,
             winner_deck_url=data.get("winner_deck_url"),
             loser_deck_url=data.get("loser_deck_url"),
             winner_went_first=winner_went_first,
             loser_went_first=loser_went_first,
             match_type=data.get("match_type", "ranked"),
+            elo_multiplier_winner=elo_multiplier_winner,
+            elo_multiplier_loser=elo_multiplier_loser,
         )
 
-        if data["match_type"] == "testing":
-            pass
-        elif data.get("ladder_info"):
+        if ladder_info and data["match_type"] != "testing":
             stakes_msg = await _apply_ladder_elo(
                 bot,
-                data["ladder_info"],
+                ladder_info,
                 data["winner_id"],
                 data["winner_global"],
                 data["loser_id"],
@@ -317,8 +324,6 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 match_id,
                 event_active,
             )
-        else:
-            update_elo_db(data["loser_id"], data["loser_global"], False, data["winner_id"])
 
         if data["match_type"] == "testing":
             elo_msg = " *(⭐ Casual match - ELO not affected)*"
@@ -385,7 +390,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
     if data["match_type"] == "limited":
         if guild_id:
             mark_limited_pairing_reported(guild_id, data["winner_id"], data["loser_id"])
-    elif guild_id and not data.get("ladder_info"):
+    elif guild_id:
         mark_pairing_reported(guild_id, data["winner_id"], data["loser_id"])
 
     # ── limited run status DMs ──

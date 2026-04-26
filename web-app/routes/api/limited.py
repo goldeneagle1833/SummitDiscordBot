@@ -12,6 +12,9 @@ from repositories.limited_repo import (
     get_latest_arena_run,
     get_limited_elo,
     get_matches_for_run,
+    get_latest_arena_run_from_archive,
+    get_matches_for_archived_run,
+    get_all_archived_matches_for_user,
 )
 from services.limited_service import (
     MAX_ARENA_LOSSES,
@@ -54,6 +57,7 @@ def get_user_status(user_id):
     try:
         active_run = get_active_arena_run(uid)
         elo = get_limited_elo(uid)
+        is_archived = False
 
         if active_run:
             has_active = True
@@ -64,10 +68,24 @@ def get_user_status(user_id):
             has_active = False
             can_queue = False
             latest = get_latest_arena_run(uid)
-            run_data = _run_to_dict(latest) if latest else None
-            match_history = get_matches_for_run(latest["run_id"], uid) if latest else []
+            if latest:
+                run_data = _run_to_dict(latest)
+                match_history = get_matches_for_run(latest["run_id"], uid)
+            else:
+                # No live data — fall back to archive tables (between events)
+                archived = get_latest_arena_run_from_archive(uid)
+                if archived:
+                    is_archived = True
+                    run_data = _run_to_dict(archived)
+                    match_history = get_all_archived_matches_for_user(uid)
+                else:
+                    run_data = None
+                    match_history = []
 
-        logger.info("GET status for user %s: has_active_run=%s, can_queue=%s", uid, has_active, can_queue)
+        logger.info(
+            "GET status for user %s: has_active_run=%s, can_queue=%s, is_archived=%s",
+            uid, has_active, can_queue, is_archived,
+        )
 
         return jsonify({
             "success": True,
@@ -77,6 +95,7 @@ def get_user_status(user_id):
             "match_history": match_history,
             "limited_elo": elo,
             "can_queue": can_queue,
+            "is_archived": is_archived,
         })
 
     except sqlite3.Error as e:

@@ -341,3 +341,98 @@ def get_matches_for_run(run_id, user_id):
             "timestamp": row[5],
         })
     return matches
+
+
+# --- Archive fallback queries ---
+
+
+def get_latest_arena_run_from_archive(user_id):
+    """Get the user's most recent archived arena run, or None.
+
+    Falls back to the archive table when the live table has no runs
+    (e.g. between events after data has been archived).
+    """
+    conn = _match_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """SELECT original_run_id, user_id, user_display_name, deck_url, NULL,
+                      wins, losses, starting_elo, status, created_at, completed_at
+               FROM limited_arena_runs_archive
+               WHERE user_id = ?
+               ORDER BY created_at DESC
+               LIMIT 1""",
+            (user_id,),
+        )
+        row = cur.fetchone()
+    except Exception:
+        row = None
+    finally:
+        conn.close()
+    return _run_from_row(row)
+
+
+def get_matches_for_archived_run(original_run_id, user_id):
+    """Get match records for an archived arena run, ordered chronologically."""
+    conn = _match_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """SELECT original_match_id, winner_id, winner_display_name, loser_id, loser_display_name,
+                      timestamp, winner_elo_change, loser_elo_change
+               FROM limited_match_records_archive
+               WHERE winner_run_id = ? OR loser_run_id = ?
+               ORDER BY timestamp ASC""",
+            (original_run_id, original_run_id),
+        )
+        rows = cur.fetchall()
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+
+    matches = []
+    for row in rows:
+        won = row[1] == user_id
+        matches.append({
+            "match_id": row[0],
+            "won": won,
+            "opponent_name": row[4] if won else row[2],
+            "opponent_id": row[3] if won else row[1],
+            "elo_change": row[6] if won else row[7],
+            "timestamp": row[5],
+        })
+    return matches
+
+
+def get_all_archived_matches_for_user(user_id):
+    """Get all archived match records for a user across all runs, ordered chronologically."""
+    conn = _match_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """SELECT original_match_id, winner_id, winner_display_name, loser_id, loser_display_name,
+                      timestamp, winner_elo_change, loser_elo_change
+               FROM limited_match_records_archive
+               WHERE winner_id = ? OR loser_id = ?
+               ORDER BY timestamp ASC""",
+            (user_id, user_id),
+        )
+        rows = cur.fetchall()
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+
+    matches = []
+    for row in rows:
+        won = row[1] == user_id
+        matches.append({
+            "match_id": row[0],
+            "won": won,
+            "opponent_name": row[4] if won else row[2],
+            "opponent_id": row[3] if won else row[1],
+            "elo_change": row[6] if won else row[7],
+            "timestamp": row[5],
+        })
+    return matches

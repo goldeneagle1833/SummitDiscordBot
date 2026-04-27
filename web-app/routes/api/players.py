@@ -147,7 +147,7 @@ def _extract_deck_info(deck_json):
                         if el in ("Earth", "Fire", "Water", "Air"):
                             elements_set.add(el)
         elements = sorted(elements_set)
-    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError, AttributeError):
         pass
     return avatar_name, elements
 
@@ -1410,7 +1410,7 @@ def player_api(player_id):
             "{}",
             "",
             None,
-        ):
+        ) and str(player_deck_url_check).startswith("https://curiosa.io"):
             has_deck = True
         if player_deck_json and player_deck_json not in ("{}", "", None):
             has_deck = True
@@ -1499,7 +1499,7 @@ def player_api(player_id):
                 "No URL provided",
                 "Admin reported match",
                 "{}",
-            ):
+            ) or not str(player_deck_url).startswith("https://curiosa.io"):
                 continue
 
             # Normalize URL by stripping query parameters (e.g. ?tab=view)

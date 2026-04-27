@@ -24,6 +24,7 @@ from cogs.lfg.persistent_confirm import (
     ensure_pending_confirmations_table,
 )
 from repositories.elo_repo import migrate_to_dual_elo_system
+from services.elo_service import backfill_deck_data
 
 import config
 
@@ -56,6 +57,10 @@ bot.remove_command("help")  # Remove default help command
 async def on_ready():
     print(f"Logged in as {bot.user.name}")
     logger.info(f"Bot started as {bot.user.name}")
+
+    # Backfill any missing deck JSON in the background (non-blocking)
+    import asyncio
+    asyncio.create_task(backfill_deck_data())
 
     # Sync slash commands
     try:

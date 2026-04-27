@@ -847,6 +847,20 @@ def _calculate_both_elo_changes(
     return (winner_lifetime_change, winner_event_change, loser_lifetime_change, loser_event_change)
 
 
+_VALID_DECK_URL_PREFIX = "https://curiosa.io/decks/"
+
+
+def _is_valid_deck_url(url: str) -> bool:
+    """Return True if url is a proper Curiosa deck URL with a non-empty deck ID."""
+    if not url or not isinstance(url, str):
+        return False
+    base = url.split("?")[0].rstrip("/")
+    if not base.startswith(_VALID_DECK_URL_PREFIX):
+        return False
+    deck_id = base[len(_VALID_DECK_URL_PREFIX):]
+    return bool(deck_id)
+
+
 async def _update_deck_data(match_id: int, winner_url: str, loser_url: str) -> None:
     """Background task: fetch deck JSON from Curiosa and update the match record.
 
@@ -856,10 +870,18 @@ async def _update_deck_data(match_id: int, winner_url: str, loser_url: str) -> N
     """
     winner_json = "{}"
     loser_json = "{}"
-    if winner_url and winner_url != "No URL provided":
+    if _is_valid_deck_url(winner_url):
         winner_json = await scrape_curosa_async(winner_url)
-    if loser_url and loser_url != "No URL provided":
+        if winner_json == "{}":
+            logger.warning("_update_deck_data: failed to fetch winner deck json for match %s url=%s", match_id, winner_url)
+        else:
+            logger.info("_update_deck_data: fetched winner deck json for match %s", match_id)
+    if _is_valid_deck_url(loser_url):
         loser_json = await scrape_curosa_async(loser_url)
+        if loser_json == "{}":
+            logger.warning("_update_deck_data: failed to fetch loser deck json for match %s url=%s", match_id, loser_url)
+        else:
+            logger.info("_update_deck_data: fetched loser deck json for match %s", match_id)
 
     try:
         conn = sqlite3.connect("match_records.db")
@@ -872,6 +894,75 @@ async def _update_deck_data(match_id: int, winner_url: str, loser_url: str) -> N
         logger.info("_update_deck_data: updated deck data for match_id=%s", match_id)
     except Exception as exc:
         logger.warning("_update_deck_data: failed to write deck data for match %s: %s", match_id, exc)
+
+
+async def backfill_deck_data() -> None:
+    """Background startup task: fetch deck JSON for any records with valid URLs but empty JSON.
+
+    Runs once on bot startup to recover data for matches that were recorded when
+    the async deck-fetch was broken (e.g. wrong WHERE clause, SSL failures).
+    Rate-limited to ~1 request per second to avoid hammering Curiosa.
+    """
+    import asyncio as _asyncio
+
+    try:
+        conn = sqlite3.connect("match_records.db")
+        cur = conn.cursor()
+        # Fetch records where either deck JSON column is missing — filter valid URLs in Python
+        cur.execute(
+            """
+            SELECT rowid, curiosa_url_winner, curiosa_url_loser,
+                   json_deck_data_winner, json_deck_data_loser
+            FROM match_records
+            WHERE (json_deck_data_winner IS NULL OR json_deck_data_winner = '{}')
+               OR (json_deck_data_loser IS NULL OR json_deck_data_loser = '{}')
+            """
+        )
+        rows = cur.fetchall()
+        conn.close()
+    except Exception as exc:
+        logger.warning("backfill_deck_data: failed to query records: %s", exc)
+        return
+
+    # Filter to only rows that have at least one valid URL with missing JSON
+    to_backfill = [
+        row for row in rows
+        if (_is_valid_deck_url(row[1]) and (not row[3] or row[3] == "{}"))
+        or (_is_valid_deck_url(row[2]) and (not row[4] or row[4] == "{}"))
+    ]
+
+    if not to_backfill:
+        logger.info("backfill_deck_data: nothing to backfill")
+        return
+
+    logger.info("backfill_deck_data: backfilling %d records", len(to_backfill))
+    updated = 0
+    for rowid, winner_url, loser_url, existing_winner_json, existing_loser_json in to_backfill:
+        winner_json = existing_winner_json or "{}"
+        loser_json = existing_loser_json or "{}"
+
+        if _is_valid_deck_url(winner_url) and (not existing_winner_json or existing_winner_json == "{}"):
+            winner_json = await scrape_curosa_async(winner_url)
+
+        if _is_valid_deck_url(loser_url) and (not existing_loser_json or existing_loser_json == "{}"):
+            loser_json = await scrape_curosa_async(loser_url)
+
+        if winner_json != "{}" or loser_json != "{}":
+            try:
+                conn = sqlite3.connect("match_records.db")
+                conn.execute(
+                    "UPDATE match_records SET json_deck_data = ?, json_deck_data_winner = ?, json_deck_data_loser = ? WHERE rowid = ?",
+                    (winner_json, winner_json, loser_json, rowid),
+                )
+                conn.commit()
+                conn.close()
+                updated += 1
+            except Exception as exc:
+                logger.warning("backfill_deck_data: failed to update rowid=%s: %s", rowid, exc)
+
+        await _asyncio.sleep(1)  # rate-limit: 1 req/sec
+
+    logger.info("backfill_deck_data: updated %d records", updated)
 
 
 async def record_match(

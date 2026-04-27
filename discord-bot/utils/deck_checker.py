@@ -93,47 +93,35 @@ def scrape_Curosa(deck_url, name):
 
 
 async def scrape_curosa_async(deck_url: str) -> str:
-    """Fetch deck data from Curiosa asynchronously using aiohttp.
+    """Fetch deck data from Curiosa asynchronously.
 
-    Retries once after 30 seconds only if the API returns a 400 error.
+    Runs the synchronous requests.get call in a thread to avoid blocking
+    the event loop — same approach as curosa.py but non-blocking.
     Returns a JSON string of the deck data, or '{}' on any failure.
-    Unlike the sync version, does NOT write to a local file.
     """
-    import aiohttp
-    import ssl
-
-    try:
-        ssl_ctx = ssl.create_default_context()
-        if _REQUESTS_VERIFY and _REQUESTS_VERIFY is not True:
-            # certifi path returned
-            import certifi as _certifi
-            ssl_ctx = ssl.create_default_context(cafile=_certifi.where())
-    except Exception:
-        ssl_ctx = True  # aiohttp default SSL
-
-    deck_id = get_deck_id(deck_url)
-    url = "https://curiosa.io/api/decks?ids=" + deck_id
-
-    for attempt in range(2):
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=30), ssl=ssl_ctx) as resp:
-                    if resp.status == 400:
-                        if attempt == 0:
-                            await asyncio.sleep(30)
-                            continue
-                        return "{}"
-                    if resp.status != 200:
-                        return "{}"
-                    json_data = await resp.json(content_type=None)
-                    if not isinstance(json_data, list) or len(json_data) == 0:
-                        return "{}"
-                    return json.dumps(json_data[0])
-        except asyncio.TimeoutError:
+    def _fetch() -> str:
+        deck_id = get_deck_id(deck_url)
+        if not deck_id:
             return "{}"
+        try:
+            response = requests.get(
+                "https://curiosa.io/api/decks?ids=" + deck_id,
+                timeout=30,
+                verify=_REQUESTS_VERIFY,
+            )
+            if response.status_code != 200:
+                return "{}"
+            json_data = json.loads(response.text)
+            if not isinstance(json_data, list) or len(json_data) == 0:
+                return "{}"
+            return json.dumps(json_data[0])
         except Exception:
             return "{}"
-    return "{}"
+
+    try:
+        return await asyncio.to_thread(_fetch)
+    except Exception:
+        return "{}"
 
 
 def search_deck(

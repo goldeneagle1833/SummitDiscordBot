@@ -1489,6 +1489,7 @@ class ReportResultSelectView(discord.ui.View):
         self.opponent_run_id = opponent_run_id
         self.selected_winner_id = None
         self.selected_first_id = None
+        self._select_interaction = None
 
         self.winner_select = discord.ui.Select(
             placeholder="Who won?",
@@ -1525,6 +1526,7 @@ class ReportResultSelectView(discord.ui.View):
             await interaction.response.defer()
 
     async def _both_selected(self, interaction: discord.Interaction):
+        self._select_interaction = interaction
         if not self.reporter_deck_url and self.match_type != "testing":
             modal = MatchReportDeckModal(self)
             await interaction.response.send_modal(modal)
@@ -1541,13 +1543,13 @@ class ReportResultSelectView(discord.ui.View):
         winner_global = self.player1_global if winner_id == self.player1_id else self.player2_global
         loser_global = self.player2_global if winner_id == self.player1_id else self.player1_global
 
-        # Slot the reporter's deck URL into the correct player slot
-        p1_deck = self.player1_deck_url
-        p2_deck = self.player2_deck_url
+        # Slot deck URLs into player1/player2 slots
         if self.reporter_id == self.player1_id:
-            p1_deck = self.reporter_deck_url or p1_deck
+            p1_deck = self.reporter_deck_url
+            p2_deck = self.opponent_deck_url
         else:
-            p2_deck = self.reporter_deck_url or p2_deck
+            p1_deck = self.opponent_deck_url
+            p2_deck = self.reporter_deck_url
 
         winner_deck_url = p1_deck if winner_id == self.player1_id else p2_deck
         loser_deck_url = p2_deck if winner_id == self.player1_id else p1_deck
@@ -1625,6 +1627,16 @@ class ReportResultSelectView(discord.ui.View):
             self.bot, opponent_user, self.opponent_id, self.opponent_global,
             confirm_msg, confirmation_view, interaction, self.guild_id,
         )
+
+        # Replace the ephemeral select form with a confirmation message
+        target_interaction = self._select_interaction or interaction
+        try:
+            await target_interaction.edit_original_response(
+                content="**Result reported!** Waiting for your opponent to confirm.",
+                view=None,
+            )
+        except Exception:
+            pass
 
         self.stop()
 

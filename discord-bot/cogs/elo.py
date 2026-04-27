@@ -295,7 +295,7 @@ class EloCog(commands.Cog):
         if filtered_players:
             leaderboard = "🏆 **Masters Bracket Leaderboard** 🏆\n"
             for i, (user_display_name, elo) in enumerate(
-                filtered_players[:16], start=1
+                filtered_players[:24], start=1
             ):
                 leaderboard += f"#{i}: {user_display_name} - {elo} Elo\n"
             await ctx.send(leaderboard)

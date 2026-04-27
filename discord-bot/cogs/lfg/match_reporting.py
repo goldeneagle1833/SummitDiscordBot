@@ -1642,12 +1642,12 @@ class ReportResultSelectView(discord.ui.View):
 
 
 class MatchReportDeckModal(discord.ui.Modal, title="Enter Your Deck"):
-    """Collects an optional deck URL before submitting the match report."""
+    """Collects the reporter's deck URL before submitting the match report."""
 
     deck_url = discord.ui.TextInput(
         label="Curiosa Deck URL",
-        placeholder="https://curiosa.io/decks/... (optional)",
-        required=False,
+        placeholder="https://curiosa.io/decks/...",
+        required=True,
     )
 
     def __init__(self, report_view: "ReportResultSelectView"):

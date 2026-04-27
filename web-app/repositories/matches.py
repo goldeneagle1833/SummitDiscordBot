@@ -317,7 +317,7 @@ class MatchRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT winner_elo_change, loser_elo_change FROM match_records WHERE match_id = ?",
+            "SELECT winner_elo_change, loser_elo_change FROM match_records WHERE rowid = ?",
             (match_id,),
         )
         row = cur.fetchone()

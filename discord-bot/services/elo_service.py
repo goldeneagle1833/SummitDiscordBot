@@ -490,13 +490,13 @@ def get_current_event_match_elo_snapshot(match_id: int):
 
     match_cur.execute(
         """
-        SELECT match_id, winner_id, winner_display_name, losser_id, losser_display_name,
+        SELECT rowid as match_id, winner_id, winner_display_name, losser_id, losser_display_name,
                timestamp, match_type, did_win,
                winner_elo_change, loser_elo_change,
                winner_lifetime_elo_change, loser_lifetime_elo_change
         FROM match_records
         WHERE timestamp >= ?
-        ORDER BY timestamp ASC, match_id ASC
+        ORDER BY timestamp ASC, rowid ASC
         """,
         (event_start_str,),
     )
@@ -864,7 +864,7 @@ async def _update_deck_data(match_id: int, winner_url: str, loser_url: str) -> N
     try:
         conn = sqlite3.connect("match_records.db")
         conn.execute(
-            "UPDATE match_records SET json_deck_data = ?, json_deck_data_winner = ?, json_deck_data_loser = ? WHERE match_id = ?",
+            "UPDATE match_records SET json_deck_data = ?, json_deck_data_winner = ?, json_deck_data_loser = ? WHERE rowid = ?",
             (winner_json, winner_json, loser_json, match_id),
         )
         conn.commit()
@@ -1532,10 +1532,10 @@ def remove_match_record(match_id: int) -> dict:
     match_cur = match_conn.cursor()
 
     match_cur.execute(
-        """SELECT match_id, winner_id, losser_id, winner_display_name, losser_display_name,
+        """SELECT rowid, winner_id, losser_id, winner_display_name, losser_display_name,
                   winner_elo_change, loser_elo_change,
                   winner_lifetime_elo_change, loser_lifetime_elo_change, timestamp
-           FROM match_records WHERE match_id = ?""",
+           FROM match_records WHERE rowid = ?""",
         (match_id,),
     )
     match = match_cur.fetchone()
@@ -1571,7 +1571,7 @@ def remove_match_record(match_id: int) -> dict:
             f"**{loser_name}**: Lifetime +{-l_lifetime}, Event +{-l_event} ELO"
         )
 
-    match_cur.execute("DELETE FROM match_records WHERE match_id = ?", (match_id,))
+    match_cur.execute("DELETE FROM match_records WHERE rowid = ?", (match_id,))
 
     elo_conn.commit()
     match_conn.commit()

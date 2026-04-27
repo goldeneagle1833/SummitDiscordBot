@@ -642,11 +642,11 @@ class EloCog(commands.Cog):
                 # Get matches where user was either winner or loser (not just reporter)
                 cur.execute(
                     """
-                    SELECT 
-                        match_id,
+                    SELECT
+                        rowid as match_id,
                         winner_display_name as winner,
                         losser_display_name as loser,
-                        CASE 
+                        CASE
                             WHEN winner_id = ? THEN 1
                             ELSE 0
                         END as did_win,
@@ -656,11 +656,11 @@ class EloCog(commands.Cog):
                         match_comment,
                         timestamp as match_date,
                         'match_records' as source,
-                        CASE 
+                        CASE
                             WHEN winner_id = ? THEN COALESCE(winner_elo_change, 0)
                             ELSE COALESCE(loser_elo_change, 0)
                         END as elo_change
-                    FROM match_records 
+                    FROM match_records
                     WHERE winner_id = ? OR losser_id = ?
                     UNION ALL
                     SELECT 

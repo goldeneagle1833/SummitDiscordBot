@@ -1090,6 +1090,23 @@ a.feature-card {
   text-decoration: underline;
 }
 
+/* ELO Bracket (Winrate vs Opponent ELO) Section */
+.elo-bracket-chart-section {
+  margin: var(--spacing-md) 0;
+}
+
+.elo-bracket-chart-wrapper {
+  padding: var(--spacing-lg);
+  background: var(--color-bg-elevated);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-soft);
+}
+
+/* Limited Arena Section */
+#limited-arena-section {
+  margin: var(--spacing-md) 0;
+}
+
 /* ELO History Chart */
 .elo-chart-section {
   margin: var(--spacing-md) 0;

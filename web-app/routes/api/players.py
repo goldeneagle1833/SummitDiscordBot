@@ -301,6 +301,26 @@ def _get_limited_stats(player_id: str) -> dict:
     return result
 
 
+@players_bp.route("/players/search")
+def search_players():
+    """Public player search for autocomplete. GET /api/players/search?q=<query>&limit=8"""
+    query = request.args.get("q", "").strip()
+    if len(query) < 2:
+        return jsonify({"players": []})
+    limit = min(request.args.get("limit", 8, type=int), 20)
+    try:
+        repo = UserProfileRepository()
+        results = repo.search_users(query, limit=limit)
+        players = [
+            {"user_id": r["user_id"], "display_name": r["display_name"], "avatar": r.get("avatar"), "provider": r.get("provider", "discord")}
+            for r in results
+        ]
+        return jsonify({"players": players})
+    except Exception as e:
+        logger.error(f"Player search error: {e}")
+        return jsonify({"players": []})
+
+
 @players_bp.route("/player/<player_id>")
 def player_api(player_id):
     """Get comprehensive player stats and match history.
@@ -665,7 +685,7 @@ def player_api(player_id):
                     curiosa_url,
                     winner_id,
                     losser_id,
-                    original_match_id as match_id,
+                    COALESCE(original_match_id, rowid) as match_id,
                     json_deck_data_winner,
                     json_deck_data_loser,
                     curiosa_url_winner,
@@ -698,7 +718,7 @@ def player_api(player_id):
                         curiosa_url,
                         winner_id,
                         losser_id,
-                        original_match_id as match_id,
+                        COALESCE(original_match_id, rowid) as match_id,
                         json_deck_data_winner,
                         json_deck_data_loser,
                         curiosa_url_winner,

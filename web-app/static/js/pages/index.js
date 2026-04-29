@@ -11,6 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeTemporaryNotices();
   initializeEasterEgg();
   initializeEloSourceToggle();
+  initializePlayerSearch();
 
   // Load saved preference or default to online
   const savedSource = localStorage.getItem("home_elo_source_preference");
@@ -222,6 +223,129 @@ function initializeEloSourceToggle() {
 function updateToggleButtons(source) {
   document.querySelectorAll(".elo-source-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.source === source);
+  });
+}
+
+/**
+ * Player search autocomplete
+ */
+function initializePlayerSearch() {
+  const input = document.getElementById("player-search-input");
+  const dropdown = document.getElementById("player-search-dropdown");
+  if (!input || !dropdown) return;
+
+  let debounceTimer = null;
+  let activeIndex = -1;
+  let currentResults = [];
+
+  function getAvatarUrl(player) {
+    if (player.provider === "discord" && player.avatar) {
+      return `https://cdn.discordapp.com/avatars/${player.user_id}/${player.avatar}.png?size=32`;
+    }
+    if (player.provider === "google" && player.avatar) {
+      return player.avatar;
+    }
+    return null;
+  }
+
+  function getPlayerUrl(player) {
+    return `/player/${encodeURIComponent(player.user_id)}`;
+  }
+
+  function renderDropdown(players) {
+    currentResults = players;
+    activeIndex = -1;
+    dropdown.innerHTML = "";
+
+    if (!players.length) {
+      const empty = document.createElement("div");
+      empty.className = "player-search-empty";
+      empty.textContent = "No players found";
+      dropdown.appendChild(empty);
+      dropdown.hidden = false;
+      return;
+    }
+
+    players.forEach((player, i) => {
+      const a = document.createElement("a");
+      a.className = "player-search-item";
+      a.href = getPlayerUrl(player);
+
+      const avatarUrl = getAvatarUrl(player);
+      const img = document.createElement("img");
+      img.className = "player-search-avatar";
+      img.alt = "";
+      if (avatarUrl) {
+        img.src = avatarUrl;
+        img.onerror = () => { img.src = ""; img.style.visibility = "hidden"; };
+      } else {
+        img.style.visibility = "hidden";
+      }
+
+      const name = document.createElement("span");
+      name.className = "player-search-name";
+      name.textContent = player.display_name;
+
+      a.appendChild(img);
+      a.appendChild(name);
+      dropdown.appendChild(a);
+    });
+
+    dropdown.hidden = false;
+  }
+
+  function closeDropdown() {
+    dropdown.hidden = true;
+    activeIndex = -1;
+  }
+
+  function setActive(index) {
+    const items = dropdown.querySelectorAll(".player-search-item");
+    items.forEach((el, i) => el.classList.toggle("active", i === index));
+    activeIndex = index;
+  }
+
+  async function doSearch(query) {
+    if (query.length < 3) { closeDropdown(); return; }
+    try {
+      const res = await fetch(`/api/players/search?q=${encodeURIComponent(query)}&limit=8`);
+      const data = await res.json();
+      renderDropdown(data.players || []);
+    } catch (_) {
+      closeDropdown();
+    }
+  }
+
+  input.addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    const q = input.value.trim();
+    if (q.length < 3) { closeDropdown(); return; }
+    debounceTimer = setTimeout(() => doSearch(q), 200);
+  });
+
+  input.addEventListener("keydown", (e) => {
+    const items = dropdown.querySelectorAll(".player-search-item");
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive(Math.min(activeIndex + 1, items.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive(Math.max(activeIndex - 1, 0));
+    } else if (e.key === "Enter") {
+      if (activeIndex >= 0 && currentResults[activeIndex]) {
+        window.location.href = getPlayerUrl(currentResults[activeIndex]);
+      } else if (currentResults.length === 1) {
+        window.location.href = getPlayerUrl(currentResults[0]);
+      }
+    } else if (e.key === "Escape") {
+      closeDropdown();
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!document.getElementById("player-search-container").contains(e.target)) {
+      closeDropdown();
+    }
   });
 }
 

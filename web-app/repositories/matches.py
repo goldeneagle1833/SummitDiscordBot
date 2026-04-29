@@ -295,6 +295,51 @@ class MatchRepository:
         conn.close()
 
         if not row:
+            # Not in match_records — check archive table by rowid
+            conn2 = self._get_connection()
+            cur2 = conn2.cursor()
+            try:
+                cur2.execute(
+                    """
+                    SELECT
+                        winner_id,
+                        losser_id,
+                        winner_display_name,
+                        losser_display_name,
+                        timestamp,
+                        json_deck_data,
+                        json_deck_data_winner,
+                        json_deck_data_loser
+                    FROM match_records_archive
+                    WHERE rowid = ?
+                """,
+                    (match_id,),
+                )
+                row = cur2.fetchone()
+                has_new_columns = True
+            except sqlite3.OperationalError:
+                try:
+                    cur2.execute(
+                        """
+                        SELECT
+                            winner_id,
+                            losser_id,
+                            winner_display_name,
+                            losser_display_name,
+                            timestamp,
+                            json_deck_data
+                        FROM match_records_archive
+                        WHERE rowid = ?
+                    """,
+                        (match_id,),
+                    )
+                    row = cur2.fetchone()
+                    has_new_columns = False
+                except sqlite3.OperationalError:
+                    row = None
+            conn2.close()
+
+        if not row:
             return None
 
         result = {

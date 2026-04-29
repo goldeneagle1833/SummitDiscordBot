@@ -445,6 +445,98 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
+/* Player search bar */
+.player-search-wrapper {
+  display: flex;
+  justify-content: center;
+  margin: 1.25rem auto 0;
+  max-width: 480px;
+  width: 100%;
+  padding: 0 1rem;
+}
+
+.player-search-container {
+  position: relative;
+  width: 100%;
+}
+
+.player-search-input {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  background: var(--color-bg-secondary, #1e1e2e);
+  border: 1px solid var(--color-border, #3a3a4e);
+  border-radius: 8px;
+  color: var(--color-text, #e0e0e0);
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.player-search-input::placeholder {
+  color: var(--color-text-muted, #666);
+}
+
+.player-search-input:focus {
+  border-color: var(--color-primary, #e8a800);
+  box-shadow: 0 0 0 2px rgba(232, 168, 0, 0.15);
+}
+
+.player-search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--color-bg-elevated, #21262d);
+  border: 1px solid var(--color-border, #3a3a4e);
+  border-radius: 8px;
+  overflow: hidden;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.player-search-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--color-text, #e0e0e0);
+  font-size: 0.9rem;
+  transition: background 0.15s;
+}
+
+.player-search-item:hover,
+.player-search-item.active {
+  background: rgba(232, 168, 0, 0.12);
+  color: #fff;
+}
+
+.player-search-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--color-bg-secondary, #2a2a3e);
+}
+
+.player-search-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-search-empty {
+  padding: 0.6rem 0.9rem;
+  color: var(--color-text-muted, #666);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
 /* Easter egg hint */
 .hero-secret {
   cursor: default;

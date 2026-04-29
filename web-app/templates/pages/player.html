@@ -399,7 +399,7 @@
         <div
           class="elo-bracket-chart-section"
           id="elo-bracket-chart-section"
-          style="display: none; margin-top: 2rem">
+          style="display: none">
           <h3
             class="collapsible-header collapsed"
             id="elo-bracket-chart-header">
@@ -408,8 +408,7 @@
           </h3>
           <div
             class="elo-bracket-chart-wrapper collapsible-content collapsed"
-            id="elo-bracket-chart-container"
-            style="padding: 1.5rem; background: var(--color-bg-secondary); border-radius: 8px; margin-top: 0.5rem">
+            id="elo-bracket-chart-container">
             <div id="elo-bracket-table"></div>
           </div>
         </div>
@@ -436,7 +435,7 @@
                 type="range"
                 id="elo-range-slider"
                 min="10"
-                max="100"
+                max="500"
                 value="50"
                 step="5" />
             </div>
@@ -1902,15 +1901,16 @@
         const scaleValue = document.getElementById("elo-scale-value");
 
         if (rangeSlider && storedMatches) {
-          // Set max to total matches or 100, whichever is smaller
-          const maxValue = Math.min(storedMatches.length, 100);
+          const maxValue = storedMatches.length;
           rangeSlider.max = maxValue;
+          rangeSlider.min = Math.min(10, maxValue);
+          rangeSlider.step = maxValue > 100 ? 10 : 5;
           rangeSlider.value = Math.min(50, maxValue);
           currentMaxMatches = parseInt(rangeSlider.value);
           rangeValue.textContent = rangeSlider.value;
 
           rangeSlider.addEventListener("input", function () {
-            rangeValue.textContent = this.value;
+            rangeValue.textContent = parseInt(this.value) >= maxValue ? `${this.value} (all)` : this.value;
             currentMaxMatches = parseInt(this.value);
             renderEloChart(
               storedElo,
@@ -2113,7 +2113,6 @@
             storedElo = chartElo;
             storedMatches = data.matches;
             setupEloSliders();
-            currentMaxMatches = Math.min(50, data.matches.length);
             renderEloChart(
               chartElo,
               data.matches,

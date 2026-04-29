@@ -250,56 +250,24 @@ class MatchRepository:
         conn.close()
         return players
 
+    _ARCHIVE_ID_OFFSET = 1_000_000_000
+
     def get_match_by_id(self, match_id: int) -> dict | None:
-        """Get a single match by its ID."""
+        """Get a single match by its ID.
+
+        IDs >= 1_000_000_000 are archive rows: subtract the offset to get the
+        rowid in match_records_archive.  All other IDs are rowids in
+        match_records.
+        """
         conn = self._get_connection()
         cur = conn.cursor()
+        row = None
+        has_new_columns = True
 
-        try:
-            cur.execute(
-                """
-                SELECT
-                    winner_id,
-                    losser_id,
-                    winner_display_name,
-                    losser_display_name,
-                    timestamp,
-                    json_deck_data,
-                    json_deck_data_winner,
-                    json_deck_data_loser
-                FROM match_records
-                WHERE rowid = ?
-            """,
-                (match_id,),
-            )
-            row = cur.fetchone()
-            has_new_columns = True
-        except sqlite3.OperationalError:
-            cur.execute(
-                """
-                SELECT
-                    winner_id,
-                    losser_id,
-                    winner_display_name,
-                    losser_display_name,
-                    timestamp,
-                    json_deck_data
-                FROM match_records
-                WHERE rowid = ?
-            """,
-                (match_id,),
-            )
-            row = cur.fetchone()
-            has_new_columns = False
-
-        conn.close()
-
-        if not row:
-            # Not in match_records — check archive table by rowid
-            conn2 = self._get_connection()
-            cur2 = conn2.cursor()
+        if match_id >= self._ARCHIVE_ID_OFFSET:
+            archive_rowid = match_id - self._ARCHIVE_ID_OFFSET
             try:
-                cur2.execute(
+                cur.execute(
                     """
                     SELECT
                         winner_id,
@@ -313,13 +281,12 @@ class MatchRepository:
                     FROM match_records_archive
                     WHERE rowid = ?
                 """,
-                    (match_id,),
+                    (archive_rowid,),
                 )
-                row = cur2.fetchone()
-                has_new_columns = True
+                row = cur.fetchone()
             except sqlite3.OperationalError:
                 try:
-                    cur2.execute(
+                    cur.execute(
                         """
                         SELECT
                             winner_id,
@@ -331,13 +298,50 @@ class MatchRepository:
                         FROM match_records_archive
                         WHERE rowid = ?
                     """,
-                        (match_id,),
+                        (archive_rowid,),
                     )
-                    row = cur2.fetchone()
+                    row = cur.fetchone()
                     has_new_columns = False
                 except sqlite3.OperationalError:
                     row = None
-            conn2.close()
+        else:
+            try:
+                cur.execute(
+                    """
+                    SELECT
+                        winner_id,
+                        losser_id,
+                        winner_display_name,
+                        losser_display_name,
+                        timestamp,
+                        json_deck_data,
+                        json_deck_data_winner,
+                        json_deck_data_loser
+                    FROM match_records
+                    WHERE rowid = ?
+                """,
+                    (match_id,),
+                )
+                row = cur.fetchone()
+            except sqlite3.OperationalError:
+                cur.execute(
+                    """
+                    SELECT
+                        winner_id,
+                        losser_id,
+                        winner_display_name,
+                        losser_display_name,
+                        timestamp,
+                        json_deck_data
+                    FROM match_records
+                    WHERE rowid = ?
+                """,
+                    (match_id,),
+                )
+                row = cur.fetchone()
+                has_new_columns = False
+
+        conn.close()
 
         if not row:
             return None

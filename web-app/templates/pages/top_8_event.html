@@ -562,7 +562,6 @@
               <th>Player</th>
               <th>Avatar</th>
               <th>Deck</th>
-              <th style="width: 150px">View</th>
               <th style="width: 150px">Deck Rec</th>
             </tr>
           </thead>
@@ -573,18 +572,6 @@
               <td>{{ deck.player }}</td>
               <td>{{ deck.avatar }}</td>
               <td>{{ deck.deck_name }}</td>
-              <td>
-                {% if deck.deck_id %}
-                <a
-                  href="https://curiosa.io/decks/{{ deck.deck_id }}"
-                  target="_blank"
-                  class="deck-link"
-                  >View on Curiosa</a
-                >
-                {% else %}
-                <span class="deck-link private">No Link</span>
-                {% endif %}
-              </td>
               <td>
                 {% if deck.deck_id %}
                 <a href="/deck-rec/{{ deck.deck_id }}" class="deck-link deck-link-rec">Deck Rec</a>
@@ -615,7 +602,6 @@
               <th>Player</th>
               <th>Avatar</th>
               <th>Deck</th>
-              <th style="width: 150px">View</th>
               <th style="width: 150px">Deck Rec</th>
             </tr>
           </thead>
@@ -626,18 +612,6 @@
               <td>{{ deck.player }}</td>
               <td>{{ deck.avatar }}</td>
               <td>{{ deck.deck_name }}</td>
-              <td>
-                {% if deck.deck_id %}
-                <a
-                  href="https://curiosa.io/decks/{{ deck.deck_id }}"
-                  target="_blank"
-                  class="deck-link"
-                  >View on Curiosa</a
-                >
-                {% else %}
-                <span class="deck-link private">No Link</span>
-                {% endif %}
-              </td>
               <td>
                 {% if deck.deck_id %}
                 <a href="/deck-rec/{{ deck.deck_id }}" class="deck-link deck-link-rec">Deck Rec</a>

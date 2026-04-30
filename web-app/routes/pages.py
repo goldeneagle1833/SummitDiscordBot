@@ -357,6 +357,26 @@ def deck_snapshot(match_id, player_id):
     )
 
 
+@pages_bp.route("/deck-stats/<player_id>")
+def deck_stats(player_id):
+    """Deck stats page."""
+    deck_url = request.args.get("url", "").strip()
+    if not deck_url:
+        return render_template("pages/error.html", error="No deck URL provided"), 400
+
+    logged_in_user_id = session.get("user_id")
+    is_owner = logged_in_user_id is not None and str(logged_in_user_id) == str(player_id)
+
+    if not is_owner and not is_admin():
+        return render_template(
+            "pages/error.html", error="You can only view your own deck stats"
+        ), 403
+
+    return render_template(
+        "pages/deck_stats.html", player_id=player_id, deck_url=deck_url
+    )
+
+
 @pages_bp.route("/admin/audit-log")
 def admin_audit_log():
     """Admin audit log page - shows all admin actions."""

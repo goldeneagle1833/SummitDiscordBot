@@ -210,6 +210,207 @@ def deck_snapshot(match_id, player_id):
         return jsonify({"error": str(e)}), 500
 
 
+@players_bp.route("/<player_id>/deck-stats")
+def get_deck_stats(player_id):
+    """Get detailed stats for a specific deck URL for a player."""
+    deck_url = request.args.get("url", "").strip()
+    if not deck_url:
+        return jsonify({"error": "url parameter required"}), 400
+
+    # Normalize player_id
+    player_id_str = str(player_id)
+    if player_id_str.startswith("google_"):
+        player_id = player_id_str[7:]
+
+    # Auth: owner or admin only
+    logged_in_user_id = session.get("user_id")
+    is_owner = False
+    if logged_in_user_id is not None:
+        logged_in_id_str = str(logged_in_user_id)
+        if logged_in_id_str.startswith("google_"):
+            logged_in_id_str = logged_in_id_str[7:]
+        is_owner = logged_in_id_str == str(player_id)
+    api_key = request.headers.get("X-API-Key")
+    if api_key and api_key in VALID_API_KEYS:
+        is_owner = True
+    if is_admin():
+        is_owner = True
+    if not is_owner:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    # Normalise the target URL the same way the player page does
+    deck_url = deck_url.split("?")[0]
+
+    conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    # Pull every match for this player from both active and archive tables
+    all_rows = []
+    for table, id_col in [("match_records", "rowid"), ("match_records_archive", "rowid + 1000000000")]:
+        try:
+            cur.execute(
+                f"""
+                SELECT
+                    CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                    winner_display_name,
+                    losser_display_name,
+                    winner_id,
+                    losser_id,
+                    timestamp,
+                    winner_elo_change,
+                    loser_elo_change,
+                    match_time,
+                    {id_col} as match_id,
+                    COALESCE(curiosa_url_winner, curiosa_url) as winner_deck_url,
+                    curiosa_url_loser as loser_deck_url,
+                    json_deck_data_winner as winner_json,
+                    json_deck_data_loser as loser_json,
+                    winner_went_first,
+                    loser_went_first
+                FROM {table}
+                WHERE winner_id = ? OR losser_id = ?
+                ORDER BY timestamp DESC
+                """,
+                (player_id, player_id, player_id),
+            )
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError:
+            try:
+                cur.execute(
+                    f"""
+                    SELECT
+                        CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                        winner_display_name,
+                        losser_display_name,
+                        winner_id,
+                        losser_id,
+                        timestamp,
+                        winner_elo_change,
+                        loser_elo_change,
+                        match_time,
+                        {id_col} as match_id,
+                        COALESCE(curiosa_url_winner, curiosa_url) as winner_deck_url,
+                        NULL as loser_deck_url,
+                        json_deck_data as winner_json,
+                        NULL as loser_json,
+                        NULL as winner_went_first,
+                        NULL as loser_went_first
+                    FROM {table}
+                    WHERE winner_id = ? OR losser_id = ?
+                    ORDER BY timestamp DESC
+                    """,
+                    (player_id, player_id, player_id),
+                )
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass
+    conn.close()
+
+    wins = 0
+    losses = 0
+    deck_name = "Unnamed Deck"
+    avatar = "Unknown"
+    vs_avatars = {}   # opponent_avatar -> {wins, losses}
+    on_play = {"wins": 0, "losses": 0}
+    on_draw = {"wins": 0, "losses": 0}
+    match_history = []
+
+    for row in all_rows:
+        did_win = row["did_win"]
+        player_url = row["winner_deck_url"] if did_win else row["loser_deck_url"]
+        if not player_url:
+            continue
+        # Normalise URL
+        player_url = player_url.split("?")[0]
+        if player_url != deck_url:
+            continue
+
+        player_json = row["winner_json"] if did_win else row["loser_json"]
+        opp_json = row["loser_json"] if did_win else row["winner_json"]
+        opp_name = row["losser_display_name"] if did_win else row["winner_display_name"]
+        opp_id = str(row["losser_id"]) if did_win else str(row["winner_id"])
+        elo_change = row["winner_elo_change"] if did_win else row["loser_elo_change"]
+
+        # Extract own deck info (use first match that has it)
+        if avatar == "Unknown" and player_json and player_json not in ("{}", ""):
+            av, _ = _extract_deck_info(player_json)
+            if av:
+                avatar = av
+            try:
+                d = json.loads(player_json)
+                if d.get("name"):
+                    deck_name = d["name"]
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        opp_avatar, _ = _extract_deck_info(opp_json)
+        opp_avatar = opp_avatar or "Unknown"
+
+        if opp_avatar not in vs_avatars:
+            vs_avatars[opp_avatar] = {"wins": 0, "losses": 0}
+        if did_win:
+            wins += 1
+            vs_avatars[opp_avatar]["wins"] += 1
+        else:
+            losses += 1
+            vs_avatars[opp_avatar]["losses"] += 1
+
+        # On play / on draw
+        went_first_val = row["winner_went_first"] if did_win else row["loser_went_first"]
+        if went_first_val is not None:
+            on_play_flag = "y" in str(went_first_val).lower()
+            bucket = on_play if on_play_flag else on_draw
+            if did_win:
+                bucket["wins"] += 1
+            else:
+                bucket["losses"] += 1
+
+        match_history.append({
+            "match_id": row["match_id"],
+            "date": row["timestamp"],
+            "result": "Win" if did_win else "Loss",
+            "opponent": opp_name,
+            "opponent_id": opp_id,
+            "opponent_avatar": opp_avatar,
+            "elo_change": elo_change,
+            "match_time": row["match_time"],
+        })
+
+    total = wins + losses
+    win_rate = round(wins / total * 100, 1) if total > 0 else 0
+
+    matchups = []
+    for opp_av, rec in sorted(vs_avatars.items(), key=lambda x: x[1]["wins"] + x[1]["losses"], reverse=True):
+        t = rec["wins"] + rec["losses"]
+        matchups.append({
+            "opponent_avatar": opp_av,
+            "wins": rec["wins"],
+            "losses": rec["losses"],
+            "total": t,
+            "win_rate": round(rec["wins"] / t * 100, 1) if t > 0 else 0,
+        })
+
+    def _play_stats(bucket):
+        t = bucket["wins"] + bucket["losses"]
+        return {"wins": bucket["wins"], "losses": bucket["losses"], "total": t,
+                "win_rate": round(bucket["wins"] / t * 100, 1) if t > 0 else 0}
+
+    return jsonify({
+        "deck_name": deck_name,
+        "avatar": avatar,
+        "url": deck_url,
+        "wins": wins,
+        "losses": losses,
+        "total": total,
+        "win_rate": win_rate,
+        "matchups": matchups,
+        "on_play": _play_stats(on_play),
+        "on_draw": _play_stats(on_draw),
+        "matches": match_history,
+    })
+
+
 def _get_limited_stats(player_id: str) -> dict:
     """Fetch limited arena stats for a player from match_records.db and elo.db."""
     result = {

@@ -2194,6 +2194,7 @@
               deckItem.className = "recent-deck-item";
               const date = new Date(deck.date).toLocaleDateString();
               const winRateColor = deck.win_rate >= 50 ? "#4ade80" : "#f87171";
+              const encodedUrl = encodeURIComponent(deck.url);
               deckItem.innerHTML = `
                 <div class="deck-info">
                   <div class="deck-avatar">🎭 ${deck.avatar}</div>
@@ -2203,7 +2204,10 @@
                   </div>
                   <div class="deck-date">${date}</div>
                 </div>
-                <a href="${deck.url}" target="_blank" class="deck-link-button">View Deck →</a>
+                <div class="deck-tile-actions">
+                  <a href="/deck-stats/${playerId}?url=${encodedUrl}" class="deck-link-button deck-stats-button">Stats</a>
+                  <a href="${deck.url}" target="_blank" class="deck-link-button">View Deck →</a>
+                </div>
               `;
               decksList.appendChild(deckItem);
             });
@@ -2348,7 +2352,8 @@
             const matchTime = match.match_time
               ? `${match.match_time} min`
               : "-";
-            const matchId = match.match_id ? `#${match.match_id}` : "-";
+            const rawMatchId = match.match_id >= 1000000000 ? match.match_id - 1000000000 : match.match_id;
+            const matchId = match.match_id ? `#${rawMatchId}` : "-";
             const avatarName = match.player_avatar || "-";
             const elementsHtml = renderElementIcons(match.deck_elements);
             const oppAvatarName = match.opponent_avatar || "-";
@@ -2457,7 +2462,8 @@
               const resultClass = match.result === "Win" ? "match-win" : "match-loss";
               const date = new Date(match.date).toLocaleDateString();
               const matchTime = match.match_time ? `${match.match_time} min` : "-";
-              const matchId = match.match_id ? `#${match.match_id}` : "-";
+              const rawMatchId = match.match_id >= 1000000000 ? match.match_id - 1000000000 : match.match_id;
+            const matchId = match.match_id ? `#${rawMatchId}` : "-";
               const avatarName = match.player_avatar || "-";
               const elementsHtml = renderElementIcons(match.deck_elements);
               const oppAvatarName = match.opponent_avatar || "-";

@@ -72,6 +72,9 @@ def _get_card_details(spellbook: list, atlas: list | None = None) -> list[dict]:
         name = card.get("name", "").strip()
         if not name:
             continue
+        # Curiosa API returns one entry per unique card with a quantity field.
+        # Tournament JSON has one entry per copy — treat missing quantity as 1.
+        card_qty = int(card.get("quantity") or card.get("qty") or 1)
         if name not in seen:
             seen[name] = {
                 "name": name,
@@ -79,7 +82,7 @@ def _get_card_details(spellbook: list, atlas: list | None = None) -> list[dict]:
                 "type": card.get("type", ""),
                 "threshold": card.get("threshold") or card.get("cost") or card.get("mana") or 0,
             }
-        seen[name]["qty"] += 1
+        seen[name]["qty"] += card_qty
     return list(seen.values())
 
 

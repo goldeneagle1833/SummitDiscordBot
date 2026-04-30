@@ -210,7 +210,7 @@ def deck_snapshot(match_id, player_id):
         return jsonify({"error": str(e)}), 500
 
 
-@players_bp.route("/<player_id>/deck-stats")
+@players_bp.route("/player/<player_id>/deck-stats")
 def get_deck_stats(player_id):
     """Get detailed stats for a specific deck URL for a player."""
     deck_url = request.args.get("url", "").strip()

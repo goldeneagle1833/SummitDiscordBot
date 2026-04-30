@@ -85,7 +85,7 @@ function renderHistory(matches) {
 async function loadDeckStats() {
   try {
     const params = new URLSearchParams({ url: deckUrl });
-    const res = await fetch(`/api/players/${playerId}/deck-stats?${params}`);
+    const res = await fetch(`/api/player/${playerId}/deck-stats?${params}`);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       throw new Error(data.error || `HTTP ${res.status}`);

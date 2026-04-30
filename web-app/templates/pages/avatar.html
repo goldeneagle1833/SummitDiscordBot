@@ -1094,7 +1094,7 @@
           if (!res.ok) return;
           const data = await res.json();
           const decks = (data.decks || []).filter(
-            (d) => d.avatar_name.toLowerCase() === avatarName.toLowerCase()
+            (d) => d.is_admin_rec && d.avatar_name.toLowerCase() === avatarName.toLowerCase()
           );
           if (decks.length === 0) {
             document.getElementById("staff-picks-empty").textContent = "No staff pick decks for this avatar yet.";

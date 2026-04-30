@@ -149,6 +149,16 @@
         color: rgba(255, 255, 255, 0.4);
       }
 
+      .deck-link-rec {
+        color: #a78bfa;
+        border-color: #a78bfa;
+      }
+
+      .deck-link-rec:hover {
+        background: #a78bfa;
+        color: #000;
+      }
+
       .no-data {
         padding: 2rem;
         text-align: center;
@@ -553,6 +563,7 @@
               <th>Avatar</th>
               <th>Deck</th>
               <th style="width: 150px">View</th>
+              <th style="width: 150px">Deck Rec</th>
             </tr>
           </thead>
           <tbody>
@@ -572,6 +583,11 @@
                 >
                 {% else %}
                 <span class="deck-link private">No Link</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if deck.deck_id %}
+                <a href="/deck-rec/{{ deck.deck_id }}" class="deck-link deck-link-rec">Deck Rec</a>
                 {% endif %}
               </td>
             </tr>
@@ -600,6 +616,7 @@
               <th>Avatar</th>
               <th>Deck</th>
               <th style="width: 150px">View</th>
+              <th style="width: 150px">Deck Rec</th>
             </tr>
           </thead>
           <tbody>
@@ -619,6 +636,11 @@
                 >
                 {% else %}
                 <span class="deck-link private">No Link</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if deck.deck_id %}
+                <a href="/deck-rec/{{ deck.deck_id }}" class="deck-link deck-link-rec">Deck Rec</a>
                 {% endif %}
               </td>
             </tr>

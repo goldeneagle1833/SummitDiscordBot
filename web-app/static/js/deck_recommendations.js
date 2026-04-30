@@ -1215,7 +1215,7 @@
   // TCGPlayer affiliate buy link                                        //
   // ------------------------------------------------------------------ //
 
-  const TCGPLAYER_IMPACT_LINK = "https://tcgplayer.pxf.io/6e3ojm";
+  const TCGPLAYER_IMPACT_LINK = "https://partner.tcgplayer.com/c/5746741/1780961/21018";
 
   function buildTcgPlayerUrl(seedCards) {
     if (!seedCards || seedCards.length === 0) return null;

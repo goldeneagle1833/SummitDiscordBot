@@ -288,6 +288,73 @@
         content: "▼";
         opacity: 1;
       }
+      /* Staff pick deck cards */
+      .staff-picks-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 0.75rem;
+      }
+      .staff-pick-card {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        padding: 0.75rem;
+        text-decoration: none;
+        display: block;
+        transition: background 0.2s, border-color 0.2s, transform 0.15s;
+      }
+      .staff-pick-card:hover {
+        background: rgba(255, 255, 255, 0.15);
+        border-color: rgba(255, 255, 255, 0.4);
+        transform: translateY(-2px);
+      }
+      .staff-pick-name {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-bottom: 0.25rem;
+      }
+      .staff-pick-event {
+        font-size: 0.78rem;
+        color: rgba(255, 255, 255, 0.65);
+        margin-bottom: 0.25rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .staff-pick-elements {
+        display: flex;
+        gap: 3px;
+        align-items: center;
+        margin-top: 0.4rem;
+      }
+      .staff-pick-stars {
+        color: #f39c12;
+        font-size: 0.85rem;
+        margin-top: 0.25rem;
+      }
+      .staff-pick-primer {
+        font-size: 0.78rem;
+        color: rgba(255, 255, 255, 0.7);
+        margin-top: 0.35rem;
+        line-height: 1.4;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .staff-pick-cluster {
+        margin-top: 0.5rem;
+        font-size: 0.75rem;
+        color: rgba(255, 255, 255, 0.55);
+      }
+      .staff-pick-cluster span {
+        color: rgba(255, 255, 255, 0.85);
+        font-weight: 600;
+      }
     </style>
   </head>
   <body class="md:ml-48">
@@ -395,6 +462,19 @@
               <div class="stat-label">Win Rate on the Draw</div>
               <div class="text-xs text-text-muted mt-1" id="stat-draw-record">-</div>
             </div>
+          </div>
+        </div>
+
+        <!-- Staff Pick Decks -->
+        <div class="p-6 md:p-8 border-t border-border" id="staff-picks-section">
+          <h3 class="text-lg md:text-xl font-semibold mb-2">
+            🃏 Staff Pick Decks
+          </h3>
+          <p class="text-sm text-text-muted mb-4">
+            Tournament and community builds for this avatar
+          </p>
+          <div class="staff-picks-grid" id="staff-picks-grid">
+            <p class="loading-text" id="staff-picks-empty">Loading decks...</p>
           </div>
         </div>
 
@@ -1007,6 +1087,66 @@
 
       // Fetch deck composition data
       fetchDeckComposition();
+
+      async function loadStaffPicks() {
+        try {
+          const res = await fetch("/api/deck-rec/decks");
+          if (!res.ok) return;
+          const data = await res.json();
+          const decks = (data.decks || []).filter(
+            (d) => d.avatar_name.toLowerCase() === avatarName.toLowerCase()
+          );
+          if (decks.length === 0) {
+            document.getElementById("staff-picks-empty").textContent = "No staff pick decks for this avatar yet.";
+            return;
+          }
+
+          const ELEMENT_ICONS = { Fire: "fire.png", Water: "water.png", Earth: "earth.png", Air: "wind.png" };
+
+          function esc(s) {
+            return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+          }
+
+          const grid = document.getElementById("staff-picks-grid");
+          grid.innerHTML = "";
+
+          decks.forEach((deck) => {
+            const a = document.createElement("a");
+            a.href = `/deck-rec/${encodeURIComponent(deck.deck_id)}`;
+            a.className = "staff-pick-card";
+
+            const elementIcons = (deck.elements || [])
+              .filter((el) => ELEMENT_ICONS[el])
+              .map((el) => `<img src="/avatar-images/${esc(ELEMENT_ICONS[el])}" alt="${esc(el)}" title="${esc(el)}" width="16" height="16">`)
+              .join("");
+
+            const starsHtml = deck.stars
+              ? `<div class="staff-pick-stars">${"★".repeat(deck.stars)}${"☆".repeat(3 - deck.stars)}</div>`
+              : "";
+            const primerHtml = deck.primer
+              ? `<div class="staff-pick-primer">${esc(deck.primer)}</div>`
+              : "";
+            const clusterLabel =
+              deck.cluster_size === 1 ? "1 similar build" : `${deck.cluster_size} similar builds`;
+
+            a.innerHTML = `
+              <div class="staff-pick-name" title="${esc(deck.deck_name)}">${esc(deck.deck_name)}</div>
+              <div class="staff-pick-event">${esc(deck.event_name || "")}</div>
+              ${elementIcons ? `<div class="staff-pick-elements">${elementIcons}</div>` : ""}
+              ${starsHtml}
+              ${primerHtml}
+              <div class="staff-pick-cluster">Community: <span>${esc(clusterLabel)}</span></div>
+            `;
+            grid.appendChild(a);
+          });
+
+        } catch (e) {
+          document.getElementById("staff-picks-empty").textContent = "Failed to load staff picks.";
+          console.error("Error loading staff picks:", e);
+        }
+      }
+
+      loadStaffPicks();
 
       // Popularity over time chart
       let popularityChartInstance = null;

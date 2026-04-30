@@ -151,6 +151,11 @@ def get_recommendations(deck_id: str):
                 })
         similar_seeds.sort(key=lambda x: x["similarity"], reverse=True)
 
+        seed_cards = [
+            {"name": name, "qty": qty}
+            for name, qty in sorted(seed.card_quantities_display.items(), key=lambda x: -x[1])
+        ]
+
         return jsonify(
             {
                 "seed": {
@@ -163,6 +168,7 @@ def get_recommendations(deck_id: str):
                     "curiosa_url": seed.curiosa_url,
                     "primer": seed.primer or "",
                 },
+                "seed_cards": seed_cards,
                 "cluster_size": len(members),
                 "avg_similarity": avg_sim,
                 "wins": win_data["wins"],

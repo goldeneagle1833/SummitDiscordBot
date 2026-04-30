@@ -858,6 +858,15 @@
       seedLink.style.display = data.seed.curiosa_url ? "inline" : "none";
     }
 
+    const tcgBtn = document.getElementById("tcgplayer-btn");
+    if (tcgBtn) {
+      const tcgUrl = buildTcgPlayerUrl(data.seed_cards);
+      if (tcgUrl) {
+        tcgBtn.href = tcgUrl;
+        tcgBtn.style.display = "inline-block";
+      }
+    }
+
     // Primer / short description
     const seedPrimer = document.getElementById("seed-primer");
     if (seedPrimer && data.seed.primer) {
@@ -1123,6 +1132,22 @@
   // ------------------------------------------------------------------ //
   // Helpers                                                             //
   // ------------------------------------------------------------------ //
+
+  // ------------------------------------------------------------------ //
+  // TCGPlayer affiliate buy link                                        //
+  // ------------------------------------------------------------------ //
+
+  const TCGPLAYER_IMPACT_LINK = "https://tcgplayer.pxf.io/6e3ojm";
+
+  function buildTcgPlayerUrl(seedCards) {
+    if (!seedCards || seedCards.length === 0) return null;
+    const cardList = seedCards.map((c) => `${c.qty} ${c.name}`).join("||");
+    const massEntryUrl =
+      "https://www.tcgplayer.com/massentry" +
+      "?productline=Sorcery+Contested+Realm" +
+      "&c=" + encodeURIComponent(cardList);
+    return TCGPLAYER_IMPACT_LINK + "?u=" + encodeURIComponent(massEntryUrl);
+  }
 
   function showNotFound(el) {
     if (!el) return;

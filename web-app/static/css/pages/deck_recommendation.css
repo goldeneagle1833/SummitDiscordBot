@@ -20,6 +20,36 @@
   margin: 0 auto 1.5rem;
   padding: 0 var(--spacing-md);
 }
+.archetype-header-inner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.archetype-header-left {
+  flex: 1;
+  min-width: 0;
+}
+.archetype-header-right {
+  flex-shrink: 0;
+  padding-top: 0.25rem;
+}
+.tcgplayer-buy-btn {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background: #e5a800;
+  color: #111;
+  font-weight: 700;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.tcgplayer-buy-btn:hover {
+  background: #f0bb00;
+  color: #000;
+}
 .archetype-title {
   font-size: 1.6rem;
   font-weight: 700;

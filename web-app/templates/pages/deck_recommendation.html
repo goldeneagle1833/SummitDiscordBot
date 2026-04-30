@@ -42,32 +42,47 @@
       <div id="archetype-content" style="display: none">
         <!-- Seed deck header -->
         <div class="archetype-header">
-          <div class="archetype-title" id="seed-name"></div>
-          <div
-            class="archetype-meta"
-            style="display: flex; align-items: center; gap: 0.4rem">
-            Avatar:
-            <span
-              id="seed-avatar"
-              style="
-                display: inline-flex;
-                align-items: center;
-                gap: 0.35rem;
-                font-weight: 600;
-              "></span>
+          <div class="archetype-header-inner">
+            <div class="archetype-header-left">
+              <div class="archetype-title" id="seed-name"></div>
+              <div
+                class="archetype-meta"
+                style="display: flex; align-items: center; gap: 0.4rem">
+                Avatar:
+                <span
+                  id="seed-avatar"
+                  style="
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.35rem;
+                    font-weight: 600;
+                  "></span>
+              </div>
+              <div class="archetype-meta">Event: <span id="seed-event"></span></div>
+              <div class="archetype-meta">
+                Player: <span id="seed-player"></span>
+              </div>
+              <a
+                class="curiosa-link"
+                id="seed-link"
+                href="#"
+                target="_blank"
+                rel="noopener">
+                View on Curiosa ↗
+              </a>
+            </div>
+            <div class="archetype-header-right">
+              <a
+                id="tcgplayer-btn"
+                class="tcgplayer-buy-btn"
+                href="#"
+                target="_blank"
+                rel="noopener"
+                style="display: none">
+                Buy on TCGPlayer ↗
+              </a>
+            </div>
           </div>
-          <div class="archetype-meta">Event: <span id="seed-event"></span></div>
-          <div class="archetype-meta">
-            Player: <span id="seed-player"></span>
-          </div>
-          <a
-            class="curiosa-link"
-            id="seed-link"
-            href="#"
-            target="_blank"
-            rel="noopener">
-            View on Curiosa ↗
-          </a>
           <div class="archetype-primer" id="seed-primer" style="display: none"></div>
         </div>
 

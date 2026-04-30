@@ -48,6 +48,18 @@ def _count_quantities(spellbook: list) -> dict[str, int]:
     return dict(counts)
 
 
+def _count_quantities_display(spellbook: list) -> dict[str, int]:
+    """Return a {card_name: copy_count} dict preserving original casing."""
+    counts: Counter = Counter()
+    for card in spellbook:
+        if not isinstance(card, dict):
+            continue
+        name = card.get("name", "")
+        if name:
+            counts[name.strip()] += 1
+    return dict(counts)
+
+
 def _extract_year(text: str) -> int | None:
     """Return the first 20xx year found in text, or None."""
     m = _YEAR_RE.search(text)
@@ -72,6 +84,8 @@ class DeckRecord:
     is_admin_rec: bool = False
     # card_name (lowercase) → number of copies in the deck
     card_quantities: dict = field(default_factory=dict)
+    # card_name (original casing) → number of copies in the deck
+    card_quantities_display: dict = field(default_factory=dict)
     primer: str = ""          # short description shown on admin tile
     stars: int | None = None  # 1–3 star rating
 
@@ -231,6 +245,7 @@ class DeckRecRepository:
                 elements=_extract_elements(spellbook),
                 event_year=_extract_year(event_name),
                 card_quantities=card_quantities,
+                card_quantities_display=_count_quantities_display(spellbook),
             )
         except Exception as e:
             logger.debug("Skipping malformed tournament deck: %s", e)
@@ -436,6 +451,7 @@ class DeckRecRepository:
                 event_year=None,
                 is_admin_rec=True,
                 card_quantities=_count_quantities(spellbook),
+                card_quantities_display=_count_quantities_display(spellbook),
                 primer=row["primer"] or "",
                 stars=row["stars"],
             )

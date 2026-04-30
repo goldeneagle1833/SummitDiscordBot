@@ -12,7 +12,7 @@ import re
 
 from flask import Blueprint, jsonify, request, session
 
-from repositories.deck_rec_repo import DeckRecRepository
+from repositories.deck_rec_repo import DeckRecRepository, _get_card_details
 from services.curiosa import CuriosaService
 from services.deck_similarity import SIMILARITY_THRESHOLD, aggregate_archetype, average_similarity, build_clusters, jaccard
 from utils.auth import is_admin, require_admin
@@ -151,9 +151,38 @@ def get_recommendations(deck_id: str):
                 })
         similar_seeds.sort(key=lambda x: x["similarity"], reverse=True)
 
+        # For admin/staff decks (or any seed missing card details), fetch live from Curiosa
+        detail_source = seed.card_details
+        if (seed.is_admin_rec or not detail_source) and seed.curiosa_url:
+            try:
+                fresh_json = CuriosaService().fetch_deck_data(seed.curiosa_url)
+                if fresh_json and fresh_json not in ("{}", ""):
+                    fresh_data = json.loads(fresh_json)
+                    live_details = _get_card_details(
+                        fresh_data.get("spellbook", []),
+                        fresh_data.get("atlas", []),
+                    )
+                    if live_details:
+                        detail_source = live_details
+            except Exception as e:
+                logger.warning("Could not fetch live Curiosa data for %s: %s", seed.deck_id, e)
+
+        # seed_cards: flat list for TCGPlayer buy link (spellbook + atlas)
         seed_cards = [
-            {"name": name, "qty": qty}
-            for name, qty in sorted(seed.card_quantities_display.items(), key=lambda x: -x[1])
+            {"name": c["name"], "qty": c["qty"]}
+            for c in detail_source
+        ]
+
+        # seed_spellbook: rich list for deck contents display
+        seed_spellbook = [
+            {
+                "name": c["name"],
+                "qty": c["qty"],
+                "type": c["type"],
+                "threshold": c["threshold"],
+                "image": _resolve_card_image(c["name"]),
+            }
+            for c in detail_source
         ]
 
         return jsonify(
@@ -169,6 +198,7 @@ def get_recommendations(deck_id: str):
                     "primer": seed.primer or "",
                 },
                 "seed_cards": seed_cards,
+                "seed_spellbook": seed_spellbook,
                 "cluster_size": len(members),
                 "avg_similarity": avg_sim,
                 "wins": win_data["wins"],

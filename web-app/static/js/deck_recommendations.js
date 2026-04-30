@@ -867,6 +867,8 @@
       }
     }
 
+    renderSeedDeck(data.seed_spellbook || []);
+
     // Primer / short description
     const seedPrimer = document.getElementById("seed-primer");
     if (seedPrimer && data.seed.primer) {
@@ -1132,6 +1134,82 @@
   // ------------------------------------------------------------------ //
   // Helpers                                                             //
   // ------------------------------------------------------------------ //
+
+  // ------------------------------------------------------------------ //
+  // Seed deck contents (snapshot-style tiles)                          //
+  // ------------------------------------------------------------------ //
+
+  const CARD_TYPE_ORDER = ["Minion", "Magic", "Artifact", "Aura", "Site", "Other"];
+
+  function _getSeedCardType(typeStr) {
+    const t = (typeStr || "").toLowerCase();
+    if (t.includes("minion")) return "Minion";
+    if (t.includes("magic")) return "Magic";
+    if (t.includes("artifact")) return "Artifact";
+    if (t.includes("aura")) return "Aura";
+    if (t.includes("site")) return "Site";
+    return "Other";
+  }
+
+  function renderSeedDeck(cards) {
+    const section = document.getElementById("seed-deck-section");
+    const grid = document.getElementById("seed-deck-grid");
+    if (!section || !grid || !cards || cards.length === 0) return;
+
+    // Group by type
+    const groups = {};
+    CARD_TYPE_ORDER.forEach((t) => { groups[t] = []; });
+    cards.forEach((card) => {
+      const type = _getSeedCardType(card.type);
+      groups[type].push(card);
+    });
+
+    // Sort each group by threshold then name
+    Object.values(groups).forEach((group) => {
+      group.sort((a, b) => (a.threshold || 0) - (b.threshold || 0) || a.name.localeCompare(b.name));
+    });
+
+    grid.innerHTML = "";
+
+    CARD_TYPE_ORDER.forEach((type) => {
+      const group = groups[type];
+      if (group.length === 0) return;
+
+      const tile = document.createElement("div");
+      tile.className = "seed-deck-tile";
+
+      const heading = document.createElement("div");
+      heading.className = "seed-deck-tile-heading";
+      heading.textContent = type === "Site" ? "Atlas" : type + "s";
+      tile.appendChild(heading);
+
+      const ul = document.createElement("ul");
+      ul.className = "seed-card-list";
+
+      group.forEach((card) => {
+        const li = document.createElement("li");
+        li.className = "seed-card-item";
+        if (card.image) {
+          li.dataset.cardImage = card.image;
+          li.style.cursor = "pointer";
+          li.addEventListener("mouseenter", (e) => showCardPopup(card.image, e.currentTarget));
+          li.addEventListener("mouseleave", hideCardPopup);
+          li.addEventListener("click", (e) => toggleCardPopupPin(card.image, e.currentTarget));
+          _preload(card.image);
+        }
+        const costHtml = card.threshold
+          ? `<span class="seed-card-cost">${card.threshold}</span>`
+          : "";
+        li.innerHTML = `<span class="seed-card-qty">${card.qty}x</span><span class="seed-card-name">${escHtml(card.name)}</span>${costHtml}`;
+        ul.appendChild(li);
+      });
+
+      tile.appendChild(ul);
+      grid.appendChild(tile);
+    });
+
+    section.style.display = "block";
+  }
 
   // ------------------------------------------------------------------ //
   // TCGPlayer affiliate buy link                                        //

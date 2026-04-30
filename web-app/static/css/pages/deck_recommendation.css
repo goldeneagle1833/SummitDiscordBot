@@ -82,6 +82,98 @@
   white-space: pre-wrap;
 }
 
+/* ------------------------------------------------------------------ */
+/* Seed deck contents section                                          */
+/* ------------------------------------------------------------------ */
+
+.seed-deck-section {
+  max-width: 1200px;
+  margin: 0 auto 2rem;
+  padding: 0 var(--spacing-md);
+}
+
+.seed-deck-heading {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 0.75rem;
+}
+
+.seed-deck-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.seed-deck-tile {
+  background: var(--color-bg-elevated, rgba(255,255,255,0.04));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.seed-deck-tile-heading {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-primary, #e5a800);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 2px solid var(--color-primary, #e5a800);
+}
+
+.seed-card-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.seed-card-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.85rem;
+}
+
+.seed-card-item:last-child {
+  border-bottom: none;
+}
+
+.seed-card-qty {
+  color: var(--color-primary, #e5a800);
+  font-weight: 600;
+  min-width: 1.6rem;
+  flex-shrink: 0;
+}
+
+.seed-card-name {
+  color: rgba(255, 255, 255, 0.9);
+  flex: 1;
+}
+
+.seed-card-cost {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+@media (max-width: 600px) {
+  .seed-deck-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.65rem;
+  }
+}
+
 .cluster-stats {
   display: flex;
   gap: 2rem;

@@ -60,6 +60,29 @@ def _count_quantities_display(spellbook: list) -> dict[str, int]:
     return dict(counts)
 
 
+def _get_card_details(spellbook: list, atlas: list | None = None) -> list[dict]:
+    """Return aggregated card list preserving name, qty, type, and threshold.
+
+    Combines spellbook and atlas so the full deck is represented.
+    """
+    seen: dict[str, dict] = {}
+    for card in list(spellbook) + list(atlas or []):
+        if not isinstance(card, dict):
+            continue
+        name = card.get("name", "").strip()
+        if not name:
+            continue
+        if name not in seen:
+            seen[name] = {
+                "name": name,
+                "qty": 0,
+                "type": card.get("type", ""),
+                "threshold": card.get("threshold") or card.get("cost") or card.get("mana") or 0,
+            }
+        seen[name]["qty"] += 1
+    return list(seen.values())
+
+
 def _extract_year(text: str) -> int | None:
     """Return the first 20xx year found in text, or None."""
     m = _YEAR_RE.search(text)
@@ -86,6 +109,8 @@ class DeckRecord:
     card_quantities: dict = field(default_factory=dict)
     # card_name (original casing) → number of copies in the deck
     card_quantities_display: dict = field(default_factory=dict)
+    # full card details: [{name, qty, type, threshold}] for spellbook + atlas
+    card_details: list = field(default_factory=list)
     primer: str = ""          # short description shown on admin tile
     stars: int | None = None  # 1–3 star rating
 
@@ -223,6 +248,7 @@ class DeckRecRepository:
                 return None
 
             spellbook = raw.get("spellbook", [])
+            atlas = raw.get("atlas", [])
             card_names = frozenset(
                 c["name"].strip().lower()
                 for c in spellbook
@@ -246,6 +272,7 @@ class DeckRecRepository:
                 event_year=_extract_year(event_name),
                 card_quantities=card_quantities,
                 card_quantities_display=_count_quantities_display(spellbook),
+                card_details=_get_card_details(spellbook, atlas),
             )
         except Exception as e:
             logger.debug("Skipping malformed tournament deck: %s", e)
@@ -422,6 +449,7 @@ class DeckRecRepository:
             deck_data = json.loads(deck_json_str) if deck_json_str not in ("", "{}") else {}
 
             spellbook = deck_data.get("spellbook", [])
+            atlas = deck_data.get("atlas", [])
             card_names = frozenset(
                 c["name"].strip().lower()
                 for c in spellbook
@@ -452,6 +480,7 @@ class DeckRecRepository:
                 is_admin_rec=True,
                 card_quantities=_count_quantities(spellbook),
                 card_quantities_display=_count_quantities_display(spellbook),
+                card_details=_get_card_details(spellbook, atlas),
                 primer=row["primer"] or "",
                 stars=row["stars"],
             )

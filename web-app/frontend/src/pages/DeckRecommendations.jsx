@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import Spinner from '@/components/ui/Spinner'
+import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import AvatarImageAdmin from '@/components/ui/AvatarImageAdmin'
 import { getDeckRecList, adminAddDeck, adminUpdateDeck, adminRemoveDeck } from '@/api/decks'
 import { getAvatarImageFiles } from '@/api/cards'
@@ -38,8 +37,23 @@ function ElementIcons({ elements }) {
   )
 }
 
+/* ---- Deck Card Skeleton ---- */
+function DeckCardSkeleton() {
+  return (
+    <div className="relative rounded-lg overflow-hidden bg-bg-surface border border-border animate-pulse" style={{ minHeight: '160px' }}>
+      <div className="p-4 flex flex-col gap-2">
+        <div className="h-4 bg-bg-raised rounded w-3/4" />
+        <div className="h-3 bg-bg-raised rounded w-1/2" />
+        <div className="h-3 bg-bg-raised rounded w-2/3" />
+        <div className="h-3 bg-bg-raised rounded w-1/3 mt-auto" />
+      </div>
+    </div>
+  )
+}
+
 /* ---- Deck Card ---- */
 function DeckCard({ deck, imageFiles, imageSettings, isAdmin, onEdit, onRemove, isAdminRec, onImageSettingsSaved }) {
+  const navigate = useNavigate()
   const imgFile = getAvatarImagePath(deck.avatar_name, imageFiles)
   const imgSrc = imgFile ? `/avatar-images/${imgFile}` : null
   const settings = imageSettings?.[deck.avatar_name] || {}
@@ -50,9 +64,9 @@ function DeckCard({ deck, imageFiles, imageSettings, isAdmin, onEdit, onRemove, 
   const starsStr = deck.stars ? '\u2605'.repeat(deck.stars) + '\u2606'.repeat(3 - deck.stars) : ''
 
   return (
-    <Link
-      to={`/deck-rec/${encodeURIComponent(deck.deck_id)}`}
-      className={`relative block rounded-lg overflow-hidden transition-colors group ${isAdminRec ? 'border border-secondary/40 bg-bg-surface' : 'bg-bg-surface border border-border'}`}
+    <div
+      onClick={() => navigate(`/deck-rec/${encodeURIComponent(deck.deck_id)}`)}
+      className={`relative block rounded-lg overflow-hidden transition-colors group cursor-pointer ${isAdminRec ? 'border border-secondary/40 bg-bg-surface' : 'bg-bg-surface border border-border'}`}
       style={{ minHeight: '160px' }}
     >
       {imgSrc && (
@@ -79,28 +93,26 @@ function DeckCard({ deck, imageFiles, imageSettings, isAdmin, onEdit, onRemove, 
           Community: <span className="text-text-primary">{clusterLabel}</span>
         </div>
         {isAdmin && (
-          <div className="flex justify-end gap-2 mt-2 flex-wrap" onClick={(e) => e.preventDefault()}>
+          <div className="flex justify-end gap-2 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
             {imgSrc && (
-              <div onClick={(e) => e.stopPropagation()}>
-                <AvatarImageAdmin
-                  avatarName={deck.avatar_name}
-                  imgSrc={imgSrc}
-                  currentSettings={settings}
-                  onSaved={onImageSettingsSaved}
-                />
-              </div>
+              <AvatarImageAdmin
+                avatarName={deck.avatar_name}
+                imgSrc={imgSrc}
+                currentSettings={settings}
+                onSaved={onImageSettingsSaved}
+              />
             )}
             {isAdminRec && (
               <>
                 <button
                   className="text-xs text-text-muted hover:text-secondary"
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(deck) }}
+                  onClick={(e) => { e.stopPropagation(); onEdit(deck) }}
                 >
                   Edit
                 </button>
                 <button
                   className="text-xs text-text-muted hover:text-accent-red"
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(deck) }}
+                  onClick={(e) => { e.stopPropagation(); onRemove(deck) }}
                 >
                   Remove
                 </button>
@@ -109,7 +121,7 @@ function DeckCard({ deck, imageFiles, imageSettings, isAdmin, onEdit, onRemove, 
           </div>
         )}
       </div>
-    </Link>
+    </div>
   )
 }
 
@@ -408,7 +420,6 @@ export default function DeckRecommendations() {
     } catch { alert('Failed to remove deck') }
   }
 
-  if (loading) return <Spinner className="py-20" />
   if (error && !allDecks.length) return <p className="text-center text-accent-red py-8">{error}</p>
 
   return (
@@ -517,7 +528,9 @@ export default function DeckRecommendations() {
       <section>
         <h2 className="font-display text-secondary text-lg mb-3">Tournament Archetypes</h2>
         {decksLoading ? (
-          <Spinner className="py-12" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {Array.from({ length: 8 }).map((_, i) => <DeckCardSkeleton key={i} />)}
+          </div>
         ) : pagedDecks.length === 0 ? (
           <p className="text-text-muted text-sm py-8 text-center">No decks found for the selected filters.</p>
         ) : (

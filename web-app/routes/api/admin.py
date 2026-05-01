@@ -10,6 +10,7 @@ from flask import Blueprint, jsonify, request, session
 
 from services.admin import AdminService
 from repositories.audit import AuditRepository
+from repositories.avatar_image_settings import AvatarImageSettingsRepository
 from utils.auth import require_admin
 from webapp_config import ELO_DB_PATH, MATCH_RECORDS_DB_PATH, BOT_DIR
 
@@ -39,6 +40,19 @@ def _get_admin_info():
     admin_id = session.get("user_id", 0)
     admin_name = session.get("username", "API/localhost")
     return admin_id, admin_name
+
+
+@admin_bp.route("/admin/audit-log", methods=["GET"])
+@require_admin
+def audit_log():
+    """Get admin audit log entries (admin only)."""
+    limit = request.args.get("limit", 50, type=int)
+    offset = request.args.get("offset", 0, type=int)
+    limit = min(max(1, limit), 200)
+    audit = AuditRepository()
+    entries = audit.get_logs(limit=limit, offset=offset)
+    total = audit.get_log_count()
+    return jsonify({"success": True, "entries": entries, "total": total}), 200
 
 
 @admin_bp.route("/admin/remove-player/<path:user_id>", methods=["DELETE"])
@@ -764,3 +778,82 @@ def end_event_route():
     except Exception as e:
         logger.error(f"Failed to end event: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ── Avatar Image Display Settings ──────────────────────────────────
+
+@admin_bp.route("/admin/avatar-image-settings", methods=["GET"])
+@require_admin
+def get_all_avatar_image_settings():
+    """Get all avatar image display settings (admin only)."""
+    repo = AvatarImageSettingsRepository()
+    settings = repo.get_all()
+    return jsonify({"success": True, "settings": settings}), 200
+
+
+@admin_bp.route("/admin/avatar-image-settings/<path:avatar_name>", methods=["PUT"])
+@require_admin
+def update_avatar_image_settings(avatar_name):
+    """Update display settings for an avatar image (admin only)."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "JSON body required"}), 400
+
+    brightness = data.get("brightness", 1.0)
+    position_x = data.get("position_x", 50)
+    position_y = data.get("position_y", 25)
+    opacity = data.get("opacity", 0.5)
+
+    # Validate ranges
+    try:
+        brightness = float(brightness)
+        position_x = int(position_x)
+        position_y = int(position_y)
+        opacity = float(opacity)
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "Invalid numeric values"}), 400
+
+    if not (0.1 <= brightness <= 2.0):
+        return jsonify({"success": False, "error": "Brightness must be between 0.1 and 2.0"}), 400
+    if not (0 <= position_x <= 100):
+        return jsonify({"success": False, "error": "position_x must be between 0 and 100"}), 400
+    if not (0 <= position_y <= 100):
+        return jsonify({"success": False, "error": "position_y must be between 0 and 100"}), 400
+    if not (0.0 <= opacity <= 1.0):
+        return jsonify({"success": False, "error": "opacity must be between 0.0 and 1.0"}), 400
+
+    repo = AvatarImageSettingsRepository()
+    previous = repo.get(avatar_name)
+    repo.upsert(avatar_name, brightness, position_x, position_y, opacity)
+
+    admin_id, admin_name = _get_admin_info()
+    audit = AuditRepository()
+    audit.log_action(
+        admin_id, admin_name, "update_avatar_image_settings",
+        target_name=avatar_name,
+        previous_state=previous,
+        new_state={"brightness": brightness, "position_x": position_x, "position_y": position_y, "opacity": opacity},
+        details=f"Updated image settings for avatar '{avatar_name}'",
+    )
+
+    return jsonify({"success": True}), 200
+
+
+@admin_bp.route("/admin/avatar-image-settings/<path:avatar_name>", methods=["DELETE"])
+@require_admin
+def delete_avatar_image_settings(avatar_name):
+    """Reset display settings for an avatar image to defaults (admin only)."""
+    repo = AvatarImageSettingsRepository()
+    previous = repo.get(avatar_name)
+    repo.delete(avatar_name)
+
+    admin_id, admin_name = _get_admin_info()
+    audit = AuditRepository()
+    audit.log_action(
+        admin_id, admin_name, "reset_avatar_image_settings",
+        target_name=avatar_name,
+        previous_state=previous,
+        details=f"Reset image settings for avatar '{avatar_name}' to defaults",
+    )
+
+    return jsonify({"success": True}), 200

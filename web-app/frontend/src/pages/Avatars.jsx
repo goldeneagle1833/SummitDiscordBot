@@ -1,6 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { getAvatars, getAvatarImageFiles, getAvatarFilters, getPlayDrawStats } from '@/api/cards'
+import { getAvatarImageSettings } from '@/api/admin'
+import { useAuth } from '@/context/AuthContext'
+import AvatarImageAdmin from '@/components/ui/AvatarImageAdmin'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -55,8 +58,11 @@ function sortAvatars(data, key) {
 
 export default function Avatars() {
   usePageTitle('Avatar Win Rates')
+  const { user } = useAuth()
+  const isAdmin = user?.is_admin === true
   const [avatars, setAvatars] = useState([])
   const [imageFiles, setImageFiles] = useState([])
+  const [imageSettings, setImageSettings] = useState({})
   const [filters, setFilters] = useState({ events: [], sources: [] })
   const [playDraw, setPlayDraw] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -72,6 +78,22 @@ export default function Avatars() {
         if (flt.status === 'fulfilled') setFilters(flt.value)
         if (pd.status === 'fulfilled') setPlayDraw(pd.value)
       })
+  }, [])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    getAvatarImageSettings()
+      .then((data) => setImageSettings(data.settings || {}))
+      .catch(() => {})
+  }, [isAdmin])
+
+  const handleImageSettingsSaved = useCallback((avatarName, newSettings) => {
+    setImageSettings((prev) => {
+      const next = { ...prev }
+      if (newSettings) next[avatarName] = newSettings
+      else delete next[avatarName]
+      return next
+    })
   }, [])
 
   useEffect(() => {
@@ -144,6 +166,11 @@ export default function Avatars() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-8">
             {sorted.map((avatar, i) => {
               const imgFile = getAvatarImagePath(avatar.name, imageFiles)
+              const imgSrc = imgFile ? `/avatar-images/${imgFile}` : null
+              const settings = imageSettings[avatar.name] || {}
+              const bgPos = `${settings.position_x ?? 50}% ${settings.position_y ?? 25}%`
+              const bgBrightness = settings.brightness ?? 1.0
+              const bgOpacity = settings.opacity ?? 0.5
               return (
                 <Link
                   key={avatar.name}
@@ -151,10 +178,15 @@ export default function Avatars() {
                   className="relative bg-bg-surface border border-border rounded-soft overflow-hidden hover:border-primary/50 transition-colors group"
                   style={{ minHeight: '140px' }}
                 >
-                  {imgFile && (
+                  {imgSrc && (
                     <div
-                      className="absolute inset-0 bg-cover bg-center opacity-15 group-hover:opacity-25 transition-opacity"
-                      style={{ backgroundImage: `url('/avatar-images/${imgFile}')` }}
+                      className="absolute inset-0 bg-cover bg-center transition-opacity"
+                      style={{
+                        backgroundImage: `url('${imgSrc}')`,
+                        backgroundPosition: bgPos,
+                        filter: `brightness(${bgBrightness})`,
+                        opacity: bgOpacity,
+                      }}
                     />
                   )}
                   <div className="relative p-3 flex flex-col h-full justify-between">
@@ -172,6 +204,16 @@ export default function Avatars() {
                         <span className="text-accent-red">{avatar.losses}L</span>
                       </div>
                     </div>
+                    {isAdmin && imgSrc && (
+                      <div onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
+                        <AvatarImageAdmin
+                          avatarName={avatar.name}
+                          imgSrc={imgSrc}
+                          currentSettings={settings}
+                          onSaved={handleImageSettingsSaved}
+                        />
+                      </div>
+                    )}
                   </div>
                 </Link>
               )

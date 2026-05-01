@@ -1,18 +1,52 @@
 """Miscellaneous API routes."""
 
 import logging
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, session
 from services.youtube import get_latest_videos
 from webapp_config import (
     MATCH_RECORDS_DB_PATH,
     ELO_DB_PATH,
     FART_SCORES_DB_PATH,
     COMMUNITY_DB_PATH,
+    ADMINS,
 )
 from utils.auth import is_admin
 
 misc_bp = Blueprint("misc", __name__)
 logger = logging.getLogger(__name__)
+
+
+@misc_bp.route("/me")
+def me():
+    """Return current authenticated user from session, or 401 if not logged in."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Not authenticated"}), 401
+    return jsonify({
+        "user_id": str(user_id),
+        "username": session.get("username"),
+        "avatar": session.get("avatar"),
+        "auth_provider": session.get("auth_provider"),
+        "is_admin": str(user_id) in ADMINS,
+    })
+
+
+@misc_bp.route("/logout")
+def logout():
+    """Clear session and log out user (API alias for /auth/logout)."""
+    username = session.get("username", "Unknown")
+    session.clear()
+    logger.info(f"User {username} logged out via /api/logout")
+    return jsonify({"success": True})
+
+
+@misc_bp.route("/recent-event")
+def recent_event():
+    """Get the most recently added top-8 event if within 48 hours."""
+    from repositories.events import EventRepository
+    repo = EventRepository()
+    event = repo.get_recent_event(hours=48)
+    return jsonify({"event": event})
 
 
 @misc_bp.route("/status")
@@ -26,6 +60,17 @@ def youtube_videos():
     """Get latest videos from community YouTube channels."""
     videos = get_latest_videos()
     return jsonify(videos)
+
+
+@misc_bp.route("/community")
+def community():
+    """Get community links: Discord servers, websites, and YouTube channels."""
+    from repositories.community import CommunityRepository
+    repo = CommunityRepository()
+    return jsonify({
+        "discord_servers": repo.get_discord_servers(),
+        "websites": repo.get_websites(),
+    })
 
 
 @misc_bp.route("/debug/database-status")

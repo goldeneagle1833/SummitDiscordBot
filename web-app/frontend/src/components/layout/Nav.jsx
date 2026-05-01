@@ -1,13 +1,112 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 
-const mainLinks = [
-  { to: '/elo', label: 'Leaderboard' },
-  { to: '/match-history', label: 'Matches' },
-  { to: '/top-8', label: 'Events' },
-  { to: '/community', label: 'Community' },
+const NAV_LINKS = [
+  { to: '/', label: 'Home' },
+  { href: 'https://discord.gg/ZDqHSK9VGx', label: 'Discord' },
+  { href: 'https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink', label: 'Patreon' },
+  { to: '/about', label: 'About' },
 ]
+
+function NotificationBell({ user }) {
+  const [count, setCount] = useState(0)
+  const [open, setOpen] = useState(false)
+  const [confirmations, setConfirmations] = useState([])
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!user) return
+    const fetchPending = () => {
+      fetch('/api/match-report/pending', { credentials: 'include' })
+        .then((r) => r.ok ? r.json() : { pending_confirmations: [] })
+        .then((d) => {
+          const pending = d.pending_confirmations || []
+          setConfirmations(pending)
+          setCount(pending.length)
+        })
+        .catch(() => {})
+    }
+    fetchPending()
+    const interval = setInterval(fetchPending, 60000)
+    return () => clearInterval(interval)
+  }, [user])
+
+  useEffect(() => {
+    if (!open) return
+    const handleClick = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [open])
+
+  if (!user || count === 0) return null
+
+  const formatTime = (expiresAt) => {
+    const remaining = expiresAt - Math.floor(Date.now() / 1000)
+    if (remaining <= 0) return 'expired'
+    const h = Math.floor(remaining / 3600)
+    if (h > 24) return `${Math.floor(h / 24)}d`
+    if (h > 0) return `${h}h`
+    return `${Math.floor((remaining % 3600) / 60)}m`
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        className="relative flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
+        onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
+        aria-label="Notifications"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" className="w-6 h-6">
+          <path fill={count > 0 ? '#ef4444' : 'white'} d="M12 2C11.4477 2 11 2.44772 11 3V3.17071C8.83481 3.58254 7.17254 5.24481 6.76071 7.41L6 11.5L4.5 13V15H19.5V13L18 11.5L17.2393 7.41C16.8275 5.24481 15.1652 3.58254 13 3.17071V3C13 2.44772 12.5523 2 12 2Z" />
+          <path fill={count > 0 ? '#ef4444' : 'white'} d="M10 17C10 18.1046 10.8954 19 12 19C13.1046 19 14 18.1046 14 17H10Z" />
+        </svg>
+        <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 text-white text-xs font-bold rounded-full flex items-center justify-center">
+          {count > 9 ? '9+' : count}
+        </span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-80 max-h-96 bg-bg-elevated shadow-xl rounded-lg overflow-hidden z-[1001] border border-secondary/30">
+          <div className="bg-secondary/20 px-4 py-3 border-b border-white/10">
+            <h3 className="text-sm font-bold text-white uppercase tracking-wide">Match Confirmations</h3>
+          </div>
+          <div className="overflow-y-auto max-h-80">
+            {confirmations.length === 0 ? (
+              <div className="p-6 text-center text-text-muted text-sm">No pending confirmations</div>
+            ) : (
+              confirmations.map((conf) => {
+                const youWon = conf.winner_discord_id === conf.opponent_discord_id
+                return (
+                  <Link
+                    key={conf.id}
+                    to="/life-counter"
+                    className="block px-4 py-3 border-b border-white/5 hover:bg-white/5 transition-colors"
+                    onClick={() => setOpen(false)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-white truncate">{conf.submitter_display_name || 'Unknown'}</p>
+                        <p className={`text-xs font-medium mt-0.5 ${youWon ? 'text-green-400' : 'text-red-400'}`}>
+                          {youWon ? 'You won' : 'You lost'}
+                        </p>
+                        <p className="text-xs text-text-muted mt-1">Final: {conf.final_life_winner} - {conf.final_life_loser}</p>
+                      </div>
+                      <span className="text-xs px-2 py-0.5 bg-yellow-500/20 text-yellow-400 rounded-full whitespace-nowrap">
+                        {formatTime(conf.expires_at)}
+                      </span>
+                    </div>
+                  </Link>
+                )
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Nav() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -27,78 +126,94 @@ export default function Nav() {
       )}
 
       <nav className="bg-bg-surface border-b border-border sticky top-0 z-[1000]">
-        <div className="max-w-content mx-auto px-4 flex items-center justify-between h-14">
-          {/* Hamburger */}
-          <button
-            className="p-2 text-text-muted hover:text-text"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            aria-label="Toggle menu"
-          >
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-
-          {/* Logo */}
-          <Link to="/" className="font-display text-xl text-secondary hover:text-secondary-light transition-colors">
-            Sorcerers Summit
-          </Link>
-
-          {/* Desktop Nav Links */}
-          <div className="hidden md:flex items-center gap-6">
-            {mainLinks.map(({ to, label }) => (
-              <Link
-                key={to}
-                to={to}
-                className={`text-sm font-medium transition-colors ${
-                  location.pathname.startsWith(to)
-                    ? 'text-primary'
-                    : 'text-text-muted hover:text-text'
-                }`}
-              >
-                {label}
-              </Link>
-            ))}
+        <div className="max-w-content mx-auto px-4 flex items-center h-16">
+          {/* Left: Hamburger + Brand */}
+          <div className="flex items-center gap-4 flex-1">
+            <button
+              className="flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              aria-label="Toggle menu"
+            >
+              <span className="text-2xl font-bold leading-none text-white">☰</span>
+            </button>
+            <Link to="/" className="font-display text-lg md:text-xl text-secondary hover:text-text transition-colors">
+              Sorcerers Summit
+            </Link>
           </div>
 
-          {/* Auth / Life Counter */}
-          <div className="flex items-center gap-3">
-            <Link
-              to="/life-counter"
-              className="text-sm text-text-muted hover:text-text transition-colors hidden sm:inline"
-            >
-              Life Counter
-            </Link>
+          {/* Right: Nav Links (desktop) + Notifications + Auth */}
+          <div className="hidden md:flex items-center gap-5 flex-1 justify-end">
+            {NAV_LINKS.map(({ to, href, label }) =>
+              href ? (
+                <a
+                  key={label}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-text hover:text-secondary font-medium transition-colors"
+                >
+                  {label}
+                </a>
+              ) : (
+                <Link
+                  key={label}
+                  to={to}
+                  className={`font-medium transition-colors ${
+                    location.pathname === to ? 'text-secondary' : 'text-text hover:text-secondary'
+                  }`}
+                >
+                  {label}
+                </Link>
+              )
+            )}
+            <NotificationBell user={user} />
             {!loading && (
               user ? (
-                <div className="flex items-center gap-2">
+                <>
                   <Link
                     to={`/player/${user.user_id}`}
-                    className="text-sm text-primary hover:text-primary-light transition-colors"
+                    className="text-primary font-semibold hover:text-primary-light transition-colors"
                   >
                     {user.username}
                   </Link>
                   <a
                     href="/api/logout"
-                    className="text-sm text-text-muted hover:text-text transition-colors"
+                    className="text-sm text-text-muted hover:text-accent-red transition-colors"
                     onClick={(e) => {
                       e.preventDefault()
                       fetch('/api/logout', { credentials: 'include' })
-                        .then(() => window.location.href = '/')
+                        .then(() => window.location.reload())
                     }}
                   >
                     Logout
                   </a>
-                </div>
+                </>
               ) : (
                 <Link
-                  to="/login"
+                  to={`/login?next=${encodeURIComponent(window.location.href)}`}
                   className="text-sm bg-primary/20 text-primary hover:bg-primary/30 px-3 py-1.5 rounded-soft transition-colors"
                 >
                   Login
                 </Link>
               )
             )}
+          </div>
+
+          {/* Mobile right: notification bell + life counter icon */}
+          <div className="flex md:hidden items-center gap-2 flex-1 justify-end">
+            <NotificationBell user={user} />
+            <Link
+              to="/life-counter"
+              className="flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
+              aria-label="Life Counter"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="w-6 h-6">
+                <circle cx="7" cy="6" r="2.5" fill="white" />
+                <path d="M7 10C4.5 10 2.5 11.5 2.5 13.5V17H11.5V13.5C11.5 11.5 9.5 10 7 10Z" fill="white" />
+                <circle cx="17" cy="6" r="2.5" fill="white" />
+                <path d="M17 10C14.5 10 12.5 11.5 12.5 13.5V17H21.5V13.5C21.5 11.5 19.5 10 17 10Z" fill="white" />
+              </svg>
+            </Link>
           </div>
         </div>
       </nav>
@@ -146,7 +261,7 @@ export default function Nav() {
                   onClick={(e) => {
                     e.preventDefault()
                     fetch('/api/logout', { credentials: 'include' })
-                      .then(() => { close(); window.location.href = '/' })
+                      .then(() => { close(); window.location.reload() })
                   }}
                 >
                   Logout
@@ -154,7 +269,7 @@ export default function Nav() {
               </>
             ) : (
               <Link
-                to="/login"
+                to={`/login?next=${encodeURIComponent(window.location.href)}`}
                 className="block mx-4 my-3 text-center bg-primary/20 text-primary hover:bg-primary/30 px-3 py-2 rounded-soft transition-colors font-medium"
                 onClick={close}
               >

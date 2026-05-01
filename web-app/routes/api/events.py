@@ -5,11 +5,50 @@ import logging
 from flask import Blueprint, jsonify, request
 
 from repositories.events import EventRepository
-from utils.auth import require_admin
+from utils.auth import is_admin, require_admin
+from utils.formatting import format_event_name
 
 logger = logging.getLogger(__name__)
 
 events_bp = Blueprint("events", __name__)
+
+
+@events_bp.route("/top-8-events")
+def list_top8_events():
+    """Return all top-8 event folders with metadata."""
+    try:
+        repo = EventRepository()
+        events = repo.get_all_events()
+        return jsonify(events)
+    except Exception as e:
+        logger.exception("Error listing events: %s", e)
+        return jsonify({"error": "Failed to load events"}), 500
+
+
+@events_bp.route("/events/<event_folder>")
+def get_event_detail(event_folder: str):
+    """Return deck tables, card stats, and element charts for a single event."""
+    try:
+        repo = EventRepository()
+        decks = repo.get_event_decks(event_folder)
+        if decks is None:
+            return jsonify({"error": "Event not found"}), 404
+
+        stats = repo.get_event_stats(event_folder)
+        element_stats = repo.get_event_element_stats(event_folder)
+
+        return jsonify({
+            "event_name": format_event_name(event_folder),
+            "event_folder": event_folder,
+            "top8_decks": decks["top8_decks"],
+            "all_decks": decks["all_decks"],
+            "card_data": stats["card_data"] if stats else [],
+            "element_stats": element_stats,
+            "is_admin": is_admin(),
+        })
+    except Exception as e:
+        logger.exception("Error loading event %s: %s", event_folder, e)
+        return jsonify({"error": "Failed to load event data"}), 500
 
 
 @events_bp.route("/events/<event_folder>/reorder", methods=["POST"])

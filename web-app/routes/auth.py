@@ -2,7 +2,7 @@
 
 import json
 import logging
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import requests
 from flask import Blueprint, redirect, url_for, session, request, render_template
@@ -14,6 +14,7 @@ from webapp_config import (
     GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
     GOOGLE_REDIRECT_URI,
+    FRONTEND_URL,
 )
 from repositories.user_profiles import UserProfileRepository
 
@@ -21,16 +22,46 @@ logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint("auth", __name__)
 
+# Allowed hosts for post-login redirects (prevent open redirect)
+_ALLOWED_REDIRECT_HOSTS = {"localhost", "127.0.0.1", "sorcererssummit.com", "www.sorcererssummit.com"}
+
+
+def _safe_redirect_url(url):
+    """Return url if it's a safe redirect target, else None."""
+    if not url:
+        return None
+    parsed = urlparse(url)
+    # Allow relative URLs (no host)
+    if not parsed.netloc:
+        return url
+    # Allow known hosts (any port)
+    host = parsed.hostname
+    if host in _ALLOWED_REDIRECT_HOSTS:
+        return url
+    return None
+
+
+def _get_post_login_redirect():
+    """Get the redirect URL after login from session, falling back to the frontend."""
+    next_url = _safe_redirect_url(session.pop("next_url", None))
+    return next_url or FRONTEND_URL
+
 
 @auth_bp.route("/login")
 def login():
     """Display login selection page."""
+    next_url = _safe_redirect_url(request.args.get("next"))
+    if next_url:
+        session["next_url"] = next_url
     return render_template("pages/login.html")
 
 
 @auth_bp.route("/discord")
 def discord_login():
     """Redirect user to Discord OAuth authorization."""
+    next_url = _safe_redirect_url(request.args.get("next"))
+    if next_url:
+        session["next_url"] = next_url
     if not DISCORD_CLIENT_ID:
         logger.error("DISCORD_CLIENT_ID not configured")
         return "OAuth not configured", 500
@@ -51,12 +82,12 @@ def discord_callback():
     error = request.args.get("error")
     if error:
         logger.error(f"Discord OAuth error: {error}")
-        return redirect(url_for("pages.home"))
+        return redirect(FRONTEND_URL)
 
     code = request.args.get("code")
     if not code:
         logger.error("No code received from Discord")
-        return redirect(url_for("pages.home"))
+        return redirect(FRONTEND_URL)
 
     # Exchange code for access token
     token_url = "https://discord.com/api/oauth2/token"
@@ -74,12 +105,12 @@ def discord_callback():
         tokens = token_response.json()
     except requests.RequestException as e:
         logger.error(f"Failed to get Discord token: {e}")
-        return redirect(url_for("pages.home"))
+        return redirect(FRONTEND_URL)
 
     access_token = tokens.get("access_token")
     if not access_token:
         logger.error("No access token in Discord response")
-        return redirect(url_for("pages.home"))
+        return redirect(FRONTEND_URL)
 
     # Get user info from Discord
     user_url = "https://discord.com/api/users/@me"
@@ -91,7 +122,7 @@ def discord_callback():
         user_data = user_response.json()
     except requests.RequestException as e:
         logger.error(f"Failed to get Discord user info: {e}")
-        return redirect(url_for("pages.home"))
+        return redirect(FRONTEND_URL)
 
     # Store user info in session (permanent = survives browser close)
     session.permanent = True
@@ -120,21 +151,25 @@ def discord_callback():
 
     logger.info(f"User {user_data['username']} (ID: {user_data['id']}) logged in")
 
-    return redirect(url_for("pages.home"))
+    return redirect(_get_post_login_redirect())
 
 
 @auth_bp.route("/logout")
 def logout():
     """Clear session and log out user."""
     username = session.get("username", "Unknown")
+    next_url = _safe_redirect_url(request.args.get("next"))
     session.clear()
     logger.info(f"User {username} logged out")
-    return redirect(url_for("pages.home"))
+    return redirect(next_url or FRONTEND_URL)
 
 
 @auth_bp.route("/google")
 def google_login():
     """Redirect user to Google OAuth authorization."""
+    next_url = _safe_redirect_url(request.args.get("next"))
+    if next_url:
+        session["next_url"] = next_url
     if not GOOGLE_CLIENT_ID:
         logger.error("GOOGLE_CLIENT_ID not configured")
         return "Google OAuth not configured", 500
@@ -156,12 +191,12 @@ def google_callback():
     error = request.args.get("error")
     if error:
         logger.error(f"Google OAuth error: {error}")
-        return redirect(url_for("pages.home"))
+        return redirect(FRONTEND_URL)
 
     code = request.args.get("code")
     if not code:
         logger.error("No code received from Google")
-        return redirect(url_for("pages.home"))
+        return redirect(FRONTEND_URL)
 
     # Exchange code for access token
     token_url = "https://oauth2.googleapis.com/token"
@@ -179,12 +214,12 @@ def google_callback():
         tokens = token_response.json()
     except requests.RequestException as e:
         logger.error(f"Failed to get Google token: {e}")
-        return redirect(url_for("pages.home"))
+        return redirect(FRONTEND_URL)
 
     access_token = tokens.get("access_token")
     if not access_token:
         logger.error("No access token in Google response")
-        return redirect(url_for("pages.home"))
+        return redirect(FRONTEND_URL)
 
     # Get user info from Google
     user_url = "https://www.googleapis.com/oauth2/v2/userinfo"
@@ -196,7 +231,7 @@ def google_callback():
         user_data = user_response.json()
     except requests.RequestException as e:
         logger.error(f"Failed to get Google user info: {e}")
-        return redirect(url_for("pages.home"))
+        return redirect(FRONTEND_URL)
 
     # Store user info in session (permanent = survives browser close)
     session.permanent = True
@@ -229,4 +264,4 @@ def google_callback():
         f"User {session['username']} (Google ID: {user_data['id']}) logged in via Google"
     )
 
-    return redirect(url_for("pages.home"))
+    return redirect(_get_post_login_redirect())

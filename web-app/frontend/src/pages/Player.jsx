@@ -1,94 +1,245 @@
-import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
-import { getPlayer, getPlayerAvatarStats } from '@/api/players'
-import PlayerCard from '@/components/player/PlayerCard'
+import { useState, useEffect, useCallback } from 'react'
+import { useParams, Link } from 'react-router-dom'
+import { getPlayer } from '@/api/players'
+import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
-import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
+import PlayerHeader from '@/components/player/PlayerHeader'
+import OverallStats from '@/components/player/OverallStats'
+import EloBrackets from '@/components/player/EloBrackets'
+import AvatarPerformance from '@/components/player/AvatarPerformance'
+import AvatarMatchups from '@/components/player/AvatarMatchups'
+import RecentDecks from '@/components/player/RecentDecks'
+import LimitedArena from '@/components/player/LimitedArena'
+import MatchHistoryTable from '@/components/player/MatchHistoryTable'
+import RecordedGames from '@/components/player/RecordedGames'
+import DisplayNameBanner from '@/components/player/DisplayNameBanner'
+import ReportGameModal from '@/components/player/ReportGameModal'
+import EditDeckModal from '@/components/player/EditDeckModal'
+import AdminControls from '@/components/player/AdminControls'
+
+const PER_PAGE = 50
 
 export default function Player() {
   usePageTitle('Player')
   const { playerId } = useParams()
-  const [profile, setProfile] = useState(null)
-  const [avatarStats, setAvatarStats] = useState([])
+  const [data, setData] = useState(null)
+  const [events, setEvents] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  useEffect(() => {
-    setLoading(true)
-    Promise.all([getPlayer(playerId), getPlayerAvatarStats(playerId).catch(() => [])])
-      .then(([profileData, statsData]) => {
-        setProfile(profileData)
-        setAvatarStats(statsData)
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [playerId])
+  // Filter state
+  const [eventFilter, setEventFilter] = useState('lifetime')
+  const [eloSource, setEloSource] = useState(() => {
+    const saved = localStorage.getItem('elo_source_preference')
+    return saved === 'web' || saved === 'bot' ? saved : 'bot'
+  })
+  const [page, setPage] = useState(1)
+  const [casualPage, setCasualPage] = useState(1)
+  const [statsType, setStatsType] = useState('ranked')
 
-  if (loading) return <Spinner className="py-20" />
-  if (error) return <p className="text-center text-accent-red py-8">{error}</p>
-  if (!profile) return null
+  // Modal state
+  const [showReportModal, setShowReportModal] = useState(false)
+  const [editDeck, setEditDeck] = useState(null)
+
+  // Collapsible sections
+  const [openSections, setOpenSections] = useState({
+    eloBrackets: false,
+    avatarPerf: true,
+    avatarMatchups: true,
+    recentDecks: false,
+    limitedArena: true,
+  })
+  const toggle = (key) => setOpenSections((s) => ({ ...s, [key]: !s[key] }))
+
+  const fetchData = useCallback(
+    (ev, pg, src, cpg) => {
+      setLoading(true)
+      getPlayer(playerId, { event: ev, source: src, page: pg, perPage: PER_PAGE, casualPage: cpg })
+        .then((d) => {
+          setData(d)
+          setError(null)
+        })
+        .catch((err) => setError(err.message))
+        .finally(() => setLoading(false))
+    },
+    [playerId],
+  )
+
+  useEffect(() => {
+    fetchData(eventFilter, page, eloSource, casualPage)
+    get('/api/events').then(setEvents).catch(() => {})
+  }, [playerId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const refetch = (ev, pg, src, cpg) => {
+    const e = ev ?? eventFilter
+    const p = pg ?? page
+    const s = src ?? eloSource
+    const c = cpg ?? casualPage
+    setEventFilter(e)
+    setPage(p)
+    setEloSource(s)
+    setCasualPage(c)
+    fetchData(e, p, s, c)
+  }
+
+  const refreshCurrentPage = () => fetchData(eventFilter, page, eloSource, casualPage)
+
+  const handleSourceChange = (src) => {
+    localStorage.setItem('elo_source_preference', src)
+    refetch(undefined, 1, src, 1)
+  }
+
+  const handleNameChange = (newName) => {
+    setData((d) => d ? { ...d, name: newName, has_custom_display_name: true } : d)
+  }
+
+  if (loading && !data) return <Spinner className="py-20" />
+  if (error && !data) return <p className="text-center text-accent-red py-8">{error}</p>
+  if (!data) return null
+
+  // ELO display logic
+  let eloText = ''
+  let rankText = ''
+  if (eventFilter === 'lifetime' || !eventFilter) {
+    eloText = `Lifetime ELO: ${data.elo}`
+    if (data.event_elo && data.event_elo !== 1500) eloText += ` | Event ELO: ${data.event_elo}`
+    rankText = data.rank ? `Rank #${data.rank}` : ''
+  } else if (eventFilter === 'current') {
+    eloText = data.displayed_elo !== 1500 ? `Current Event ELO: ${data.displayed_elo}` : 'No current event data'
+    rankText = data.displayed_rank > 0 ? `Event Rank #${data.displayed_rank}` : ''
+  } else {
+    eloText = data.displayed_elo !== 1500 ? `Event ELO: ${data.displayed_elo}` : 'No data for this event'
+    rankText = data.displayed_rank > 0 ? `#${data.displayed_rank}` : ''
+  }
+
+  const stats = statsType === 'casual' ? data.casual_stats : data
+  const pastEvents = events?.events?.filter((e) => !e.is_active) || []
 
   return (
     <div className="space-y-6">
-      <PlayerCard player={profile} linkTo={false} />
+      <Link to="/" className="text-sm text-secondary hover:underline">&larr; Back to Leaderboard</Link>
 
-      {/* Avatar Stats */}
-      {avatarStats.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold mb-3">Avatar Performance</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {avatarStats.map((stat) => (
-              <div key={stat.avatar_name} className="bg-bg-surface border border-border rounded-soft p-3 flex items-center gap-3">
-                {stat.image_url && (
-                  <img src={stat.image_url} alt={stat.avatar_name} className="h-10 w-10 rounded object-cover" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{stat.avatar_name}</p>
-                  <p className="text-xs text-text-muted">
-                    <span className="text-accent-green">{stat.wins}W</span>
-                    {' / '}
-                    <span className="text-accent-red">{stat.losses}L</span>
-                    {stat.win_rate != null && ` (${(stat.win_rate * 100).toFixed(0)}%)`}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* Admin Controls (admin only) */}
+      {data.is_admin && (
+        <AdminControls
+          playerId={playerId}
+          playerName={data.name}
+          onAction={refreshCurrentPage}
+        />
       )}
 
-      {/* Recent Matches */}
-      {profile.recent_matches?.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold mb-3">Recent Matches</h2>
-          <div className="space-y-2">
-            {profile.recent_matches.map((match) => {
-              const isWinner = match.winner_id === playerId
-              return (
-                <div key={match.match_id} className="bg-bg-surface border border-border rounded-soft p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${isWinner ? 'bg-accent-green/20 text-accent-green' : 'bg-accent-red/20 text-accent-red'}`}>
-                      {isWinner ? 'W' : 'L'}
-                    </span>
-                    <span className="text-sm">
-                      vs{' '}
-                      <Link
-                        to={`/player/${isWinner ? match.loser_id : match.winner_id}`}
-                        className="text-primary hover:text-primary-light"
-                      >
-                        {isWinner ? match.loser_name : match.winner_name}
-                      </Link>
-                    </span>
-                  </div>
-                  <span className={`text-sm font-medium ${isWinner ? 'text-accent-green' : 'text-accent-red'}`}>
-                    {isWinner ? `+${match.winner_elo_change}` : `${match.loser_elo_change}`}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+      {/* Display Name Banner (owner only, no custom name yet) */}
+      {data.is_owner && (
+        <DisplayNameBanner
+          playerId={playerId}
+          defaultName={data.name}
+          hasCustomName={data.has_custom_display_name}
+          onNameChange={handleNameChange}
+        />
+      )}
+
+      <PlayerHeader
+        data={data}
+        eloText={eloText}
+        rankText={rankText}
+        eloSource={eloSource}
+        onSourceChange={handleSourceChange}
+        eventFilter={eventFilter}
+        pastEvents={pastEvents}
+        onEventChange={(val) => refetch(val, 1, undefined, 1)}
+      />
+
+      {/* Report Game button (owner only) */}
+      {data.is_owner && (
+        <button
+          onClick={() => setShowReportModal(true)}
+          className="px-4 py-2 text-sm bg-secondary text-white rounded hover:opacity-90 transition-opacity"
+        >
+          Report a Game
+        </button>
+      )}
+
+      <OverallStats
+        data={data}
+        stats={stats}
+        statsType={statsType}
+        onStatsTypeChange={setStatsType}
+      />
+
+      <EloBrackets
+        brackets={data.elo_vs_brackets}
+        open={openSections.eloBrackets}
+        onToggle={() => toggle('eloBrackets')}
+      />
+
+      <AvatarPerformance
+        avatars={data.avatar_performance}
+        open={openSections.avatarPerf}
+        onToggle={() => toggle('avatarPerf')}
+      />
+
+      <AvatarMatchups
+        matchups={data.avatar_matchups}
+        open={openSections.avatarMatchups}
+        onToggle={() => toggle('avatarMatchups')}
+      />
+
+      <RecentDecks
+        decks={data.recent_decks}
+        open={openSections.recentDecks}
+        onToggle={() => toggle('recentDecks')}
+      />
+
+      <LimitedArena
+        limited={data.limited}
+        playerId={playerId}
+        open={openSections.limitedArena}
+        onToggle={() => toggle('limitedArena')}
+      />
+
+      <MatchHistoryTable
+        title="Ranked Match History"
+        matches={data.matches}
+        pagination={data.pagination}
+        playerId={playerId}
+        isOwner={data.is_owner}
+        onPageChange={(p) => refetch(undefined, p)}
+        onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
+      />
+
+      {data.casual_matches?.length > 0 && (
+        <MatchHistoryTable
+          title="Casual Match History"
+          subtitle="Casual games do not affect ELO ratings."
+          matches={data.casual_matches}
+          pagination={data.casual_pagination}
+          playerId={playerId}
+          isOwner={data.is_owner}
+          onPageChange={(p) => refetch(undefined, undefined, undefined, p)}
+          onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
+        />
+      )}
+
+      <RecordedGames games={data.recorded_games} />
+
+      {/* Modals */}
+      {showReportModal && (
+        <ReportGameModal
+          playerId={playerId}
+          onClose={() => setShowReportModal(false)}
+          onReported={refreshCurrentPage}
+        />
+      )}
+
+      {editDeck && (
+        <EditDeckModal
+          matchId={editDeck.matchId}
+          currentUrl={editDeck.url}
+          eloSource={eloSource}
+          onClose={() => setEditDeck(null)}
+          onSaved={refreshCurrentPage}
+        />
       )}
     </div>
   )

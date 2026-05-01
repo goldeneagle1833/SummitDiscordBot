@@ -67,7 +67,9 @@
       "Bash(scp root@50.116.43.215:/root/Summit/log_report.log F:/GitHub/SummitDiscordBot/discord-bot/pull_from_server/)",
       "Bash(ssh root@50.116.43.215 \"cat /root/Summit/scripts/daily_log_report.py\")",
       "Bash(sqlite3.exe \"discord-bot/pull_from_server/match_records.db\" \"SELECT json_deck_data_winner FROM match_records WHERE json_deck_data_winner IS NOT NULL AND json_deck_data_winner != ''{}'' LIMIT 1;\")",
-      "Bash(where sqlite3)"
+      "Bash(where sqlite3)",
+      "Bash(npm install)",
+      "Bash(npx --yes acorn --ecma2022 --module --allow-import-export-everywhere src/pages/AvatarDetail.jsx)"
     ]
   },
   "enabledPlugins": {

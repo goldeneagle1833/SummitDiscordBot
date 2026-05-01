@@ -131,7 +131,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
         run_id = None
         if self.queue_type == "limited":
             active_run = get_active_arena_run(interaction.user.id)
-            if active_run and active_run["status"] == "active" and active_run["wins"] < 5 and active_run["losses"] < 3:
+            if active_run and active_run["status"] == "active" and active_run["wins"] < 4 and active_run["losses"] < 2:
                 run_id = active_run["run_id"]
                 deck_url = active_run["deck_url"]
             else:
@@ -175,8 +175,8 @@ class LimitedQueueModal(discord.ui.Modal, title="Join Limited Queue"):
         if not (
             active_run
             and active_run["status"] == "active"
-            and active_run["wins"] < 5
-            and active_run["losses"] < 3
+            and active_run["wins"] < 4
+            and active_run["losses"] < 2
         ):
             await interaction.followup.send(
                 LIMITED_RUN_REQUIRED_MESSAGE,

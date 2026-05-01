@@ -43,5 +43,15 @@ jobs:
             pip install -r requirements.txt
             deactivate
 
+            # Build React frontend
+            cd frontend
+            npm ci
+            npm run build
+            cd ..
+
+            # NOTE: FRONTEND_URL=https://sorcererssummit.com should be set in
+            # the summit-web systemd service file (Environment= directive) or
+            # in a server-side .env file loaded by the Flask app.
+
             # Restart the service
             sudo systemctl restart summit-web

@@ -1,168 +1,275 @@
-# Data Model: Fun Stats Page
+# Data Model: Flask/Jinja2 → React SPA Migration
 
-## No New Tables Required
+## Overview
 
-This feature is **read-only**. All stats are computed from existing tables using SELECT queries. No schema changes, no new tables, no migrations.
+No backend schema changes. All data models here represent **frontend state shapes** — the JSON structures the React app receives from Flask API responses and stores in component state or React Context.
 
-## Existing Tables Used
+---
 
-### `match_records` (match_records.db) — Current Matches
+## Core Entities
 
-| Column | Type | Used For |
-|--------|------|----------|
-| `match_id` | INTEGER PK | Unique match identifier |
-| `winner_id` | INTEGER | Player ID of winner |
-| `winner_display_name` | TEXT | Winner's display name |
-| `losser_id` | INTEGER | Player ID of loser (note: column typo is intentional) |
-| `losser_display_name` | TEXT | Loser's display name |
-| `timestamp` | TEXT | ISO datetime — used for event filtering by date range |
-| `match_time` | INTEGER | Duration in minutes — for match duration stats |
-| `json_deck_data_winner` | TEXT | JSON deck data — for avatar extraction (diversity stat) |
-| `json_deck_data_loser` | TEXT | JSON deck data — for avatar extraction (diversity stat) |
-| `winner_elo_change` | INTEGER | Per-match ELO delta — for biggest upset detection |
-| `loser_elo_change` | INTEGER | Per-match ELO delta — for biggest upset detection |
-| `winner_lifetime_elo_change` | INTEGER | Lifetime ELO change — for most improved calculation |
-| `loser_lifetime_elo_change` | INTEGER | Lifetime ELO change — for most improved calculation |
-| `winner_went_first` | TEXT | Who went first — for first player advantage stat |
-| `loser_went_first` | TEXT | Who went first — for first player advantage stat |
-| `source` | TEXT | Match source — for source filtering ("Discord", etc.) |
-| `match_type` | TEXT | "ranked" or "testing" — filter to ranked only |
+### User (AuthContext)
 
-### `match_records_archive` (match_records.db) — Historical Matches
+Returned by `GET /api/me`. Stored globally in `AuthContext`.
 
-Same schema as `match_records` plus:
-
-| Column | Type | Used For |
-|--------|------|----------|
-| `archive_id` | INTEGER PK | Archive entry identifier |
-| `event_id` | INTEGER | Links to events table — for event-specific queries |
-| `original_match_id` | INTEGER | Original match ID reference |
-| `archived_at` | TEXT | When the match was archived |
-
-### `events` (elo.db) — Event Metadata
-
-| Column | Type | Used For |
-|--------|------|----------|
-| `event_id` | INTEGER PK | Event identifier |
-| `event_name` | TEXT | Display name |
-| `start_date` | TEXT | ISO date — filter boundary |
-| `end_date` | TEXT | ISO date — filter boundary |
-| `is_active` | BOOLEAN | Whether event is currently running |
-
-### `overall_standings` (elo.db) — Player ELO
-
-| Column | Type | Used For |
-|--------|------|----------|
-| `user_id` | INTEGER PK | Player ID |
-| `user_display_name` | TEXT | Display name (fallback for name resolution) |
-
-## Computed Data Structures (API Response)
-
-### Win Streaks
-
-```python
+```js
+// null = not yet loaded, false = unauthenticated, object = authenticated
 {
-    "name": str,           # Player display name
-    "best_streak": int,    # All-time longest win streak
-    "current_streak": int  # Active win streak (0 if last match was a loss)
+  user_id: string,       // Discord ID or "google_<id>"
+  username: string,      // Display name
+  avatar: string | null, // Avatar URL (Discord CDN or Google picture)
+  auth_provider: 'discord' | 'google',
+  is_admin: boolean      // True if user_id is in ADMINS list
 }
 ```
 
-### Most Diverse Players
+**State transitions**: `null` → (fetch /api/me) → `false` | `User object`
 
-```python
+---
+
+### LeaderboardEntry
+
+Returned by `GET /api/leaderboard` as an array.
+
+```js
 {
-    "name": str,           # Player display name
-    "unique_avatars": int, # Count of distinct avatars used
-    "avatars": list[str]   # List of avatar names played
+  rank: number,
+  player_id: string,
+  display_name: string,
+  elo: number,
+  wins: number,
+  losses: number,
+  win_rate: number,        // 0.0–1.0
+  avatar_url: string | null
 }
 ```
 
-### Most Active Players
+---
 
-```python
+### PlayerProfile
+
+Returned by `GET /api/players/:id`.
+
+```js
 {
-    "name": str,    # Player display name
-    "wins": int,    # Total wins in period
-    "losses": int,  # Total losses in period
-    "games": int    # Total games (wins + losses)
+  player_id: string,
+  display_name: string,
+  elo: number,
+  wins: number,
+  losses: number,
+  win_rate: number,
+  rank: number | null,
+  avatar_url: string | null,
+  recent_matches: Match[],
+  avatar_stats: AvatarStat[]
 }
 ```
 
-### Biggest Upsets
+---
 
-```python
+### Match
+
+Returned by `GET /api/match-history` (array) and embedded in `PlayerProfile.recent_matches`.
+
+```js
 {
-    "winner_name": str,    # Underdog who won
-    "loser_name": str,     # Favorite who lost
-    "elo_change": int,     # Winner's ELO gain (higher = bigger upset)
-    "timestamp": str       # When it happened
+  match_id: number,
+  winner_id: string,
+  winner_name: string,
+  loser_id: string,
+  loser_name: string,
+  winner_elo_change: number,
+  loser_elo_change: number,
+  winner_avatar: string | null,
+  loser_avatar: string | null,
+  match_time: string | null,   // ISO timestamp
+  match_type: 'ranked' | 'unranked',
+  event: string | null
 }
 ```
 
-### Nemesis Pairs
+---
 
-```python
+### Event
+
+Returned by the events listing (via `GET /api/games` or `pages.py` event data, adapted to `/api/events`).
+
+```js
 {
-    "player1_name": str,   # First player
-    "player2_name": str,   # Second player
-    "encounters": int,     # Total matches between them
-    "p1_wins": int,        # Player 1's wins
-    "p2_wins": int         # Player 2's wins
+  folder: string,        // Event folder name (used as route param)
+  display_name: string,
+  star_rating: 1 | 2 | 3,
+  date: string | null,
+  top8: Deck[],
+  all_decks: Deck[]
 }
 ```
 
-### First Player Advantage
+---
 
-```python
+### Deck
+
+Embedded in `Event.top8` and `Event.all_decks`.
+
+```js
 {
-    "total_matches": int,         # Matches with first-player data
-    "first_player_wins": int,     # Times first player won
-    "first_player_win_rate": float # Percentage
+  player_name: string,
+  placement: number | null,
+  curiosa_url: string | null,
+  deck_data: DeckData | null
 }
 ```
 
-### Match Duration Stats
+---
 
-```python
+### DeckData
+
+Returned by `GET /api/cards/:id` (Curiosa API proxy).
+
+```js
 {
-    "average_minutes": float,  # Mean match time
-    "fastest_minutes": int,    # Shortest match
-    "longest_minutes": int,    # Longest match
-    "total_with_data": int     # Matches that have time data
+  avatar: {
+    name: string,
+    element: string,
+    image_url: string
+  },
+  cards: CardEntry[]
+}
+
+// CardEntry
+{
+  name: string,
+  quantity: number,
+  element: string,
+  image_url: string | null,
+  type: string
 }
 ```
 
-### Most Improved Players
+---
 
-```python
+### AvatarStat
+
+Embedded in `PlayerProfile.avatar_stats`.
+
+```js
 {
-    "name": str,        # Player display name
-    "elo_change": int   # Net ELO gained in period
+  avatar_name: string,
+  wins: number,
+  losses: number,
+  win_rate: number,
+  image_url: string | null
 }
 ```
 
-### Ironman Streak
+---
 
-```python
+### CurioEntry
+
+Returned by `GET /api/curios` (existing endpoint).
+
+```js
 {
-    "name": str,               # Player display name
-    "consecutive_days": int    # Longest run of consecutive days with matches
+  id: number,
+  player_name: string,
+  curio_name: string,
+  set_name: string,
+  image_url: string | null,
+  submitted_at: string
 }
 ```
 
-## Query Patterns
+---
 
-### Event Filtering
+### CommunityLink
 
-All queries support optional event/date-range filtering:
+Returned by repositories data (community servers + websites).
 
-- **No filter (default)**: Query `match_records` only (current event data)
-- **Specific event**: Query `match_records_archive WHERE event_id = ?`
-- **"all"**: UNION of `match_records` + `match_records_archive`
-- **Season filter**: Query with `timestamp BETWEEN start_date AND end_date`
-- **Source filter**: Additional `WHERE source = ?` clause
+```js
+// Discord server
+{
+  type: 'discord',
+  name: string,
+  invite_url: string,
+  member_count: number | null,
+  description: string | null
+}
 
-### Match Type Filter
+// Website
+{
+  type: 'website',
+  name: string,
+  url: string,
+  description: string | null
+}
+```
 
-All queries include `WHERE match_type = 'ranked'` to exclude testing matches (where the column exists).
+---
+
+## Frontend State Architecture
+
+### Global State (React Context)
+
+| Context | State | Provider location |
+|---------|-------|-------------------|
+| `AuthContext` | `{ user, loading }` where `user` is `null | false | User` | `App.jsx` wraps all routes |
+
+### Page-Level State (useState / route loader)
+
+Each page component manages its own fetch state locally:
+
+```js
+// Pattern for all data pages
+const [data, setData] = useState(null)
+const [loading, setLoading] = useState(true)
+const [error, setError] = useState(null)
+```
+
+Pages with multiple independent data sources use `Promise.all` in the api layer:
+
+```js
+// Example: Player page needs profile + matches simultaneously
+const [profile, matches] = await Promise.all([
+  api.players.getProfile(playerId),
+  api.players.getMatches(playerId)
+])
+```
+
+### No Global Store
+
+React Context is sufficient for auth state. No Redux, Zustand, or other state management library. All other state is local to pages/components.
+
+---
+
+## Validation Rules
+
+All validation happens on the Flask backend (unchanged). The React app treats all API responses as trusted — no client-side schema validation required.
+
+**Error handling pattern** (in `api/client.js`):
+- HTTP 401 → redirect to `/login`
+- HTTP 4xx → throw `ApiError` with `status` and `message`
+- HTTP 5xx → throw `ApiError` with generic message
+- Network failure → throw `NetworkError`
+
+---
+
+## State Transitions: Auth Flow
+
+```
+App loads
+  └─> AuthContext calls GET /api/me
+        ├─> 200 OK  → user = { user_id, username, avatar, auth_provider }
+        └─> 401     → user = false
+
+User clicks "Login with Discord"
+  └─> Navigate to /discord (proxied → Flask OAuth redirect)
+        └─> Discord OAuth completes
+              └─> Flask callback sets session cookie
+                    └─> redirect(FRONTEND_URL) → React app loads
+                          └─> AuthContext calls GET /api/me → 200 OK → user hydrated
+
+User clicks "Logout"
+  └─> Call GET /logout (proxied → Flask clears session)
+        └─> AuthContext sets user = false
+              └─> Navigate to /
+```

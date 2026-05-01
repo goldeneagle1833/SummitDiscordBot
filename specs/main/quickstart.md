@@ -1,59 +1,143 @@
-# Quickstart: Fun Stats Page
+# Quickstart: Flask/Jinja2 → React SPA Migration
 
 ## What This Feature Does
 
-Adds a new "Fun Stats" page to the web app accessible from the hamburger sidebar menu. The page displays entertaining community statistics — win streaks, most diverse players, most active players, biggest upsets, nemesis pairs, first player advantage, match duration stats, most improved players, and ironman streaks. Users can filter all stats by event and match source using the same dropdown pattern as the avatar winrate page.
+Replaces the Jinja2 server-side rendering with a React SPA at `web-app/frontend/`. Flask becomes a pure JSON API backend. The React app is built with Vite, styled with Tailwind CSS v4, and routes via React Router v6. Auth (Discord + Google OAuth) continues through Flask sessions — the React app calls `/api/me` on load to hydrate user state.
 
-## Files to Create
+---
 
-| File | Purpose |
-|------|---------|
-| `web-app/routes/api/fun_stats.py` | Flask API blueprint — computes and returns all stats as JSON |
-| `web-app/templates/pages/fun_stats.html` | Jinja2 page template — filter bar + stat card grid skeleton |
-| `web-app/static/css/pages/fun-stats.css` | Page-specific styles for stat cards and grid layout |
-| `web-app/static/js/pages/fun-stats.js` | Filter logic, API calls, DOM rendering |
+## Prerequisites
 
-## Files to Edit
+- Python 3.11+ with existing `web-app/` dependencies installed
+- Node.js 20+ (`node --version`)
+- The existing Flask app runs on `http://localhost:5000`
 
-| File | Change |
-|------|--------|
-| `web-app/routes/pages.py` | Add `/fun-stats` page route |
-| `web-app/templates/components/navbar.html` | Add "Fun Stats" link to sidebar menu |
-| `web-app/app.py` | Register the `fun_stats_bp` blueprint |
+---
 
-## Architecture
+## Local Development Setup
 
-```
-User visits /fun-stats
-  → pages.py renders fun_stats.html (empty skeleton + filter bar)
-  → fun-stats.js fetches /api/fun-stats/filters (events + sources)
-  → fun-stats.js fetches /api/fun-stats (default: current data)
-  → JS renders stat cards into the grid
+### 1. Start Flask API backend
 
-User changes filter
-  → fun-stats.js fetches /api/fun-stats?event=X&source=Y
-  → JS re-renders all stat cards with new data
+```bash
+cd web-app
+source venv/bin/activate           # or: venv\Scripts\activate on Windows
+python app.py
+# Flask runs on http://localhost:5000
 ```
 
-## Key Patterns to Follow
+### 2. Start React dev server (separate terminal)
 
-1. **Event filtering**: Copy the pattern from `routes/api/avatars.py` — `_get_event_date_range()`, query param handling, archive vs current table selection
-2. **Win streaks**: Port the algorithm from `routes/api/admin.py:516-563` — chronological iteration tracking current/best per player
-3. **Avatar extraction**: Use the JSON parsing pattern from `avatars.py:115-125` — `json.loads(deck_str)["avatar"][0]["name"]`
-4. **Blueprint registration**: Follow existing pattern in `app.py` — `from routes.api.fun_stats import fun_stats_bp` then `app.register_blueprint(fun_stats_bp, url_prefix="/api")`
-5. **Template structure**: Extend `base.html`, load page-specific CSS/JS blocks
-6. **Sidebar link**: Add after "Element Winrates" in `navbar.html`, same styling as other links
+```bash
+cd web-app/frontend
+npm install                        # first time only
+npm run dev
+# Vite runs on http://localhost:5173
+# /api/* requests are proxied → Flask :5000
+```
 
-## Database Access
+Open `http://localhost:5173` — the React app with live HMR.
 
-- **Read-only** — no writes to any table
-- **Two databases**: `match_records.db` (matches) and `elo.db` (events, standings)
-- **Connection pattern**: Open/close per function, same as all existing routes
-- **Config imports**: `from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS`
+### 3. Environment variables (optional for local dev)
 
-## Not in Scope
+Create `web-app/frontend/.env.local`:
+```
+VITE_API_BASE_URL=http://localhost:5000
+```
 
-- Admin-only restrictions (page is public)
-- Caching/precomputation
-- Export/download stats
-- Player-specific fun stats (use existing player profile page for that)
+The `api/client.js` reads `import.meta.env.VITE_API_BASE_URL` (defaults to empty string, relying on Vite proxy).
+
+---
+
+## Building for Production
+
+```bash
+cd web-app/frontend
+npm ci
+npm run build
+# Output: web-app/frontend/dist/
+```
+
+Nginx serves `dist/index.html` for all non-API routes (catch-all `try_files`).
+
+---
+
+## Project Structure Quick Reference
+
+```
+web-app/frontend/src/
+├── api/           # All fetch calls live here — import these in pages
+│   ├── client.js  # Base fetch wrapper (credentials, error handling)
+│   ├── auth.js    # getMe(), logout()
+│   ├── leaderboard.js
+│   ├── players.js
+│   ├── matches.js
+│   ├── events.js
+│   └── decks.js
+├── context/
+│   └── AuthContext.jsx   # useAuth() hook — access user anywhere
+├── components/   # Shared UI — import directly (no barrel files)
+│   ├── layout/Nav.jsx
+│   ├── layout/Footer.jsx
+│   ├── player/PlayerCard.jsx
+│   ├── deck/DeckViewer.jsx      # lazy-loaded
+│   ├── leaderboard/LeaderboardTable.jsx
+│   └── ui/Button.jsx, Avatar.jsx, Badge.jsx, Spinner.jsx
+└── pages/        # One file per route — thin, compose components
+```
+
+---
+
+## Adding a New Page
+
+1. Create `src/pages/MyPage.jsx`
+2. Add any new API calls to the appropriate `src/api/*.js` file
+3. Add a `<Route>` in `src/App.jsx`
+4. Link from `Nav.jsx` if needed
+
+---
+
+## Adding a New API Endpoint
+
+1. Add to appropriate `src/api/*.js` module (e.g., `players.js` for player endpoints)
+2. Use the `client.get()` / `client.post()` wrapper — never raw `fetch()`
+3. The api module is the only place that knows about endpoint URLs
+
+---
+
+## Auth in Components
+
+```jsx
+import { useAuth } from '@/context/AuthContext'
+
+function MyComponent() {
+  const { user, loading } = useAuth()
+
+  if (loading) return <Spinner />
+  if (!user) return <Navigate to="/login" />
+
+  return <div>Hello, {user.username}</div>
+}
+```
+
+---
+
+## Tailwind CSS
+
+Use utility classes directly in JSX. No separate CSS files for component styles.
+
+```jsx
+<button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg">
+  Click me
+</button>
+```
+
+Custom design tokens (colors, fonts) are in `tailwind.config.js` — copied from the existing web app palette.
+
+---
+
+## Common Gotchas
+
+- **Session cookies**: All `fetch()` calls must use `credentials: 'include'` (handled by `api/client.js` automatically)
+- **No barrel files**: Import directly from the file path — `import PlayerCard from '@/components/player/PlayerCard'`, not from an index
+- **OAuth in dev**: Login flows go through `/discord` and `/google` routes, proxied to Flask. The callback redirects to `FRONTEND_URL` (defaults to `http://localhost:5173` in dev)
+- **Deep links in dev**: React Router handles routing — navigating to `/player/123` directly works because Vite's dev server handles `history` mode

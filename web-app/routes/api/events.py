@@ -3,13 +3,20 @@
 import logging
 
 from flask import Blueprint, jsonify, request
-
 from repositories.events import EventRepository
 from utils.auth import require_admin
 
 logger = logging.getLogger(__name__)
 
 events_bp = Blueprint("events", __name__)
+
+
+@events_bp.route("/events")
+def list_events():
+    """Return all events with metadata as JSON."""
+    repo = EventRepository()
+    events = repo.get_all_events()
+    return jsonify(events)
 
 
 @events_bp.route("/events/<event_folder>/reorder", methods=["POST"])

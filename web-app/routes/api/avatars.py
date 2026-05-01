@@ -8,13 +8,27 @@ from urllib.parse import unquote
 
 from flask import Blueprint, jsonify, request
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH, ELO_DB_PATH, SEASON_FILTERS
+import os
+
+from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH, ELO_DB_PATH, SEASON_FILTERS, AVATAR_IMAGES_DIR
 from utils.formatting import generate_pseudonym
 from utils.auth import is_admin
 
 logger = logging.getLogger(__name__)
 
 avatars_bp = Blueprint("avatars", __name__)
+
+
+@avatars_bp.route("/avatars/image-files")
+def get_avatar_image_files():
+    """Return list of available avatar image filenames."""
+    if not AVATAR_IMAGES_DIR.exists():
+        return jsonify([])
+    files = [
+        f for f in os.listdir(AVATAR_IMAGES_DIR)
+        if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+    ]
+    return jsonify(files)
 
 
 @avatars_bp.route("/avatars/filters")

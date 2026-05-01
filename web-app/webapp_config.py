@@ -57,6 +57,9 @@ else:
         "WARNING: Using randomly generated SECRET_KEY. Set SECRET_KEY env var for persistent sessions."
     )
 
+# Frontend URL for SPA redirect after OAuth
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
 # Discord OAuth configuration
 DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID")
 DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET")

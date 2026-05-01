@@ -53,7 +53,7 @@ from utils.constants import SORCERY_NICKNAMES
 from utils.text import find_best_command_match
 from utils.checks import is_bot_admin
 from services.pilots_service import is_pilot_active
-from services.limited_service import limited_winner_report, get_run_summary, forfeit_arena_run
+from services.limited_service import limited_winner_report, get_run_summary, forfeit_arena_run, start_arena_run
 from repositories.limited_repo import get_active_arena_run, get_limited_elo
 
 logger = logging.getLogger("discord_bot")
@@ -1537,6 +1537,22 @@ class LFGCog(commands.Cog):
                 "`!remove_player @user`\n"
                 "Remove a player and revert ALL ELO changes from their matches.\n"
                 "**Warning:** This affects all opponents' ELO as well!"
+            ),
+            inline=False,
+        )
+
+        # Limited Management
+        embed.add_field(
+            name="Limited Management",
+            value=(
+                "`!admin_start_run @player <deck_url>`\n"
+                "Manually start a limited arena run for a player.\n"
+                "**When to use:** When a player's run was lost due to a reset or bug.\n\n"
+                "`!admin_limited_report @winner @loser`\n"
+                "Manually report a limited match result.\n\n"
+                "`!remove_limited_match <match_id>`\n"
+                "Remove a limited match and revert ELO changes.\n\n"
+                "`!reset_limited_elo` - **DANGER:** Reset ALL limited data"
             ),
             inline=False,
         )
@@ -3073,6 +3089,69 @@ class LFGCog(commands.Cog):
         else:
             logger.error(f"reset_limited_elo error: {error}")
             await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    async def admin_start_run(self, ctx, player: discord.Member = None, deck_url: str = None):
+        """Admin command to manually start a limited arena run for a player. Usage: !admin_start_run @player <deck_url>"""
+        DRAFT_SORCERY_ROLE_ID = 1499801776772354160
+
+        is_admin = False
+        if ctx.author.guild_permissions.administrator:
+            is_admin = True
+        elif any(role.id == config.BOT_ADMIN_ROLE_ID for role in ctx.author.roles):
+            is_admin = True
+        elif any(role.id == config.JUDGE_ROLE_ID for role in ctx.author.roles):
+            is_admin = True
+        elif any(role.id == DRAFT_SORCERY_ROLE_ID for role in ctx.author.roles):
+            is_admin = True
+
+        if not is_admin:
+            await ctx.send("You don't have permission to use this command.")
+            return
+
+        if player is None or deck_url is None:
+            await ctx.send("Usage: `!admin_start_run @player <deck_url>`")
+            return
+
+        if player.bot:
+            await ctx.send("Cannot start runs for bots!")
+            return
+
+        try:
+            display_name = player.global_name or player.display_name
+            run = start_arena_run(player.id, display_name, deck_url)
+
+            log_admin_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "admin_start_run",
+                new_state={"run_id": run["run_id"], "player_id": player.id, "deck_url": deck_url},
+                details=f"Admin started arena run #{run['run_id']} for {display_name} (ID: {player.id})",
+            )
+
+            embed = discord.Embed(
+                title="Arena Run Started",
+                description=(
+                    f"Started a new limited arena run for {player.mention}\n"
+                    f"• **Run ID:** {run['run_id']}\n"
+                    f"• **Deck:** {deck_url}\n"
+                    f"• **Starting ELO:** {run['starting_elo']}"
+                ),
+                color=discord.Color.green(),
+            )
+            await ctx.send(embed=embed)
+            logger.info(f"Admin {ctx.author} started arena run #{run['run_id']} for {display_name} (ID: {player.id})")
+
+        except ValueError as e:
+            await ctx.send(f"Cannot start run: {e}")
+        except Exception as e:
+            await ctx.send(f"Error starting run: {e}")
+            logger.error(f"admin_start_run failed: {e}")
+
+    @admin_start_run.error
+    async def admin_start_run_error(self, ctx, error):
+        logger.error(f"admin_start_run error: {error}")
+        await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
     async def eligible_for_masters_braket(self, ctx):

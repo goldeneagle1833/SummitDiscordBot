@@ -1,7 +1,7 @@
 """Miscellaneous API routes."""
 
 import logging
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, session
 from services.youtube import get_latest_videos
 from webapp_config import (
     MATCH_RECORDS_DB_PATH,
@@ -10,9 +10,32 @@ from webapp_config import (
     COMMUNITY_DB_PATH,
 )
 from utils.auth import is_admin
+from repositories.community import CommunityRepository
 
 misc_bp = Blueprint("misc", __name__)
 logger = logging.getLogger(__name__)
+
+
+@misc_bp.route("/me")
+def me():
+    """Get current authenticated user info."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Not authenticated"}), 401
+    return jsonify({
+        "user_id": str(user_id),
+        "username": session.get("username"),
+        "avatar": session.get("avatar"),
+        "auth_provider": session.get("auth_provider"),
+        "is_admin": is_admin(),
+    })
+
+
+@misc_bp.route("/logout")
+def api_logout():
+    """Clear session and return JSON response."""
+    session.clear()
+    return jsonify({"ok": True})
 
 
 @misc_bp.route("/status")
@@ -26,6 +49,16 @@ def youtube_videos():
     """Get latest videos from community YouTube channels."""
     videos = get_latest_videos()
     return jsonify(videos)
+
+
+@misc_bp.route("/community")
+def community():
+    """Get community links (Discord servers and websites)."""
+    repo = CommunityRepository()
+    return jsonify({
+        "discord_servers": repo.get_discord_servers(),
+        "websites": repo.get_websites(),
+    })
 
 
 @misc_bp.route("/debug/database-status")

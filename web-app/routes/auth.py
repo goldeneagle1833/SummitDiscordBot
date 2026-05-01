@@ -5,8 +5,9 @@ import logging
 from urllib.parse import urlencode
 
 import requests
-from flask import Blueprint, redirect, url_for, session, request, render_template
+from flask import Blueprint, redirect, url_for, session, request, render_template, jsonify
 
+import webapp_config
 from webapp_config import (
     DISCORD_CLIENT_ID,
     DISCORD_CLIENT_SECRET,
@@ -16,10 +17,12 @@ from webapp_config import (
     GOOGLE_REDIRECT_URI,
 )
 from repositories.user_profiles import UserProfileRepository
+from utils.auth import is_admin
 
 logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint("auth", __name__)
+
 
 
 @auth_bp.route("/login")
@@ -51,12 +54,12 @@ def discord_callback():
     error = request.args.get("error")
     if error:
         logger.error(f"Discord OAuth error: {error}")
-        return redirect(url_for("pages.home"))
+        return redirect(webapp_config.FRONTEND_URL)
 
     code = request.args.get("code")
     if not code:
         logger.error("No code received from Discord")
-        return redirect(url_for("pages.home"))
+        return redirect(webapp_config.FRONTEND_URL)
 
     # Exchange code for access token
     token_url = "https://discord.com/api/oauth2/token"
@@ -74,12 +77,12 @@ def discord_callback():
         tokens = token_response.json()
     except requests.RequestException as e:
         logger.error(f"Failed to get Discord token: {e}")
-        return redirect(url_for("pages.home"))
+        return redirect(webapp_config.FRONTEND_URL)
 
     access_token = tokens.get("access_token")
     if not access_token:
         logger.error("No access token in Discord response")
-        return redirect(url_for("pages.home"))
+        return redirect(webapp_config.FRONTEND_URL)
 
     # Get user info from Discord
     user_url = "https://discord.com/api/users/@me"
@@ -91,7 +94,7 @@ def discord_callback():
         user_data = user_response.json()
     except requests.RequestException as e:
         logger.error(f"Failed to get Discord user info: {e}")
-        return redirect(url_for("pages.home"))
+        return redirect(webapp_config.FRONTEND_URL)
 
     # Store user info in session (permanent = survives browser close)
     session.permanent = True
@@ -120,7 +123,7 @@ def discord_callback():
 
     logger.info(f"User {user_data['username']} (ID: {user_data['id']}) logged in")
 
-    return redirect(url_for("pages.home"))
+    return redirect(webapp_config.FRONTEND_URL)
 
 
 @auth_bp.route("/logout")
@@ -156,12 +159,12 @@ def google_callback():
     error = request.args.get("error")
     if error:
         logger.error(f"Google OAuth error: {error}")
-        return redirect(url_for("pages.home"))
+        return redirect(webapp_config.FRONTEND_URL)
 
     code = request.args.get("code")
     if not code:
         logger.error("No code received from Google")
-        return redirect(url_for("pages.home"))
+        return redirect(webapp_config.FRONTEND_URL)
 
     # Exchange code for access token
     token_url = "https://oauth2.googleapis.com/token"
@@ -179,12 +182,12 @@ def google_callback():
         tokens = token_response.json()
     except requests.RequestException as e:
         logger.error(f"Failed to get Google token: {e}")
-        return redirect(url_for("pages.home"))
+        return redirect(webapp_config.FRONTEND_URL)
 
     access_token = tokens.get("access_token")
     if not access_token:
         logger.error("No access token in Google response")
-        return redirect(url_for("pages.home"))
+        return redirect(webapp_config.FRONTEND_URL)
 
     # Get user info from Google
     user_url = "https://www.googleapis.com/oauth2/v2/userinfo"
@@ -196,7 +199,7 @@ def google_callback():
         user_data = user_response.json()
     except requests.RequestException as e:
         logger.error(f"Failed to get Google user info: {e}")
-        return redirect(url_for("pages.home"))
+        return redirect(webapp_config.FRONTEND_URL)
 
     # Store user info in session (permanent = survives browser close)
     session.permanent = True
@@ -229,4 +232,4 @@ def google_callback():
         f"User {session['username']} (Google ID: {user_data['id']}) logged in via Google"
     )
 
-    return redirect(url_for("pages.home"))
+    return redirect(webapp_config.FRONTEND_URL)

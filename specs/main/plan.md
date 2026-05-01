@@ -1,36 +1,29 @@
-# Implementation Plan: Fun Stats Page
+# Implementation Plan: Flask/Jinja2 → React SPA Migration
 
-**Branch**: `main` | **Date**: 2026-04-08 | **Spec**: `specs/main/spec.md`
-**Input**: User request for a new "Fun Stats" web page with event filtering and community stats
+**Branch**: `main` | **Date**: 2026-04-30 | **Spec**: user-provided via /speckit.plan
+**Input**: Inline feature specification from /speckit.plan invocation
 
 ## Summary
 
-A new public-facing "Fun Stats" page for the web app that showcases entertaining community statistics: win streaks, most diverse players, most active players, biggest upsets, nemesis pairs, and more. The page reuses the event/source filter pattern from the avatar winrate page and is added to the hamburger sidebar menu. All data is read-only from existing `match_records`, `match_records_archive`, and `elo.db` tables — no schema changes required.
+Migrate the Summit Discord Bot web app from Jinja2 server-side rendering to a React SPA (Vite + React 18 + React Router 6 + Tailwind CSS v4) with Flask serving as a pure JSON API backend. All existing Flask API routes under `/api/**` remain unchanged. A new `GET /api/me` endpoint exposes session user data to the SPA. Auth flows (Discord + Google OAuth) continue through Flask, with callbacks redirecting to the React app root URL. The React app lives at `web-app/frontend/` and builds to `dist/`, which Nginx serves as a catch-all for non-API routes. Discord bot infrastructure is completely untouched.
 
 ## Technical Context
 
-**Language/Version**: Python 3.11+ (Flask backend), HTML/CSS/JS (Jinja2 templates)
-**Primary Dependencies**: Flask, SQLite3, Jinja2
-**Storage**: SQLite (`match_records.db`, `elo.db`) — read-only queries
-**Testing**: Manual browser testing + syntax/import verification
-**Target Platform**: Linux server (production), Windows (development)
-**Project Type**: Web application (Flask)
-**Performance Goals**: Page load < 2s, API response < 1s
-**Constraints**: Discord's existing database schema — no writes, no migrations
-**Scale/Scope**: Single page with 1 route, 1 API blueprint, 1 template, 1 CSS, 1 JS
+**Language/Version**: Python 3.11 (Flask backend, unchanged) / JavaScript ES2022 (React frontend, no TypeScript)
+**Primary Dependencies**: React 18, React Router 6, Vite 5, Tailwind CSS v4 (@tailwindcss/vite plugin), flask-cors (dev only)
+**Storage**: SQLite (unchanged) — no schema changes required
+**Testing**: pytest (backend, unchanged), Vitest + React Testing Library (frontend)
+**Target Platform**: Linux VPS (Linode), systemd, Nginx, Cloudflare CDN
+**Project Type**: Web application — SPA frontend + Flask REST API backend
+**Performance Goals**: Initial JS bundle <200KB gzipped; lazy-load DeckViewer + CurioTracking pages; no sequential API request waterfalls (Promise.all in api layer)
+**Constraints**: Flask session cookie (SameSite=Lax, Secure, HttpOnly — already configured) must be sent with all API calls via `credentials: 'include'`; no JWT; no SSR; no TypeScript
+**Scale/Scope**: ~15 pages, ~20 API modules, single VPS deployment
 
 ## Constitution Check
 
-*GATE: Constitution is a placeholder template — no project-specific gates defined. Proceeding with established codebase patterns.*
+*The project constitution is unpopulated (template placeholders only) — no project-specific architectural gates are defined.*
 
-The project follows these observed conventions:
-- **Routes pattern**: Page route in `pages.py`, API routes in `routes/api/` blueprint
-- **Template pattern**: Jinja2 templates in `templates/pages/`, extend `base.html`
-- **Database access**: Direct SQLite connections (no ORM), connections opened/closed per function
-- **Event filtering**: Query `events` table for metadata, filter `match_records` by timestamp range
-- **Navigation**: Sidebar links in `templates/components/navbar.html`
-
-All conventions will be followed.
+**Result**: No violations. Proceeding to Phase 0.
 
 ## Project Structure
 
@@ -38,86 +31,87 @@ All conventions will be followed.
 
 ```text
 specs/main/
-├── plan.md              # This file
+├── plan.md              # This file (/speckit.plan output)
 ├── research.md          # Phase 0 output
 ├── data-model.md        # Phase 1 output
 ├── quickstart.md        # Phase 1 output
 ├── contracts/           # Phase 1 output
-│   └── fun-stats-api.md
-└── tasks.md             # Phase 2 output (NOT created by /speckit.plan)
+│   ├── auth.md
+│   ├── leaderboard.md
+│   ├── players.md
+│   ├── matches.md
+│   ├── events.md
+│   └── decks.md
+└── tasks.md             # Phase 2 output (/speckit.tasks — not created here)
 ```
 
-### Source Code (repository root)
+### Source Code Layout
 
 ```text
 web-app/
+├── app.py                        # Add /api/me + /api/logout; remove pages blueprint when ready
 ├── routes/
-│   ├── pages.py                    # ADD: /fun-stats route
-│   └── api/
-│       └── fun_stats.py            # NEW: Fun stats API blueprint
-├── templates/
-│   ├── components/
-│   │   └── navbar.html             # EDIT: Add "Fun Stats" link to sidebar
-│   └── pages/
-│       └── fun_stats.html          # NEW: Fun Stats page template
-└── static/
-    ├── css/pages/
-    │   └── fun-stats.css           # NEW: Page-specific styles
-    └── js/pages/
-        └── fun-stats.js            # NEW: Filter logic + API calls + rendering
+│   ├── api/                      # All /api/** endpoints (unchanged)
+│   └── auth.py                   # Change callback redirects → React app root URL
+├── services/                     # Unchanged
+├── repositories/                 # Unchanged
+└── frontend/                     # NEW: React SPA
+    ├── index.html
+    ├── vite.config.js             # Proxy /api/*, /avatar-images/*, /card-images/* → Flask :5000
+    ├── tailwind.config.js         # Color palette + custom design tokens
+    ├── postcss.config.js
+    ├── package.json
+    ├── README.md                  # Local dev setup (Flask + Vite)
+    └── src/
+        ├── main.jsx               # App entry point
+        ├── App.jsx                # React Router route definitions
+        ├── api/                   # Centralized fetch client — only place with URLs
+        │   ├── client.js          # Base fetch (credentials: include, error handling)
+        │   ├── auth.js            # GET /api/me, GET /logout
+        │   ├── leaderboard.js     # GET /api/leaderboard, /api/leaderboard/event, etc.
+        │   ├── players.js         # GET /api/players/:id, /api/players/:id/matches
+        │   ├── matches.js         # GET /api/match-history
+        │   ├── events.js          # GET /api/events (pages.py), /api/events/:id/decks
+        │   └── decks.js           # GET /api/cards/:id
+        ├── context/
+        │   └── AuthContext.jsx    # Global user state via /api/me; provides useAuth()
+        ├── components/
+        │   ├── layout/
+        │   │   ├── Nav.jsx
+        │   │   └── Footer.jsx
+        │   ├── player/
+        │   │   └── PlayerCard.jsx
+        │   ├── deck/
+        │   │   └── DeckViewer.jsx  # lazy-loaded via React.lazy()
+        │   ├── leaderboard/
+        │   │   └── LeaderboardTable.jsx
+        │   └── ui/
+        │       ├── Button.jsx
+        │       ├── Avatar.jsx
+        │       ├── Badge.jsx
+        │       └── Spinner.jsx
+        └── pages/                  # Thin page components — fetch via api/, compose components
+            ├── Home.jsx
+            ├── Leaderboard.jsx
+            ├── Player.jsx
+            ├── Matches.jsx
+            ├── Events.jsx
+            ├── EventDetail.jsx
+            ├── DeckDetail.jsx      # lazy DeckViewer via Suspense
+            ├── Community.jsx
+            ├── CurioTracking.jsx   # lazy-loaded
+            ├── Help.jsx            # lightweight hardcoded content
+            ├── LifeCounter.jsx     # rebuilt as React component
+            ├── About.jsx           # lightweight hardcoded content
+            ├── Privacy.jsx         # lightweight hardcoded content
+            ├── Terms.jsx           # lightweight hardcoded content
+            ├── Login.jsx
+            └── admin/
+                └── AuditLog.jsx    # admin-only, guarded by is_admin from AuthContext
 ```
 
-**Structure Decision**: Follows the existing web app convention — a page route, an API blueprint, a Jinja2 template, and page-specific CSS/JS.
-
-## Stats Breakdown
-
-### User-Requested Stats
-
-| # | Stat | Description | Data Source |
-|---|------|-------------|-------------|
-| 1 | **Win Streaks** | Best all-time + current active win streak per player (top 10) | All matches ordered by timestamp, iterate tracking consecutive wins |
-| 2 | **Most Diverse Player** | Top 10 players who have played the most unique avatars | `json_deck_data_winner`/`json_deck_data_loser` → extract avatar name per match |
-| 3 | **Most Active Player** | Top 10 players by total games played | Count appearances as winner + loser |
-
-### Suggested Additional Stats
-
-| # | Stat | Description | Data Source |
-|---|------|-------------|-------------|
-| 4 | **Biggest Upset** | Match where lower-rated player beat higher-rated player by largest ELO gap (shows both players, result, ELO delta) | `winner_elo_change` / `loser_elo_change` from match records |
-| 5 | **Nemesis Pairs** | Top 5 player pairs who have faced each other the most (shows matchup record) | Count matchups between `winner_id`/`losser_id` pairs |
-| 6 | **First Player Advantage** | Overall win rate when going first vs second | `winner_went_first` column analysis |
-| 7 | **Match Duration Stats** | Average, fastest, and longest match times | `match_time` column (minutes) |
-| 8 | **Most Improved** | Top 5 players with biggest cumulative ELO gain in the period | Sum of `winner_lifetime_elo_change` and `loser_lifetime_elo_change` per player |
-| 9 | **Ironman Streak** | Players with the most consecutive days containing at least one match | Timestamp analysis for daily activity |
-
-## Implementation Approach
-
-### Backend (API)
-
-1. **New blueprint**: `fun_stats_bp` in `routes/api/fun_stats.py`
-2. **Single endpoint**: `GET /api/fun-stats` with optional `?event=<value>&source=<value>` query params
-3. **Filter logic**: Reuse the exact pattern from `avatars.py` — `_get_event_date_range()` for event→date mapping, `_collect_rows()` for table selection (current vs archive)
-4. **Streak computation**: Port the proven algorithm from `admin.py:516-563` (iterate chronological matches, track current/best per player)
-5. **Avatar diversity**: Use `_extract_avatar_from_deck()` pattern from `avatars.py:115-125` to parse JSON deck data
-
-### Frontend (Template + JS)
-
-1. **Template**: Extends `base.html`, includes filter bar (event + source dropdowns) matching avatar page pattern
-2. **JavaScript**: On filter change → fetch `/api/fun-stats?event=X&source=Y` → render stat cards
-3. **Layout**: Card-based grid layout — each stat gets a card with a title, icon, and ranked list or single value
-4. **Responsive**: 1-column mobile, 2-column tablet, 3-column desktop (CSS grid)
-
-### Navigation
-
-1. **Sidebar**: Add `<a href="/fun-stats">Fun Stats</a>` link after "Element Winrates" in `navbar.html`
-2. **Public access**: No admin check required — visible to all users
+**Structure Decision**: Web application layout (Option 2). Flask backend unchanged at `web-app/`; new React SPA at `web-app/frontend/`. Jinja2 templates and `routes/pages.py` remain registered in Flask during migration (parallel operation) — Nginx catch-all serves React for end users while Jinja2 stays as fallback. Nginx proxies `/api/**`, `/avatar-images/**`, `/card-images/**` to Gunicorn. Flask route `/api/games` renamed to `/api/events` (keep `/api/games` as deprecated alias). Admin pages migrated to React with server-side admin checks via `is_admin` in `/api/me`. No barrel `index.js` files — all imports are direct file paths.
 
 ## Complexity Tracking
 
-> No constitution violations. Feature follows established patterns entirely.
-
-| Decision | Rationale |
-|----------|-----------|
-| Single API endpoint (not per-stat) | All stats share the same filter params and DB connections — one round-trip is simpler and faster |
-| Port admin streak logic (not import) | Admin code is tightly coupled to its UNION helpers — cleaner to adapt the algorithm in the new blueprint |
-| Client-side rendering | Matches the avatar page pattern — template provides skeleton, JS fills data from API |
+*No constitution violations to justify.*

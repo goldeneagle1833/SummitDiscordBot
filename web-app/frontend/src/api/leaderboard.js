@@ -2,6 +2,7 @@ import { get } from './client'
 
 export const getLeaderboard = () => get('/api/leaderboard')
 export const getEventLeaderboard = () => get('/api/leaderboard/event')
+export const getPaperEventLeaderboard = () => get('/api/leaderboard/paper-event')
 export const getLimitedLeaderboard = () => get('/api/leaderboard/limited')
 export const getCombinedLeaderboard = () => get('/api/leaderboard/combined')
 export const getEloDistribution = () => get('/api/elo-distribution')

@@ -1,10 +1,13 @@
-import { useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 
 export default function Login() {
   usePageTitle('Login')
-  useEffect(() => {
-  }, [])
+  const [searchParams] = useSearchParams()
+
+  // Build the redirect-back URL: use ?next= param, or fallback to current origin
+  const next = searchParams.get('next') || window.location.origin + '/'
+  const qs = `?next=${encodeURIComponent(next)}`
 
   return (
     <div className="max-w-sm mx-auto py-12 space-y-6 text-center">
@@ -14,13 +17,13 @@ export default function Login() {
       </p>
       <div className="space-y-3">
         <a
-          href="/auth/discord"
+          href={`/auth/discord${qs}`}
           className="block w-full px-5 py-3 bg-[#5865F2] text-white rounded-soft font-medium hover:bg-[#4752C4] transition-colors"
         >
           Login with Discord
         </a>
         <a
-          href="/auth/google"
+          href={`/auth/google${qs}`}
           className="block w-full px-5 py-3 bg-bg-surface border border-border rounded-soft font-medium hover:border-primary/50 transition-colors"
         >
           Login with Google

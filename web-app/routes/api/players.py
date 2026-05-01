@@ -1849,6 +1849,7 @@ def player_api(player_id):
             "casual_matches": casual_match_history,
             "recorded_games": recorded_games if is_owner else [],
             "is_owner": is_owner,
+            "is_admin": is_admin(),
             "has_custom_display_name": has_custom_display_name,
             "elo_vs_brackets": elo_vs_brackets,
             "pagination": {

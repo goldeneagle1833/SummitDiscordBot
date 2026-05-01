@@ -57,7 +57,8 @@ else:
         "WARNING: Using randomly generated SECRET_KEY. Set SECRET_KEY env var for persistent sessions."
     )
 
-# Frontend URL for SPA redirect after OAuth
+# Frontend URL - used for post-login redirects back to the React app
+# In dev, React runs on :5173; in production it's the same origin
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
 
 # Discord OAuth configuration

@@ -8,9 +8,9 @@ from webapp_config import (
     ELO_DB_PATH,
     FART_SCORES_DB_PATH,
     COMMUNITY_DB_PATH,
+    ADMINS,
 )
 from utils.auth import is_admin
-from repositories.community import CommunityRepository
 
 misc_bp = Blueprint("misc", __name__)
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 @misc_bp.route("/me")
 def me():
-    """Get current authenticated user info."""
+    """Return current authenticated user from session, or 401 if not logged in."""
     user_id = session.get("user_id")
     if not user_id:
         return jsonify({"error": "Not authenticated"}), 401
@@ -27,15 +27,26 @@ def me():
         "username": session.get("username"),
         "avatar": session.get("avatar"),
         "auth_provider": session.get("auth_provider"),
-        "is_admin": is_admin(),
+        "is_admin": str(user_id) in ADMINS,
     })
 
 
 @misc_bp.route("/logout")
-def api_logout():
-    """Clear session and return JSON response."""
+def logout():
+    """Clear session and log out user (API alias for /auth/logout)."""
+    username = session.get("username", "Unknown")
     session.clear()
-    return jsonify({"ok": True})
+    logger.info(f"User {username} logged out via /api/logout")
+    return jsonify({"success": True})
+
+
+@misc_bp.route("/recent-event")
+def recent_event():
+    """Get the most recently added top-8 event if within 48 hours."""
+    from repositories.events import EventRepository
+    repo = EventRepository()
+    event = repo.get_recent_event(hours=48)
+    return jsonify({"event": event})
 
 
 @misc_bp.route("/status")
@@ -53,7 +64,8 @@ def youtube_videos():
 
 @misc_bp.route("/community")
 def community():
-    """Get community links (Discord servers and websites)."""
+    """Get community links: Discord servers, websites, and YouTube channels."""
+    from repositories.community import CommunityRepository
     repo = CommunityRepository()
     return jsonify({
         "discord_servers": repo.get_discord_servers(),

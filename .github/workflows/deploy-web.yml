@@ -37,7 +37,7 @@ jobs:
             # Apply stashed changes if any (will merge automatically)
             git stash pop || true
 
-            # Install/update dependencies in venv
+            # Install/update Python dependencies in venv
             cd web-app
             source venv/bin/activate
             pip install -r requirements.txt
@@ -47,11 +47,7 @@ jobs:
             cd frontend
             npm ci
             npm run build
-            cd ..
-
-            # NOTE: FRONTEND_URL=https://sorcererssummit.com should be set in
-            # the summit-web systemd service file (Environment= directive) or
-            # in a server-side .env file loaded by the Flask app.
+            cd ../..
 
             # Restart the service
             sudo systemctl restart summit-web

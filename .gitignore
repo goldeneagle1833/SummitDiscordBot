@@ -55,6 +55,10 @@ discord-bot/test_data/
 # Ignore the entire curiosa-io-tools folder (contains local tools)
 web-app/curiosa-io-tools/
 
+# Node / Frontend
+node_modules/
+web-app/frontend/dist/
+
 # Tailwind CSS
 web-app/tailwindcss
 web-app/tailwindcss.exe

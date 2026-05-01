@@ -85,6 +85,7 @@ def list_entries():
     return jsonify({
         "entries": [_entry_to_json(e) for e in entries],
         "sets": [{"id": s["id"], "name": s["name"], "is_default": s["is_default"]} for s in sets],
+        "can_edit": is_curio_editor(),
     })
 
 

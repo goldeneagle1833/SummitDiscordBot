@@ -157,6 +157,25 @@
   flex: 1;
 }
 
+.seed-card-pips {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.seed-card-pip {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.seed-card-pip--filled {
+  background: var(--color-primary, #e5a800);
+}
+
 .seed-card-cost {
   color: rgba(255, 255, 255, 0.4);
   font-size: 0.75rem;

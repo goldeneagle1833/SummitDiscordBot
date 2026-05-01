@@ -57,6 +57,13 @@ export default function DeckVisualizer({ cards, spellbook, atlas, sideboard }) {
     groups[type].sort((a, b) => getManaCost(a) - getManaCost(b))
   }
 
+  // Each copy is offset 15% of the card's height below the previous one.
+  // translateY(%) uses the element's own height, so 15% = 15% of card height directly.
+  // paddingTop(%) uses the parent's width, so we multiply by the card aspect ratio (height/width ≈ 1.386).
+  const GAP_PCT = 15
+  const CARD_RATIO = 1.386 // Sorcery card height/width ratio (88mm / 63.5mm)
+  const GAP_WIDTH_PCT = GAP_PCT * CARD_RATIO // ≈ 20.8% of width per step
+
   return (
     <div className="space-y-4">
       {CARD_TYPE_ORDER.map((type) => {
@@ -72,19 +79,58 @@ export default function DeckVisualizer({ cards, spellbook, atlas, sideboard }) {
             <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-2">
               {cards.map((card, i) => {
                 const qty = card.quantity || card.qty || 1
+                const stackCount = Math.min(qty, 4)
                 return (
-                  <div key={`${card.name}-${i}`} className="relative">
-                    <img
-                      src={`/card-images/${card.image}`}
-                      alt={card.name}
-                      className="w-full rounded shadow-sm"
-                      loading="lazy"
-                    />
-                    {qty > 1 && (
-                      <span className="absolute top-1 right-1 bg-black/70 text-white text-xs font-bold px-1.5 py-0.5 rounded">
-                        x{qty}
-                      </span>
-                    )}
+                  <div key={`${card.name}-${i}`}>
+                    {/*
+                      paddingTop reserves space at top so background copies
+                      (which start at y=0) can peek above the front card.
+                      The invisible spacer img establishes the correct height
+                      for the front card at y=maxOffset.
+                    */}
+                    <div className="relative" style={{ paddingTop: `${((stackCount - 1) * GAP_WIDTH_PCT).toFixed(2)}%` }}>
+                      {/* Invisible spacer sets container height = cardHeight at this width */}
+                      <img
+                        src={`/card-images/${card.image}`}
+                        alt=""
+                        aria-hidden="true"
+                        className="w-full"
+                        style={{ visibility: 'hidden' }}
+                      />
+                      {/*
+                        All copies absolutely positioned at top:0, then shifted down.
+                        j=0 → y=0 (top of stack, back/lowest z), j=N-1 → y=maxOffset (front/highest z).
+                      */}
+                      {Array.from({ length: stackCount }).map((_, j) => {
+                        const isFront = j === stackCount - 1
+                        return (
+                          <div
+                            key={j}
+                            className="absolute top-0 left-0 w-full"
+                            style={{
+                              transform: `translateY(${j * GAP_PCT}%)`,
+                              zIndex: j + 1,
+                            }}
+                          >
+                            <img
+                              src={`/card-images/${card.image}`}
+                              alt={isFront ? card.name : ''}
+                              aria-hidden={!isFront || undefined}
+                              className="w-full rounded"
+                              style={{ filter: 'drop-shadow(0 3px 6px rgba(0,0,0,0.55))' }}
+                              loading="lazy"
+                            />
+                            {isFront && qty > 1 && (
+                              <span
+                                className="absolute bottom-1 right-1 bg-black/70 text-white text-xs font-bold px-1.5 py-0.5 rounded"
+                              >
+                                x{qty}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
                     <p className="text-xs text-text-muted text-center mt-1 truncate">{card.name}</p>
                   </div>
                 )

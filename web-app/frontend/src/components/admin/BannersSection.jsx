@@ -199,7 +199,7 @@ export default function BannersSection() {
             <span className="opacity-50">(optional — auto-scrolls every 10s if multiple)</span>
           </label>
           <div className="flex gap-2 mt-1 flex-wrap items-center">
-            <label className="px-3 py-1.5 text-xs bg-secondary text-white rounded cursor-pointer hover:opacity-90">
+            <label className="px-3 py-1.5 text-xs bg-secondary text-black rounded cursor-pointer hover:opacity-90">
               {uploading ? 'Uploading...' : 'Upload Image'}
               <input
                 ref={fileRef}

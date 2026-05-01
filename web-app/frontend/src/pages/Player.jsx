@@ -17,6 +17,7 @@ import DisplayNameBanner from '@/components/player/DisplayNameBanner'
 import ReportGameModal from '@/components/player/ReportGameModal'
 import EditDeckModal from '@/components/player/EditDeckModal'
 import AdminControls from '@/components/player/AdminControls'
+import EloHistory from '@/components/player/EloHistory'
 
 const PER_PAGE = 50
 
@@ -44,6 +45,7 @@ export default function Player() {
 
   // Collapsible sections
   const [openSections, setOpenSections] = useState({
+    eloHistory: true,
     eloBrackets: false,
     avatarPerf: true,
     avatarMatchups: true,
@@ -154,7 +156,7 @@ export default function Player() {
       {data.is_owner && (
         <button
           onClick={() => setShowReportModal(true)}
-          className="px-4 py-2 text-sm bg-secondary text-white rounded hover:opacity-90 transition-opacity"
+          className="px-4 py-2 text-sm bg-secondary text-black rounded hover:opacity-90 transition-opacity"
         >
           Report a Game
         </button>
@@ -165,6 +167,14 @@ export default function Player() {
         stats={stats}
         statsType={statsType}
         onStatsTypeChange={setStatsType}
+      />
+
+      <EloHistory
+        matches={data.matches}
+        currentElo={data.elo}
+        totalMatches={data.pagination?.total_matches}
+        open={openSections.eloHistory}
+        onToggle={() => toggle('eloHistory')}
       />
 
       <EloBrackets
@@ -187,6 +197,7 @@ export default function Player() {
 
       <RecentDecks
         decks={data.recent_decks}
+        playerId={playerId}
         open={openSections.recentDecks}
         onToggle={() => toggle('recentDecks')}
       />

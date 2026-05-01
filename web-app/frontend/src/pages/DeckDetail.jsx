@@ -192,7 +192,7 @@ export default function DeckDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showFringe, setShowFringe] = useState(false)
-  const [viewMode, setViewMode] = useState('list')
+  const [viewMode, setViewMode] = useState('visual')
   const [popup, setPopup] = useState({ image: null, rect: null })
 
   usePageTitle(data?.seed?.deck_name || 'Deck Archetype')
@@ -309,7 +309,7 @@ export default function DeckDetail() {
               <button
                 onClick={() => setViewMode('list')}
                 className={`px-3 py-1 text-xs font-medium transition-colors ${
-                  viewMode === 'list' ? 'bg-secondary text-white' : 'text-text-muted hover:text-text-primary'
+                  viewMode === 'list' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
                 }`}
               >
                 List
@@ -317,7 +317,7 @@ export default function DeckDetail() {
               <button
                 onClick={() => setViewMode('visual')}
                 className={`px-3 py-1 text-xs font-medium transition-colors ${
-                  viewMode === 'visual' ? 'bg-secondary text-white' : 'text-text-muted hover:text-text-primary'
+                  viewMode === 'visual' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
                 }`}
               >
                 Visual

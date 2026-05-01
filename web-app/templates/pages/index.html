@@ -131,9 +131,9 @@
                 Paper
               </button>
               {% if show_limited_leaderboard %}
-              <a href="/elo/limited" class="elo-source-btn" title="Limited (Arena Draft) leaderboard">
+              <button class="elo-source-btn" data-source="limited" title="Limited (Arena Draft) leaderboard">
                 Limited
-              </a>
+              </button>
               {% endif %}
             </div>
           </div>
@@ -160,7 +160,9 @@
               <tr>
                 <th>Rank</th>
                 <th>Player</th>
-                <th>Event ELO</th>
+                <th id="th-elo">Event ELO</th>
+                <th id="th-wl" style="display:none">W/L</th>
+                <th id="th-winpct" style="display:none">Win %</th>
               </tr>
             </thead>
             <tbody id="event-leaderboard-tbody">

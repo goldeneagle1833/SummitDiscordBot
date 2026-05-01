@@ -56,7 +56,7 @@ export default function CurioTracking() {
           <button
             onClick={() => setActiveSet('all')}
             className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-              activeSet === 'all' ? 'bg-secondary text-white' : 'bg-bg-raised text-text-muted hover:text-text-primary'
+              activeSet === 'all' ? 'bg-secondary text-black' : 'bg-bg-raised text-text-muted hover:text-text-primary'
             }`}
           >
             All
@@ -66,7 +66,7 @@ export default function CurioTracking() {
               key={s.id}
               onClick={() => setActiveSet(String(s.id))}
               className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                activeSet === String(s.id) ? 'bg-secondary text-white' : 'bg-bg-raised text-text-muted hover:text-text-primary'
+                activeSet === String(s.id) ? 'bg-secondary text-black' : 'bg-bg-raised text-text-muted hover:text-text-primary'
               }`}
             >
               {s.name}
@@ -89,7 +89,7 @@ export default function CurioTracking() {
         {canEdit && (
           <button
             onClick={() => { setEditingEntry(null); setModalOpen(true) }}
-            className="ml-auto bg-secondary hover:bg-secondary/80 text-white text-sm px-4 py-2 rounded transition-colors"
+            className="ml-auto bg-secondary hover:bg-secondary/80 text-black text-sm px-4 py-2 rounded transition-colors"
           >
             + Add Entry
           </button>
@@ -340,7 +340,7 @@ function CurioModal({ entry, sets, onClose, onSaved }) {
           <button
             onClick={handleSubmit}
             disabled={saving}
-            className="bg-secondary hover:bg-secondary/80 text-white text-sm px-4 py-2 rounded transition-colors disabled:opacity-50"
+            className="bg-secondary hover:bg-secondary/80 text-black text-sm px-4 py-2 rounded transition-colors disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Save Entry'}
           </button>

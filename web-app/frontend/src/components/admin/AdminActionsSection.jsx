@@ -149,7 +149,7 @@ export default function AdminActionsSection({ onRefresh }) {
             <button
               onClick={handleActivity}
               disabled={activityLoading}
-              className="px-3 py-1.5 text-xs bg-secondary text-white rounded hover:opacity-90 disabled:opacity-40"
+              className="px-3 py-1.5 text-xs bg-secondary text-black rounded hover:opacity-90 disabled:opacity-40"
             >
               {activityLoading ? 'Loading...' : 'View Activity'}
             </button>

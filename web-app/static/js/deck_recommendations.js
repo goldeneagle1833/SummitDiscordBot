@@ -1200,7 +1200,14 @@
         const costHtml = card.threshold
           ? `<span class="seed-card-cost">${card.threshold}</span>`
           : "";
-        li.innerHTML = `<span class="seed-card-qty">${card.qty}x</span><span class="seed-card-name">${escHtml(card.name)}</span>${costHtml}`;
+        const qty = card.qty || 1;
+        const maxPips = 4;
+        let pipsHtml = '<span class="seed-card-pips">';
+        for (let i = 0; i < maxPips; i++) {
+          pipsHtml += `<span class="seed-card-pip${i < qty ? " seed-card-pip--filled" : ""}"></span>`;
+        }
+        pipsHtml += "</span>";
+        li.innerHTML = `<span class="seed-card-qty">${qty}x</span>${pipsHtml}<span class="seed-card-name">${escHtml(card.name)}</span>${costHtml}`;
         ul.appendChild(li);
       });
 

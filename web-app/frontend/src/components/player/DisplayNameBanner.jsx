@@ -52,7 +52,7 @@ export default function DisplayNameBanner({ playerId, defaultName, hasCustomName
         <p className="text-sm text-text-primary flex-1">Set a custom display name for the leaderboard and your profile.</p>
         <button
           onClick={openModal}
-          className="px-3 py-1.5 text-xs font-medium bg-secondary text-white rounded hover:opacity-90 transition-opacity"
+          className="px-3 py-1.5 text-xs font-medium bg-secondary text-black rounded hover:opacity-90 transition-opacity"
         >
           Set Name
         </button>
@@ -86,7 +86,7 @@ export default function DisplayNameBanner({ playerId, defaultName, hasCustomName
               <button
                 onClick={() => submit(nameInput)}
                 disabled={saving}
-                className="px-3 py-1.5 text-sm bg-secondary text-white rounded hover:opacity-90 disabled:opacity-40"
+                className="px-3 py-1.5 text-sm bg-secondary text-black rounded hover:opacity-90 disabled:opacity-40"
               >
                 {saving ? 'Saving...' : 'Save Name'}
               </button>

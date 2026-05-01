@@ -127,7 +127,7 @@ export default function AdminControls({ playerId, playerName, onAction }) {
                 onClick={modal === 'removeMatch' ? handleRemoveMatch : modal === 'resetElo' ? handleResetElo : handleRename}
                 disabled={saving}
                 className={`px-3 py-1.5 text-sm rounded hover:opacity-90 disabled:opacity-40 ${
-                  modal === 'removeMatch' ? 'bg-accent-red text-white' : 'bg-secondary text-white'
+                  modal === 'removeMatch' ? 'bg-accent-red text-white' : 'bg-secondary text-black'
                 }`}
               >
                 {saving ? 'Processing...' : 'Confirm'}

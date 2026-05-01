@@ -9,7 +9,7 @@ export default function OverallStats({ data, stats, statsType, onStatsTypeChange
           <button
             onClick={() => onStatsTypeChange('ranked')}
             className={`px-3 py-1 text-xs font-medium transition-colors ${
-              statsType === 'ranked' ? 'bg-secondary text-white' : 'text-text-muted hover:text-text-primary'
+              statsType === 'ranked' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
             }`}
           >
             Ranked
@@ -17,7 +17,7 @@ export default function OverallStats({ data, stats, statsType, onStatsTypeChange
           <button
             onClick={() => onStatsTypeChange('casual')}
             className={`px-3 py-1 text-xs font-medium transition-colors ${
-              statsType === 'casual' ? 'bg-secondary text-white' : 'text-text-muted hover:text-text-primary'
+              statsType === 'casual' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
             }`}
           >
             Casual

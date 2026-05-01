@@ -47,10 +47,10 @@ function WinStreaks({ data }) {
   return (
     <StatCard title="Win Streaks">
       <div className="inline-flex bg-bg-raised border border-border rounded-lg overflow-hidden mb-3">
-        <button onClick={() => setView('best')} className={`px-3 py-1 text-xs font-medium transition-colors ${view === 'best' ? 'bg-secondary text-white' : 'text-text-muted hover:text-text-primary'}`}>
+        <button onClick={() => setView('best')} className={`px-3 py-1 text-xs font-medium transition-colors ${view === 'best' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'}`}>
           Best All-Time
         </button>
-        <button onClick={() => setView('active')} className={`px-3 py-1 text-xs font-medium transition-colors ${view === 'active' ? 'bg-secondary text-white' : 'text-text-muted hover:text-text-primary'}`}>
+        <button onClick={() => setView('active')} className={`px-3 py-1 text-xs font-medium transition-colors ${view === 'active' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'}`}>
           Active Streaks
         </button>
       </div>

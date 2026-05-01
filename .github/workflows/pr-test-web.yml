@@ -1,0 +1,78 @@
+name: Test Web App PR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'web-app/**'
+      - '.github/workflows/pr-test-web.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          cd web-app
+          pip install -r requirements.txt
+
+      - name: Syntax check Python files
+        run: |
+          find web-app -name "*.py" -not -path "*/venv/*" -not -path "*/__pycache__/*" \
+            | xargs python -m py_compile
+
+      - name: Import check (verify modules load)
+        run: |
+          cd web-app
+          python -c "
+          import sys, importlib, os
+          sys.path.insert(0, '.')
+          # Verify key modules import without errors
+          import webapp_config
+          from repositories import elo, matches, events
+          from services import leaderboard, match, player
+          print('All imports OK')
+          "
+        env:
+          FLASK_ENV: testing
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web-app/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: |
+          cd web-app/frontend
+          npm ci
+
+      - name: Build frontend
+        run: |
+          cd web-app/frontend
+          npm run build
+
+      - name: Comment test results on PR
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const success = '${{ job.status }}' === 'success'
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: success
+                ? '✅ Web app build passed! Python syntax OK and frontend built successfully.'
+                : '❌ Web app build failed. Check the Actions tab for details.'
+            })

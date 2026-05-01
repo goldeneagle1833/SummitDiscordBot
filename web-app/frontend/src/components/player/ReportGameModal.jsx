@@ -113,12 +113,12 @@ export default function ReportGameModal({ playerId, onClose, onReported }) {
 
   const btnClass = (active) =>
     `px-3 py-1.5 text-xs font-medium border rounded transition-colors ${
-      active ? 'bg-secondary text-white border-secondary' : 'bg-bg-raised border-border text-text-muted hover:text-text-primary'
+      active ? 'bg-secondary text-black border-secondary' : 'bg-bg-raised border-border text-text-muted hover:text-text-primary'
     }`
 
   const tabClass = (active) =>
     `px-4 py-2 text-sm font-medium transition-colors ${
-      active ? 'bg-secondary text-white' : 'text-text-muted hover:text-text-primary'
+      active ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
     }`
 
   return (
@@ -302,7 +302,7 @@ export default function ReportGameModal({ playerId, onClose, onReported }) {
             <button
               onClick={handleSubmit}
               disabled={saving}
-              className="px-3 py-1.5 text-sm bg-secondary text-white rounded hover:opacity-90 disabled:opacity-40"
+              className="px-3 py-1.5 text-sm bg-secondary text-black rounded hover:opacity-90 disabled:opacity-40"
             >
               {saving ? 'Submitting...' : 'Submit'}
             </button>

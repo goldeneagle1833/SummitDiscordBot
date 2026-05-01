@@ -15,7 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Load saved preference or default to online
   const savedSource = localStorage.getItem("home_elo_source_preference");
-  if (savedSource && (savedSource === "online" || savedSource === "paper")) {
+  if (savedSource && (savedSource === "online" || savedSource === "paper" || savedSource === "limited")) {
     currentEloSource = savedSource;
     updateToggleButtons(currentEloSource);
   }
@@ -128,6 +128,70 @@ async function fetchYouTubeVideos() {
 }
 
 /**
+ * Show or hide the extra W/L and Win% columns used for limited mode
+ * @param {boolean} show
+ */
+function setLimitedColumns(show) {
+  const thElo = document.getElementById("th-elo");
+  const thWl = document.getElementById("th-wl");
+  const thWinPct = document.getElementById("th-winpct");
+  if (thElo) thElo.textContent = show ? "Limited ELO" : "Event ELO";
+  if (thWl) thWl.style.display = show ? "" : "none";
+  if (thWinPct) thWinPct.style.display = show ? "" : "none";
+}
+
+/**
+ * Render limited leaderboard data into the home page table
+ * @param {Object[]} players - Array of player objects with limited stats
+ */
+function renderLimitedLeaderboard(players) {
+  const titleEl = document.getElementById("event-title");
+  const subtitleEl = document.getElementById("event-subtitle");
+  const tbody = document.getElementById("event-leaderboard-tbody");
+  const eventSection = document.getElementById("event-section");
+  const noEventSection = document.getElementById("no-event-section");
+  const statsBar = document.getElementById("event-stats-bar");
+
+  eventSection.style.display = "block";
+  noEventSection.style.display = "none";
+  statsBar.style.display = "none";
+  setLimitedColumns(true);
+
+  titleEl.textContent = "Limited Format Leaderboard";
+  subtitleEl.textContent = "Rankings based on Limited (Arena Draft) matches";
+
+  tbody.innerHTML = "";
+
+  if (!players.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="leaderboard-empty-state">No limited players yet</td></tr>';
+    return;
+  }
+
+  players.forEach((player, index) => {
+    const row = document.createElement("tr");
+    const rank = index + 1;
+    let rankDisplay = `<span class="rank-display">${rank}</span>`;
+    if (rank <= 3) {
+      const romanRank = { 1: 'I', 2: 'II', 3: 'III' }[rank];
+      rankDisplay = `<span class="rank-badge rank-${rank}">${romanRank}</span>`;
+      row.classList.add(`rank-row-${rank}`);
+    }
+
+    const totalGames = player.wins + player.losses;
+    const winPct = totalGames > 0 ? ((player.wins / totalGames) * 100).toFixed(1) : "0.0";
+
+    row.innerHTML = `
+      <td>${rankDisplay}</td>
+      <td><a href="/player/${player.id}" class="player-link">${player.name}</a></td>
+      <td>${player.elo}</td>
+      <td>${player.wins}-${player.losses}</td>
+      <td>${winPct}%</td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+/**
  * Render event leaderboard table
  * @param {Object} eventData - Event data containing event info and leaderboard
  */
@@ -137,6 +201,8 @@ function renderEventLeaderboard(eventData) {
   const tbody = document.getElementById("event-leaderboard-tbody");
   const eventSection = document.getElementById("event-section");
   const noEventSection = document.getElementById("no-event-section");
+
+  setLimitedColumns(false);
 
   if (!eventData.event) {
     // Hide event leaderboard, show no-event content
@@ -354,6 +420,17 @@ function initializePlayerSearch() {
  */
 async function fetchEventLeaderboard() {
   try {
+    if (currentEloSource === "limited") {
+      const res = await fetch("/api/leaderboard/limited");
+      if (!res.ok) {
+        console.error("Failed to fetch limited leaderboard:", res.status);
+        return;
+      }
+      const data = await res.json();
+      renderLimitedLeaderboard(data);
+      return;
+    }
+
     // Fetch from different endpoint based on source
     const endpoint =
       currentEloSource === "paper"

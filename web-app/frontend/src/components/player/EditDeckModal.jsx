@@ -56,7 +56,7 @@ export default function EditDeckModal({ matchId, currentUrl, eloSource, onClose,
           <button
             onClick={handleSubmit}
             disabled={saving}
-            className="px-3 py-1.5 text-sm bg-secondary text-white rounded hover:opacity-90 disabled:opacity-40"
+            className="px-3 py-1.5 text-sm bg-secondary text-black rounded hover:opacity-90 disabled:opacity-40"
           >
             {saving ? 'Saving...' : 'Save'}
           </button>

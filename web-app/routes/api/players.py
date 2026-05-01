@@ -210,7 +210,7 @@ def deck_snapshot(match_id, player_id):
         return jsonify({"error": str(e)}), 500
 
 
-@players_bp.route("/player/<player_id>/deck-stats")
+@players_bp.route("/players/<player_id>/deck-stats")
 def get_deck_stats(player_id):
     """Get detailed stats for a specific deck URL for a player."""
     deck_url = request.args.get("url", "").strip()
@@ -315,6 +315,7 @@ def get_deck_stats(player_id):
     on_play = {"wins": 0, "losses": 0}
     on_draw = {"wins": 0, "losses": 0}
     match_history = []
+    stored_deck_json = None
 
     for row in all_rows:
         did_win = row["did_win"]
@@ -343,6 +344,10 @@ def get_deck_stats(player_id):
                     deck_name = d["name"]
             except (json.JSONDecodeError, TypeError):
                 pass
+
+        # Store deck JSON for card display
+        if stored_deck_json is None and player_json and player_json not in ("{}", ""):
+            stored_deck_json = player_json
 
         opp_avatar, _ = _extract_deck_info(opp_json)
         opp_avatar = opp_avatar or "Unknown"
@@ -396,6 +401,19 @@ def get_deck_stats(player_id):
         return {"wins": bucket["wins"], "losses": bucket["losses"], "total": t,
                 "win_rate": round(bucket["wins"] / t * 100, 1) if t > 0 else 0}
 
+    # Build deck card data with resolved images
+    deck_data_response = {}
+    if stored_deck_json:
+        try:
+            deck_data = json.loads(stored_deck_json)
+            for section in ("spellbook", "atlas", "sideboard", "avatar"):
+                for card in deck_data.get(section, []) or []:
+                    if card and card.get("name"):
+                        card["image"] = _resolve_card_image(card["name"])
+            deck_data_response = deck_data
+        except Exception:
+            pass
+
     return jsonify({
         "deck_name": deck_name,
         "avatar": avatar,
@@ -408,6 +426,7 @@ def get_deck_stats(player_id):
         "on_play": _play_stats(on_play),
         "on_draw": _play_stats(on_draw),
         "matches": match_history,
+        "deck": deck_data_response,
     })
 
 
@@ -1700,84 +1719,82 @@ def player_api(player_id):
     for row in paginated_casual_rows:
         casual_match_history.append(_build_match_entry(row))
 
-    # Recent decks (owner only)
-    # Group matches by deck URL to calculate win rates
+    # Recent decks - group matches by deck URL to calculate win rates
     recent_decks = []
-    if is_owner:
-        deck_stats = {}  # deck_url -> {wins, losses, avatar, deck_name, last_date}
+    deck_stats = {}  # deck_url -> {wins, losses, avatar, deck_name, last_date}
 
-        for row in all_rows:
-            did_win = row[0]
-            winner_deck_url = row[15] if len(row) > 15 else row[9]
-            loser_deck_url = row[16] if len(row) > 16 else None
-            winner_json = row[13] if len(row) > 13 else row[2]
-            loser_json = row[14] if len(row) > 14 else None
+    for row in all_rows:
+        did_win = row[0]
+        winner_deck_url = row[15] if len(row) > 15 else row[9]
+        loser_deck_url = row[16] if len(row) > 16 else None
+        winner_json = row[13] if len(row) > 13 else row[2]
+        loser_json = row[14] if len(row) > 14 else None
 
-            player_deck_url = winner_deck_url if did_win else loser_deck_url
-            player_deck_json = winner_json if did_win else loser_json
+        player_deck_url = winner_deck_url if did_win else loser_deck_url
+        player_deck_json = winner_json if did_win else loser_json
 
-            if not player_deck_url or player_deck_url in (
-                "No URL provided",
-                "Admin reported match",
-                "{}",
-            ) or not str(player_deck_url).startswith("https://curiosa.io"):
-                continue
+        if not player_deck_url or player_deck_url in (
+            "No URL provided",
+            "Admin reported match",
+            "{}",
+        ) or not str(player_deck_url).startswith("https://curiosa.io"):
+            continue
 
-            # Normalize URL by stripping query parameters (e.g. ?tab=view)
-            player_deck_url = player_deck_url.split("?")[0]
+        # Normalize URL by stripping query parameters (e.g. ?tab=view)
+        player_deck_url = player_deck_url.split("?")[0]
 
-            # Initialize deck stats if first time seeing this URL
-            if player_deck_url not in deck_stats:
-                avatar_name = "Unknown"
-                deck_name = "Unnamed Deck"
-                if player_deck_json and player_deck_json not in ("", "{}"):
-                    try:
-                        deck_data = json.loads(player_deck_json)
-                        if deck_data.get("avatar") and len(deck_data["avatar"]) > 0:
-                            avatar_name = deck_data["avatar"][0].get("name", "Unknown")
-                        if deck_data.get("name"):
-                            deck_name = deck_data["name"]
-                    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-                        pass
+        # Initialize deck stats if first time seeing this URL
+        if player_deck_url not in deck_stats:
+            avatar_name = "Unknown"
+            deck_name = "Unnamed Deck"
+            if player_deck_json and player_deck_json not in ("", "{}"):
+                try:
+                    deck_data = json.loads(player_deck_json)
+                    if deck_data.get("avatar") and len(deck_data["avatar"]) > 0:
+                        avatar_name = deck_data["avatar"][0].get("name", "Unknown")
+                    if deck_data.get("name"):
+                        deck_name = deck_data["name"]
+                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                    pass
 
-                deck_stats[player_deck_url] = {
-                    "wins": 0,
-                    "losses": 0,
-                    "avatar": avatar_name,
-                    "deck_name": deck_name,
-                    "last_date": row[6],
-                }
+            deck_stats[player_deck_url] = {
+                "wins": 0,
+                "losses": 0,
+                "avatar": avatar_name,
+                "deck_name": deck_name,
+                "last_date": row[6],
+            }
 
-            # Update win/loss count
-            if did_win:
-                deck_stats[player_deck_url]["wins"] += 1
-            else:
-                deck_stats[player_deck_url]["losses"] += 1
+        # Update win/loss count
+        if did_win:
+            deck_stats[player_deck_url]["wins"] += 1
+        else:
+            deck_stats[player_deck_url]["losses"] += 1
 
-            # Update last_date if this match is more recent
-            if row[6] and (not deck_stats[player_deck_url]["last_date"] or row[6] > deck_stats[player_deck_url]["last_date"]):
-                deck_stats[player_deck_url]["last_date"] = row[6]
+        # Update last_date if this match is more recent
+        if row[6] and (not deck_stats[player_deck_url]["last_date"] or row[6] > deck_stats[player_deck_url]["last_date"]):
+            deck_stats[player_deck_url]["last_date"] = row[6]
 
-        # Convert to list and sort by most recent usage
-        for deck_url, stats in sorted(deck_stats.items(), key=lambda x: x[1]["last_date"] or "", reverse=True):
-            total_games = stats["wins"] + stats["losses"]
-            deck_win_rate = (stats["wins"] / total_games * 100) if total_games > 0 else 0
+    # Convert to list and sort by most recent usage
+    for deck_url, stats in sorted(deck_stats.items(), key=lambda x: x[1]["last_date"] or "", reverse=True):
+        total_games = stats["wins"] + stats["losses"]
+        deck_win_rate = (stats["wins"] / total_games * 100) if total_games > 0 else 0
 
-            recent_decks.append(
-                {
-                    "url": deck_url,
-                    "avatar": stats["avatar"],
-                    "deck_name": stats["deck_name"],
-                    "date": stats["last_date"],
-                    "wins": stats["wins"],
-                    "losses": stats["losses"],
-                    "win_rate": round(deck_win_rate, 1),
-                    "total_games": total_games,
-                }
-            )
+        recent_decks.append(
+            {
+                "url": deck_url,
+                "avatar": stats["avatar"],
+                "deck_name": stats["deck_name"],
+                "date": stats["last_date"],
+                "wins": stats["wins"],
+                "losses": stats["losses"],
+                "win_rate": round(deck_win_rate, 1),
+                "total_games": total_games,
+            }
+        )
 
-            if len(recent_decks) >= 10:
-                break
+        if len(recent_decks) >= 10:
+            break
 
     # Recorded games (owner only)
     recorded_games = []
@@ -1844,7 +1861,7 @@ def player_api(player_id):
             },
             "avatar_performance": avatar_performance if is_owner else [],
             "avatar_matchups": avatar_matchups if is_owner else [],
-            "recent_decks": recent_decks if is_owner else [],
+            "recent_decks": recent_decks,
             "matches": match_history,
             "casual_matches": casual_match_history,
             "recorded_games": recorded_games if is_owner else [],

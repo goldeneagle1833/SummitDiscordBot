@@ -99,7 +99,7 @@ export default function DeckSnapshot() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [viewMode, setViewMode] = useState('list')
+  const [viewMode, setViewMode] = useState('visual')
   const [hoverCard, setHoverCard] = useState({ image: null, rect: null })
 
   usePageTitle(data ? `${data.deck?.name || 'Deck'} - Snapshot` : 'Deck Snapshot')
@@ -167,7 +167,7 @@ export default function DeckSnapshot() {
           <button
             onClick={() => setViewMode('list')}
             className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-              viewMode === 'list' ? 'bg-secondary text-white' : 'text-text-muted hover:text-text-primary'
+              viewMode === 'list' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
             }`}
           >
             List
@@ -175,7 +175,7 @@ export default function DeckSnapshot() {
           <button
             onClick={() => setViewMode('visual')}
             className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-              viewMode === 'visual' ? 'bg-secondary text-white' : 'text-text-muted hover:text-text-primary'
+              viewMode === 'visual' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
             }`}
           >
             Visual

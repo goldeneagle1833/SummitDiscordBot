@@ -52,7 +52,7 @@ export default function AnalyticsSection() {
             onClick={() => handleFilter(f.hours)}
             className={`px-3 py-1 text-xs rounded border transition-colors ${
               hours === f.hours
-                ? 'bg-secondary text-white border-secondary'
+                ? 'bg-secondary text-black border-secondary'
                 : 'bg-bg-raised border-border text-text-muted hover:border-secondary'
             }`}
           >

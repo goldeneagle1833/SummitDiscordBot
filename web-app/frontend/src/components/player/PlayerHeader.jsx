@@ -10,7 +10,7 @@ export default function PlayerHeader({ data, eloText, rankText, eloSource, onSou
                 <button
                   onClick={() => onSourceChange('web')}
                   className={`px-3 py-1 text-xs font-medium transition-colors ${
-                    eloSource === 'web' ? 'bg-secondary text-white' : 'text-text-muted hover:text-text-primary'
+                    eloSource === 'web' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
                   }`}
                 >
                   Paper
@@ -18,7 +18,7 @@ export default function PlayerHeader({ data, eloText, rankText, eloSource, onSou
                 <button
                   onClick={() => onSourceChange('bot')}
                   className={`px-3 py-1 text-xs font-medium transition-colors ${
-                    eloSource === 'bot' ? 'bg-secondary text-white' : 'text-text-muted hover:text-text-primary'
+                    eloSource === 'bot' ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'
                   }`}
                 >
                   Online

@@ -150,9 +150,11 @@ def mock_interaction(mock_user, mock_guild, mock_channel):
     interaction.guild = mock_guild
     interaction.channel = mock_channel
     interaction.response.defer = AsyncMock()
+    interaction.response.edit_message = AsyncMock()
     interaction.response.send_message = AsyncMock()
     interaction.response.send_modal = AsyncMock()
     interaction.followup.send = AsyncMock()
+    interaction.edit_original_response = AsyncMock()
     return interaction
 
 

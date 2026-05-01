@@ -26,6 +26,7 @@ from cogs.lfg.state import (
     pending_match_reports,
     processed_matches,
 )
+from cogs.lfg.match_reporting import ReportResultSelectView, MatchReportDeckModal
 from cogs.lfg.helpers import scrub_urls
 
 
@@ -380,6 +381,85 @@ class TestReportingFlow:
         pending_match_reports.pop(report_key, None)
 
         assert report_key not in pending_match_reports
+
+
+def _build_report_result_view(mock_bot, mock_user, mock_user_2, reporter_deck_url):
+    return ReportResultSelectView(
+        bot=mock_bot,
+        reporter_id=mock_user.id,
+        reporter_global=mock_user.global_name,
+        reporter_deck_url=reporter_deck_url,
+        opponent_id=mock_user_2.id,
+        opponent_global=mock_user_2.global_name,
+        opponent_deck_url="https://curiosa.io/decks/opponent-deck",
+        player1_id=mock_user.id,
+        player1_global=mock_user.global_name,
+        player2_id=mock_user_2.id,
+        player2_global=mock_user_2.global_name,
+        match_start_time=datetime.now(),
+        guild_id=111111111,
+        ladder_info={},
+        match_type="ranked",
+        reporter_run_id=0,
+        opponent_run_id=0,
+    )
+
+
+class TestReportResultSelectView:
+    @pytest.mark.asyncio
+    async def test_selects_do_not_auto_submit(self, mock_bot, mock_interaction, mock_user, mock_user_2):
+        view = _build_report_result_view(
+            mock_bot, mock_user, mock_user_2, "https://curiosa.io/decks/reporter-deck"
+        )
+        view._submit = AsyncMock()
+
+        view.first_select._values = [str(mock_user.id)]
+        await view._on_first_select(mock_interaction)
+
+        assert view.selected_first_id == mock_user.id
+        assert view.submit_button.disabled is True
+        view._submit.assert_not_awaited()
+
+        mock_interaction.response.edit_message.reset_mock()
+        view.winner_select._values = [str(mock_user_2.id)]
+        await view._on_winner_select(mock_interaction)
+
+        assert view.selected_winner_id == mock_user_2.id
+        assert view.submit_button.disabled is False
+        view._submit.assert_not_awaited()
+        mock_interaction.response.edit_message.assert_awaited_once_with(view=view)
+
+    @pytest.mark.asyncio
+    async def test_submit_button_opens_deck_modal_when_missing_deck_url(
+        self, mock_bot, mock_interaction, mock_user, mock_user_2
+    ):
+        view = _build_report_result_view(mock_bot, mock_user, mock_user_2, None)
+        view.selected_first_id = mock_user.id
+        view.selected_winner_id = mock_user.id
+        view._sync_controls()
+
+        await view._on_submit(mock_interaction)
+
+        modal = mock_interaction.response.send_modal.await_args.args[0]
+        assert isinstance(modal, MatchReportDeckModal)
+        assert view._submit_interaction is mock_interaction
+
+    @pytest.mark.asyncio
+    async def test_submit_button_calls_submit_when_ready(
+        self, mock_bot, mock_interaction, mock_user, mock_user_2
+    ):
+        view = _build_report_result_view(
+            mock_bot, mock_user, mock_user_2, "https://curiosa.io/decks/reporter-deck"
+        )
+        view.selected_first_id = mock_user.id
+        view.selected_winner_id = mock_user_2.id
+        view._sync_controls()
+        view._submit = AsyncMock()
+
+        await view._on_submit(mock_interaction)
+
+        mock_interaction.response.defer.assert_awaited_once_with()
+        view._submit.assert_awaited_once_with(mock_interaction)
 
 
 class TestStateReset:

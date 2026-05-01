@@ -1405,7 +1405,7 @@ class MatchCardView(discord.ui.View):
             opponent_run_id=opponent_run_id,
         )
 
-        msg = "**Report Match Result:**\nSelect the winner and who went first."
+        msg = "**Report Match Result:**\nSelect who went first, then who won, then click **Submit Report**."
         if not reporter_deck_url and self.match_type != "testing":
             msg += "\nYou'll be asked for your deck URL after selecting."
 
@@ -1447,7 +1447,7 @@ class MatchCardView(discord.ui.View):
 
 
 class ReportResultSelectView(discord.ui.View):
-    """Ephemeral view with select menus: who won and who went first."""
+    """Ephemeral view with turn-order and winner selects plus submit button."""
 
     def __init__(
         self,
@@ -1489,17 +1489,7 @@ class ReportResultSelectView(discord.ui.View):
         self.opponent_run_id = opponent_run_id
         self.selected_winner_id = None
         self.selected_first_id = None
-        self._select_interaction = None
-
-        self.winner_select = discord.ui.Select(
-            placeholder="Who won?",
-            options=[
-                discord.SelectOption(label=player1_global, value=str(player1_id)),
-                discord.SelectOption(label=player2_global, value=str(player2_id)),
-            ],
-        )
-        self.winner_select.callback = self._on_winner_select
-        self.add_item(self.winner_select)
+        self._submit_interaction = None
 
         self.first_select = discord.ui.Select(
             placeholder="Who went first?",
@@ -1511,22 +1501,64 @@ class ReportResultSelectView(discord.ui.View):
         self.first_select.callback = self._on_first_select
         self.add_item(self.first_select)
 
+        self.winner_select = discord.ui.Select(
+            placeholder="Who won?",
+            options=[
+                discord.SelectOption(label=player1_global, value=str(player1_id)),
+                discord.SelectOption(label=player2_global, value=str(player2_id)),
+            ],
+        )
+        self.winner_select.callback = self._on_winner_select
+        self.add_item(self.winner_select)
+
+        self.submit_button = discord.ui.Button(
+            label="Submit Report",
+            style=discord.ButtonStyle.success,
+            disabled=True,
+        )
+        self.submit_button.callback = self._on_submit
+        self.add_item(self.submit_button)
+
+    def _get_player_label(self, player_id: int | None) -> str | None:
+        if player_id == self.player1_id:
+            return self.player1_global
+        if player_id == self.player2_id:
+            return self.player2_global
+        return None
+
+    def _sync_controls(self):
+        first_label = self._get_player_label(self.selected_first_id)
+        winner_label = self._get_player_label(self.selected_winner_id)
+
+        self.first_select.placeholder = (
+            f"Went first: {first_label}" if first_label else "Who went first?"
+        )
+        self.winner_select.placeholder = (
+            f"Winner: {winner_label}" if winner_label else "Who won?"
+        )
+        self.submit_button.disabled = not (
+            self.selected_first_id is not None and self.selected_winner_id is not None
+        )
+
     async def _on_winner_select(self, interaction: discord.Interaction):
         self.selected_winner_id = int(self.winner_select.values[0])
-        if self.selected_winner_id is not None and self.selected_first_id is not None:
-            await self._both_selected(interaction)
-        else:
-            await interaction.response.defer()
+        self._sync_controls()
+        await interaction.response.edit_message(view=self)
 
     async def _on_first_select(self, interaction: discord.Interaction):
         self.selected_first_id = int(self.first_select.values[0])
-        if self.selected_winner_id is not None and self.selected_first_id is not None:
-            await self._both_selected(interaction)
-        else:
-            await interaction.response.defer()
+        self._sync_controls()
+        await interaction.response.edit_message(view=self)
 
-    async def _both_selected(self, interaction: discord.Interaction):
-        self._select_interaction = interaction
+    async def _on_submit(self, interaction: discord.Interaction):
+        if self.selected_winner_id is None or self.selected_first_id is None:
+            await interaction.response.send_message(
+                "Please select who went first and who won before submitting.",
+                ephemeral=True,
+            )
+            return
+
+        self._submit_interaction = interaction
         if not self.reporter_deck_url and self.match_type != "testing":
             modal = MatchReportDeckModal(self)
             await interaction.response.send_modal(modal)
@@ -1629,7 +1661,7 @@ class ReportResultSelectView(discord.ui.View):
         )
 
         # Replace the ephemeral select form with a confirmation message
-        target_interaction = self._select_interaction or interaction
+        target_interaction = self._submit_interaction or interaction
         try:
             await target_interaction.edit_original_response(
                 content="**Result reported!** Waiting for your opponent to confirm.",

@@ -26,6 +26,7 @@ from repositories.elo_repo import (  # noqa: F401
     get_past_events,
     get_event_archive_standings,
     get_top_16_user_ids,
+    get_top_8_user_ids,
     get_total_match_count,
     get_event_participant_ids,
     has_player_played_event,

@@ -34,6 +34,7 @@ from utils.database import (
     record_match,
     check_milestone,
     get_top_16_user_ids,
+    get_top_8_user_ids,
     get_ladder_challenge_today,
     save_ladder_challenge,
     complete_ladder_challenge,
@@ -1063,11 +1064,12 @@ class LFGCog(commands.Cog):
 
     @commands.command()
     async def issue_challenge(self, ctx):
-        """Issue a ladder challenge (Top 16 event players or admins, once per day).
+        """Issue a ladder challenge (Top 16 players or admins, once per day).
 
         Adds you to the ranked queue. The next person who matches with you will play
         for modified ELO stakes. Can be used in DMs with the bot.
         The challenge only counts against your daily limit when a match is found.
+        Disabled during the first week of a new event.
 
         Stakes:
         - If the non-Top 16 player WINS: 2x ELO gain
@@ -1083,6 +1085,27 @@ class LFGCog(commands.Cog):
 
         user_id = ctx.author.id
         user_global = ctx.author.global_name or ctx.author.display_name
+
+        # Check if challenges are disabled during the first week of an event
+        from utils.database import get_active_event
+        from datetime import datetime, timedelta
+        active_event = get_active_event()
+        if active_event:
+            event_start = active_event["start_date"]
+            if datetime.now() - event_start < timedelta(days=7):
+                days_left = 7 - (datetime.now() - event_start).days
+                try:
+                    await ctx.author.send(
+                        f"Ladder challenges are disabled during the first week of a new event. "
+                        f"Available in {days_left} day(s)!"
+                    )
+                except discord.Forbidden:
+                    if ctx.guild:
+                        await ctx.send(
+                            f"{ctx.author.mention}, ladder challenges are disabled during the first week of a new event.",
+                            delete_after=10,
+                        )
+                return
 
         # Resolve guild and member for permission checks (works in DMs too)
         guild_id = ctx.guild.id if ctx.guild else config.GUILD_ID
@@ -1104,19 +1127,19 @@ class LFGCog(commands.Cog):
             elif any(role.id == config.BOT_ADMIN_ROLE_ID for role in member.roles):
                 is_admin = True
 
-        # Check if user is in Top 16 of current event (unless they're an admin)
+        # Check if user is in Top 16 overall (unless they're an admin)
         if not is_admin:
             top_16 = get_top_16_user_ids()
             if user_id not in top_16:
                 try:
                     await ctx.author.send(
-                        "Only Top 16 event players can issue challenges! "
-                        "Check `!event_leaderboard` to see the current event rankings."
+                        "Only Top 16 players can issue challenges! "
+                        "Check `!event_leaderboard` to see the current rankings."
                     )
                 except discord.Forbidden:
                     if ctx.guild:
                         await ctx.send(
-                            f"{ctx.author.mention}, only Top 16 event players can issue challenges!",
+                            f"{ctx.author.mention}, only Top 16 players can issue challenges!",
                             delete_after=10,
                         )
                 return
@@ -1441,9 +1464,9 @@ class LFGCog(commands.Cog):
                 "**When to use:** When you want to play against a specific person "
                 "instead of being matched randomly. They have 5 minutes to accept.\n\n"
                 "`!issue_challenge` or `/issue-challenge` - Issue a ladder challenge (Top 16 or admins)\n"
-                "**When to use:** Top 16 event players or admins can issue once per day. Adds you to the ranked queue - "
-                "the next player to match with you plays for special stakes. Non-Top 16 wins = 2x ELO gain, "
-                "Top 16 loses = 0.5x ELO loss (normal stakes if ELO diff < 100)."
+                "**When to use:** Top 16 players or admins can issue once per day (disabled first week of event). "
+                "Adds you to the ranked queue - the next player to match with you plays for special stakes. "
+                "Non-Top 16 wins = 2x ELO gain, Top 16 loses = 0.5x ELO loss (normal stakes if ELO diff < 100)."
             ),
             inline=False,
         )

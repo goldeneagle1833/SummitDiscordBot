@@ -554,6 +554,37 @@ def get_top_16_user_ids():
     return [row[0] for row in rows]
 
 
+def get_top_8_user_ids():
+    """
+    Get the user IDs of the top 8 players by current online event ELO (Discord bot).
+
+    Only counts players who have played at least one online event match.
+    Falls back to online lifetime ELO if no active event.
+
+    Returns:
+        List of user_id integers for the top 8 players
+    """
+    migrate_to_dual_elo_system()
+    active_event = get_active_event()
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+
+    if active_event:
+        event_start_str = active_event["start_date"].isoformat()
+        participants = get_event_participant_ids(event_start_str)
+
+        cur.execute(
+            "SELECT user_id FROM overall_standings ORDER BY online_event_elo DESC"
+        )
+        rows = [row for row in cur.fetchall() if row[0] in participants][:8]
+    else:
+        cur.execute("SELECT user_id FROM overall_standings ORDER BY online_elo DESC LIMIT 8")
+        rows = cur.fetchall()
+
+    conn.close()
+    return [row[0] for row in rows]
+
+
 def get_event_participant_ids(event_start_str: str) -> set:
     """Get the set of player IDs who have played matches since event start.
 

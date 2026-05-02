@@ -49,7 +49,8 @@ const CurioTracking = lazy(() => import('@/pages/CurioTracking'))
 // Phase 7: Admin
 import AuditLog from '@/pages/admin/AuditLog'
 
-// 404
+// Error pages
+import ErrorPage from '@/pages/ErrorPage'
 import NotFound from '@/pages/NotFound'
 
 function LazyPage({ children }) {
@@ -113,7 +114,8 @@ const router = createBrowserRouter([
       { path: '/login', element: <Login /> },
       // Phase 7: Admin
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
-      // 404
+      // Error & 404
+      { path: '/error', element: <ErrorPage /> },
       { path: '*', element: <NotFound /> },
     ],
   },

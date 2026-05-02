@@ -290,9 +290,9 @@ class LFGCog(commands.Cog):
 
                 conn_matches.close()
 
-                # Overall Rankings (top 16 of all players)
+                # Overall Rankings (top 8 of all players)
                 overall_text = []
-                for idx, p in enumerate(player_data[:16], 1):
+                for idx, p in enumerate(player_data[:8], 1):
                     overall_text.append(
                         f"**{idx}.** {p['display_name']} - **{p['elo']}** ELO ({p['games']} games)"
                     )
@@ -304,10 +304,10 @@ class LFGCog(commands.Cog):
                     inline=False,
                 )
 
-                # Ticket Holders section (top 16 players with the ticket holder role)
+                # Ticket Holders section (top 24 players with the ticket holder role)
                 ticket_players = [p for p in player_data if p["has_ticket"]]
                 ticket_text = []
-                for idx, p in enumerate(ticket_players[:16], 1):
+                for idx, p in enumerate(ticket_players[:24], 1):
                     ticket_text.append(
                         f"**{idx}.** {p['display_name']} - **{p['elo']}** ELO ({p['games']} games)"
                     )
@@ -319,10 +319,10 @@ class LFGCog(commands.Cog):
                     inline=False,
                 )
 
-                # Free Play section (top 16 from non-ticket holders)
+                # Free Play section (top 8 from non-ticket holders)
                 free_players = [p for p in player_data if not p["has_ticket"]]
                 free_text = []
-                for idx, p in enumerate(free_players[:16], 1):
+                for idx, p in enumerate(free_players[:8], 1):
                     free_text.append(
                         f"**{idx}.** {p['display_name']} - **{p['elo']}** ELO ({p['games']} games)"
                     )

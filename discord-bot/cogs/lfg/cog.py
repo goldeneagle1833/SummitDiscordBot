@@ -2677,7 +2677,38 @@ class LFGCog(commands.Cog):
     async def refresh_leaderboard(self, ctx):
         """Admin command to force-refresh the leaderboard message. Usage: !refresh_leaderboard"""
         try:
-            await ctx.send("Refreshing leaderboard...")
+            channel_id = config.LEADERBOARD_CHANNEL_ID
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                await ctx.send(f"Leaderboard channel not found! `LEADERBOARD_CHANNEL_ID` = `{channel_id}` — check your config.")
+                return
+            await ctx.send(f"Refreshing leaderboard in <#{channel_id}>...")
+            # Inline the core logic so errors aren't swallowed by update_leaderboard's try/except
+            import sqlite3
+            from utils.database import get_active_event
+
+            active_event = get_active_event()
+            event_start_str = None
+            event_name = "Current Season"
+            if active_event:
+                event_start_str = active_event["start_date"].isoformat()
+                event_name = active_event["event_name"]
+            await ctx.send(f"Active event: **{event_name}** (start: `{event_start_str}`)")
+
+            conn_elo = sqlite3.connect("elo.db")
+            cursor_elo = conn_elo.cursor()
+            if active_event:
+                from repositories.elo_repo import get_event_participant_ids
+                event_participants = get_event_participant_ids(event_start_str)
+                cursor_elo.execute("SELECT COUNT(*) FROM overall_standings")
+                total_in_db = cursor_elo.fetchone()[0]
+                await ctx.send(f"Total players in DB: {total_in_db}, event participants: {len(event_participants)}")
+            else:
+                cursor_elo.execute("SELECT COUNT(*) FROM overall_standings")
+                total_in_db = cursor_elo.fetchone()[0]
+                await ctx.send(f"No active event. Total players in DB: {total_in_db}")
+            conn_elo.close()
+
             await self.update_leaderboard()
             await ctx.send("Leaderboard refreshed.")
         except Exception as e:

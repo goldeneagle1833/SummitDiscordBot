@@ -58,8 +58,8 @@ else:
     )
 
 # Frontend URL - used for post-login redirects back to the React app
-# In dev, React runs on :5173; in production it's the same origin
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+# In dev, set FRONTEND_URL=http://localhost:5173; production defaults to same-origin
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "/")
 
 # Discord OAuth configuration
 DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID")

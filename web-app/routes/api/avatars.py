@@ -266,6 +266,148 @@ def _collect_external_rows(cur, source_filter, event_start=None, event_end=None)
     return rows
 
 
+def _collect_discord_rows_with_players(cur, event_filter):
+    """Like _collect_discord_rows but also includes player IDs and names.
+
+    Returns (rows, use_new_columns) where rows are tuples of
+    (winner_deck_json, loser_deck_json, winner_id, winner_name, loser_id, loser_name).
+    """
+    all_rows = []
+    use_new_columns = True
+
+    deck_where = ("((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
+                  " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))")
+
+    if event_filter in ("all", "current"):
+        try:
+            cur.execute(f"""
+                SELECT json_deck_data_winner, json_deck_data_loser,
+                       winner_id, winner_display_name, losser_id, losser_display_name
+                FROM match_records
+                WHERE {deck_where}
+                  AND (source = 'Discord' OR source IS NULL)
+            """)
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError:
+            use_new_columns = False
+            return all_rows, use_new_columns
+
+    if event_filter == "all" and use_new_columns:
+        try:
+            cur.execute(f"""
+                SELECT json_deck_data_winner, json_deck_data_loser,
+                       winner_id, winner_display_name, losser_id, losser_display_name
+                FROM match_records_archive
+                WHERE {deck_where}
+            """)
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError:
+            logger.info("Archive table not found - continuing without archive data")
+    elif event_filter not in ("all", "current") and use_new_columns:
+        if isinstance(event_filter, str) and event_filter.startswith("season_"):
+            start_date, end_date = _get_event_date_range(event_filter)
+            if start_date and end_date:
+                for table in ("match_records", "match_records_archive"):
+                    try:
+                        cur.execute(f"""
+                            SELECT json_deck_data_winner, json_deck_data_loser,
+                                   winner_id, winner_display_name, losser_id, losser_display_name
+                            FROM {table}
+                            WHERE {deck_where} AND timestamp >= ? AND timestamp <= ?
+                              AND (source = 'Discord' OR source IS NULL)
+                        """, (start_date, end_date))
+                        all_rows.extend(cur.fetchall())
+                    except sqlite3.OperationalError:
+                        pass
+        else:
+            try:
+                event_id = int(event_filter)
+                cur.execute(f"""
+                    SELECT json_deck_data_winner, json_deck_data_loser,
+                           winner_id, winner_display_name, losser_id, losser_display_name
+                    FROM match_records_archive
+                    WHERE {deck_where} AND event_id = ?
+                """, (event_id,))
+                all_rows.extend(cur.fetchall())
+            except (ValueError, sqlite3.OperationalError):
+                pass
+
+    return all_rows, use_new_columns
+
+
+def _collect_external_rows_with_players(cur, source_filter, event_start=None, event_end=None):
+    """Like _collect_external_rows but also includes player IDs and names."""
+    rows = []
+    try:
+        params = []
+        where_parts = [
+            "((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
+            " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))",
+            "source != 'Discord'",
+            "source IS NOT NULL",
+        ]
+
+        if source_filter not in ("all", "discord"):
+            where_parts.append("source = ?")
+            params.append(source_filter)
+
+        if event_start:
+            where_parts.append("timestamp >= ?")
+            params.append(event_start)
+        if event_end:
+            where_parts.append("timestamp <= ?")
+            params.append(event_end)
+
+        query = f"""SELECT json_deck_data_winner, json_deck_data_loser,
+                           winner_id, winner_display_name, losser_id, losser_display_name
+                    FROM match_records WHERE {' AND '.join(where_parts)}"""
+        cur.execute(query, params)
+        rows = cur.fetchall()
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not query match_records for external sources: {e}")
+
+    return rows
+
+
+def _tally_avatar_stats_with_players(rows, use_new_columns, avatar_stats, avatar_player_stats):
+    """Process rows with player info into avatar stats and per-avatar player stats.
+
+    Rows are (winner_deck_json, loser_deck_json, winner_id, winner_name, loser_id, loser_name).
+    Mutates avatar_stats and avatar_player_stats in place.
+    """
+    if not use_new_columns:
+        return
+
+    for row in rows:
+        winner_deck_str, loser_deck_str = row[0], row[1]
+        winner_id, winner_name = str(row[2]) if row[2] else None, row[3]
+        loser_id, loser_name = str(row[4]) if row[4] else None, row[5]
+
+        name = _extract_avatar_from_deck(winner_deck_str)
+        if name:
+            if name not in avatar_stats:
+                avatar_stats[name] = {"wins": 0, "losses": 0}
+            avatar_stats[name]["wins"] += 1
+            if winner_id:
+                if name not in avatar_player_stats:
+                    avatar_player_stats[name] = {}
+                if winner_id not in avatar_player_stats[name]:
+                    avatar_player_stats[name][winner_id] = {"wins": 0, "losses": 0, "name": winner_name or f"Player {winner_id}"}
+                avatar_player_stats[name][winner_id]["wins"] += 1
+
+        name = _extract_avatar_from_deck(loser_deck_str)
+        if name:
+            if name not in avatar_stats:
+                avatar_stats[name] = {"wins": 0, "losses": 0}
+            avatar_stats[name]["losses"] += 1
+            if loser_id:
+                if name not in avatar_player_stats:
+                    avatar_player_stats[name] = {}
+                if loser_id not in avatar_player_stats[name]:
+                    avatar_player_stats[name][loser_id] = {"wins": 0, "losses": 0, "name": loser_name or f"Player {loser_id}"}
+                avatar_player_stats[name][loser_id]["losses"] += 1
+
+
 def _tally_avatar_stats(rows, use_new_columns=True):
     """Process deck data rows into avatar win/loss stats dict."""
     avatar_stats = {}
@@ -339,26 +481,18 @@ def get_all_avatars():
         cur = conn.cursor()
 
         avatar_stats = {}
+        # Per-avatar per-player stats: {avatar_name: {player_id: {"wins": N, "losses": N, "name": str}}}
+        avatar_player_stats = {}
 
         # Collect Discord bot matches (unless source is a specific external source)
         if source_filter in ("all", "discord"):
-            discord_rows, use_new_columns = _collect_discord_rows(cur, event_filter)
-            discord_stats = _tally_avatar_stats(discord_rows, use_new_columns)
-            for name, stats in discord_stats.items():
-                if name not in avatar_stats:
-                    avatar_stats[name] = {"wins": 0, "losses": 0}
-                avatar_stats[name]["wins"] += stats["wins"]
-                avatar_stats[name]["losses"] += stats["losses"]
+            discord_rows, use_new_columns = _collect_discord_rows_with_players(cur, event_filter)
+            _tally_avatar_stats_with_players(discord_rows, use_new_columns, avatar_stats, avatar_player_stats)
 
         # Collect external source matches (unless source is "discord")
         if source_filter != "discord":
-            ext_rows = _collect_external_rows(cur, source_filter, event_start, event_end)
-            ext_stats = _tally_avatar_stats(ext_rows, use_new_columns=True)
-            for name, stats in ext_stats.items():
-                if name not in avatar_stats:
-                    avatar_stats[name] = {"wins": 0, "losses": 0}
-                avatar_stats[name]["wins"] += stats["wins"]
-                avatar_stats[name]["losses"] += stats["losses"]
+            ext_rows = _collect_external_rows_with_players(cur, source_filter, event_start, event_end)
+            _tally_avatar_stats_with_players(ext_rows, True, avatar_stats, avatar_player_stats)
 
         conn.close()
     except sqlite3.OperationalError as e:
@@ -373,13 +507,26 @@ def get_all_avatars():
         total = stats["wins"] + stats["losses"]
         if total > 0:
             win_rate = stats["wins"] / total * 100
-            avatar_list.append({
+            entry = {
                 "name": name,
                 "wins": stats["wins"],
                 "losses": stats["losses"],
                 "total": total,
                 "win_rate": round(win_rate, 1),
-            })
+            }
+            # Find top player by most wins with this avatar
+            players = avatar_player_stats.get(name, {})
+            if players:
+                top = max(players.values(), key=lambda p: (p["wins"], p["wins"] - p["losses"]))
+                top_total = top["wins"] + top["losses"]
+                entry["top_player"] = {
+                    "name": top["name"],
+                    "wins": top["wins"],
+                    "losses": top["losses"],
+                    "total": top_total,
+                    "win_rate": round(top["wins"] / top_total * 100, 1) if top_total > 0 else 0,
+                }
+            avatar_list.append(entry)
 
     avatar_list.sort(key=lambda x: x["total"], reverse=True)
     return jsonify(avatar_list)

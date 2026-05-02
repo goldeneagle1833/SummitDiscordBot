@@ -1,5 +1,4 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import ReportGameModal from "@/components/player/ReportGameModal";
 import usePageTitle from "@/hooks/usePageTitle";
@@ -60,12 +59,11 @@ function ThresholdCounter({ element, count, onChange }) {
   const countRef = useRef(count);
   countRef.current = count;
 
-  const startHold = () => {
-    onChange(count + 1);
-    // After 2 seconds held, start counting in increments of 5
+  const startHold = (delta) => {
+    onChange(Math.max(0, count + delta));
     holdTimer.current = setTimeout(() => {
       holdInterval.current = setInterval(() => {
-        const next = countRef.current + 5;
+        const next = Math.max(0, countRef.current + (delta > 0 ? 5 : -5));
         onChange(next);
       }, 300);
     }, 2000);
@@ -84,29 +82,41 @@ function ThresholdCounter({ element, count, onChange }) {
   }, []);
 
   return (
-    <button
-      className="flex-1 aspect-square flex items-center justify-center relative select-none touch-manipulation bg-bg-surface/50 border border-border/30 active:bg-white/10 transition-colors"
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        startHold();
-      }}
-      onPointerUp={stopHold}
-      onPointerLeave={stopHold}
-      onPointerCancel={stopHold}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onChange(Math.max(0, count - 1));
-      }}>
-      <img
-        src={`${ELEMENT_IMG}${element.file}`}
-        alt={element.label}
-        className="w-3/5 h-3/5 object-contain opacity-85"
-      />
-      <span className="absolute inset-0 flex items-center justify-center text-white text-3xl font-bold drop-shadow-md">
-        {count}
-      </span>
-    </button>
+    <div className="flex-1 flex flex-col select-none touch-manipulation">
+      {/* Top half: + button */}
+      <button
+        className="flex-1 flex items-end justify-center bg-bg-surface/50 border border-border/30 active:bg-white/10 transition-colors"
+        onPointerDown={(e) => { e.stopPropagation(); startHold(1); }}
+        onPointerUp={stopHold}
+        onPointerLeave={stopHold}
+        onPointerCancel={stopHold}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <span className="text-text-muted/40 text-lg font-bold pb-0.5">+</span>
+      </button>
+      {/* Center: icon + count */}
+      <div className="relative flex items-center justify-center py-1 bg-bg-surface/70 border-x border-border/30">
+        <img
+          src={`${ELEMENT_IMG}${element.file}`}
+          alt={element.label}
+          className="w-8 h-8 object-contain opacity-85"
+        />
+        <span className="absolute inset-0 flex items-center justify-center text-white text-3xl font-bold drop-shadow-md">
+          {count}
+        </span>
+      </div>
+      {/* Bottom half: - button */}
+      <button
+        className="flex-1 flex items-start justify-center bg-bg-surface/50 border border-border/30 active:bg-white/10 transition-colors"
+        onPointerDown={(e) => { e.stopPropagation(); startHold(-1); }}
+        onPointerUp={stopHold}
+        onPointerLeave={stopHold}
+        onPointerCancel={stopHold}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <span className="text-text-muted/40 text-lg font-bold pt-0.5">&minus;</span>
+      </button>
+    </div>
   );
 }
 
@@ -222,7 +232,6 @@ function DiceRollerStrip({ onReset }) {
     setRolling(true);
     clearTimeout(rollTimeout.current);
 
-    // Quick animation: show random numbers then settle
     let count = 0;
     const anim = setInterval(() => {
       setRollResult({ sides, value: Math.floor(Math.random() * sides) + 1 });
@@ -237,14 +246,29 @@ function DiceRollerStrip({ onReset }) {
     }, 60);
   };
 
+  const clearRoll = () => {
+    clearTimeout(rollTimeout.current);
+    setRollResult(null);
+    setRolling(false);
+  };
+
   useEffect(() => {
     return () => clearTimeout(rollTimeout.current);
   }, []);
 
   return (
     <div className="flex items-center justify-center gap-1 py-2 bg-bg-surface/80 border-y border-border/50 relative z-20">
-      {/* Close / navigate back */}
-      <NavBackButton />
+      {/* Clear dice roll */}
+      <button
+        onClick={clearRoll}
+        className="p-2 text-text-muted hover:text-white transition-colors touch-manipulation"
+        title="Clear roll"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
 
       {/* Dice buttons */}
       {DICE.map((d) => (
@@ -290,26 +314,6 @@ function DiceRollerStrip({ onReset }) {
   );
 }
 
-function NavBackButton() {
-  const navigate = useNavigate();
-  return (
-    <button
-      onClick={() => navigate(-1)}
-      className="p-2 text-text-muted hover:text-white transition-colors touch-manipulation"
-      title="Back">
-      <svg
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2">
-        <line x1="18" y1="6" x2="6" y2="18" />
-        <line x1="6" y1="6" x2="18" y2="18" />
-      </svg>
-    </button>
-  );
-}
 
 const defaultThresholds = () => ({ earth: 0, fire: 0, air: 0, water: 0 });
 

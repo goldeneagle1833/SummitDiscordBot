@@ -45,12 +45,12 @@ export default function Player() {
 
   // Collapsible sections
   const [openSections, setOpenSections] = useState({
-    eloHistory: true,
+    eloHistory: false,
     eloBrackets: false,
-    avatarPerf: true,
-    avatarMatchups: true,
+    avatarPerf: false,
+    avatarMatchups: false,
     recentDecks: false,
-    limitedArena: true,
+    limitedArena: false,
   })
   const toggle = (key) => setOpenSections((s) => ({ ...s, [key]: !s[key] }))
 

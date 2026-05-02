@@ -340,21 +340,38 @@ class LFGCog(commands.Cog):
 
             embed.set_footer(text="Updates automatically after each match")
 
+            # Send new leaderboard message first (before deleting old one)
+            new_message = await leaderboard_channel.send(embed=embed)
+            old_message_id = lfg_state.leaderboard_message_id
+            lfg_state.leaderboard_message_id = new_message.id
+
             # Delete old leaderboard message
-            if lfg_state.leaderboard_message_id:
+            if old_message_id:
                 try:
-                    old_message = await leaderboard_channel.fetch_message(
-                        lfg_state.leaderboard_message_id
-                    )
+                    old_message = await leaderboard_channel.fetch_message(old_message_id)
                     await old_message.delete()
                 except discord.NotFound:
                     pass
                 except Exception as e:
                     logger.warning(f"Could not delete old leaderboard message: {e}")
 
-            # Send new leaderboard message
-            new_message = await leaderboard_channel.send(embed=embed)
-            lfg_state.leaderboard_message_id = new_message.id
+            # Ensure only one leaderboard message exists in the channel
+            async for message in leaderboard_channel.history(limit=50):
+                if (
+                    message.id != new_message.id
+                    and message.author.id == self.bot.user.id
+                    and message.embeds
+                    and any(
+                        "Leaderboard" in str(embed.title)
+                        for embed in message.embeds
+                    )
+                ):
+                    try:
+                        await message.delete()
+                        logger.info(f"Cleaned up duplicate leaderboard message: {message.id}")
+                    except Exception as e:
+                        logger.warning(f"Could not clean up duplicate leaderboard: {e}")
+
             logger.info("Leaderboard updated successfully")
 
         except Exception as e:

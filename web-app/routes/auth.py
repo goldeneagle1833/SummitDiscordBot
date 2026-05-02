@@ -23,7 +23,10 @@ logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)
 
 # Allowed hosts for post-login redirects (prevent open redirect)
-_ALLOWED_REDIRECT_HOSTS = {"localhost", "127.0.0.1", "sorcererssummit.com", "www.sorcererssummit.com"}
+_PRODUCTION_HOSTS = {"sorcererssummit.com", "www.sorcererssummit.com"}
+_DEV_HOSTS = {"localhost", "127.0.0.1"}
+_is_dev = "localhost" in FRONTEND_URL or "127.0.0.1" in FRONTEND_URL
+_ALLOWED_REDIRECT_HOSTS = _PRODUCTION_HOSTS | (_DEV_HOSTS if _is_dev else set())
 
 
 def _safe_redirect_url(url):

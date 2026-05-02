@@ -1582,6 +1582,7 @@ class LFGCog(commands.Cog):
                 "`!end_event` - End the current event\n"
                 "`!event_status` - View current event status\n"
                 "`!recalculate_event_elo` - Recalculate all event ELO from match records\n"
+                "`!refresh_leaderboard` - Force-refresh the leaderboard message\n"
                 "`!reset_elo` - **DANGER:** Reset ALL ELO ratings and match history"
             ),
             inline=False,
@@ -2669,6 +2670,26 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
         else:
             logger.error(f"recalculate_event_elo error: {error}")
+            await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def refresh_leaderboard(self, ctx):
+        """Admin command to force-refresh the leaderboard message. Usage: !refresh_leaderboard"""
+        try:
+            await ctx.send("Refreshing leaderboard...")
+            await self.update_leaderboard()
+            await ctx.send("Leaderboard refreshed.")
+        except Exception as e:
+            logger.error(f"Failed to refresh leaderboard: {e}")
+            await ctx.send(f"Error refreshing leaderboard: {e}")
+
+    @refresh_leaderboard.error
+    async def refresh_leaderboard_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"refresh_leaderboard error: {error}")
             await ctx.send(f"An error occurred: {error}")
 
     @commands.command()

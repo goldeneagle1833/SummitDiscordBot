@@ -14,19 +14,36 @@ const ELEMENTS = [
 ];
 
 const DICE = [
-  { sides: 20, label: "d20", path: "M12 2L2 19h20L12 2zm0 4l7 12H5l7-12z" },
+  {
+    sides: 20,
+    label: "d20",
+    // Hexagon
+    path: "M12 2L3.27 6.5v11L12 22l8.73-4.5v-11L12 2z",
+  },
   {
     sides: 12,
     label: "d12",
-    path: "M12 2l-8 5.5v9L12 22l8-5.5v-9L12 2zm0 3l5.5 3.8v6.4L12 19l-5.5-3.8V8.8L12 5z",
+    // Pentagon
+    path: "M12 2L2.24 9.5 5.97 21h12.06l3.73-11.5L12 2z",
   },
   {
     sides: 8,
     label: "d8",
-    path: "M12 2L3 12l9 10 9-10L12 2zm0 4l5.5 6L12 18 6.5 12 12 6z",
+    // Diamond
+    path: "M12 2L2 12l10 10 10-10L12 2z",
   },
-  { sides: 6, label: "d6", path: "M4 4h16v16H4V4zm2 2v12h12V6H6z" },
-  { sides: 4, label: "d4", path: "M12 3L2 21h20L12 3zm0 6l5 9H7l5-9z" },
+  {
+    sides: 6,
+    label: "d6",
+    // Square
+    path: "M4 4h16v16H4z",
+  },
+  {
+    sides: 4,
+    label: "d4",
+    // Triangle
+    path: "M12 3L2 21h20L12 3z",
+  },
 ];
 
 function DiceIcon({ dice, size = 24 }) {
@@ -83,39 +100,35 @@ function ThresholdCounter({ element, count, onChange }) {
 
   return (
     <div className="flex-1 flex flex-col select-none touch-manipulation">
-      {/* Top half: + button */}
+      {/* Top: + button (half height, no symbol) */}
       <button
-        className="flex-1 flex items-end justify-center bg-bg-surface/50 border border-border/30 active:bg-white/10 transition-colors"
+        className="h-6 bg-bg-surface/50 border border-border/30 active:bg-white/10 transition-colors"
         onPointerDown={(e) => { e.stopPropagation(); startHold(1); }}
         onPointerUp={stopHold}
         onPointerLeave={stopHold}
         onPointerCancel={stopHold}
         onContextMenu={(e) => e.preventDefault()}
-      >
-        <span className="text-text-muted/40 text-lg font-bold pb-0.5">+</span>
-      </button>
-      {/* Center: icon + count */}
-      <div className="relative flex items-center justify-center py-1 bg-bg-surface/70 border-x border-border/30">
+      />
+      {/* Center: icon + count side by side */}
+      <div className="flex items-center justify-center gap-1 py-1 bg-bg-surface/70 border-x border-border/30">
+        <span className="text-white text-2xl font-bold drop-shadow-md leading-none">
+          {count}
+        </span>
         <img
           src={`${ELEMENT_IMG}${element.file}`}
           alt={element.label}
-          className="w-8 h-8 object-contain opacity-85"
+          className="w-6 h-6 object-contain opacity-85"
         />
-        <span className="absolute inset-0 flex items-center justify-center text-white text-3xl font-bold drop-shadow-md">
-          {count}
-        </span>
       </div>
-      {/* Bottom half: - button */}
+      {/* Bottom: - button (half height, no symbol) */}
       <button
-        className="flex-1 flex items-start justify-center bg-bg-surface/50 border border-border/30 active:bg-white/10 transition-colors"
+        className="h-6 bg-bg-surface/50 border border-border/30 active:bg-white/10 transition-colors"
         onPointerDown={(e) => { e.stopPropagation(); startHold(-1); }}
         onPointerUp={stopHold}
         onPointerLeave={stopHold}
         onPointerCancel={stopHold}
         onContextMenu={(e) => e.preventDefault()}
-      >
-        <span className="text-text-muted/40 text-lg font-bold pt-0.5">&minus;</span>
-      </button>
+      />
     </div>
   );
 }

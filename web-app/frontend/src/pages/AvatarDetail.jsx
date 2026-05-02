@@ -226,7 +226,7 @@ function StaffPicks({ avatarName }) {
     get('/api/deck-rec/decks')
       .then((data) => {
         const filtered = (data.decks || data || []).filter(
-          (d) => d.avatar && d.avatar.toLowerCase() === avatarName.toLowerCase()
+          (d) => d.avatar_name && d.avatar_name.toLowerCase() === avatarName.toLowerCase()
         )
         setDecks(filtered)
       })
@@ -244,8 +244,8 @@ function StaffPicks({ avatarName }) {
           to={`/deck-rec/${encodeURIComponent(d.deck_id)}`}
           className="bg-bg-elevated border border-border rounded-soft p-3 hover:border-primary/50 transition-colors"
         >
-          <div className="text-sm font-semibold truncate">{d.name}</div>
-          {d.event && <div className="text-xs text-text-muted truncate mt-0.5">{d.event}</div>}
+          <div className="text-sm font-semibold truncate">{d.deck_name}</div>
+          {d.event_name && <div className="text-xs text-text-muted truncate mt-0.5">{d.event_name}</div>}
           {d.stars > 0 && <div className="text-amber-400 text-sm mt-1">{'★'.repeat(d.stars)}{'☆'.repeat(3 - d.stars)}</div>}
           {d.primer && <p className="text-xs text-text-muted mt-1 line-clamp-2">{d.primer}</p>}
         </Link>

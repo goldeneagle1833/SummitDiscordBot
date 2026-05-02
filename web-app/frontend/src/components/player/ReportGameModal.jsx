@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { recordGame, submitMatchReport, searchOpponents, listAllAvatars, getPlayerSeasons } from '@/api/games'
 
-export default function ReportGameModal({ playerId, onClose, onReported }) {
+export default function ReportGameModal({ playerId, onClose, onReported, initialLifeSubmitter, initialLifeOpponent }) {
   const [mode, setMode] = useState('ranked')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -16,8 +16,8 @@ export default function ReportGameModal({ playerId, onClose, onReported }) {
   const [opponentQuery, setOpponentQuery] = useState('')
   const [opponentResults, setOpponentResults] = useState([])
   const [selectedOpponent, setSelectedOpponent] = useState(null)
-  const [lifeSubmitter, setLifeSubmitter] = useState('')
-  const [lifeOpponent, setLifeOpponent] = useState('')
+  const [lifeSubmitter, setLifeSubmitter] = useState(initialLifeSubmitter != null ? String(initialLifeSubmitter) : '')
+  const [lifeOpponent, setLifeOpponent] = useState(initialLifeOpponent != null ? String(initialLifeOpponent) : '')
   const [seasons, setSeasons] = useState([])
   const [selectedSeason, setSelectedSeason] = useState(null)
   const searchTimer = useRef(null)

@@ -9,24 +9,135 @@ const NAV_LINKS = [
   { to: '/about', label: 'About' },
 ]
 
+function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
+  const [deckUrl, setDeckUrl] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  const youWon = confirmation.winner_discord_id === confirmation.opponent_discord_id
+
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  const handleSubmit = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/match-report/confirm/${confirmation.id}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deck_url: deckUrl.trim() || undefined }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        onConfirmed()
+      } else {
+        setError(data.error?.message || 'Failed to confirm')
+      }
+    } catch {
+      setError('Network error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="bg-bg-surface border border-border rounded-lg w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="p-6">
+          <h3 className="text-lg font-semibold text-text-primary mb-4">Confirm Match</h3>
+
+          {/* Game stats */}
+          <div className="bg-bg-elevated rounded-lg p-4 mb-4 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-text-muted">Reported by</span>
+              <span className="text-white font-medium">{confirmation.submitter_display_name || 'Unknown'}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-text-muted">Result</span>
+              <span className={`font-medium ${youWon ? 'text-green-400' : 'text-red-400'}`}>
+                {youWon ? 'You won' : 'You lost'}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-text-muted">Final life</span>
+              <span className="text-white">{confirmation.final_life_winner} - {confirmation.final_life_loser}</span>
+            </div>
+            {confirmation.match_type && (
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">Type</span>
+                <span className="text-white capitalize">{confirmation.match_type}</span>
+              </div>
+            )}
+            {confirmation.went_first && (
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">First player</span>
+                <span className="text-white capitalize">{confirmation.went_first}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Deck URL input */}
+          <div className="mb-4">
+            <label className="text-xs text-text-muted block mb-1">Your Deck URL (optional)</label>
+            <input
+              type="url"
+              value={deckUrl}
+              onChange={(e) => setDeckUrl(e.target.value)}
+              placeholder="https://curiosa.io/decks/..."
+              className="w-full bg-bg-elevated border border-border rounded px-3 py-2 text-sm"
+            />
+          </div>
+
+          {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
+
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 text-sm bg-bg-elevated border border-border rounded hover:border-secondary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={saving}
+              className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-500 transition-colors disabled:opacity-40"
+            >
+              {saving ? 'Confirming...' : 'Confirm Match'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function NotificationBell({ user }) {
   const [count, setCount] = useState(0)
   const [open, setOpen] = useState(false)
   const [confirmations, setConfirmations] = useState([])
+  const [acting, setActing] = useState({})
+  const [feedback, setFeedback] = useState({})
+  const [confirmModal, setConfirmModal] = useState(null)
   const ref = useRef(null)
+
+  const fetchPending = () => {
+    fetch('/api/match-report/pending', { credentials: 'include' })
+      .then((r) => r.ok ? r.json() : { pending_confirmations: [] })
+      .then((d) => {
+        const pending = d.pending_confirmations || []
+        setConfirmations(pending)
+        setCount(pending.length)
+      })
+      .catch(() => {})
+  }
 
   useEffect(() => {
     if (!user) return
-    const fetchPending = () => {
-      fetch('/api/match-report/pending', { credentials: 'include' })
-        .then((r) => r.ok ? r.json() : { pending_confirmations: [] })
-        .then((d) => {
-          const pending = d.pending_confirmations || []
-          setConfirmations(pending)
-          setCount(pending.length)
-        })
-        .catch(() => {})
-    }
     fetchPending()
     const interval = setInterval(fetchPending, 60000)
     return () => clearInterval(interval)
@@ -41,6 +152,29 @@ function NotificationBell({ user }) {
     return () => document.removeEventListener('click', handleClick)
   }, [open])
 
+  const handleDeny = async (id) => {
+    setActing((prev) => ({ ...prev, [id]: true }))
+    try {
+      const res = await fetch(`/api/match-report/deny/${id}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setFeedback((prev) => ({ ...prev, [id]: 'denied' }))
+        setTimeout(() => fetchPending(), 1200)
+      } else {
+        setFeedback((prev) => ({ ...prev, [id]: data.error?.message || 'Failed' }))
+      }
+    } catch {
+      setFeedback((prev) => ({ ...prev, [id]: 'Error denying' }))
+    } finally {
+      setActing((prev) => ({ ...prev, [id]: false }))
+    }
+  }
+
   if (!user || count === 0) return null
 
   const formatTime = (expiresAt) => {
@@ -53,58 +187,96 @@ function NotificationBell({ user }) {
   }
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        className="relative flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
-        onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
-        aria-label="Notifications"
-      >
-        <svg width="24" height="24" viewBox="0 0 24 24" className="w-6 h-6">
-          <path fill={count > 0 ? '#ef4444' : 'white'} d="M12 2C11.4477 2 11 2.44772 11 3V3.17071C8.83481 3.58254 7.17254 5.24481 6.76071 7.41L6 11.5L4.5 13V15H19.5V13L18 11.5L17.2393 7.41C16.8275 5.24481 15.1652 3.58254 13 3.17071V3C13 2.44772 12.5523 2 12 2Z" />
-          <path fill={count > 0 ? '#ef4444' : 'white'} d="M10 17C10 18.1046 10.8954 19 12 19C13.1046 19 14 18.1046 14 17H10Z" />
-        </svg>
-        <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 text-white text-xs font-bold rounded-full flex items-center justify-center">
-          {count > 9 ? '9+' : count}
-        </span>
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 max-h-96 bg-bg-elevated shadow-xl rounded-lg overflow-hidden z-[1001] border border-secondary/30">
-          <div className="bg-secondary/20 px-4 py-3 border-b border-white/10">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wide">Match Confirmations</h3>
-          </div>
-          <div className="overflow-y-auto max-h-80">
-            {confirmations.length === 0 ? (
-              <div className="p-6 text-center text-text-muted text-sm">No pending confirmations</div>
-            ) : (
-              confirmations.map((conf) => {
-                const youWon = conf.winner_discord_id === conf.opponent_discord_id
-                return (
-                  <Link
-                    key={conf.id}
-                    to="/life-counter"
-                    className="block px-4 py-3 border-b border-white/5 hover:bg-white/5 transition-colors"
-                    onClick={() => setOpen(false)}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-white truncate">{conf.submitter_display_name || 'Unknown'}</p>
-                        <p className={`text-xs font-medium mt-0.5 ${youWon ? 'text-green-400' : 'text-red-400'}`}>
-                          {youWon ? 'You won' : 'You lost'}
-                        </p>
-                        <p className="text-xs text-text-muted mt-1">Final: {conf.final_life_winner} - {conf.final_life_loser}</p>
+    <>
+      <div className="relative" ref={ref}>
+        <button
+          className="relative flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
+          onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
+          aria-label="Notifications"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" className="w-6 h-6">
+            <path fill={count > 0 ? '#ef4444' : 'white'} d="M12 2C11.4477 2 11 2.44772 11 3V3.17071C8.83481 3.58254 7.17254 5.24481 6.76071 7.41L6 11.5L4.5 13V15H19.5V13L18 11.5L17.2393 7.41C16.8275 5.24481 15.1652 3.58254 13 3.17071V3C13 2.44772 12.5523 2 12 2Z" />
+            <path fill={count > 0 ? '#ef4444' : 'white'} d="M10 17C10 18.1046 10.8954 19 12 19C13.1046 19 14 18.1046 14 17H10Z" />
+          </svg>
+          <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 text-white text-xs font-bold rounded-full flex items-center justify-center">
+            {count > 9 ? '9+' : count}
+          </span>
+        </button>
+        {open && (
+          <div className="absolute right-0 top-full mt-2 w-80 max-h-96 bg-bg-elevated shadow-xl rounded-lg overflow-hidden z-[1001] border border-secondary/30">
+            <div className="bg-secondary/20 px-4 py-3 border-b border-white/10">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wide">Match Confirmations</h3>
+            </div>
+            <div className="overflow-y-auto max-h-80">
+              {confirmations.length === 0 ? (
+                <div className="p-6 text-center text-text-muted text-sm">No pending confirmations</div>
+              ) : (
+                confirmations.map((conf) => {
+                  const youWon = conf.winner_discord_id === conf.opponent_discord_id
+                  const fb = feedback[conf.id]
+                  return (
+                    <div
+                      key={conf.id}
+                      className="px-4 py-3 border-b border-white/5"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-white truncate">{conf.submitter_display_name || 'Unknown'}</p>
+                          <p className={`text-xs font-medium mt-0.5 ${youWon ? 'text-green-400' : 'text-red-400'}`}>
+                            {youWon ? 'You won' : 'You lost'}
+                          </p>
+                          <p className="text-xs text-text-muted mt-1">Final: {conf.final_life_winner} - {conf.final_life_loser}</p>
+                        </div>
+                        <span className="text-xs px-2 py-0.5 bg-yellow-500/20 text-yellow-400 rounded-full whitespace-nowrap">
+                          {formatTime(conf.expires_at)}
+                        </span>
                       </div>
-                      <span className="text-xs px-2 py-0.5 bg-yellow-500/20 text-yellow-400 rounded-full whitespace-nowrap">
-                        {formatTime(conf.expires_at)}
-                      </span>
+                      {/* Confirm / Deny actions */}
+                      {fb === 'confirmed' ? (
+                        <p className="text-xs text-green-400 mt-2 font-medium">Confirmed!</p>
+                      ) : fb === 'denied' ? (
+                        <p className="text-xs text-red-400 mt-2 font-medium">Denied</p>
+                      ) : fb ? (
+                        <p className="text-xs text-red-400 mt-2">{fb}</p>
+                      ) : (
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            onClick={() => { setConfirmModal(conf); setOpen(false) }}
+                            className="flex-1 px-3 py-1.5 text-xs font-medium bg-green-600/80 text-white rounded hover:bg-green-600 transition-colors"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            onClick={() => handleDeny(conf.id)}
+                            disabled={acting[conf.id]}
+                            className="flex-1 px-3 py-1.5 text-xs font-medium bg-red-600/80 text-white rounded hover:bg-red-600 transition-colors disabled:opacity-40"
+                          >
+                            {acting[conf.id] ? '...' : 'Deny'}
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </Link>
-                )
-              })
-            )}
+                  )
+                })
+              )}
+            </div>
           </div>
-        </div>
+        )}
+      </div>
+
+      {/* Confirm match modal */}
+      {confirmModal && (
+        <ConfirmMatchModal
+          confirmation={confirmModal}
+          onClose={() => setConfirmModal(null)}
+          onConfirmed={() => {
+            setFeedback((prev) => ({ ...prev, [confirmModal.id]: 'confirmed' }))
+            setConfirmModal(null)
+            setTimeout(() => fetchPending(), 1200)
+          }}
+        />
       )}
-    </div>
+    </>
   )
 }
 

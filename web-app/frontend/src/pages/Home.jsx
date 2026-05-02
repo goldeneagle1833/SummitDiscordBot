@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { get } from '@/api/client'
-import { getEventLeaderboard, getPaperEventLeaderboard } from '@/api/leaderboard'
+import { getEventLeaderboard, getPaperEventLeaderboard, getLimitedLeaderboard } from '@/api/leaderboard'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -236,11 +236,11 @@ function PromoBanners() {
 
 // ── Stat Bar ──────────────────────────────────────────────────
 
-function StatBar({ leaderboard }) {
+function StatBar({ leaderboard, eloKey = 'event_elo' }) {
   if (!leaderboard.length) return null
   const total = leaderboard.length
-  const top = leaderboard[0].event_elo
-  const avg = Math.round(leaderboard.reduce((s, p) => s + p.event_elo, 0) / total)
+  const top = leaderboard[0][eloKey]
+  const avg = Math.round(leaderboard.reduce((s, p) => s + (p[eloKey] || 0), 0) / total)
   return (
     <div className="flex gap-6 mb-4 text-center">
       {[['Players', total], ['Top ELO', top], ['Avg ELO', avg]].map(([label, val]) => (
@@ -293,10 +293,12 @@ function YouTubeVideos() {
 
 const STORAGE_KEY = 'home_elo_source_preference'
 
+const SOURCE_LABELS = { online: 'Online', paper: 'Paper', limited: 'Limited' }
+
 function EloToggle({ source, onChange }) {
   return (
     <div className="inline-flex bg-bg-surface border border-border rounded-soft overflow-hidden">
-      {['online', 'paper'].map((s) => (
+      {['online', 'paper', 'limited'].map((s) => (
         <button
           key={s}
           onClick={() => onChange(s)}
@@ -306,7 +308,7 @@ function EloToggle({ source, onChange }) {
               : 'text-text-muted hover:bg-bg-elevated hover:text-primary'
           }`}
         >
-          {s === 'online' ? 'Online' : 'Paper'}
+          {SOURCE_LABELS[s]}
         </button>
       ))}
     </div>
@@ -317,7 +319,7 @@ function EloToggle({ source, onChange }) {
 
 const RANK_LABELS = { 1: 'I', 2: 'II', 3: 'III' }
 
-function EventLeaderboardTable({ leaderboard }) {
+function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo' }) {
   if (!leaderboard.length) {
     return <p className="text-center text-text-muted py-8">No matches played yet</p>
   }
@@ -328,7 +330,7 @@ function EventLeaderboardTable({ leaderboard }) {
           <tr className="border-b border-border text-left">
             <th className="py-2 px-3 w-14 text-text-muted font-semibold">Rank</th>
             <th className="py-2 px-3 text-text-muted font-semibold">Player</th>
-            <th className="py-2 px-3 text-right text-text-muted font-semibold">Event ELO</th>
+            <th className="py-2 px-3 text-right text-text-muted font-semibold">ELO</th>
           </tr>
         </thead>
         <tbody>
@@ -354,7 +356,7 @@ function EventLeaderboardTable({ leaderboard }) {
                     {player.name}
                   </Link>
                 </td>
-                <td className="py-2 px-3 text-right">{player.event_elo}</td>
+                <td className="py-2 px-3 text-right">{player[eloKey]}</td>
               </tr>
             )
           })}
@@ -369,7 +371,7 @@ function EventLeaderboardTable({ leaderboard }) {
 export default function Home() {
   usePageTitle('Sorcerers Summit')
   const [source, setSource] = useState(() =>
-    localStorage.getItem(STORAGE_KEY) === 'paper' ? 'paper' : 'online'
+    ['paper', 'limited'].includes(localStorage.getItem(STORAGE_KEY)) ? localStorage.getItem(STORAGE_KEY) : 'online'
   )
   const [eventData, setEventData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -389,8 +391,13 @@ export default function Home() {
   const fetchLeaderboard = useCallback(async (src) => {
     setLoading(true)
     try {
-      const data = src === 'paper' ? await getPaperEventLeaderboard() : await getEventLeaderboard()
-      setEventData(data)
+      if (src === 'limited') {
+        const data = await getLimitedLeaderboard()
+        setEventData({ limited: true, leaderboard: data })
+      } else {
+        const data = src === 'paper' ? await getPaperEventLeaderboard() : await getEventLeaderboard()
+        setEventData(data)
+      }
     } catch {
       setEventData(null)
     } finally {
@@ -421,7 +428,8 @@ export default function Home() {
     titleTimer.current = setTimeout(() => { titleClickCount.current = 0 }, 600)
   }
 
-  const hasEvent = eventData?.event != null
+  const isLimited = eventData?.limited === true
+  const hasEvent = isLimited || eventData?.event != null
   const leaderboard = eventData?.leaderboard || []
 
   return (
@@ -462,18 +470,30 @@ export default function Home() {
         <section>
           <div className="flex flex-wrap justify-between items-start gap-4 mb-4">
             <div>
-              <h2 className="text-xl font-display text-secondary">{eventData.event.event_name}</h2>
-              <p className="text-sm text-text-muted mt-0.5">
-                Started: {new Date(eventData.event.start_date).toLocaleDateString()}
-              </p>
+              {isLimited ? (
+                <>
+                  <h2 className="text-xl font-display text-secondary">Limited Format Leaderboard</h2>
+                  <p className="text-sm text-text-muted mt-0.5">Rankings for limited format matches</p>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-xl font-display text-secondary">{eventData.event.event_name}</h2>
+                  <p className="text-sm text-text-muted mt-0.5">
+                    Started: {new Date(eventData.event.start_date).toLocaleDateString()}
+                  </p>
+                </>
+              )}
             </div>
             <EloToggle source={source} onChange={handleSourceChange} />
           </div>
-          <StatBar leaderboard={leaderboard} />
-          <EventLeaderboardTable leaderboard={leaderboard} />
+          {!isLimited && <StatBar leaderboard={leaderboard} />}
+          <EventLeaderboardTable leaderboard={leaderboard} eloKey={isLimited ? 'elo' : 'event_elo'} />
         </section>
       ) : (
         <section className="text-center py-8">
+          <div className="flex justify-center mb-4">
+            <EloToggle source={source} onChange={handleSourceChange} />
+          </div>
           <h2 className="text-xl font-display text-secondary mb-2">No Active Event</h2>
           <p className="text-text-muted mb-2">Check back soon for the next event leaderboard!</p>
           <p className="text-text-muted text-sm mb-6">

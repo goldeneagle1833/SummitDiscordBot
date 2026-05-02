@@ -16,7 +16,7 @@ from repositories.deck_rec_repo import DeckRecRepository, _get_card_details
 from services.curiosa import CuriosaService
 from services.deck_similarity import SIMILARITY_THRESHOLD, aggregate_archetype, average_similarity, build_clusters, jaccard
 from utils.auth import is_admin, require_admin
-from webapp_config import CARD_IMAGES_DIR
+from webapp_config import ALL_CARDS_PATH, CARD_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,52 @@ def _attach_images(cards: list[dict]) -> list[dict]:
     return cards
 
 
+# ---------------------------------------------------------------------------
+# Card metadata lookup — elements, rarity, attack, defence
+# ---------------------------------------------------------------------------
+
+_card_metadata: dict[str, dict] | None = None
+
+
+def _get_card_metadata() -> dict[str, dict]:
+    """Return {normalized_name: {elements, rarity, attack, defence}} from All_Cards_Array.json."""
+    global _card_metadata
+    if _card_metadata is not None:
+        return _card_metadata
+
+    meta: dict[str, dict] = {}
+    try:
+        with open(ALL_CARDS_PATH, encoding="utf-8") as f:
+            all_cards = json.load(f)
+        for card in all_cards:
+            name = (card.get("name") or "").strip().lower()
+            if not name:
+                continue
+            g = card.get("guardian") or {}
+            meta[name] = {
+                "elements": card.get("elements", "None"),
+                "rarity": g.get("rarity", "Unknown"),
+                "attack": g.get("attack"),
+                "defence": g.get("defence"),
+            }
+    except Exception as e:
+        logger.warning("Failed to load card metadata: %s", e)
+    _card_metadata = meta
+    return meta
+
+
+def _enrich_card(card_dict: dict) -> dict:
+    """Add elements, rarity, attack, defence to a card dict from All_Cards_Array."""
+    meta = _get_card_metadata()
+    key = (card_dict.get("name") or "").strip().lower()
+    info = meta.get(key, {})
+    card_dict["elements"] = info.get("elements", "None")
+    card_dict["rarity"] = info.get("rarity", "Unknown")
+    card_dict["attack"] = info.get("attack")
+    card_dict["defence"] = info.get("defence")
+    return card_dict
+
+
 def _load_and_cluster():
     """Load all decks and build clusters. Returns (repo, seeds, community, clusters)."""
     repo = DeckRecRepository()
@@ -112,6 +158,63 @@ def get_decks():
     except Exception as e:
         logger.exception("Error in get_decks: %s", e)
         return jsonify({"error": "Failed to load deck data"}), 500
+
+
+@deck_rec_bp.route("/<deck_id>/info")
+def get_deck_info(deck_id: str):
+    """Return seed info + deck contents without expensive clustering."""
+    try:
+        repo = DeckRecRepository()
+        all_decks = repo.load_all_decks()
+        seed = next((d for d in all_decks if d.is_seed and d.deck_id == deck_id), None)
+        if seed is None:
+            return jsonify({"error": f"Deck '{deck_id}' not found among archetype seeds"}), 404
+
+        # For admin/staff decks, fetch live from Curiosa
+        detail_source = seed.card_details
+        if (seed.is_admin_rec or not detail_source) and seed.curiosa_url:
+            try:
+                fresh_json = CuriosaService().fetch_deck_data(seed.curiosa_url)
+                if fresh_json and fresh_json not in ("{}", ""):
+                    fresh_data = json.loads(fresh_json)
+                    live_details = _get_card_details(
+                        fresh_data.get("spellbook", []),
+                        fresh_data.get("atlas", []),
+                    )
+                    if live_details:
+                        detail_source = live_details
+            except Exception as e:
+                logger.warning("Could not fetch live Curiosa data for %s: %s", seed.deck_id, e)
+
+        seed_cards = [{"name": c["name"], "qty": c["qty"]} for c in detail_source]
+        seed_spellbook = [
+            _enrich_card({
+                "name": c["name"],
+                "qty": c["qty"],
+                "type": c["type"],
+                "threshold": c["threshold"],
+                "image": _resolve_card_image(c["name"]),
+            })
+            for c in detail_source
+        ]
+
+        return jsonify({
+            "seed": {
+                "deck_id": seed.deck_id,
+                "deck_name": seed.deck_name,
+                "avatar_name": seed.avatar_name,
+                "player_name": seed.player_name,
+                "event_name": seed.event_name,
+                "card_count": seed.card_count,
+                "curiosa_url": seed.curiosa_url,
+                "primer": seed.primer or "",
+            },
+            "seed_cards": seed_cards,
+            "seed_spellbook": seed_spellbook,
+        })
+    except Exception as e:
+        logger.exception("Error in get_deck_info for %s: %s", deck_id, e)
+        return jsonify({"error": "Failed to load deck info"}), 500
 
 
 @deck_rec_bp.route("/<deck_id>/recommendations")
@@ -175,13 +278,13 @@ def get_recommendations(deck_id: str):
 
         # seed_spellbook: rich list for deck contents display
         seed_spellbook = [
-            {
+            _enrich_card({
                 "name": c["name"],
                 "qty": c["qty"],
                 "type": c["type"],
                 "threshold": c["threshold"],
                 "image": _resolve_card_image(c["name"]),
-            }
+            })
             for c in detail_source
         ]
 

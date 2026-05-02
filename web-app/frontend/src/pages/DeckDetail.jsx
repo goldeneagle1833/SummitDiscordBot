@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getDeckRecommendations } from '@/api/decks'
+import { getDeckInfo, getDeckRecommendations } from '@/api/decks'
 import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
 import CardImagePopup from '@/components/deck/CardImagePopup'
@@ -187,28 +187,43 @@ function SimilarSeeds({ seeds, imageFiles }) {
 /* ---- Main Page ---- */
 export default function DeckDetail() {
   const { deckId } = useParams()
-  const [data, setData] = useState(null)
+  const [info, setInfo] = useState(null)
+  const [recs, setRecs] = useState(null)
   const [imageFiles, setImageFiles] = useState([])
   const [loading, setLoading] = useState(true)
+  const [recsLoading, setRecsLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showFringe, setShowFringe] = useState(false)
   const [viewMode, setViewMode] = useState('visual')
   const [popup, setPopup] = useState({ image: null, rect: null })
 
-  usePageTitle(data?.seed?.deck_name || 'Deck Archetype')
+  // Combine info + recs into a single data object for rendering
+  const data = info ? { ...info, ...(recs || {}) } : null
+
+  usePageTitle(info?.seed?.deck_name || 'Deck Archetype')
 
   useEffect(() => {
     setLoading(true)
-    setData(null)
+    setRecsLoading(true)
+    setInfo(null)
+    setRecs(null)
     setError(null)
     setShowFringe(false)
-    Promise.all([getDeckRecommendations(deckId), getAvatarImageFiles()])
-      .then(([recData, imgs]) => {
-        setData(recData)
+
+    // Fast: load deck info + avatar images
+    Promise.all([getDeckInfo(deckId), getAvatarImageFiles()])
+      .then(([infoData, imgs]) => {
+        setInfo(infoData)
         setImageFiles(imgs || [])
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
+
+    // Slow: load recommendations in background
+    getDeckRecommendations(deckId)
+      .then(setRecs)
+      .catch(() => {}) // info already loaded, non-critical
+      .finally(() => setRecsLoading(false))
   }, [deckId])
 
   const handleHover = useCallback((image, rect) => setPopup({ image, rect }), [])
@@ -228,7 +243,6 @@ export default function DeckDetail() {
   const { seed } = data
   const avatarImg = getAvatarImagePath(seed.avatar_name, imageFiles)
   const tcgUrl = buildTcgPlayerUrl(data.seed_cards)
-  const winRatePct = data.win_rate != null ? `${Math.round(data.win_rate * 100)}%` : null
 
   return (
     <div>
@@ -279,27 +293,6 @@ export default function DeckDetail() {
         )}
       </div>
 
-      {/* Cluster Stats */}
-      <div className="flex flex-wrap gap-6 mb-6 text-sm">
-        <div className="text-text-muted">
-          Community builds matched: <strong className="text-text-primary">{data.cluster_size}</strong>
-        </div>
-        {winRatePct && (
-          <div className="text-text-muted">
-            Summit win rate: <strong className="text-text-primary">{winRatePct}</strong>
-            <span className="text-text-muted/50 ml-1">({data.wins}W / {data.losses}L)</span>
-          </div>
-        )}
-      </div>
-
-      {/* Empty cluster message */}
-      {data.cluster_size === 0 && (
-        <div className="bg-bg-surface rounded-lg p-4 border border-border mb-6 text-sm text-text-muted">
-          No community builds found matching this archetype at the current threshold.<br />
-          This seed deck may be highly unique or the archive may not yet have similar builds.
-        </div>
-      )}
-
       {/* Seed Deck Contents */}
       {data.seed_spellbook?.length > 0 && (
         <>
@@ -332,62 +325,93 @@ export default function DeckDetail() {
         </>
       )}
 
-      {/* Card Tiers */}
-      {data.cluster_size > 0 && (
+      {/* Community Recommendations — lazy loaded */}
+      {recsLoading ? (
+        <div className="py-8">
+          <Spinner className="py-4" />
+          <p className="text-center text-sm text-text-muted mt-2">Loading community recommendations...</p>
+        </div>
+      ) : recs && (
         <>
-          <TierSection
-            title="Core Cards"
-            badge="≥ 80%"
-            badgeColor="bg-green-500/20 text-green-400"
-            cards={data.core_cards}
-            onHover={handleHover}
-            onLeave={handleLeave}
-          />
-          <TierSection
-            title="Common Cards"
-            badge="50-79%"
-            badgeColor="bg-blue-500/20 text-blue-400"
-            cards={data.common_cards}
-            onHover={handleHover}
-            onLeave={handleLeave}
-          />
-          <TierSection
-            title="Tech Choices"
-            badge="20-49%"
-            badgeColor="bg-yellow-500/20 text-yellow-400"
-            cards={data.tech_cards}
-            onHover={handleHover}
-            onLeave={handleLeave}
-          />
-
-          {/* Fringe toggle */}
-          {data.fringe_cards?.length > 0 && (
-            <>
-              <div className="text-center mb-4">
-                <button
-                  className="text-sm text-text-muted hover:text-secondary border border-border rounded px-4 py-1.5 transition-colors"
-                  onClick={() => setShowFringe((v) => !v)}
-                >
-                  {showFringe ? 'Hide Fringe Cards' : 'Show Fringe Cards'}
-                </button>
+          {/* Cluster Stats */}
+          <div className="flex flex-wrap gap-6 mb-6 text-sm">
+            <div className="text-text-muted">
+              Community builds matched: <strong className="text-text-primary">{recs.cluster_size}</strong>
+            </div>
+            {recs.win_rate != null && (
+              <div className="text-text-muted">
+                Summit win rate: <strong className="text-text-primary">{Math.round(recs.win_rate * 100)}%</strong>
+                <span className="text-text-muted/50 ml-1">({recs.wins}W / {recs.losses}L)</span>
               </div>
-              {showFringe && (
-                <TierSection
-                  title="Fringe Cards"
-                  badge="< 20%"
-                  badgeColor="bg-red-500/20 text-red-400"
-                  cards={data.fringe_cards}
-                  onHover={handleHover}
-                  onLeave={handleLeave}
-                />
+            )}
+          </div>
+
+          {/* Empty cluster message */}
+          {recs.cluster_size === 0 && (
+            <div className="bg-bg-surface rounded-lg p-4 border border-border mb-6 text-sm text-text-muted">
+              No community builds found matching this archetype at the current threshold.<br />
+              This seed deck may be highly unique or the archive may not yet have similar builds.
+            </div>
+          )}
+
+          {/* Card Tiers */}
+          {recs.cluster_size > 0 && (
+            <>
+              <TierSection
+                title="Core Cards"
+                badge="≥ 80%"
+                badgeColor="bg-green-500/20 text-green-400"
+                cards={recs.core_cards}
+                onHover={handleHover}
+                onLeave={handleLeave}
+              />
+              <TierSection
+                title="Common Cards"
+                badge="50-79%"
+                badgeColor="bg-blue-500/20 text-blue-400"
+                cards={recs.common_cards}
+                onHover={handleHover}
+                onLeave={handleLeave}
+              />
+              <TierSection
+                title="Tech Choices"
+                badge="20-49%"
+                badgeColor="bg-yellow-500/20 text-yellow-400"
+                cards={recs.tech_cards}
+                onHover={handleHover}
+                onLeave={handleLeave}
+              />
+
+              {/* Fringe toggle */}
+              {recs.fringe_cards?.length > 0 && (
+                <>
+                  <div className="text-center mb-4">
+                    <button
+                      className="text-sm text-text-muted hover:text-secondary border border-border rounded px-4 py-1.5 transition-colors"
+                      onClick={() => setShowFringe((v) => !v)}
+                    >
+                      {showFringe ? 'Hide Fringe Cards' : 'Show Fringe Cards'}
+                    </button>
+                  </div>
+                  {showFringe && (
+                    <TierSection
+                      title="Fringe Cards"
+                      badge="< 20%"
+                      badgeColor="bg-red-500/20 text-red-400"
+                      cards={recs.fringe_cards}
+                      onHover={handleHover}
+                      onLeave={handleLeave}
+                    />
+                  )}
+                </>
               )}
             </>
           )}
+
+          {/* Similar Seeds */}
+          <SimilarSeeds seeds={recs.similar_seeds} imageFiles={imageFiles} />
         </>
       )}
-
-      {/* Similar Seeds */}
-      <SimilarSeeds seeds={data.similar_seeds} imageFiles={imageFiles} />
 
       {/* Card Image Popup */}
       <CardImagePopup imageFile={popup.image} anchorRect={popup.rect} />

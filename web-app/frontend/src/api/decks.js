@@ -2,6 +2,8 @@ import { get, post, del } from './client'
 
 // Deck Rec endpoints (prefix: /api/deck-rec)
 export const getDeckRecList = () => get('/api/deck-rec/decks')
+export const getDeckInfo = (deckId) =>
+  get(`/api/deck-rec/${encodeURIComponent(deckId)}/info`)
 export const getDeckRecommendations = (deckId) =>
   get(`/api/deck-rec/${encodeURIComponent(deckId)}/recommendations`)
 

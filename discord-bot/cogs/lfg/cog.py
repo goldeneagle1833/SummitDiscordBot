@@ -375,7 +375,12 @@ class LFGCog(commands.Cog):
             logger.info("Leaderboard updated successfully")
 
         except Exception as e:
-            logger.error(f"Error updating leaderboard: {e}")
+            logger.error(f"Error updating leaderboard: {e}", exc_info=True)
+            try:
+                if leaderboard_channel:
+                    await leaderboard_channel.send(f"Error updating leaderboard: ```{e}```")
+            except Exception:
+                pass
 
     @tasks.loop(minutes=1)
     async def check_expired_queue(self):

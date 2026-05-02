@@ -219,7 +219,7 @@ class LFGCog(commands.Cog):
             # Create leaderboard embed with event name and game count
             embed = discord.Embed(
                 title=f"{event_name} Leaderboard ({total_games_played} games played)",
-                description="Current ELO Rankings | Started: 3/20/2026 | End: 4/25/2026",
+                description=None,
                 color=discord.Color.gold(),
             )
 
@@ -294,7 +294,7 @@ class LFGCog(commands.Cog):
                 overall_text = []
                 for idx, p in enumerate(player_data[:8], 1):
                     overall_text.append(
-                        f"**{idx}.** {p['display_name']} - **{p['elo']}** ELO ({p['games']} games)"
+                        f"{idx}. {p['display_name']} - {p['elo']} ({p['games']}g)"
                     )
                 embed.add_field(
                     name="Overall Rankings",
@@ -309,7 +309,7 @@ class LFGCog(commands.Cog):
                 ticket_text = []
                 for idx, p in enumerate(ticket_players[:24], 1):
                     ticket_text.append(
-                        f"**{idx}.** {p['display_name']} - **{p['elo']}** ELO ({p['games']} games)"
+                        f"{idx}. {p['display_name']} - {p['elo']} ({p['games']}g)"
                     )
                 embed.add_field(
                     name="Ticket Holders",
@@ -324,7 +324,7 @@ class LFGCog(commands.Cog):
                 free_text = []
                 for idx, p in enumerate(free_players[:8], 1):
                     free_text.append(
-                        f"**{idx}.** {p['display_name']} - **{p['elo']}** ELO ({p['games']} games)"
+                        f"{idx}. {p['display_name']} - {p['elo']} ({p['games']}g)"
                     )
                 embed.add_field(
                     name="Free Play",

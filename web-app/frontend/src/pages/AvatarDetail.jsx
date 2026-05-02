@@ -226,7 +226,7 @@ function StaffPicks({ avatarName }) {
     get('/api/deck-rec/decks')
       .then((data) => {
         const filtered = (data.decks || data || []).filter(
-          (d) => d.avatar_name && d.avatar_name.toLowerCase() === avatarName.toLowerCase()
+          (d) => d.is_admin_rec && d.avatar_name && d.avatar_name.toLowerCase() === avatarName.toLowerCase()
         )
         setDecks(filtered)
       })

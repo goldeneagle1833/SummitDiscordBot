@@ -45,6 +45,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
               <th className="py-2 px-3 text-text-muted font-semibold">Elements</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Opponent</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Opp. Avatar</th>
+              <th className="py-2 px-3 text-text-muted font-semibold">Opp. Elements</th>
               <th className="py-2 px-3 text-text-muted font-semibold">ELO</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Play/Draw</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Time</th>
@@ -76,6 +77,9 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                     </Link>
                   </td>
                   <td className="py-2 px-3 text-sm">{m.opponent_avatar || '-'}</td>
+                  <td className="py-2 px-3">
+                    <ElementIcons elements={m.opponent_elements} />
+                  </td>
                   <td className={`py-2 px-3 font-medium ${isWin ? 'text-accent-green' : 'text-accent-red'}`}>
                     {isWin ? '+' : ''}{m.elo_change}
                   </td>

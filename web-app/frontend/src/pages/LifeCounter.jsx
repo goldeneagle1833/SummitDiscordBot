@@ -136,7 +136,7 @@ function ThresholdCounter({ element, count, onChange }) {
 
 function ThresholdRow({ thresholds, onChange }) {
   return (
-    <div className="flex w-full">
+    <div className="grid grid-cols-4 w-full" style={{ height: "calc(25vw * 0.75)" }}>
       {ELEMENTS.map((el) => (
         <ThresholdCounter
           key={el.key}
@@ -386,7 +386,7 @@ export default function LifeCounter() {
     <>
       {/* Full-viewport container — escapes the normal page layout padding */}
       <div
-        className="fixed inset-0 z-40 flex flex-col bg-bg-dark"
+        className="fixed inset-x-0 top-16 bottom-0 z-40 flex flex-col bg-bg-dark"
         style={{ touchAction: "manipulation" }}>
         {/* Player 2 (top, rotated 180) */}
         <PlayerHalf
@@ -398,11 +398,13 @@ export default function LifeCounter() {
         />
 
         {/* Center: P2 thresholds, dice strip, P1 thresholds */}
-        <div style={{ transform: "rotate(180deg)" }}>
+        <div className="relative z-20" style={{ transform: "rotate(180deg)" }}>
           <ThresholdRow thresholds={p2Thresholds} onChange={setP2Thresholds} />
         </div>
         <DiceRollerStrip onReset={reset} />
-        <ThresholdRow thresholds={p1Thresholds} onChange={setP1Thresholds} />
+        <div className="relative z-20">
+          <ThresholdRow thresholds={p1Thresholds} onChange={setP1Thresholds} />
+        </div>
 
         {/* Player 1 (bottom, normal) */}
         <PlayerHalf

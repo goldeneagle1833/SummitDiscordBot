@@ -16,7 +16,7 @@ Summit Discord Bot is a community bot for "Sorcery: Contested Realm" card game. 
 pip install -r discord-bot/requirements.txt
 python discord-bot/main.py
 
-# Run tests
+# Run tests (185+ tests)
 cd discord-bot && pytest tests/ -v
 ```
 
@@ -25,6 +25,9 @@ cd discord-bot && pytest tests/ -v
 pip install -r web-app/requirements.txt
 cd web-app && python app.py        # Development (port 5000)
 gunicorn -c gunicorn_config.py     # Production
+
+# Run backend tests (73+ tests)
+cd web-app && pytest tests/ -v
 ```
 
 ### Web App — React Frontend
@@ -33,6 +36,7 @@ cd web-app/frontend
 npm install
 npm run dev     # Dev server (Vite, port 5173) — proxies /api, /auth, /static to Flask
 npm run build   # Build to web-app/frontend/dist/ for production
+npm test        # Run frontend tests (61+ tests)
 ```
 
 ### Seed Test Databases
@@ -128,6 +132,7 @@ Database migrations run automatically on Flask startup via `web-app/migrations/`
 **GitHub Actions** (`.github/workflows/`):
 - `deploy-bot.yml` - Discord bot deployment
 - `deploy-web.yml` - Web app deployment (runs `npm run build`, deploys Flask + React dist)
+- `pr-test-web.yml` - PR checks: Python syntax, backend pytest, frontend Vitest, production build
 
 **Production**: systemd + Gunicorn + Nginx + Cloudflare.
 - React SPA served directly by Nginx from `frontend/dist/`
@@ -173,6 +178,8 @@ async def my_command_slash(self, interaction: discord.Interaction, param: str):
 
 ### New API Endpoint (Flask)
 Add to the appropriate file in `web-app/routes/api/`. All endpoints return JSON.
+
+Every endpoint must use an auth decorator (`@require_auth`, `@require_api_key`, `@require_admin`) or be added to `KNOWN_PUBLIC_ENDPOINTS` in `web-app/tests/test_endpoint_auth.py`. A CI test enforces this.
 
 ### New Frontend Page (React)
 1. Create `web-app/frontend/src/pages/MyPage.jsx`

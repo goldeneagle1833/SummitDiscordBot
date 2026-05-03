@@ -79,12 +79,17 @@ Vite automatically proxies `/api`, `/auth`, `/static`, `/avatar-images`, and `/c
 ### 5. Run the Tests
 
 ```bash
-# Discord bot tests
+# Discord bot tests (185+ tests)
 cd discord-bot
 pytest tests/ -v
 
-# Run a specific test file
-pytest tests/test_lfg_queue.py -v
+# Web app backend tests (73+ tests)
+cd web-app
+pytest tests/ -v
+
+# Web app frontend tests (61+ tests)
+cd web-app/frontend
+npm test
 ```
 
 ---
@@ -123,6 +128,8 @@ git checkout -b fix/bug-description
 
 Add to the relevant file in `web-app/routes/api/`. All endpoints return JSON — no template rendering.
 
+**Auth requirement:** Every new endpoint must either use an auth decorator (`@require_auth`, `@require_api_key`, or `@require_admin` from `utils.auth`) or be explicitly added to the `KNOWN_PUBLIC_ENDPOINTS` allowlist in `web-app/tests/test_endpoint_auth.py`. A CI test enforces this — PRs with unprotected endpoints that aren't allowlisted will fail.
+
 ### Adding a New Bot Command
 
 See the patterns in `CLAUDE.md` for prefix commands, slash commands, and new cogs.
@@ -133,7 +140,9 @@ See the patterns in `CLAUDE.md` for prefix commands, slash commands, and new cog
 
 ### Checklist
 
-- [ ] Tests pass: `cd discord-bot && pytest tests/ -v`
+- [ ] Bot tests pass: `cd discord-bot && pytest tests/ -v`
+- [ ] Backend tests pass: `cd web-app && pytest tests/ -v`
+- [ ] Frontend tests pass: `cd web-app/frontend && npm test`
 - [ ] No Python syntax errors: `python -m py_compile <changed_files>`
 - [ ] React builds without errors: `cd web-app/frontend && npm run build`
 - [ ] Tested the feature manually (bot in test server, or web app locally)

@@ -65,7 +65,7 @@ SummitDiscordBot/
 │   ├── repositories/       # Data access layer
 │   ├── services/           # Business logic
 │   ├── utils/              # Shared utilities
-│   ├── tests/              # Test suite (87+ tests)
+│   ├── tests/              # Test suite (185+ tests)
 │   ├── scripts/            # Helper scripts
 │   ├── config.py           # Configuration (gitignored)
 │   └── main.py             # Entry point
@@ -83,11 +83,13 @@ SummitDiscordBot/
     ├── migrations/         # Database migrations (auto-run on startup)
     ├── scripts/
     │   └── seed_databases.py  # Create test databases for local dev
+    ├── tests/              # Backend test suite (73+ tests)
     ├── frontend/           # React + Vite SPA
     │   └── src/
     │       ├── pages/      # One component per route
     │       ├── components/ # Shared UI components
     │       ├── api/        # Typed API fetch wrappers
+    │       ├── test/       # Test utilities and setup
     │       └── App.jsx     # Router
     ├── static/             # Served assets (favicon, element images)
     ├── templates/
@@ -114,6 +116,8 @@ SummitDiscordBot/
 - **SQLite** — Shared databases with the bot
 - **Gunicorn** — WSGI server
 - **Nginx + Cloudflare** — Reverse proxy and CDN
+- **pytest** — Backend tests
+- **Vitest + React Testing Library** — Frontend tests
 
 ---
 
@@ -127,6 +131,7 @@ SummitDiscordBot/
 
 ## Tests
 
+### Discord Bot (185+ tests)
 ```bash
 cd discord-bot
 pytest tests/ -v                      # All tests
@@ -134,7 +139,28 @@ pytest tests/test_lfg_queue.py -v    # Specific file
 pytest -k "test_queue" -v             # By name pattern
 ```
 
-87+ tests covering queue logic, ELO calculations, match reporting, database operations, and end-to-end workflows.
+Covers queue logic, ELO calculations, match reporting, database operations, and end-to-end workflows.
+
+### Web App — Backend (73+ tests)
+```bash
+cd web-app
+pytest tests/ -v
+```
+
+Covers repositories, services, API routes, authentication, and endpoint auth coverage (ensures all endpoints have explicit auth decisions).
+
+### Web App — Frontend (61+ tests)
+```bash
+cd web-app/frontend
+npm test              # Single run
+npm run test:watch    # Watch mode
+```
+
+Covers UI components, API client, hooks, auth context, and page rendering using Vitest + React Testing Library.
+
+### CI
+
+All tests run automatically on PRs that touch `web-app/` via GitHub Actions (`pr-test-web.yml`). The workflow runs Python syntax checks, backend pytest, frontend Vitest, and a production build.
 
 ---
 

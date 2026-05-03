@@ -152,8 +152,6 @@ function ThresholdRow({ thresholds, onChange }) {
 function PlayerHalf({
   life,
   onLifeChange,
-  thresholds,
-  onThresholdChange,
   flipped,
   playerNum,
   isDead,
@@ -191,9 +189,6 @@ function PlayerHalf({
     <div
       className="flex-1 flex flex-col relative select-none"
       style={{ transform: flipped ? "rotate(180deg)" : undefined }}>
-      {/* Threshold counters at the edge */}
-      <ThresholdRow thresholds={thresholds} onChange={onThresholdChange} />
-
       {/* Life total area */}
       <div className="flex-1 flex flex-col items-center justify-center relative">
         {/* Tap zone: top half = increment */}
@@ -397,22 +392,22 @@ export default function LifeCounter() {
         <PlayerHalf
           life={p2Life}
           onLifeChange={setP2Life}
-          thresholds={p2Thresholds}
-          onThresholdChange={setP2Thresholds}
           flipped={true}
           playerNum={2}
           isDead={p2Life <= 0}
         />
 
-        {/* Center dice strip */}
+        {/* Center: P2 thresholds, dice strip, P1 thresholds */}
+        <div style={{ transform: "rotate(180deg)" }}>
+          <ThresholdRow thresholds={p2Thresholds} onChange={setP2Thresholds} />
+        </div>
         <DiceRollerStrip onReset={reset} />
+        <ThresholdRow thresholds={p1Thresholds} onChange={setP1Thresholds} />
 
         {/* Player 1 (bottom, normal) */}
         <PlayerHalf
           life={p1Life}
           onLifeChange={setP1Life}
-          thresholds={p1Thresholds}
-          onThresholdChange={setP1Thresholds}
           flipped={false}
           playerNum={1}
           isDead={p1Life <= 0}

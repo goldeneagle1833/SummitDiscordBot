@@ -43,6 +43,7 @@ const DICE = [
     label: "d4",
     // Triangle
     path: "M12 3L2 21h20L12 3z",
+    textY: 16,
   },
 ];
 
@@ -58,7 +59,7 @@ function DiceIcon({ dice, size = 24 }) {
       <path d={dice.path} />
       <text
         x="12"
-        y="14"
+        y={dice.textY || 14}
         textAnchor="middle"
         fontSize="6"
         fill="currentColor"
@@ -99,18 +100,18 @@ function ThresholdCounter({ element, count, onChange }) {
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col select-none touch-manipulation">
-      {/* Top: + button (half height, no symbol) */}
+    <div className="flex-1 flex flex-col select-none touch-manipulation relative">
+      {/* Top half: + tap zone */}
       <button
-        className="h-6 bg-bg-surface/50 border border-border/30 active:bg-white/10 transition-colors"
+        className="flex-1 bg-bg-surface/50 border border-border/30 active:bg-white/10 transition-colors"
         onPointerDown={(e) => { e.stopPropagation(); startHold(1); }}
         onPointerUp={stopHold}
         onPointerLeave={stopHold}
         onPointerCancel={stopHold}
         onContextMenu={(e) => e.preventDefault()}
       />
-      {/* Center: icon + count side by side */}
-      <div className="flex items-center justify-center gap-1 py-1 bg-bg-surface/70 border-x border-border/30">
+      {/* Center: icon + count side by side (overlaid on the split) */}
+      <div className="absolute inset-0 flex items-center justify-center gap-1 pointer-events-none">
         <span className="text-white text-2xl font-bold drop-shadow-md leading-none">
           {count}
         </span>
@@ -120,9 +121,9 @@ function ThresholdCounter({ element, count, onChange }) {
           className="w-6 h-6 object-contain opacity-85"
         />
       </div>
-      {/* Bottom: - button (half height, no symbol) */}
+      {/* Bottom half: - tap zone */}
       <button
-        className="h-6 bg-bg-surface/50 border border-border/30 active:bg-white/10 transition-colors"
+        className="flex-1 bg-bg-surface/50 border border-border/30 active:bg-white/10 transition-colors"
         onPointerDown={(e) => { e.stopPropagation(); startHold(-1); }}
         onPointerUp={stopHold}
         onPointerLeave={stopHold}
@@ -239,7 +240,22 @@ function PlayerHalf({
 function DiceRollerStrip({ onReset }) {
   const [rollResult, setRollResult] = useState(null);
   const [rolling, setRolling] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const rollTimeout = useRef(null);
+
+  useEffect(() => {
+    const onFs = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  };
 
   const rollDice = (sides) => {
     setRolling(true);
@@ -308,6 +324,28 @@ function DiceRollerStrip({ onReset }) {
           strokeWidth="2">
           <path d="M3 12a9 9 0 1 1 3 6.7" />
           <path d="M3 22v-6h6" />
+        </svg>
+      </button>
+
+      {/* Fullscreen button */}
+      <button
+        onClick={toggleFullscreen}
+        className="p-2 text-text-muted hover:text-white active:scale-110 transition-all touch-manipulation"
+        title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          {isFullscreen ? (
+            <>
+              <path d="M4 14h6v6" /><path d="M14 10h6V4" />
+              <path d="M20 4l-6 6" /><path d="M4 20l6-6" />
+            </>
+          ) : (
+            <>
+              <path d="M8 3H5a2 2 0 00-2 2v3" />
+              <path d="M21 8V5a2 2 0 00-2-2h-3" />
+              <path d="M3 16v3a2 2 0 002 2h3" />
+              <path d="M16 21h3a2 2 0 002-2v-3" />
+            </>
+          )}
         </svg>
       </button>
 

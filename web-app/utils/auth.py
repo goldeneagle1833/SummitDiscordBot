@@ -32,6 +32,7 @@ def require_api_key(f):
 
         return f(*args, **kwargs)
 
+    decorated_function._auth_required = True
     return decorated_function
 
 
@@ -63,6 +64,7 @@ def require_auth(f):
         )
         return jsonify({"error": "Authentication required (login or API key)"}), 401
 
+    decorated_function._auth_required = True
     return decorated_function
 
 
@@ -137,6 +139,7 @@ def require_admin(f):
             )
             return jsonify({"error": "Admin access required"}), 403
         return f(*args, **kwargs)
+    decorated_function._auth_required = True
     return decorated_function
 
 

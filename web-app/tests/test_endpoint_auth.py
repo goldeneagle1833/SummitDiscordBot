@@ -1,0 +1,190 @@
+"""Test that all API endpoints have explicit auth decisions.
+
+When adding a new endpoint, you must either:
+1. Add an auth decorator (@require_auth, @require_api_key, @require_admin)
+2. Add the endpoint to KNOWN_PUBLIC_ENDPOINTS below (conscious opt-in to public)
+
+This prevents accidentally exposing endpoints without authentication.
+"""
+
+import pytest
+
+# Endpoints intentionally public (read-only data, auth flows, status, etc.)
+# To make a new endpoint public, add it here with a comment explaining why.
+KNOWN_PUBLIC_ENDPOINTS = {
+    # -- Status / health --
+    "api.misc.status",
+    "api.misc.recent_event",
+    "api.misc.database_status",
+
+    # -- Auth flows (must be public) --
+    "api.misc.me",
+    "api.misc.logout",
+    "auth.login",
+    "auth.discord_login",
+    "auth.discord_callback",
+    "auth.logout",
+    "auth.google_login",
+    "auth.google_callback",
+
+    # -- Leaderboards (public read-only) --
+    "api.leaderboard.get_leaderboard",
+    "api.leaderboard.get_event_leaderboard",
+    "api.leaderboard.get_combined_leaderboard",
+    "api.leaderboard.get_paper_leaderboard",
+    "api.leaderboard.get_paper_event_leaderboard",
+    "api.leaderboard.get_elo_distribution",
+    "api.leaderboard.get_leaderboard_sources",
+    "api.leaderboard.get_source_leaderboard",
+    "api.leaderboard.get_events",
+    "api.leaderboard.get_player_event_stats",
+    "api.leaderboard.get_archived_event_leaderboard",
+    "api.leaderboard.get_season_leaderboard",
+    "api.leaderboard.get_limited_leaderboard",
+
+    # -- Match history (public read-only) --
+    "api.matches.available_dates",
+    "api.matches.match_history",
+
+    # -- Player profiles (public read-only) --
+    "api.players.player_api",
+    "api.players.search_players",
+    "api.players.deck_snapshot",
+    "api.players.get_deck_stats",
+    "api.players.set_display_name",
+
+    # -- Card / avatar stats (public read-only) --
+    "api.cards.get_cards",
+    "api.cards.get_live_popular_cards",
+    "api.cards.get_element_filters",
+    "api.cards.get_elements",
+    "api.cards.get_card_stats",
+    "api.cards.get_card_popularity",
+    "api.cards.get_all_cards_popularity",
+    "api.cards.get_deck_composition",
+    "api.avatars.get_avatar_image_files",
+    "api.avatars.get_avatar_filters",
+    "api.avatars.get_all_avatars",
+    "api.avatars.get_avatar",
+    "api.avatars.get_avatar_popularity",
+    "api.avatars.get_all_avatars_popularity",
+    "api.avatars.get_avatar_deck_composition",
+    "api.avatars.get_play_draw_stats",
+    "api.avatars.get_avatar_matchups",
+    "api.avatars.list_all_avatars",
+
+    # -- Events / tournaments (public read-only) --
+    "api.events.list_top8_events",
+    "api.events.get_event_detail",
+
+    # -- Curios (auth checked internally per-method) --
+    "api.curios.list_entries",
+    "api.curios.list_sets",
+    "api.curios.create_entry",
+    "api.curios.update_entry",
+    "api.curios.delete_entry",
+    "api.curios.create_set",
+
+    # -- Deck recommendations (public read-only) --
+    "api.deck_rec.get_decks",
+    "api.deck_rec.get_deck_info",
+    "api.deck_rec.get_recommendations",
+
+    # -- Fun stats (public read-only) --
+    "api.fun_stats.get_fun_stats_filters",
+    "api.fun_stats.get_fun_stats",
+
+    # -- Community / misc (public read-only) --
+    "api.misc.community",
+    "api.misc.youtube_videos",
+
+    # -- Streamers (public read-only) --
+    "api.streamers.list_streamers",
+    "api.streamers.streamer_banner",
+
+    # -- Analytics (public tracking endpoints) --
+    "api.analytics.banner_click",
+    "api.analytics.active_banners",
+
+    # -- Seasons (public browse) --
+    "api.seasons.browse_seasons",
+    "api.seasons.get_player_seasons",
+    "api.seasons.get_season_members",
+
+    # -- Match reporting (auth checked internally) --
+    "api.match_reporting.submit_match_report",
+    "api.match_reporting.confirm_match_report",
+    "api.match_reporting.deny_match_report",
+    "api.match_reporting.get_pending_confirmations",
+    "api.match_reporting.search_opponents",
+
+    # -- Limited (API key checked internally) --
+    "api.limited.post_report_match",
+    "api.limited.post_user_run",
+    "api.limited.post_end_run",
+    "api.limited.get_user_status",
+
+    # -- Static file serving --
+    "static",
+    "avatar_images",
+    "card_images",
+}
+
+
+def _has_auth_marker(view_func):
+    """Check if a view function was decorated with an auth decorator."""
+    return getattr(view_func, "_auth_required", False)
+
+
+class TestEndpointAuthCoverage:
+    def test_all_endpoints_have_auth_or_are_allowlisted(self, app):
+        """Every endpoint must have an auth decorator or be in KNOWN_PUBLIC_ENDPOINTS."""
+        unprotected = []
+
+        for rule in app.url_map.iter_rules():
+            endpoint = rule.endpoint
+            view_func = app.view_functions.get(endpoint)
+            if view_func is None:
+                continue
+
+            if _has_auth_marker(view_func):
+                continue
+
+            if endpoint in KNOWN_PUBLIC_ENDPOINTS:
+                continue
+
+            unprotected.append(f"{endpoint} ({rule.rule})")
+
+        assert unprotected == [], (
+            "Found endpoints without auth decorators that are NOT in "
+            "KNOWN_PUBLIC_ENDPOINTS.\n"
+            "Either add an auth decorator (@require_auth, @require_api_key, "
+            "@require_admin) or explicitly add the endpoint to "
+            "KNOWN_PUBLIC_ENDPOINTS in test_endpoint_auth.py:\n"
+            + "\n".join(f"  - {ep}" for ep in sorted(unprotected))
+        )
+
+    def test_allowlist_has_no_stale_entries(self, app):
+        """KNOWN_PUBLIC_ENDPOINTS should not contain endpoints that no longer exist."""
+        registered = {rule.endpoint for rule in app.url_map.iter_rules()}
+        stale = KNOWN_PUBLIC_ENDPOINTS - registered
+
+        assert stale == set(), (
+            "KNOWN_PUBLIC_ENDPOINTS contains endpoints that no longer exist "
+            "in the app. Remove them:\n"
+            + "\n".join(f"  - {ep}" for ep in sorted(stale))
+        )
+
+    def test_allowlist_has_no_protected_entries(self, app):
+        """Endpoints with auth decorators should not be in the allowlist."""
+        redundant = []
+        for endpoint in sorted(KNOWN_PUBLIC_ENDPOINTS):
+            view_func = app.view_functions.get(endpoint)
+            if view_func and _has_auth_marker(view_func):
+                redundant.append(endpoint)
+
+        assert redundant == [], (
+            "These endpoints have auth decorators but are also in "
+            "KNOWN_PUBLIC_ENDPOINTS. Remove them from the allowlist:\n"
+            + "\n".join(f"  - {ep}" for ep in redundant)
+        )

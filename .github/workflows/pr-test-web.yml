@@ -45,6 +45,14 @@ jobs:
         env:
           FLASK_ENV: testing
 
+      - name: Run backend tests
+        run: |
+          cd web-app
+          pip install pytest
+          python -m pytest tests/ -v
+        env:
+          FLASK_ENV: testing
+
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
@@ -56,6 +64,11 @@ jobs:
         run: |
           cd web-app/frontend
           npm ci
+
+      - name: Run frontend tests
+        run: |
+          cd web-app/frontend
+          npm test
 
       - name: Build frontend
         run: |
@@ -73,6 +86,6 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: success
-                ? '✅ Web app build passed! Python syntax OK and frontend built successfully.'
-                : '❌ Web app build failed. Check the Actions tab for details.'
+                ? '✅ Web app checks passed! Python syntax OK, backend tests passed, frontend tests passed, and frontend built successfully.'
+                : '❌ Web app checks failed. Check the Actions tab for details.'
             })

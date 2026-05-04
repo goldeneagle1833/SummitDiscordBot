@@ -148,11 +148,11 @@ def get_creator_popular_cards():
             except sqlite3.OperationalError:
                 logger.info("Archive table not found - continuing without archive data")
 
-        # Solo match reports
+        # Solo match reports (no source column in this table)
         try:
             cur.execute(f"""
                 SELECT json_deck_data FROM solo_match_reports
-                WHERE {solo_deck_where} {source_clause}
+                WHERE {solo_deck_where}
             """)
             _parse_deck_rows(cur.fetchall(), dual_column=False)
         except sqlite3.OperationalError:
@@ -162,23 +162,33 @@ def get_creator_popular_cards():
         # Season date-range filter - query both tables by timestamp (same as avatar winrates)
         start_date, end_date = _get_event_date_range(event_filter)
         if start_date and end_date:
-            for table in ("match_records", "match_records_archive"):
-                try:
-                    cur.execute(f"""
-                        SELECT json_deck_data_winner, json_deck_data_loser
-                        FROM {table}
-                        WHERE {deck_where} {source_clause}
-                          AND timestamp >= ? AND timestamp <= ?
-                    """, (start_date, end_date))
-                    _parse_deck_rows(cur.fetchall())
-                except sqlite3.OperationalError:
-                    pass
-            # Solo match reports with date range
+            # match_records has source column, archive does not
+            try:
+                cur.execute(f"""
+                    SELECT json_deck_data_winner, json_deck_data_loser
+                    FROM match_records
+                    WHERE {deck_where} {source_clause}
+                      AND timestamp >= ? AND timestamp <= ?
+                """, (start_date, end_date))
+                _parse_deck_rows(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass
+            try:
+                cur.execute(f"""
+                    SELECT json_deck_data_winner, json_deck_data_loser
+                    FROM match_records_archive
+                    WHERE {deck_where}
+                      AND timestamp >= ? AND timestamp <= ?
+                """, (start_date, end_date))
+                _parse_deck_rows(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass
+            # Solo match reports with date range (no source column, uses report_date)
             try:
                 cur.execute(f"""
                     SELECT json_deck_data FROM solo_match_reports
-                    WHERE {solo_deck_where} {source_clause}
-                      AND timestamp >= ? AND timestamp <= ?
+                    WHERE {solo_deck_where}
+                      AND report_date >= ? AND report_date <= ?
                 """, (start_date, end_date))
                 _parse_deck_rows(cur.fetchall(), dual_column=False)
             except sqlite3.OperationalError:

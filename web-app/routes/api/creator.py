@@ -6,65 +6,73 @@ import sqlite3
 
 from flask import Blueprint, jsonify, request
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH
+from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH, ELO_DB_PATH, SEASON_FILTERS
 from utils.auth import require_creator
-from routes.api.cards import _build_card_image_lookup, _find_card_image
+from routes.api.cards import _build_card_image_lookup, _find_card_image, _get_event_date_range
 
 logger = logging.getLogger(__name__)
 
 creator_bp = Blueprint("creator", __name__)
 
 
-def _get_ended_seasons():
-    """Get all ended seasons from the seasons table."""
-    seasons = []
+@creator_bp.route("/filters")
+@require_creator
+def get_creator_filters():
+    """Return available past events and sources for the creator page filter dropdown.
+
+    Same format as /api/avatars/filters but excludes active events.
+    """
+    events = []
+
+    # Get events from elo.db (exclude active)
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        conn = sqlite3.connect(str(ELO_DB_PATH))
         cur = conn.cursor()
-        cur.execute("""
-            SELECT season_id, title, start_date, end_date
-            FROM seasons
-            WHERE status = 'ended'
-            ORDER BY end_date DESC
-        """)
-        for row in cur.fetchall():
-            seasons.append({
-                "id": row[0],
-                "name": row[1],
-                "start_date": row[2],
-                "end_date": row[3],
-            })
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='events'")
+        if cur.fetchone():
+            cur.execute("""
+                SELECT event_id, event_name, start_date, end_date, is_active
+                FROM events
+                ORDER BY start_date DESC
+            """)
+            for row in cur.fetchall():
+                if bool(row[4]):
+                    continue  # Skip active events for creators
+                events.append({
+                    "event_id": row[0],
+                    "event_name": row[1],
+                    "start_date": row[2],
+                    "end_date": row[3],
+                    "is_active": False,
+                })
         conn.close()
     except sqlite3.OperationalError as e:
-        logger.warning(f"Error fetching seasons: {e}")
-    return seasons
+        logger.warning(f"Could not query events: {e}")
+
+    # Append season date-range filters
+    for sf in SEASON_FILTERS:
+        events.append({
+            "event_id": sf["id"],
+            "event_name": sf["name"],
+            "start_date": sf["start_date"],
+            "end_date": sf["end_date"],
+            "is_active": False,
+        })
+
+    return jsonify({"events": events})
 
 
 @creator_bp.route("/popular-cards")
 @require_creator
 def get_creator_popular_cards():
-    """Card popularity stats from ended seasons using season_match_elo data.
+    """Card popularity stats from match_records (same source as live-popular-cards).
 
     Query params:
-    - season: season_id (integer). If omitted, uses all ended seasons.
-    - source: "discord" | "web" | "all" (default: "all")
+    - event: event_id or season filter ID (e.g. "season_gothic_1"). Omit for all data.
+    - source: "discord" | "web" | "all" (default: "discord")
     """
-    season_id = request.args.get("season", type=int)
-    source_filter = request.args.get("source", "all")
-
-    # Get ended season IDs
-    ended_seasons = _get_ended_seasons()
-    if not ended_seasons:
-        return jsonify([])
-
-    ended_ids = [s["id"] for s in ended_seasons]
-
-    if season_id:
-        if season_id not in ended_ids:
-            return jsonify({"error": "Season not found or still active"}), 404
-        season_ids = [season_id]
-    else:
-        season_ids = ended_ids
+    event_filter = request.args.get("event", "all")
+    source_filter = request.args.get("source", "discord")
 
     # Load card metadata
     card_metadata = {}
@@ -90,21 +98,29 @@ def get_creator_popular_cards():
     else:
         source_clause = ""
 
-    # Query season_match_elo for deck data from ended seasons
-    placeholders = ",".join("?" * len(season_ids))
-    all_decks = []
+    # Build date filter clause from event selection
+    date_clause = ""
+    date_params = []
+    if event_filter and event_filter != "all":
+        start_date, end_date = _get_event_date_range(event_filter)
+        if start_date and end_date:
+            date_clause = "AND timestamp >= ? AND timestamp <= ?"
+            date_params = [start_date, end_date]
 
+    all_decks = []
+    conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    cur = conn.cursor()
+
+    # Query match_records
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
-        cur = conn.cursor()
         cur.execute(f"""
             SELECT json_deck_data_winner, json_deck_data_loser
-            FROM season_match_elo
-            WHERE season_id IN ({placeholders})
-            AND ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+            FROM match_records
+            WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
                OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
             {source_clause}
-        """, season_ids)
+            {date_clause}
+        """, date_params)
         for row in cur.fetchall():
             for deck_str in [row[0], row[1]]:
                 if deck_str and deck_str not in ("", "{}"):
@@ -112,9 +128,48 @@ def get_creator_popular_cards():
                         all_decks.append(json.loads(deck_str))
                     except json.JSONDecodeError:
                         pass
-        conn.close()
     except sqlite3.OperationalError as e:
-        logger.warning(f"Error querying season_match_elo: {e}")
+        logger.warning(f"Error querying match_records: {e}")
+
+    # Also query match_records_archive
+    try:
+        cur.execute(f"""
+            SELECT json_deck_data_winner, json_deck_data_loser
+            FROM match_records_archive
+            WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
+               OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
+            {source_clause}
+            {date_clause}
+        """, date_params)
+        for row in cur.fetchall():
+            for deck_str in [row[0], row[1]]:
+                if deck_str and deck_str not in ("", "{}"):
+                    try:
+                        all_decks.append(json.loads(deck_str))
+                    except json.JSONDecodeError:
+                        pass
+    except sqlite3.OperationalError:
+        pass
+
+    # Also get solo match reports
+    try:
+        cur.execute(f"""
+            SELECT json_deck_data
+            FROM solo_match_reports
+            WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
+            {source_clause}
+            {date_clause}
+        """, date_params)
+        for row in cur.fetchall():
+            if row[0]:
+                try:
+                    all_decks.append(json.loads(row[0]))
+                except json.JSONDecodeError:
+                    pass
+    except sqlite3.OperationalError:
+        pass
+
+    conn.close()
 
     if not all_decks:
         return jsonify([])
@@ -181,10 +236,3 @@ def get_creator_popular_cards():
     card_list.sort(key=lambda x: (x["percent_of_decks"], x["count"]), reverse=True)
 
     return jsonify(card_list)
-
-
-@creator_bp.route("/seasons")
-@require_creator
-def get_creator_seasons():
-    """Return ended seasons for the creator page dropdown."""
-    return jsonify(_get_ended_seasons())

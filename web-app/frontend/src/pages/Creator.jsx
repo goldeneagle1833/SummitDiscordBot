@@ -8,8 +8,9 @@ import usePageTitle from '@/hooks/usePageTitle'
 export default function Creator() {
   usePageTitle('Creator Stats')
   const [cards, setCards] = useState([])
-  const [seasons, setSeasons] = useState([])
-  const [selectedSeason, setSelectedSeason] = useState('')
+  const [filters, setFilters] = useState({ events: [] })
+  const [eventFilter, setEventFilter] = useState('all')
+  const [sourceFilter, setSourceFilter] = useState('discord')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
@@ -21,21 +22,21 @@ export default function Creator() {
   const handleLeave = useCallback(() => setHoverCard({ image: null, rect: null }), [])
 
   useEffect(() => {
-    get('/api/creator/seasons')
-      .then(setSeasons)
+    get('/api/creator/filters')
+      .then(setFilters)
       .catch(() => {})
   }, [])
 
   useEffect(() => {
     setLoading(true)
     setError(null)
-    const params = new URLSearchParams()
-    if (selectedSeason) params.set('season', selectedSeason)
+    const params = new URLSearchParams({ source: sourceFilter })
+    if (eventFilter !== 'all') params.set('event', eventFilter)
     get(`/api/creator/popular-cards?${params}`)
       .then(setCards)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [selectedSeason])
+  }, [eventFilter, sourceFilter])
 
   const elements = [...new Set(cards.map((c) => c.element).filter((e) => e && e !== 'None'))].sort()
   const types = [...new Set(cards.map((c) => c.type).filter((t) => t && t !== 'Unknown'))].sort()
@@ -51,22 +52,44 @@ export default function Creator() {
     <div>
       <h1 className="text-2xl font-display text-secondary mb-2">Creator Stats</h1>
       <p className="text-text-muted text-sm mb-6">
-        Card popularity data from past seasons. This data is exclusive to creators.
+        Card popularity data from reported matches. This data is exclusive to creators.
       </p>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-6">
-        <select
-          value={selectedSeason}
-          onChange={(e) => setSelectedSeason(e.target.value)}
-          className="bg-bg-surface border border-border rounded px-3 py-2 text-sm"
-        >
-          <option value="">All Past Seasons</option>
-          {seasons.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
+      {/* Filters - same layout as Avatar Winrates */}
+      <div className="flex flex-wrap justify-center gap-4 mb-6">
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-text-muted">Event:</label>
+          <select
+            value={eventFilter}
+            onChange={(e) => setEventFilter(e.target.value)}
+            className="bg-bg-surface border border-border rounded px-2 py-1 text-sm"
+          >
+            <option value="all">All Events</option>
+            {(filters.events || []).map((ev) => (
+              <option key={ev.event_id} value={String(ev.event_id)}>
+                {ev.event_name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-text-muted">Source:</label>
+          <div className="inline-flex bg-bg-surface border border-border rounded-lg overflow-hidden">
+            {[['discord', 'Online'], ['web', 'Paper']].map(([val, label]) => (
+              <button
+                key={val}
+                className={`px-3 py-1 text-xs font-medium transition-colors ${sourceFilter === val ? 'bg-primary text-bg' : 'text-text-muted hover:text-text'}`}
+                onClick={() => setSourceFilter(val)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
+      {/* Card-specific filters */}
+      <div className="flex flex-wrap gap-3 mb-6">
         <input
           type="text"
           placeholder="Search cards..."
@@ -74,7 +97,6 @@ export default function Creator() {
           onChange={(e) => setSearch(e.target.value)}
           className="bg-bg-surface border border-border rounded px-3 py-2 text-sm flex-1 min-w-[180px]"
         />
-
         <select
           value={elementFilter}
           onChange={(e) => setElementFilter(e.target.value)}
@@ -85,7 +107,6 @@ export default function Creator() {
             <option key={el} value={el}>{el}</option>
           ))}
         </select>
-
         <select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
@@ -136,7 +157,7 @@ export default function Creator() {
 
           {filtered.length === 0 && (
             <p className="text-center text-text-muted py-8">
-              {cards.length === 0 ? 'No card data available for this season.' : 'No cards match your filters.'}
+              {cards.length === 0 ? 'No card data available for this selection.' : 'No cards match your filters.'}
             </p>
           )}
         </>

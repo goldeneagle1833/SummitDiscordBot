@@ -224,7 +224,7 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
                   >
                     <option value="">None</option>
                     {seasons.map((s) => (
-                      <option key={s.season_id} value={s.season_id}>{s.season_name}</option>
+                      <option key={s.season_id} value={s.season_id}>{s.title}</option>
                     ))}
                   </select>
                 </div>

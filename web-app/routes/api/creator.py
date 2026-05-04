@@ -90,7 +90,12 @@ def get_creator_popular_cards():
         logger.error(f"Error loading card pool: {e}")
         return jsonify({"error": "Failed to load card data"}), 500
 
-    # Build source filter clause
+    # Match the avatar winrates query pattern exactly
+    deck_where = ("((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
+                  " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))")
+    solo_deck_where = "json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'"
+
+    # Source filter (same as avatar winrates)
     if source_filter == "discord":
         source_clause = "AND (source = 'Discord' OR source IS NULL)"
     elif source_filter == "web":
@@ -98,76 +103,99 @@ def get_creator_popular_cards():
     else:
         source_clause = ""
 
-    # Build date filter clause from event selection
-    date_clause = ""
-    date_params = []
-    if event_filter and event_filter != "all":
-        start_date, end_date = _get_event_date_range(event_filter)
-        if start_date and end_date:
-            date_clause = "AND timestamp >= ? AND timestamp <= ?"
-            date_params = [start_date, end_date]
-
     all_decks = []
     conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
     cur = conn.cursor()
 
-    # Query match_records
-    try:
-        cur.execute(f"""
-            SELECT json_deck_data_winner, json_deck_data_loser
-            FROM match_records
-            WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
-               OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
-            {source_clause}
-            {date_clause}
-        """, date_params)
-        for row in cur.fetchall():
-            for deck_str in [row[0], row[1]]:
-                if deck_str and deck_str not in ("", "{}"):
+    def _parse_deck_rows(rows, dual_column=True):
+        """Parse deck JSON from query rows into all_decks list."""
+        for row in rows:
+            if dual_column:
+                for deck_str in [row[0], row[1]]:
+                    if deck_str and deck_str not in ("", "{}"):
+                        try:
+                            all_decks.append(json.loads(deck_str))
+                        except json.JSONDecodeError:
+                            pass
+            else:
+                if row[0]:
                     try:
-                        all_decks.append(json.loads(deck_str))
+                        all_decks.append(json.loads(row[0]))
                     except json.JSONDecodeError:
                         pass
-    except sqlite3.OperationalError as e:
-        logger.warning(f"Error querying match_records: {e}")
 
-    # Also query match_records_archive
-    try:
-        cur.execute(f"""
-            SELECT json_deck_data_winner, json_deck_data_loser
-            FROM match_records_archive
-            WHERE ((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{{}}')
-               OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{{}}'))
-            {source_clause}
-            {date_clause}
-        """, date_params)
-        for row in cur.fetchall():
-            for deck_str in [row[0], row[1]]:
-                if deck_str and deck_str not in ("", "{}"):
-                    try:
-                        all_decks.append(json.loads(deck_str))
-                    except json.JSONDecodeError:
-                        pass
-    except sqlite3.OperationalError:
-        pass
+    if event_filter in ("all", "current"):
+        # Query current match_records (same as avatar winrates "all"/"current" path)
+        try:
+            cur.execute(f"""
+                SELECT json_deck_data_winner, json_deck_data_loser
+                FROM match_records
+                WHERE {deck_where} {source_clause}
+            """)
+            _parse_deck_rows(cur.fetchall())
+        except sqlite3.OperationalError as e:
+            logger.warning(f"Error querying match_records: {e}")
 
-    # Also get solo match reports
-    try:
-        cur.execute(f"""
-            SELECT json_deck_data
-            FROM solo_match_reports
-            WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{{}}'
-            {source_clause}
-            {date_clause}
-        """, date_params)
-        for row in cur.fetchall():
-            if row[0]:
+        # For "all", also include archive (same as avatar winrates)
+        if event_filter == "all":
+            try:
+                cur.execute(f"""
+                    SELECT json_deck_data_winner, json_deck_data_loser
+                    FROM match_records_archive
+                    WHERE {deck_where}
+                """)
+                _parse_deck_rows(cur.fetchall())
+            except sqlite3.OperationalError:
+                logger.info("Archive table not found - continuing without archive data")
+
+        # Solo match reports
+        try:
+            cur.execute(f"""
+                SELECT json_deck_data FROM solo_match_reports
+                WHERE {solo_deck_where} {source_clause}
+            """)
+            _parse_deck_rows(cur.fetchall(), dual_column=False)
+        except sqlite3.OperationalError:
+            pass
+
+    elif isinstance(event_filter, str) and event_filter.startswith("season_"):
+        # Season date-range filter - query both tables by timestamp (same as avatar winrates)
+        start_date, end_date = _get_event_date_range(event_filter)
+        if start_date and end_date:
+            for table in ("match_records", "match_records_archive"):
                 try:
-                    all_decks.append(json.loads(row[0]))
-                except json.JSONDecodeError:
+                    cur.execute(f"""
+                        SELECT json_deck_data_winner, json_deck_data_loser
+                        FROM {table}
+                        WHERE {deck_where} {source_clause}
+                          AND timestamp >= ? AND timestamp <= ?
+                    """, (start_date, end_date))
+                    _parse_deck_rows(cur.fetchall())
+                except sqlite3.OperationalError:
                     pass
-    except sqlite3.OperationalError:
-        pass
+            # Solo match reports with date range
+            try:
+                cur.execute(f"""
+                    SELECT json_deck_data FROM solo_match_reports
+                    WHERE {solo_deck_where} {source_clause}
+                      AND timestamp >= ? AND timestamp <= ?
+                """, (start_date, end_date))
+                _parse_deck_rows(cur.fetchall(), dual_column=False)
+            except sqlite3.OperationalError:
+                pass
+
+    else:
+        # Specific past event - query archive by event_id (same as avatar winrates)
+        try:
+            event_id = int(event_filter)
+            cur.execute(f"""
+                SELECT json_deck_data_winner, json_deck_data_loser
+                FROM match_records_archive
+                WHERE {deck_where} AND event_id = ?
+            """, (event_id,))
+            _parse_deck_rows(cur.fetchall())
+        except (ValueError, sqlite3.OperationalError) as e:
+            logger.warning(f"Error querying archive for event {event_filter}: {e}")
 
     conn.close()
 

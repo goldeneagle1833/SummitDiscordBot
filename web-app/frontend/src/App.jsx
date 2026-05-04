@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react'
-import { createBrowserRouter, RouterProvider, Outlet } from 'react-router-dom'
+import { lazy, Suspense, useEffect, useRef } from 'react'
+import { createBrowserRouter, RouterProvider, Outlet, useLocation } from 'react-router-dom'
 import { AuthProvider } from '@/context/AuthContext'
 import Nav from '@/components/layout/Nav'
 import Footer from '@/components/layout/Footer'
@@ -57,7 +57,24 @@ function LazyPage({ children }) {
   return <Suspense fallback={<Spinner className="py-20" />}>{children}</Suspense>
 }
 
+function usePageTracking() {
+  const location = useLocation()
+  const prevPath = useRef(null)
+  useEffect(() => {
+    const path = location.pathname
+    if (path === prevPath.current) return
+    prevPath.current = path
+    const body = JSON.stringify({ path, referrer: document.referrer || null })
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/analytics/page-view', new Blob([body], { type: 'application/json' }))
+    } else {
+      fetch('/api/analytics/page-view', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
+    }
+  }, [location.pathname])
+}
+
 function Layout() {
+  usePageTracking()
   return (
     <AuthProvider>
       <div className="min-h-screen flex flex-col">

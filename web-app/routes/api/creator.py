@@ -72,7 +72,7 @@ def get_creator_popular_cards():
     - source: "discord" | "web" | "all" (default: "discord")
     """
     event_filter = request.args.get("event", "all")
-    source_filter = request.args.get("source", "discord")
+    source_filter = request.args.get("source", "all")
 
     # Load card metadata
     card_metadata = {}

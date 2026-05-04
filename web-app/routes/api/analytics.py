@@ -18,6 +18,19 @@ MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
 analytics_bp = Blueprint("analytics", __name__)
 
 
+@analytics_bp.route("/analytics/page-view", methods=["POST"])
+def page_view():
+    """Record a page view from the React SPA (public endpoint)."""
+    data = request.get_json(silent=True) or {}
+    path = data.get("path", "/")
+    AnalyticsRepository().log_page_view(
+        path,
+        request.headers.get("User-Agent"),
+        data.get("referrer"),
+    )
+    return "", 204
+
+
 @analytics_bp.route("/analytics/banner-click", methods=["POST"])
 def banner_click():
     """Record a banner click (public endpoint)."""

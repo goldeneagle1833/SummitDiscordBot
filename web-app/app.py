@@ -85,23 +85,6 @@ def create_app() -> Flask:
             "show_limited_leaderboard": admin or is_pilot_active("limited_leaderboard"),
         }
 
-    # Track page views (skip static files and API calls)
-    @app.before_request
-    def track_page_view():
-        from flask import request as req
-        path = req.path
-        if path.startswith(("/static/", "/api/", "/avatar-images/", "/card-images/")):
-            return
-        try:
-            from repositories.analytics import AnalyticsRepository
-            AnalyticsRepository().log_page_view(
-                path,
-                req.headers.get("User-Agent"),
-                req.headers.get("Referer"),
-            )
-        except Exception:
-            pass  # Never break the request for analytics
-
     logger.info(f"Application initialized, version: {APP_VERSION}")
     return app
 

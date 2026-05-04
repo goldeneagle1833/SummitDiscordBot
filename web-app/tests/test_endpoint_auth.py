@@ -103,6 +103,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.streamers.streamer_banner",
 
     # -- Analytics (public tracking endpoints) --
+    "api.analytics.page_view",
     "api.analytics.banner_click",
     "api.analytics.active_banners",
 

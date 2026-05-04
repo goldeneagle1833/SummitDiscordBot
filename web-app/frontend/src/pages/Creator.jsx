@@ -10,7 +10,7 @@ export default function Creator() {
   const [cards, setCards] = useState([])
   const [filters, setFilters] = useState({ events: [] })
   const [eventFilter, setEventFilter] = useState('all')
-  const [sourceFilter, setSourceFilter] = useState('discord')
+  const [sourceFilter, setSourceFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')

@@ -142,7 +142,7 @@ export default function Player() {
         />
       )}
 
-      <PlayerSeasons playerId={playerId} isOwner={data.is_owner} />
+      {data.is_owner && <PlayerSeasons playerId={playerId} isOwner={data.is_owner} />}
 
       <PlayerHeader
         data={data}
@@ -186,31 +186,39 @@ export default function Player() {
         onToggle={() => toggle('eloBrackets')}
       />
 
-      <AvatarPerformance
-        avatars={data.avatar_performance}
-        open={openSections.avatarPerf}
-        onToggle={() => toggle('avatarPerf')}
-      />
+      {data.is_owner && (
+        <AvatarPerformance
+          avatars={data.avatar_performance}
+          open={openSections.avatarPerf}
+          onToggle={() => toggle('avatarPerf')}
+        />
+      )}
 
-      <AvatarMatchups
-        matchups={data.avatar_matchups}
-        open={openSections.avatarMatchups}
-        onToggle={() => toggle('avatarMatchups')}
-      />
+      {data.is_owner && (
+        <AvatarMatchups
+          matchups={data.avatar_matchups}
+          open={openSections.avatarMatchups}
+          onToggle={() => toggle('avatarMatchups')}
+        />
+      )}
 
-      <RecentDecks
-        decks={data.recent_decks}
-        playerId={playerId}
-        open={openSections.recentDecks}
-        onToggle={() => toggle('recentDecks')}
-      />
+      {data.is_owner && (
+        <RecentDecks
+          decks={data.recent_decks}
+          playerId={playerId}
+          open={openSections.recentDecks}
+          onToggle={() => toggle('recentDecks')}
+        />
+      )}
 
-      <LimitedArena
-        limited={data.limited}
-        playerId={playerId}
-        open={openSections.limitedArena}
-        onToggle={() => toggle('limitedArena')}
-      />
+      {data.is_owner && (
+        <LimitedArena
+          limited={data.limited}
+          playerId={playerId}
+          open={openSections.limitedArena}
+          onToggle={() => toggle('limitedArena')}
+        />
+      )}
 
       <MatchHistoryTable
         title="Ranked Match History"
@@ -235,7 +243,7 @@ export default function Player() {
         />
       )}
 
-      <RecordedGames games={data.recorded_games} />
+      {data.is_owner && <RecordedGames games={data.recorded_games} />}
 
       {/* Modals */}
       {showReportModal && (

@@ -21,7 +21,7 @@ function ElementIcons({ elements }) {
   )
 }
 
-export default function MatchHistoryTable({ title, subtitle, matches, pagination, playerId, isOwner, onPageChange, onEditDeck }) {
+export default function MatchHistoryTable({ title, subtitle, matches, pagination, playerId, isOwner, perPage, perPageOptions, onPageChange, onPerPageChange, onEditDeck }) {
   if (!matches?.length) {
     return (
       <section>
@@ -128,6 +128,21 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
           </tbody>
         </table>
       </div>
+
+      {perPageOptions && onPerPageChange && (
+        <div className="flex items-center gap-2 mt-3 text-xs text-text-muted">
+          <span>Show:</span>
+          {perPageOptions.map((n) => (
+            <button
+              key={n}
+              onClick={() => onPerPageChange(n)}
+              className={`px-2 py-1 rounded border ${perPage === n ? 'border-secondary text-secondary' : 'border-border hover:border-secondary'}`}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      )}
 
       {pagination && pagination.total_pages > 1 && (
         <div className="flex items-center justify-center gap-3 mt-4">

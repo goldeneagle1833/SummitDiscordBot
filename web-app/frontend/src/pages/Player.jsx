@@ -20,7 +20,7 @@ import AdminControls from '@/components/player/AdminControls'
 import EloHistory from '@/components/player/EloHistory'
 import PlayerSeasons from '@/components/player/PlayerSeasons'
 
-const PER_PAGE = 50
+const PER_PAGE_OPTIONS = [15, 25, 50]
 
 export default function Player() {
   usePageTitle('Player')
@@ -38,6 +38,7 @@ export default function Player() {
   })
   const [page, setPage] = useState(1)
   const [casualPage, setCasualPage] = useState(1)
+  const [perPage, setPerPage] = useState(15)
   const [statsType, setStatsType] = useState('ranked')
 
   // Modal state
@@ -56,9 +57,9 @@ export default function Player() {
   const toggle = (key) => setOpenSections((s) => ({ ...s, [key]: !s[key] }))
 
   const fetchData = useCallback(
-    (ev, pg, src, cpg) => {
+    (ev, pg, src, cpg, pp) => {
       setLoading(true)
-      getPlayer(playerId, { event: ev, source: src, page: pg, perPage: PER_PAGE, casualPage: cpg })
+      getPlayer(playerId, { event: ev, source: src, page: pg, perPage: pp, casualPage: cpg })
         .then((d) => {
           setData(d)
           setError(null)
@@ -70,23 +71,25 @@ export default function Player() {
   )
 
   useEffect(() => {
-    fetchData(eventFilter, page, eloSource, casualPage)
+    fetchData(eventFilter, page, eloSource, casualPage, perPage)
     get('/api/events').then(setEvents).catch(() => {})
   }, [playerId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const refetch = (ev, pg, src, cpg) => {
+  const refetch = (ev, pg, src, cpg, pp) => {
     const e = ev ?? eventFilter
     const p = pg ?? page
     const s = src ?? eloSource
     const c = cpg ?? casualPage
+    const r = pp ?? perPage
     setEventFilter(e)
     setPage(p)
     setEloSource(s)
     setCasualPage(c)
-    fetchData(e, p, s, c)
+    setPerPage(r)
+    fetchData(e, p, s, c, r)
   }
 
-  const refreshCurrentPage = () => fetchData(eventFilter, page, eloSource, casualPage)
+  const refreshCurrentPage = () => fetchData(eventFilter, page, eloSource, casualPage, perPage)
 
   const handleSourceChange = (src) => {
     localStorage.setItem('elo_source_preference', src)
@@ -226,7 +229,10 @@ export default function Player() {
         pagination={data.pagination}
         playerId={playerId}
         isOwner={data.is_owner}
+        perPage={perPage}
+        perPageOptions={PER_PAGE_OPTIONS}
         onPageChange={(p) => refetch(undefined, p)}
+        onPerPageChange={(pp) => refetch(undefined, 1, undefined, undefined, pp)}
         onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
       />
 

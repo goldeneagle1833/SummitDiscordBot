@@ -10,6 +10,18 @@ export const resetElo = (userId, newElo, source) =>
 export const renamePlayer = (userId, newName) =>
   post(`/api/admin/rename-player/${userId}`, { new_name: newName })
 
+// Creator access management
+export const getCreatorAccess = () => get('/api/admin/creator-access')
+
+export const addCreatorAccess = (userId, displayName) =>
+  post('/api/admin/creator-access', { user_id: userId, display_name: displayName })
+
+export const removeCreatorAccess = (userId) =>
+  del(`/api/admin/creator-access/${userId}`)
+
+export const searchUsers = (q) =>
+  get(`/api/admin/search-users?q=${encodeURIComponent(q)}`)
+
 // Avatar image display settings
 export const getAvatarImageSettings = () => get('/api/admin/avatar-image-settings')
 

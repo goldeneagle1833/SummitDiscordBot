@@ -135,11 +135,25 @@ def is_creator() -> bool:
     Access granted if:
     - User is an admin (superset)
     - User has the creator role from Discord
+    - User has been manually granted access via the admin panel (creator_access table)
     """
     if is_admin():
         return True
 
-    return bool(session.get("is_creator"))
+    if session.get("is_creator"):
+        return True
+
+    user_id = session.get("user_id")
+    if user_id:
+        try:
+            from repositories.creator_access import CreatorAccessRepository
+            repo = CreatorAccessRepository()
+            if repo.has_access(str(user_id)):
+                return True
+        except Exception:
+            pass
+
+    return False
 
 
 def require_creator(f):

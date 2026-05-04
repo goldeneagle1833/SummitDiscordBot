@@ -11,6 +11,8 @@ from flask import Blueprint, jsonify, request, session
 from services.admin import AdminService
 from repositories.audit import AuditRepository
 from repositories.avatar_image_settings import AvatarImageSettingsRepository
+from repositories.creator_access import CreatorAccessRepository
+from repositories.user_profiles import UserProfileRepository
 from utils.auth import require_admin
 from webapp_config import ELO_DB_PATH, MATCH_RECORDS_DB_PATH, BOT_DIR
 
@@ -837,6 +839,73 @@ def update_avatar_image_settings(avatar_name):
     )
 
     return jsonify({"success": True}), 200
+
+
+@admin_bp.route("/admin/creator-access", methods=["GET"])
+@require_admin
+def list_creator_access():
+    """List all users with manually-granted creator access (admin only)."""
+    repo = CreatorAccessRepository()
+    return jsonify({"success": True, "users": repo.list_all()}), 200
+
+
+@admin_bp.route("/admin/creator-access", methods=["POST"])
+@require_admin
+def add_creator_access():
+    """Grant creator access to a user (admin only)."""
+    data = request.get_json(silent=True)
+    if not data or not data.get("user_id") or not data.get("display_name"):
+        return jsonify({"success": False, "error": "user_id and display_name are required"}), 400
+
+    user_id = str(data["user_id"]).strip()
+    display_name = str(data["display_name"]).strip()
+
+    repo = CreatorAccessRepository()
+    admin_id, admin_name = _get_admin_info()
+    repo.add(user_id, display_name, granted_by=admin_name)
+
+    audit = AuditRepository()
+    audit.log_action(
+        admin_id, admin_name, "grant_creator_access",
+        target_id=user_id,
+        target_name=display_name,
+        details=f"Granted creator access to {display_name} ({user_id})",
+    )
+
+    return jsonify({"success": True}), 200
+
+
+@admin_bp.route("/admin/creator-access/<path:user_id>", methods=["DELETE"])
+@require_admin
+def remove_creator_access(user_id):
+    """Revoke creator access from a user (admin only)."""
+    repo = CreatorAccessRepository()
+    deleted = repo.remove(user_id)
+    if not deleted:
+        return jsonify({"success": False, "error": "User not found in creator access list"}), 404
+
+    admin_id, admin_name = _get_admin_info()
+    audit = AuditRepository()
+    audit.log_action(
+        admin_id, admin_name, "revoke_creator_access",
+        target_id=user_id,
+        details=f"Revoked creator access from user {user_id}",
+    )
+
+    return jsonify({"success": True}), 200
+
+
+@admin_bp.route("/admin/search-users", methods=["GET"])
+@require_admin
+def search_users():
+    """Search users by display name for admin operations (admin only)."""
+    q = request.args.get("q", "").strip()
+    if len(q) < 2:
+        return jsonify({"success": False, "error": "Query must be at least 2 characters"}), 400
+
+    repo = UserProfileRepository()
+    results = repo.search_users(q, limit=10)
+    return jsonify({"success": True, "users": results}), 200
 
 
 @admin_bp.route("/admin/avatar-image-settings/<path:avatar_name>", methods=["DELETE"])

@@ -764,64 +764,43 @@ def get_elements():
 
 @cards_bp.route("/card/<card_name>")
 def get_card_stats(card_name):
-    """API endpoint for individual card stats.
+    """API endpoint for individual card detail: metadata + match stats.
 
-    Returns stats for a specific card including wins, losses, win rate, type, and image.
+    Public endpoint — returns card info from card pool JSON and win/loss stats
+    from match history. Stats will be null if the card has no recorded matches.
     """
-    if not is_admin():
-        return jsonify({"error": "Unauthorized"}), 403
-
     from urllib.parse import unquote
     card_name = unquote(card_name)
 
     card_image_lookup = _build_card_image_lookup()
 
+    # Load card metadata from All_Cards_Array.json
+    card_meta = {}
     try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
-        cur = conn.cursor()
+        with open(ALL_CARDS_PATH, "r", encoding="utf-8") as f:
+            all_cards = json.load(f)
+            for c in all_cards:
+                if c.get("name", "").lower() == card_name.lower():
+                    guardian = c.get("guardian", {}) or {}
+                    sets = c.get("sets", []) or []
+                    card_meta = {
+                        "name": c.get("name", card_name),
+                        "element": c.get("elements", None),
+                        "type": guardian.get("type", None),
+                        "rarity": guardian.get("rarity", None),
+                        "set": sets[0].get("name") if sets else None,
+                        "threshold": guardian.get("threshold", None),
+                        "cost": guardian.get("cost", None),
+                        "power": guardian.get("power", None),
+                        "defense": guardian.get("defense", None),
+                        "text": guardian.get("text", None) or guardian.get("rule_text", None),
+                    }
+                    break
+    except Exception as e:
+        logger.warning(f"Could not load card metadata for {card_name}: {e}")
 
-        all_rows = []
-        use_new_columns = True
-
-        # Query current match_records
-        try:
-            cur.execute("""
-                SELECT json_deck_data_winner, json_deck_data_loser
-                FROM match_records
-                WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                   OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
-            """)
-            all_rows.extend(cur.fetchall())
-        except sqlite3.OperationalError:
-            cur.execute("""
-                SELECT
-                    CASE WHEN reporter_id = winner_id THEN 1 ELSE 0 END as reporter_won,
-                    json_deck_data
-                FROM match_records
-                WHERE json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'
-            """)
-            all_rows.extend(cur.fetchall())
-            use_new_columns = False
-
-        # Also query match_records_archive for lifetime stats
-        if use_new_columns:
-            try:
-                cur.execute("""
-                    SELECT json_deck_data_winner, json_deck_data_loser
-                    FROM match_records_archive
-                    WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')
-                       OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')
-                """)
-                all_rows.extend(cur.fetchall())
-            except sqlite3.OperationalError:
-                pass  # Archive table may not exist
-
-        rows = all_rows
-        conn.close()
-    except sqlite3.OperationalError:
-        return jsonify({"error": "Database not found"}), 404
-
-    card_stats = {"wins": 0, "losses": 0, "type": None}
+    # Gather match stats
+    card_stats = {"wins": 0, "losses": 0}
     sections = ["spellbook", "atlas", "sideboard"]
 
     def process_deck(deck_str, is_winner):
@@ -830,52 +809,59 @@ def get_card_stats(card_name):
         try:
             deck_data = json.loads(deck_str)
             deck = deck_data[0] if isinstance(deck_data, list) else deck_data
-            card_found = False
             for sec in sections:
                 for card in deck.get(sec, []) or []:
-                    name = card.get("name")
-                    if name and name == card_name:
-                        card_found = True
-                        ctype = card.get("type") or "Unknown"
-                        if not card_stats["type"]:
-                            card_stats["type"] = ctype
-                        break
-                if card_found:
-                    break
-
-            if card_found:
-                if is_winner:
-                    card_stats["wins"] += 1
-                else:
-                    card_stats["losses"] += 1
+                    if card.get("name") == card_name:
+                        if is_winner:
+                            card_stats["wins"] += 1
+                        else:
+                            card_stats["losses"] += 1
+                        return
         except (json.JSONDecodeError, KeyError, IndexError, TypeError):
             pass
 
-    if use_new_columns:
-        for row in rows:
-            process_deck(row[0], is_winner=True)
-            process_deck(row[1], is_winner=False)
-    else:
-        for row in rows:
-            reporter_won = row[0]
-            process_deck(row[1], is_winner=reporter_won)
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+        deck_where = ("(json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
+                      " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}')")
+        for table in ("match_records", "match_records_archive"):
+            try:
+                cur.execute(f"SELECT json_deck_data_winner, json_deck_data_loser FROM {table} WHERE {deck_where}")
+                for row in cur.fetchall():
+                    process_deck(row[0], is_winner=True)
+                    process_deck(row[1], is_winner=False)
+            except sqlite3.OperationalError:
+                pass
+        conn.close()
+    except sqlite3.OperationalError:
+        pass
 
     total = card_stats["wins"] + card_stats["losses"]
-
-    if total == 0:
-        return jsonify({"error": "Card not found in any matches"}), 404
-
-    win_rate = (card_stats["wins"] / total * 100) if total > 0 else 0
     image = _find_card_image(card_name, card_image_lookup)
 
+    # Use name from metadata if found (preserves correct casing), else use URL param
+    resolved_name = card_meta.get("name", card_name)
+
+    if not card_meta and total == 0:
+        return jsonify({"error": f"Card '{card_name}' not found"}), 404
+
     return jsonify({
-        "name": card_name,
-        "wins": card_stats["wins"],
-        "losses": card_stats["losses"],
-        "total_matches": total,
-        "win_rate": round(win_rate, 1),
-        "type": card_stats.get("type", "Unknown"),
+        "name": resolved_name,
+        "element": card_meta.get("element"),
+        "type": card_meta.get("type"),
+        "rarity": card_meta.get("rarity"),
+        "set": card_meta.get("set"),
+        "threshold": card_meta.get("threshold"),
+        "cost": card_meta.get("cost"),
+        "power": card_meta.get("power"),
+        "defense": card_meta.get("defense"),
+        "text": card_meta.get("text"),
         "image": image,
+        "wins": card_stats["wins"] if total > 0 else None,
+        "losses": card_stats["losses"] if total > 0 else None,
+        "total_matches": total if total > 0 else None,
+        "win_rate": round(card_stats["wins"] / total * 100, 1) if total > 0 else None,
     })
 
 

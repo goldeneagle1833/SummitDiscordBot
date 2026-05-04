@@ -12,4 +12,4 @@ export const getCards = (params) => {
   const query = params ? `?${new URLSearchParams(params)}` : ''
   return get(`/api/cards${query}`)
 }
-export const getCard = (name) => get(`/api/cards/${encodeURIComponent(name)}`)
+export const getCard = (name) => get(`/api/card/${encodeURIComponent(name)}`)

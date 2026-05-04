@@ -129,6 +129,33 @@ def is_curio_editor() -> bool:
     return False
 
 
+def is_creator() -> bool:
+    """Check if the current user has the creator role.
+
+    Access granted if:
+    - User is an admin (superset)
+    - User has the creator role from Discord
+    """
+    if is_admin():
+        return True
+
+    return bool(session.get("is_creator"))
+
+
+def require_creator(f):
+    """Decorator requiring creator role (Discord role, admin, or API key)."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_creator():
+            logger.warning(
+                f"Non-creator access attempt to {request.path} from {request.remote_addr}"
+            )
+            return jsonify({"error": "Creator access required"}), 403
+        return f(*args, **kwargs)
+    decorated_function._auth_required = True
+    return decorated_function
+
+
 def require_admin(f):
     """Decorator requiring admin access (session admin, localhost, or API key)."""
     @wraps(f)

@@ -4,6 +4,7 @@ import { AuthProvider } from '@/context/AuthContext'
 import Nav from '@/components/layout/Nav'
 import Footer from '@/components/layout/Footer'
 import AdminGuard from '@/components/layout/AdminGuard'
+import CreatorGuard from '@/components/layout/CreatorGuard'
 import Spinner from '@/components/ui/Spinner'
 
 // Phase 3: Core data pages
@@ -28,8 +29,6 @@ import AvatarDetail from '@/pages/AvatarDetail'
 import Cards from '@/pages/Cards'
 import CardDetail from '@/pages/CardDetail'
 import Elements from '@/pages/Elements'
-import LivePopularCards from '@/pages/LivePopularCards'
-
 // Phase 6: Content & Interactive
 import Home from '@/pages/Home'
 import About from '@/pages/About'
@@ -42,6 +41,7 @@ import LifeCounter from '@/pages/LifeCounter'
 import FunStats from '@/pages/FunStats'
 import FartLeaderboard from '@/pages/FartLeaderboard'
 import Login from '@/pages/Login'
+import Creator from '@/pages/Creator'
 
 // Lazy-loaded pages
 const CurioTracking = lazy(() => import('@/pages/CurioTracking'))
@@ -99,7 +99,6 @@ const router = createBrowserRouter([
       { path: '/cards', element: <Cards /> },
       { path: '/card/:name', element: <CardDetail /> },
       { path: '/elements', element: <Elements /> },
-      { path: '/live-popular-cards', element: <LivePopularCards /> },
       // Phase 6: Content & Interactive
       { path: '/about', element: <About /> },
       { path: '/help', element: <Help /> },
@@ -112,6 +111,8 @@ const router = createBrowserRouter([
       { path: '/fun-stats', element: <FunStats /> },
       { path: '/secret-fart-leaderboard', element: <FartLeaderboard /> },
       { path: '/login', element: <Login /> },
+      // Creator
+      { path: '/creator', element: <CreatorGuard><Creator /></CreatorGuard> },
       // Phase 7: Admin
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
       // Error & 404

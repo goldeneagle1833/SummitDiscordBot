@@ -28,6 +28,7 @@ def me():
         "avatar": session.get("avatar"),
         "auth_provider": session.get("auth_provider"),
         "is_admin": str(user_id) in ADMINS,
+        "is_creator": session.get("is_creator", False),
     })
 
 

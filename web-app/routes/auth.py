@@ -11,6 +11,8 @@ from webapp_config import (
     DISCORD_CLIENT_ID,
     DISCORD_CLIENT_SECRET,
     DISCORD_REDIRECT_URI,
+    DISCORD_GUILD_ID,
+    CREATOR_ROLE_ID,
     GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
     GOOGLE_REDIRECT_URI,
@@ -73,7 +75,7 @@ def discord_login():
         "client_id": DISCORD_CLIENT_ID,
         "redirect_uri": DISCORD_REDIRECT_URI,
         "response_type": "code",
-        "scope": "identify email",  # Request email scope to get user's email
+        "scope": "identify email guilds.members.read",
     }
     auth_url = f"https://discord.com/api/oauth2/authorize?{urlencode(params)}"
     return redirect(auth_url)
@@ -127,12 +129,26 @@ def discord_callback():
         logger.error(f"Failed to get Discord user info: {e}")
         return redirect(FRONTEND_URL)
 
+    # Check guild membership and roles
+    is_creator = False
+    if DISCORD_GUILD_ID and CREATOR_ROLE_ID:
+        try:
+            guild_url = f"https://discord.com/api/users/@me/guilds/{DISCORD_GUILD_ID}/member"
+            member_response = requests.get(guild_url, headers=headers)
+            if member_response.status_code == 200:
+                member_data = member_response.json()
+                member_roles = member_data.get("roles", [])
+                is_creator = CREATOR_ROLE_ID in member_roles
+        except requests.RequestException as e:
+            logger.error(f"Failed to check guild roles: {e}")
+
     # Store user info in session (permanent = survives browser close)
     session.permanent = True
     session["user_id"] = int(user_data["id"])
     session["username"] = user_data["username"]
     session["avatar"] = user_data.get("avatar")
     session["auth_provider"] = "discord"
+    session["is_creator"] = is_creator
 
     # Save comprehensive user profile to database (non-blocking)
     try:

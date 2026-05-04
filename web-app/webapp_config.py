@@ -67,6 +67,8 @@ DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET")
 DISCORD_REDIRECT_URI = os.environ.get(
     "DISCORD_REDIRECT_URI", "http://localhost:5000/auth/discord/callback"
 )
+DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "1319120227643949211")
+CREATOR_ROLE_ID = os.environ.get("CREATOR_ROLE_ID", "1437891375717945495")
 
 # Google OAuth configuration
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")

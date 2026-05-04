@@ -451,6 +451,13 @@ export default function Nav() {
           )}
         </div>
 
+        {/* Creator link */}
+        {(user?.is_creator || user?.is_admin) && (
+          <div className="border-b border-border">
+            <SidebarLink to="/creator" label="Creator Stats" location={location} onClick={close} />
+          </div>
+        )}
+
         {/* Admin link */}
         {user?.is_admin && (
           <div className="border-b border-border">
@@ -470,10 +477,7 @@ export default function Nav() {
         <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
         <SidebarLink to="/fun-stats" label="Fun Stats" location={location} onClick={close} />
         {user?.is_admin && (
-          <>
-            <SidebarLink to="/cards" label="Card Winrates" location={location} onClick={close} />
-            <SidebarLink to="/live-popular-cards" label="Live Popular Cards" location={location} onClick={close} />
-          </>
+          <SidebarLink to="/cards" label="Card Winrates" location={location} onClick={close} />
         )}
         <SidebarLink to="/elo" label="ELO Leaderboards" location={location} onClick={close} />
         <SidebarLink to="/elo/limited" label="Limited Leaderboard" location={location} onClick={close} />

@@ -18,6 +18,7 @@ import ReportGameModal from '@/components/player/ReportGameModal'
 import EditDeckModal from '@/components/player/EditDeckModal'
 import AdminControls from '@/components/player/AdminControls'
 import EloHistory from '@/components/player/EloHistory'
+import PlayerSeasons from '@/components/player/PlayerSeasons'
 
 const PER_PAGE = 50
 
@@ -140,6 +141,8 @@ export default function Player() {
           onNameChange={handleNameChange}
         />
       )}
+
+      <PlayerSeasons playerId={playerId} isOwner={data.is_owner} />
 
       <PlayerHeader
         data={data}

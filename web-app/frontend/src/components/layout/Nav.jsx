@@ -487,6 +487,7 @@ export default function Nav() {
         <SidebarLink to="/help" label="Help" location={location} onClick={close} />
         <SidebarLink to="/community" label="Community" location={location} onClick={close} />
         <SidebarLink to="/curio-tracking" label="Curio Tracking" location={location} onClick={close} />
+        <SidebarLink to="/explorer" label="Explorer Standings" location={location} onClick={close} />
       </aside>
     </>
   )

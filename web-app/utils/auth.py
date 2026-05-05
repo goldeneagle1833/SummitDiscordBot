@@ -184,6 +184,43 @@ def require_admin(f):
     return decorated_function
 
 
+def is_explorer_admin() -> bool:
+    """Check if the current user can manage Explorer Standings events/seasons.
+
+    Access granted if:
+    - User is a global admin (superset)
+    - User's Discord ID is in the explorer_admins table
+    """
+    if is_admin():
+        return True
+
+    user_id = session.get("user_id")
+    if user_id:
+        try:
+            from repositories.explorer import ExplorerRepository
+            repo = ExplorerRepository()
+            if repo.is_explorer_admin(str(user_id)):
+                return True
+        except Exception:
+            pass
+
+    return False
+
+
+def require_explorer_admin(f):
+    """Decorator requiring Explorer admin access."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_explorer_admin():
+            logger.warning(
+                f"Non-explorer-admin access attempt to {request.path} from {request.remote_addr}"
+            )
+            return jsonify({"error": "Explorer admin access required"}), 403
+        return f(*args, **kwargs)
+    decorated_function._auth_required = True
+    return decorated_function
+
+
 def get_current_user() -> dict | None:
     """Get the currently logged in user from session, or None."""
     if "user_id" in session:

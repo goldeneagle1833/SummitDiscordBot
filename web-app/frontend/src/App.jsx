@@ -45,6 +45,7 @@ import Creator from '@/pages/Creator'
 
 // Lazy-loaded pages
 const CurioTracking = lazy(() => import('@/pages/CurioTracking'))
+const ExplorerStandings = lazy(() => import('@/pages/ExplorerStandings'))
 
 // Phase 7: Admin
 import AuditLog from '@/pages/admin/AuditLog'
@@ -125,6 +126,7 @@ const router = createBrowserRouter([
       { path: '/community', element: <Community /> },
       { path: '/life-counter', element: <LifeCounter /> },
       { path: '/curio-tracking', element: <LazyPage><CurioTracking /></LazyPage> },
+      { path: '/explorer', element: <LazyPage><ExplorerStandings /></LazyPage> },
       { path: '/fun-stats', element: <FunStats /> },
       { path: '/secret-fart-leaderboard', element: <FartLeaderboard /> },
       { path: '/login', element: <Login /> },

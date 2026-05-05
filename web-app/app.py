@@ -27,6 +27,7 @@ from routes import register_blueprints
 from migrations.create_match_reports_web import create_match_reports_web_table
 from migrations.add_season_id_to_match_reports_web import migrate as migrate_season_id
 from migrations.create_analytics_tables import create_analytics_tables
+from migrations.create_explorer_tables import create_explorer_tables
 
 # Configure logging
 logging.basicConfig(
@@ -63,6 +64,11 @@ def create_app() -> Flask:
         create_analytics_tables()
     except Exception as e:
         logger.error(f"Failed to ensure analytics tables: {e}")
+
+    try:
+        create_explorer_tables()
+    except Exception as e:
+        logger.error(f"Failed to ensure explorer tables: {e}")
 
     # Register all blueprints
     register_blueprints(app)

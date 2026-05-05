@@ -10,7 +10,7 @@ from webapp_config import (
     COMMUNITY_DB_PATH,
     ADMINS,
 )
-from utils.auth import is_admin
+from utils.auth import is_admin, is_explorer_admin
 
 misc_bp = Blueprint("misc", __name__)
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ def me():
         "auth_provider": session.get("auth_provider"),
         "is_admin": str(user_id) in ADMINS,
         "is_creator": session.get("is_creator", False) or str(user_id) in ADMINS,
+        "is_explorer_admin": is_explorer_admin(),
     })
 
 

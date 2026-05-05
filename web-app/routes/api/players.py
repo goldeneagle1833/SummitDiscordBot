@@ -1045,7 +1045,7 @@ def player_api(player_id):
             # Also get online ELO from overall_standings for the toggle
             try:
                 elo_cur.execute(
-                    "SELECT elo, user_display_name, event_elo FROM overall_standings WHERE user_id = ?",
+                    "SELECT online_elo, user_display_name, online_event_elo FROM overall_standings WHERE user_id = ?",
                     (player_id_normalized,),
                 )
                 online_row = elo_cur.fetchone()
@@ -1060,7 +1060,7 @@ def player_api(player_id):
             # Query online ELO columns (bot-based matches)
             try:
                 elo_cur.execute(
-                    "SELECT elo, user_display_name, event_elo FROM overall_standings WHERE user_id = ?",
+                    "SELECT online_elo, user_display_name, online_event_elo FROM overall_standings WHERE user_id = ?",
                     (player_id_normalized,),
                 )
                 elo_row = elo_cur.fetchone()
@@ -1071,27 +1071,11 @@ def player_api(player_id):
                     online_elo = player_elo
                     online_event_elo = event_elo
                     elo_cur.execute(
-                        "SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (player_elo,)
+                        "SELECT COUNT(*) FROM overall_standings WHERE online_elo > ?", (player_elo,)
                     )
                     rank = elo_cur.fetchone()[0] + 1
             except sqlite3.OperationalError:
-                # event_elo column may not exist, try without it
-                try:
-                    elo_cur.execute(
-                        "SELECT elo, user_display_name FROM overall_standings WHERE user_id = ?",
-                        (player_id_normalized,),
-                    )
-                    elo_row = elo_cur.fetchone()
-                    if elo_row:
-                        player_elo = elo_row[0]
-                        player_name_from_elo = elo_row[1]
-                        online_elo = player_elo
-                        elo_cur.execute(
-                            "SELECT COUNT(*) FROM overall_standings WHERE elo > ?", (player_elo,)
-                        )
-                        rank = elo_cur.fetchone()[0] + 1
-                except sqlite3.OperationalError:
-                    pass
+                pass
 
             # Get paper ELO from paper_standings for the source toggle
             try:

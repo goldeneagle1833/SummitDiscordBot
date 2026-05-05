@@ -129,6 +129,11 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "static",
     "avatar_images",
     "card_images",
+
+    # -- Explorer Standings (public read-only) --
+    "api.explorer.get_seasons",
+    "api.explorer.get_season_events",
+    "api.explorer.get_leaderboard",
 }
 
 

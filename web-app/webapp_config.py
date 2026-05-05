@@ -27,6 +27,7 @@ FART_SCORES_DB_PATH = Path(
 )
 COMMUNITY_DB_PATH = Path(os.environ.get("COMMUNITY_DB_PATH", BOT_DIR / "community.db"))
 ANALYTICS_DB_PATH = Path(os.environ.get("ANALYTICS_DB_PATH", BASE_DIR / "analytics.db"))
+EXPLORER_DB_PATH = Path(os.environ.get("EXPLORER_DB_PATH", BASE_DIR / "explorer.db"))
 
 # Upload directories
 STATIC_DIR = BASE_DIR / "static"

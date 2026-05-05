@@ -69,6 +69,21 @@ def create_season():
         return jsonify({"error": str(e)}), 500
 
 
+@explorer_bp.route("/seasons/<int:season_id>", methods=["DELETE"])
+@require_explorer_admin
+def delete_season(season_id):
+    """Delete a season and all its events/results."""
+    try:
+        repo = ExplorerRepository()
+        if not repo.get_season(season_id):
+            return jsonify({"error": "Season not found"}), 404
+        repo.delete_season(season_id)
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error(f"Error deleting explorer season: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @explorer_bp.route("/seasons/<int:season_id>/events")
 def get_season_events(season_id):
     """List all events in a season. Public."""

@@ -46,6 +46,18 @@ class ExplorerRepository:
             ).fetchone()
         return dict(row) if row else None
 
+    def delete_season(self, season_id: int) -> None:
+        """Delete a season and all its events/results."""
+        with self._conn() as conn:
+            event_ids = conn.execute(
+                "SELECT id FROM explorer_events WHERE season_id = ?", (season_id,)
+            ).fetchall()
+            for row in event_ids:
+                conn.execute("DELETE FROM explorer_results WHERE event_id = ?", (row["id"],))
+            conn.execute("DELETE FROM explorer_events WHERE season_id = ?", (season_id,))
+            conn.execute("DELETE FROM explorer_seasons WHERE id = ?", (season_id,))
+            conn.commit()
+
     # ── Events ────────────────────────────────────────────────────────────────
 
     def create_event(

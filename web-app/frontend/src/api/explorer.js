@@ -5,6 +5,9 @@ export const fetchSeasons = () => get('/api/explorer/seasons')
 export const createSeason = (name, description, pointsConfig) =>
   post('/api/explorer/seasons', { name, description, points_config: pointsConfig })
 
+export const deleteSeason = (seasonId) =>
+  del(`/api/explorer/seasons/${seasonId}`)
+
 export const fetchSeasonEvents = (seasonId) =>
   get(`/api/explorer/seasons/${seasonId}/events`)
 

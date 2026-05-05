@@ -5,6 +5,7 @@ import {
   fetchSeasons,
   fetchLeaderboard,
   deleteEvent,
+  deleteSeason,
 } from '@/api/explorer'
 import AddSeasonModal from '@/components/explorer/AddSeasonModal'
 import AddEventModal from '@/components/explorer/AddEventModal'
@@ -151,6 +152,20 @@ export default function ExplorerStandings() {
     setExpandedPlayers((prev) => ({ ...prev, [uid]: !prev[uid] }))
   }
 
+  const handleDeleteSeason = async () => {
+    if (!selectedSeasonId) return
+    const season = seasons.find((s) => s.id === selectedSeasonId)
+    if (!confirm(`Delete series "${season?.name}" and all its events/results? This cannot be undone.`)) return
+    try {
+      await deleteSeason(selectedSeasonId)
+      setSelectedSeasonId(null)
+      setLeaderboard(null)
+      loadSeasons()
+    } catch (e) {
+      alert(`Failed to delete series: ${e.message}`)
+    }
+  }
+
   const handleDeleteEvent = async (eventId) => {
     if (!confirm('Delete this event and all its results?')) return
     try {
@@ -234,12 +249,22 @@ export default function ExplorerStandings() {
                 onChange={(e) => setSelectedSeasonId(Number(e.target.value))}
                 className="bg-bg-elevated border border-border rounded px-3 py-1.5 text-sm text-text-primary"
               >
+
                 {seasons.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} ({s.event_count} event{s.event_count !== 1 ? 's' : ''})
                   </option>
                 ))}
               </select>
+              {isExplorerAdmin && selectedSeasonId && (
+                <button
+                  onClick={handleDeleteSeason}
+                  className="px-2 py-1 text-xs text-red-400 hover:text-red-300 border border-red-400/30 hover:border-red-400 rounded transition-colors"
+                  title="Delete this series"
+                >
+                  Delete Series
+                </button>
+              )}
             </div>
             {selectedSeasonId && seasons.find((s) => s.id === selectedSeasonId)?.description && (
               <p className="text-sm text-text-muted mt-2">

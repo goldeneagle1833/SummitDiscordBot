@@ -28,7 +28,17 @@ function EventRow({ result, onDelete, isAdmin }) {
       <td className="py-1 px-2 text-center text-blue-300">{result.pathfinder}</td>
       <td className="py-1 px-2 text-center text-red-300">{result.persecutor}</td>
       <td className="py-1 px-2 text-center text-secondary">{result.grand_explorer}</td>
-      {isAdmin && <td />}
+      {isAdmin && (
+        <td className="py-1 px-2 text-center">
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(result.event_id) }}
+            className="text-red-400 hover:text-red-300 transition-colors"
+            title="Remove event"
+          >
+            ✕
+          </button>
+        </td>
+      )}
     </tr>
   )
 }
@@ -168,8 +178,8 @@ export default function ExplorerStandings() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-display text-text-primary">Explorer Standings</h1>
-          <p className="text-sm text-text-muted mt-0.5">Season leaderboard for The Explorer Series</p>
+          <h1 className="text-2xl font-display text-text-primary">Community Series</h1>
+          <p className="text-sm text-text-muted mt-0.5">Series leaderboard for The Community Series</p>
         </div>
 
         {isExplorerAdmin && (
@@ -178,7 +188,7 @@ export default function ExplorerStandings() {
               onClick={() => setShowAddSeason(true)}
               className="px-3 py-1.5 text-sm bg-bg-elevated border border-border rounded hover:border-secondary text-text-primary transition-colors"
             >
-              + Add Season
+              + Add Series
             </button>
             {seasons.length > 0 && (
               <button
@@ -211,24 +221,31 @@ export default function ExplorerStandings() {
 
       {seasons.length === 0 ? (
         <div className="bg-bg-surface border border-border rounded-lg p-8 text-center">
-          <p className="text-text-muted">No seasons yet.{isExplorerAdmin ? ' Create one to get started.' : ''}</p>
+          <p className="text-text-muted">No series yet.{isExplorerAdmin ? ' Create one to get started.' : ''}</p>
         </div>
       ) : (
         <>
-          {/* Season selector */}
-          <div className="mb-6 flex items-center gap-3">
-            <label className="text-sm text-text-muted">Season:</label>
-            <select
-              value={selectedSeasonId ?? ''}
-              onChange={(e) => setSelectedSeasonId(Number(e.target.value))}
-              className="bg-bg-elevated border border-border rounded px-3 py-1.5 text-sm text-text-primary"
-            >
-              {seasons.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.event_count} event{s.event_count !== 1 ? 's' : ''})
-                </option>
-              ))}
-            </select>
+          {/* Series selector */}
+          <div className="mb-6">
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-text-muted">Series:</label>
+              <select
+                value={selectedSeasonId ?? ''}
+                onChange={(e) => setSelectedSeasonId(Number(e.target.value))}
+                className="bg-bg-elevated border border-border rounded px-3 py-1.5 text-sm text-text-primary"
+              >
+                {seasons.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.event_count} event{s.event_count !== 1 ? 's' : ''})
+                  </option>
+                ))}
+              </select>
+            </div>
+            {selectedSeasonId && seasons.find((s) => s.id === selectedSeasonId)?.description && (
+              <p className="text-sm text-text-muted mt-2">
+                {seasons.find((s) => s.id === selectedSeasonId).description}
+              </p>
+            )}
           </div>
 
           {/* Points legend */}
@@ -246,7 +263,7 @@ export default function ExplorerStandings() {
             <div className="flex justify-center py-12"><Spinner /></div>
           ) : !leaderboard || leaderboard.players.length === 0 ? (
             <div className="bg-bg-surface border border-border rounded-lg p-8 text-center">
-              <p className="text-text-muted">No results yet for this season.{isExplorerAdmin ? ' Import an event to populate the leaderboard.' : ''}</p>
+              <p className="text-text-muted">No results yet for this series.{isExplorerAdmin ? ' Import an event to populate the leaderboard.' : ''}</p>
             </div>
           ) : (
             <div className="bg-bg-surface border border-border rounded-lg overflow-hidden">

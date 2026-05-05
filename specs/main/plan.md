@@ -1,29 +1,33 @@
-# Implementation Plan: Flask/Jinja2 → React SPA Migration
+# Implementation Plan: Explorer Standings
 
-**Branch**: `main` | **Date**: 2026-04-30 | **Spec**: user-provided via /speckit.plan
-**Input**: Inline feature specification from /speckit.plan invocation
+**Branch**: `main` | **Date**: 2026-05-05 | **Spec**: specs/main/spec.md
 
 ## Summary
 
-Migrate the Summit Discord Bot web app from Jinja2 server-side rendering to a React SPA (Vite + React 18 + React Router 6 + Tailwind CSS v4) with Flask serving as a pure JSON API backend. All existing Flask API routes under `/api/**` remain unchanged. A new `GET /api/me` endpoint exposes session user data to the SPA. Auth flows (Discord + Google OAuth) continue through Flask, with callbacks redirecting to the React app root URL. The React app lives at `web-app/frontend/` and builds to `dist/`, which Nginx serves as a catch-all for non-API routes. Discord bot infrastructure is completely untouched.
+New "Explorer Standings" leaderboard page tracking cumulative season points across Explorer Series in-person tournaments. Authorized admins import events by pasting a sorcerytcg.com URL; the backend fetches placement data from the carde.io API, persists it in a dedicated `explorer.db`, and computes season standings. The page is publicly readable; write operations require an Explorer admin role.
 
 ## Technical Context
 
-**Language/Version**: Python 3.11 (Flask backend, unchanged) / JavaScript ES2022 (React frontend, no TypeScript)
-**Primary Dependencies**: React 18, React Router 6, Vite 5, Tailwind CSS v4 (@tailwindcss/vite plugin), flask-cors (dev only)
-**Storage**: SQLite (unchanged) — no schema changes required
-**Testing**: pytest (backend, unchanged), Vitest + React Testing Library (frontend)
-**Target Platform**: Linux VPS (Linode), systemd, Nginx, Cloudflare CDN
-**Project Type**: Web application — SPA frontend + Flask REST API backend
-**Performance Goals**: Initial JS bundle <200KB gzipped; lazy-load DeckViewer + CurioTracking pages; no sequential API request waterfalls (Promise.all in api layer)
-**Constraints**: Flask session cookie (SameSite=Lax, Secure, HttpOnly — already configured) must be sent with all API calls via `credentials: 'include'`; no JWT; no SSR; no TypeScript
-**Scale/Scope**: ~15 pages, ~20 API modules, single VPS deployment
+**Language/Version**: Python 3.11 (Flask backend) + React 18 (Vite frontend)  
+**Primary Dependencies**: Flask, SQLite3, `requests` (server-side carde.io API calls), React, React Router v6  
+**Storage**: `web-app/explorer.db` — new SQLite database (4 tables)  
+**Testing**: pytest (backend), Vitest + React Testing Library (frontend)  
+**Target Platform**: Linux server (existing deployment, Gunicorn + Nginx + Cloudflare)  
+**Project Type**: web-service feature addition  
+**Performance Goals**: Leaderboard page load < 500ms; event import < 10s (carde.io API dependent)  
+**Constraints**: All carde.io calls server-side (no CORS); import is synchronous (small events, < 200 players); no schema migrations to existing databases  
+**Scale/Scope**: ~10 events/season, ~50 players/event, ~100 distinct players across a season
 
 ## Constitution Check
 
-*The project constitution is unpopulated (template placeholders only) — no project-specific architectural gates are defined.*
+No constitution is defined for this project. Applying general quality gates:
 
-**Result**: No violations. Proceeding to Phase 0.
+- **No duplicate logic**: Explorer admin auth follows the existing `is_curio_editor()` pattern exactly
+- **Auth coverage**: All write endpoints use `@require_explorer_admin` or `@require_admin`; all new endpoints added to `test_endpoint_auth.py` allowlist or decorated
+- **Repository pattern**: Data access in `repositories/explorer.py`; business logic in `services/explorer.py`
+- **Migration pattern**: Schema initialization in `migrations/create_explorer_tables.py`, called in `app.py`
+
+**Gate Status**: PASS — no violations
 
 ## Project Structure
 
@@ -31,87 +35,65 @@ Migrate the Summit Discord Bot web app from Jinja2 server-side rendering to a Re
 
 ```text
 specs/main/
-├── plan.md              # This file (/speckit.plan output)
-├── research.md          # Phase 0 output
-├── data-model.md        # Phase 1 output
-├── quickstart.md        # Phase 1 output
-├── contracts/           # Phase 1 output
-│   ├── auth.md
-│   ├── leaderboard.md
-│   ├── players.md
-│   ├── matches.md
-│   ├── events.md
-│   └── decks.md
-└── tasks.md             # Phase 2 output (/speckit.tasks — not created here)
+├── plan.md              # This file
+├── research.md          # R-1 through R-6 (API, DB, auth, points, migration)
+├── data-model.md        # DB schema + API/frontend response shapes
+├── contracts/
+│   └── explorer-api.md  # All 9 endpoint contracts
+└── tasks.md             # Phase 2 output (run /speckit.tasks)
 ```
 
-### Source Code Layout
+### Source Code
 
 ```text
 web-app/
-├── app.py                        # Add /api/me + /api/logout; remove pages blueprint when ready
-├── routes/
-│   ├── api/                      # All /api/** endpoints (unchanged)
-│   └── auth.py                   # Change callback redirects → React app root URL
-├── services/                     # Unchanged
-├── repositories/                 # Unchanged
-└── frontend/                     # NEW: React SPA
-    ├── index.html
-    ├── vite.config.js             # Proxy /api/*, /avatar-images/*, /card-images/* → Flask :5000
-    ├── tailwind.config.js         # Color palette + custom design tokens
-    ├── postcss.config.js
-    ├── package.json
-    ├── README.md                  # Local dev setup (Flask + Vite)
-    └── src/
-        ├── main.jsx               # App entry point
-        ├── App.jsx                # React Router route definitions
-        ├── api/                   # Centralized fetch client — only place with URLs
-        │   ├── client.js          # Base fetch (credentials: include, error handling)
-        │   ├── auth.js            # GET /api/me, GET /logout
-        │   ├── leaderboard.js     # GET /api/leaderboard, /api/leaderboard/event, etc.
-        │   ├── players.js         # GET /api/players/:id, /api/players/:id/matches
-        │   ├── matches.js         # GET /api/match-history
-        │   ├── events.js          # GET /api/events (pages.py), /api/events/:id/decks
-        │   └── decks.js           # GET /api/cards/:id
-        ├── context/
-        │   └── AuthContext.jsx    # Global user state via /api/me; provides useAuth()
-        ├── components/
-        │   ├── layout/
-        │   │   ├── Nav.jsx
-        │   │   └── Footer.jsx
-        │   ├── player/
-        │   │   └── PlayerCard.jsx
-        │   ├── deck/
-        │   │   └── DeckViewer.jsx  # lazy-loaded via React.lazy()
-        │   ├── leaderboard/
-        │   │   └── LeaderboardTable.jsx
-        │   └── ui/
-        │       ├── Button.jsx
-        │       ├── Avatar.jsx
-        │       ├── Badge.jsx
-        │       └── Spinner.jsx
-        └── pages/                  # Thin page components — fetch via api/, compose components
-            ├── Home.jsx
-            ├── Leaderboard.jsx
-            ├── Player.jsx
-            ├── Matches.jsx
-            ├── Events.jsx
-            ├── EventDetail.jsx
-            ├── DeckDetail.jsx      # lazy DeckViewer via Suspense
-            ├── Community.jsx
-            ├── CurioTracking.jsx   # lazy-loaded
-            ├── Help.jsx            # lightweight hardcoded content
-            ├── LifeCounter.jsx     # rebuilt as React component
-            ├── About.jsx           # lightweight hardcoded content
-            ├── Privacy.jsx         # lightweight hardcoded content
-            ├── Terms.jsx           # lightweight hardcoded content
-            ├── Login.jsx
-            └── admin/
-                └── AuditLog.jsx    # admin-only, guarded by is_admin from AuthContext
-```
+├── migrations/
+│   └── create_explorer_tables.py    # NEW: initialize explorer.db schema
+├── repositories/
+│   └── explorer.py                  # NEW: ExplorerRepository (CRUD for all 4 tables)
+├── services/
+│   └── explorer.py                  # NEW: ExplorerService (carde.io fetch + leaderboard calc)
+├── routes/api/
+│   └── explorer.py                  # NEW: explorer_bp Blueprint (9 endpoints)
+├── routes/__init__.py               # MODIFY: register explorer_bp
+├── utils/auth.py                    # MODIFY: add is_explorer_admin() + require_explorer_admin
+├── webapp_config.py                 # MODIFY: add EXPLORER_DB_PATH
+├── app.py                           # MODIFY: call create_explorer_tables() on startup
+└── tests/
+    ├── test_explorer_repo.py        # NEW: repository unit tests
+    ├── test_explorer_service.py     # NEW: service unit tests (mock carde.io)
+    ├── test_explorer_routes.py      # NEW: route integration tests
+    └── test_endpoint_auth.py        # MODIFY: add new endpoints to coverage
 
-**Structure Decision**: Web application layout (Option 2). Flask backend unchanged at `web-app/`; new React SPA at `web-app/frontend/`. Jinja2 templates and `routes/pages.py` remain registered in Flask during migration (parallel operation) — Nginx catch-all serves React for end users while Jinja2 stays as fallback. Nginx proxies `/api/**`, `/avatar-images/**`, `/card-images/**` to Gunicorn. Flask route `/api/games` renamed to `/api/events` (keep `/api/games` as deprecated alias). Admin pages migrated to React with server-side admin checks via `is_admin` in `/api/me`. No barrel `index.js` files — all imports are direct file paths.
+web-app/frontend/src/
+├── pages/
+│   └── ExplorerStandings.jsx        # NEW: main page component
+├── api/
+│   └── explorer.js                  # NEW: fetch wrappers for all endpoints
+├── components/
+│   └── explorer/
+│       ├── AddSeasonModal.jsx       # NEW: modal for creating a season
+│       ├── AddEventModal.jsx        # NEW: modal for importing event (URL + preview)
+│       └── ExplorerAdminPanel.jsx   # NEW: manage explorer admins (global admin only)
+├── App.jsx                          # MODIFY: add /explorer route
+└── components/layout/Nav.jsx        # MODIFY: add Explorer link in nav
+```
 
 ## Complexity Tracking
 
-*No constitution violations to justify.*
+No constitution violations requiring justification.
+
+---
+
+## Phase 0 Artifacts
+
+- [research.md](research.md) — API discovery, DB location, auth pattern, points config, migration pattern
+
+## Phase 1 Artifacts
+
+- [data-model.md](data-model.md) — DB schema (4 tables) + API response shapes + frontend state
+- [contracts/explorer-api.md](contracts/explorer-api.md) — 9 endpoint contracts with request/response shapes and error codes
+
+## Next Step
+
+Run `/speckit.tasks` to generate the implementation task list.

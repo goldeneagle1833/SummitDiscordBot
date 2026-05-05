@@ -74,7 +74,7 @@ export default function AddEventModal({ seasons, onClose, onSaved }) {
                 />
               </div>
               <div>
-                <label className="text-xs text-text-muted block mb-1">Season *</label>
+                <label className="text-xs text-text-muted block mb-1">Series *</label>
                 <select
                   value={seasonId}
                   onChange={(e) => setSeasonId(e.target.value)}

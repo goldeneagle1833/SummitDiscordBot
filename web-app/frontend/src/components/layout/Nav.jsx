@@ -475,6 +475,8 @@ export default function Nav() {
         <SidebarLink to="/avatars" label="Avatar Winrates" location={location} onClick={close} />
         <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
         <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
+        <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} />
+        <SidebarLink to="/top-8" label="Top 8 Decks" location={location} onClick={close} />
         <SidebarLink to="/fun-stats" label="Fun Stats" location={location} onClick={close} />
         {user?.is_admin && (
           <SidebarLink to="/cards" label="Card Winrates" location={location} onClick={close} />
@@ -482,12 +484,10 @@ export default function Nav() {
         <SidebarLink to="/elo" label="ELO Leaderboards" location={location} onClick={close} />
         <SidebarLink to="/elo/limited" label="Limited Leaderboard" location={location} onClick={close} />
         <SidebarLink to="/match-history" label="Match History" location={location} onClick={close} />
-        <SidebarLink to="/top-8" label="Top 8 Decks" location={location} onClick={close} />
         <SidebarLink to="/life-counter" label="Life Counter" location={location} onClick={close} />
         <SidebarLink to="/help" label="Help" location={location} onClick={close} />
         <SidebarLink to="/community" label="Community" location={location} onClick={close} />
         <SidebarLink to="/curio-tracking" label="Curio Tracking" location={location} onClick={close} />
-        <SidebarLink to="/explorer" label="Explorer Standings" location={location} onClick={close} />
       </aside>
     </>
   )

@@ -1,82 +1,204 @@
-# Feature Specification: Daily Summary Message
+# Feature Specification: Explorer Standings
 
 ## Overview
 
-An automated daily recap message posted to a designated Discord channel every day at 11:30 PM EST. The message provides a snapshot of the day's competitive activity: total matches played, most active players, biggest ELO swings, top ELO gainers, and other community engagement stats. The feature is a new cog that queries existing `match_records` and `overall_standings` tables — no schema changes required.
+A new web page called **Explorer Standings** that tracks cumulative season standings across multiple in-person Explorer Series tournament events sourced from the carde.io platform. Authorized admins can add seasons and import events by pasting a sorcerytcg.com event URL. The system fetches player placement and win data from the carde.io API, persists it in a dedicated SQLite database, and computes a three-track season leaderboard.
+
+## Points System
+
+### Pathfinder Points (attendance + win bonus)
+
+Every player who attends earns **10 base Pathfinder points**. Additional **Bonus Pathfinder** points are awarded based on **exact** Swiss win count (players with 3+ wins receive no bonus):
+
+| Swiss Wins | Bonus Pathfinder |
+|-----------|-----------------|
+| Exactly 0 | +5 |
+| Exactly 1 | +4 |
+| Exactly 2 | +3 |
+| 3 or more | +0 |
+
+### Persecutor Points (top-8 only)
+
+Only players who reach the final single-elimination phase earn Persecutor points:
+
+| Final Standing | Persecutor |
+|---------------|-----------|
+| 1st | 10 |
+| 2nd | 5 |
+| 3rd | 4 |
+| 4th | 4 |
+| 5th | 3 |
+| 6th | 3 |
+| 7th | 2 |
+| 8th | 2 |
+| 9th+ | 0 |
+
+### Grand Explorer
+
+`Grand Explorer = Pathfinder + Persecutor`
+
+### Qualified for Trials of the Persecutor
+
+A player is **Qualified** once their cumulative seasonal Persecutor total reaches the threshold (default: **10 points**, configurable per season).
 
 ## User Stories
 
-### US-1: Automated Daily Posting
+### US-1: Public Leaderboard Page
 
-As a community member, I want an automated daily summary posted at 11:30 PM EST so I can see the day's activity at a glance.
-
-**Acceptance Criteria:**
-- A rich embed message is posted to a configurable channel every day at 11:30 PM EST
-- The message covers all ranked matches from midnight EST to the time of posting (same calendar day)
-- If zero matches were played, a brief "No matches today" message is posted instead
-- The scheduled task starts automatically when the bot boots and survives across days
-- The task uses `discord.ext.tasks` following the existing `MatchConfirmationJobs` pattern
-
-### US-2: Core Stats
-
-As a community member, I want to see key competitive stats for the day.
+As a community member, I want to view the Explorer Standings page and see ranked players for a selected season.
 
 **Acceptance Criteria:**
-- **Total Matches Played** — count of ranked matches recorded today
-- **Most Active Player** — the player who appeared in the most matches (wins + losses), with match count shown
-- **Largest ELO Swing** — the single match with the biggest absolute ELO change, showing both players, the result, and the ELO delta
-- **Top ELO Gainer** — the player who gained the most cumulative online lifetime ELO across all today's matches, with net change shown
-- **Biggest ELO Loser** — the player who lost the most cumulative online lifetime ELO today (displayed lightheartedly)
+- Route `/explorer` renders the Explorer Standings React page
+- A season selector dropdown lets users choose which season to view
+- The leaderboard table shows: rank, player name/avatar, Grand Explorer total, Pathfinder total, Persecutor total, events attended, "Qualified?" badge
+- Each row can expand to show per-event breakdown (standing, wins, Pathfinder, Persecutor per event)
+- The page is public (no login required to read)
 
-### US-3: Extended / Fun Stats
+### US-2: Admin Season Management
 
-As a community member, I want additional fun and engagement stats in the daily summary.
-
-**Acceptance Criteria:**
-- **Unique Players** — count of distinct players who played at least one match today
-- **Hot Streaks** — players currently on a win streak of 3+ (computed from recent match history, not just today). Shows player name and streak length (e.g., "DragonSlayer is on a 5-win streak")
-- **Streak Broken** — players who lost today and had a win streak of 6+ going into that loss. Shows player name, the streak that was broken, and who broke it (e.g., "WizardKing's 8-win streak was ended by Newcomer")
-- **Biggest Upset** — the match where the lower-rated player beat the higher-rated player by the largest ELO gap
-- **Average Match Duration** — mean match time in minutes (from `match_time` column, excluding nulls/zeros)
-- Stats that have no data (e.g., no one is on a 3+ streak) are omitted from the embed rather than showing "N/A"
-
-### US-4: GPT-Flavored Commentary
-
-As a community member, I want the daily summary to feel alive and entertaining, not just raw stats.
+As an authorized Explorer admin, I want to create a new season so I can start tracking events under it.
 
 **Acceptance Criteria:**
-- After computing all stats, the raw data is sent to OpenAI (`gpt-4.1-nano`) to generate a short, themed commentary paragraph
-- The commentary is placed at the top of the embed (in the description field) before the stat fields
-- The system prompt instructs GPT to write a brief, entertaining recap varying its style each day — sometimes dramatic narrator, sometimes sports broadcaster, sometimes comedic, sometimes poetic. It should reference players by name and call out upsets, streaks, and drama
-- Follows the same pattern as the milestone message in `cogs/lfg/helpers.py`: `openai_client.responses.create()` with `instructions` + `input`
-- If the OpenAI call fails, the embed posts normally without commentary (stats only, no error shown to users)
-- Commentary is capped at ~100 words to keep the embed concise
-- Zero-match days get a short "quiet day" themed message from GPT instead
+- An "Add Season" button is visible only to Explorer admins (global admins + explorer-specific admins)
+- Clicking it opens a modal with: Season Name (text), Description (optional)
+- Submitting calls `POST /api/explorer/seasons` which creates the `explorer_seasons` record and, if `explorer.db` does not exist, initializes the schema
+- The new season appears immediately in the season selector
 
-### US-5: Configuration
+### US-3: Admin Event Import
 
-As a bot administrator, I want to configure the daily summary channel and time.
+As an authorized Explorer admin, I want to import an event from a carde.io URL so its results are added to the leaderboard.
 
 **Acceptance Criteria:**
-- `DAILY_SUMMARY_CHANNEL_ID` added to `config.py` (defaults to `LEADERBOARD_CHANNEL_ID`)
-- `DAILY_SUMMARY_HOUR` and `DAILY_SUMMARY_MINUTE` in `config.py` (default 23 and 30)
-- No slash/prefix commands needed to trigger the summary — it is purely automated
-- An admin-only `!daily_summary` prefix command can manually trigger the summary for testing
+- An "Add Event" button is visible only to Explorer admins
+- Clicking opens a modal with: Event URL (from `https://play.sorcerytcg.com/events/{uuid}`), Season selector
+- On submit, the backend:
+  1. Extracts the event UUID from the URL
+  2. Calls `https://api.carde.io/api/play/events/{uuid}` to get event metadata, phase IDs, and tournament IDs
+  3. Fetches the **Swiss phase roster** (`/activityPhases/{swiss_phase_id}/roster?sortBy=seed`) to get ALL players with their `tieBreakers.points` (match points) and `standing`
+  4. Derives win count: `wins = tieBreakers.points // 3` (3 pts/win from Swiss config)
+  5. If a final phase (single-elim) exists, fetches its standings (`/tournaments/{final_tournament_id}/standings`) for authoritative top-8 placements
+  6. Merges: top-8 players use final standings `standing`; rest use Swiss `standing` offset by top-cut size
+  7. Persists event + results (with per-player `wins`) to `explorer.db`
+- A preview shows event name, date, player count, and first few results (with win counts) before saving
+- Duplicate event URLs are rejected with a clear error
+
+### US-4: Explorer Admin Management
+
+As a global admin, I want to grant Explorer admin access to specific Discord users so they can manage events without full site admin.
+
+**Acceptance Criteria:**
+- `GET /api/explorer/admins` returns the list of current Explorer admins (admin only)
+- `POST /api/explorer/admins` adds a user by Discord ID + display name (admin only)
+- `DELETE /api/explorer/admins/{discord_user_id}` removes a user (admin only)
+- The admin panel for Explorer Standings shows the current admin list with an add/remove UI
+- Explorer admins can add seasons and events but cannot manage other Explorer admins
+
+### US-5: Leaderboard Computation
+
+As a user, I want correctly computed standings using the three-track point system.
+
+**Acceptance Criteria:**
+- Per player per event, the service computes:
+  - `pathfinder = 10 + bonus_pathfinder[wins]` (exact-win lookup; 0 for wins ≥ 3)
+  - `persecutor = persecutor_config[final_standing]` (0 if standing > 8)
+  - `grand_explorer = pathfinder + persecutor`
+- Season totals: sum of each track across all attended events
+- `qualified = season_persecutor_total >= trials_threshold` (default 10)
+- Sort: Grand Explorer descending; ties broken by Persecutor total, then Pathfinder total
+- All thresholds and point values stored in `explorer_seasons.points_config` (JSON) and configurable per season without code changes
+
+## Data Storage
+
+### Database: `web-app/explorer.db`
+
+Path added to `webapp_config.py` as `EXPLORER_DB_PATH`.
+
+### Schema
+
+```sql
+CREATE TABLE explorer_seasons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    points_config TEXT,   -- JSON (see default below)
+    created_at TEXT DEFAULT (datetime('now'))
+);
+-- Default points_config:
+-- {
+--   "participation": 10,
+--   "bonus_pathfinder": {"0": 5, "1": 4, "2": 3},
+--   "persecutor": {"1": 10, "2": 5, "3": 4, "4": 4,
+--                  "5": 3, "6": 3, "7": 2, "8": 2},
+--   "trials_threshold": 10
+-- }
+
+CREATE TABLE explorer_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    season_id INTEGER NOT NULL REFERENCES explorer_seasons(id),
+    cardeio_event_id TEXT NOT NULL UNIQUE,
+    cardeio_final_tournament_id TEXT,   -- NULL for Swiss-only events
+    cardeio_swiss_phase_id TEXT NOT NULL,
+    event_name TEXT NOT NULL,
+    event_date TEXT,
+    total_players INTEGER,
+    play_format TEXT,
+    venue_name TEXT,
+    source_url TEXT,
+    fetched_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE explorer_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL REFERENCES explorer_events(id),
+    cardeio_user_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    final_standing INTEGER NOT NULL,  -- 1 = 1st
+    wins INTEGER NOT NULL DEFAULT 0,  -- Swiss win count (for bonus pathfinder)
+    total_players INTEGER NOT NULL,
+    image_url TEXT,
+    team_name TEXT,
+    UNIQUE(event_id, cardeio_user_id)
+);
+
+CREATE TABLE explorer_admins (
+    discord_user_id TEXT PRIMARY KEY,
+    display_name TEXT,
+    added_at TEXT DEFAULT (datetime('now'))
+);
+```
+
+### Key Design Notes
+- `wins` is derived at import time: `tieBreakers.points // 3` from Swiss phase roster
+- `points_config` JSON encodes all three point tracks + threshold — no schema migration needed to adjust per season
+- `cardeio_user_id` is the stable identity key (handles display name changes)
+- `total_players` denormalized per row for leaderboard scaling without joins
+
+## API Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/explorer/seasons` | Public | List all seasons |
+| POST | `/api/explorer/seasons` | Explorer admin | Create new season |
+| GET | `/api/explorer/seasons/{id}/events` | Public | List events in season |
+| POST | `/api/explorer/events/preview` | Explorer admin | Fetch from carde.io, return preview (no save) |
+| POST | `/api/explorer/events` | Explorer admin | Import and save event |
+| DELETE | `/api/explorer/events/{id}` | Explorer admin | Remove event + results |
+| GET | `/api/explorer/leaderboard/{season_id}` | Public | Computed three-track leaderboard |
+| GET | `/api/explorer/admins` | Global admin | List Explorer admins |
+| POST | `/api/explorer/admins` | Global admin | Add Explorer admin |
+| DELETE | `/api/explorer/admins/{user_id}` | Global admin | Remove Explorer admin |
 
 ## Non-Functional Requirements
 
-- Read-only: no writes to any database table; purely SELECT queries
-- Core stats scoped to current EST calendar day (`timestamp LIKE 'YYYY-MM-DD%'`)
-- Win streak stats require querying recent match history (beyond today) to compute current streaks and detect broken streaks
-- Only counts `match_type = 'ranked'` matches (excludes testing matches)
-- Must not block the bot event loop — all DB access in executor or async-safe
-- Embed follows Discord's 6000-character limit; truncate gracefully if needed
-- Uses existing EST timezone pattern from `cogs/fun.py` (`ZoneInfo("America/New_York")`)
+- External carde.io API calls made server-side (avoid CORS issues from browser)
+- Timeout on carde.io calls: 10 seconds
+- Import is a synchronous operation (events are small, < 200 players)
+- All new endpoints must have `@require_explorer_admin` or `@require_admin` decorator or be added to `KNOWN_PUBLIC_ENDPOINTS` in tests
+- New `is_explorer_admin()` utility in `utils/auth.py` follows the existing `is_curio_editor()` pattern
 
-## Out of Scope (Future)
+## Out of Scope
 
-- Weekly / monthly summary rollups
-- Configurable stats (pick which stats appear)
-- Web app dashboard for daily summaries
-- Sending summary via DM to opted-in users
-- Historical summary archive
+- Real-time standings refresh (import is manual/on-demand)
+- Historical points rule changes (retroactive recalculation)
+- Discord bot commands for Explorer standings
+- Player profile linking (cardeio_user_id to Discord user)

@@ -79,7 +79,12 @@ class ExplorerService:
         if final_tournament_id:
             top_cut_standings = self._fetch_final_standings(final_tournament_id)
 
-        results = self._merge_standings(swiss_roster, top_cut_standings)
+        # When no top cut, use Swiss tournament standings for proper placement order
+        swiss_standings = {}
+        if not final_tournament_id and swiss_tournament_id:
+            swiss_standings = self._fetch_final_standings(swiss_tournament_id)
+
+        results = self._merge_standings(swiss_roster, top_cut_standings, swiss_standings)
 
         event_info = data.get("event", {})
         owner = event_info.get("owner", {})
@@ -226,12 +231,14 @@ class ExplorerService:
         return standings
 
     def _merge_standings(
-        self, swiss_roster: list[dict], top_cut_standings: dict
+        self, swiss_roster: list[dict], top_cut_standings: dict,
+        swiss_standings: dict | None = None,
     ) -> list[dict]:
         """Merge Swiss roster with optional top-cut standings.
 
         Top-cut players use their final standing from top_cut_standings.
-        Remaining Swiss players are ranked after the top cut, preserving Swiss order.
+        When no top cut exists but swiss_standings are provided, those are
+        used for placement (overall standings based on performance).
         Each result has: cardeio_user_id, display_name, final_standing, wins,
                          total_players, image_url, team_name
         """
@@ -271,11 +278,18 @@ class ExplorerService:
         # Sort top-cut results by their final standing
         results.sort(key=lambda r: r["final_standing"])
 
-        # Assign sequential standings to non-top-cut players (Swiss order)
-        for i, row in enumerate(non_top_cut):
-            row["final_standing"] = swiss_rank_offset + i + 1
-            results.append(row)
+        # Assign standings to non-top-cut players
+        if not top_cut_standings and swiss_standings:
+            # No top cut — use overall Swiss standings for placement
+            for row in non_top_cut:
+                row["final_standing"] = swiss_standings.get(row["cardeio_user_id"], total_players)
+            non_top_cut.sort(key=lambda r: r["final_standing"])
+        else:
+            # Top cut exists — assign sequential standings after top cut
+            for i, row in enumerate(non_top_cut):
+                row["final_standing"] = swiss_rank_offset + i + 1
 
+        results.extend(non_top_cut)
         return results
 
     def compute_leaderboard(self, season_id: int) -> dict:

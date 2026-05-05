@@ -1,175 +1,99 @@
-# Research: Flask/Jinja2 → React SPA Migration
+# Research: Explorer Standings
 
-## R-1: Tailwind CSS Version
+## R-1: carde.io API Discovery
 
-**Decision**: Tailwind CSS v4 via `@tailwindcss/vite` plugin
-**Rationale**: Tailwind v4 ships a native Vite plugin that eliminates PostCSS from the critical path, delivering faster HMR and build times. The `@tailwindcss/vite` plugin injects CSS as a Vite virtual module — no `postcss.config.js` required (though one can coexist). CSS custom properties replace `tailwind.config.js` theme keys in v4's new cascade-layer system.
-**Alternatives considered**:
-- Tailwind v3 + PostCSS: Mature, widely documented, but slower build pipeline. Rejected because v4 is current and the Vite plugin path is simpler.
-- Vanilla CSS / CSS Modules: Rejected — spec explicitly requires Tailwind only.
+**Decision**: Use the carde.io JSON REST API directly — no HTML scraping.
 
-## R-2: React Router Version
+**Rationale**: The sorcerytcg.com event pages are a React SPA powered by carde.io. The underlying API is publicly accessible (no auth headers required). Three endpoints cover all needed data:
 
-**Decision**: React Router v6 (data router / `createBrowserRouter`)
-**Rationale**: v6 is stable and widely adopted. The data router API (`createBrowserRouter` + `loader`) enables parallel data loading at the route level without waterfalls, matching the spec requirement for `Promise.all` fetching. v7 introduces breaking changes not worth taking during a migration.
-**Alternatives considered**:
-- React Router v5: Legacy API. Rejected.
-- TanStack Router: Type-safe but spec says no TypeScript. Rejected.
+| Endpoint | Data |
+|----------|------|
+| `GET https://api.carde.io/api/play/events/{event_uuid}` | Event metadata, phase list, tournament IDs, venue, player count |
+| `GET https://api.carde.io/api/play/tournaments/{tournament_id}/standings` | Final standings for a given tournament phase (top cut) |
+| `GET https://api.carde.io/api/play/activityPhases/{phase_id}/roster?sortBy=seed` | Full player list with standings (Swiss phase) |
 
-## R-3: Flask Sessions + SPA (Credentials: Include)
+**URL parsing**: Extract the UUID from `https://play.sorcerytcg.com/events/{uuid}`. Use `{uuid}` as the `event_uuid` for the API call.
 
-**Decision**: Use `credentials: 'include'` on all `fetch()` calls; Vite proxy for dev (no flask-cors needed)
-**Rationale**: Flask session cookies are `HttpOnly`, `Secure`, and `SameSite=Lax` (already configured in `app.py`). In production, the React app and Flask API share the same Nginx origin — cookies are sent automatically, no CORS needed. In development, the Vite `proxy` config forwards `/api/**` to Flask on `:5000`, keeping requests same-origin from the browser's perspective.
-**Alternatives considered**:
-- JWT: Rejected by spec.
-- flask-cors for dev: Unnecessary with proxy. Rejected.
-- flask-cors for prod: Insecure (broadens CORS surface). Rejected.
+**Alternatives considered**: HTML scraping via BeautifulSoup — rejected because the site requires JS execution (SPA). The JSON API is cleaner and more stable.
 
-## R-4: /api/me Endpoint
+---
 
-**Decision**: Add `GET /api/me` to Flask that reads from `session`
-**Rationale**: The React `AuthContext` needs to know the current user on every page load without a redirect. Returns session user if authenticated, `401` if not.
+## R-2: Phase Resolution for Final Standings
 
-**Response shapes**:
+**Decision**: Use the highest-stage completed phase for top-cut standings; use stage-1 (Swiss) for full roster.
+
+**Rationale**: The event response includes `phases` keyed by stage number ("1" = Swiss, "2" = Single Elimination). Each phase contains a `tournament.id`. For completed events:
+
+1. Sort phases by stage descending; take the first with `status: "complete"` -> final phase
+2. Fetch `GET .../tournaments/{final_tournament_id}/standings` for top-cut placements (authoritative 1-N)
+3. Fetch `GET .../activityPhases/{swiss_phase_id}/roster?sortBy=seed` for all players with Swiss standings
+
+**Merge algorithm**:
+- Players in the final-phase standings -> use their `standing` directly (1st, 2nd, etc.)
+- Remaining players (in Swiss roster but not in top cut) -> offset their Swiss standing by the top-cut size
+- For Swiss-only events (no phase 2) -> use Swiss standings directly
+
+---
+
+## R-3: Database Location
+
+**Decision**: `web-app/explorer.db` + `EXPLORER_DB_PATH` in `webapp_config.py`.
+
+**Rationale**: Consistent with `analytics.db` which also lives in `web-app/`. Explorer data is web-only.
+
+**Alternatives considered**: Adding tables to `match_records.db` or `elo.db` — rejected (mixes concerns).
+
+---
+
+## R-4: Explorer Admin Authorization
+
+**Decision**: New `is_explorer_admin()` + `require_explorer_admin` decorator in `utils/auth.py`. Admin list stored in `explorer_admins` table (UI-managed).
+
+**Rationale**: The `is_curio_editor()` pattern is a direct template. Global admins always have access. Explorer-specific admins are UI-managed (no deploy cycle needed).
+
+---
+
+## R-5: Three-Track Points Configuration
+
+**Decision**: JSON column `points_config` in `explorer_seasons` encoding all three tracks + qualification threshold.
+
+**Three tracks**:
+- **Pathfinder** = `participation` (10) + `bonus_pathfinder[exact_wins]` (0-win: +5, 1-win: +4, 2-win: +3, 3+-win: +0)
+- **Persecutor** = `persecutor[final_standing]` for standings 1–8 only
+- **Grand Explorer** = Pathfinder + Persecutor
+- **Qualified** = season Persecutor total ≥ `trials_threshold` (default: 10)
+
+**Default config**:
 ```json
-// 200 OK (authenticated)
-{ "user_id": "123456789", "username": "DragonSlayer", "avatar": "https://cdn.discordapp.com/...", "auth_provider": "discord" }
-
-// 401 Unauthorized (no session)
-{ "error": "Not authenticated" }
-```
-
-## R-5: Vite Proxy Configuration
-
-**Decision**: Configure `server.proxy` in `vite.config.js` to forward all Flask routes to `http://localhost:5000`
-**Rationale**: Single-origin in dev = no CORS, no cookie issues, OAuth flows work end-to-end.
-
-```js
-proxy: {
-  '/api':           'http://localhost:5000',
-  '/avatar-images': 'http://localhost:5000',
-  '/card-images':   'http://localhost:5000',
-  '/static':        'http://localhost:5000',
-  '/discord':       { target: 'http://localhost:5000', changeOrigin: true },
-  '/google':        { target: 'http://localhost:5000', changeOrigin: true },
-  '/logout':        'http://localhost:5000',
+{
+  "participation": 10,
+  "bonus_pathfinder": {"0": 5, "1": 4, "2": 3},
+  "persecutor": {"1": 10, "2": 5, "3": 4, "4": 4, "5": 3, "6": 3, "7": 2, "8": 2},
+  "trials_threshold": 10
 }
 ```
 
-## R-6: Nginx Catch-All for React Router
+**Win count derivation**: Swiss `tieBreakers.points // 3` (3 pts/win in standard config). Stored as `wins` integer in `explorer_results` at import time.
 
-**Decision**: `try_files $uri $uri/ /index.html` catch-all for all non-API routes
-**Rationale**: React Router handles client-side routing. Without this, direct navigation to `/player/123` returns 404.
+**Alternatives considered**: Hardcoded in service — rejected (per-season configurability required). Separate `points_rules` table — over-engineered for this small lookup.
 
-```nginx
-# Specific routes first
-location /api/          { proxy_pass http://gunicorn; }
-location /avatar-images/ { alias /path/to/avatar_imgs/; }
-location /card-images/   { alias /path/to/card_images/; }
+---
 
-# React SPA catch-all LAST
-location / {
-    root /path/to/web-app/frontend/dist;
-    try_files $uri $uri/ /index.html;
-}
-```
+## R-6: Migration Pattern
 
-## R-7: Auth Callback Redirect
+**Decision**: New `web-app/migrations/create_explorer_tables.py`, called in `app.py` on startup.
 
-**Decision**: Replace `url_for("pages.home")` in `auth.py` callbacks with `redirect(FRONTEND_URL)` where `FRONTEND_URL` is an env var
-**Rationale**: Post-migration, OAuth callbacks must redirect to the React app root (not Jinja2 pages route). React then calls `/api/me` to hydrate auth state.
+**Precedent**: `create_analytics_tables.py` follows this exact pattern.
 
-**Implementation**: `FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")` in `webapp_config.py`.
-
-## R-8: Build Strategy
-
-**Decision**: Build React on the server during deployment (`npm ci && npm run build` in deploy script)
-**Rationale**: Minimal change to existing SSH-based deploy workflow. Node.js must be installed on the Linode server (one-time setup).
-**Alternatives considered**:
-- Build in CI and upload dist/: Cleaner but requires artifact handling. Can be adopted later.
-- Pre-commit dist/: Anti-pattern. Rejected.
-
-## R-9: Lazy Loading Strategy
-
-**Decision**: `React.lazy()` + `<Suspense>` for `DeckViewer` component and `CurioTracking` page
-**Rationale**: Both are heavy, behind-the-fold routes rarely hit on first visit. Lazy loading keeps initial bundle under 200KB.
-
-```jsx
-const DeckViewer = React.lazy(() => import('@/components/deck/DeckViewer'))
-const CurioTracking = React.lazy(() => import('@/pages/CurioTracking'))
-```
-
-## R-10: Tailwind Color Palette
-
-**Decision**: Copy `web-app/tailwind.config.js` color tokens verbatim into `web-app/frontend/tailwind.config.js`
-**Rationale**: Migration spec requires preserving existing visual design. The web app already has a custom palette — it must be the single source of truth.
-
-## R-11: No Barrel Files
-
-**Decision**: Direct file imports only — no `index.js` re-export files in `components/`
-**Rationale**: Barrel files force bundlers to eagerly evaluate all re-exported modules, adding 200-800ms to cold start. Direct imports (`import PlayerCard from '@/components/player/PlayerCard'`) are faster and more explicit.
-
-## R-12: Path Aliases
-
-**Decision**: Configure `@` as alias for `src/` in `vite.config.js`
-**Rationale**: Avoids fragile relative path chains (`../../components/...`). Standard Vite pattern.
-
-```js
-resolve: { alias: { '@': path.resolve(__dirname, './src') } }
-```
-
-## R-13: Events API Route Naming
-
-**Decision**: Rename Flask route from `/api/games` to `/api/events` for consistency with React page names
-**Rationale**: The React app has `Events.jsx`, `EventDetail.jsx`, and `api/events.js`. Using `/api/games` as the backend route creates a naming mismatch. Rename to `/api/events` in Flask and update any existing consumers.
-**Migration**: Add `/api/events` routes in Flask; optionally keep `/api/games` as a deprecated alias during transition.
-
-## R-14: Jinja2 Parallel Operation
-
-**Decision**: Keep Jinja2 templates and `routes/pages.py` running alongside the React SPA during migration
-**Rationale**: Allows incremental rollout — React app can be tested in production while Jinja2 pages remain as fallback. Remove Jinja2 templates only after verifying all React pages work correctly. Nginx serves React `dist/` for non-API routes, but Flask still has the pages blueprint registered (just unreachable behind Nginx catch-all).
-
-## R-15: Admin Pages in React
-
-**Decision**: Migrate admin pages to React with admin authorization checks
-**Rationale**: Admin pages (audit log, event management) should be part of the SPA for consistent UX. The `AuthContext` exposes `user.user_id`, and admin checks are done server-side via existing `@require_admin` decorator on API endpoints. React admin pages simply call admin API endpoints — if the user isn't admin, the API returns 403.
-**Implementation**: Add `is_admin` field to `/api/me` response so React can conditionally show admin nav links and pages.
-
-## R-16: Static Content Pages
-
-**Decision**: Lightweight React components with hardcoded content (no markdown)
-**Rationale**: About, Help, Privacy, Terms pages are simple HTML content. Rebuilding as React components with Tailwind classes preserves the existing visual design while keeping them consistent with the SPA layout (shared Nav/Footer). No markdown parser dependency needed.
-
-## R-17: Life Counter
-
-**Decision**: Rebuild as a standard React component within the SPA
-**Rationale**: Keeps all pages consistent in look, feel, and routing. The life counter currently receives session data via template injection — in React, it uses `useAuth()` from `AuthContext` instead. All interactive JS logic is reimplemented as React state.
-
-## R-18: Node.js on Production Server
-
-**Decision**: Install Node.js 20 LTS on Linode as a deployment prerequisite
-**Rationale**: Required for `npm ci && npm run build` during deploy. One-time setup task. Use NodeSource or nvm for installation.
-**Task**: Add Node.js installation step to deployment documentation.
+---
 
 ## Summary
 
 | # | Topic | Decision |
 |---|-------|----------|
-| R-1 | Tailwind | v4 via @tailwindcss/vite |
-| R-2 | React Router | v6 createBrowserRouter |
-| R-3 | Auth/CORS | credentials: include + Vite proxy; no flask-cors |
-| R-4 | /api/me | New Flask endpoint reading session |
-| R-5 | Vite proxy | Forward /api, /avatar-images, /card-images, /discord, /google, /logout |
-| R-6 | Nginx | try_files catch-all for React Router |
-| R-7 | Auth callbacks | Redirect to FRONTEND_URL env var |
-| R-8 | Build | npm ci && npm run build on server during deploy |
-| R-9 | Lazy loading | React.lazy() for DeckViewer + CurioTracking |
-| R-10 | Colors | Copy from web-app/tailwind.config.js |
-| R-11 | No barrels | Direct imports only |
-| R-12 | Path aliases | @ → src/ in vite.config.js |
-| R-13 | Events API | Rename /api/games → /api/events |
-| R-14 | Parallel operation | Keep Jinja2 running alongside React SPA |
-| R-15 | Admin pages | Migrate to React with server-side admin checks |
-| R-16 | Static pages | Lightweight React components, hardcoded content |
-| R-17 | Life Counter | Rebuild as React component in SPA |
-| R-18 | Node.js | Install Node 20 LTS on Linode (one-time setup) |
+| R-1 | API | carde.io JSON REST API, no scraping |
+| R-2 | Phase resolution | Highest stage = final; stage-1 = full roster; merge by offset |
+| R-3 | Database | web-app/explorer.db + EXPLORER_DB_PATH |
+| R-4 | Auth | is_explorer_admin() + require_explorer_admin; DB-backed |
+| R-5 | Points config | Three-track JSON (pathfinder, persecutor, threshold) in explorer_seasons |
+| R-6 | Migration | create_explorer_tables.py in app.py startup |

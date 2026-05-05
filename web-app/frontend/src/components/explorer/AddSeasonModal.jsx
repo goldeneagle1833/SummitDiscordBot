@@ -4,7 +4,7 @@ import { createSeason } from '@/api/explorer'
 const RULE_SETS = {
   explorer: {
     label: 'Explorer Rules',
-    description: 'Participation + win bonus (Pathfinder) and top-cut placement (Persecutor). Qualify at Persecutor ≥ 10.',
+    description: 'Participation (10) + win bonus (0 losses: +5, 1: +4, 2: +3) and top-cut placement (1st: 10, 2nd: 5, 3rd–4th: 4, 5th–6th: 3, 7th–8th: 2). Qualify at Persecutor ≥ 10.',
     config: {
       participation: 10,
       bonus_pathfinder: { '0': 5, '1': 4, '2': 3 },
@@ -12,14 +12,64 @@ const RULE_SETS = {
       trials_threshold: 10,
     },
   },
+  win_focused: {
+    label: 'Win-Focused',
+    description: 'Participation (5) + heavy win bonus (0 losses: +10, 1: +8, 2: +6, 3: +4, 4: +2). No top-cut placement points.',
+    config: {
+      participation: 5,
+      bonus_pathfinder: { '0': 10, '1': 8, '2': 6, '3': 4, '4': 2 },
+      persecutor: {},
+      trials_threshold: 0,
+    },
+  },
+  placement_only: {
+    label: 'Placement Only',
+    description: 'Participation (5) + top-8 placement only (1st: 15, 2nd: 10, 3rd–4th: 7, 5th–6th: 5, 7th–8th: 3). No win bonus. Qualify at ≥ 10.',
+    config: {
+      participation: 5,
+      bonus_pathfinder: {},
+      persecutor: { '1': 15, '2': 10, '3': 7, '4': 7, '5': 5, '6': 5, '7': 3, '8': 3 },
+      trials_threshold: 10,
+    },
+  },
+  top_heavy: {
+    label: 'Top Heavy',
+    description: 'Participation (3) + small win bonus (0 losses: +3, 1: +2, 2: +1) + big top-cut (1st: 20, 2nd: 12, 3rd–4th: 8, 5th–6th: 5, 7th–8th: 3). Qualify at ≥ 15.',
+    config: {
+      participation: 3,
+      bonus_pathfinder: { '0': 3, '1': 2, '2': 1 },
+      persecutor: { '1': 20, '2': 12, '3': 8, '4': 8, '5': 5, '6': 5, '7': 3, '8': 3 },
+      trials_threshold: 15,
+    },
+  },
+  expanded_placement: {
+    label: 'Expanded Placement (Top 16)',
+    description: 'Participation (10) + win bonus (0 losses: +5, 1: +4, 2: +3) + top-16 placement (1st: 15, 2nd: 10, 3rd–4th: 7, 5th–8th: 4–5, 9th–16th: 1–3). Qualify at ≥ 10.',
+    config: {
+      participation: 10,
+      bonus_pathfinder: { '0': 5, '1': 4, '2': 3 },
+      persecutor: { '1': 15, '2': 10, '3': 7, '4': 7, '5': 5, '6': 5, '7': 4, '8': 4, '9': 3, '10': 3, '11': 2, '12': 2, '13': 1, '14': 1, '15': 1, '16': 1 },
+      trials_threshold: 10,
+    },
+  },
   flat: {
-    label: 'Flat Points',
-    description: 'Fixed participation points only — no win bonus or top-cut points.',
+    label: 'Flat Participation',
+    description: 'Fixed 10 participation points only — no win bonus or top-cut points. No qualification threshold.',
     config: {
       participation: 10,
       bonus_pathfinder: {},
       persecutor: {},
       trials_threshold: 0,
+    },
+  },
+  balanced: {
+    label: 'Balanced',
+    description: 'Participation (8) + win bonus (0 losses: +6, 1: +5, 2: +4, 3: +3, 4: +2) + top-8 placement (1st: 8, 2nd: 6, 3rd–4th: 5, 5th–6th: 4, 7th–8th: 3). Qualify at ≥ 8.',
+    config: {
+      participation: 8,
+      bonus_pathfinder: { '0': 6, '1': 5, '2': 4, '3': 3, '4': 2 },
+      persecutor: { '1': 8, '2': 6, '3': 5, '4': 5, '5': 4, '6': 4, '7': 3, '8': 3 },
+      trials_threshold: 8,
     },
   },
   custom: {

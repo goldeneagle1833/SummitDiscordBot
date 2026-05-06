@@ -108,6 +108,35 @@ function PlayerRow({ player, rank, expanded, onToggle, isAdmin, onDeleteEvent })
   )
 }
 
+function Linkify({ text }) {
+  if (!text) return null
+  const urlRegex = /(https?:\/\/[^\s]+)/g
+  const parts = text.split(urlRegex)
+  return (
+    <>
+      {parts.map((part, i) =>
+        urlRegex.test(part) ? (
+          <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-secondary hover:underline">
+            {part}
+          </a>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  )
+}
+
+const SORT_COLUMNS = [
+  { key: 'rank', label: '#', className: 'w-12' },
+  { key: 'display_name', label: 'Player', className: '' },
+  { key: 'grand_explorer', label: 'Grand Explorer', className: 'text-center', color: 'text-secondary' },
+  { key: 'pathfinder_total', label: 'Pathfinder', className: 'text-center', color: 'text-blue-300' },
+  { key: 'persecutor_total', label: 'Persecutor', className: 'text-center', color: 'text-red-300' },
+  { key: 'events_played', label: 'Events', className: 'text-center', color: 'text-text-muted' },
+  { key: 'qualified', label: 'Status', className: 'text-center', color: 'text-text-muted' },
+]
+
 export default function ExplorerStandings() {
   const { user } = useAuth()
   const isExplorerAdmin = user?.is_explorer_admin || user?.is_admin
@@ -123,6 +152,8 @@ export default function ExplorerStandings() {
   const [showAddSeason, setShowAddSeason] = useState(false)
   const [showAddEvent, setShowAddEvent] = useState(false)
   const [showAdminPanel, setShowAdminPanel] = useState(false)
+  const [sortKey, setSortKey] = useState('rank')
+  const [sortDir, setSortDir] = useState('asc')
 
   const loadSeasons = () => {
     fetchSeasons()
@@ -151,6 +182,32 @@ export default function ExplorerStandings() {
   const togglePlayer = (uid) => {
     setExpandedPlayers((prev) => ({ ...prev, [uid]: !prev[uid] }))
   }
+
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'display_name' ? 'asc' : 'desc')
+    }
+  }
+
+  const sortedPlayers = leaderboard?.players
+    ? [...leaderboard.players].sort((a, b) => {
+        let aVal = a[sortKey]
+        let bVal = b[sortKey]
+        if (sortKey === 'display_name') {
+          aVal = (aVal || '').toLowerCase()
+          bVal = (bVal || '').toLowerCase()
+          return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+        }
+        if (sortKey === 'qualified') {
+          aVal = aVal ? 1 : 0
+          bVal = bVal ? 1 : 0
+        }
+        return sortDir === 'asc' ? aVal - bVal : bVal - aVal
+      })
+    : []
 
   const handleDeleteSeason = async () => {
     if (!selectedSeasonId) return
@@ -268,7 +325,7 @@ export default function ExplorerStandings() {
             </div>
             {selectedSeasonId && seasons.find((s) => s.id === selectedSeasonId)?.description && (
               <p className="text-sm text-text-muted mt-2">
-                {seasons.find((s) => s.id === selectedSeasonId).description}
+                <Linkify text={seasons.find((s) => s.id === selectedSeasonId).description} />
               </p>
             )}
           </div>
@@ -296,18 +353,23 @@ export default function ExplorerStandings() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-border bg-bg-elevated text-left">
-                      <th className="py-3 px-4 text-xs text-text-muted font-semibold uppercase tracking-wide w-12">#</th>
-                      <th className="py-3 px-4 text-xs text-text-muted font-semibold uppercase tracking-wide">Player</th>
-                      <th className="py-3 px-4 text-xs text-secondary font-semibold uppercase tracking-wide text-center">Grand Explorer</th>
-                      <th className="py-3 px-4 text-xs text-blue-300 font-semibold uppercase tracking-wide text-center">Pathfinder</th>
-                      <th className="py-3 px-4 text-xs text-red-300 font-semibold uppercase tracking-wide text-center">Persecutor</th>
-                      <th className="py-3 px-4 text-xs text-text-muted font-semibold uppercase tracking-wide text-center">Events</th>
-                      <th className="py-3 px-4 text-xs text-text-muted font-semibold uppercase tracking-wide text-center">Status</th>
+                      {SORT_COLUMNS.map((col) => (
+                        <th
+                          key={col.key}
+                          onClick={() => handleSort(col.key)}
+                          className={`py-3 px-4 text-xs ${col.color || 'text-text-muted'} font-semibold uppercase tracking-wide ${col.className} cursor-pointer select-none hover:text-text-primary transition-colors`}
+                        >
+                          {col.label}
+                          {sortKey === col.key && (
+                            <span className="ml-1">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                          )}
+                        </th>
+                      ))}
                       {isExplorerAdmin && <th className="py-3 px-4 w-8" />}
                     </tr>
                   </thead>
                   <tbody>
-                    {leaderboard.players.map((player) => (
+                    {sortedPlayers.map((player) => (
                       <PlayerRow
                         key={player.cardeio_user_id}
                         player={player}

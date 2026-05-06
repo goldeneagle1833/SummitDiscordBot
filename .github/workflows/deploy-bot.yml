@@ -28,18 +28,9 @@ jobs:
           script: |
             cd /root/Summit/SummitDiscordBot
 
-            # Clear any unmerged/conflicting paths (e.g. node_modules tracked by mistake)
-            git diff --name-only --diff-filter=U | xargs -r git rm --cached 2>/dev/null || true
-            git diff --cached --quiet || git commit -m "auto-resolve tracked conflicts" 2>/dev/null || true
-
-            # Stash any local changes to avoid conflicts
-            git stash
-
-            # Pull latest changes
-            git pull origin main
-
-            # Apply stashed changes if any (will merge automatically)
-            git stash pop || true
+            # Force-sync to latest origin/main (deploy target should always match remote)
+            git fetch origin main
+            git reset --hard origin/main
 
             # Install/update dependencies in venv
             cd discord-bot

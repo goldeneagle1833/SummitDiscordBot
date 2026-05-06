@@ -299,7 +299,7 @@ export default function Nav() {
 
       <nav className="bg-bg-surface border-b border-border sticky top-0 z-[1000]">
         <div className="max-w-content mx-auto px-4 flex items-center h-16">
-          {/* Left: Hamburger + Brand */}
+          {/* Left: Hamburger (mobile only) + Brand */}
           <div className="flex items-center gap-4 flex-1">
             <button
               className="flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
@@ -313,8 +313,9 @@ export default function Nav() {
             </Link>
           </div>
 
-          {/* Right: Nav Links (desktop) + Notifications + Auth */}
-          <div className="hidden md:flex items-center gap-5 flex-1 justify-end">
+          {/* Right */}
+          <div className="flex items-center gap-3 flex-1 justify-end">
+            {/* Nav links - visible on desktop */}
             {NAV_LINKS.map(({ to, href, label }) =>
               href ? (
                 <a
@@ -322,7 +323,7 @@ export default function Nav() {
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-text hover:text-secondary font-medium transition-colors"
+                  className="hidden md:inline-block text-text hover:text-secondary font-medium transition-colors"
                 >
                   {label}
                 </a>
@@ -330,7 +331,7 @@ export default function Nav() {
                 <Link
                   key={label}
                   to={to}
-                  className={`font-medium transition-colors ${
+                  className={`hidden md:inline-block font-medium transition-colors ${
                     location.pathname === to ? 'text-secondary' : 'text-text hover:text-secondary'
                   }`}
                 >
@@ -338,45 +339,14 @@ export default function Nav() {
                 </Link>
               )
             )}
-            <NotificationBell user={user} />
-            {!loading && (
-              user ? (
-                <>
-                  <Link
-                    to={`/player/${user.user_id}`}
-                    className="text-primary font-semibold hover:text-primary-light transition-colors"
-                  >
-                    {user.username}
-                  </Link>
-                  <a
-                    href="/api/logout"
-                    className="text-sm text-text-muted hover:text-accent-red transition-colors"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      fetch('/api/logout', { credentials: 'include' })
-                        .then(() => window.location.reload())
-                    }}
-                  >
-                    Logout
-                  </a>
-                </>
-              ) : (
-                <Link
-                  to={`/login?next=${encodeURIComponent(window.location.href)}`}
-                  className="text-sm bg-primary/20 text-primary hover:bg-primary/30 px-3 py-1.5 rounded-soft transition-colors"
-                >
-                  Login
-                </Link>
-              )
-            )}
-          </div>
 
-          {/* Mobile right: notification bell + life counter icon */}
-          <div className="flex md:hidden items-center gap-2 flex-1 justify-end">
+            {/* Notification bell - single instance, always visible */}
             <NotificationBell user={user} />
+
+            {/* Mobile life counter */}
             <Link
               to="/life-counter"
-              className="flex items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
+              className="flex md:hidden items-center justify-center w-10 h-10 rounded hover:bg-white/10 transition-colors"
               aria-label="Life Counter"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="w-6 h-6">
@@ -386,6 +356,40 @@ export default function Nav() {
                 <path d="M17 10C14.5 10 12.5 11.5 12.5 13.5V17H21.5V13.5C21.5 11.5 19.5 10 17 10Z" fill="white" />
               </svg>
             </Link>
+
+            {/* Desktop auth */}
+            {!loading && (
+              <div className="hidden md:flex items-center gap-3">
+                {user ? (
+                  <>
+                    <Link
+                      to={`/player/${user.user_id}`}
+                      className="text-primary font-semibold hover:text-primary-light transition-colors"
+                    >
+                      {user.username}
+                    </Link>
+                    <a
+                      href="/api/logout"
+                      className="text-sm text-text-muted hover:text-accent-red transition-colors"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        fetch('/api/logout', { credentials: 'include' })
+                          .then(() => window.location.reload())
+                      }}
+                    >
+                      Logout
+                    </a>
+                  </>
+                ) : (
+                  <Link
+                    to={`/login?next=${encodeURIComponent(window.location.href)}`}
+                    className="text-sm bg-primary/20 text-primary hover:bg-primary/30 px-3 py-1.5 rounded-soft transition-colors"
+                  >
+                    Login
+                  </Link>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </nav>
@@ -407,8 +411,8 @@ export default function Nav() {
           </button>
         </div>
 
-        {/* Navigation & External links */}
-        <div className="border-b border-border">
+        {/* Navigation & External links - hidden on desktop since they're in the nav bar */}
+        <div className="border-b border-border md:hidden">
           <SidebarLink to="/" label="Home" location={location} onClick={close} />
           <SidebarExternal href="https://discord.gg/ZDqHSK9VGx" label="Discord" />
           <SidebarExternal href="https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink" label="Patreon" />
@@ -451,43 +455,46 @@ export default function Nav() {
           )}
         </div>
 
-        {/* Creator link */}
-        {(user?.is_creator || user?.is_admin) && (
-          <div className="border-b border-border">
-            <SidebarLink to="/creator" label="Creator Stats" location={location} onClick={close} />
-          </div>
-        )}
+        {/* Full navigation */}
+        <div>
+          {/* Creator link */}
+          {(user?.is_creator || user?.is_admin) && (
+            <div className="border-b border-border">
+              <SidebarLink to="/creator" label="Creator Stats" location={location} onClick={close} />
+            </div>
+          )}
 
-        {/* Admin link */}
-        {user?.is_admin && (
-          <div className="border-b border-border">
-            <Link
-              to="/admin/audit-log"
-              className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
-              onClick={close}
-            >
-              Admin Log
-            </Link>
-          </div>
-        )}
+          {/* Admin link */}
+          {user?.is_admin && (
+            <div className="border-b border-border">
+              <Link
+                to="/admin/audit-log"
+                className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
+                onClick={close}
+              >
+                Admin Log
+              </Link>
+            </div>
+          )}
 
-        {/* Main navigation */}
-        <SidebarLink to="/avatars" label="Avatar Winrates" location={location} onClick={close} />
-        <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
-        <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
-        <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} />
-        <SidebarLink to="/top-8" label="Top 8 Decks" location={location} onClick={close} />
-        <SidebarLink to="/fun-stats" label="Fun Stats" location={location} onClick={close} />
-        {user?.is_admin && (
-          <SidebarLink to="/cards" label="Card Winrates" location={location} onClick={close} />
-        )}
-        <SidebarLink to="/elo" label="ELO Leaderboards" location={location} onClick={close} />
-        <SidebarLink to="/elo/limited" label="Limited Leaderboard" location={location} onClick={close} />
-        <SidebarLink to="/match-history" label="Match History" location={location} onClick={close} />
-        <SidebarLink to="/life-counter" label="Life Counter" location={location} onClick={close} />
-        <SidebarLink to="/help" label="Help" location={location} onClick={close} />
-        <SidebarLink to="/community" label="Community" location={location} onClick={close} />
-        <SidebarLink to="/curio-tracking" label="Curio Tracking" location={location} onClick={close} />
+          {/* Main navigation */}
+          <SidebarLink to="/avatars" label="Avatar Winrates" location={location} onClick={close} />
+          <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
+          <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
+          <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} />
+          <SidebarLink to="/top-8" label="Top 8 Decks" location={location} onClick={close} />
+          <SidebarLink to="/fun-stats" label="Fun Stats" location={location} onClick={close} />
+          {user?.is_admin && (
+            <SidebarLink to="/cards" label="Card Winrates" location={location} onClick={close} />
+          )}
+          <SidebarLink to="/elo" label="ELO Leaderboards" location={location} onClick={close} />
+          <SidebarLink to="/elo/limited" label="Limited Leaderboard" location={location} onClick={close} />
+          <SidebarLink to="/match-history" label="Match History" location={location} onClick={close} />
+          <SidebarLink to="/life-counter" label="Life Counter" location={location} onClick={close} />
+          <SidebarLink to="/help" label="Help" location={location} onClick={close} />
+          <SidebarLink to="/community" label="Community" location={location} onClick={close} />
+          <SidebarLink to="/curio-tracking" label="Curio Tracking" location={location} onClick={close} />
+        </div>
       </aside>
     </>
   )

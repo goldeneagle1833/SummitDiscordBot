@@ -2145,7 +2145,7 @@ class LFGCog(commands.Cog):
         self, ctx, winner: discord.Member = None, loser: discord.Member = None
     ):
         """Report a limited match that only affects ELO (not arena runs). Usage: !limited_report @winner @loser"""
-        DRAFT_SORCERY_USER_ID = 247563860746305536
+        DRAFT_SORCERY_USER_ID = 788152825325551647
 
         # Permission check: bot admins OR the Draft Sorcery user
         is_admin = False

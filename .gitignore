@@ -16,6 +16,7 @@ coverage.xml
 .coverage
 htmlcov/
 web-app/frontend/coverage/
+web-app/scripts/demo_host_bypass.html
 
 # Python
 __pycache__/

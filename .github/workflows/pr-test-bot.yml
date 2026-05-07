@@ -25,7 +25,6 @@ jobs:
         run: |
           cd discord-bot
           pip install -r requirements.txt
-          pip install pytest
 
       - name: Run pytest
         run: |

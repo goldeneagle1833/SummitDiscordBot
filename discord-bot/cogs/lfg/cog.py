@@ -158,6 +158,7 @@ class LFGCog(commands.Cog):
     async def update_leaderboard(self):
         """Update the leaderboard in the designated channel"""
         import sqlite3
+        from repositories.elo_repo import ELO_COUNTING_MATCH_FILTER
         from utils.database import get_active_event
 
         leaderboard_channel_id = config.LEADERBOARD_CHANNEL_ID
@@ -210,7 +211,10 @@ class LFGCog(commands.Cog):
             # Calculate total games played in current event only
             if event_start_str:
                 cursor_matches.execute(
-                    "SELECT COUNT(*) FROM match_records WHERE timestamp >= ?",
+                    f"""
+                    SELECT COUNT(*) FROM match_records
+                    WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
+                    """,
                     (event_start_str,),
                 )
             else:
@@ -253,9 +257,11 @@ class LFGCog(commands.Cog):
                     # Count games played by this user in current event only
                     if event_start_str:
                         cursor_matches.execute(
-                            """
+                            f"""
                             SELECT COUNT(*) FROM match_records
-                            WHERE (winner_id = ? OR losser_id = ?) AND timestamp >= ?
+                            WHERE (winner_id = ? OR losser_id = ?)
+                              AND timestamp >= ?
+                              AND {ELO_COUNTING_MATCH_FILTER}
                             """,
                             (user_id, user_id, event_start_str),
                         )

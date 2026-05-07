@@ -223,6 +223,65 @@ def limited_winner_report(
     return (match_id, winner_run_complete, loser_run_complete)
 
 
+def limited_elo_only_report(
+    reporter_id: int,
+    winner_id: int,
+    winner_display_name: str,
+    loser_id: int,
+    loser_display_name: str,
+    first_player: str = "n",
+    match_time: int = 0,
+    curiosa_url_winner: str = "",
+    curiosa_url_loser: str = "",
+    match_comment: str = "",
+    winner_went_first: str = "n",
+    loser_went_first: str = "n",
+    json_deck_data_winner: str = "{}",
+    json_deck_data_loser: str = "{}",
+) -> tuple:
+    """Report a limited match that only affects ELO, not arena runs.
+
+    Updates limited ELO for both players and inserts a match record,
+    but does NOT increment wins/losses on any arena run.
+
+    Returns:
+        Tuple of (match_id, winner_new_elo, loser_new_elo)
+    """
+    # Update Limited ELO for both players
+    winner_new_elo, winner_elo_change = update_limited_elo(winner_id, winner_display_name, True, loser_id)
+    loser_new_elo, loser_elo_change = update_limited_elo(loser_id, loser_display_name, False, winner_id)
+
+    # Insert limited match record (no run IDs)
+    match_id = insert_limited_match_record(
+        reporter_id=reporter_id,
+        winner_id=winner_id,
+        winner_display_name=winner_display_name,
+        loser_id=loser_id,
+        loser_display_name=loser_display_name,
+        did_win=True,
+        first_player=first_player,
+        match_time=match_time,
+        curiosa_url_winner=curiosa_url_winner,
+        curiosa_url_loser=curiosa_url_loser,
+        match_comment=match_comment,
+        json_deck_data_winner=json_deck_data_winner,
+        json_deck_data_loser=json_deck_data_loser,
+        winner_elo_change=winner_elo_change,
+        loser_elo_change=loser_elo_change,
+        winner_went_first=winner_went_first,
+        loser_went_first=loser_went_first,
+        winner_run_id=None,
+        loser_run_id=None,
+    )
+
+    logger.info(
+        "Limited ELO-only match %d reported: winner=%s (%d), loser=%s (%d)",
+        match_id, winner_id, winner_new_elo, loser_id, loser_new_elo,
+    )
+
+    return (match_id, winner_new_elo, loser_new_elo)
+
+
 def forfeit_arena_run(user_id: int) -> str:
     """Forfeit the active arena run, applying remaining losses as ELO penalty.
 

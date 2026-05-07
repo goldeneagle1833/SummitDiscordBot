@@ -4,6 +4,7 @@ Migration: Create explorer.db tables for the Explorer Standings feature.
 Run with: python migrations/create_explorer_tables.py
 """
 
+import logging
 import sqlite3
 import sys
 from pathlib import Path
@@ -11,6 +12,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from webapp_config import EXPLORER_DB_PATH
+
+logger = logging.getLogger(__name__)
 
 
 def create_explorer_tables():
@@ -70,9 +73,10 @@ def create_explorer_tables():
 
     conn.commit()
     conn.close()
-    print("explorer tables ready")
+    logger.info("explorer tables ready")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     create_explorer_tables()
-    print("Migration completed.")
+    logger.info("Migration completed.")

@@ -48,10 +48,21 @@ jobs:
       - name: Run backend tests
         run: |
           cd web-app
-          pip install pytest
-          python -m pytest tests/ -v
+          pip install pytest pytest-cov
+          python -m pytest tests/ -v \
+            --cov=. \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml
         env:
           FLASK_ENV: testing
+
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: web-app/coverage.xml
+          if-no-files-found: ignore
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -68,7 +79,15 @@ jobs:
       - name: Run frontend tests
         run: |
           cd web-app/frontend
-          npm test
+          npm run test:coverage
+
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: web-app/frontend/coverage/
+          if-no-files-found: ignore
 
       - name: Build frontend
         run: |

@@ -10,6 +10,7 @@ while Discord bot reports continue using match_records with numeric IDs.
 Run with: python migrations/create_match_reports_web.py
 """
 
+import logging
 import sqlite3
 import sys
 from pathlib import Path
@@ -19,11 +20,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from webapp_config import MATCH_RECORDS_DB_PATH
 
+logger = logging.getLogger(__name__)
+
 
 def create_match_reports_web_table():
     """Create match_reports_web table if it doesn't exist."""
 
-    print(f"Connecting to: {MATCH_RECORDS_DB_PATH}")
+    logger.info("Connecting to: %s", MATCH_RECORDS_DB_PATH)
     conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
     cursor = conn.cursor()
 
@@ -33,11 +36,11 @@ def create_match_reports_web_table():
     )
 
     if cursor.fetchone():
-        print("✓ Table match_reports_web already exists, skipping creation")
+        logger.info("Table match_reports_web already exists, skipping creation")
         conn.close()
         return
 
-    print("Creating match_reports_web table...")
+    logger.info("Creating match_reports_web table...")
 
     # Create table with TEXT columns for all IDs to support Google OAuth
     cursor.execute("""
@@ -119,16 +122,14 @@ def create_match_reports_web_table():
     conn.commit()
     conn.close()
 
-    print("✓ Successfully created match_reports_web table with indexes")
-    print("✓ Web-based match reports will now use this table")
+    logger.info("Successfully created match_reports_web table with indexes")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
         create_match_reports_web_table()
-        print("\n✅ Migration completed successfully!")
-    except Exception as e:
-        print(f"\n❌ Migration failed: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
+        logger.info("Migration completed successfully")
+    except Exception:
+        logger.exception("Migration failed")
         sys.exit(1)

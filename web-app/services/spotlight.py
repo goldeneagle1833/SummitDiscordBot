@@ -34,24 +34,27 @@ def _get_openai_client():
 
 
 _SPOTLIGHT_PROMPT = (
-    "You are writing a one-sentence spotlight blurb for a competitive card game called "
+    "You are writing a short spotlight blurb for a competitive card game called "
     "Sorcery: Contested Realm. You will receive a player name, their avatar (the champion "
-    "they battle with), the elements they wield, the number of games played with that avatar, "
-    "and their win count.\n\n"
-    "Write ONE sentence (under 40 words) in this style with a little variety of flavor:\n"
-    '"{name} has taken {avatar} into battle across {games} games, wielding {elements} to claim {wins} victories."\n\n'
+    "they battle with), the elements they wield, their season stats (total games, wins, "
+    "unique opponents), and their record with their current avatar.\n\n"
+    "Write 1-2 sentences (under 60 words) in this style with a little variety of flavor:\n"
+    '"{name} has taken {avatar} into battle across {avatar_games} games, wielding {elements} '
+    'to claim {avatar_wins} victories. With {total_games} matches and {opponents} challengers '
+    'faced this season, the grind never stops."\n\n'
     "RULES:\n"
-    "- ONE sentence only, under 40 words.\n"
-    "- You MUST include the player name, avatar name, element names, game count, and win count.\n"
+    "- 1-2 sentences, under 60 words.\n"
+    "- You MUST include the player name, avatar name, element names, and the key numbers.\n"
+    "- Weave the season stats (total games, wins, opponents) and avatar stats naturally.\n"
     "- Add a little personality -- vary between heroic, dramatic, or playful tone.\n"
     "- NO emojis.\n"
     "- Reference the avatar as a living champion the player has chosen."
 )
 
 _AVATAR_FALLBACK_TEMPLATES = [
-    "{name} has taken {avatar} into battle across {games} games, wielding {elements} to claim {wins} victories.",
-    "With {avatar} at their side and the power of {elements}, {name} has fought {games} battles and emerged victorious {wins} times.",
-    "{name} rides into the arena with {avatar} -- {wins} wins across {games} matches, channeling {elements}.",
+    "{name} has taken {avatar} into battle across {avatar_games} games, wielding {elements} to claim {avatar_wins} victories. {total_games} matches played, {opponents} challengers faced this season.",
+    "With {avatar} at their side and the power of {elements}, {name} has fought {avatar_games} battles and emerged victorious {avatar_wins} times across {total_games} season matches.",
+    "{name} rides into the arena with {avatar} -- {avatar_wins} wins across {avatar_games} matches, channeling {elements}. {total_wins} victories and {opponents} unique opponents this season.",
 ]
 
 # ── GPT description disk cache ────────────────────────────────
@@ -81,7 +84,9 @@ def _save_desc_cache(cache: dict) -> None:
 
 def _generate_avatar_description(
     player_name: str, avatar_name: str, elements: list[str],
-    games: int, wins: int, rng: random.Random,
+    avatar_games: int, avatar_wins: int,
+    total_games: int, total_wins: int, opponents: int,
+    rng: random.Random,
 ) -> str:
     """Generate a fantasy-style description via GPT, with disk caching and template fallback."""
     today = date.today().isoformat()
@@ -101,8 +106,11 @@ def _generate_avatar_description(
                 f"Player: {player_name}\n"
                 f"Avatar: {avatar_name}\n"
                 f"Elements: {elements_str}\n"
-                f"Games with this avatar: {games}\n"
-                f"Wins with this avatar: {wins}"
+                f"Games with this avatar: {avatar_games}\n"
+                f"Wins with this avatar: {avatar_wins}\n"
+                f"Total season games: {total_games}\n"
+                f"Total season wins: {total_wins}\n"
+                f"Unique opponents faced: {opponents}"
             )
             response = client.responses.create(
                 model="gpt-4.1-nano",
@@ -120,7 +128,8 @@ def _generate_avatar_description(
         template = rng.choice(_AVATAR_FALLBACK_TEMPLATES)
         description = template.format(
             name=player_name, avatar=avatar_name, elements=elements_str,
-            games=games, wins=wins,
+            avatar_games=avatar_games, avatar_wins=avatar_wins,
+            total_games=total_games, total_wins=total_wins, opponents=opponents,
         )
 
     # Save to disk cache (only keep today)
@@ -168,12 +177,10 @@ SPOTLIGHT_TYPES = ["player_of_the_day", "community_channel", "community_website"
 
 # ── Description templates ──────────────────────────────────────
 
-_PLAYER_TEMPLATES = [
-    "{name} has been tearing through the ladder -- {wins} victories across {games} matches with {opponents} different challengers this season.",
-    "All eyes on {name} today. {wins} wins, {games} games, and {opponents} opponents who can tell you firsthand -- this one means business.",
-    "The arena has spoken. {name} steps into the spotlight with {wins} wins and {opponents} unique rivals faced across {games} battles.",
-    "{name} has squared off against {opponents} different opponents across {games} matches this season, claiming {wins} victories along the way.",
-    "Meet {name} -- {wins} wins, {opponents} unique opponents, and {games} total battles. The grind never stops.",
+_PLAYER_FALLBACK_TEMPLATES = [
+    "Meet {name} -- {wins} victories across {games} matches with {opponents} different challengers this season.",
+    "Meet {name} -- {games} games, {wins} wins, and {opponents} opponents who can tell you firsthand this one means business.",
+    "Meet {name} -- {wins} wins and {opponents} unique rivals faced across {games} battles. The grind never stops.",
 ]
 
 _CHANNEL_TEMPLATES = [
@@ -260,24 +267,25 @@ def _get_player_of_the_day(rng: random.Random) -> dict | None:
         # Get most recent avatar and element stats from match deck data
         last_avatar, elements_used = _get_player_deck_stats(user_id, start_date)
 
-        # Generate GPT fantasy description if we have avatar data
-        avatar_description = None
+        # Generate GPT description weaving all stats together
         avatar_bg_image = None
         if last_avatar:
-            avatar_description = _generate_avatar_description(
+            subtitle = _generate_avatar_description(
                 player_name=display_name,
                 avatar_name=last_avatar["name"],
                 elements=elements_used,
-                games=last_avatar["games"],
-                wins=last_avatar["wins"],
+                avatar_games=last_avatar["games"],
+                avatar_wins=last_avatar["wins"],
+                total_games=games,
+                total_wins=wins,
+                opponents=opponents,
                 rng=rng,
             )
             avatar_bg_image = _find_avatar_image(last_avatar["name"])
-
-        template = rng.choice(_PLAYER_TEMPLATES)
-        subtitle = template.format(
-            name=display_name, wins=wins, games=games, opponents=opponents
-        )
+        else:
+            subtitle = rng.choice(_PLAYER_FALLBACK_TEMPLATES).format(
+                name=display_name, wins=wins, games=games, opponents=opponents,
+            )
 
         return {
             "type": "player_of_the_day",
@@ -288,13 +296,8 @@ def _get_player_of_the_day(rng: random.Random) -> dict | None:
             "link": f"/player/{user_id}",
             "image_url": image_url,
             "stats": {
-                "games": games,
-                "wins": wins,
-                "unique_opponents": opponents,
-                "avatar": last_avatar,
-                "elements": elements_used,
-                "avatar_description": avatar_description,
                 "avatar_bg_image": avatar_bg_image,
+                "elements": elements_used,
             },
         }
     except Exception:

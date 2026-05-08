@@ -514,8 +514,6 @@ export default function Home() {
 
   useEffect(() => {
     fetchLeaderboard(source)
-    const interval = setInterval(() => fetchLeaderboard(source), 30000)
-    return () => clearInterval(interval)
   }, [source, fetchLeaderboard])
 
   const handleSourceChange = (src) => {

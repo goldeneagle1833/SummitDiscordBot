@@ -1,3 +1,23 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Coverage
+coverage.xml
+.coverage
+htmlcov/
+web-app/frontend/coverage/
+web-app/scripts/demo_host_bypass.html
+
 # Python
 __pycache__/
 *.py[cod]

@@ -4,6 +4,7 @@ Migration: Create analytics tables for page views and banner clicks.
 Run with: python migrations/create_analytics_tables.py
 """
 
+import logging
 import sqlite3
 import sys
 from pathlib import Path
@@ -11,6 +12,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from webapp_config import ANALYTICS_DB_PATH
+
+logger = logging.getLogger(__name__)
 
 
 def create_analytics_tables():
@@ -69,9 +72,10 @@ def create_analytics_tables():
 
     conn.commit()
     conn.close()
-    print("analytics tables ready")
+    logger.info("analytics tables ready")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     create_analytics_tables()
-    print("Migration completed.")
+    logger.info("Migration completed.")

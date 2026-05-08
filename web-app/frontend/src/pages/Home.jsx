@@ -255,44 +255,84 @@ function CommunitySpotlight() {
       new Blob([JSON.stringify({ banner_type: `spotlight_${spotlight.type}` })], { type: 'application/json' }))
   }
 
+  const stats = spotlight.stats
+  const avatar = stats?.avatar
+  const elements = stats?.elements || []
+  const avatarDescription = stats?.avatar_description
+
+  const ELEMENT_COLORS = {
+    Earth: 'text-green-400',
+    Fire: 'text-red-400',
+    Water: 'text-blue-400',
+    Air: 'text-yellow-300',
+  }
+
   const inner = (
     <>
-      {/* Avatar / image panel */}
-      {spotlight.image_url && (
-        <div className="flex items-center justify-center py-4">
+      {/* Header strip with badge + avatar image */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-bg-raised border-b border-border/50">
+        {spotlight.image_url && (
           <img
             src={spotlight.image_url}
             alt=""
-            className="w-20 h-20 rounded-full object-cover border-2 border-border"
+            className="w-12 h-12 rounded-full object-cover border-2 border-border flex-shrink-0"
             onError={(e) => { e.target.style.display = 'none' }}
           />
-        </div>
-      )}
-
-      {/* Text strip */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-bg-raised border-t border-border/50">
-        <span className={`text-xs font-bold px-2 py-0.5 ${colors.badge} text-white rounded flex-shrink-0`}>
-          {spotlight.badge_text}
-        </span>
+        )}
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-sm text-text-primary leading-tight">{spotlight.title}</div>
-          <div className="text-text-muted text-xs mt-0.5 leading-tight">{spotlight.subtitle}</div>
-          {spotlight.stats && (
-            <div className="flex gap-3 mt-1.5">
-              {[
-                ['Games', spotlight.stats.games],
-                ['Wins', spotlight.stats.wins],
-                ['Opponents', spotlight.stats.unique_opponents],
-              ].map(([label, val]) => (
-                <div key={label} className="text-center">
-                  <div className="text-xs font-bold text-secondary">{val}</div>
-                  <div className="text-[10px] text-text-muted">{label}</div>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-bold px-2 py-0.5 ${colors.badge} text-white rounded flex-shrink-0`}>
+              {spotlight.badge_text}
+            </span>
+            {elements.length > 0 && (
+              <div className="flex gap-1">
+                {elements.map((el) => (
+                  <span key={el} className={`text-[10px] font-semibold ${ELEMENT_COLORS[el] || 'text-text-muted'}`}>
+                    {el}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="font-semibold text-sm text-text-primary leading-tight mt-1">{spotlight.title}</div>
         </div>
         <span className="text-text-muted text-base group-hover:translate-x-1 transition-transform flex-shrink-0">&rarr;</span>
+      </div>
+
+      {/* Body */}
+      <div className="px-4 py-3 space-y-2">
+        <div className="text-text-muted text-xs leading-tight">{spotlight.subtitle}</div>
+
+        {/* Season stat pills */}
+        {stats && (
+          <div className="flex gap-3">
+            {[
+              ['Games', stats.games],
+              ['Wins', stats.wins],
+              ['Opponents', stats.unique_opponents],
+            ].map(([label, val]) => (
+              <div key={label} className="text-center">
+                <div className="text-xs font-bold text-secondary">{val}</div>
+                <div className="text-[10px] text-text-muted">{label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Avatar spotlight description */}
+        {avatarDescription && (
+          <div className="border-t border-border/30 pt-2">
+            {avatar && (
+              <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">
+                Last Avatar: <span className="text-text-primary font-semibold">{avatar.name}</span>
+                <span className="ml-2 text-green-400">{avatar.wins}W</span>
+                {' - '}
+                <span className="text-red-400">{avatar.losses}L</span>
+              </div>
+            )}
+            <div className="text-xs text-text-muted italic leading-relaxed">{avatarDescription}</div>
+          </div>
+        )}
       </div>
     </>
   )

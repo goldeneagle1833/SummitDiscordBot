@@ -93,6 +93,9 @@ VALID_API_KEYS = [key.strip() for key in API_KEYS_ENV.split(",") if key.strip()]
 # Draft Sorcery API key for server-to-server limited arena endpoints
 DRAFT_SORCERY_API_KEY = os.environ.get("DRAFT_SORCERY_API_KEY", os.environ.get("REALMSDRAFT_API_KEY", ""))
 
+# OpenAI API key (shared from discord-bot/.env) — used for spotlight descriptions
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+
 # Event star ratings (1-3 stars)
 EVENT_RATINGS = {
     "ColumbusExplor2025": 1,

@@ -1,13 +1,92 @@
 """Community Spotlight service — daily rotating feature for the homepage."""
 
+import json
 import logging
 import random
 import sqlite3
 from datetime import date
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, COMMUNITY_DB_PATH
+from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, COMMUNITY_DB_PATH, OPENAI_API_KEY
 
 logger = logging.getLogger(__name__)
+
+# ── OpenAI client (lazy init) ─────────────────────────────────
+
+_openai_client = None
+
+
+def _get_openai_client():
+    """Return a cached OpenAI client, or None if no API key is configured."""
+    global _openai_client
+    if _openai_client is not None:
+        return _openai_client
+    if not OPENAI_API_KEY:
+        return None
+    try:
+        from openai import OpenAI
+        _openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        return _openai_client
+    except Exception:
+        logger.error("Failed to initialize OpenAI client", exc_info=True)
+        return None
+
+
+_SPOTLIGHT_PROMPT = (
+    "You are a fantasy narrator for Sorcery: Contested Realm, a competitive card game. "
+    "Write a short, dramatic spotlight description for the Player of the Day. "
+    "You will receive the player's name, their current avatar (the character they battle with), "
+    "the elements they wield, and their record with that avatar.\n\n"
+    "RULES:\n"
+    "- Write 2-3 sentences, under 80 words.\n"
+    "- Use a fantasy narrator voice -- dramatic, immersive, like a tale being told around a fire.\n"
+    "- You MUST include the player name, avatar name, element names, and win count from the input.\n"
+    "- NO emojis.\n"
+    "- Vary your style: sometimes reverent, sometimes playful, sometimes ominous.\n"
+    "- Reference the avatar as if it is a living champion the player has chosen to take into battle."
+)
+
+_AVATAR_FALLBACK_TEMPLATES = [
+    "{name} has taken {avatar} into battle across {games} games, wielding {elements} to claim {wins} victories.",
+    "With {avatar} at their side and the power of {elements}, {name} has fought {games} battles and emerged victorious {wins} times.",
+    "{name} rides into the arena with {avatar} -- {wins} wins across {games} matches, channeling {elements}.",
+]
+
+
+def _generate_avatar_description(
+    player_name: str, avatar_name: str, elements: list[str],
+    games: int, wins: int, rng: random.Random,
+) -> str:
+    """Generate a fantasy-style description via GPT, with template fallback."""
+    elements_str = " and ".join(elements) if elements else "unknown forces"
+
+    client = _get_openai_client()
+    if client:
+        try:
+            prompt_input = (
+                f"Player: {player_name}\n"
+                f"Avatar: {avatar_name}\n"
+                f"Elements: {elements_str}\n"
+                f"Games with this avatar: {games}\n"
+                f"Wins with this avatar: {wins}"
+            )
+            response = client.responses.create(
+                model="gpt-4.1-nano",
+                instructions=_SPOTLIGHT_PROMPT,
+                input=prompt_input,
+            )
+            text = response.output_text.strip()
+            if text:
+                return text
+        except Exception:
+            logger.error("OpenAI API error for spotlight description", exc_info=True)
+
+    # Fallback to template
+    template = rng.choice(_AVATAR_FALLBACK_TEMPLATES)
+    return template.format(
+        name=player_name, avatar=avatar_name, elements=elements_str,
+        games=games, wins=wins,
+    )
+
 
 # ── Caching ────────────────────────────────────────────────────
 
@@ -108,6 +187,21 @@ def _get_player_of_the_day(rng: random.Random) -> dict | None:
         if avatar_info and avatar_info.get("avatar"):
             image_url = f"https://cdn.discordapp.com/avatars/{user_id}/{avatar_info['avatar']}.png?size=128"
 
+        # Get most recent avatar and element stats from match deck data
+        last_avatar, elements_used = _get_player_deck_stats(user_id, start_date)
+
+        # Generate GPT fantasy description if we have avatar data
+        avatar_description = None
+        if last_avatar:
+            avatar_description = _generate_avatar_description(
+                player_name=display_name,
+                avatar_name=last_avatar["name"],
+                elements=elements_used,
+                games=last_avatar["games"],
+                wins=last_avatar["wins"],
+                rng=rng,
+            )
+
         template = rng.choice(_PLAYER_TEMPLATES)
         subtitle = template.format(
             name=display_name, wins=wins, games=games, opponents=opponents
@@ -125,6 +219,9 @@ def _get_player_of_the_day(rng: random.Random) -> dict | None:
                 "games": games,
                 "wins": wins,
                 "unique_opponents": opponents,
+                "avatar": last_avatar,
+                "elements": elements_used,
+                "avatar_description": avatar_description,
             },
         }
     except Exception:
@@ -311,6 +408,124 @@ def _get_display_names(user_ids: list[str]) -> dict[str, str]:
         return result
     except Exception:
         return {}
+
+
+def _extract_avatar_and_elements(deck_json: str | None) -> tuple[str | None, list[str]]:
+    """Extract the main avatar name and element list from a deck JSON string."""
+    if not deck_json or deck_json in ("{}", ""):
+        return None, []
+    try:
+        deck_data = json.loads(deck_json)
+        # Avatar
+        avatar_name = None
+        avatar_list = deck_data.get("avatar", [])
+        if avatar_list:
+            for av in avatar_list:
+                if av and av.get("type") == "Avatar" and av.get("name"):
+                    avatar_name = av.get("name")
+                    break
+            if not avatar_name and avatar_list[0] and avatar_list[0].get("name"):
+                avatar_name = avatar_list[0].get("name")
+        # Elements
+        elements_set = set()
+        for section in ("spellbook", "sideboard"):
+            for card in deck_data.get(section, []) or []:
+                card_elements = card.get("elements", "")
+                if card_elements and card_elements != "None":
+                    for el in card_elements.split(","):
+                        el = el.strip()
+                        if el in ("Earth", "Fire", "Water", "Air"):
+                            elements_set.add(el)
+        return avatar_name, sorted(elements_set)
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError, AttributeError):
+        return None, []
+
+
+def _get_player_deck_stats(
+    user_id: str, start_date: str | None
+) -> tuple[dict | None, list[str]]:
+    """Get most recent avatar and its season stats for a player.
+
+    Returns:
+        (last_avatar, elements_used) where last_avatar is
+        {"name": str, "wins": int, "losses": int, "games": int} or None,
+        and elements_used is the sorted list of elements from that avatar's decks.
+    """
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        date_clause = ""
+        params_base = [user_id, user_id]
+        if start_date:
+            date_clause = "AND timestamp >= ?"
+            params_base.append(start_date)
+
+        # Query match rows with deck data, ordered by timestamp desc
+        try:
+            cur.execute(
+                f"""
+                SELECT
+                    CASE WHEN winner_id = ? THEN 1 ELSE 0 END AS did_win,
+                    json_deck_data_winner,
+                    json_deck_data_loser,
+                    timestamp
+                FROM match_records
+                WHERE (winner_id = ? OR losser_id = ?)
+                  AND (match_type = 'ranked' OR match_type IS NULL)
+                  {date_clause}
+                ORDER BY timestamp DESC
+                """,
+                [user_id] + params_base,
+            )
+            rows = cur.fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+
+        conn.close()
+
+        if not rows:
+            return None, []
+
+        # Find the most recent avatar name
+        last_avatar_name = None
+        for row in rows:
+            did_win = row[0]
+            player_json = row[1] if did_win else row[2]
+            avatar_name, _ = _extract_avatar_and_elements(player_json)
+            if avatar_name:
+                last_avatar_name = avatar_name
+                break
+
+        if not last_avatar_name:
+            return None, []
+
+        # Now compute stats for that specific avatar across all season matches
+        avatar_wins = 0
+        avatar_losses = 0
+        avatar_elements = set()
+
+        for row in rows:
+            did_win = row[0]
+            player_json = row[1] if did_win else row[2]
+            avatar_name, elements = _extract_avatar_and_elements(player_json)
+
+            if avatar_name == last_avatar_name:
+                if did_win:
+                    avatar_wins += 1
+                else:
+                    avatar_losses += 1
+                avatar_elements.update(elements)
+
+        return {
+            "name": last_avatar_name,
+            "wins": avatar_wins,
+            "losses": avatar_losses,
+            "games": avatar_wins + avatar_losses,
+        }, sorted(avatar_elements)
+    except Exception:
+        logger.error("Failed to get player deck stats", exc_info=True)
+        return None, []
 
 
 def _get_player_avatar(user_id: str) -> dict | None:

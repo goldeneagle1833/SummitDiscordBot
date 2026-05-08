@@ -28,6 +28,8 @@ from repositories.elo_repo import (  # noqa: F401
     get_top_16_user_ids,
     get_top_8_user_ids,
     get_total_match_count,
+    get_event_match_count,
+    get_player_event_match_count,
     get_event_participant_ids,
     has_player_played_event,
     get_ladder_challenge_today,

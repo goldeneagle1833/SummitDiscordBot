@@ -109,6 +109,7 @@ scripts/pull_logs.py
 BUSINESS_DOC.md
 SALES_DOC.md
 scripts/pull_logs.ps1
+web-app/.spotlight_desc_cache.json
 web-app/top-8-decks-by-event/latest_event.json
 web-app/top-8-decks-by-event/Summit Gothic Season 3 2026/Summit Gothic Season 3 2026.csv
 web-app/top-8-decks-by-event/Summit Gothic Season 3 2026/Summit Gothic Season 3 2026top8.csv

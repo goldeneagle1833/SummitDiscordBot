@@ -259,6 +259,7 @@ function CommunitySpotlight() {
   const avatar = stats?.avatar
   const elements = stats?.elements || []
   const avatarDescription = stats?.avatar_description
+  const avatarBgImage = stats?.avatar_bg_image
 
   const ELEMENT_COLORS = {
     Earth: 'text-green-400',
@@ -269,7 +270,18 @@ function CommunitySpotlight() {
 
   const inner = (
     <>
-      {/* Header strip with badge + avatar image */}
+      {/* Avatar background image panel (like avatar winrate page) */}
+      {avatarBgImage && (
+        <div className="relative w-full h-32 overflow-hidden">
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: `url('${avatarBgImage}')`, backgroundPosition: '50% 25%', opacity: 0.5 }}
+          />
+          <div className="absolute inset-0 bg-black/20" />
+        </div>
+      )}
+
+      {/* Header strip with badge + user profile image */}
       <div className="flex items-center gap-3 px-4 py-3 bg-bg-raised border-b border-border/50">
         {spotlight.image_url && (
           <img

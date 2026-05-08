@@ -2,11 +2,13 @@
 
 import json
 import logging
+import os
 import random
 import sqlite3
 from datetime import date
+from pathlib import Path
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, COMMUNITY_DB_PATH, OPENAI_API_KEY
+from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, COMMUNITY_DB_PATH, OPENAI_API_KEY, AVATAR_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -32,17 +34,18 @@ def _get_openai_client():
 
 
 _SPOTLIGHT_PROMPT = (
-    "You are a fantasy narrator for Sorcery: Contested Realm, a competitive card game. "
-    "Write a short, dramatic spotlight description for the Player of the Day. "
-    "You will receive the player's name, their current avatar (the character they battle with), "
-    "the elements they wield, and their record with that avatar.\n\n"
+    "You are writing a one-sentence spotlight blurb for a competitive card game called "
+    "Sorcery: Contested Realm. You will receive a player name, their avatar (the champion "
+    "they battle with), the elements they wield, the number of games played with that avatar, "
+    "and their win count.\n\n"
+    "Write ONE sentence (under 40 words) in this style with a little variety of flavor:\n"
+    '"{name} has taken {avatar} into battle across {games} games, wielding {elements} to claim {wins} victories."\n\n'
     "RULES:\n"
-    "- Write 2-3 sentences, under 80 words.\n"
-    "- Use a fantasy narrator voice -- dramatic, immersive, like a tale being told around a fire.\n"
-    "- You MUST include the player name, avatar name, element names, and win count from the input.\n"
+    "- ONE sentence only, under 40 words.\n"
+    "- You MUST include the player name, avatar name, element names, game count, and win count.\n"
+    "- Add a little personality -- vary between heroic, dramatic, or playful tone.\n"
     "- NO emojis.\n"
-    "- Vary your style: sometimes reverent, sometimes playful, sometimes ominous.\n"
-    "- Reference the avatar as if it is a living champion the player has chosen to take into battle."
+    "- Reference the avatar as a living champion the player has chosen."
 )
 
 _AVATAR_FALLBACK_TEMPLATES = [
@@ -51,13 +54,45 @@ _AVATAR_FALLBACK_TEMPLATES = [
     "{name} rides into the arena with {avatar} -- {wins} wins across {games} matches, channeling {elements}.",
 ]
 
+# ── GPT description disk cache ────────────────────────────────
+
+_DESC_CACHE_PATH = Path(__file__).parent.parent / ".spotlight_desc_cache.json"
+
+
+def _load_desc_cache() -> dict:
+    """Load cached GPT descriptions from disk. Returns {date_str: description}."""
+    try:
+        if _DESC_CACHE_PATH.exists():
+            data = json.loads(_DESC_CACHE_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return {}
+
+
+def _save_desc_cache(cache: dict) -> None:
+    """Persist GPT descriptions to disk."""
+    try:
+        _DESC_CACHE_PATH.write_text(json.dumps(cache), encoding="utf-8")
+    except Exception:
+        logger.error("Failed to save spotlight description cache", exc_info=True)
+
 
 def _generate_avatar_description(
     player_name: str, avatar_name: str, elements: list[str],
     games: int, wins: int, rng: random.Random,
 ) -> str:
-    """Generate a fantasy-style description via GPT, with template fallback."""
+    """Generate a fantasy-style description via GPT, with disk caching and template fallback."""
+    today = date.today().isoformat()
     elements_str = " and ".join(elements) if elements else "unknown forces"
+
+    # Check disk cache first
+    desc_cache = _load_desc_cache()
+    if today in desc_cache:
+        return desc_cache[today]
+
+    description = None
 
     client = _get_openai_client()
     if client:
@@ -76,16 +111,51 @@ def _generate_avatar_description(
             )
             text = response.output_text.strip()
             if text:
-                return text
+                description = text
         except Exception:
             logger.error("OpenAI API error for spotlight description", exc_info=True)
 
     # Fallback to template
-    template = rng.choice(_AVATAR_FALLBACK_TEMPLATES)
-    return template.format(
-        name=player_name, avatar=avatar_name, elements=elements_str,
-        games=games, wins=wins,
-    )
+    if not description:
+        template = rng.choice(_AVATAR_FALLBACK_TEMPLATES)
+        description = template.format(
+            name=player_name, avatar=avatar_name, elements=elements_str,
+            games=games, wins=wins,
+        )
+
+    # Save to disk cache (only keep today)
+    _save_desc_cache({today: description})
+    return description
+
+
+# ── Avatar image helper ───────────────────────────────────────
+
+
+def _find_avatar_image(avatar_name: str) -> str | None:
+    """Find the avatar image file path for use as a background, returns URL path or None."""
+    if not avatar_name or not AVATAR_IMAGES_DIR.exists():
+        return None
+    try:
+        files = [
+            f for f in os.listdir(AVATAR_IMAGES_DIR)
+            if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+        ]
+        norm = lambda s: s.lower().replace(" ", "").replace("-", "").replace("_", "").replace("'", "")
+        target = norm(avatar_name)
+        # Exact match
+        for f in files:
+            if norm(f.rsplit(".", 1)[0]) == target:
+                return f"/avatar-images/{f}"
+        # Substring match
+        for f in files:
+            if target in norm(f.rsplit(".", 1)[0]):
+                return f"/avatar-images/{f}"
+        for f in files:
+            if norm(f.rsplit(".", 1)[0]) in target:
+                return f"/avatar-images/{f}"
+    except Exception:
+        pass
+    return None
 
 
 # ── Caching ────────────────────────────────────────────────────
@@ -192,6 +262,7 @@ def _get_player_of_the_day(rng: random.Random) -> dict | None:
 
         # Generate GPT fantasy description if we have avatar data
         avatar_description = None
+        avatar_bg_image = None
         if last_avatar:
             avatar_description = _generate_avatar_description(
                 player_name=display_name,
@@ -201,6 +272,7 @@ def _get_player_of_the_day(rng: random.Random) -> dict | None:
                 wins=last_avatar["wins"],
                 rng=rng,
             )
+            avatar_bg_image = _find_avatar_image(last_avatar["name"])
 
         template = rng.choice(_PLAYER_TEMPLATES)
         subtitle = template.format(
@@ -222,6 +294,7 @@ def _get_player_of_the_day(rng: random.Random) -> dict | None:
                 "avatar": last_avatar,
                 "elements": elements_used,
                 "avatar_description": avatar_description,
+                "avatar_bg_image": avatar_bg_image,
             },
         }
     except Exception:

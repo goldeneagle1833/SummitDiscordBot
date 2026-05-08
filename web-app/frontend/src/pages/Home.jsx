@@ -271,12 +271,21 @@ function CommunitySpotlight() {
     // Player card matching promo banner layout: image panel + text strip
     <>
       {/* Image panel (same h-44 as promo banners) */}
-      <div className="relative w-full h-44 overflow-hidden" style={{ background: 'rgba(0,0,0,0.6)' }}>
+      <div className="relative w-full h-44 overflow-hidden flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
         <div
           className="absolute inset-0 bg-cover bg-center"
           style={{ backgroundImage: `url('${avatarBgImage}')`, backgroundPosition: '50% 25%', opacity: 0.5 }}
         />
         <div className="absolute inset-0 bg-black/20" />
+        {spotlight.image_url && (
+          <img
+            src={spotlight.image_url}
+            alt=""
+            className="relative w-20 h-20 rounded-full object-cover border-2 border-white/40"
+            style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.7)' }}
+            onError={(e) => { e.target.style.display = 'none' }}
+          />
+        )}
       </div>
 
       {/* Text strip (matches promo banner layout) */}
@@ -284,14 +293,6 @@ function CommunitySpotlight() {
         <span className={`text-xs font-bold px-2 py-0.5 ${colors.badge} text-white rounded flex-shrink-0`}>
           {spotlight.badge_text}
         </span>
-        {spotlight.image_url && (
-          <img
-            src={spotlight.image_url}
-            alt=""
-            className="w-8 h-8 rounded-full object-cover border border-border flex-shrink-0"
-            onError={(e) => { e.target.style.display = 'none' }}
-          />
-        )}
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-sm text-text-primary leading-tight">{spotlight.title}</div>
           <div className="text-text-muted text-xs mt-0.5 leading-tight">{spotlight.subtitle}</div>

@@ -2,6 +2,7 @@
 
 import logging
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Optional
 import requests
@@ -37,7 +38,7 @@ def _load_channels() -> dict:
         db_channels = repo.get_youtube_channels()
         if db_channels:
             # Convert DB rows to the same dict format, keyed by lowercased name
-            return {
+            result = {
                 ch["name"].lower().replace(" ", ""): {
                     "name": ch["name"],
                     "channel_id": ch["channel_id"],
@@ -45,8 +46,10 @@ def _load_channels() -> dict:
                 }
                 for ch in db_channels
             }
-    except Exception:
-        pass
+            logger.info("Loaded %d YouTube channels from DB", len(result))
+            return result
+    except Exception as e:
+        logger.warning("Failed to load YouTube channels from DB: %s", e)
     return _FALLBACK_CHANNELS
 
 
@@ -139,12 +142,21 @@ def get_latest_videos() -> dict:
     # Load channels from DB (or fallback)
     channels = _load_channels()
 
-    # Fetch fresh data
+    # Fetch fresh data in parallel
     videos = {}
-    for channel_key in channels:
-        video = fetch_latest_video(channel_key, channels)
-        if video:
-            videos[channel_key] = video
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {
+            executor.submit(fetch_latest_video, channel_key, channels): channel_key
+            for channel_key in channels
+        }
+        for future in as_completed(futures):
+            channel_key = futures[future]
+            try:
+                video = future.result()
+                if video:
+                    videos[channel_key] = video
+            except Exception as e:
+                logger.warning("Unexpected error fetching channel %s: %s", channel_key, e)
 
     # Update cache
     _video_cache = videos

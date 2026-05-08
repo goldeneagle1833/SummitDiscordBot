@@ -268,54 +268,49 @@ function CommunitySpotlight() {
   }
 
   const inner = isPlayerCard ? (
-    // Full-bleed avatar image card (like avatar winrate tiles)
-    <div className="relative" style={{ minHeight: '180px' }}>
-      <div
-        className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: `url('${avatarBgImage}')`, backgroundPosition: '50% 25%', opacity: 0.5 }}
-      />
-      <div className="absolute inset-0 bg-black/20" />
-      <div className="relative p-4 flex flex-col h-full justify-between" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.8)', minHeight: '180px' }}>
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-bold px-2 py-0.5 bg-black text-white rounded flex-shrink-0">
-              {spotlight.badge_text}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 mb-2">
-            {spotlight.image_url && (
-              <img
-                src={spotlight.image_url}
-                alt=""
-                className="w-10 h-10 rounded-full object-cover border-2 border-white/30 flex-shrink-0"
-                onError={(e) => { e.target.style.display = 'none' }}
-              />
-            )}
-            <h3 className="font-bold text-lg leading-tight text-white">{spotlight.title}</h3>
-          </div>
-        </div>
-        <div className="text-xs text-white/80 leading-relaxed">{spotlight.subtitle}</div>
-        <div className="flex justify-end mt-1">
-          <span className="text-white/60 text-base group-hover:translate-x-1 transition-transform">&rarr;</span>
-        </div>
+    // Player card matching promo banner layout: image panel + text strip
+    <>
+      {/* Image panel (same h-44 as promo banners) */}
+      <div className="relative w-full h-44 overflow-hidden" style={{ background: 'rgba(0,0,0,0.6)' }}>
+        <div
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: `url('${avatarBgImage}')`, backgroundPosition: '50% 25%', opacity: 0.5 }}
+        />
+        <div className="absolute inset-0 bg-black/20" />
       </div>
-    </div>
+
+      {/* Text strip (matches promo banner layout) */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-bg-raised border-t border-border/50">
+        <span className={`text-xs font-bold px-2 py-0.5 ${colors.badge} text-white rounded flex-shrink-0`}>
+          {spotlight.badge_text}
+        </span>
+        {spotlight.image_url && (
+          <img
+            src={spotlight.image_url}
+            alt=""
+            className="w-8 h-8 rounded-full object-cover border border-border flex-shrink-0"
+            onError={(e) => { e.target.style.display = 'none' }}
+          />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-sm text-text-primary leading-tight">{spotlight.title}</div>
+          <div className="text-text-muted text-xs mt-0.5 leading-tight">{spotlight.subtitle}</div>
+        </div>
+        <span className="text-text-muted text-base group-hover:translate-x-1 transition-transform flex-shrink-0">&rarr;</span>
+      </div>
+    </>
   ) : (
     // Standard card for community channel / website (no avatar image)
     <>
       <div className="flex items-center gap-3 px-4 py-3 bg-bg-raised border-b border-border/50">
+        <span className={`text-xs font-bold px-2 py-0.5 ${colors.badge} text-white rounded flex-shrink-0`}>
+          {spotlight.badge_text}
+        </span>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className={`text-xs font-bold px-2 py-0.5 ${colors.badge} text-white rounded flex-shrink-0`}>
-              {spotlight.badge_text}
-            </span>
-          </div>
-          <div className="font-semibold text-sm text-text-primary leading-tight mt-1">{spotlight.title}</div>
+          <div className="font-semibold text-sm text-text-primary leading-tight">{spotlight.title}</div>
+          <div className="text-text-muted text-xs mt-0.5 leading-tight">{spotlight.subtitle}</div>
         </div>
         <span className="text-text-muted text-base group-hover:translate-x-1 transition-transform flex-shrink-0">&rarr;</span>
-      </div>
-      <div className="px-4 py-3">
-        <div className="text-text-muted text-xs leading-tight">{spotlight.subtitle}</div>
       </div>
     </>
   )

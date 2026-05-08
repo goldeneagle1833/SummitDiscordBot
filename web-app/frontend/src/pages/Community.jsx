@@ -1,18 +1,22 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { get } from '@/api/client'
+import { useAuth } from '@/context/AuthContext'
 import Spinner from '@/components/ui/Spinner'
+import AddCommunityModal from '@/components/community/AddCommunityModal'
 import usePageTitle from '@/hooks/usePageTitle'
 
 export default function Community() {
   usePageTitle('Community Links')
+  const { user } = useAuth()
   const [data, setData] = useState(null)
   const [youtubeVideos, setYoutubeVideos] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [stateFilter, setStateFilter] = useState('')
+  const [showAddModal, setShowAddModal] = useState(false)
 
-  useEffect(() => {
-    Promise.all([
+  const fetchData = useCallback(() => {
+    return Promise.all([
       get('/api/community'),
       get('/api/youtube-videos').catch(() => ({})),
     ])
@@ -23,6 +27,8 @@ export default function Community() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => { fetchData() }, [fetchData])
 
   const servers = data?.discord_servers || []
   const websites = data?.websites || []
@@ -47,6 +53,14 @@ export default function Community() {
       <section className="text-center mb-8">
         <h1 className="text-2xl font-display text-secondary mb-2">Community Links</h1>
         <p className="text-text-muted text-sm">Connect with the Sorcery community</p>
+        {user?.is_admin && (
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="mt-3 px-4 py-1.5 text-sm bg-secondary text-black font-medium rounded hover:bg-secondary/80 transition-colors"
+          >
+            + Add Entry
+          </button>
+        )}
       </section>
 
       {/* YouTube Channels */}
@@ -157,6 +171,13 @@ export default function Community() {
           <p className="text-text-muted text-sm">No websites added yet.</p>
         )}
       </section>
+
+      {showAddModal && (
+        <AddCommunityModal
+          onClose={() => setShowAddModal(false)}
+          onSaved={() => { setShowAddModal(false); fetchData() }}
+        />
+      )}
     </div>
   )
 }

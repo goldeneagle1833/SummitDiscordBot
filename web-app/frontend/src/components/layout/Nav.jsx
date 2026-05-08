@@ -4,6 +4,7 @@ import { useAuth } from '@/context/AuthContext'
 
 const NAV_LINKS = [
   { to: '/', label: 'Home' },
+  { to: '/community', label: 'Community' },
   { href: 'https://discord.gg/ZDqHSK9VGx', label: 'Discord' },
   { href: 'https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink', label: 'Patreon' },
   { to: '/about', label: 'About' },
@@ -414,6 +415,7 @@ export default function Nav() {
         {/* Navigation & External links - hidden on desktop since they're in the nav bar */}
         <div className="border-b border-border md:hidden">
           <SidebarLink to="/" label="Home" location={location} onClick={close} />
+          <SidebarLink to="/community" label="Community" location={location} onClick={close} />
           <SidebarExternal href="https://discord.gg/ZDqHSK9VGx" label="Discord" />
           <SidebarExternal href="https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink" label="Patreon" />
           <SidebarLink to="/about" label="About" location={location} onClick={close} />

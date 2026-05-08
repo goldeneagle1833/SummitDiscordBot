@@ -90,6 +90,18 @@ class TestMiscRoutes:
         resp = client.get("/api/community")
         assert resp.status_code in (200, 500)
 
+    def test_spotlight_endpoint(self, client):
+        resp = client.get("/api/spotlight")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "success" in data
+        assert data["success"] is True
+        # spotlight may be None if no data in test DBs
+        if data.get("spotlight"):
+            s = data["spotlight"]
+            for key in ("type", "badge_text", "color", "title", "subtitle", "link"):
+                assert key in s, f"Missing key: {key}"
+
 
 class TestExternalMatchRoute:
     def test_missing_fields_returns_400(self, client):

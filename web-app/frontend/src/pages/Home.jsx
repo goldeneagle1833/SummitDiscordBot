@@ -228,9 +228,97 @@ function PromoBanners() {
   if (!banners.length) return null
 
   return (
-    <div className="space-y-2 mt-4">
+    <div className="space-y-2">
       {banners.map((b) => <PromoBanner key={b.id} b={b} />)}
     </div>
+  )
+}
+
+// ── Community Spotlight ───────────────────────────────────────
+
+function CommunitySpotlight() {
+  const [spotlight, setSpotlight] = useState(null)
+
+  useEffect(() => {
+    get('/api/spotlight')
+      .then((data) => { if (data.success && data.spotlight) setSpotlight(data.spotlight) })
+      .catch(() => {})
+  }, [])
+
+  if (!spotlight) return null
+
+  const colors = BANNER_COLORS[spotlight.color] || BANNER_COLORS.blue
+  const isExternal = spotlight.link && !spotlight.link.startsWith('/')
+
+  const handleClick = () => {
+    navigator.sendBeacon?.('/api/analytics/banner-click',
+      new Blob([JSON.stringify({ banner_type: `spotlight_${spotlight.type}` })], { type: 'application/json' }))
+  }
+
+  const inner = (
+    <>
+      {/* Avatar / image panel */}
+      {spotlight.image_url && (
+        <div className="flex items-center justify-center py-4">
+          <img
+            src={spotlight.image_url}
+            alt=""
+            className="w-20 h-20 rounded-full object-cover border-2 border-border"
+            onError={(e) => { e.target.style.display = 'none' }}
+          />
+        </div>
+      )}
+
+      {/* Text strip */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-bg-raised border-t border-border/50">
+        <span className={`text-xs font-bold px-2 py-0.5 ${colors.badge} text-white rounded flex-shrink-0`}>
+          {spotlight.badge_text}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-sm text-text-primary leading-tight">{spotlight.title}</div>
+          <div className="text-text-muted text-xs mt-0.5 leading-tight">{spotlight.subtitle}</div>
+          {spotlight.stats && (
+            <div className="flex gap-3 mt-1.5">
+              {[
+                ['Games', spotlight.stats.games],
+                ['Wins', spotlight.stats.wins],
+                ['Opponents', spotlight.stats.unique_opponents],
+              ].map(([label, val]) => (
+                <div key={label} className="text-center">
+                  <div className="text-xs font-bold text-secondary">{val}</div>
+                  <div className="text-[10px] text-text-muted">{label}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <span className="text-text-muted text-base group-hover:translate-x-1 transition-transform flex-shrink-0">&rarr;</span>
+      </div>
+    </>
+  )
+
+  if (isExternal) {
+    return (
+      <a
+        href={spotlight.link}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={handleClick}
+        className={`block overflow-hidden rounded-soft border bg-bg-surface transition-all duration-300 group ${colors.border} ${colors.glow}`}
+      >
+        {inner}
+      </a>
+    )
+  }
+
+  return (
+    <Link
+      to={spotlight.link}
+      onClick={handleClick}
+      className={`block overflow-hidden rounded-soft border bg-bg-surface transition-all duration-300 group ${colors.border} ${colors.glow}`}
+    >
+      {inner}
+    </Link>
   )
 }
 
@@ -459,7 +547,10 @@ export default function Home() {
           </a>
         )}
 
-        <PromoBanners />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+          <PromoBanners />
+          <CommunitySpotlight />
+        </div>
         <PlayerSearch />
       </section>
 

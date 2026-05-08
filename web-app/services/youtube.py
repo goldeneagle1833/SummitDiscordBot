@@ -1,9 +1,12 @@
 """YouTube service for fetching latest videos from channels."""
 
+import logging
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from typing import Optional
 import requests
+
+logger = logging.getLogger(__name__)
 
 from repositories.community import CommunityRepository
 
@@ -118,7 +121,8 @@ def fetch_latest_video(channel_key: str, channels: dict) -> dict | None:
             video_info["channel_display_name"] = channel["name"]
             video_info["channel_url"] = channel["channel_url"]
         return video_info
-    except requests.RequestException:
+    except requests.RequestException as e:
+        logger.warning("Failed to fetch RSS for channel %s (%s): %s", channel_key, channel["channel_id"], e)
         return None
 
 

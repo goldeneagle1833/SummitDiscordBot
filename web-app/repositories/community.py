@@ -1,6 +1,7 @@
-"""Repository for community database access (read-only from web app)."""
+"""Repository for community database access."""
 
 import sqlite3
+import datetime
 from pathlib import Path
 
 from webapp_config import COMMUNITY_DB_PATH
@@ -77,3 +78,45 @@ class CommunityRepository:
             {"id": r[0], "name": r[1], "description": r[2], "url": r[3]}
             for r in rows
         ]
+
+    def add_discord_server(self, name: str, invite_url: str, state: str, description: str = "", added_by: str | None = None) -> int:
+        """Add a Discord server entry. Returns the new row ID."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO discord_servers (name, description, invite_url, state, added_by, added_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (name, description, invite_url, state, added_by, datetime.datetime.now().isoformat()),
+        )
+        conn.commit()
+        row_id = cur.lastrowid
+        conn.close()
+        return row_id
+
+    def add_youtube_channel(self, name: str, channel_id: str, channel_url: str, added_by: str | None = None) -> int:
+        """Add a YouTube channel entry. Returns the new row ID."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO youtube_channels (name, channel_id, channel_url, added_by, added_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (name, channel_id, channel_url, added_by, datetime.datetime.now().isoformat()),
+        )
+        conn.commit()
+        row_id = cur.lastrowid
+        conn.close()
+        return row_id
+
+    def add_website(self, name: str, url: str, description: str = "", added_by: str | None = None) -> int:
+        """Add a website entry. Returns the new row ID."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO websites (name, description, url, added_by, added_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (name, description, url, added_by, datetime.datetime.now().isoformat()),
+        )
+        conn.commit()
+        row_id = cur.lastrowid
+        conn.close()
+        return row_id

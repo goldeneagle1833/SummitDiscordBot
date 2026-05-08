@@ -7,6 +7,16 @@ from contextlib import contextmanager
 
 logger = logging.getLogger("discord_bot")
 
+ELO_COUNTING_MATCH_FILTER = """
+    (match_type IS NULL OR match_type != 'testing')
+    AND (
+        winner_elo_change IS NULL
+        OR loser_elo_change IS NULL
+        OR winner_elo_change != 0
+        OR loser_elo_change != 0
+    )
+"""
+
 
 @contextmanager
 def get_db_connection(db_name):
@@ -586,10 +596,10 @@ def get_top_8_user_ids():
 
 
 def get_event_participant_ids(event_start_str: str) -> set:
-    """Get the set of player IDs who have played matches since event start.
+    """Get player IDs who have played ELO-counting matches since event start.
 
     Queries match_records to find all players (winners and losers) with
-    matches recorded after the given event start date.
+    ranked matches recorded after the given event start date that affected ELO.
 
     Args:
         event_start_str: ISO format date string for event start
@@ -599,11 +609,13 @@ def get_event_participant_ids(event_start_str: str) -> set:
     """
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(f"""
         SELECT DISTINCT player_id FROM (
-            SELECT winner_id AS player_id FROM match_records WHERE timestamp >= ?
+            SELECT winner_id AS player_id FROM match_records
+            WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
             UNION
-            SELECT losser_id AS player_id FROM match_records WHERE timestamp >= ?
+            SELECT losser_id AS player_id FROM match_records
+            WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
         )
     """, (event_start_str, event_start_str))
     ids = {row[0] for row in cur.fetchall()}
@@ -612,24 +624,64 @@ def get_event_participant_ids(event_start_str: str) -> set:
 
 
 def has_player_played_event(user_id: int, event_start_str: str) -> bool:
-    """Check if a specific player has played any matches since event start.
+    """Check if a player has played an ELO-counting match since event start.
 
     Args:
         user_id: The player's user ID
         event_start_str: ISO format date string for event start
 
     Returns:
-        True if the player has at least one match in the event period
+        True if the player has at least one ELO-counting match in the event period
     """
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
     cur.execute(
-        "SELECT 1 FROM match_records WHERE (winner_id = ? OR losser_id = ?) AND timestamp >= ? LIMIT 1",
+        f"""
+        SELECT 1 FROM match_records
+        WHERE (winner_id = ? OR losser_id = ?)
+          AND timestamp >= ?
+          AND {ELO_COUNTING_MATCH_FILTER}
+        LIMIT 1
+        """,
         (user_id, user_id, event_start_str),
     )
     result = cur.fetchone() is not None
     conn.close()
     return result
+
+
+def get_event_match_count(event_start_str: str) -> int:
+    """Get the number of ELO-counting matches since event start."""
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute(
+        f"""
+        SELECT COUNT(*) FROM match_records
+        WHERE timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}
+        """,
+        (event_start_str,),
+    )
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
+
+
+def get_player_event_match_count(user_id: int, event_start_str: str) -> int:
+    """Get a player's number of ELO-counting matches since event start."""
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute(
+        f"""
+        SELECT COUNT(*) FROM match_records
+        WHERE (winner_id = ? OR losser_id = ?)
+          AND timestamp >= ?
+          AND {ELO_COUNTING_MATCH_FILTER}
+        """,
+        (user_id, user_id, event_start_str),
+    )
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
 
 
 def get_total_match_count():

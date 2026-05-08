@@ -29,7 +29,7 @@ jobs:
       - name: Run pytest
         run: |
           cd discord-bot
-          pytest tests/ -v
+          python -m pytest tests/ -v
         continue-on-error: false
 
       - name: Syntax check all Python files
@@ -41,12 +41,19 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '✅ Tests passed! PR is ready for review.'
-            })
+            const success = '${{ job.status }}' === 'success'
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: success
+                  ? '✅ Bot checks passed! Tests and syntax checks passed.'
+                  : '❌ Bot checks failed. Check the Actions tab for details.'
+              })
+            } catch (error) {
+              core.warning(`Unable to comment on PR: ${error.message}`)
+            }
 
   # Optional: Deploy to test bot instance
   deploy-test:
@@ -59,19 +66,23 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `
-              ## 🧪 Test Deployment
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `
+                ## 🧪 Test Deployment
 
-              To test this PR:
-              1. Use the test Discord server (create a separate test server)
-              2. Test bot token configured for test environment
-              3. Test databases located at \`discord-bot/test_data/\`
+                To test this PR:
+                1. Use the test Discord server (create a separate test server)
+                2. Test bot token configured for test environment
+                3. Test databases located at \`discord-bot/test_data/\`
 
-              **Test Bot Invite**: [Add link to test bot here]
-              **Test Server**: [Add link to test Discord server]
-              `
-            })
+                **Test Bot Invite**: [Add link to test bot here]
+                **Test Server**: [Add link to test Discord server]
+                `
+              })
+            } catch (error) {
+              core.warning(`Unable to comment on PR: ${error.message}`)
+            }

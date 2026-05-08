@@ -23,6 +23,9 @@ from utils.database import (
     record_match,
     solo_match_report,
     create_db,
+    get_event_match_count,
+    get_event_participant_ids,
+    get_player_event_match_count,
     get_current_event_match_elo_snapshot,
 )
 from repositories.audit_repo import log_admin_action
@@ -290,6 +293,42 @@ class TestRecordMatch:
 
         assert loser_db_row is not None
         assert loser_db_row[0] == 1400 + loser_elo_change
+
+    def test_event_match_counts_include_only_elo_counting_matches(self):
+        """Season leaderboard counts should match games that affected event ELO."""
+        event_start = datetime.datetime.now()
+        before_event = (event_start - datetime.timedelta(days=1)).isoformat()
+        after_event = (event_start + datetime.timedelta(minutes=1)).isoformat()
+        event_start_str = event_start.isoformat()
+
+        conn = sqlite3.connect("match_records.db")
+        cur = conn.cursor()
+        rows = [
+            (1, 101, 201, before_event, 16, -16, "ranked"),
+            (2, 101, 202, after_event, 16, -16, "ranked"),
+            (3, 101, 203, after_event, 0, 0, "testing"),
+            (4, 101, 204, after_event, 0, 0, "ranked"),
+            (5, 105, 101, after_event, None, None, "ranked"),
+        ]
+        cur.executemany(
+            """
+            INSERT INTO match_records
+            (reporter_id, winner_id, winner_display_name, losser_id, losser_display_name,
+             did_win, timestamp, first_player, match_time, curiosa_url, match_comment,
+             json_deck_data, winner_elo_change, loser_elo_change, match_type)
+            VALUES (?, ?, 'Winner', ?, 'Loser', 1, ?, 'n', 0, NULL, '', '{}', ?, ?, ?)
+            """,
+            rows,
+        )
+        conn.commit()
+        conn.close()
+
+        assert get_event_match_count(event_start_str) == 2
+        assert get_player_event_match_count(101, event_start_str) == 2
+        assert get_player_event_match_count(202, event_start_str) == 1
+        assert get_player_event_match_count(203, event_start_str) == 0
+        assert get_player_event_match_count(204, event_start_str) == 0
+        assert get_event_participant_ids(event_start_str) == {101, 105, 202}
 
 
 class TestMatchEloSnapshot:

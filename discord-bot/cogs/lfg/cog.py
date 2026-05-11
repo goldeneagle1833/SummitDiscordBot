@@ -55,7 +55,7 @@ from utils.text import find_best_command_match
 from utils.checks import is_bot_admin
 from services.pilots_service import is_pilot_active
 from services.limited_service import limited_winner_report, limited_elo_only_report, get_run_summary, forfeit_arena_run, start_arena_run
-from repositories.limited_repo import get_active_arena_run, get_limited_elo
+from repositories.limited_repo import get_active_arena_run, get_limited_elo, upsert_limited_elo
 
 logger = logging.getLogger("discord_bot")
 
@@ -1603,6 +1603,8 @@ class LFGCog(commands.Cog):
                 "Manually report a limited match result.\n\n"
                 "`!remove_limited_match <match_id>`\n"
                 "Remove a limited match and revert ELO changes.\n\n"
+                "`!spot_limited_elo @user <elo>`\n"
+                "Set a specific user's limited ELO to a custom value.\n\n"
                 "`!reset_limited_elo` - **DANGER:** Reset ALL limited data"
             ),
             inline=False,
@@ -2931,6 +2933,64 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
         else:
             logger.error(f"spot_elo_reset error: {error}")
+            await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def spot_limited_elo(self, ctx, user: discord.Member = None, elo: int = None):
+        """Admin command to set a specific user's limited ELO. Usage: !spot_limited_elo @user 1587"""
+        if user is None:
+            await ctx.send("Please mention a user. Usage: `!spot_limited_elo @user 1587`")
+            return
+        if elo is None:
+            await ctx.send("Please specify an ELO value. Usage: `!spot_limited_elo @user 1587`")
+            return
+        if elo < 0 or elo > 5000:
+            await ctx.send("ELO must be between 0 and 5000.")
+            return
+        if user.bot:
+            await ctx.send("Cannot set ELO for bots!")
+            return
+
+        try:
+            user_name = user.global_name or user.display_name
+            old_elo = get_limited_elo(user.id)
+            upsert_limited_elo(user.id, user_name, elo)
+
+            success_embed = discord.Embed(
+                title="Limited ELO Updated",
+                description=f"**User:** {user.mention} ({user_name})\n**Old Limited ELO:** {old_elo}\n**New Limited ELO:** {elo}",
+                color=discord.Color.blue(),
+            )
+            success_embed.set_footer(text=f"Updated by {ctx.author.display_name}")
+            await ctx.send(embed=success_embed)
+
+            log_admin_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "spot_limited_elo",
+                target_id=user.id,
+                target_name=user_name,
+                previous_state={"limited_elo": old_elo},
+                new_state={"limited_elo": elo},
+                details=f"Set {user_name}'s limited ELO from {old_elo} to {elo}",
+            )
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Limited ELO Update Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Spot limited ELO reset failed: {e}")
+
+    @spot_limited_elo.error
+    async def spot_limited_elo_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"spot_limited_elo error: {error}")
             await ctx.send(f"An error occurred: {error}")
 
     @commands.command()

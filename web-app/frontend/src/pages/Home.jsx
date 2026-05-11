@@ -228,7 +228,7 @@ function PromoBanners() {
   if (!banners.length) return null
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2 h-full">
       {banners.map((b) => <PromoBanner key={b.id} b={b} />)}
     </div>
   )
@@ -270,8 +270,8 @@ function CommunitySpotlight() {
   const inner = isPlayerCard ? (
     // Player card matching promo banner layout: image panel + text strip
     <>
-      {/* Image panel (same h-44 as promo banners) */}
-      <div className="relative w-full h-44 overflow-hidden flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
+      {/* Image panel — grows to fill available height */}
+      <div className="relative w-full min-h-44 flex-1 overflow-hidden flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
         <div
           className="absolute inset-0 bg-cover bg-center"
           style={{ backgroundImage: `url('${avatarBgImage}')`, backgroundPosition: '50% 25%', opacity: 0.5 }}
@@ -316,6 +316,8 @@ function CommunitySpotlight() {
     </>
   )
 
+  const wrapperClass = `flex flex-col overflow-hidden rounded-soft border bg-bg-surface transition-all duration-300 group h-full ${colors.border} ${colors.glow}`
+
   if (isExternal) {
     return (
       <a
@@ -323,7 +325,7 @@ function CommunitySpotlight() {
         target="_blank"
         rel="noopener noreferrer"
         onClick={handleClick}
-        className={`block overflow-hidden rounded-soft border bg-bg-surface transition-all duration-300 group ${colors.border} ${colors.glow}`}
+        className={wrapperClass}
       >
         {inner}
       </a>
@@ -334,7 +336,7 @@ function CommunitySpotlight() {
     <Link
       to={spotlight.link}
       onClick={handleClick}
-      className={`block overflow-hidden rounded-soft border bg-bg-surface transition-all duration-300 group ${colors.border} ${colors.glow}`}
+      className={wrapperClass}
     >
       {inner}
     </Link>

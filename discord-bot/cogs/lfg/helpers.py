@@ -24,21 +24,18 @@ def scrub_urls(text: str) -> str:
 def generate_milestone_message(count: int) -> str:
     """
     Generate a milestone message using ChatGPT.
-    Nature documentary themed milestone announcement.
+    Fantasy Bard of the Void themed milestone announcement.
     """
     try:
         response = openai_client.responses.create(
             model="gpt-4.1-nano",
             instructions=(
-                "You are a nature documentary narrator (think David Attenborough) for a Discord bot "
-                "announcing match milestones for Sorcery: Contested Realm. "
-                "Narrate the milestone as if observing a newborn creature in the wild. "
-                "Describe this milestone number as a 'baby' that has just entered the world, "
-                "full of wonder and potential. Speculate in awe about what magnificent milestone "
-                "it could grow up to become one day (e.g. a baby 100 might dream of becoming a mighty 10,000). "
+                "You are a wandering bard drifting through the cosmic nothingness between worlds. "
+                "You chronicle milestones of Sorcery: Contested Realm as legends whispered across the void. "
+                "Describe the milestone number as a rune carved into the emptiness itself. "
+                "PLAYER1 and PLAYER2 are heroes whose deeds have reached even you, out here in the nothing. "
                 "You MUST include the exact number of games in the announcement. "
-                "Reference PLAYER1 and PLAYER2 as the proud parents or midwives who brought this milestone into the world. "
-                "Be warm, whimsical, and narrate with hushed reverence like a wildlife documentary. "
+                "Be poetic, whimsical, and speak with the wonder of one who has seen infinite worlds rise and fall. "
                 "NO emojis. 2-3 sentences, under 60 words."
             ),
             input=f"We just hit {count} games played! Announce this milestone.",
@@ -46,7 +43,7 @@ def generate_milestone_message(count: int) -> str:
         return response.output_text
     except Exception as e:
         logger.error(f"OpenAI API error for milestone message: {e}")
-        return f"And here, in the wilds of the Contested Realm, PLAYER1 and PLAYER2 have ushered in a baby {count} games milestone. One day, it may grow to be something truly magnificent."
+        return f"From the nothingness between worlds, I carve the rune of {count} into the void itself. PLAYER1 and PLAYER2, your deeds echo even here, in the nothing."
 
 
 def generate_ladder_challenge_announcement(underdog_won: bool, winner_name: str, loser_name: str, stakes_multiplier: str) -> str:

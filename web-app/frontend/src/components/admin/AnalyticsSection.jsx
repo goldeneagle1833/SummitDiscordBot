@@ -76,6 +76,12 @@ export default function AnalyticsSection() {
               <div className="text-2xl font-bold text-secondary">{data.banner_clicks.total.toLocaleString()}</div>
               <div className="text-xs text-text-muted mt-1">Banner Clicks</div>
             </div>
+            <div className="bg-bg-raised border border-border rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-green-400">
+                {(data.banner_clicks.by_type?.find(b => b.banner_type === 'tcgplayer_buy')?.count || 0).toLocaleString()}
+              </div>
+              <div className="text-xs text-text-muted mt-1">TCGPlayer Clicks</div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -37,16 +37,16 @@ function ActiveGameDot(props) {
   )
 }
 
-export default function EloHistory({ matches, currentElo, totalMatches, open, onToggle }) {
+export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
   const validMatches = useMemo(
     () =>
-      [...(matches || [])]
+      [...(eloHistory || [])]
         .filter((m) => m.elo_change && m.date)
         .sort((a, b) => new Date(a.date) - new Date(b.date)),
-    [matches],
+    [eloHistory],
   )
 
-  const maxGames = totalMatches || validMatches.length
+  const maxGames = validMatches.length
   const [gameCount, setGameCount] = useState(() => Math.min(validMatches.length, 30))
 
   const chartData = useMemo(() => {

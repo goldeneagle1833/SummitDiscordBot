@@ -152,6 +152,8 @@ export default function DeckSnapshot() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-2 rounded transition-colors whitespace-nowrap"
+                onClick={() => navigator.sendBeacon?.('/api/analytics/banner-click',
+                  new Blob([JSON.stringify({ banner_type: 'tcgplayer_buy' })], { type: 'application/json' }))}
               >
                 Buy on TCGPlayer &#8599;
               </a>

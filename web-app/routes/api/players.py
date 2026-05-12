@@ -1703,6 +1703,21 @@ def player_api(player_id):
     for row in paginated_casual_rows:
         casual_match_history.append(_build_match_entry(row))
 
+    # Build lightweight ELO history from ALL ranked matches (for the chart)
+    elo_history = []
+    for row in ranked_rows:
+        did_win = row[0]
+        elo_change = row[7] if did_win else row[8]
+        if not elo_change or not row[6]:
+            continue
+        opponent_name = row[5] if did_win else row[4]
+        elo_history.append({
+            "date": row[6],
+            "elo_change": elo_change,
+            "result": "Win" if did_win else "Loss",
+            "opponent": opponent_name,
+        })
+
     # Recent decks - group matches by deck URL to calculate win rates
     recent_decks = []
     deck_stats = {}  # deck_url -> {wins, losses, avatar, deck_name, last_date}
@@ -1846,6 +1861,7 @@ def player_api(player_id):
             "avatar_performance": avatar_performance if is_owner else [],
             "avatar_matchups": avatar_matchups if is_owner else [],
             "recent_decks": recent_decks,
+            "elo_history": elo_history,
             "matches": match_history,
             "casual_matches": casual_match_history,
             "recorded_games": recorded_games if is_owner else [],

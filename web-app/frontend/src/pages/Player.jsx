@@ -176,9 +176,8 @@ export default function Player() {
       />
 
       <EloHistory
-        matches={data.matches}
+        eloHistory={data.elo_history}
         currentElo={data.elo}
-        totalMatches={data.pagination?.total_matches}
         open={openSections.eloHistory}
         onToggle={() => toggle('eloHistory')}
       />

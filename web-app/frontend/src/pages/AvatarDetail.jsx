@@ -182,6 +182,83 @@ function MatchupsSection({ avatarName, source, eventFilter }) {
   )
 }
 
+// ── ELO Win Rate Matrix (admin only) ─────────────────────────
+
+function EloMatrix({ avatarName, source, eventFilter }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    const params = new URLSearchParams({ source })
+    if (eventFilter !== 'all') params.set('event', eventFilter)
+    get(`/api/avatar/${encodeURIComponent(avatarName)}/elo-matrix?${params}`)
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false))
+  }, [avatarName, source, eventFilter])
+
+  if (loading) return <p className="text-text-muted text-sm py-4">Loading ELO matrix...</p>
+  if (!data || !data.matrix?.length) return <p className="text-text-muted text-sm py-4">Not enough data for ELO breakdown.</p>
+
+  const { brackets, matrix } = data
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="border-b border-border">
+            <th className="px-2 py-2 text-left text-xs font-semibold text-text-muted uppercase whitespace-nowrap">
+              Player ELO ↓ / Opp →
+            </th>
+            {brackets.map((b) => (
+              <th key={b} className="px-2 py-2 text-center text-xs font-semibold text-text-muted uppercase whitespace-nowrap">
+                {b}-{b + 99}
+              </th>
+            ))}
+            <th className="px-2 py-2 text-center text-xs font-bold text-secondary uppercase whitespace-nowrap">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {matrix.map((row) => (
+            <tr key={row.player_bracket} className="border-b border-border/50 hover:bg-bg-elevated/50 transition-colors">
+              <td className="px-2 py-2 text-xs font-bold whitespace-nowrap">
+                {row.player_bracket}-{row.player_bracket + 99}
+              </td>
+              {row.cells.map((cell, i) => (
+                <td key={brackets[i]} className="px-2 py-2 text-center whitespace-nowrap">
+                  {cell.total > 0 ? (
+                    <>
+                      <span className="font-bold" style={{ color: getWinRateColor(cell.win_rate) }}>
+                        {cell.win_rate}%
+                      </span>
+                      <div className="text-xs text-text-muted">({cell.wins}W-{cell.losses}L)</div>
+                    </>
+                  ) : (
+                    <span className="text-text-muted">—</span>
+                  )}
+                </td>
+              ))}
+              <td className="px-2 py-2 text-center whitespace-nowrap bg-bg-elevated/30">
+                {row.total.total > 0 ? (
+                  <>
+                    <span className="font-bold" style={{ color: getWinRateColor(row.total.win_rate) }}>
+                      {row.total.win_rate}%
+                    </span>
+                    <div className="text-xs text-text-muted">({row.total.wins}W-{row.total.losses}L)</div>
+                  </>
+                ) : (
+                  <span className="text-text-muted">—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 // ── Deck Composition (element bars) ───────────────────────────
 
 function DeckComposition({ avatarName }) {
@@ -464,6 +541,15 @@ export default function AvatarDetail() {
           <p className="text-xs text-text-muted mb-4">Showing matchups with 10+ games for statistical significance</p>
           <MatchupsSection avatarName={name} source={source} eventFilter={eventFilter} />
         </div>
+
+        {/* ELO Win Rate Matrix (admin only) */}
+        {isAdmin && (
+          <div className="p-6 border-t border-border">
+            <h3 className="text-lg font-semibold mb-1">Win Rate by ELO Bracket</h3>
+            <p className="text-xs text-text-muted mb-4">How this avatar performs across different ELO ranges (using current player ratings)</p>
+            <EloMatrix avatarName={name} source={source} eventFilter={eventFilter} />
+          </div>
+        )}
 
         {/* Deck Composition */}
         <div className="p-6 border-t border-border">

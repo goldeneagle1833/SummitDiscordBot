@@ -1314,6 +1314,141 @@ def get_all_avatars_popularity():
     return jsonify({"avatars": result, "dates": complete_dates, "daily_totals": totals})
 
 
+@avatars_bp.route("/avatar/<avatar_name>/elo-matrix")
+def get_avatar_elo_matrix(avatar_name):
+    """Win rate matrix by ELO bracket for a specific avatar. Admin only.
+
+    Rows = ELO bracket of the player using this avatar.
+    Columns = ELO bracket of the opponent.
+    Cells = win rate when row-bracket plays against column-bracket.
+    """
+    if not is_admin():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    avatar_name = unquote(avatar_name)
+    source = request.args.get("source", "discord")
+
+    if not MATCH_RECORDS_DB_PATH.exists() or not ELO_DB_PATH.exists():
+        return jsonify({"avatar_name": avatar_name, "brackets": [], "matrix": []})
+
+    # 1) Load player ELOs from the appropriate standings table
+    elo_lookup = {}
+    try:
+        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
+        elo_cur = elo_conn.cursor()
+        if source == "web":
+            elo_cur.execute("SELECT user_id, paper_elo FROM paper_standings")
+        else:
+            elo_cur.execute("SELECT user_id, elo FROM overall_standings")
+        for row in elo_cur.fetchall():
+            elo_lookup[str(row[0])] = row[1] or 1500
+        elo_conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not load ELO standings: {e}")
+        return jsonify({"avatar_name": avatar_name, "brackets": [], "matrix": []})
+
+    # 2) Collect match rows with player IDs and deck data
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        event_filter = request.args.get("event", "all")
+        if source in ("all", "discord"):
+            rows, use_new = _collect_discord_rows_with_players(cur, event_filter)
+        else:
+            event_start, event_end = None, None
+            if event_filter not in ("all", "current"):
+                event_start, event_end = _get_event_date_range(event_filter)
+            rows = _collect_external_rows_with_players(cur, source, event_start, event_end)
+            use_new = True
+
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.error(f"Database error in elo-matrix: {e}")
+        return jsonify({"avatar_name": avatar_name, "brackets": [], "matrix": []})
+
+    if not use_new:
+        return jsonify({"avatar_name": avatar_name, "brackets": [], "matrix": []})
+
+    # 3) For each match, check if this avatar was used and record win/loss by ELO bracket pair
+    def elo_bracket(elo):
+        """Return the lower bound of the 100-point bracket (e.g. 1523 -> 1500)."""
+        return (elo // 100) * 100
+
+    # {(player_bracket, opponent_bracket): {"wins": n, "losses": n}}
+    bracket_data = {}
+
+    for row in rows:
+        winner_deck_str, loser_deck_str = row[0], row[1]
+        winner_id = str(row[2]) if row[2] else None
+        loser_id = str(row[4]) if row[4] else None
+
+        if not winner_id or not loser_id:
+            continue
+
+        winner_elo = elo_lookup.get(winner_id)
+        loser_elo = elo_lookup.get(loser_id)
+        if winner_elo is None or loser_elo is None:
+            continue
+
+        winner_bracket = elo_bracket(winner_elo)
+        loser_bracket = elo_bracket(loser_elo)
+
+        # Check if the winner used this avatar
+        winner_avatar = _extract_avatar_from_deck(winner_deck_str)
+        if winner_avatar and winner_avatar.lower() == avatar_name.lower():
+            key = (winner_bracket, loser_bracket)
+            if key not in bracket_data:
+                bracket_data[key] = {"wins": 0, "losses": 0}
+            bracket_data[key]["wins"] += 1
+
+        # Check if the loser used this avatar
+        loser_avatar = _extract_avatar_from_deck(loser_deck_str)
+        if loser_avatar and loser_avatar.lower() == avatar_name.lower():
+            key = (loser_bracket, winner_bracket)
+            if key not in bracket_data:
+                bracket_data[key] = {"wins": 0, "losses": 0}
+            bracket_data[key]["losses"] += 1
+
+    if not bracket_data:
+        return jsonify({"avatar_name": avatar_name, "brackets": [], "matrix": []})
+
+    # 4) Determine all brackets that appear and build sorted list
+    all_brackets = set()
+    for (pb, ob) in bracket_data:
+        all_brackets.add(pb)
+        all_brackets.add(ob)
+    brackets = sorted(all_brackets)
+
+    # 5) Build matrix: rows = player brackets (high to low), cols = opponent brackets
+    matrix = []
+    for pb in reversed(brackets):
+        row_total_wins = 0
+        row_total_losses = 0
+        cells = []
+        for ob in brackets:
+            d = bracket_data.get((pb, ob), {"wins": 0, "losses": 0})
+            wins, losses = d["wins"], d["losses"]
+            total = wins + losses
+            wr = round(wins / total * 100, 1) if total > 0 else None
+            cells.append({"wins": wins, "losses": losses, "total": total, "win_rate": wr})
+            row_total_wins += wins
+            row_total_losses += losses
+        row_total = row_total_wins + row_total_losses
+        row_wr = round(row_total_wins / row_total * 100, 1) if row_total > 0 else None
+        matrix.append({
+            "player_bracket": pb,
+            "cells": cells,
+            "total": {"wins": row_total_wins, "losses": row_total_losses, "total": row_total, "win_rate": row_wr},
+        })
+
+    return jsonify({
+        "avatar_name": avatar_name,
+        "brackets": brackets,
+        "matrix": matrix,
+    })
+
+
 @avatars_bp.route("/avatar/<avatar_name>/deck-composition")
 def get_avatar_deck_composition(avatar_name):
     """API endpoint for deck element composition for a specific avatar."""

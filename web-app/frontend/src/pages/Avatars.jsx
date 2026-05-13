@@ -146,9 +146,8 @@ function EloBreakdown({ sourceFilter }) {
               {avatar.bracket_rates.map((cell, i) => {
                 const avg = bracket_averages[i]
                 const deviation = cell.win_rate != null && avg != null ? cell.win_rate - avg : null
-                const isOutlier = deviation != null && Math.abs(deviation) >= 10
                 return (
-                  <td key={brackets[i]} className={`px-2 py-2 text-center whitespace-nowrap ${isOutlier ? 'bg-yellow-900/20' : ''}`}>
+                  <td key={brackets[i]} className="px-2 py-2 text-center whitespace-nowrap">
                     {cell.win_rate != null ? (
                       <>
                         <span className="font-bold" style={{ color: getWinRateColor(cell.win_rate) }}>

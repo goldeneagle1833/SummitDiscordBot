@@ -1451,7 +1451,9 @@ def correct_match_record(match_id: int) -> dict:
 
     match_cur.execute(
         """SELECT rowid, winner_id, losser_id, winner_display_name, losser_display_name,
-                  timestamp, winner_elo_change, loser_elo_change
+                  timestamp, winner_elo_change, loser_elo_change,
+                  curiosa_url_winner, curiosa_url_loser,
+                  json_deck_data_winner, json_deck_data_loser
            FROM match_records WHERE rowid = ?""",
         (match_id,),
     )
@@ -1462,7 +1464,9 @@ def correct_match_record(match_id: int) -> dict:
         raise ValueError(f"Match ID #{match_id} not found.")
 
     (_, orig_winner_id, orig_loser_id, orig_winner_name, orig_loser_name,
-     target_ts, target_w_change, target_l_change) = target
+     target_ts, target_w_change, target_l_change,
+     orig_deck_url_winner, orig_deck_url_loser,
+     orig_deck_data_winner, orig_deck_data_loser) = target
 
     # Find all subsequent matches involving either player
     match_cur.execute(
@@ -1543,10 +1547,17 @@ def correct_match_record(match_id: int) -> dict:
         """UPDATE match_records
            SET winner_id = ?, winner_display_name = ?,
                losser_id = ?, losser_display_name = ?,
-               winner_elo_change = ?, loser_elo_change = ?
+               winner_elo_change = ?, loser_elo_change = ?,
+               curiosa_url = ?,
+               curiosa_url_winner = ?, curiosa_url_loser = ?,
+               json_deck_data_winner = ?, json_deck_data_loser = ?
            WHERE rowid = ?""",
         (new_winner_id, new_winner_name, new_loser_id, new_loser_name,
-         new_w_change, new_l_change, match_id),
+         new_w_change, new_l_change,
+         orig_deck_url_loser,
+         orig_deck_url_loser, orig_deck_url_winner,
+         orig_deck_data_loser, orig_deck_data_winner,
+         match_id),
     )
     elo_conn.commit()
     match_conn.commit()

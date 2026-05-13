@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Link } from "react-router-dom";
+import { get } from "@/api/client";
 import {
   getAvatars,
   getAvatarImageFiles,
@@ -73,6 +74,125 @@ function sortAvatars(data, key) {
     default:
       return d.sort((a, b) => b.win_rate * b.total - a.win_rate * a.total);
   }
+}
+
+function EloBreakdown({ sourceFilter }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [sortCol, setSortCol] = useState('overall')
+  const [sortAsc, setSortAsc] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    get(`/api/avatars/elo-breakdown?source=${sourceFilter}`)
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false))
+  }, [sourceFilter])
+
+  if (loading) return <p className="text-text-muted text-sm py-4">Loading ELO breakdown...</p>
+  if (!data || !data.avatars?.length) return <p className="text-text-muted text-sm py-4">Not enough data for ELO breakdown.</p>
+
+  const { brackets, avatars, bracket_averages } = data
+
+  const toggleSort = (col) => {
+    if (sortCol === col) setSortAsc(!sortAsc)
+    else { setSortCol(col); setSortAsc(false) }
+  }
+
+  const sorted = [...avatars].sort((a, b) => {
+    let av, bv
+    if (sortCol === 'name') {
+      return sortAsc ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
+    } else if (sortCol === 'overall') {
+      av = a.overall.win_rate ?? -1
+      bv = b.overall.win_rate ?? -1
+    } else {
+      const idx = parseInt(sortCol, 10)
+      av = a.bracket_rates[idx]?.win_rate ?? -1
+      bv = b.bracket_rates[idx]?.win_rate ?? -1
+    }
+    return sortAsc ? av - bv : bv - av
+  })
+
+  const sortIcon = (col) => sortCol === col ? (sortAsc ? ' \u25B2' : ' \u25BC') : ''
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="border-b border-border">
+            <th className="px-2 py-2 text-left text-xs font-semibold text-text-muted uppercase whitespace-nowrap cursor-pointer" onClick={() => toggleSort('name')}>
+              Avatar{sortIcon('name')}
+            </th>
+            {brackets.map((b, i) => (
+              <th key={b} className="px-2 py-2 text-center text-xs font-semibold text-text-muted uppercase whitespace-nowrap cursor-pointer" onClick={() => toggleSort(String(i))}>
+                {b}-{b + 99}{sortIcon(String(i))}
+              </th>
+            ))}
+            <th className="px-2 py-2 text-center text-xs font-bold text-secondary uppercase whitespace-nowrap cursor-pointer" onClick={() => toggleSort('overall')}>
+              Overall{sortIcon('overall')}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((avatar) => (
+            <tr key={avatar.name} className="border-b border-border/50 hover:bg-bg-elevated/50 transition-colors">
+              <td className="px-2 py-2 text-xs font-bold whitespace-nowrap">
+                <Link to={`/avatar/${encodeURIComponent(avatar.name)}`} className="text-primary hover:underline">
+                  {avatar.name}
+                </Link>
+              </td>
+              {avatar.bracket_rates.map((cell, i) => {
+                const avg = bracket_averages[i]
+                const deviation = cell.win_rate != null && avg != null ? cell.win_rate - avg : null
+                const isOutlier = deviation != null && Math.abs(deviation) >= 10
+                return (
+                  <td key={brackets[i]} className={`px-2 py-2 text-center whitespace-nowrap ${isOutlier ? 'bg-yellow-900/20' : ''}`}>
+                    {cell.win_rate != null ? (
+                      <>
+                        <span className="font-bold" style={{ color: getWinRateColor(cell.win_rate) }}>
+                          {cell.win_rate}%
+                        </span>
+                        {deviation != null && (
+                          <div className={`text-xs ${deviation > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {deviation > 0 ? '+' : ''}{deviation.toFixed(1)}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-text-muted text-xs">{cell.total > 0 ? `${cell.total}g` : '—'}</span>
+                    )}
+                  </td>
+                )
+              })}
+              <td className="px-2 py-2 text-center whitespace-nowrap bg-bg-elevated/30">
+                {avatar.overall.win_rate != null ? (
+                  <>
+                    <span className="font-bold" style={{ color: getWinRateColor(avatar.overall.win_rate) }}>
+                      {avatar.overall.win_rate}%
+                    </span>
+                    <div className="text-xs text-text-muted">({avatar.overall.total})</div>
+                  </>
+                ) : (
+                  <span className="text-text-muted">—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+          <tr className="border-t-2 border-border bg-bg-elevated/20">
+            <td className="px-2 py-2 text-xs font-bold text-text-muted">AVG</td>
+            {bracket_averages.map((avg, i) => (
+              <td key={brackets[i]} className="px-2 py-2 text-center text-xs font-semibold text-text-muted">
+                {avg != null ? `${avg}%` : '—'}
+              </td>
+            ))}
+            <td className="px-2 py-2" />
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 export default function Avatars() {
@@ -344,6 +464,18 @@ export default function Avatars() {
               </table>
             </div>
           </section>
+
+          {isAdmin && (
+            <section className="mb-8">
+              <h2 className="text-lg font-semibold text-center mb-1">
+                Win Rate by ELO Bracket (All Avatars)
+              </h2>
+              <p className="text-xs text-text-muted text-center mb-4">
+                Compares avatar win rates at each skill level. Yellow cells deviate 10%+ from average. Uses current player ratings.
+              </p>
+              <EloBreakdown sourceFilter={sourceFilter} />
+            </section>
+          )}
         </>
       )}
     </div>

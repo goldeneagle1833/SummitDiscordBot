@@ -1449,6 +1449,136 @@ def get_avatar_elo_matrix(avatar_name):
     })
 
 
+@avatars_bp.route("/avatars/elo-breakdown")
+def get_avatars_elo_breakdown():
+    """Cross-avatar win rate breakdown by ELO bracket. Admin only.
+
+    Returns each avatar's overall win rate per player-ELO bracket so admins
+    can compare performance across avatars at each skill level.
+    """
+    if not is_admin():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    source = request.args.get("source", "discord")
+
+    if not MATCH_RECORDS_DB_PATH.exists() or not ELO_DB_PATH.exists():
+        return jsonify({"brackets": [], "avatars": []})
+
+    # 1) Load player ELOs
+    elo_lookup = {}
+    try:
+        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
+        elo_cur = elo_conn.cursor()
+        if source == "web":
+            elo_cur.execute("SELECT user_id, paper_elo FROM paper_standings")
+        else:
+            elo_cur.execute("SELECT user_id, elo FROM overall_standings")
+        for row in elo_cur.fetchall():
+            elo_lookup[str(row[0])] = row[1] or 1500
+        elo_conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not load ELO standings: {e}")
+        return jsonify({"brackets": [], "avatars": []})
+
+    # 2) Collect all match rows with player IDs and deck data
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+        if source in ("all", "discord"):
+            rows, use_new = _collect_discord_rows_with_players(cur, "all")
+        else:
+            rows = _collect_external_rows_with_players(cur, source)
+            use_new = True
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.error(f"Database error in elo-breakdown: {e}")
+        return jsonify({"brackets": [], "avatars": []})
+
+    if not use_new:
+        return jsonify({"brackets": [], "avatars": []})
+
+    def elo_bracket(elo):
+        return (elo // 100) * 100
+
+    # 3) Tally: {avatar_name: {player_bracket: {"wins": n, "losses": n}}}
+    avatar_bracket_data = {}
+
+    for row in rows:
+        winner_deck_str, loser_deck_str = row[0], row[1]
+        winner_id = str(row[2]) if row[2] else None
+        loser_id = str(row[4]) if row[4] else None
+
+        if not winner_id or not loser_id:
+            continue
+
+        winner_elo = elo_lookup.get(winner_id)
+        loser_elo = elo_lookup.get(loser_id)
+        if winner_elo is None or loser_elo is None:
+            continue
+
+        winner_bracket = elo_bracket(winner_elo)
+        loser_bracket = elo_bracket(loser_elo)
+
+        winner_avatar = _extract_avatar_from_deck(winner_deck_str)
+        if winner_avatar:
+            abd = avatar_bracket_data.setdefault(winner_avatar, {})
+            b = abd.setdefault(winner_bracket, {"wins": 0, "losses": 0})
+            b["wins"] += 1
+
+        loser_avatar = _extract_avatar_from_deck(loser_deck_str)
+        if loser_avatar:
+            abd = avatar_bracket_data.setdefault(loser_avatar, {})
+            b = abd.setdefault(loser_bracket, {"wins": 0, "losses": 0})
+            b["losses"] += 1
+
+    if not avatar_bracket_data:
+        return jsonify({"brackets": [], "avatars": []})
+
+    # 4) Determine all brackets
+    all_brackets = set()
+    for bd in avatar_bracket_data.values():
+        all_brackets.update(bd.keys())
+    brackets = sorted(all_brackets)
+
+    # 5) Build response per avatar
+    min_games = 5
+    avatars_result = []
+    for avatar_name, bd in sorted(avatar_bracket_data.items()):
+        total_wins = sum(d["wins"] for d in bd.values())
+        total_losses = sum(d["losses"] for d in bd.values())
+        total_games = total_wins + total_losses
+        if total_games < 10:
+            continue
+
+        bracket_rates = []
+        for brk in brackets:
+            d = bd.get(brk, {"wins": 0, "losses": 0})
+            t = d["wins"] + d["losses"]
+            if t >= min_games:
+                bracket_rates.append({"wins": d["wins"], "losses": d["losses"], "total": t, "win_rate": round(d["wins"] / t * 100, 1)})
+            else:
+                bracket_rates.append({"wins": d["wins"], "losses": d["losses"], "total": t, "win_rate": None})
+
+        overall_wr = round(total_wins / total_games * 100, 1) if total_games > 0 else None
+        avatars_result.append({
+            "name": avatar_name,
+            "bracket_rates": bracket_rates,
+            "overall": {"wins": total_wins, "losses": total_losses, "total": total_games, "win_rate": overall_wr},
+        })
+
+    # 6) Compute per-bracket averages across all avatars (for comparison baseline)
+    bracket_avgs = []
+    for i, brk in enumerate(brackets):
+        rates = [a["bracket_rates"][i]["win_rate"] for a in avatars_result if a["bracket_rates"][i]["win_rate"] is not None]
+        bracket_avgs.append(round(sum(rates) / len(rates), 1) if rates else None)
+
+    return jsonify({
+        "brackets": brackets,
+        "avatars": avatars_result,
+        "bracket_averages": bracket_avgs,
+    })
+
+
 @avatars_bp.route("/avatar/<avatar_name>/deck-composition")
 def get_avatar_deck_composition(avatar_name):
     """API endpoint for deck element composition for a specific avatar."""

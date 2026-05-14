@@ -26,6 +26,7 @@ import DeckRecommendations from '@/pages/DeckRecommendations'
 // Phase 5: Cards & Avatars
 import Avatars from '@/pages/Avatars'
 import AvatarDetail from '@/pages/AvatarDetail'
+import EloBreakdownMatches from '@/pages/EloBreakdownMatches'
 import Cards from '@/pages/Cards'
 import CardDetail from '@/pages/CardDetail'
 import Elements from '@/pages/Elements'
@@ -114,6 +115,7 @@ const router = createBrowserRouter([
       // Phase 5: Cards & Avatars
       { path: '/avatars', element: <Avatars /> },
       { path: '/avatar/:name', element: <AvatarDetail /> },
+      { path: '/avatars/elo-matches', element: <EloBreakdownMatches /> },
       { path: '/cards', element: <Cards /> },
       { path: '/card/:name', element: <CardDetail /> },
       { path: '/elements', element: <Elements /> },

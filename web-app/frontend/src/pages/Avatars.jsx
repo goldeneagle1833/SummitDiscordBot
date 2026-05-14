@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { get } from "@/api/client";
 import {
   getAvatars,
@@ -77,6 +77,7 @@ function sortAvatars(data, key) {
 }
 
 function EloBreakdown({ sourceFilter }) {
+  const navigate = useNavigate()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [sortCol, setSortCol] = useState('overall')
@@ -146,13 +147,19 @@ function EloBreakdown({ sourceFilter }) {
               {avatar.bracket_rates.map((cell, i) => {
                 const avg = bracket_averages[i]
                 const deviation = cell.win_rate != null && avg != null ? cell.win_rate - avg : null
+                const cellClickable = cell.total > 0
                 return (
-                  <td key={brackets[i]} className="px-2 py-2 text-center whitespace-nowrap">
+                  <td
+                    key={brackets[i]}
+                    className={`px-2 py-2 text-center whitespace-nowrap ${cellClickable ? 'cursor-pointer hover:bg-bg-elevated/70' : ''}`}
+                    onClick={cellClickable ? () => navigate(`/avatars/elo-matches?avatar=${encodeURIComponent(avatar.name)}&bracket=${brackets[i]}&source=${sourceFilter}`) : undefined}
+                  >
                     {cell.win_rate != null ? (
                       <>
                         <span className="font-bold" style={{ color: getWinRateColor(cell.win_rate) }}>
                           {cell.win_rate}%
                         </span>
+                        <div className="text-xs text-text-muted">({cell.total})</div>
                         {deviation != null && (
                           <div className={`text-xs ${deviation > 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {deviation > 0 ? '+' : ''}{deviation.toFixed(1)}

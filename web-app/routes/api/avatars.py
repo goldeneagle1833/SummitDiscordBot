@@ -1579,6 +1579,164 @@ def get_avatars_elo_breakdown():
     })
 
 
+@avatars_bp.route("/avatars/elo-breakdown/matches")
+def get_elo_breakdown_matches():
+    """Return detailed match list for a specific avatar + player ELO bracket cell.
+
+    Query params: avatar, bracket (lower bound e.g. 1500), source (discord/web).
+    Admin only.
+    """
+    if not is_admin():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    avatar_name = request.args.get("avatar", "")
+    try:
+        bracket = int(request.args.get("bracket", "0"))
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid bracket"}), 400
+    source = request.args.get("source", "discord")
+
+    if not avatar_name:
+        return jsonify({"error": "Missing avatar parameter"}), 400
+
+    if not MATCH_RECORDS_DB_PATH.exists() or not ELO_DB_PATH.exists():
+        return jsonify({"matches": []})
+
+    # 1) Load player ELOs
+    elo_lookup = {}
+    try:
+        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
+        elo_cur = elo_conn.cursor()
+        if source == "web":
+            elo_cur.execute("SELECT user_id, paper_elo FROM paper_standings")
+        else:
+            elo_cur.execute("SELECT user_id, elo FROM overall_standings")
+        for row in elo_cur.fetchall():
+            elo_lookup[str(row[0])] = row[1] or 1500
+        elo_conn.close()
+    except sqlite3.OperationalError:
+        return jsonify({"matches": []})
+
+    def elo_bracket(elo):
+        return (elo // 100) * 100
+
+    # 2) Query all matches with full detail
+    detail_cols = """
+        rowid, winner_id, losser_id, winner_display_name, losser_display_name,
+        json_deck_data_winner, json_deck_data_loser,
+        curiosa_url_winner, curiosa_url_loser,
+        timestamp, final_player1_life, final_player2_life,
+        winner_went_first, loser_went_first, match_time,
+        winner_elo_change, loser_elo_change
+    """
+    deck_where = (
+        "((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
+        " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))"
+    )
+
+    all_rows = []
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+        source_filter = "(source = 'Discord' OR source IS NULL)" if source in ("all", "discord") else "source = ?"
+        params = [] if source in ("all", "discord") else [source]
+
+        for table in ("match_records", "match_records_archive"):
+            try:
+                cur.execute(
+                    f"SELECT {detail_cols} FROM {table} WHERE {deck_where} AND {source_filter}",
+                    params,
+                )
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass
+        conn.close()
+    except sqlite3.OperationalError:
+        return jsonify({"matches": []})
+
+    # 3) Filter to matches where the avatar was used by a player in the target bracket
+    matches = []
+    for row in all_rows:
+        (match_id, winner_id, loser_id, winner_name, loser_name,
+         w_deck_json, l_deck_json, w_url, l_url,
+         timestamp, life1, life2, w_first, l_first, match_time,
+         w_elo_change, l_elo_change) = row
+
+        w_id_str = str(winner_id) if winner_id else None
+        l_id_str = str(loser_id) if loser_id else None
+        if not w_id_str or not l_id_str:
+            continue
+
+        w_elo = elo_lookup.get(w_id_str)
+        l_elo = elo_lookup.get(l_id_str)
+        if w_elo is None or l_elo is None:
+            continue
+
+        # Check winner side
+        w_avatar = _extract_avatar_from_deck(w_deck_json)
+        if w_avatar and w_avatar.lower() == avatar_name.lower() and elo_bracket(w_elo) == bracket:
+            l_avatar = _extract_avatar_from_deck(l_deck_json)
+            matches.append({
+                "match_id": match_id,
+                "result": "win",
+                "player_name": winner_name,
+                "player_id": w_id_str,
+                "player_elo": w_elo,
+                "player_avatar": w_avatar,
+                "player_deck_url": w_url,
+                "player_deck_json": w_deck_json or None,
+                "opponent_name": loser_name,
+                "opponent_id": l_id_str,
+                "opponent_elo": l_elo,
+                "opponent_avatar": l_avatar,
+                "opponent_deck_url": l_url,
+                "opponent_deck_json": l_deck_json or None,
+                "timestamp": timestamp,
+                "player_life": life1,
+                "opponent_life": life2,
+                "went_first": w_first == "y" if w_first else None,
+                "match_time": match_time,
+                "elo_change": w_elo_change,
+            })
+
+        # Check loser side
+        l_avatar = _extract_avatar_from_deck(l_deck_json)
+        if l_avatar and l_avatar.lower() == avatar_name.lower() and elo_bracket(l_elo) == bracket:
+            if not w_avatar:
+                w_avatar = _extract_avatar_from_deck(w_deck_json)
+            matches.append({
+                "match_id": match_id,
+                "result": "loss",
+                "player_name": loser_name,
+                "player_id": l_id_str,
+                "player_elo": l_elo,
+                "player_avatar": l_avatar,
+                "player_deck_url": l_url,
+                "player_deck_json": l_deck_json or None,
+                "opponent_name": winner_name,
+                "opponent_id": w_id_str,
+                "opponent_elo": w_elo,
+                "opponent_avatar": w_avatar,
+                "opponent_deck_url": w_url,
+                "opponent_deck_json": w_deck_json or None,
+                "timestamp": timestamp,
+                "player_life": life2,
+                "opponent_life": life1,
+                "went_first": l_first == "y" if l_first else None,
+                "match_time": match_time,
+                "elo_change": l_elo_change,
+            })
+
+    # Sort by timestamp descending
+    matches.sort(key=lambda m: m.get("timestamp") or "", reverse=True)
+
+    return jsonify({
+        "avatar": avatar_name,
+        "bracket": bracket,
+        "matches": matches,
+    })
+
+
 @avatars_bp.route("/avatar/<avatar_name>/deck-composition")
 def get_avatar_deck_composition(avatar_name):
     """API endpoint for deck element composition for a specific avatar."""

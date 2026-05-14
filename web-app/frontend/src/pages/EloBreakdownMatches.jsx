@@ -16,7 +16,7 @@ const ELEMENT_FILE = {
   Earth: 'earth.png',
   Fire: 'fire.png',
   Water: 'water.png',
-  Air: 'air.png',
+  Air: 'wind.png',
   Void: 'void.png',
 }
 

@@ -1639,6 +1639,10 @@ def get_elo_breakdown_matches():
                 cur.execute(f"PRAGMA table_info({table})")
                 table_cols = {row[1] for row in cur.fetchall()}
 
+                # Skip tables without new deck columns
+                if "json_deck_data_winner" not in table_cols:
+                    continue
+
                 base_cols = "rowid, winner_id, losser_id, winner_display_name, losser_display_name, json_deck_data_winner, json_deck_data_loser, curiosa_url_winner, curiosa_url_loser, timestamp"
                 optional = [
                     ("final_player1_life", "NULL"),
@@ -1653,9 +1657,18 @@ def get_elo_breakdown_matches():
                     col if col in table_cols else f"{fallback} as {col}"
                     for col, fallback in optional
                 )
+
+                # Build source filter - handle tables without source column
+                if "source" not in table_cols:
+                    tbl_source_filter = "1=1"
+                    tbl_params = []
+                else:
+                    tbl_source_filter = source_filter
+                    tbl_params = params
+
                 cur.execute(
-                    f"SELECT {base_cols}, {extra_cols} FROM {table} WHERE {deck_where} AND {source_filter}",
-                    params,
+                    f"SELECT {base_cols}, {extra_cols} FROM {table} WHERE {deck_where} AND {tbl_source_filter}",
+                    tbl_params,
                 )
                 all_rows.extend(cur.fetchall())
             except sqlite3.OperationalError as e:
@@ -1669,7 +1682,7 @@ def get_elo_breakdown_matches():
     for row in all_rows:
         (match_id, winner_id, loser_id, winner_name, loser_name,
          w_deck_json, l_deck_json, w_url, l_url,
-         timestamp, life1, life2, w_first, l_first, match_time,
+         timestamp, _life1, _life2, w_first, l_first, match_time,
          w_elo_change, l_elo_change) = row
 
         w_id_str = str(winner_id) if winner_id else None
@@ -1702,8 +1715,6 @@ def get_elo_breakdown_matches():
                 "opponent_deck_url": l_url,
                 "opponent_deck_json": l_deck_json or None,
                 "timestamp": timestamp,
-                "player_life": life1,
-                "opponent_life": life2,
                 "went_first": w_first == "y" if w_first else None,
                 "match_time": match_time,
                 "elo_change": w_elo_change,
@@ -1730,8 +1741,6 @@ def get_elo_breakdown_matches():
                 "opponent_deck_url": w_url,
                 "opponent_deck_json": w_deck_json or None,
                 "timestamp": timestamp,
-                "player_life": life2,
-                "opponent_life": life1,
                 "went_first": l_first == "y" if l_first else None,
                 "match_time": match_time,
                 "elo_change": l_elo_change,

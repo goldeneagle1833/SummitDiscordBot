@@ -1621,14 +1621,6 @@ def get_elo_breakdown_matches():
         return (elo // 100) * 100
 
     # 2) Query all matches with full detail
-    detail_cols = """
-        rowid, winner_id, losser_id, winner_display_name, losser_display_name,
-        json_deck_data_winner, json_deck_data_loser,
-        curiosa_url_winner, curiosa_url_loser,
-        timestamp, final_player1_life, final_player2_life,
-        winner_went_first, loser_went_first, match_time,
-        winner_elo_change, loser_elo_change
-    """
     deck_where = (
         "((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
         " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))"
@@ -1643,13 +1635,31 @@ def get_elo_breakdown_matches():
 
         for table in ("match_records", "match_records_archive"):
             try:
+                # Detect available columns for this table
+                cur.execute(f"PRAGMA table_info({table})")
+                table_cols = {row[1] for row in cur.fetchall()}
+
+                base_cols = "rowid, winner_id, losser_id, winner_display_name, losser_display_name, json_deck_data_winner, json_deck_data_loser, curiosa_url_winner, curiosa_url_loser, timestamp"
+                optional = [
+                    ("final_player1_life", "NULL"),
+                    ("final_player2_life", "NULL"),
+                    ("winner_went_first", "NULL"),
+                    ("loser_went_first", "NULL"),
+                    ("match_time", "NULL"),
+                    ("winner_elo_change", "NULL"),
+                    ("loser_elo_change", "NULL"),
+                ]
+                extra_cols = ", ".join(
+                    col if col in table_cols else f"{fallback} as {col}"
+                    for col, fallback in optional
+                )
                 cur.execute(
-                    f"SELECT {detail_cols} FROM {table} WHERE {deck_where} AND {source_filter}",
+                    f"SELECT {base_cols}, {extra_cols} FROM {table} WHERE {deck_where} AND {source_filter}",
                     params,
                 )
                 all_rows.extend(cur.fetchall())
-            except sqlite3.OperationalError:
-                pass
+            except sqlite3.OperationalError as e:
+                logger.warning(f"Could not query {table} for elo-breakdown matches: {e}")
         conn.close()
     except sqlite3.OperationalError:
         return jsonify({"matches": []})

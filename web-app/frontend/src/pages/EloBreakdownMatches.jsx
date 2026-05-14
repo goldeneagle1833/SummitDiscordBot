@@ -215,18 +215,20 @@ function OpponentEloBreakdown({ matches }) {
 export default function EloBreakdownMatches() {
   const [searchParams] = useSearchParams()
   const avatar = searchParams.get('avatar') || ''
-  const bracket = parseInt(searchParams.get('bracket') || '0', 10)
+  const bracketParam = searchParams.get('bracket') || '0'
+  const isAll = bracketParam === 'all'
+  const bracket = isAll ? null : parseInt(bracketParam, 10)
   const source = searchParams.get('source') || 'discord'
 
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  usePageTitle(`${avatar} ${bracket}-${bracket + 99} ELO Matches`)
+  usePageTitle(isAll ? `${avatar} All Matches` : `${avatar} ${bracket}-${bracket + 99} ELO Matches`)
 
   useEffect(() => {
     setLoading(true)
-    get(`/api/avatars/elo-breakdown/matches?avatar=${encodeURIComponent(avatar)}&bracket=${bracket}&source=${source}`)
+    get(`/api/avatars/elo-breakdown/matches?avatar=${encodeURIComponent(avatar)}&bracket=${bracketParam}&source=${source}`)
       .then(setData)
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
@@ -251,7 +253,7 @@ export default function EloBreakdownMatches() {
 
       <div className="bg-bg-surface border border-border rounded-lg p-5">
         <h1 className="text-2xl font-display text-text-primary">
-          {avatar} — {bracket}-{bracket + 99} ELO Bracket
+          {avatar} — {isAll ? 'All ELO Brackets' : `${bracket}-${bracket + 99} ELO Bracket`}
         </h1>
         <p className="text-sm text-text-muted mt-1">
           {total} matches — <span style={{ color: getWinRateColor(parseFloat(winRate)) }} className="font-bold">{winRate}%</span> win rate

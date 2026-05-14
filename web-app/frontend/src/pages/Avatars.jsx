@@ -172,7 +172,10 @@ function EloBreakdown({ sourceFilter }) {
                   </td>
                 )
               })}
-              <td className="px-2 py-2 text-center whitespace-nowrap bg-bg-elevated/30">
+              <td
+                className="px-2 py-2 text-center whitespace-nowrap bg-bg-elevated/30 cursor-pointer hover:bg-bg-elevated/70"
+                onClick={() => navigate(`/avatars/elo-matches?avatar=${encodeURIComponent(avatar.name)}&bracket=all&source=${sourceFilter}`)}
+              >
                 {avatar.overall.win_rate != null ? (
                   <>
                     <span className="font-bold" style={{ color: getWinRateColor(avatar.overall.win_rate) }}>

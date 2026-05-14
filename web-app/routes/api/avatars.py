@@ -1590,10 +1590,14 @@ def get_elo_breakdown_matches():
         return jsonify({"error": "Unauthorized"}), 403
 
     avatar_name = request.args.get("avatar", "")
-    try:
-        bracket = int(request.args.get("bracket", "0"))
-    except (ValueError, TypeError):
-        return jsonify({"error": "Invalid bracket"}), 400
+    bracket_param = request.args.get("bracket", "0")
+    if bracket_param == "all":
+        bracket = None  # No bracket filter
+    else:
+        try:
+            bracket = int(bracket_param)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid bracket"}), 400
     source = request.args.get("source", "discord")
 
     if not avatar_name:
@@ -1698,7 +1702,7 @@ def get_elo_breakdown_matches():
 
         # Check winner side
         w_avatar = _extract_avatar_from_deck(w_deck_json)
-        if w_avatar and w_avatar.lower() == avatar_name.lower() and elo_bracket(w_elo) == bracket:
+        if w_avatar and w_avatar.lower() == avatar_name.lower() and (bracket is None or elo_bracket(w_elo) == bracket):
             l_avatar = _extract_avatar_from_deck(l_deck_json)
             matches.append({
                 "match_id": match_id,
@@ -1723,7 +1727,7 @@ def get_elo_breakdown_matches():
 
         # Check loser side
         l_avatar = _extract_avatar_from_deck(l_deck_json)
-        if l_avatar and l_avatar.lower() == avatar_name.lower() and elo_bracket(l_elo) == bracket:
+        if l_avatar and l_avatar.lower() == avatar_name.lower() and (bracket is None or elo_bracket(l_elo) == bracket):
             if not w_avatar:
                 w_avatar = _extract_avatar_from_deck(w_deck_json)
             matches.append({

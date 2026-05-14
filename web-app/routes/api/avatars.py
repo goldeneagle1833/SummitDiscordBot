@@ -1643,7 +1643,8 @@ def get_elo_breakdown_matches():
                 if "json_deck_data_winner" not in table_cols:
                     continue
 
-                base_cols = "rowid, winner_id, losser_id, winner_display_name, losser_display_name, json_deck_data_winner, json_deck_data_loser, curiosa_url_winner, curiosa_url_loser, timestamp"
+                archive_offset = 1_000_000_000 if table == "match_records_archive" else 0
+                base_cols = f"rowid + {archive_offset}, winner_id, losser_id, winner_display_name, losser_display_name, json_deck_data_winner, json_deck_data_loser, curiosa_url_winner, curiosa_url_loser, timestamp"
                 optional = [
                     ("final_player1_life", "NULL"),
                     ("final_player2_life", "NULL"),

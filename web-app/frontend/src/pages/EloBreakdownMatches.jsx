@@ -11,6 +11,46 @@ function getWinRateColor(rate) {
   return '#ef4444'
 }
 
+const ELEMENT_IMG = '/static/images/elements/'
+const ELEMENT_FILE = {
+  Earth: 'earth.png',
+  Fire: 'fire.png',
+  Water: 'water.png',
+  Air: 'air.png',
+  Void: 'void.png',
+}
+
+function ElementIcons({ elements }) {
+  if (!elements?.length) return <span className="text-text-muted text-xs">-</span>
+  return (
+    <span className="flex gap-0.5">
+      {elements.map(el => {
+        const file = ELEMENT_FILE[el]
+        if (!file) return <span key={el} className="text-xs">{el}</span>
+        return <img key={el} src={`${ELEMENT_IMG}${file}`} alt={el} title={el} className="w-4 h-4" />
+      })}
+    </span>
+  )
+}
+
+function extractElements(deckJson) {
+  if (!deckJson) return []
+  try {
+    const deck = JSON.parse(deckJson)
+    const elems = new Set()
+    for (const section of ['spellbook', 'sideboard']) {
+      for (const card of deck[section] || []) {
+        const str = card.elements || ''
+        for (const e of str.split(',')) {
+          const trimmed = e.trim()
+          if (trimmed && trimmed !== 'None') elems.add(trimmed)
+        }
+      }
+    }
+    return [...elems].sort()
+  } catch { return [] }
+}
+
 function DeckLinks({ deckUrl, hasDeckJson, matchId, playerId, label }) {
   const url = deckUrl && deckUrl !== 'No URL provided' && deckUrl !== 'Admin reported match' ? deckUrl : null
   return (
@@ -35,6 +75,8 @@ function DeckLinks({ deckUrl, hasDeckJson, matchId, playerId, label }) {
 function MatchRow({ match }) {
   const date = match.timestamp ? new Date(match.timestamp).toLocaleDateString() : '—'
   const isWin = match.result === 'win'
+  const playerElements = useMemo(() => extractElements(match.player_deck_json), [match.player_deck_json])
+  const opponentElements = useMemo(() => extractElements(match.opponent_deck_json), [match.opponent_deck_json])
 
   return (
     <tr className="border-b border-border/50 hover:bg-bg-elevated/50 transition-colors">
@@ -50,26 +92,6 @@ function MatchRow({ match }) {
         </Link>
         <span className="text-text-muted text-xs ml-1">({match.player_elo})</span>
       </td>
-      <td className="px-3 py-2 text-sm">
-        <Link to={`/player/${match.opponent_id}`} className="text-primary hover:underline">
-          {match.opponent_name}
-        </Link>
-        <span className="text-text-muted text-xs ml-1">({match.opponent_elo})</span>
-        {match.opponent_avatar && (
-          <span className="text-text-muted text-xs ml-1">- {match.opponent_avatar}</span>
-        )}
-      </td>
-      <td className="px-3 py-2 text-center text-xs text-text-muted">
-        {match.went_first === true ? 'Play' : match.went_first === false ? 'Draw' : '—'}
-      </td>
-      <td className="px-3 py-2 text-center text-xs">
-        {match.elo_change != null ? (
-          <span className={match.elo_change >= 0 ? 'text-accent-green' : 'text-accent-red'}>
-            {match.elo_change >= 0 ? '+' : ''}{match.elo_change}
-          </span>
-        ) : '—'}
-      </td>
-      <td className="px-3 py-2 text-xs text-text-muted">{date}</td>
       <td className="px-3 py-2">
         <DeckLinks
           deckUrl={match.player_deck_url}
@@ -80,6 +102,18 @@ function MatchRow({ match }) {
         />
       </td>
       <td className="px-3 py-2">
+        <ElementIcons elements={playerElements} />
+      </td>
+      <td className="px-3 py-2 text-sm">
+        <Link to={`/player/${match.opponent_id}`} className="text-primary hover:underline">
+          {match.opponent_name}
+        </Link>
+        <span className="text-text-muted text-xs ml-1">({match.opponent_elo})</span>
+        {match.opponent_avatar && (
+          <span className="text-text-muted text-xs ml-1">- {match.opponent_avatar}</span>
+        )}
+      </td>
+      <td className="px-3 py-2">
         <DeckLinks
           deckUrl={match.opponent_deck_url}
           hasDeckJson={!!match.opponent_deck_json}
@@ -87,6 +121,20 @@ function MatchRow({ match }) {
           playerId={match.opponent_id}
           label="Curiosa"
         />
+      </td>
+      <td className="px-3 py-2">
+        <ElementIcons elements={opponentElements} />
+      </td>
+      <td className="px-3 py-2 text-center text-xs text-text-muted">
+        {match.went_first === true ? 'Play' : match.went_first === false ? 'Draw' : '—'}
+      </td>
+      <td className="px-3 py-2 text-xs text-text-muted">{date}</td>
+      <td className="px-3 py-2 text-center text-xs">
+        {match.elo_change != null ? (
+          <span className={match.elo_change >= 0 ? 'text-accent-green' : 'text-accent-red'}>
+            {match.elo_change >= 0 ? '+' : ''}{match.elo_change}
+          </span>
+        ) : '—'}
       </td>
     </tr>
   )
@@ -220,12 +268,14 @@ export default function EloBreakdownMatches() {
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">ID</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Result</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Player</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Opponent</th>
-              <th className="px-3 py-2 text-center text-xs font-semibold text-text-muted uppercase">Play/Draw</th>
-              <th className="px-3 py-2 text-center text-xs font-semibold text-text-muted uppercase">ELO</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Date</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Player Deck</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Elements</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Opponent</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Opp Deck</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Elements</th>
+              <th className="px-3 py-2 text-center text-xs font-semibold text-text-muted uppercase">Play/Draw</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase">Date</th>
+              <th className="px-3 py-2 text-center text-xs font-semibold text-text-muted uppercase">ELO</th>
             </tr>
           </thead>
           <tbody>

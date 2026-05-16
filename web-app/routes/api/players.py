@@ -1065,7 +1065,7 @@ def player_api(player_id):
                 )
                 elo_row = elo_cur.fetchone()
                 if elo_row:
-                    player_elo = elo_row[0]
+                    player_elo = elo_row[0] if elo_row[0] else 1500
                     player_name_from_elo = elo_row[1]
                     event_elo = elo_row[2] if elo_row[2] else 1500
                     online_elo = player_elo
@@ -1825,7 +1825,6 @@ def player_api(player_id):
     # Fetch limited arena stats
     limited_stats = _get_limited_stats(player_id_normalized)
 
-    from utils.auth import is_admin
     admin = is_admin()
 
     return jsonify(

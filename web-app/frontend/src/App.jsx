@@ -59,6 +59,24 @@ function LazyPage({ children }) {
   return <Suspense fallback={<Spinner className="py-20" />}>{children}</Suspense>
 }
 
+const SESSION_ID = crypto.randomUUID?.() || Math.random().toString(36).slice(2)
+
+function useHeartbeat() {
+  useEffect(() => {
+    const send = () => {
+      const body = JSON.stringify({ sid: SESSION_ID })
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/analytics/heartbeat', new Blob([body], { type: 'application/json' }))
+      } else {
+        fetch('/api/analytics/heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
+      }
+    }
+    send()
+    const id = setInterval(send, 30000)
+    return () => clearInterval(id)
+  }, [])
+}
+
 function usePageTracking() {
   const location = useLocation()
   const prevPath = useRef(null)
@@ -77,6 +95,7 @@ function usePageTracking() {
 
 function Layout() {
   usePageTracking()
+  useHeartbeat()
   return (
     <AuthProvider>
       <div className="min-h-screen flex flex-col">

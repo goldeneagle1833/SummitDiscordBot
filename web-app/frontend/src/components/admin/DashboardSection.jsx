@@ -180,6 +180,27 @@ function ChartCard({ title, children }) {
   )
 }
 
+function ActiveUsersCard() {
+  const [count, setCount] = useState(null)
+
+  useEffect(() => {
+    const load = () => get('/api/analytics/active-users')
+      .then(d => { if (d.success) setCount(d.active_users) })
+      .catch(() => {})
+    load()
+    const id = setInterval(load, 15000)
+    return () => clearInterval(id)
+  }, [])
+
+  return (
+    <div className="bg-bg-raised border border-border rounded-lg p-4 text-center relative">
+      <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+      <div className="text-2xl font-bold text-green-400">{count ?? '--'}</div>
+      <div className="text-xs text-text-muted mt-1 leading-tight">Active Now</div>
+    </div>
+  )
+}
+
 export default function DashboardSection() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -220,7 +241,8 @@ export default function DashboardSection() {
         <p className="text-xs text-text-muted">Community health at a glance</p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+        <ActiveUsersCard />
         {summaryCards.map(c => (
           <div key={c.label} className="bg-bg-raised border border-border rounded-lg p-4 text-center">
             <div className="text-2xl font-bold text-secondary">{c.value ?? '--'}</div>

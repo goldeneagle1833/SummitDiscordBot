@@ -94,6 +94,56 @@ class AnalyticsRepository:
         conn.close()
         return {"total": total, "by_type": by_type}
 
+    # --- Active Sessions ---
+
+    def _ensure_active_sessions_table(self):
+        """Create active_sessions table if it doesn't exist."""
+        conn = self._connect()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS active_sessions (
+                session_id TEXT PRIMARY KEY,
+                last_seen TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+    def record_heartbeat(self, session_id: str):
+        """Record or update a session heartbeat."""
+        try:
+            self._ensure_active_sessions_table()
+            conn = self._connect()
+            conn.execute(
+                """INSERT INTO active_sessions (session_id, last_seen)
+                   VALUES (?, strftime('%Y-%m-%d %H:%M:%S', 'now'))
+                   ON CONFLICT(session_id)
+                   DO UPDATE SET last_seen = strftime('%Y-%m-%d %H:%M:%S', 'now')""",
+                (session_id,),
+            )
+            # Clean up stale sessions older than 2 minutes
+            conn.execute(
+                "DELETE FROM active_sessions WHERE last_seen < strftime('%Y-%m-%d %H:%M:%S', 'now', '-120 seconds')"
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.debug(f"Failed to record heartbeat: {e}")
+
+    def get_active_user_count(self) -> int:
+        """Get the number of active users (heartbeat within last 60 seconds)."""
+        try:
+            self._ensure_active_sessions_table()
+            conn = self._connect()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT COUNT(*) FROM active_sessions WHERE last_seen >= strftime('%Y-%m-%d %H:%M:%S', 'now', '-60 seconds')"
+            )
+            count = cur.fetchone()[0]
+            conn.close()
+            return count
+        except Exception:
+            return 0
+
     # --- Promo Banners ---
 
     def _ensure_promo_table(self):

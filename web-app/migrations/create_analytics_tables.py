@@ -70,6 +70,18 @@ def create_analytics_tables():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS active_sessions (
+            session_id TEXT PRIMARY KEY,
+            last_seen TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_active_sessions_last_seen
+        ON active_sessions(last_seen)
+    """)
+
     conn.commit()
     conn.close()
     logger.info("analytics tables ready")

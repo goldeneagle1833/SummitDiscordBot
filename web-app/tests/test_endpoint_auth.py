@@ -109,6 +109,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # -- Analytics (public tracking endpoints) --
     "api.analytics.page_view",
     "api.analytics.banner_click",
+    "api.analytics.heartbeat",
     "api.analytics.active_banners",
 
     # -- Seasons (public browse) --

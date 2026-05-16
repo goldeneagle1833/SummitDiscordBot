@@ -40,6 +40,25 @@ def banner_click():
     return "", 204
 
 
+@analytics_bp.route("/analytics/heartbeat", methods=["POST"])
+def heartbeat():
+    """Record a heartbeat from an active browser session (public endpoint)."""
+    data = request.get_json(silent=True) or {}
+    session_id = data.get("sid", "")
+    if not session_id or len(session_id) > 64:
+        return "", 204
+    AnalyticsRepository().record_heartbeat(session_id)
+    return "", 204
+
+
+@analytics_bp.route("/analytics/active-users", methods=["GET"])
+@require_admin
+def active_users():
+    """Get the number of currently active site users (admin only)."""
+    count = AnalyticsRepository().get_active_user_count()
+    return jsonify({"success": True, "active_users": count})
+
+
 @analytics_bp.route("/analytics/stats", methods=["GET"])
 @require_admin
 def analytics_stats():

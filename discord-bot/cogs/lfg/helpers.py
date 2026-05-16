@@ -62,28 +62,28 @@ def generate_ladder_challenge_announcement(underdog_won: bool, winner_name: str,
     try:
         if underdog_won:
             prompt = (
-                f"A Ladder Challenge match just finished where the underdog {winner_name} DEFEATED "
-                f"the Top 16 ranked player {loser_name}! The underdog earned {stakes_multiplier} ELO. "
-                f"Create an epic, championship-style victory announcement celebrating the underdog's triumph. "
-                f"Make it dramatic and exciting like a sports announcer calling an upset victory. "
+                f"A Ladder Challenge match just finished where the underdog {winner_name} beat "
+                f"the Top 16 ranked player {loser_name}. The underdog earned {stakes_multiplier} ELO. "
+                f"Create a fun, upbeat announcement celebrating the underdog's win. "
+                f"Keep the tone lighthearted and conversational, not over-the-top dramatic. "
                 f"Use WINNER and LOSER as placeholders. 1 line, under 40 words. NO emojis."
             )
         else:
             prompt = (
                 f"A Ladder Challenge match just finished where the Top 16 player {winner_name} "
-                f"defended their ranking against challenger {loser_name}. {stakes_multiplier} ELO stakes. "
-                f"Create a dramatic announcement about the champion maintaining their dominance. "
-                f"Make it sound like a title defense. Use WINNER and LOSER as placeholders. "
-                f"1 line, under 40 words. NO emojis."
+                f"held their ranking against challenger {loser_name}. {stakes_multiplier} ELO stakes. "
+                f"Create a short, casual announcement about the champion keeping their spot. "
+                f"Keep it lighthearted and conversational, not over-the-top dramatic. "
+                f"Use WINNER and LOSER as placeholders. 1 line, under 40 words. NO emojis."
             )
 
         response = openai_client.responses.create(
             model="gpt-4.1-nano",
             instructions=(
-                "You are a hype sports announcer for Sorcery: Contested Realm ladder challenges. "
-                "Create dramatic, exciting announcements for match results. Vary your style: "
-                "sometimes epic and heroic, sometimes intense, sometimes with wrestling announcer energy. "
-                "Be creative and engaging. Reference WINNER and LOSER in your announcement."
+                "You are a chill announcer for Sorcery: Contested Realm ladder challenges. "
+                "Create fun, engaging announcements for match results. Vary your style but "
+                "keep it casual and lighthearted — not overly dramatic or intense. "
+                "Be creative and conversational. Reference WINNER and LOSER in your announcement."
             ),
             input=prompt,
         )
@@ -91,9 +91,9 @@ def generate_ladder_challenge_announcement(underdog_won: bool, winner_name: str,
     except Exception as e:
         logger.error(f"OpenAI API error for ladder challenge announcement: {e}")
         if underdog_won:
-            return f"🏆 UPSET VICTORY! WINNER defeats Top 16 player LOSER in the Ladder Challenge! {stakes_multiplier} ELO stakes applied!"
+            return f"Nice one! WINNER takes down Top 16 player LOSER in the Ladder Challenge! {stakes_multiplier} ELO stakes applied."
         else:
-            return f"🏆 THE CHAMPION STANDS! WINNER defends against LOSER in the Ladder Challenge! {stakes_multiplier} ELO stakes applied!"
+            return f"WINNER holds strong against LOSER in the Ladder Challenge! {stakes_multiplier} ELO stakes applied."
 
 
 async def send_milestone_announcement(

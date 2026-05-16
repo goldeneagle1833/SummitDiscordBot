@@ -86,9 +86,15 @@ class MatchRepository:
         return self._rows_to_match_dicts(rows)
 
     def get_matches_by_date_range(self, start_date: str, end_date: str) -> list[dict]:
-        """Get matches between two dates (inclusive). Dates should be YYYY-MM-DD."""
+        """Get matches between two dates (inclusive). Dates should be YYYY-MM-DD.
+
+        Queries both match_records (current season) and match_records_archive
+        (previous seasons) to return all historical matches in the range.
+        """
         conn = self._get_connection()
         cur = conn.cursor()
+
+        # Current season matches
         cur.execute(
             """
             SELECT
@@ -108,8 +114,37 @@ class MatchRepository:
             (start_date, end_date),
         )
         rows = cur.fetchall()
+        results = self._rows_to_match_dicts(rows)
+
+        # Archived matches (previous seasons)
+        try:
+            cur.execute(
+                """
+                SELECT
+                    rowid as match_id,
+                    winner_display_name,
+                    winner_elo_change,
+                    losser_display_name,
+                    loser_elo_change,
+                    match_time,
+                    timestamp,
+                    winner_id,
+                    losser_id
+                FROM match_records_archive
+                WHERE date(timestamp) >= ? AND date(timestamp) <= ?
+                ORDER BY rowid DESC
+            """,
+                (start_date, end_date),
+            )
+            archive_rows = cur.fetchall()
+            results.extend(self._rows_to_match_dicts(archive_rows))
+        except sqlite3.OperationalError:
+            pass  # Archive table may not exist
+
         conn.close()
-        return self._rows_to_match_dicts(rows)
+        # Sort combined results by timestamp descending
+        results.sort(key=lambda m: m["timestamp"] or "", reverse=True)
+        return results
 
     def get_recent_matches(self, hours: int = 24) -> list[dict]:
         """Get matches from the last N hours."""

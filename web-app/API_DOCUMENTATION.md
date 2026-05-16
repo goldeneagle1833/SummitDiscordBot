@@ -11,7 +11,7 @@ https://sorcererssummit.com
 For local development:
 
 ```
-https://sorcererssummit.com
+http://localhost:5000
 ```
 
 ## Authentication

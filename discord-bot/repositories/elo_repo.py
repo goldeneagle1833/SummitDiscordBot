@@ -302,6 +302,12 @@ def create_active_pairings_table():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Migration: add match_type column (ranked/testing/limited)
+    try:
+        cur.execute("ALTER TABLE active_pairings ADD COLUMN match_type TEXT DEFAULT 'ranked'")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     conn.commit()
     conn.close()
 
@@ -888,6 +894,7 @@ def save_pairing(
     player2_id: int,
     player1_deck_url: str = None,
     player2_deck_url: str = None,
+    match_type: str = "ranked",
 ) -> int:
     """
     Save a new active pairing to the database.
@@ -898,6 +905,7 @@ def save_pairing(
         player2_id: Discord ID of second player
         player1_deck_url: Optional deck URL for player 1
         player2_deck_url: Optional deck URL for player 2
+        match_type: Match type (ranked, testing, limited)
 
     Returns:
         The pairing_id of the created record
@@ -918,8 +926,8 @@ def save_pairing(
 
             cur.execute(
                 """INSERT INTO active_pairings
-                   (guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, status)
-                   VALUES (?, ?, ?, ?, ?, ?, 'active')""",
+                   (guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, status, match_type)
+                   VALUES (?, ?, ?, ?, ?, ?, 'active', ?)""",
                 (
                     guild_id,
                     player1_id,
@@ -927,12 +935,13 @@ def save_pairing(
                     player1_deck_url,
                     player2_deck_url,
                     datetime.datetime.now().isoformat(),
+                    match_type,
                 ),
             )
 
             pairing_id = cur.lastrowid
             logger.info(
-                f"Saved pairing {pairing_id}: guild={guild_id}, player1={player1_id}, player2={player2_id}"
+                f"Saved pairing {pairing_id}: guild={guild_id}, player1={player1_id}, player2={player2_id}, match_type={match_type}"
             )
             return pairing_id
     except sqlite3.Error as e:
@@ -959,7 +968,7 @@ def get_active_pairing_for_user(guild_id: int, user_id: int) -> dict | None:
     cur = conn.cursor()
 
     cur.execute(
-        """SELECT pairing_id, guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at
+        """SELECT pairing_id, guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, match_type
            FROM active_pairings
            WHERE guild_id = ? AND (player1_id = ? OR player2_id = ?) AND status = 'active'
            ORDER BY created_at DESC
@@ -978,6 +987,7 @@ def get_active_pairing_for_user(guild_id: int, user_id: int) -> dict | None:
             "player1_deck_url": row[4],
             "player2_deck_url": row[5],
             "created_at": row[6],
+            "match_type": row[7] or "ranked",
         }
     return None
 
@@ -1021,7 +1031,7 @@ def get_pairing_between_players(guild_id: int, user_id: int, opponent_id: int) -
     cur = conn.cursor()
 
     cur.execute(
-        """SELECT pairing_id, guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at
+        """SELECT pairing_id, guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, match_type
            FROM active_pairings
            WHERE guild_id = ? AND status = 'active'
            AND ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))
@@ -1041,6 +1051,7 @@ def get_pairing_between_players(guild_id: int, user_id: int, opponent_id: int) -
             "player1_deck_url": row[4],
             "player2_deck_url": row[5],
             "created_at": row[6],
+            "match_type": row[7] or "ranked",
         }
     return None
 

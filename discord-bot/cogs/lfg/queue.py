@@ -329,6 +329,7 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                     player2_id=matched_user_id,
                     player1_deck_url=deck_url or "",
                     player2_deck_url=matched_user_deck_url or "",
+                    match_type=match_type or "ranked",
                 )
             logger.info(
                 f"Saved {'limited ' if match_type == 'limited' else ''}pairing {pairing_id} in guild {interaction.guild.id}: "

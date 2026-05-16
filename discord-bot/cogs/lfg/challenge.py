@@ -191,6 +191,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
                     player2_id=interaction.user.id,
                     player1_deck_url=self.challenger_deck_url,
                     player2_deck_url=accepter_deck_url,
+                    match_type="ranked",
                 )
                 logger.info(
                     f"Saved challenge pairing {pairing_id} in guild {self.guild_id}: "

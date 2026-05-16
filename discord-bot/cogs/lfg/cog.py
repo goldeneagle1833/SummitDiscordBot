@@ -1263,6 +1263,7 @@ class LFGCog(commands.Cog):
                     player2_id=matched_user_id,
                     player1_deck_url=None,
                     player2_deck_url=matched_user_deck_url,
+                    match_type=match_type or "ranked",
                 )
                 logger.info(
                     f"Saved pairing {pairing_id} in guild {guild_id}: "

@@ -193,7 +193,7 @@ def test_get_last_unreported_pairing_prefers_regular_over_limited(setup_database
 
     assert result is not None
     assert result['pairing_id'] == regular_pairing_id
-    assert 'match_type' not in result  # Regular pairings don't have match_type set
+    assert result['match_type'] == 'ranked'  # Regular pairings default to ranked
 
 
 def test_get_last_unreported_pairing_gets_most_recent(setup_databases):

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
 import {
@@ -193,11 +194,11 @@ function ActiveUsersCard() {
   }, [])
 
   return (
-    <div className="bg-bg-raised border border-border rounded-lg p-4 text-center relative">
+    <Link to="/admin/active-connections" className="bg-bg-raised border border-border rounded-lg p-4 text-center relative hover:border-green-400/50 transition-colors cursor-pointer block">
       <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-green-400 animate-pulse" />
       <div className="text-2xl font-bold text-green-400">{count ?? '--'}</div>
       <div className="text-xs text-text-muted mt-1 leading-tight">Active Now</div>
-    </div>
+    </Link>
   )
 }
 

@@ -50,6 +50,7 @@ const ExplorerStandings = lazy(() => import('@/pages/ExplorerStandings'))
 
 // Phase 7: Admin
 import AuditLog from '@/pages/admin/AuditLog'
+import ActiveConnections from '@/pages/admin/ActiveConnections'
 
 // Error pages
 import ErrorPage from '@/pages/ErrorPage'
@@ -60,11 +61,13 @@ function LazyPage({ children }) {
 }
 
 const SESSION_ID = crypto.randomUUID?.() || Math.random().toString(36).slice(2)
+const USER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || null
 
 function useHeartbeat() {
+  const location = useLocation()
   useEffect(() => {
     const send = () => {
-      const body = JSON.stringify({ sid: SESSION_ID })
+      const body = JSON.stringify({ sid: SESSION_ID, path: location.pathname, timezone: USER_TZ })
       if (navigator.sendBeacon) {
         navigator.sendBeacon('/api/analytics/heartbeat', new Blob([body], { type: 'application/json' }))
       } else {
@@ -74,7 +77,7 @@ function useHeartbeat() {
     send()
     const id = setInterval(send, 30000)
     return () => clearInterval(id)
-  }, [])
+  }, [location.pathname])
 }
 
 function usePageTracking() {
@@ -155,6 +158,7 @@ const router = createBrowserRouter([
       { path: '/creator', element: <CreatorGuard><Creator /></CreatorGuard> },
       // Phase 7: Admin
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
+      { path: '/admin/active-connections', element: <AdminGuard><ActiveConnections /></AdminGuard> },
       // Error & 404
       { path: '/error', element: <ErrorPage /> },
       { path: '*', element: <NotFound /> },

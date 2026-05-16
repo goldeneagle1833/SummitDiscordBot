@@ -28,13 +28,15 @@ export default function Player() {
   const { playerId } = useParams()
   const { user: authUser } = useAuth()
   const isAdmin = authUser && authUser.is_admin
+  const isOwner = authUser && String(authUser.user_id) === String(playerId)
+  const canSeeLifetime = isAdmin || isOwner
   const [data, setData] = useState(null)
   const [events, setEvents] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   // Filter state
-  const [eventFilter, setEventFilter] = useState(isAdmin ? 'lifetime' : 'current')
+  const [eventFilter, setEventFilter] = useState(canSeeLifetime ? 'lifetime' : 'current')
   const [eloSource, setEloSource] = useState(() => {
     const saved = localStorage.getItem('elo_source_preference')
     return saved === 'web' || saved === 'bot' ? saved : 'bot'
@@ -111,7 +113,7 @@ export default function Player() {
   let eloText = ''
   let rankText = ''
   if (eventFilter === 'lifetime' || !eventFilter) {
-    if (isAdmin && data.elo != null) {
+    if (canSeeLifetime && data.elo != null) {
       eloText = `Lifetime ELO: ${data.elo}`
       if (data.event_elo && data.event_elo !== 1500) eloText += ` | Event ELO: ${data.event_elo}`
       rankText = data.rank ? `Rank #${data.rank}` : ''
@@ -164,6 +166,7 @@ export default function Player() {
         eventFilter={eventFilter}
         pastEvents={pastEvents}
         onEventChange={(val) => refetch(val, 1, undefined, 1)}
+        canSeeLifetime={canSeeLifetime}
       />
 
       {/* Report Game button (owner only) */}

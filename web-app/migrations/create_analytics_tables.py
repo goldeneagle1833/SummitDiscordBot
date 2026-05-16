@@ -73,7 +73,12 @@ def create_analytics_tables():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS active_sessions (
             session_id TEXT PRIMARY KEY,
-            last_seen TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+            first_seen TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+            last_seen TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+            ip TEXT,
+            user_agent TEXT,
+            path TEXT,
+            timezone TEXT
         )
     """)
 

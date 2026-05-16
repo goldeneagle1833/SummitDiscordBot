@@ -1,8 +1,4 @@
-import { useAuth } from '@/context/AuthContext'
-
-export default function PlayerHeader({ data, eloText, rankText, eloSource, onSourceChange, eventFilter, pastEvents, onEventChange }) {
-  const { user } = useAuth()
-  const isAdmin = user && user.is_admin
+export default function PlayerHeader({ data, eloText, rankText, eloSource, onSourceChange, eventFilter, pastEvents, onEventChange, canSeeLifetime }) {
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -39,7 +35,7 @@ export default function PlayerHeader({ data, eloText, rankText, eloSource, onSou
           onChange={(e) => onEventChange(e.target.value)}
           className="bg-bg-raised border border-border rounded px-3 py-2 text-sm min-w-[180px]"
         >
-          {isAdmin && <option value="lifetime">Lifetime</option>}
+          {canSeeLifetime && <option value="lifetime">Lifetime</option>}
           <option value="current">Current Event</option>
           {pastEvents.map((ev) => (
             <option key={ev.event_id} value={ev.event_id}>{ev.event_name}</option>

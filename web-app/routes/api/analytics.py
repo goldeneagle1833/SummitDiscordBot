@@ -47,7 +47,11 @@ def heartbeat():
     session_id = data.get("sid", "")
     if not session_id or len(session_id) > 64:
         return "", 204
-    AnalyticsRepository().record_heartbeat(session_id)
+    ip = request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.remote_addr
+    ua = request.headers.get("User-Agent")
+    path = data.get("path", "")[:200] if data.get("path") else None
+    tz = data.get("timezone", "")[:60] if data.get("timezone") else None
+    AnalyticsRepository().record_heartbeat(session_id, ip=ip, user_agent=ua, path=path, timezone=tz)
     return "", 204
 
 
@@ -57,6 +61,14 @@ def active_users():
     """Get the number of currently active site users (admin only)."""
     count = AnalyticsRepository().get_active_user_count()
     return jsonify({"success": True, "active_users": count})
+
+
+@analytics_bp.route("/analytics/active-sessions", methods=["GET"])
+@require_admin
+def active_sessions_list():
+    """Get all active sessions with metadata (admin only)."""
+    sessions = AnalyticsRepository().get_active_sessions()
+    return jsonify({"success": True, "sessions": sessions})
 
 
 @analytics_bp.route("/analytics/stats", methods=["GET"])

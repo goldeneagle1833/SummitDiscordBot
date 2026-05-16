@@ -1826,16 +1826,17 @@ def player_api(player_id):
     limited_stats = _get_limited_stats(player_id_normalized)
 
     admin = is_admin()
+    show_lifetime = admin or is_owner
 
     return jsonify(
         {
             "id": player_id_normalized,
             "name": player_name,
-            "elo": player_elo if admin else None,
+            "elo": player_elo if show_lifetime else None,
             "event_elo": event_elo,
-            "displayed_elo": displayed_elo if event_filter != "lifetime" or admin else event_elo,
-            "rank": rank if admin else None,
-            "displayed_rank": displayed_rank if event_filter != "lifetime" or admin else 0,
+            "displayed_elo": displayed_elo if event_filter != "lifetime" or show_lifetime else event_elo,
+            "rank": rank if show_lifetime else None,
+            "displayed_rank": displayed_rank if event_filter != "lifetime" or show_lifetime else 0,
             "event_filter": event_filter,
             "wins": wins,
             "losses": losses,

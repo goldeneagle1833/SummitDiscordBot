@@ -97,28 +97,47 @@ class AnalyticsRepository:
     # --- Active Sessions ---
 
     def _ensure_active_sessions_table(self):
-        """Create active_sessions table if it doesn't exist."""
+        """Create active_sessions table if it doesn't exist, with all columns."""
         conn = self._connect()
         conn.execute("""
             CREATE TABLE IF NOT EXISTS active_sessions (
                 session_id TEXT PRIMARY KEY,
-                last_seen TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+                first_seen TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+                last_seen TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+                ip TEXT,
+                user_agent TEXT,
+                path TEXT,
+                timezone TEXT
             )
         """)
+        # Add columns if upgrading from old schema
+        cur = conn.execute("PRAGMA table_info(active_sessions)")
+        columns = {row[1] for row in cur.fetchall()}
+        for col, col_type in [("first_seen", "TEXT"), ("ip", "TEXT"),
+                              ("user_agent", "TEXT"), ("path", "TEXT"),
+                              ("timezone", "TEXT")]:
+            if col not in columns:
+                conn.execute(f"ALTER TABLE active_sessions ADD COLUMN {col} {col_type}")
         conn.commit()
         conn.close()
 
-    def record_heartbeat(self, session_id: str):
-        """Record or update a session heartbeat."""
+    def record_heartbeat(self, session_id: str, ip: str | None = None,
+                         user_agent: str | None = None, path: str | None = None,
+                         timezone: str | None = None):
+        """Record or update a session heartbeat with metadata."""
         try:
             self._ensure_active_sessions_table()
             conn = self._connect()
             conn.execute(
-                """INSERT INTO active_sessions (session_id, last_seen)
-                   VALUES (?, strftime('%Y-%m-%d %H:%M:%S', 'now'))
+                """INSERT INTO active_sessions (session_id, first_seen, last_seen, ip, user_agent, path, timezone)
+                   VALUES (?, strftime('%Y-%m-%d %H:%M:%S', 'now'), strftime('%Y-%m-%d %H:%M:%S', 'now'), ?, ?, ?, ?)
                    ON CONFLICT(session_id)
-                   DO UPDATE SET last_seen = strftime('%Y-%m-%d %H:%M:%S', 'now')""",
-                (session_id,),
+                   DO UPDATE SET last_seen = strftime('%Y-%m-%d %H:%M:%S', 'now'),
+                                ip = COALESCE(excluded.ip, active_sessions.ip),
+                                user_agent = COALESCE(excluded.user_agent, active_sessions.user_agent),
+                                path = COALESCE(excluded.path, active_sessions.path),
+                                timezone = COALESCE(excluded.timezone, active_sessions.timezone)""",
+                (session_id, ip, user_agent, path, timezone),
             )
             # Clean up stale sessions older than 2 minutes
             conn.execute(
@@ -143,6 +162,34 @@ class AnalyticsRepository:
             return count
         except Exception:
             return 0
+
+    def get_active_sessions(self) -> list[dict]:
+        """Get all active sessions with full metadata."""
+        try:
+            self._ensure_active_sessions_table()
+            conn = self._connect()
+            cur = conn.cursor()
+            cur.execute(
+                """SELECT session_id, first_seen, last_seen, ip, user_agent, path, timezone
+                   FROM active_sessions
+                   WHERE last_seen >= strftime('%Y-%m-%d %H:%M:%S', 'now', '-120 seconds')
+                   ORDER BY last_seen DESC"""
+            )
+            sessions = []
+            for r in cur.fetchall():
+                sessions.append({
+                    "session_id": r[0][:8] + "...",
+                    "first_seen": r[1],
+                    "last_seen": r[2],
+                    "ip": r[3],
+                    "user_agent": r[4],
+                    "path": r[5],
+                    "timezone": r[6],
+                })
+            conn.close()
+            return sessions
+        except Exception:
+            return []
 
     # --- Promo Banners ---
 

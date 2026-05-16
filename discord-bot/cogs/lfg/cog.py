@@ -1869,8 +1869,8 @@ class LFGCog(commands.Cog):
             if event_active:
                 description += (
                     f"\n\n**New Ranks:**\n"
-                    f"{winner_name}: **{winner_event_elo}** event / **{winner_elo}** lifetime\n"
-                    f"{loser_name}: **{loser_event_elo}** event / **{loser_elo}** lifetime"
+                    f"{winner_name}: **{winner_event_elo}** event\n"
+                    f"{loser_name}: **{loser_event_elo}** event"
                 )
             success_embed = discord.Embed(
                 title="Match Reported",
@@ -2365,8 +2365,8 @@ class LFGCog(commands.Cog):
             if event_active:
                 description += (
                     f"\n\n**New Ranks:**\n"
-                    f"{winner_name}: **{winner_event_elo}** event / **{winner_elo}** lifetime\n"
-                    f"{loser_name}: **{loser_event_elo}** event / **{loser_elo}** lifetime"
+                    f"{winner_name}: **{winner_event_elo}** event\n"
+                    f"{loser_name}: **{loser_event_elo}** event"
                 )
             if stakes_msg:
                 description += stakes_msg

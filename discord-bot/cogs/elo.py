@@ -144,8 +144,9 @@ class EloCog(commands.Cog):
 
     @commands.command()
     async def rank(self, ctx, user: discord.Member = None):
-        """Check your current Elo ranking (lifetime and event), or check another user's rank by tagging them."""
+        """Check your current Elo ranking and event rank, or check another user's rank by tagging them."""
         from utils.database import get_active_event, has_player_played_event, get_event_participant_ids
+        from utils.checks import check_is_admin
 
         # Determine which user to check
         target_user = user if user else ctx.author
@@ -188,7 +189,8 @@ class EloCog(commands.Cog):
             else:
                 msg = f"**{target_name}**\n"
 
-            msg += f"**Lifetime ELO:** {lifetime_elo} (Rank #{lifetime_rank})\n"
+            if check_is_admin(ctx):
+                msg += f"**Lifetime ELO:** {lifetime_elo} (Rank #{lifetime_rank})\n"
 
             if active_event:
                 if has_event_games:
@@ -214,7 +216,13 @@ class EloCog(commands.Cog):
 
     @commands.command()
     async def leaderboard(self, ctx):
-        """Check the top 16 lifetime Elo rankings."""
+        """Check the top 16 lifetime Elo rankings (admin only)."""
+        from utils.checks import check_is_admin
+
+        if not check_is_admin(ctx):
+            await ctx.send("The lifetime leaderboard is only available to admins. Use `!event_leaderboard` instead.")
+            return
+
         conn = sqlite3.connect("elo.db")
         cur = conn.cursor()
         cur.execute(
@@ -237,7 +245,7 @@ class EloCog(commands.Cog):
 
         active_event = get_active_event()
         if not active_event:
-            await ctx.send("No active event. Use `!leaderboard` to see lifetime rankings.")
+            await ctx.send("No active event. Check back when a new event starts!")
             return
 
         event_start_str = active_event["start_date"].isoformat()
@@ -265,7 +273,13 @@ class EloCog(commands.Cog):
 
     @commands.command()
     async def masters_bracket(self, ctx):
-        """Check the top 16 Elo rankings for masters bracket members only."""
+        """Check the top 16 Elo rankings for masters bracket members only (admin only)."""
+        from utils.checks import check_is_admin
+
+        if not check_is_admin(ctx):
+            await ctx.send("The masters bracket leaderboard is only available to admins.")
+            return
+
         # Role IDs to filter by
         masters_role_ids = config.MASTERS_ROLE_IDS
 
@@ -441,7 +455,8 @@ class EloCog(commands.Cog):
             else:
                 response += f"\nNo avatar data found in your match records."
 
-            # Get the user's elo
+            # Get the user's elo (lifetime ELO shown to admins only)
+            from utils.checks import check_is_admin
             try:
                 conn_elo = sqlite3.connect("elo.db")
                 cur_elo = conn_elo.cursor()
@@ -456,21 +471,22 @@ class EloCog(commands.Cog):
                         f"\nError accessing Elo data. Please contact an administrator."
                     )
                 else:
-                    cur_elo.execute(
-                        "SELECT online_elo FROM overall_standings WHERE user_id=?",
-                        (ctx.author.id,),
-                    )
-                    elo_row = cur_elo.fetchone()
-                    if elo_row:
-                        elo = elo_row[0]
+                    if check_is_admin(ctx):
                         cur_elo.execute(
-                            "SELECT COUNT(*) FROM overall_standings WHERE online_elo > ?",
-                            (elo,),
+                            "SELECT online_elo FROM overall_standings WHERE user_id=?",
+                            (ctx.author.id,),
                         )
-                        rank = cur_elo.fetchone()[0] + 1
-                        response += f"\n**Your Elo:** {elo} (Rank #{rank})"
-                    else:
-                        response += f"\nYou don't have an Elo rating yet."
+                        elo_row = cur_elo.fetchone()
+                        if elo_row:
+                            elo = elo_row[0]
+                            cur_elo.execute(
+                                "SELECT COUNT(*) FROM overall_standings WHERE online_elo > ?",
+                                (elo,),
+                            )
+                            rank = cur_elo.fetchone()[0] + 1
+                            response += f"\n**Your Elo:** {elo} (Rank #{rank})"
+                        else:
+                            response += f"\nYou don't have an Elo rating yet."
 
             except sqlite3.Error as e:
                 logger.error(f"Database error accessing elo.db: {e}")
@@ -572,7 +588,8 @@ class EloCog(commands.Cog):
 
     @commands.command()
     async def match_elo(self, ctx, match_id=None):
-        """Show lifetime and event Elo before and after a specific current-event match."""
+        """Show event Elo before and after a specific current-event match."""
+        from utils.checks import check_is_admin
         if match_id is None:
             await ctx.send("Please provide a match ID. Usage: `!match_elo <match_id>`")
             return
@@ -600,25 +617,28 @@ class EloCog(commands.Cog):
             return
 
         timestamp_str = snapshot["match_timestamp"].strftime("%Y-%m-%d %H:%M")
+        is_admin = check_is_admin(ctx)
         lines = [
             f"**Match #{snapshot['match_id']} Elo Snapshot**",
             f"**Event:** {snapshot['event_name']}",
             f"**Played:** {timestamp_str}",
             f"**Winner:** {snapshot['winner_display_name']}",
-            (
+        ]
+        if is_admin:
+            lines.append(
                 f"Lifetime: {snapshot['winner']['lifetime_before']} -> {snapshot['winner']['lifetime_after']}"
                 if snapshot["winner"]["lifetime_before"] is not None
                 else "Lifetime: unavailable"
-            ),
-            f"Event: {snapshot['winner']['event_before']} -> {snapshot['winner']['event_after']}",
-            f"**Loser:** {snapshot['loser_display_name']}",
-            (
+            )
+        lines.append(f"Event: {snapshot['winner']['event_before']} -> {snapshot['winner']['event_after']}")
+        lines.append(f"**Loser:** {snapshot['loser_display_name']}")
+        if is_admin:
+            lines.append(
                 f"Lifetime: {snapshot['loser']['lifetime_before']} -> {snapshot['loser']['lifetime_after']}"
                 if snapshot["loser"]["lifetime_before"] is not None
                 else "Lifetime: unavailable"
-            ),
-            f"Event: {snapshot['loser']['event_before']} -> {snapshot['loser']['event_after']}",
-        ]
+            )
+        lines.append(f"Event: {snapshot['loser']['event_before']} -> {snapshot['loser']['event_after']}")
 
         if snapshot["notes"]:
             lines.append("**Notes:**")

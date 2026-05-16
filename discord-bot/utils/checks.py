@@ -17,3 +17,14 @@ def is_bot_admin():
         raise commands.MissingPermissions(["administrator"])
 
     return commands.check(predicate)
+
+
+def check_is_admin(ctx):
+    """Return True if the user is a bot admin (non-decorator version for conditional logic)."""
+    if ctx.author.guild_permissions.administrator:
+        return True
+    if any(role.id == config.BOT_ADMIN_ROLE_ID for role in ctx.author.roles):
+        return True
+    if any(role.id == config.JUDGE_ROLE_ID for role in ctx.author.roles):
+        return True
+    return False

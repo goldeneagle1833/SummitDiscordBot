@@ -10,6 +10,7 @@ import {
   getArchivedLeaderboard,
   browseSeasons,
 } from '@/api/leaderboard'
+import { useAuth } from '@/context/AuthContext'
 import usePageTitle from '@/hooks/usePageTitle'
 
 // ── ELO Distribution helpers ──────────────────────────────────
@@ -213,6 +214,8 @@ function SeasonSearch() {
 
 export default function Leaderboard() {
   usePageTitle('ELO Leaderboards')
+  const { user } = useAuth()
+  const isAdmin = user && user.is_admin
   const [lifetimeData, setLifetimeData] = useState([])
   const [eventData, setEventData] = useState(null)
   const [limitedData, setLimitedData] = useState(null)
@@ -247,15 +250,17 @@ export default function Leaderboard() {
         <p className="text-sm text-text-muted">Track player rankings across events</p>
       </section>
 
-      {/* ELO Distribution */}
-      <EloDistribution elos={elos} />
+      {/* ELO Distribution (admin only) */}
+      {isAdmin && <EloDistribution elos={elos} />}
 
-      {/* Lifetime Leaderboard */}
-      <section className="mb-8">
-        <h2 className="text-xl font-display text-secondary mb-1">Lifetime ELO Leaderboard</h2>
-        <p className="text-sm text-text-muted mb-4">Cumulative rankings across all events</p>
-        <LeaderboardTable data={lifetimeData} columns="lifetime" />
-      </section>
+      {/* Lifetime Leaderboard (admin only) */}
+      {isAdmin && (
+        <section className="mb-8">
+          <h2 className="text-xl font-display text-secondary mb-1">Lifetime ELO Leaderboard</h2>
+          <p className="text-sm text-text-muted mb-4">Cumulative rankings across all events</p>
+          <LeaderboardTable data={lifetimeData} columns="lifetime" />
+        </section>
+      )}
 
       {/* Event Leaderboard */}
       <section className="mb-8">

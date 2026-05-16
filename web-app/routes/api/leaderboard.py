@@ -15,7 +15,11 @@ leaderboard_bp = Blueprint("leaderboard", __name__)
 
 @leaderboard_bp.route("/leaderboard")
 def get_leaderboard():
-    """Get lifetime ELO leaderboard with win/loss records."""
+    """Get lifetime ELO leaderboard with win/loss records (admin only)."""
+    from utils.auth import is_admin
+
+    if not is_admin():
+        return jsonify({"error": "Lifetime leaderboard is only available to admins."}), 403
     try:
         service = LeaderboardService()
         leaderboard_data = service.get_leaderboard()
@@ -39,10 +43,14 @@ def get_event_leaderboard():
 
 @leaderboard_bp.route("/leaderboard/combined")
 def get_combined_leaderboard():
-    """Get both lifetime and event leaderboards."""
+    """Get both lifetime and event leaderboards. Lifetime data only included for admins."""
+    from utils.auth import is_admin
+
     try:
         service = LeaderboardService()
         combined_data = service.get_combined_leaderboard()
+        if not is_admin():
+            combined_data.pop("lifetime", None)
         return jsonify(combined_data)
     except Exception as e:
         logger.error(f"Error fetching combined leaderboard: {e}", exc_info=True)
@@ -92,7 +100,11 @@ def get_limited_leaderboard():
 
 @leaderboard_bp.route("/elo-distribution")
 def get_elo_distribution():
-    """Get ELO distribution across bands."""
+    """Get ELO distribution across bands (admin only, based on lifetime ELO)."""
+    from utils.auth import is_admin
+
+    if not is_admin():
+        return jsonify({"error": "ELO distribution is only available to admins."}), 403
     try:
         service = LeaderboardService()
         distribution = service.get_elo_distribution()

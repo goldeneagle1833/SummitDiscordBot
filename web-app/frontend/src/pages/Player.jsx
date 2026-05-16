@@ -19,19 +19,22 @@ import EditDeckModal from '@/components/player/EditDeckModal'
 import AdminControls from '@/components/player/AdminControls'
 import EloHistory from '@/components/player/EloHistory'
 import PlayerSeasons from '@/components/player/PlayerSeasons'
+import { useAuth } from '@/context/AuthContext'
 
 const PER_PAGE_OPTIONS = [15, 25, 50]
 
 export default function Player() {
   usePageTitle('Player')
   const { playerId } = useParams()
+  const { user: authUser } = useAuth()
+  const isAdmin = authUser && authUser.is_admin
   const [data, setData] = useState(null)
   const [events, setEvents] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   // Filter state
-  const [eventFilter, setEventFilter] = useState('lifetime')
+  const [eventFilter, setEventFilter] = useState(isAdmin ? 'lifetime' : 'current')
   const [eloSource, setEloSource] = useState(() => {
     const saved = localStorage.getItem('elo_source_preference')
     return saved === 'web' || saved === 'bot' ? saved : 'bot'
@@ -108,9 +111,14 @@ export default function Player() {
   let eloText = ''
   let rankText = ''
   if (eventFilter === 'lifetime' || !eventFilter) {
-    eloText = `Lifetime ELO: ${data.elo}`
-    if (data.event_elo && data.event_elo !== 1500) eloText += ` | Event ELO: ${data.event_elo}`
-    rankText = data.rank ? `Rank #${data.rank}` : ''
+    if (isAdmin && data.elo != null) {
+      eloText = `Lifetime ELO: ${data.elo}`
+      if (data.event_elo && data.event_elo !== 1500) eloText += ` | Event ELO: ${data.event_elo}`
+      rankText = data.rank ? `Rank #${data.rank}` : ''
+    } else {
+      eloText = data.event_elo && data.event_elo !== 1500 ? `Event ELO: ${data.event_elo}` : ''
+      rankText = ''
+    }
   } else if (eventFilter === 'current') {
     eloText = data.displayed_elo !== 1500 ? `Current Event ELO: ${data.displayed_elo}` : 'No current event data'
     rankText = data.displayed_rank > 0 ? `Event Rank #${data.displayed_rank}` : ''

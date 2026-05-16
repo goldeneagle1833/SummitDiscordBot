@@ -39,15 +39,9 @@ def _get_player_context(user_id: int, display_name: str) -> str:
         )
         row = cur.fetchone()
         if row:
-            lifetime_elo = row[0] if row[0] else 1500
             event_elo = row[1] if row[1] else 1500
-            cur.execute(
-                "SELECT COUNT(*) FROM overall_standings WHERE online_elo > ?",
-                (lifetime_elo,),
-            )
-            rank = cur.fetchone()[0] + 1
             parts.append(
-                f"Lifetime ELO: {lifetime_elo} (Rank #{rank}), Event ELO: {event_elo}"
+                f"Event ELO: {event_elo}"
             )
         else:
             parts.append("No ELO rating yet (hasn't played any ranked matches)")

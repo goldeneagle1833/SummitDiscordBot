@@ -1825,15 +1825,18 @@ def player_api(player_id):
     # Fetch limited arena stats
     limited_stats = _get_limited_stats(player_id_normalized)
 
+    from utils.auth import is_admin
+    admin = is_admin()
+
     return jsonify(
         {
             "id": player_id_normalized,
             "name": player_name,
-            "elo": player_elo,
+            "elo": player_elo if admin else None,
             "event_elo": event_elo,
-            "displayed_elo": displayed_elo,
-            "rank": rank,
-            "displayed_rank": displayed_rank,
+            "displayed_elo": displayed_elo if event_filter != "lifetime" or admin else event_elo,
+            "rank": rank if admin else None,
+            "displayed_rank": displayed_rank if event_filter != "lifetime" or admin else 0,
             "event_filter": event_filter,
             "wins": wins,
             "losses": losses,

@@ -37,7 +37,7 @@ export default function Help() {
         <div className="space-y-3 text-sm">
           <div>
             <p className="font-medium">Leaderboard</p>
-            <p className="text-text-muted">Browse lifetime, event, and limited leaderboards.</p>
+            <p className="text-text-muted">Browse event and limited leaderboards.</p>
           </div>
           <div>
             <p className="font-medium">Events & Decks</p>

@@ -14,6 +14,7 @@ from cogs.anti_spam import AntiSpamCog
 from cogs.purchase_tracking import PurchaseTrackingCog
 from cogs.streaming import StreamingCog
 from cogs.community import CommunityCog
+from cogs.chat import ChatCog
 from cogs.reaction_roles import ReactionRolesCog
 from cogs.match_confirmation_jobs import MatchConfirmationJobs
 from cogs.pilots import PilotsCog
@@ -158,6 +159,7 @@ async def setup_cogs():
     await bot.add_cog(MatchConfirmationJobs(bot))  # Background jobs for match confirmation reminders & expiration
     await bot.add_cog(PilotsCog(bot))  # Feature flag management
     await bot.add_cog(DailySummaryCog(bot))  # Daily summary at 11:30 PM EST
+    await bot.add_cog(ChatCog(bot))  # AI chat responses to mentions/replies
 
 
 async def main():

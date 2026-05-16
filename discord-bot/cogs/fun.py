@@ -1084,52 +1084,6 @@ class FunCog(commands.Cog):
         finally:
             conn.close()
 
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        if message.author == self.bot.user:
-            return
-        if message.channel.id == self.fart_channel_id and self.bot.user.mentioned_in(
-            message
-        ):
-            prompt = message.content.replace(
-                f"<@{self.bot.user.id}>",
-                "",
-            ).strip()
-            if prompt:
-                try:
-                    conn = sqlite3.connect("fart_scores.db")
-                    cur = conn.cursor()
-                    cur.execute(
-                        "SELECT score FROM fart_scores WHERE user_id=?",
-                        (message.author.id,),
-                    )
-                    row = cur.fetchone()
-                    if row:
-                        user_score = row[0]
-                        cur.execute(
-                            "SELECT COUNT(*) FROM fart_scores WHERE score > ?",
-                            (user_score,),
-                        )
-                        rank = cur.fetchone()[0] + 1
-                        db_info = (
-                            f"Your fart score is {user_score} and your rank is #{rank}."
-                        )
-                    else:
-                        db_info = "You don't have a fart score yet. Use the `!fart` command to start earning points!"
-                    conn.close()
-
-                    response_text = self.openai_response(
-                        f"{prompt}. Also, {db_info}", message.author.name
-                    )
-                    await message.channel.send(
-                        f"{message.author.mention} {response_text}"
-                    )
-                except Exception as e:
-                    logger.error(f"Error during OpenAI interaction: {e}")
-                    await message.channel.send(
-                        f"Sorry, I'm having trouble responding right now."
-                    )
-
     @commands.command()
     async def fartprediction(self, ctx):
         """Predict your fart for double points or lose half!"""

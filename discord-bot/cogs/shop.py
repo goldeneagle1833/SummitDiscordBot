@@ -97,10 +97,6 @@ class ShopCog(commands.Cog):
         if not isinstance(error, commands.CommandNotFound):
             return
 
-        # Only respond in the fart channel
-        if ctx.channel.id != self.fart_channel_id:
-            return
-
         # Extract the failed command from the message
         message_content = ctx.message.content.lower()
         if not message_content.startswith("!"):
@@ -700,13 +696,6 @@ class ShopCog(commands.Cog):
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def blue_shell(self, ctx):
         logger.debug(f"Blue shell command used by {ctx.author.id}")
-        if ctx.channel.id != self.fart_channel_id:
-            logger.debug(f"Wrong channel: {ctx.channel.id}")
-            await ctx.send(
-                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-            )
-            return
-
         try:
             if not await self.check_points(ctx.author.id, "blue"):
                 return await ctx.send(
@@ -743,12 +732,6 @@ class ShopCog(commands.Cog):
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def red_shell(self, ctx):
         """Hit the player directly in front"""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-            )
-            return
-
         if not await self.check_points(ctx.author.id, "red"):
             return await ctx.send(
                 f"You don't have enough points! Red Shell costs {self.item_costs['red']} points!"
@@ -772,12 +755,6 @@ class ShopCog(commands.Cog):
     @commands.command(name="green_shell")
     async def green_shell(self, ctx):
         """Hit a random player in fronaaat"""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-            )
-            return
-
         if not await self.check_points(ctx.author.id, "green"):
             return await ctx.send(
                 f"You don't have enough points! Green Shell costs {self.item_costs['green']} points!"
@@ -801,12 +778,6 @@ class ShopCog(commands.Cog):
     @commands.command(name="banana")
     async def banana(self, ctx):
         """Hit a random player behind"""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-            )
-            return
-
         if not await self.check_points(ctx.author.id, "banana"):
             return await ctx.send(
                 f"You don't have enough points! Banana costs {self.item_costs['banana']} points!"
@@ -832,13 +803,6 @@ class ShopCog(commands.Cog):
     async def star(self, ctx):
         logger.debug(f"Star command used by {ctx.author.id}")
         try:
-            if ctx.channel.id != self.fart_channel_id:
-                logger.debug(f"Wrong channel: {ctx.channel.id}")
-                await ctx.send(
-                    f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-                )
-                return
-
             # Get user's current points
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
@@ -899,12 +863,6 @@ class ShopCog(commands.Cog):
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def mushroom(self, ctx):
         """Mushroom Boost - Your next fart gets rolled twice, take the higher result! (Once per week)"""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-            )
-            return
-
         try:
             # Check if user has enough points
             if not await self.check_points(ctx.author.id, "mushroom"):
@@ -1011,12 +969,6 @@ class ShopCog(commands.Cog):
         """Hit the top 5 players with explosion damage"""
         logger.debug(f"Bob-omb command used by {ctx.author.id}")
 
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-            )
-            return
-
         if not await self.check_points(ctx.author.id, "bobomb"):
             return await ctx.send(
                 f"You don't have enough points! Bob-omb costs {self.item_costs['bobomb']} points!"
@@ -1074,12 +1026,6 @@ class ShopCog(commands.Cog):
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def thunder_fart(self, ctx):
         """Hit ALL players for small damage"""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-            )
-            return
-
         if not await self.check_points(ctx.author.id, "thunder_fart"):
             return await ctx.send(
                 f"You don't have enough points! Thunder Fart costs {self.item_costs['thunder_fart']} points!"
@@ -1123,12 +1069,6 @@ class ShopCog(commands.Cog):
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def gas_shield(self, ctx):
         """Activate a shield that reflects 50% damage back at the next attacker"""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-            )
-            return
-
         if not await self.check_points(ctx.author.id, "gas_shield"):
             return await ctx.send(
                 f"You don't have enough points! Gas Shield costs {self.item_costs['gas_shield']} points!"
@@ -1166,12 +1106,6 @@ class ShopCog(commands.Cog):
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def stink_bomb(self, ctx):
         """Hit a random player (anyone) for heavy damage"""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-            )
-            return
-
         if not await self.check_points(ctx.author.id, "stink_bomb"):
             return await ctx.send(
                 f"You don't have enough points! Stink Bomb costs {self.item_costs['stink_bomb']} points!"
@@ -1200,12 +1134,6 @@ class ShopCog(commands.Cog):
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_rocket(self, ctx):
         """Swap scores with a random player"""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-            )
-            return
-
         if not await self.check_points(ctx.author.id, "fart_rocket"):
             return await ctx.send(
                 f"You don't have enough points! Fart Rocket costs {self.item_costs['fart_rocket']} points!"
@@ -1253,12 +1181,6 @@ class ShopCog(commands.Cog):
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_trap(self, ctx):
         """Set a trap on a random player - their next attack backfires on them!"""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-            )
-            return
-
         if not await self.check_points(ctx.author.id, "fart_trap"):
             return await ctx.send(
                 f"You don't have enough points! Fart Trap costs {self.item_costs['fart_trap']} points!"
@@ -1309,12 +1231,6 @@ class ShopCog(commands.Cog):
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def stink_cloud(self, ctx):
         """Blind a random player, preventing them from using shop items for 30 minutes"""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-            )
-            return
-
         if not await self.check_points(ctx.author.id, "stink_cloud"):
             return await ctx.send(
                 f"You don't have enough points! Stink Cloud costs {self.item_costs['stink_cloud']} points!"

@@ -5,13 +5,13 @@ This document describes how to use the Match Reporting API to submit match resul
 ## Base URL
 
 ```
-http://your-server-domain:5000
+https://sorcererssummit.com
 ```
 
 For local development:
 
 ```
-http://localhost:5000
+https://sorcererssummit.com
 ```
 
 ## Authentication
@@ -96,7 +96,7 @@ Submit a match result between two players. This endpoint will:
 #### Example Request
 
 ```bash
-curl -X POST http://localhost:5000/api/report-match \
+curl -X POST https://sorcererssummit.com/api/report-match \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key_here" \
   -d '{
@@ -183,6 +183,89 @@ curl -X POST http://localhost:5000/api/report-match \
 
 ---
 
+### 3. Get Match Data by Date Range
+
+Retrieve all ranked match results between two dates (inclusive). Returns winner/loser names, ELO changes, match duration, and timestamps.
+
+**Endpoint:** `GET /api/matches/date-range`
+
+**Authentication:** Required
+
+#### Query Parameters
+
+| Parameter    | Required | Format       | Description                      |
+| ------------ | -------- | ------------ | -------------------------------- |
+| `start_date` | Yes      | `YYYY-MM-DD` | Start of date range (inclusive)  |
+| `end_date`   | Yes      | `YYYY-MM-DD` | End of date range (inclusive)    |
+
+#### Example Request
+
+```bash
+curl -H "X-API-Key: your_api_key_here" \
+  "https://sorcererssummit.com/api/matches/date-range?start_date=2026-05-01&end_date=2026-05-15"
+```
+
+#### Success Response
+
+**Status Code:** `200 OK`
+
+```json
+{
+  "start_date": "2026-05-01",
+  "end_date": "2026-05-15",
+  "total_matches": 2,
+  "matches": [
+    {
+      "match_id": 1542,
+      "winner": "PlayerOne",
+      "winner_elo_change": 16,
+      "loser": "PlayerTwo",
+      "loser_elo_change": -16,
+      "match_time": 1823,
+      "timestamp": "2026-05-14 19:32:05",
+      "winner_id": "123456789012345678",
+      "loser_id": "987654321098765432"
+    },
+    {
+      "match_id": 1541,
+      "winner": "PlayerThree",
+      "winner_elo_change": 12,
+      "loser": "PlayerOne",
+      "loser_elo_change": -12,
+      "match_time": 2105,
+      "timestamp": "2026-05-13 15:10:22",
+      "winner_id": "111222333444555666",
+      "loser_id": "123456789012345678"
+    }
+  ]
+}
+```
+
+#### Response Fields
+
+| Field              | Type   | Description                              |
+| ------------------ | ------ | ---------------------------------------- |
+| `match_id`         | int    | Unique match identifier                  |
+| `winner`           | string | Winner's display name                    |
+| `winner_elo_change`| int    | ELO points gained by winner              |
+| `loser`            | string | Loser's display name                     |
+| `loser_elo_change` | int    | ELO points lost by loser (negative)      |
+| `match_time`       | int    | Match duration in seconds (0 if unknown) |
+| `timestamp`        | string | When the match was played (UTC)          |
+| `winner_id`        | string | Winner's Discord user ID                 |
+| `loser_id`         | string | Loser's Discord user ID                  |
+
+#### Error Responses
+
+| Status | Body |
+| ------ | ---- |
+| 400    | `{"error": "start_date and end_date query params are required"}` |
+| 400    | `{"error": "Dates must be in YYYY-MM-DD format"}` |
+| 400    | `{"error": "start_date must be before or equal to end_date"}` |
+| 401    | `{"error": "Invalid or missing API key"}` |
+
+---
+
 ## Code Examples
 
 ### Python
@@ -190,7 +273,7 @@ curl -X POST http://localhost:5000/api/report-match \
 ```python
 import requests
 
-API_URL = "http://localhost:5000/api/report-match"
+API_URL = "https://sorcererssummit.com/api/report-match"
 API_KEY = "your_api_key_here"
 
 headers = {
@@ -227,7 +310,7 @@ else:
 ```javascript
 const axios = require("axios");
 
-const API_URL = "http://localhost:5000/api/report-match";
+const API_URL = "https://sorcererssummit.com/api/report-match";
 const API_KEY = "your_api_key_here";
 
 const matchData = {
@@ -272,7 +355,7 @@ axios
 ### cURL
 
 ```bash
-curl -X POST http://localhost:5000/api/report-match \
+curl -X POST https://sorcererssummit.com/api/report-match \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key_here" \
   -d '{
@@ -425,7 +508,7 @@ Summary of Changes
 import requests
 
 response = requests.post(
-"http://localhost:5000/api/report-match",
+"https://sorcererssummit.com/api/report-match",
 headers={
 "Content-Type": "application/json",
 "X-API-Key": "summit_api_key_change_this_in_production_12345"

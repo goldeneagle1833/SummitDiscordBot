@@ -16,6 +16,10 @@ class MatchService:
             return self._match_repo.get_matches_by_date(date)
         return self._match_repo.get_recent_matches(hours=24)
 
+    def get_matches_by_date_range(self, start_date: str, end_date: str) -> list[dict]:
+        """Get matches between two dates (inclusive, YYYY-MM-DD)."""
+        return self._match_repo.get_matches_by_date_range(start_date, end_date)
+
     def get_available_dates(self) -> list[str]:
         """Get dates that have match data."""
         return self._match_repo.get_available_dates()

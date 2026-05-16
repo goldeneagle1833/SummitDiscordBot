@@ -85,6 +85,32 @@ class MatchRepository:
         conn.close()
         return self._rows_to_match_dicts(rows)
 
+    def get_matches_by_date_range(self, start_date: str, end_date: str) -> list[dict]:
+        """Get matches between two dates (inclusive). Dates should be YYYY-MM-DD."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT
+                rowid as match_id,
+                winner_display_name,
+                winner_elo_change,
+                losser_display_name,
+                loser_elo_change,
+                match_time,
+                timestamp,
+                winner_id,
+                losser_id
+            FROM match_records
+            WHERE date(timestamp) >= ? AND date(timestamp) <= ?
+            ORDER BY rowid DESC
+        """,
+            (start_date, end_date),
+        )
+        rows = cur.fetchall()
+        conn.close()
+        return self._rows_to_match_dicts(rows)
+
     def get_recent_matches(self, hours: int = 24) -> list[dict]:
         """Get matches from the last N hours."""
         # Validate hours is a positive integer to prevent injection

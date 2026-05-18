@@ -5,18 +5,31 @@ export default function AvatarMatchups({ matchups, open, onToggle }) {
 
   return (
     <CollapsibleSection title="Performance Against Other Avatars" open={open} onToggle={onToggle}>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        {matchups.map((m) => (
-          <div key={m.opponent_avatar} className="bg-bg-raised border border-border rounded-lg p-3 text-center">
-            <p className="font-medium text-text-primary text-sm mb-1">{m.opponent_avatar}</p>
-            <p className="text-sm">
-              <span className="text-accent-green">{m.wins}</span>
-              {' - '}
-              <span className="text-accent-red">{m.losses}</span>
-            </p>
-            <p className="text-xs text-text-muted">{m.win_rate}% ({m.total_games} games)</p>
-          </div>
-        ))}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-left">
+              <th className="py-2 px-3 text-text-muted font-semibold">Opponent</th>
+              <th className="py-2 px-3 text-text-muted font-semibold">Record</th>
+              <th className="py-2 px-3 text-text-muted font-semibold">Win Rate</th>
+              <th className="py-2 px-3 text-text-muted font-semibold">Games</th>
+            </tr>
+          </thead>
+          <tbody>
+            {matchups.map((m) => (
+              <tr key={m.opponent_avatar} className="border-b border-border/50">
+                <td className="py-2 px-3">{m.opponent_avatar}</td>
+                <td className="py-2 px-3">
+                  <span className="text-accent-green">{m.wins}W</span>
+                  {' / '}
+                  <span className="text-accent-red">{m.losses}L</span>
+                </td>
+                <td className="py-2 px-3">{m.win_rate}%</td>
+                <td className="py-2 px-3 text-text-muted">{m.total_games}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </CollapsibleSection>
   )

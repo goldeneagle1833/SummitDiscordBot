@@ -100,11 +100,7 @@ def get_limited_leaderboard():
 
 @leaderboard_bp.route("/elo-distribution")
 def get_elo_distribution():
-    """Get ELO distribution across bands (admin only, based on lifetime ELO)."""
-    from utils.auth import is_admin
-
-    if not is_admin():
-        return jsonify({"error": "ELO distribution is only available to admins."}), 403
+    """Get ELO distribution across bands (public, based on lifetime ELO)."""
     try:
         service = LeaderboardService()
         distribution = service.get_elo_distribution()

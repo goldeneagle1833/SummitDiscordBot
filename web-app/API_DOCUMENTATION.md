@@ -224,7 +224,17 @@ curl -H "X-API-Key: your_api_key_here" \
       "match_time": 1823,
       "timestamp": "2026-05-14 19:32:05",
       "winner_id": "123456789012345678",
-      "loser_id": "987654321098765432"
+      "loser_id": "987654321098765432",
+      "winner_deck": {
+        "avatar": "Fen Cleric",
+        "spellbook": ["Card A", "Card B"],
+        "atlas": ["Land A", "Land B"]
+      },
+      "loser_deck": {
+        "avatar": "Storm Mage",
+        "spellbook": ["Card C", "Card D"],
+        "atlas": ["Land C", "Land D"]
+      }
     },
     {
       "match_id": 1541,
@@ -235,7 +245,9 @@ curl -H "X-API-Key: your_api_key_here" \
       "match_time": 2105,
       "timestamp": "2026-05-13 15:10:22",
       "winner_id": "111222333444555666",
-      "loser_id": "123456789012345678"
+      "loser_id": "123456789012345678",
+      "winner_deck": null,
+      "loser_deck": null
     }
   ]
 }
@@ -243,17 +255,19 @@ curl -H "X-API-Key: your_api_key_here" \
 
 #### Response Fields
 
-| Field              | Type   | Description                              |
-| ------------------ | ------ | ---------------------------------------- |
-| `match_id`         | int    | Unique match identifier                  |
-| `winner`           | string | Winner's display name                    |
-| `winner_elo_change`| int    | ELO points gained by winner              |
-| `loser`            | string | Loser's display name                     |
-| `loser_elo_change` | int    | ELO points lost by loser (negative)      |
-| `match_time`       | int    | Match duration in seconds (0 if unknown) |
-| `timestamp`        | string | When the match was played (UTC)          |
-| `winner_id`        | string | Winner's Discord user ID                 |
-| `loser_id`         | string | Loser's Discord user ID                  |
+| Field              | Type        | Description                                      |
+| ------------------ | ----------- | ------------------------------------------------ |
+| `match_id`         | int         | Unique match identifier                          |
+| `winner`           | string      | Winner's display name                            |
+| `winner_elo_change`| int         | ELO points gained by winner                      |
+| `loser`            | string      | Loser's display name                             |
+| `loser_elo_change` | int         | ELO points lost by loser (negative)              |
+| `match_time`       | int         | Match duration in seconds (0 if unknown)         |
+| `timestamp`        | string      | When the match was played (UTC)                  |
+| `winner_id`        | string      | Winner's Discord user ID                         |
+| `loser_id`         | string      | Loser's Discord user ID                          |
+| `winner_deck`      | object/null | Winner's deck contents (null if not available)   |
+| `loser_deck`       | object/null | Loser's deck contents (null if not available)    |
 
 #### Error Responses
 

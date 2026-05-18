@@ -250,8 +250,8 @@ export default function Leaderboard() {
         <p className="text-sm text-text-muted">Track player rankings across events</p>
       </section>
 
-      {/* ELO Distribution (admin only) */}
-      {isAdmin && <EloDistribution elos={elos} />}
+      {/* ELO Distribution */}
+      <EloDistribution elos={elos} />
 
       {/* Lifetime Leaderboard (admin only) */}
       {isAdmin && (

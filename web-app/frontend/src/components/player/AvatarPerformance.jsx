@@ -5,18 +5,29 @@ export default function AvatarPerformance({ avatars, open, onToggle }) {
 
   return (
     <CollapsibleSection title="Avatar Performance" open={open} onToggle={onToggle}>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        {avatars.map((av) => (
-          <div key={av.name} className="bg-bg-raised border border-border rounded-lg p-3 text-center">
-            <p className="font-medium text-text-primary text-sm mb-1">{av.name}</p>
-            <p className="text-sm">
-              <span className="text-accent-green">{av.wins}</span>
-              {' - '}
-              <span className="text-accent-red">{av.losses}</span>
-            </p>
-            <p className="text-xs text-text-muted">{av.win_rate}%</p>
-          </div>
-        ))}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-left">
+              <th className="py-2 px-3 text-text-muted font-semibold">Avatar</th>
+              <th className="py-2 px-3 text-text-muted font-semibold">Record</th>
+              <th className="py-2 px-3 text-text-muted font-semibold">Win Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {avatars.map((av) => (
+              <tr key={av.name} className="border-b border-border/50">
+                <td className="py-2 px-3">{av.name}</td>
+                <td className="py-2 px-3">
+                  <span className="text-accent-green">{av.wins}W</span>
+                  {' / '}
+                  <span className="text-accent-red">{av.losses}L</span>
+                </td>
+                <td className="py-2 px-3">{av.win_rate}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </CollapsibleSection>
   )

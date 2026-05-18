@@ -85,19 +85,7 @@ class MatchRepository:
         conn.close()
         return self._rows_to_match_dicts(rows)
 
-    def get_matches_by_date_range(self, start_date: str, end_date: str) -> list[dict]:
-        """Get matches between two dates (inclusive). Dates should be YYYY-MM-DD.
-
-        Queries both match_records (current season) and match_records_archive
-        (previous seasons) to return all historical matches in the range.
-        """
-        conn = self._get_connection()
-        cur = conn.cursor()
-
-        # Current season matches
-        cur.execute(
-            """
-            SELECT
+    _DATE_RANGE_COLS_NEW = """
                 rowid as match_id,
                 winner_display_name,
                 winner_elo_change,
@@ -106,43 +94,95 @@ class MatchRepository:
                 match_time,
                 timestamp,
                 winner_id,
-                losser_id
-            FROM match_records
-            WHERE date(timestamp) >= ? AND date(timestamp) <= ?
-            ORDER BY rowid DESC
-        """,
-            (start_date, end_date),
-        )
-        rows = cur.fetchall()
-        results = self._rows_to_match_dicts(rows)
+                losser_id,
+                json_deck_data_winner,
+                json_deck_data_loser
+    """
 
-        # Archived matches (previous seasons)
-        try:
-            cur.execute(
-                """
-                SELECT
-                    rowid as match_id,
-                    winner_display_name,
-                    winner_elo_change,
-                    losser_display_name,
-                    loser_elo_change,
-                    match_time,
-                    timestamp,
-                    winner_id,
-                    losser_id
-                FROM match_records_archive
-                WHERE date(timestamp) >= ? AND date(timestamp) <= ?
-                ORDER BY rowid DESC
-            """,
-                (start_date, end_date),
-            )
-            archive_rows = cur.fetchall()
-            results.extend(self._rows_to_match_dicts(archive_rows))
-        except sqlite3.OperationalError:
-            pass  # Archive table may not exist
+    _DATE_RANGE_COLS_OLD = """
+                rowid as match_id,
+                winner_display_name,
+                winner_elo_change,
+                losser_display_name,
+                loser_elo_change,
+                match_time,
+                timestamp,
+                winner_id,
+                losser_id,
+                json_deck_data
+    """
+
+    def _rows_to_match_dicts_with_decks(self, rows, has_new_columns: bool) -> list[dict]:
+        """Convert rows that include deck JSON columns to dicts."""
+        import json as _json
+        results = []
+        for row in rows:
+            d = {
+                "match_id": row[0],
+                "winner": row[1] or "Unknown",
+                "winner_elo_change": row[2] or 0,
+                "loser": row[3] or "Unknown",
+                "loser_elo_change": row[4] or 0,
+                "match_time": row[5] or 0,
+                "timestamp": row[6],
+                "winner_id": str(row[7]),
+                "loser_id": str(row[8]),
+            }
+            if has_new_columns:
+                raw_w = row[9]
+                raw_l = row[10]
+            else:
+                # Old schema: single json_deck_data column (no way to know
+                # which player it belongs to, so include it as-is for both)
+                raw_w = row[9]
+                raw_l = row[9]
+
+            for key, raw in [("winner_deck", raw_w), ("loser_deck", raw_l)]:
+                if raw and raw != "{}":
+                    try:
+                        d[key] = _json.loads(raw)
+                    except (ValueError, TypeError):
+                        d[key] = None
+                else:
+                    d[key] = None
+            results.append(d)
+        return results
+
+    def get_matches_by_date_range(self, start_date: str, end_date: str) -> list[dict]:
+        """Get matches between two dates (inclusive). Dates should be YYYY-MM-DD.
+
+        Queries both match_records (current season) and match_records_archive
+        (previous seasons) to return all historical matches in the range.
+        Includes deck JSON data for each player when available.
+        """
+        conn = self._get_connection()
+        cur = conn.cursor()
+        results: list[dict] = []
+
+        # --- Current season ---
+        for table in ("match_records", "match_records_archive"):
+            try:
+                cur.execute(
+                    f"SELECT {self._DATE_RANGE_COLS_NEW} FROM {table}"
+                    " WHERE date(timestamp) >= ? AND date(timestamp) <= ?"
+                    " ORDER BY rowid DESC",
+                    (start_date, end_date),
+                )
+                results.extend(self._rows_to_match_dicts_with_decks(cur.fetchall(), True))
+            except sqlite3.OperationalError:
+                # New columns don't exist — try old schema
+                try:
+                    cur.execute(
+                        f"SELECT {self._DATE_RANGE_COLS_OLD} FROM {table}"
+                        " WHERE date(timestamp) >= ? AND date(timestamp) <= ?"
+                        " ORDER BY rowid DESC",
+                        (start_date, end_date),
+                    )
+                    results.extend(self._rows_to_match_dicts_with_decks(cur.fetchall(), False))
+                except sqlite3.OperationalError:
+                    pass  # Table doesn't exist
 
         conn.close()
-        # Sort combined results by timestamp descending
         results.sort(key=lambda m: m["timestamp"] or "", reverse=True)
         return results
 

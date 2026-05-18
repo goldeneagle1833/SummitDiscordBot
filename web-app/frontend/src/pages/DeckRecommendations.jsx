@@ -31,7 +31,7 @@ function ElementIcons({ elements }) {
   return (
     <span className="inline-flex gap-1 items-center">
       {elements.filter((el) => ELEMENT_ICONS[el]).map((el) => (
-        <img key={el} src={`/avatar-images/${ELEMENT_ICONS[el]}`} alt={el} title={el} width={18} height={18} />
+        <img key={el} src={`/avatar-images/${ELEMENT_ICONS[el]}`} alt={el} title={el} width={22} height={22} className="drop-shadow" />
       ))}
     </span>
   )
@@ -66,31 +66,39 @@ function DeckCard({ deck, imageFiles, imageSettings, isAdmin, onEdit, onRemove, 
   return (
     <div
       onClick={() => navigate(`/deck-rec/${encodeURIComponent(deck.deck_id)}`)}
-      className={`relative block rounded-lg overflow-hidden transition-colors group cursor-pointer ${isAdminRec ? 'border border-secondary/40 bg-bg-surface' : 'bg-bg-surface border border-border'}`}
+      className={`relative block rounded-lg overflow-hidden transition-all group cursor-pointer hover:-translate-y-0.5 ${isAdminRec ? 'border-2 border-secondary/70 bg-bg-surface ring-1 ring-secondary/30 hover:ring-secondary/60' : 'bg-bg-surface border border-border hover:border-secondary/60'}`}
       style={{ minHeight: '160px' }}
     >
       {imgSrc && (
-        <div
-          className="absolute inset-0 bg-cover bg-center transition-opacity"
-          style={{
-            backgroundImage: `url('${imgSrc}')`,
-            backgroundPosition: bgPos,
-            filter: `brightness(${bgBrightness})`,
-            opacity: bgOpacity,
-          }}
-        />
+        <>
+          <div
+            className="absolute inset-0 bg-cover bg-center transition-opacity"
+            style={{
+              backgroundImage: `url('${imgSrc}')`,
+              backgroundPosition: bgPos,
+              filter: `brightness(${bgBrightness})`,
+              opacity: bgOpacity,
+            }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-bg-base/95 via-bg-base/60 to-bg-base/10 pointer-events-none" />
+        </>
       )}
-      <div className="relative p-4 flex flex-col h-full">
-        <h3 className="text-sm font-semibold leading-tight truncate mb-2" title={deck.deck_name}>
+      {isAdminRec && (
+        <div className="absolute top-2 right-2 z-10 text-[10px] font-semibold uppercase tracking-wider bg-secondary text-bg-base px-1.5 py-0.5 rounded">
+          Staff Pick
+        </div>
+      )}
+      <div className="relative p-4 flex flex-col h-full" style={{ textShadow: imgSrc ? '0 1px 3px rgba(0,0,0,0.8)' : 'none' }}>
+        <h3 className="text-base font-semibold leading-tight truncate mb-2 text-text-primary" title={deck.deck_name}>
           {deck.deck_name}
         </h3>
-        <div className="text-xs text-text-muted mb-1">{deck.avatar_name}</div>
+        <div className="text-sm text-text-primary/90 mb-1">{deck.avatar_name}</div>
         {!isAdminRec && <div className="text-xs text-text-muted mb-1">{deck.event_name}</div>}
-        {starsStr && <div className="text-xs text-yellow-400 mb-1">{starsStr}</div>}
+        {starsStr && <div className="text-sm text-yellow-400 mb-1 drop-shadow">{starsStr}</div>}
         <ElementIcons elements={deck.elements} />
-        {deck.primer && <div className="text-xs text-text-muted mt-1 line-clamp-2 italic">{deck.primer}</div>}
-        <div className="text-xs text-text-muted mt-auto pt-2">
-          Community: <span className="text-text-primary">{clusterLabel}</span>
+        {deck.primer && <div className="text-xs text-text-primary/80 mt-1 line-clamp-2 italic">{deck.primer}</div>}
+        <div className="text-xs text-text-primary/70 mt-auto pt-2">
+          Community: <span className="text-text-primary font-medium">{clusterLabel}</span>
         </div>
         {isAdmin && (
           <div className="flex justify-end gap-2 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
@@ -243,7 +251,7 @@ function AdminModal({ isOpen, onClose, onSubmit, editDeck }) {
         </h3>
         {!isEdit && (
           <div className="mb-3">
-            <label className="text-xs text-text-muted block mb-1">Curiosa Deck URL</label>
+            <label className="text-sm text-text-primary font-medium block mb-1">Curiosa Deck URL</label>
             <input
               type="text"
               className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm"
@@ -256,7 +264,7 @@ function AdminModal({ isOpen, onClose, onSubmit, editDeck }) {
           </div>
         )}
         <div className="mb-3">
-          <label className="text-xs text-text-muted block mb-1">Short Description / Primer (optional)</label>
+          <label className="text-sm text-text-primary font-medium block mb-1">Short Description / Primer (optional)</label>
           <textarea
             className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm"
             placeholder="Why you should try this deck..."
@@ -266,7 +274,7 @@ function AdminModal({ isOpen, onClose, onSubmit, editDeck }) {
           />
         </div>
         <div className="mb-4">
-          <label className="text-xs text-text-muted block mb-1">Star Rating (optional)</label>
+          <label className="text-sm text-text-primary font-medium block mb-1">Star Rating (optional)</label>
           <div className="flex gap-1">
             {[1, 2, 3].map((s) => (
               <button
@@ -322,6 +330,7 @@ export default function DeckRecommendations() {
   // Modal
   const [modalOpen, setModalOpen] = useState(false)
   const [editDeck, setEditDeck] = useState(null)
+  const [staffPicksOpen, setStaffPicksOpen] = useState(true)
 
   // Load images first (fast), decks separately (slow)
   useEffect(() => {
@@ -390,6 +399,11 @@ export default function DeckRecommendations() {
     return sorted
   }, [tournamentDecks, activeAvatar, activeElements, activeYear, activeSort])
 
+  const filtersActive = activeAvatar !== 'all' || activeElements.size > 0 || !!activeYear
+
+  // Auto-collapse staff picks when filters become active; reopen when cleared.
+  useEffect(() => { setStaffPicksOpen(!filtersActive) }, [filtersActive])
+
   // Pagination
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const pagedDecks = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -426,15 +440,15 @@ export default function DeckRecommendations() {
     <div>
       {/* Hero */}
       <section className="text-center mb-6">
-        <h1 className="text-2xl font-display text-secondary mb-2">Sorcery Deck Rec</h1>
-        <p className="text-text-muted text-sm max-w-xl mx-auto">
+        <h1 className="text-4xl font-display text-secondary mb-2">Sorcery Deck Rec</h1>
+        <p className="text-text-primary/80 text-sm max-w-xl mx-auto">
           Community-aggregated archetypes from tournament builds.<br />
           Click an archetype to see what cards players commonly run in that style.
         </p>
       </section>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-end gap-4 mb-6 p-3 bg-bg-surface rounded-lg border border-border">
+      <div className="flex flex-wrap items-end gap-4 mb-6 p-4 bg-bg-elevated rounded-lg border border-border">
         <AvatarSearch
           avatars={avatarNames}
           value={activeAvatar}
@@ -442,17 +456,17 @@ export default function DeckRecommendations() {
         />
 
         <div>
-          <label className="text-xs text-text-muted block mb-1">Elements:</label>
+          <label className="text-sm text-text-primary font-medium block mb-1">Elements:</label>
           <div className="flex gap-1">
             {Object.entries(ELEMENT_ICONS).map(([el, icon]) => (
               <button
                 key={el}
-                className={`flex items-center gap-1 px-2 py-1 rounded text-xs border transition-colors ${
-                  activeElements.has(el) ? 'border-secondary bg-secondary/20 text-secondary' : 'border-border text-text-muted hover:border-text-muted'
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm border-2 transition-colors ${
+                  activeElements.has(el) ? 'border-secondary bg-secondary/20 text-secondary' : 'border-border text-text-primary hover:border-secondary/60 hover:bg-bg-raised'
                 }`}
                 onClick={() => toggleElement(el)}
               >
-                <img src={`/avatar-images/${icon}`} alt={el} width={16} height={16} /> {el}
+                <img src={`/avatar-images/${icon}`} alt={el} width={18} height={18} /> {el}
               </button>
             ))}
           </div>
@@ -460,7 +474,7 @@ export default function DeckRecommendations() {
 
         {years.length > 0 && (
           <div>
-            <label className="text-xs text-text-muted block mb-1">Year:</label>
+            <label className="text-sm text-text-primary font-medium block mb-1">Year:</label>
             <select
               className="bg-bg-raised border border-border rounded px-2 py-1 text-sm"
               value={activeYear}
@@ -473,7 +487,7 @@ export default function DeckRecommendations() {
         )}
 
         <div>
-          <label className="text-xs text-text-muted block mb-1">Sort:</label>
+          <label className="text-sm text-text-primary font-medium block mb-1">Sort:</label>
           <select
             className="bg-bg-raised border border-border rounded px-2 py-1 text-sm"
             value={activeSort}
@@ -487,46 +501,62 @@ export default function DeckRecommendations() {
         </div>
       </div>
 
-      {/* Admin Recommendations Section */}
+      {/* Admin Recommendations Accordion */}
       {(adminDecks.length > 0 || isAdmin) && (
-        <section className="mb-8">
-          <div className="flex items-center gap-3 mb-3">
-            <h2 className="font-display text-secondary text-lg">Summit Admin Recommendations</h2>
-            <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">Staff Pick</span>
-            {isAdmin && (
-              <button
-                className="ml-auto text-xs bg-secondary text-bg-base px-3 py-1 rounded hover:opacity-90"
-                onClick={() => { setEditDeck(null); setModalOpen(true) }}
-              >
-                + Add Deck
-              </button>
+        <section className="mb-6">
+          <div className="rounded-lg border-2 border-secondary/40 bg-bg-elevated overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setStaffPicksOpen((v) => !v)}
+              aria-expanded={staffPicksOpen}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-bg-raised transition-colors"
+            >
+              <span className={`text-secondary text-lg transition-transform ${staffPicksOpen ? 'rotate-90' : ''}`}>&#9656;</span>
+              <h2 className="font-display text-secondary text-xl">Summit Admin Recommendations</h2>
+              <span className="text-xs font-semibold uppercase tracking-wider bg-secondary text-bg-base px-2 py-0.5 rounded">Staff Pick</span>
+              <span className="text-sm text-text-muted">({adminDecks.length})</span>
+              {isAdmin && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="ml-auto text-xs bg-secondary text-bg-base px-3 py-1 rounded hover:opacity-90 cursor-pointer"
+                  onClick={(e) => { e.stopPropagation(); setEditDeck(null); setModalOpen(true) }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setEditDeck(null); setModalOpen(true) } }}
+                >
+                  + Add Deck
+                </span>
+              )}
+            </button>
+            {staffPicksOpen && (
+              <div className="px-4 pb-4 pt-2 border-t border-border">
+                {adminDecks.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {adminDecks.map((deck) => (
+                      <DeckCard
+                        key={deck.deck_id}
+                        deck={deck}
+                        imageFiles={imageFiles}
+                        imageSettings={imageSettings}
+                        isAdmin={isAdmin}
+                        isAdminRec
+                        onEdit={(d) => { setEditDeck(d); setModalOpen(true) }}
+                        onRemove={handleRemove}
+                        onImageSettingsSaved={handleImageSettingsSaved}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-text-muted text-sm">No admin recommendations yet.</p>
+                )}
+              </div>
             )}
           </div>
-          {adminDecks.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {adminDecks.map((deck) => (
-                <DeckCard
-                  key={deck.deck_id}
-                  deck={deck}
-                  imageFiles={imageFiles}
-                  imageSettings={imageSettings}
-                  isAdmin={isAdmin}
-                  isAdminRec
-                  onEdit={(d) => { setEditDeck(d); setModalOpen(true) }}
-                  onRemove={handleRemove}
-                  onImageSettingsSaved={handleImageSettingsSaved}
-                />
-              ))}
-            </div>
-          ) : (
-            <p className="text-text-muted text-sm">No admin recommendations yet.</p>
-          )}
         </section>
       )}
 
       {/* Tournament Archetypes */}
       <section>
-        <h2 className="font-display text-secondary text-lg mb-3">Tournament Archetypes</h2>
+        <h2 className="font-display text-secondary text-2xl mb-4">Tournament Archetypes</h2>
         {decksLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {Array.from({ length: 8 }).map((_, i) => <DeckCardSkeleton key={i} />)}
@@ -552,17 +582,17 @@ export default function DeckRecommendations() {
         {!decksLoading && totalPages > 1 && (
           <div className="flex items-center justify-center gap-4 mt-6">
             <button
-              className="text-sm text-text-muted hover:text-text-primary disabled:opacity-30"
+              className="text-sm text-text-primary hover:text-secondary disabled:opacity-30 disabled:hover:text-text-primary"
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
             >
               &larr; Prev
             </button>
-            <span className="text-sm text-text-muted">
-              Page {page} of {totalPages} ({filtered.length} decks)
+            <span className="text-sm text-text-primary">
+              Page {page} of {totalPages} <span className="text-text-muted">({filtered.length} decks)</span>
             </span>
             <button
-              className="text-sm text-text-muted hover:text-text-primary disabled:opacity-30"
+              className="text-sm text-text-primary hover:text-secondary disabled:opacity-30 disabled:hover:text-text-primary"
               disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
             >

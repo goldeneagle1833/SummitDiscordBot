@@ -66,7 +66,7 @@ function DeckCard({ deck, imageFiles, imageSettings, isAdmin, onEdit, onRemove, 
   return (
     <div
       onClick={() => navigate(`/deck-rec/${encodeURIComponent(deck.deck_id)}`)}
-      className={`relative block rounded-lg overflow-hidden transition-all group cursor-pointer hover:-translate-y-0.5 ${isAdminRec ? 'border-2 border-secondary/70 bg-bg-surface ring-1 ring-secondary/30 hover:ring-secondary/60' : 'bg-bg-surface border border-border hover:border-secondary/60'}`}
+      className={`relative block rounded-lg overflow-hidden transition-all group cursor-pointer hover:-translate-y-0.5 ${isAdminRec ? 'border border-secondary/40 bg-bg-surface hover:border-secondary/70' : 'bg-bg-surface border border-border hover:border-border/80'}`}
       style={{ minHeight: '160px' }}
     >
       {imgSrc && (
@@ -84,7 +84,7 @@ function DeckCard({ deck, imageFiles, imageSettings, isAdmin, onEdit, onRemove, 
         </>
       )}
       {isAdminRec && (
-        <div className="absolute top-2 right-2 z-10 text-[10px] font-semibold uppercase tracking-wider bg-secondary text-bg-base px-1.5 py-0.5 rounded">
+        <div className="absolute top-2 right-2 z-10 text-[10px] font-semibold uppercase tracking-wider bg-bg-base/80 text-secondary border border-secondary/50 px-1.5 py-0.5 rounded">
           Staff Pick
         </div>
       )}
@@ -462,7 +462,7 @@ export default function DeckRecommendations() {
               <button
                 key={el}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm border-2 transition-colors ${
-                  activeElements.has(el) ? 'border-secondary bg-secondary/20 text-secondary' : 'border-border text-text-primary hover:border-secondary/60 hover:bg-bg-raised'
+                  activeElements.has(el) ? 'border-secondary/70 bg-bg-raised text-text-primary' : 'border-border text-text-primary hover:border-border/80 hover:bg-bg-raised'
                 }`}
                 onClick={() => toggleElement(el)}
               >
@@ -504,16 +504,16 @@ export default function DeckRecommendations() {
       {/* Admin Recommendations Accordion */}
       {(adminDecks.length > 0 || isAdmin) && (
         <section className="mb-6">
-          <div className="rounded-lg border-2 border-secondary/40 bg-bg-elevated overflow-hidden">
+          <div className="rounded-lg border border-border bg-bg-elevated overflow-hidden">
             <button
               type="button"
               onClick={() => setStaffPicksOpen((v) => !v)}
               aria-expanded={staffPicksOpen}
               className="w-full flex items-center gap-3 px-4 py-3 hover:bg-bg-raised transition-colors"
             >
-              <span className={`text-secondary text-lg transition-transform ${staffPicksOpen ? 'rotate-90' : ''}`}>&#9656;</span>
-              <h2 className="font-display text-secondary text-xl">Summit Admin Recommendations</h2>
-              <span className="text-xs font-semibold uppercase tracking-wider bg-secondary text-bg-base px-2 py-0.5 rounded">Staff Pick</span>
+              <span className={`text-text-muted text-lg transition-transform ${staffPicksOpen ? 'rotate-90' : ''}`}>&#9656;</span>
+              <h2 className="font-display text-text-primary text-xl">Summit Admin Recommendations</h2>
+              <span className="text-xs font-semibold uppercase tracking-wider text-secondary border border-secondary/50 px-2 py-0.5 rounded">Staff Pick</span>
               <span className="text-sm text-text-muted">({adminDecks.length})</span>
               {isAdmin && (
                 <span
@@ -556,7 +556,7 @@ export default function DeckRecommendations() {
 
       {/* Tournament Archetypes */}
       <section>
-        <h2 className="font-display text-secondary text-2xl mb-4">Tournament Archetypes</h2>
+        <h2 className="font-display text-text-primary text-2xl mb-4">Tournament Archetypes</h2>
         {decksLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {Array.from({ length: 8 }).map((_, i) => <DeckCardSkeleton key={i} />)}

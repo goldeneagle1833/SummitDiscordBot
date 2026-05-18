@@ -217,6 +217,7 @@ export default function Leaderboard() {
   const { user } = useAuth()
   const isAdmin = user && user.is_admin
   const [lifetimeData, setLifetimeData] = useState([])
+  const [eloValues, setEloValues] = useState([])
   const [eventData, setEventData] = useState(null)
   const [limitedData, setLimitedData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -228,8 +229,10 @@ export default function Leaderboard() {
         getLimitedLeaderboard(),
       ])
       if (combined.status === 'fulfilled') {
-        setLifetimeData(combined.value.lifetime || [])
-        setEventData(combined.value.event || null)
+        const data = combined.value
+        setLifetimeData(data.lifetime || [])
+        setEloValues(data.elos || (data.lifetime || []).map((p) => p.elo))
+        setEventData(data.event || null)
       }
       if (limited.status === 'fulfilled') setLimitedData(limited.value)
       else setLimitedData(null)
@@ -239,7 +242,7 @@ export default function Leaderboard() {
 
   if (loading) return <Spinner className="py-20" />
 
-  const elos = lifetimeData.map((p) => p.elo)
+  const elos = eloValues.length > 0 ? eloValues : lifetimeData.map((p) => p.elo)
   const eventInfo = eventData?.info
   const eventLeaderboard = eventData?.leaderboard || []
 

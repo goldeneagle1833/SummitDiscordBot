@@ -50,7 +50,9 @@ def get_combined_leaderboard():
         service = LeaderboardService()
         combined_data = service.get_combined_leaderboard()
         if not is_admin():
-            combined_data.pop("lifetime", None)
+            # Keep just the ELO values for the distribution chart
+            lifetime = combined_data.pop("lifetime", [])
+            combined_data["elos"] = [p["elo"] for p in lifetime]
         return jsonify(combined_data)
     except Exception as e:
         logger.error(f"Error fetching combined leaderboard: {e}", exc_info=True)

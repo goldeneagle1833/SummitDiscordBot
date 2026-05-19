@@ -29,11 +29,14 @@ export default {
         },
         bg: {
           dark: '#0d1117',
+          base: '#0d1117',
           surface: '#161b22',
           elevated: '#21262d',
+          raised: '#21262d',
         },
         text: {
           DEFAULT: '#f0f6fc',
+          primary: '#f0f6fc',
           muted: '#8b949e',
         },
         border: {

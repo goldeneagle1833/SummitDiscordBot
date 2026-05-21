@@ -79,6 +79,10 @@ export default function AvatarTopPlayers() {
     () => data.avatars.find((avatar) => avatar.name === selectedAvatar) || data.avatars[0],
     [data.avatars, selectedAvatar],
   )
+  const avatarOptions = useMemo(
+    () => [...data.avatars].sort((a, b) => a.name.localeCompare(b.name)),
+    [data.avatars],
+  )
   const players = useMemo(
     () => sortPlayers(selected?.players || [], sortBy).map((player, index) => ({ ...player, displayRank: index + 1 })),
     [selected, sortBy],
@@ -108,7 +112,7 @@ export default function AvatarTopPlayers() {
               onChange={(e) => setSelectedAvatar(e.target.value)}
               className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm"
             >
-              {data.avatars.map((avatar) => (
+              {avatarOptions.map((avatar) => (
                 <option key={avatar.name} value={avatar.name}>{avatar.name}</option>
               ))}
             </select>

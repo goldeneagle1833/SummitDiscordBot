@@ -28,6 +28,19 @@ from cogs.lfg.state import (
 )
 
 
+def make_queue_entry(queue_type="ranked", timestamp=None, timeframe=30, deck_url=None, **kwargs):
+    """Helper to create a queue entry in the new multi-queue format."""
+    if timestamp is None:
+        timestamp = datetime.now()
+    entry = {
+        "timestamp": timestamp,
+        "timeframe": timeframe,
+        "deck_url": deck_url,
+    }
+    entry.update(kwargs)
+    return {"queues": {queue_type: entry}}
+
+
 class TestLFGQueueBasics:
     """Test basic queue operations."""
 
@@ -38,15 +51,13 @@ class TestLFGQueueBasics:
         lfg_queue.clear()
 
         async with lfg_queue_lock:
-            lfg_queue[user_id] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": "https://curiosa.io/test",
-            }
+            lfg_queue[user_id] = make_queue_entry(
+                deck_url="https://curiosa.io/test",
+            )
 
         assert user_id in lfg_queue
-        assert lfg_queue[user_id]["timeframe"] == 30
-        assert lfg_queue[user_id]["deck_url"] == "https://curiosa.io/test"
+        assert lfg_queue[user_id]["queues"]["ranked"]["timeframe"] == 30
+        assert lfg_queue[user_id]["queues"]["ranked"]["deck_url"] == "https://curiosa.io/test"
 
     @pytest.mark.asyncio
     async def test_queue_add_multiple_users(self):
@@ -56,11 +67,7 @@ class TestLFGQueueBasics:
 
         async with lfg_queue_lock:
             for i, user_id in enumerate(user_ids):
-                lfg_queue[user_id] = {
-                    "timestamp": datetime.now(),
-                    "timeframe": 30 + i * 5,
-                    "deck_url": None,
-                }
+                lfg_queue[user_id] = make_queue_entry(timeframe=30 + i * 5)
 
         assert len(lfg_queue) == 3
         assert all(uid in lfg_queue for uid in user_ids)
@@ -72,11 +79,7 @@ class TestLFGQueueBasics:
         lfg_queue.clear()
 
         async with lfg_queue_lock:
-            lfg_queue[user_id] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": None,
-            }
+            lfg_queue[user_id] = make_queue_entry()
 
         assert user_id in lfg_queue
 
@@ -92,11 +95,7 @@ class TestLFGQueueBasics:
         lfg_queue.clear()
 
         async with lfg_queue_lock:
-            lfg_queue[user_id] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": None,
-            }
+            lfg_queue[user_id] = make_queue_entry()
 
         # Try to add same user again
         assert user_id in lfg_queue
@@ -108,20 +107,12 @@ class TestLFGQueueBasics:
 
         async with lfg_queue_lock:
             # User without deck URL
-            lfg_queue[111] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": None,
-            }
+            lfg_queue[111] = make_queue_entry()
             # User with deck URL
-            lfg_queue[222] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": "https://curiosa.io/test",
-            }
+            lfg_queue[222] = make_queue_entry(deck_url="https://curiosa.io/test")
 
-        assert lfg_queue[111]["deck_url"] is None
-        assert lfg_queue[222]["deck_url"] is not None
+        assert lfg_queue[111]["queues"]["ranked"]["deck_url"] is None
+        assert lfg_queue[222]["queues"]["ranked"]["deck_url"] is not None
 
 
 class TestQueueExpiration:
@@ -135,24 +126,20 @@ class TestQueueExpiration:
 
         async with lfg_queue_lock:
             # Add user with 30-minute timeframe (not expired)
-            lfg_queue[111] = {
-                "timestamp": current_time,
-                "timeframe": 30,
-                "deck_url": None,
-            }
+            lfg_queue[111] = make_queue_entry(timestamp=current_time)
             # Add user with 5-minute timeframe, added 15 minutes ago (expired)
-            lfg_queue[222] = {
-                "timestamp": current_time - timedelta(minutes=15),
-                "timeframe": 5,
-                "deck_url": None,
-            }
+            lfg_queue[222] = make_queue_entry(
+                timestamp=current_time - timedelta(minutes=15),
+                timeframe=5,
+            )
 
         # Check which entries are expired
         expired = []
-        for user_id, entry in lfg_queue.items():
-            expiry_time = entry["timestamp"] + timedelta(minutes=entry["timeframe"])
-            if current_time > expiry_time:
-                expired.append(user_id)
+        for user_id, user_data in lfg_queue.items():
+            for qt, entry in user_data["queues"].items():
+                expiry_time = entry["timestamp"] + timedelta(minutes=entry["timeframe"])
+                if current_time > expiry_time:
+                    expired.append(user_id)
 
         assert 222 in expired
         assert 111 not in expired
@@ -164,30 +151,22 @@ class TestQueueExpiration:
         current_time = datetime.now()
 
         async with lfg_queue_lock:
-            # Add mixed entries (expired and not expired)
-            lfg_queue[111] = {
-                "timestamp": current_time,
-                "timeframe": 30,
-                "deck_url": None,
-            }
-            lfg_queue[222] = {
-                "timestamp": current_time - timedelta(minutes=20),
-                "timeframe": 10,
-                "deck_url": None,
-            }
-            lfg_queue[333] = {
-                "timestamp": current_time - timedelta(minutes=5),
-                "timeframe": 30,
-                "deck_url": None,
-            }
+            lfg_queue[111] = make_queue_entry(timestamp=current_time)
+            lfg_queue[222] = make_queue_entry(
+                timestamp=current_time - timedelta(minutes=20),
+                timeframe=10,
+            )
+            lfg_queue[333] = make_queue_entry(
+                timestamp=current_time - timedelta(minutes=5),
+            )
 
         # Remove expired entries
         async with lfg_queue_lock:
-            expired_users = [
-                user_id
-                for user_id, entry in list(lfg_queue.items())
-                if current_time > entry["timestamp"] + timedelta(minutes=entry["timeframe"])
-            ]
+            expired_users = []
+            for user_id, user_data in list(lfg_queue.items()):
+                for qt, entry in list(user_data["queues"].items()):
+                    if current_time > entry["timestamp"] + timedelta(minutes=entry["timeframe"]):
+                        expired_users.append(user_id)
             for user_id in expired_users:
                 lfg_queue.pop(user_id, None)
 
@@ -223,16 +202,8 @@ class TestMatchingLogic:
         lfg_queue.clear()
 
         async with lfg_queue_lock:
-            lfg_queue[111] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": "https://curiosa.io/deck1",
-            }
-            lfg_queue[222] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": "https://curiosa.io/deck2",
-            }
+            lfg_queue[111] = make_queue_entry(deck_url="https://curiosa.io/deck1")
+            lfg_queue[222] = make_queue_entry(deck_url="https://curiosa.io/deck2")
 
         # Matching should find a pair
         assert len(lfg_queue) == 2
@@ -246,11 +217,7 @@ class TestMatchingLogic:
         lfg_queue.clear()
 
         async with lfg_queue_lock:
-            lfg_queue[111] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": None,
-            }
+            lfg_queue[111] = make_queue_entry()
 
         # No matching possible with just one user
         assert len(lfg_queue) == 1
@@ -268,21 +235,9 @@ class TestMatchingLogic:
         lfg_queue.clear()
 
         async with lfg_queue_lock:
-            lfg_queue[111] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": None,
-            }
-            lfg_queue[222] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": None,
-            }
-            lfg_queue[333] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": None,
-            }
+            lfg_queue[111] = make_queue_entry()
+            lfg_queue[222] = make_queue_entry()
+            lfg_queue[333] = make_queue_entry()
 
         # Simulate matching user 111 with user 222
         matched_opponent = 222
@@ -306,11 +261,7 @@ class TestConcurrentAccess:
 
         async def add_user(user_id):
             async with lfg_queue_lock:
-                lfg_queue[user_id] = {
-                    "timestamp": datetime.now(),
-                    "timeframe": 30,
-                    "deck_url": None,
-                }
+                lfg_queue[user_id] = make_queue_entry()
 
         # Add multiple users concurrently
         user_ids = list(range(100, 110))
@@ -332,11 +283,7 @@ class TestConcurrentAccess:
 
         async def writer(user_id):
             async with lfg_queue_lock:
-                lfg_queue[user_id] = {
-                    "timestamp": datetime.now(),
-                    "timeframe": 30,
-                    "deck_url": None,
-                }
+                lfg_queue[user_id] = make_queue_entry()
 
         # Run readers and writers concurrently
         readers = [reader() for _ in range(3)]

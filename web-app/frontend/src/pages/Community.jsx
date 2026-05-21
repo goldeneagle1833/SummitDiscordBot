@@ -75,7 +75,7 @@ export default function Community() {
                     <img
                       src={video.thumbnail}
                       alt={video.title}
-                      className="w-full h-36 object-cover"
+                      className="w-full aspect-video object-contain bg-black"
                       loading="lazy"
                     />
                   </a>

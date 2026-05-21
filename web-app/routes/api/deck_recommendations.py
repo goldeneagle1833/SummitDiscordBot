@@ -172,6 +172,7 @@ def get_deck_info(deck_id: str):
 
         # For admin/staff decks, fetch live from Curiosa
         detail_source = seed.card_details
+        sideboard_source = seed.sideboard_details
         if (seed.is_admin_rec or not detail_source) and seed.curiosa_url:
             try:
                 fresh_json = CuriosaService().fetch_deck_data(seed.curiosa_url)
@@ -183,6 +184,9 @@ def get_deck_info(deck_id: str):
                     )
                     if live_details:
                         detail_source = live_details
+                    live_sideboard = _get_card_details(fresh_data.get("sideboard", []))
+                    if live_sideboard:
+                        sideboard_source = live_sideboard
             except Exception as e:
                 logger.warning("Could not fetch live Curiosa data for %s: %s", seed.deck_id, e)
 
@@ -196,6 +200,16 @@ def get_deck_info(deck_id: str):
                 "image": _resolve_card_image(c["name"]),
             })
             for c in detail_source
+        ]
+        seed_sideboard = [
+            _enrich_card({
+                "name": c["name"],
+                "qty": c["qty"],
+                "type": c["type"],
+                "threshold": c["threshold"],
+                "image": _resolve_card_image(c["name"]),
+            })
+            for c in sideboard_source
         ]
 
         return jsonify({
@@ -211,6 +225,7 @@ def get_deck_info(deck_id: str):
             },
             "seed_cards": seed_cards,
             "seed_spellbook": seed_spellbook,
+            "seed_sideboard": seed_sideboard,
         })
     except Exception as e:
         logger.exception("Error in get_deck_info for %s: %s", deck_id, e)

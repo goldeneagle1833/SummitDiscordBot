@@ -444,8 +444,8 @@ export default function DeckVisualizer({ cards, spellbook, atlas, sideboard }) {
       spellbookCards = spellbook
     }
     if (atlas) mainCards.push(...atlas)
-    if (sideboard) sideboardCards = sideboard
   }
+  if (sideboard) sideboardCards = sideboard
 
   const allCards = [...mainCards, ...sideboardCards]
   const withImages = mainCards.filter((c) => c.image)

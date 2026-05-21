@@ -107,6 +107,20 @@ class CommunityRepository:
         conn.close()
         return row_id
 
+    def delete_entry(self, entry_type: str, entry_id: int) -> bool:
+        """Delete a community entry by type and ID. Returns True if a row was deleted."""
+        table_map = {"discord": "discord_servers", "youtube": "youtube_channels", "website": "websites"}
+        table = table_map.get(entry_type)
+        if not table or not self._table_exists(table):
+            return False
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(f"DELETE FROM {table} WHERE id = ?", (entry_id,))
+        conn.commit()
+        deleted = cur.rowcount > 0
+        conn.close()
+        return deleted
+
     def add_website(self, name: str, url: str, description: str = "", added_by: str | None = None) -> int:
         """Add a website entry. Returns the new row ID."""
         conn = self._get_connection()

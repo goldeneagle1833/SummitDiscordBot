@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { getStreamerBanner } from '@/api/streamers'
 
 const NAV_LINKS = [
   { to: '/', label: 'Home' },
@@ -281,6 +282,39 @@ function NotificationBell({ user }) {
   )
 }
 
+function LiveIndicator() {
+  const [streamer, setStreamer] = useState(null)
+
+  useEffect(() => {
+    const fetch_ = () => {
+      getStreamerBanner()
+        .then((data) => setStreamer(data.is_live ? data.streamer : null))
+        .catch(() => setStreamer(null))
+    }
+    fetch_()
+    const interval = setInterval(fetch_, 120000)
+    return () => clearInterval(interval)
+  }, [])
+
+  if (!streamer) return null
+
+  return (
+    <a
+      href={streamer.stream_url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-1.5 text-sm text-text hover:text-secondary transition-colors"
+      title={streamer.stream_title || `${streamer.display_name} is live`}
+    >
+      <span className="relative flex h-2.5 w-2.5">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+      </span>
+      <span className="hidden sm:inline font-medium">{streamer.display_name}</span>
+    </a>
+  )
+}
+
 export default function Nav() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { user, loading } = useAuth()
@@ -316,6 +350,8 @@ export default function Nav() {
 
           {/* Right */}
           <div className="flex items-center gap-3 flex-1 justify-end">
+            <LiveIndicator />
+
             {/* Nav links - visible on desktop */}
             {NAV_LINKS.map(({ to, href, label }) =>
               href ? (

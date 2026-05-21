@@ -2,6 +2,7 @@
 
 import json
 import logging
+import math
 import os
 import sqlite3
 from collections import Counter
@@ -16,6 +17,36 @@ from utils.auth import is_admin
 logger = logging.getLogger(__name__)
 
 avatars_bp = Blueprint("avatars", __name__)
+
+Z_SCORE = 1.96
+M_VALUE = 10
+
+
+def calculate_wilson_lower_bound(wins, total_games):
+    """Return the lower bound of the Wilson score interval as a decimal."""
+    if total_games <= 0:
+        return 0
+
+    p = wins / total_games
+    z_squared = Z_SCORE ** 2
+    term_1 = p + (z_squared / (2 * total_games))
+    term_2 = Z_SCORE * math.sqrt(
+        (p * (1 - p) / total_games) + (z_squared / (4 * (total_games ** 2)))
+    )
+    denominator = 1 + (z_squared / total_games)
+    return max(0, (term_1 - term_2) / denominator)
+
+
+def calculate_avatar_score(wins, losses):
+    """Calculate the Avatar Score for a player/avatar or avatar aggregate record."""
+    total_games = wins + losses
+    if total_games <= 0:
+        return 0
+
+    base_skill_score = calculate_wilson_lower_bound(wins, total_games) * 100
+    volume_bonus = M_VALUE * math.log(total_games)
+    raw_score = base_skill_score + volume_bonus
+    return int((raw_score * 10) + 0.5)
 
 
 @avatars_bp.route("/avatars/image-files")
@@ -513,6 +544,7 @@ def get_all_avatars():
                 "losses": stats["losses"],
                 "total": total,
                 "win_rate": round(win_rate, 1),
+                "avatar_score": calculate_avatar_score(stats["wins"], stats["losses"]),
             }
             # Find top player by most wins with this avatar
             players = avatar_player_stats.get(name, {})
@@ -525,11 +557,109 @@ def get_all_avatars():
                     "losses": top["losses"],
                     "total": top_total,
                     "win_rate": round(top["wins"] / top_total * 100, 1) if top_total > 0 else 0,
+                    "avatar_score": calculate_avatar_score(top["wins"], top["losses"]),
                 }
             avatar_list.append(entry)
 
     avatar_list.sort(key=lambda x: x["total"], reverse=True)
     return jsonify(avatar_list)
+
+
+@avatars_bp.route("/avatars/top-players")
+def get_avatar_top_players():
+    """Return the top players for each avatar, ranked by Avatar Score."""
+    source_filter = request.args.get("source", "discord")
+    event_filter = request.args.get("event", "all")
+    if event_filter == "current" and not is_admin():
+        event_filter = "all"
+    try:
+        limit = max(1, min(100, int(request.args.get("limit", 16))))
+    except (TypeError, ValueError):
+        limit = 16
+    try:
+        min_games = max(1, int(request.args.get("min_games", 10)))
+    except (TypeError, ValueError):
+        min_games = 10
+
+    if not MATCH_RECORDS_DB_PATH.exists():
+        logger.warning(f"Database not found at {MATCH_RECORDS_DB_PATH}")
+        return jsonify({"avatars": []})
+
+    event_start, event_end = None, None
+    if event_filter not in ("all",):
+        event_start, event_end = _get_event_date_range(event_filter)
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        avatar_stats = {}
+        avatar_player_stats = {}
+
+        if source_filter in ("all", "discord"):
+            discord_rows, use_new_columns = _collect_discord_rows_with_players(cur, event_filter)
+            _tally_avatar_stats_with_players(discord_rows, use_new_columns, avatar_stats, avatar_player_stats)
+
+        if source_filter != "discord":
+            ext_rows = _collect_external_rows_with_players(cur, source_filter, event_start, event_end)
+            _tally_avatar_stats_with_players(ext_rows, True, avatar_stats, avatar_player_stats)
+
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.error(f"Database error: {e}")
+        return jsonify({"avatars": []})
+    except Exception as e:
+        logger.error(f"Unexpected error in get_avatar_top_players: {e}")
+        return jsonify({"avatars": []})
+
+    avatars = []
+    for avatar_name, players in avatar_player_stats.items():
+        ranked_players = []
+        for player_id, stats in players.items():
+            total = stats["wins"] + stats["losses"]
+            if total < min_games:
+                continue
+
+            win_rate = stats["wins"] / total * 100 if total > 0 else 0
+            ranked_players.append({
+                "player_id": player_id,
+                "name": stats["name"] or f"Player {player_id}",
+                "wins": stats["wins"],
+                "losses": stats["losses"],
+                "total": total,
+                "win_rate": round(win_rate, 1),
+                "avatar_score": calculate_avatar_score(stats["wins"], stats["losses"]),
+            })
+
+        ranked_players.sort(
+            key=lambda p: (p["avatar_score"], p["win_rate"], p["wins"], p["total"]),
+            reverse=True,
+        )
+        ranked_players = ranked_players[:limit]
+        for idx, player in enumerate(ranked_players, start=1):
+            player["rank"] = idx
+
+        if ranked_players:
+            total_stats = avatar_stats.get(avatar_name, {"wins": 0, "losses": 0})
+            total_games = total_stats["wins"] + total_stats["losses"]
+            avatars.append({
+                "name": avatar_name,
+                "wins": total_stats["wins"],
+                "losses": total_stats["losses"],
+                "total": total_games,
+                "win_rate": round(total_stats["wins"] / total_games * 100, 1) if total_games > 0 else 0,
+                "avatar_score": calculate_avatar_score(total_stats["wins"], total_stats["losses"]),
+                "players": ranked_players,
+            })
+
+    avatars.sort(key=lambda a: (a["avatar_score"], a["total"], a["name"]), reverse=True)
+    return jsonify({
+        "avatars": avatars,
+        "limit": limit,
+        "min_games": min_games,
+        "source": source_filter,
+        "event": event_filter,
+    })
 
 
 @avatars_bp.route("/avatar/<avatar_name>")
@@ -994,7 +1124,7 @@ def get_avatar(avatar_name):
         }
     }
 
-    # Include top players per ranking method: accuracy, winrate, total_wins
+    # Include top players per ranking method: avatar_score, winrate, total_wins
     if player_stats:
         min_games = 10
         qualified = []
@@ -1009,15 +1139,17 @@ def get_avatar(avatar_name):
                     "losses": stats["losses"],
                     "total": total,
                     "win_rate": round(wr, 1),
-                    "accuracy": round(wr * total, 1)
+                    "avatar_score": calculate_avatar_score(stats["wins"], stats["losses"]),
+                    "wins_score": stats["wins"],
                 })
 
         if qualified:
-            top_by_accuracy = max(qualified, key=lambda p: p["accuracy"])
+            top_by_avatar_score = max(qualified, key=lambda p: (p["avatar_score"], p["win_rate"], p["total"]))
             top_by_winrate = max(qualified, key=lambda p: (p["win_rate"], p["total"]))
             top_by_wins = max(qualified, key=lambda p: (p["wins"], p["win_rate"]))
             result["top_players"] = {
-                "accuracy": top_by_accuracy,
+                "avatar_score": top_by_avatar_score,
+                "accuracy": top_by_avatar_score,
                 "winrate": top_by_winrate,
                 "total_wins": top_by_wins,
             }

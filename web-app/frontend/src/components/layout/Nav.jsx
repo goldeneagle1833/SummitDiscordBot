@@ -481,6 +481,7 @@ export default function Nav() {
 
           {/* Main navigation */}
           <SidebarLink to="/avatars" label="Avatar Winrates" location={location} onClick={close} />
+          <SidebarLink to="/avatars/top-players" label="Avatar Top 16" location={location} onClick={close} />
           <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
           <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
           <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} />

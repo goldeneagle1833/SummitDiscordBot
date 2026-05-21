@@ -222,9 +222,11 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
         return
 
     async with lfg_queue_lock:
-        if interaction.user.id in lfg_queue:
+        # Check if already in this specific queue type
+        user_queues = lfg_queue.get(interaction.user.id, {}).get("queues", {})
+        if queue_type in user_queues:
             await interaction.followup.send(
-                "You're already in the queue!", ephemeral=True
+                f"You're already in the {queue_type.capitalize()} queue!", ephemeral=True
             )
             return
 
@@ -232,11 +234,11 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
         matched_user_id = lfg_cog.check_if_someone_is_lfg(ctx, queue_type)
 
         if matched_user_id and matched_user_id != interaction.user.id:
-            matched_user_info = lfg_queue.get(matched_user_id, {})
-            matched_user_deck_url = matched_user_info.get("deck_url")
-            matched_queue_type = matched_user_info.get("queue_type", "ranked")
-            matched_ladder_info = matched_user_info.get("ladder_info")
-            matched_run_id = int(matched_user_info.get("run_id") or 0)
+            matched_entry = lfg_queue.get(matched_user_id, {}).get("queues", {}).get(queue_type, {})
+            matched_user_deck_url = matched_entry.get("deck_url")
+            matched_queue_type = queue_type
+            matched_ladder_info = matched_entry.get("ladder_info")
+            matched_run_id = int(matched_entry.get("run_id") or 0)
             match_type = lfg_cog.resolve_match_type(queue_type, matched_queue_type)
 
             if matched_ladder_info:
@@ -267,6 +269,8 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                     )
 
             lfg_queue.pop(matched_user_id, None)
+            # Also remove the joiner from any other queues they may be in
+            lfg_queue.pop(interaction.user.id, None)
             logger.info(
                 f"Lock acquired: Matching {interaction.user.id} with {matched_user_id} (match_type={match_type})"
             )
@@ -532,17 +536,16 @@ class JoinQueueButtons(discord.ui.View):
             self.remove_item(self.join_ranked_button)
         if not is_pilot_active("CasualQueue"):
             self.remove_item(self.join_testing_button)
-        # Join Both requires both Ranked and Casual to be active
-        if not (is_pilot_active("RankedQueue") and is_pilot_active("CasualQueue")):
-            self.remove_item(self.join_both_button)
         if not is_pilot_active("GrewWolves"):
             self.remove_item(self.join_limited_button)
 
     async def _handle_join(self, interaction: discord.Interaction, queue_type: str):
         """Shared handler for all join buttons"""
-        if interaction.user.id in lfg_queue:
+        # Check if already in this specific queue type
+        user_queues = lfg_queue.get(interaction.user.id, {}).get("queues", {})
+        if queue_type in user_queues:
             await interaction.response.send_message(
-                "You're already in the queue!", ephemeral=True
+                f"You're already in the {queue_type.capitalize()} queue!", ephemeral=True
             )
             return
         if queue_type == "limited":
@@ -580,21 +583,6 @@ class JoinQueueButtons(discord.ui.View):
             )
             return
         await self._handle_join(interaction, "testing")
-
-    @discord.ui.button(
-        label="Join Both",
-        style=discord.ButtonStyle.secondary,
-        custom_id="join_lfg_both",
-    )
-    async def join_both_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if not (is_pilot_active("RankedQueue") and is_pilot_active("CasualQueue")):
-            await interaction.response.send_message(
-                "Both queues must be available to join both.", ephemeral=True
-            )
-            return
-        await self._handle_join(interaction, "both")
 
     @discord.ui.button(
         label="Join Limited",

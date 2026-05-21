@@ -232,7 +232,7 @@ function PlayerHalf({
   );
 }
 
-function DiceRollerStrip({ onReset }) {
+function DiceRollerStrip({ onReset, wakeLock, onToggleWakeLock }) {
   const [rollResult, setRollResult] = useState(null);
   const [rolling, setRolling] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
@@ -322,6 +322,26 @@ function DiceRollerStrip({ onReset }) {
         </svg>
       </button>
 
+      {/* Wake lock (keep screen on) */}
+      {"wakeLock" in navigator && (
+        <button
+          onClick={onToggleWakeLock}
+          className={`p-2 active:scale-110 transition-all touch-manipulation ${wakeLock ? "text-secondary" : "text-text-muted hover:text-white"}`}
+          title={wakeLock ? "Allow screen sleep" : "Keep screen on"}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill={wakeLock ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="5" />
+            <line x1="12" y1="1" x2="12" y2="3" />
+            <line x1="12" y1="21" x2="12" y2="23" />
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+            <line x1="1" y1="12" x2="3" y2="12" />
+            <line x1="21" y1="12" x2="23" y2="12" />
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+          </svg>
+        </button>
+      )}
+
       {/* Fullscreen button */}
       <button
         onClick={toggleFullscreen}
@@ -371,6 +391,55 @@ export default function LifeCounter() {
   const [p1Thresholds, setP1Thresholds] = useState(defaultThresholds);
   const [p2Thresholds, setP2Thresholds] = useState(defaultThresholds);
   const [showReport, setShowReport] = useState(false);
+  const [wakeLock, setWakeLock] = useState(null);
+  const wakeLockRef = useRef(null);
+
+  const toggleWakeLock = async () => {
+    if (wakeLockRef.current) {
+      await wakeLockRef.current.release();
+      wakeLockRef.current = null;
+      setWakeLock(null);
+    } else {
+      try {
+        wakeLockRef.current = await navigator.wakeLock.request("screen");
+        setWakeLock(true);
+        wakeLockRef.current.addEventListener("release", () => {
+          wakeLockRef.current = null;
+          setWakeLock(null);
+        });
+      } catch {
+        // Wake lock request failed (e.g. low battery)
+      }
+    }
+  };
+
+  // Re-acquire wake lock when page becomes visible again (browser releases it on tab switch)
+  useEffect(() => {
+    const onVisibility = async () => {
+      if (document.visibilityState === "visible" && wakeLock && !wakeLockRef.current) {
+        try {
+          wakeLockRef.current = await navigator.wakeLock.request("screen");
+          wakeLockRef.current.addEventListener("release", () => {
+            wakeLockRef.current = null;
+            setWakeLock(null);
+          });
+        } catch {
+          // Failed to re-acquire
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [wakeLock]);
+
+  // Release wake lock on unmount
+  useEffect(() => {
+    return () => {
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release();
+      }
+    };
+  }, []);
 
   const reset = () => {
     setP1Life(STARTING_LIFE);
@@ -401,7 +470,7 @@ export default function LifeCounter() {
         <div className="relative z-20" style={{ transform: "rotate(180deg)" }}>
           <ThresholdRow thresholds={p2Thresholds} onChange={setP2Thresholds} />
         </div>
-        <DiceRollerStrip onReset={reset} />
+        <DiceRollerStrip onReset={reset} wakeLock={wakeLock} onToggleWakeLock={toggleWakeLock} />
         <div className="relative z-20">
           <ThresholdRow thresholds={p1Thresholds} onChange={setP1Thresholds} />
         </div>

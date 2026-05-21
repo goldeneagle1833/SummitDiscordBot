@@ -123,6 +123,22 @@ def add_community_entry():
     return jsonify({"success": True, "id": row_id}), 201
 
 
+@misc_bp.route("/community/<entry_type>/<int:entry_id>", methods=["DELETE"])
+@require_admin
+def delete_community_entry(entry_type, entry_id):
+    """Delete a community entry by type and ID. Admin only."""
+    from repositories.community import CommunityRepository
+    repo = CommunityRepository()
+    if entry_type not in ("discord", "youtube", "website"):
+        return jsonify({"error": "type must be 'discord', 'youtube', or 'website'"}), 400
+    deleted = repo.delete_entry(entry_type, entry_id)
+    if not deleted:
+        return jsonify({"error": "Entry not found"}), 404
+    deleted_by = str(session.get("user_id", ""))
+    logger.info(f"Community entry deleted: type={entry_type}, id={entry_id}, by={deleted_by}")
+    return jsonify({"success": True})
+
+
 @misc_bp.route("/debug/database-status")
 def database_status():
     """Debug endpoint to check database file paths and existence (admin only)."""

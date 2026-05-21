@@ -25,8 +25,21 @@ export default function Season() {
 
   return (
     <div>
-      <h1 className="text-2xl font-display text-secondary mb-4">Season {seasonId}</h1>
-      <LeaderboardTable data={data?.leaderboard || data || []} />
+      <h1 className="text-2xl font-display text-secondary mb-2">
+        {data?.title || `Season ${seasonId}`}
+      </h1>
+      {data?.description && (
+        <p className="text-text-muted mb-1">{data.description}</p>
+      )}
+      <p className="text-sm text-text-muted mb-4">
+        {data?.start_date} — {data?.end_date}
+        {data?.region && ` · ${data.region}`}
+        {data?.creator_display_name && ` · Created by ${data.creator_display_name}`}
+        {data?.status === 'ended' && (
+          <span className="ml-2 text-xs bg-accent-red/20 text-accent-red px-2 py-0.5 rounded">Ended</span>
+        )}
+      </p>
+      <LeaderboardTable data={data?.leaderboard || []} />
     </div>
   )
 }

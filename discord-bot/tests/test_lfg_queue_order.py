@@ -7,6 +7,17 @@ from cogs.lfg.cog import LFGCog
 from cogs.lfg.state import lfg_queue
 
 
+def make_queue_entry(queue_type, timestamp, timeframe=30, deck_url=None, **kwargs):
+    """Helper to create a queue entry in the new multi-queue format."""
+    entry = {
+        "timestamp": timestamp,
+        "timeframe": timeframe,
+        "deck_url": deck_url,
+    }
+    entry.update(kwargs)
+    return {"queues": {queue_type: entry}}
+
+
 @pytest.fixture
 def mock_bot():
     """Create a mock bot instance."""
@@ -51,31 +62,10 @@ class TestQueueFIFOOrdering:
         """Test that ranked queue matches with the FIRST player who joined."""
         now = datetime.datetime.now()
 
-        # Player 1 joins first (oldest)
-        lfg_queue[111] = {
-            "timestamp": now - datetime.timedelta(minutes=10),
-            "timeframe": 30,
-            "deck_url": None,
-            "queue_type": "ranked",
-        }
+        lfg_queue[111] = make_queue_entry("ranked", now - datetime.timedelta(minutes=10))
+        lfg_queue[222] = make_queue_entry("ranked", now - datetime.timedelta(minutes=5))
+        lfg_queue[333] = make_queue_entry("ranked", now - datetime.timedelta(minutes=1))
 
-        # Player 2 joins second
-        lfg_queue[222] = {
-            "timestamp": now - datetime.timedelta(minutes=5),
-            "timeframe": 30,
-            "deck_url": None,
-            "queue_type": "ranked",
-        }
-
-        # Player 3 joins third (newest)
-        lfg_queue[333] = {
-            "timestamp": now - datetime.timedelta(minutes=1),
-            "timeframe": 30,
-            "deck_url": None,
-            "queue_type": "ranked",
-        }
-
-        # Player 999 joins and should match with Player 111 (first in queue)
         matched_user_id = lfg_cog.check_if_someone_is_lfg(mock_ctx, "ranked")
 
         assert matched_user_id == 111, "Should match with the FIRST player (111), not the newest"
@@ -84,23 +74,9 @@ class TestQueueFIFOOrdering:
         """Test that casual queue matches with the FIRST player who joined."""
         now = datetime.datetime.now()
 
-        # Player 1 joins first (oldest)
-        lfg_queue[111] = {
-            "timestamp": now - datetime.timedelta(minutes=10),
-            "timeframe": 30,
-            "deck_url": None,
-            "queue_type": "testing",
-        }
+        lfg_queue[111] = make_queue_entry("testing", now - datetime.timedelta(minutes=10))
+        lfg_queue[222] = make_queue_entry("testing", now - datetime.timedelta(minutes=5))
 
-        # Player 2 joins second (newest)
-        lfg_queue[222] = {
-            "timestamp": now - datetime.timedelta(minutes=5),
-            "timeframe": 30,
-            "deck_url": None,
-            "queue_type": "testing",
-        }
-
-        # Player 999 joins and should match with Player 111 (first in queue)
         matched_user_id = lfg_cog.check_if_someone_is_lfg(mock_ctx, "testing")
 
         assert matched_user_id == 111, "Casual queue should match with the FIRST player (111)"
@@ -109,25 +85,15 @@ class TestQueueFIFOOrdering:
         """Test that limited queue matches with the FIRST player who joined."""
         now = datetime.datetime.now()
 
-        # Player 1 joins first (oldest)
-        lfg_queue[111] = {
-            "timestamp": now - datetime.timedelta(minutes=10),
-            "timeframe": 30,
-            "deck_url": "https://curiosa.io/decks/111",
-            "queue_type": "limited",
-            "run_id": 1,
-        }
+        lfg_queue[111] = make_queue_entry(
+            "limited", now - datetime.timedelta(minutes=10),
+            deck_url="https://curiosa.io/decks/111", run_id=1,
+        )
+        lfg_queue[222] = make_queue_entry(
+            "limited", now - datetime.timedelta(minutes=5),
+            deck_url="https://curiosa.io/decks/222", run_id=2,
+        )
 
-        # Player 2 joins second (newest)
-        lfg_queue[222] = {
-            "timestamp": now - datetime.timedelta(minutes=5),
-            "timeframe": 30,
-            "deck_url": "https://curiosa.io/decks/222",
-            "queue_type": "limited",
-            "run_id": 2,
-        }
-
-        # Player 999 joins and should match with Player 111 (first in queue)
         matched_user_id = lfg_cog.check_if_someone_is_lfg(mock_ctx, "limited")
 
         assert matched_user_id == 111, "Limited queue should match with the FIRST player (111)"
@@ -136,19 +102,13 @@ class TestQueueFIFOOrdering:
         """Test the reported bug: when two people join ranked, first person should be matched."""
         now = datetime.datetime.now()
 
-        # Player A joins ranked queue first
         player_a_id = 100
-        lfg_queue[player_a_id] = {
-            "timestamp": now - datetime.timedelta(seconds=30),
-            "timeframe": 30,
-            "deck_url": None,
-            "queue_type": "ranked",
-        }
+        lfg_queue[player_a_id] = make_queue_entry(
+            "ranked", now - datetime.timedelta(seconds=30),
+        )
 
-        # Player B joins ranked queue second (this is ctx.author)
         mock_ctx.author.id = 200
 
-        # Player B should match with Player A (who joined first)
         matched_user_id = lfg_cog.check_if_someone_is_lfg(mock_ctx, "ranked")
 
         assert matched_user_id == player_a_id, (
@@ -161,22 +121,10 @@ class TestQueueFIFOOrdering:
         now = datetime.datetime.now()
 
         # Player 1 joined first but expired (31 minutes ago, timeframe=30)
-        lfg_queue[111] = {
-            "timestamp": now - datetime.timedelta(minutes=31),
-            "timeframe": 30,
-            "deck_url": None,
-            "queue_type": "ranked",
-        }
-
+        lfg_queue[111] = make_queue_entry("ranked", now - datetime.timedelta(minutes=31))
         # Player 2 joined second and is still valid
-        lfg_queue[222] = {
-            "timestamp": now - datetime.timedelta(minutes=5),
-            "timeframe": 30,
-            "deck_url": None,
-            "queue_type": "ranked",
-        }
+        lfg_queue[222] = make_queue_entry("ranked", now - datetime.timedelta(minutes=5))
 
-        # Player 999 joins and should match with Player 222 (111 is expired)
         matched_user_id = lfg_cog.check_if_someone_is_lfg(mock_ctx, "ranked")
 
         assert matched_user_id == 222, "Should skip expired player 111 and match with 222"
@@ -186,20 +134,9 @@ class TestQueueFIFOOrdering:
         now = datetime.datetime.now()
 
         # Player 1 joined first but in casual queue
-        lfg_queue[111] = {
-            "timestamp": now - datetime.timedelta(minutes=10),
-            "timeframe": 30,
-            "deck_url": None,
-            "queue_type": "testing",
-        }
-
+        lfg_queue[111] = make_queue_entry("testing", now - datetime.timedelta(minutes=10))
         # Player 2 joined second in ranked queue (compatible)
-        lfg_queue[222] = {
-            "timestamp": now - datetime.timedelta(minutes=5),
-            "timeframe": 30,
-            "deck_url": None,
-            "queue_type": "ranked",
-        }
+        lfg_queue[222] = make_queue_entry("ranked", now - datetime.timedelta(minutes=5))
 
         # Player 999 joins ranked queue and should match with Player 222 (111 is incompatible)
         matched_user_id = lfg_cog.check_if_someone_is_lfg(mock_ctx, "ranked")

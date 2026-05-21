@@ -116,6 +116,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # -- Seasons (public browse) --
     "api.seasons.browse_seasons",
     "api.seasons.get_player_seasons",
+    "api.seasons.get_season",
     "api.seasons.get_season_members",
 
     # -- Match reporting (auth checked internally) --

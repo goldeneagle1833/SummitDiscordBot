@@ -112,7 +112,7 @@ export default function AvatarTopPlayers() {
               onChange={(e) => setSelectedAvatar(e.target.value)}
               className="mt-1 w-full bg-bg-elevated border border-border rounded px-2 py-2 text-sm"
             >
-              {avatarOptions.map((avatar) => (
+              {[...data.avatars].sort((a, b) => a.name.localeCompare(b.name)).map((avatar) => (
                 <option key={avatar.name} value={avatar.name}>{avatar.name}</option>
               ))}
             </select>

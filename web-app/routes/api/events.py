@@ -19,7 +19,7 @@ def list_top8_events():
     try:
         repo = EventRepository()
         events = repo.get_all_events()
-        return jsonify(events)
+        return jsonify({"events": events, "is_admin": is_admin()})
     except Exception as e:
         logger.exception("Error listing events: %s", e)
         return jsonify({"error": "Failed to load events"}), 500
@@ -49,6 +49,35 @@ def get_event_detail(event_folder: str):
     except Exception as e:
         logger.exception("Error loading event %s: %s", event_folder, e)
         return jsonify({"error": "Failed to load event data"}), 500
+
+
+@events_bp.route("/events/<event_folder>/metadata", methods=["PUT"])
+@require_admin
+def update_event_metadata(event_folder):
+    """Update display name and/or star rating for an event (admin only)."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "Request body required"}), 400
+
+    name = data.get("name")
+    rating = data.get("rating")
+
+    if name is not None and (not isinstance(name, str) or not name.strip()):
+        return jsonify({"success": False, "error": "Name must be a non-empty string"}), 400
+
+    if rating is not None:
+        if not isinstance(rating, int) or rating < 1 or rating > 3:
+            return jsonify({"success": False, "error": "Rating must be 1, 2, or 3"}), 400
+
+    repo = EventRepository()
+    result = repo.update_event_metadata(
+        event_folder,
+        name=name.strip() if name else None,
+        rating=rating,
+    )
+
+    status = 200 if result.get("success") else 400
+    return jsonify(result), status
 
 
 @events_bp.route("/events/<event_folder>/reorder", methods=["POST"])

@@ -108,7 +108,7 @@ function SeedCardItem({ card, onHover, onLeave }) {
 }
 
 /* ---- Seed Deck Contents ---- */
-function SeedDeckContents({ cards, onHover, onLeave }) {
+function SeedDeckContents({ cards, sideboard, onHover, onLeave }) {
   if (!cards?.length) return null
 
   const groups = {}
@@ -139,6 +139,16 @@ function SeedDeckContents({ cards, onHover, onLeave }) {
             </div>
           )
         })}
+        {sideboard?.length > 0 && (
+          <div className="bg-bg-surface rounded-lg p-3 border border-border">
+            <h4 className="text-xs text-secondary font-semibold mb-2 uppercase tracking-wide">Collection</h4>
+            <ul className="space-y-1">
+              {sideboard.map((card) => (
+                <SeedCardItem key={card.name} card={card} onHover={onHover} onLeave={onLeave} />
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -320,9 +330,9 @@ export default function DeckDetail() {
             </div>
           </div>
           {viewMode === 'list' ? (
-            <SeedDeckContents cards={data.seed_spellbook} onHover={handleHover} onLeave={handleLeave} />
+            <SeedDeckContents cards={data.seed_spellbook} sideboard={data.seed_sideboard} onHover={handleHover} onLeave={handleLeave} />
           ) : (
-            <DeckVisualizer cards={data.seed_spellbook} />
+            <DeckVisualizer cards={data.seed_spellbook} sideboard={data.seed_sideboard} />
           )}
         </>
       )}

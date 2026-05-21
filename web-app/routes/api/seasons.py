@@ -74,6 +74,40 @@ def browse_seasons():
     return jsonify({"success": True, "seasons": seasons}), 200
 
 
+@seasons_bp.route("/seasons/<int:season_id>", methods=["GET"])
+def get_season(season_id):
+    """Public endpoint returning season info + members as a leaderboard."""
+    season = service.repo.get_season_by_id(season_id)
+    if not season:
+        return jsonify({"success": False, "error": "Season not found"}), 404
+
+    members = service.get_season_members(season_id)
+    leaderboard = [
+        {
+            "id": m["user_id"],
+            "name": m["display_name"],
+            "elo": m["season_elo"],
+            "wins": m["wins"],
+            "losses": m["losses"],
+            "rank": m["rank"],
+            "is_creator": m["is_creator"],
+        }
+        for m in members
+    ]
+    return jsonify({
+        "success": True,
+        "season_id": season_id,
+        "title": season["title"],
+        "description": season["description"],
+        "start_date": season["start_date"],
+        "end_date": season["end_date"],
+        "region": season["region"],
+        "status": season["status"],
+        "creator_display_name": season["creator_display_name"],
+        "leaderboard": leaderboard,
+    }), 200
+
+
 @seasons_bp.route("/seasons/<int:season_id>/join", methods=["POST"])
 @require_auth
 def join_season(season_id):

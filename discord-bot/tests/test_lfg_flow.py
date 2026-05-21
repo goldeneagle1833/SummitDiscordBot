@@ -30,6 +30,19 @@ from cogs.lfg.match_reporting import ReportResultSelectView, MatchReportDeckModa
 from cogs.lfg.helpers import scrub_urls
 
 
+def make_queue_entry(queue_type="ranked", timestamp=None, timeframe=30, deck_url=None, **kwargs):
+    """Helper to create a queue entry in the new multi-queue format."""
+    if timestamp is None:
+        timestamp = datetime.now()
+    entry = {
+        "timestamp": timestamp,
+        "timeframe": timeframe,
+        "deck_url": deck_url,
+    }
+    entry.update(kwargs)
+    return {"queues": {queue_type: entry}}
+
+
 class TestLFGMatchFlow:
     """Test the complete flow from joining to reporting."""
 
@@ -40,37 +53,29 @@ class TestLFGMatchFlow:
 
         user_id = 123456789
         async with lfg_queue_lock:
-            lfg_queue[user_id] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": "https://curiosa.io/deck1",
-            }
+            lfg_queue[user_id] = make_queue_entry(
+                deck_url="https://curiosa.io/deck1",
+            )
 
         assert user_id in lfg_queue
-        assert lfg_queue[user_id]["timeframe"] == 30
+        assert lfg_queue[user_id]["queues"]["ranked"]["timeframe"] == 30
 
     @pytest.mark.asyncio
     async def test_two_users_match(self):
         """Test two users being matched."""
         lfg_queue.clear()
 
-        # Both users join
         user1_id = 123456789
         user2_id = 987654321
 
         async with lfg_queue_lock:
-            lfg_queue[user1_id] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": "https://curiosa.io/deck1",
-            }
-            lfg_queue[user2_id] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": "https://curiosa.io/deck2",
-            }
+            lfg_queue[user1_id] = make_queue_entry(
+                deck_url="https://curiosa.io/deck1",
+            )
+            lfg_queue[user2_id] = make_queue_entry(
+                deck_url="https://curiosa.io/deck2",
+            )
 
-        # Check for match
         assert user1_id in lfg_queue
         assert user2_id in lfg_queue
         assert len(lfg_queue) == 2
@@ -84,20 +89,13 @@ class TestLFGMatchFlow:
         user2_id = 987654321
 
         async with lfg_queue_lock:
-            lfg_queue[user1_id] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": None,
-            }
-            lfg_queue[user2_id] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": None,
-            }
+            lfg_queue[user1_id] = make_queue_entry()
+            lfg_queue[user2_id] = make_queue_entry()
 
         # User1 matches with User2
         matched_user_id = user2_id
-        matched_user_deck_url = lfg_queue.get(matched_user_id, {}).get("deck_url")
+        matched_entry = lfg_queue.get(matched_user_id, {}).get("queues", {}).get("ranked", {})
+        matched_user_deck_url = matched_entry.get("deck_url")
 
         async with lfg_queue_lock:
             lfg_queue.pop(matched_user_id, None)
@@ -113,7 +111,6 @@ class TestLFGMatchFlow:
         reporter_id = 123456789
         opponent_id = 987654321
 
-        # Create pending report
         report_key = (reporter_id, opponent_id)
         pending_match_reports[report_key] = {
             "winner_id": reporter_id,
@@ -137,11 +134,9 @@ class TestLFGMatchFlow:
         player2_id = 987654321
         match_key = frozenset({player1_id, player2_id})
 
-        # First report
         processed_matches[match_key] = datetime.now()
         assert match_key in processed_matches
 
-        # Try to report again - should detect duplicate
         is_duplicate = match_key in processed_matches
         assert is_duplicate is True
 
@@ -150,20 +145,14 @@ class TestLFGMatchFlow:
         """Test handling multiple matches concurrently."""
         lfg_queue.clear()
 
-        # Add 6 users (3 potential matches)
         user_ids = [100, 101, 102, 103, 104, 105]
 
         async with lfg_queue_lock:
             for user_id in user_ids:
-                lfg_queue[user_id] = {
-                    "timestamp": datetime.now(),
-                    "timeframe": 30,
-                    "deck_url": None,
-                }
+                lfg_queue[user_id] = make_queue_entry()
 
         assert len(lfg_queue) == 6
 
-        # Simulate 3 matches being made
         matches = [(100, 101), (102, 103), (104, 105)]
         remaining_users = user_ids.copy()
 
@@ -176,7 +165,6 @@ class TestLFGMatchFlow:
                 if player2 in remaining_users:
                     remaining_users.remove(player2)
 
-        # Both players should be removed from remaining
         assert len(remaining_users) == 0
 
 
@@ -190,30 +178,21 @@ class TestQueueCleanupFlow:
 
         current_time = datetime.now()
         async with lfg_queue_lock:
-            # Add mix of expired and valid entries
-            lfg_queue[111] = {
-                "timestamp": current_time - timedelta(minutes=40),
-                "timeframe": 30,
-                "deck_url": None,
-            }
-            lfg_queue[222] = {
-                "timestamp": current_time - timedelta(minutes=5),
-                "timeframe": 30,
-                "deck_url": None,
-            }
-            lfg_queue[333] = {
-                "timestamp": current_time,
-                "timeframe": 30,
-                "deck_url": None,
-            }
+            lfg_queue[111] = make_queue_entry(
+                timestamp=current_time - timedelta(minutes=40),
+            )
+            lfg_queue[222] = make_queue_entry(
+                timestamp=current_time - timedelta(minutes=5),
+            )
+            lfg_queue[333] = make_queue_entry(timestamp=current_time)
 
         # Clean expired
         async with lfg_queue_lock:
-            expired_ids = [
-                uid
-                for uid, entry in list(lfg_queue.items())
-                if current_time > entry["timestamp"] + timedelta(minutes=entry["timeframe"])
-            ]
+            expired_ids = []
+            for uid, user_data in list(lfg_queue.items()):
+                for qt, entry in list(user_data["queues"].items()):
+                    if current_time > entry["timestamp"] + timedelta(minutes=entry["timeframe"]):
+                        expired_ids.append(uid)
             for uid in expired_ids:
                 lfg_queue.pop(uid, None)
 
@@ -228,29 +207,26 @@ class TestQueueCleanupFlow:
 
         current_time = datetime.now()
         async with lfg_queue_lock:
-            lfg_queue[111] = {
-                "timestamp": current_time - timedelta(minutes=10),
-                "timeframe": 5,  # Expired
-                "deck_url": None,
-            }
-            lfg_queue[222] = {
-                "timestamp": current_time - timedelta(minutes=10),
-                "timeframe": 20,  # Still valid
-                "deck_url": None,
-            }
-            lfg_queue[333] = {
-                "timestamp": current_time,
-                "timeframe": 120,  # Just added, valid
-                "deck_url": None,
-            }
+            lfg_queue[111] = make_queue_entry(
+                timestamp=current_time - timedelta(minutes=10),
+                timeframe=5,  # Expired
+            )
+            lfg_queue[222] = make_queue_entry(
+                timestamp=current_time - timedelta(minutes=10),
+                timeframe=20,  # Still valid
+            )
+            lfg_queue[333] = make_queue_entry(
+                timestamp=current_time,
+                timeframe=120,  # Just added, valid
+            )
 
         # Find expired
         async with lfg_queue_lock:
-            expired = [
-                uid
-                for uid, entry in list(lfg_queue.items())
-                if current_time > entry["timestamp"] + timedelta(minutes=entry["timeframe"])
-            ]
+            expired = []
+            for uid, user_data in list(lfg_queue.items()):
+                for qt, entry in user_data["queues"].items():
+                    if current_time > entry["timestamp"] + timedelta(minutes=entry["timeframe"]):
+                        expired.append(uid)
 
         assert 111 in expired
         assert 222 not in expired
@@ -269,13 +245,9 @@ class TestURLHandlingInFlow:
         deck_url = "https://curiosa.io/decks/test123"
 
         async with lfg_queue_lock:
-            lfg_queue[user_id] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": deck_url,
-            }
+            lfg_queue[user_id] = make_queue_entry(deck_url=deck_url)
 
-        assert lfg_queue[user_id]["deck_url"] == deck_url
+        assert lfg_queue[user_id]["queues"]["ranked"]["deck_url"] == deck_url
 
     @pytest.mark.asyncio
     async def test_scrub_urls_in_public_message(self):
@@ -298,18 +270,11 @@ class TestURLHandlingInFlow:
         user_with_url = 222
 
         async with lfg_queue_lock:
-            lfg_queue[user_without_url] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": None,
-            }
-            lfg_queue[user_with_url] = {
-                "timestamp": datetime.now(),
-                "timeframe": 30,
-                "deck_url": "https://curiosa.io/deck",
-            }
+            lfg_queue[user_without_url] = make_queue_entry()
+            lfg_queue[user_with_url] = make_queue_entry(
+                deck_url="https://curiosa.io/deck",
+            )
 
-        # Both should be matchable
         assert user_without_url in lfg_queue
         assert user_with_url in lfg_queue
 
@@ -320,13 +285,11 @@ class TestReportingFlow:
     @pytest.mark.asyncio
     async def test_reporter_chosen_randomly(self):
         """Test that reporter is randomly chosen from two players."""
-        # This is a logic test - in real code, random.sample is used
         players = [
             (111, "Player1", "deck1"),
             (222, "Player2", "deck2"),
         ]
 
-        # Simulate random selection (would use random.sample in real code)
         import random
         selected = random.sample(players, 2)
 
@@ -341,7 +304,6 @@ class TestReportingFlow:
         reporter_id = 111
         other_id = 222
 
-        # After reporter submits report, create pending confirmation
         report_key = (reporter_id, other_id)
         pending_match_reports[report_key] = {
             "result": "reporter_won",
@@ -361,7 +323,6 @@ class TestReportingFlow:
             "timestamp": datetime.now(),
         }
 
-        # Opponent confirms
         pending_match_reports.pop(report_key, None)
 
         assert report_key not in pending_match_reports
@@ -377,7 +338,6 @@ class TestReportingFlow:
             "timestamp": datetime.now(),
         }
 
-        # Opponent rejects
         pending_match_reports.pop(report_key, None)
 
         assert report_key not in pending_match_reports
@@ -486,12 +446,10 @@ class TestStateReset:
         pending_match_reports.clear()
         processed_matches.clear()
 
-        # Add test data
         lfg_queue[123] = {"test": "data"}
         pending_match_reports[(1, 2)] = {"test": "data"}
         processed_matches[frozenset({1, 2})] = "timestamp"
 
-        # Clear all
         lfg_queue.clear()
         pending_match_reports.clear()
         processed_matches.clear()

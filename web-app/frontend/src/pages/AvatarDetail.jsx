@@ -346,8 +346,8 @@ function TopPlayerBadge({ topPlayers }) {
   else record = `${player.wins} wins (${player.win_rate}% WR)`
 
   return (
-    <div className="text-right flex-shrink-0">
-      <div className="flex items-center justify-end gap-2 mb-1">
+    <div className="sm:text-right flex-shrink-0">
+      <div className="flex items-center sm:justify-end gap-2 mb-1">
         <span className="text-xs uppercase tracking-wide text-text-muted">Top Player</span>
         <select
           value={sortBy}
@@ -468,8 +468,8 @@ export default function AvatarDetail() {
       {/* Profile Card */}
       <div className="bg-bg-surface border border-border rounded-soft overflow-hidden">
         {/* Header */}
-        <div className="p-6 border-b border-border flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4 flex-1 min-w-0">
+        <div className="p-6 border-b border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-4 min-w-0">
             {imgSrc && (
               <img
                 src={imgSrc}

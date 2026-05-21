@@ -140,6 +140,56 @@ class EventRepository:
 
         return {"success": True}
 
+    def _get_metadata_file(self) -> Path:
+        """Get the path to the event metadata overrides JSON file."""
+        return self._events_dir / "_event_metadata.json"
+
+    def _load_metadata_overrides(self) -> dict:
+        """Load saved event metadata overrides (name/rating), or empty dict."""
+        meta_file = self._get_metadata_file()
+        if not meta_file.exists():
+            return {}
+        try:
+            with open(meta_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+        return {}
+
+    def update_event_metadata(self, folder: str, name: str | None = None, rating: int | None = None) -> dict:
+        """Update display name and/or rating for an event.
+
+        Args:
+            folder: The event folder name.
+            name: New display name (or None to keep current).
+            rating: New star rating 1-3 (or None to keep current).
+
+        Returns:
+            dict with "success" bool and optional "error" string.
+        """
+        overrides = self._load_metadata_overrides()
+        entry = overrides.get(folder, {})
+
+        if name is not None:
+            entry["name"] = name
+        if rating is not None:
+            if not isinstance(rating, int) or rating < 1 or rating > 3:
+                return {"success": False, "error": "Rating must be 1, 2, or 3"}
+            entry["rating"] = rating
+
+        overrides[folder] = entry
+
+        try:
+            with open(self._get_metadata_file(), "w", encoding="utf-8") as f:
+                json.dump(overrides, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Failed to save event metadata: {e}")
+            return {"success": False, "error": "Failed to save metadata"}
+
+        return {"success": True}
+
     def _get_order_file(self) -> Path:
         """Get the path to the event order JSON file."""
         return self._events_dir / "_event_order.json"
@@ -187,6 +237,8 @@ class EventRepository:
         if not self._events_dir.exists():
             return events
 
+        metadata_overrides = self._load_metadata_overrides()
+
         for folder in self._events_dir.iterdir():
             if not folder.is_dir():
                 continue
@@ -210,14 +262,15 @@ class EventRepository:
                 try:
                     with open(json_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
+                        overrides = metadata_overrides.get(folder.name, {})
                         events.append(
                             {
                                 "folder": folder.name,
-                                "name": format_event_name(folder.name),
+                                "name": overrides.get("name", format_event_name(folder.name)),
                                 "player_count": len(data),
                                 "has_top8": top8_json is not None,
                                 "has_full": full_json is not None,
-                                "rating": EVENT_RATINGS.get(folder.name, 1),
+                                "rating": overrides.get("rating", EVENT_RATINGS.get(folder.name, 1)),
                             }
                         )
                 except Exception:

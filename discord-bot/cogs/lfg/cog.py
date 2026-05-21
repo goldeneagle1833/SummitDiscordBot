@@ -444,7 +444,7 @@ class LFGCog(commands.Cog):
         self.clean_expired_lfg()
 
         # Log queue state for debugging
-        queue_types = [info.get("queue_type", "ranked") for info in lfg_queue.values()]
+        queue_types = [qt for user_data in lfg_queue.values() for qt in user_data.get("queues", {})]
         logger.debug(f"Updating LFG status: {len(lfg_queue)} players, types={queue_types}")
 
         # Create embed based on queue status
@@ -460,13 +460,13 @@ class LFGCog(commands.Cog):
             # GREEN - Active queue
             now = datetime.datetime.now()
 
-            # Build ranked queue details (ranked + both players)
+            # Build ranked queue details
             ranked_details = []
-            for user_id, info in lfg_queue.items():
-                qt = info.get("queue_type", "ranked")
-                if qt in ("ranked", "both"):
-                    time_elapsed = (now - info["timestamp"]).total_seconds() / 60
-                    time_remaining = info["timeframe"] - time_elapsed
+            for user_id, user_data in lfg_queue.items():
+                entry = user_data.get("queues", {}).get("ranked")
+                if entry:
+                    time_elapsed = (now - entry["timestamp"]).total_seconds() / 60
+                    time_remaining = entry["timeframe"] - time_elapsed
                     placeholder = SORCERY_NICKNAMES[
                         randrange(0, len(SORCERY_NICKNAMES))
                     ]
@@ -474,13 +474,13 @@ class LFGCog(commands.Cog):
                         f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`"
                     )
 
-            # Build testing queue details (testing + both players)
+            # Build testing queue details
             testing_details = []
-            for user_id, info in lfg_queue.items():
-                qt = info.get("queue_type", "ranked")
-                if qt in ("testing", "both"):
-                    time_elapsed = (now - info["timestamp"]).total_seconds() / 60
-                    time_remaining = info["timeframe"] - time_elapsed
+            for user_id, user_data in lfg_queue.items():
+                entry = user_data.get("queues", {}).get("testing")
+                if entry:
+                    time_elapsed = (now - entry["timestamp"]).total_seconds() / 60
+                    time_remaining = entry["timeframe"] - time_elapsed
                     placeholder = SORCERY_NICKNAMES[
                         randrange(0, len(SORCERY_NICKNAMES))
                     ]
@@ -525,11 +525,11 @@ class LFGCog(commands.Cog):
             # Limited queue section (only show when pilot is active)
             if is_pilot_active("GrewWolves"):
                 limited_details = []
-                for user_id, info in lfg_queue.items():
-                    qt = info.get("queue_type", "ranked")
-                    if qt == "limited":
-                        time_elapsed = (now - info["timestamp"]).total_seconds() / 60
-                        time_remaining = info["timeframe"] - time_elapsed
+                for user_id, user_data in lfg_queue.items():
+                    entry = user_data.get("queues", {}).get("limited")
+                    if entry:
+                        time_elapsed = (now - entry["timestamp"]).total_seconds() / 60
+                        time_remaining = entry["timeframe"] - time_elapsed
                         placeholder = SORCERY_NICKNAMES[
                             randrange(0, len(SORCERY_NICKNAMES))
                         ]
@@ -775,24 +775,16 @@ class LFGCog(commands.Cog):
     @staticmethod
     def are_queue_types_compatible(type_a, type_b):
         """Check if two queue types can match together.
-        ranked <-> ranked, both
-        testing <-> testing, both
-        both <-> ranked, testing, both
-        limited <-> limited only (fully isolated)
+        ranked <-> ranked
+        testing <-> testing
+        limited <-> limited
         """
-        # Limited is fully isolated - only matches other limited
-        if type_a == "limited" or type_b == "limited":
-            return type_a == "limited" and type_b == "limited"
-        if type_a == "both" or type_b == "both":
-            return True
         return type_a == type_b
 
     @staticmethod
     def resolve_match_type(type_a, type_b):
         """Determine the match type when two players are matched.
-        If either player has 'limited', match type is 'limited'.
-        If either player explicitly chose 'testing' (casual), it's casual (no ELO).
-        Otherwise it's ranked (including both vs both).
+        Players now only match within the same queue type.
         Note: 'testing' is the internal value for casual matches.
         """
         if type_a == "limited" or type_b == "limited":
@@ -805,7 +797,7 @@ class LFGCog(commands.Cog):
         """Find a player in queue compatible with the given queue_type.
         All queue types use FIFO order (oldest first) with anti-rematch for ranked/limited.
         Casual (testing): No pairing restrictions, FIFO order (oldest first).
-        Returns None if no valid match found.
+        Returns user_id if a valid match is found, None otherwise.
         """
         now = datetime.datetime.now()
         best_match = None
@@ -814,20 +806,20 @@ class LFGCog(commands.Cog):
         # Casual (testing) has no pairing restrictions
         is_casual = queue_type == "testing"
 
-        for user_id, info in lfg_queue.items():
+        for user_id, user_data in lfg_queue.items():
             if user_id == ctx.author.id:
                 continue
 
-            timestamp = info["timestamp"]
-            timeframe = info["timeframe"]
+            # Check if this user has a compatible queue entry
+            entry = user_data.get("queues", {}).get(queue_type)
+            if not entry:
+                continue
+
+            timestamp = entry["timestamp"]
+            timeframe = entry["timeframe"]
 
             # Check if still within timeframe
             if (now - timestamp).total_seconds() >= timeframe * 60:
-                continue
-
-            # Check queue type compatibility
-            their_type = info.get("queue_type", "ranked")
-            if not self.are_queue_types_compatible(queue_type, their_type):
                 continue
 
             # Ranked/Limited: skip if they played each other in their last match
@@ -851,36 +843,45 @@ class LFGCog(commands.Cog):
             "timestamp": datetime.datetime.now(),
             "timeframe": int(timeframe),
             "deck_url": deck_url,
-            "queue_type": queue_type,
         }
         if ladder_info:
             queue_entry["ladder_info"] = ladder_info
         if run_id is not None:
             queue_entry["run_id"] = run_id
-        lfg_queue[ctx.author.id] = queue_entry
+
+        if ctx.author.id not in lfg_queue:
+            lfg_queue[ctx.author.id] = {"queues": {}}
+        lfg_queue[ctx.author.id]["queues"][queue_type] = queue_entry
 
     def pair_players(self, ctx):
         now = datetime.datetime.now()
-        for user_id, info in lfg_queue.items():
-            if (
-                user_id != ctx.author.id
-                and (now - info["timestamp"]).total_seconds() < info["timeframe"] * 60
-            ):
-                matched_user_id = user_id
-                lfg_queue.pop(matched_user_id, None)
-                lfg_queue.pop(ctx.author.id, None)
-                logger.info(f"Pairing {matched_user_id} with {ctx.author.id}")
-                return matched_user_id
+        for user_id, user_data in lfg_queue.items():
+            if user_id == ctx.author.id:
+                continue
+            # Check if any queue entry is still valid
+            for qt, entry in user_data.get("queues", {}).items():
+                if (now - entry["timestamp"]).total_seconds() < entry["timeframe"] * 60:
+                    matched_user_id = user_id
+                    lfg_queue.pop(matched_user_id, None)
+                    lfg_queue.pop(ctx.author.id, None)
+                    logger.info(f"Pairing {matched_user_id} with {ctx.author.id}")
+                    return matched_user_id
         return None
 
     def clean_expired_lfg(self):
         now = datetime.datetime.now()
-        expired = [
-            user_id
-            for user_id, info in lfg_queue.items()
-            if (now - info["timestamp"]).total_seconds() > info["timeframe"] * 60
-        ]
-        for user_id in expired:
+        users_to_remove = []
+        for user_id, user_data in lfg_queue.items():
+            queues = user_data.get("queues", {})
+            expired_types = [
+                qt for qt, entry in queues.items()
+                if (now - entry["timestamp"]).total_seconds() > entry["timeframe"] * 60
+            ]
+            for qt in expired_types:
+                queues.pop(qt)
+            if not queues:
+                users_to_remove.append(user_id)
+        for user_id in users_to_remove:
             lfg_queue.pop(user_id)
 
     def clean_expired_processed_matches(self):
@@ -913,11 +914,11 @@ class LFGCog(commands.Cog):
         except Exception as e:
             logger.warning(f"Could not delete command message: {e}")
 
-        # Check if user is already in queue
+        # Check if user is already in all available queues
         if ctx.author.id in lfg_queue:
             try:
                 await ctx.author.send(
-                    "You're already in the queue! Use `!cancel` to leave the queue if needed."
+                    "You're already in a queue! Use `!cancel` to leave the queue if needed."
                 )
             except discord.Forbidden:
                 pass
@@ -1172,13 +1173,15 @@ class LFGCog(commands.Cog):
         ladder_info = None
 
         async with lfg_queue_lock:
-            if user_id in lfg_queue:
+            # Check if already in the ranked queue specifically
+            user_queues = lfg_queue.get(user_id, {}).get("queues", {})
+            if "ranked" in user_queues:
                 try:
-                    await ctx.author.send("You're already in the LFG queue!")
+                    await ctx.author.send("You're already in the ranked queue!")
                 except discord.Forbidden:
                     if ctx.guild:
                         await ctx.send(
-                            f"{ctx.author.mention}, you're already in the queue!",
+                            f"{ctx.author.mention}, you're already in the ranked queue!",
                             delete_after=10,
                         )
                 return
@@ -1203,9 +1206,9 @@ class LFGCog(commands.Cog):
                 ladder_info["challenge_id"] = challenge_id
 
                 # Get matched user info before removing from queue
-                matched_user_info = lfg_queue.get(matched_user_id, {})
-                matched_user_deck_url = matched_user_info.get("deck_url")
-                matched_queue_type = matched_user_info.get("queue_type", "ranked")
+                matched_entry = lfg_queue.get(matched_user_id, {}).get("queues", {}).get("ranked", {})
+                matched_user_deck_url = matched_entry.get("deck_url")
+                matched_queue_type = "ranked"
 
                 # Adjust ladder multipliers based on ELO difference
                 challenger_elo = get_user_event_elo(user_id)
@@ -1225,8 +1228,9 @@ class LFGCog(commands.Cog):
 
                 match_type = self.resolve_match_type("ranked", matched_queue_type)
 
-                # Remove matched user from queue
+                # Remove both players from all queues
                 lfg_queue.pop(matched_user_id, None)
+                lfg_queue.pop(user_id, None)
                 logger.info(
                     f"Lock acquired: Matching challenger {user_id} with {matched_user_id} (match_type={match_type})"
                 )

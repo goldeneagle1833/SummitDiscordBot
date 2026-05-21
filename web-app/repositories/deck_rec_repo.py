@@ -114,6 +114,8 @@ class DeckRecord:
     card_quantities_display: dict = field(default_factory=dict)
     # full card details: [{name, qty, type, threshold}] for spellbook + atlas
     card_details: list = field(default_factory=list)
+    # sideboard / collection card details
+    sideboard_details: list = field(default_factory=list)
     primer: str = ""          # short description shown on admin tile
     stars: int | None = None  # 1–3 star rating
 
@@ -260,6 +262,7 @@ class DeckRecRepository:
             if not card_names:
                 return None
 
+            sideboard = raw.get("sideboard", [])
             card_quantities = _count_quantities(spellbook)
             return DeckRecord(
                 deck_id=deck_id,
@@ -276,6 +279,7 @@ class DeckRecRepository:
                 card_quantities=card_quantities,
                 card_quantities_display=_count_quantities_display(spellbook),
                 card_details=_get_card_details(spellbook, atlas),
+                sideboard_details=_get_card_details(sideboard),
             )
         except Exception as e:
             logger.debug("Skipping malformed tournament deck: %s", e)

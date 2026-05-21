@@ -65,6 +65,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.avatars.get_avatar_image_files",
     "api.avatars.get_avatar_filters",
     "api.avatars.get_all_avatars",
+    "api.avatars.get_avatar_top_players",
     "api.avatars.get_avatar",
     "api.avatars.get_avatar_popularity",
     "api.avatars.get_all_avatars_popularity",

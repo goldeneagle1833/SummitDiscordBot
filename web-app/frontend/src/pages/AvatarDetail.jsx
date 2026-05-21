@@ -334,14 +334,14 @@ function StaffPicks({ avatarName }) {
 // ── Top Player Badge ──────────────────────────────────────────
 
 function TopPlayerBadge({ topPlayers }) {
-  const [sortBy, setSortBy] = useState('accuracy')
+  const [sortBy, setSortBy] = useState('avatar_score')
   if (!topPlayers) return null
 
   const player = topPlayers[sortBy]
   if (!player) return null
 
   let record
-  if (sortBy === 'accuracy') record = `${player.win_rate}% WR \u00d7 ${player.total} games = ${player.accuracy}`
+  if (sortBy === 'avatar_score') record = `Avatar Score: ${player.avatar_score ?? 0} (${player.win_rate}% WR, ${player.total} games)`
   else if (sortBy === 'winrate') record = `${player.win_rate}% (${player.wins}W-${player.losses}L)`
   else record = `${player.wins} wins (${player.win_rate}% WR)`
 
@@ -354,9 +354,9 @@ function TopPlayerBadge({ topPlayers }) {
           onChange={(e) => setSortBy(e.target.value)}
           className="text-xs bg-bg-elevated border border-border rounded px-1.5 py-0.5 text-text-muted"
         >
-          <option value="accuracy">Accuracy</option>
+          <option value="avatar_score">Avatar Score</option>
           <option value="winrate">Win Rate</option>
-          <option value="total_wins">Total Wins</option>
+          <option value="total_wins">Wins</option>
         </select>
       </div>
       <Link to={`/player/${player.player_id}`} className="text-base font-semibold text-primary hover:underline block">

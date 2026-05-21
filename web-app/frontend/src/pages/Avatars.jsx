@@ -14,20 +14,20 @@ import Spinner from "@/components/ui/Spinner";
 import usePageTitle from "@/hooks/usePageTitle";
 
 const SORT_OPTIONS = [
-  { value: "accuracy", label: "Accuracy Score" },
+  { value: "avatar-score", label: "Avatar Score" },
   { value: "winrate", label: "Win Rate" },
   { value: "alphabetical", label: "Alphabetical" },
   { value: "most-played", label: "Most Played" },
-  { value: "most-wins", label: "Most Wins" },
+  { value: "most-wins", label: "Wins" },
   { value: "best-record", label: "Best Record (+/-)" },
 ];
 
 const SORT_LABELS = {
-  accuracy: "accuracy score (win rate \u00d7 games played)",
+  "avatar-score": "Avatar Score",
   winrate: "win rate",
   alphabetical: "name (A\u2013Z)",
   "most-played": "most games played",
-  "most-wins": "most wins",
+  "most-wins": "wins",
   "best-record": "best record (wins \u2212 losses)",
 };
 
@@ -71,8 +71,9 @@ function sortAvatars(data, key) {
       return d.sort(
         (a, b) => b.wins - b.losses - (a.wins - a.losses) || b.total - a.total,
       );
+    case "avatar-score":
     default:
-      return d.sort((a, b) => b.win_rate * b.total - a.win_rate * a.total);
+      return d.sort((a, b) => (b.avatar_score ?? 0) - (a.avatar_score ?? 0) || b.wins - a.wins);
   }
 }
 
@@ -217,7 +218,7 @@ export default function Avatars() {
   const [error, setError] = useState(null);
   const [eventFilter, setEventFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("discord");
-  const [sortBy, setSortBy] = useState("accuracy");
+  const [sortBy, setSortBy] = useState("avatar-score");
 
   useEffect(() => {
     Promise.allSettled([
@@ -275,6 +276,9 @@ export default function Avatars() {
           Global statistics from all matches reported with decklists, sorted by{" "}
           {SORT_LABELS[sortBy]}
         </p>
+        <Link to="/avatars/top-players" className="inline-block text-sm text-primary hover:underline mt-2">
+          View Top 16 Players by Avatar
+        </Link>
         {playDraw?.play_stats && playDraw?.draw_stats && (
           <p className="text-xs text-text-muted mt-2">
             Overall (from 2/7/2026 onward):&nbsp; On the Play:{" "}
@@ -389,6 +393,9 @@ export default function Avatars() {
                     </div>
                     <div className="mt-2">
                       <div className="text-xs font-medium">
+                        Avatar Score: <span className="text-base font-bold text-secondary">{avatar.avatar_score ?? 0}</span>
+                      </div>
+                      <div className="text-xs font-medium mt-0.5">
                         Winrate:{" "}
                         <span
                           className="text-base font-bold"

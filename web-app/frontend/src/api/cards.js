@@ -4,6 +4,10 @@ export const getAvatars = (params) => {
   const query = params ? `?${new URLSearchParams(params)}` : ''
   return get(`/api/avatars${query}`)
 }
+export const getAvatarTopPlayers = (params) => {
+  const query = params ? `?${new URLSearchParams(params)}` : ''
+  return get(`/api/avatars/top-players${query}`)
+}
 export const getAvatar = (name) => get(`/api/avatars/${encodeURIComponent(name)}`)
 export const getAvatarImageFiles = () => get('/api/avatars/image-files')
 export const getAvatarFilters = () => get('/api/avatars/filters')

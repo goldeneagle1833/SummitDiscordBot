@@ -19,7 +19,7 @@ def list_top8_events():
     try:
         repo = EventRepository()
         events = repo.get_all_events()
-        return jsonify(events)
+        return jsonify({"events": events, "is_admin": is_admin()})
     except Exception as e:
         logger.exception("Error listing events: %s", e)
         return jsonify({"error": "Failed to load events"}), 500

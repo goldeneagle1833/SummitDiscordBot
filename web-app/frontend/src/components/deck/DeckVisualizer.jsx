@@ -430,23 +430,26 @@ function DeckStatsBar({ cards, spellbookCards }) {
 export default function DeckVisualizer({ cards, spellbook, atlas, sideboard }) {
   const [groupBy, setGroupBy] = useState('type')
 
-  // Merge all sources into one list
-  let allCards = []
+  // Merge main deck sources (spellbook + atlas) into one list; keep sideboard separate
+  let mainCards = []
+  let sideboardCards = []
   // Track which cards are spellbook-only (for stats calculation)
   let spellbookCards = []
   if (cards) {
-    allCards = cards
+    mainCards = cards
     spellbookCards = cards
   } else {
     if (spellbook) {
-      allCards.push(...spellbook)
+      mainCards.push(...spellbook)
       spellbookCards = spellbook
     }
-    if (atlas) allCards.push(...atlas)
-    if (sideboard) allCards.push(...sideboard)
+    if (atlas) mainCards.push(...atlas)
+    if (sideboard) sideboardCards = sideboard
   }
 
-  const withImages = allCards.filter((c) => c.image)
+  const allCards = [...mainCards, ...sideboardCards]
+  const withImages = mainCards.filter((c) => c.image)
+  const sideboardWithImages = sideboardCards.filter((c) => c.image)
   const groups = useMemo(() => buildGroups(withImages, groupBy), [withImages, groupBy])
 
   if (!withImages.length) {
@@ -544,6 +547,64 @@ export default function DeckVisualizer({ cards, spellbook, atlas, sideboard }) {
           </div>
         )
       })}
+
+      {/* Collection / Sideboard */}
+      {sideboardWithImages.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
+            Collection ({sideboardWithImages.reduce((sum, c) => sum + (c.quantity || c.qty || 1), 0)})
+          </h4>
+          <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-2">
+            {sideboardWithImages.map((card, i) => {
+              const qty = card.quantity || card.qty || 1
+              const stackCount = Math.min(qty, 4)
+              return (
+                <div key={`sb-${card.name}-${i}`}>
+                  <div className="relative" style={{ paddingTop: `${((stackCount - 1) * GAP_WIDTH_PCT).toFixed(2)}%` }}>
+                    <img
+                      src={`/card-images/${card.image}`}
+                      alt=""
+                      aria-hidden="true"
+                      className="w-full"
+                      style={{ visibility: 'hidden' }}
+                    />
+                    {Array.from({ length: stackCount }).map((_, j) => {
+                      const isFront = j === stackCount - 1
+                      return (
+                        <div
+                          key={j}
+                          className="absolute top-0 left-0 w-full"
+                          style={{
+                            transform: `translateY(${j * GAP_PCT}%)`,
+                            zIndex: j + 1,
+                          }}
+                        >
+                          <img
+                            src={`/card-images/${card.image}`}
+                            alt={isFront ? card.name : ''}
+                            aria-hidden={!isFront || undefined}
+                            className="w-full rounded"
+                            style={{ filter: 'drop-shadow(0 3px 6px rgba(0,0,0,0.55))' }}
+                            loading="lazy"
+                          />
+                          {isFront && qty > 1 && (
+                            <span
+                              className="absolute bottom-1 right-1 bg-black/70 text-white text-xs font-bold px-1.5 py-0.5 rounded"
+                            >
+                              x{qty}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-text-muted text-center mt-1 truncate">{card.name}</p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

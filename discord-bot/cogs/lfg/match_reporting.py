@@ -9,6 +9,7 @@ from cogs.lfg.helpers import scrub_urls, send_milestone_announcement, generate_l
 from utils.database import (
     record_match,
     complete_ladder_challenge,
+    delete_ladder_challenge,
     mark_pairing_reported,
     get_pairing_between_players,
 )
@@ -1274,6 +1275,17 @@ class LFGReportButtons(discord.ui.View):
         await interaction.response.send_message(
             f"{interaction.user.mention} clicked **cancel match**", ephemeral=True
         )
+
+        # If this was a ladder challenge, delete the DB record so it doesn't count as daily use
+        if self.ladder_info and self.ladder_info.get("challenge_id"):
+            try:
+                delete_ladder_challenge(self.ladder_info["challenge_id"])
+                logger.info(
+                    f"Deleted ladder challenge {self.ladder_info['challenge_id']} due to match cancellation"
+                )
+            except Exception as e:
+                logger.error(f"Failed to delete ladder challenge on cancel: {e}")
+
         try:
             await interaction.message.edit(view=None)
         except discord.Forbidden:
@@ -1427,6 +1439,16 @@ class MatchCardView(discord.ui.View):
             await interaction.message.edit(content="**Match Cancelled**", view=self)
         except Exception:
             pass
+
+        # If this was a ladder challenge, delete the DB record so it doesn't count as daily use
+        if self.ladder_info and self.ladder_info.get("challenge_id"):
+            try:
+                delete_ladder_challenge(self.ladder_info["challenge_id"])
+                logger.info(
+                    f"Deleted ladder challenge {self.ladder_info['challenge_id']} due to match cancellation"
+                )
+            except Exception as e:
+                logger.error(f"Failed to delete ladder challenge on cancel: {e}")
 
         try:
             other_user = await self.bot.fetch_user(other_id)

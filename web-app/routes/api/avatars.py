@@ -546,10 +546,23 @@ def get_all_avatars():
                 "win_rate": round(win_rate, 1),
                 "avatar_score": calculate_avatar_score(stats["wins"], stats["losses"]),
             }
-            # Find top player by most wins with this avatar
+            # Find top player by Avatar Score with this avatar
             players = avatar_player_stats.get(name, {})
             if players:
-                top = max(players.values(), key=lambda p: (p["wins"], p["wins"] - p["losses"]))
+                min_games = 10
+                qualified_players = [
+                    p for p in players.values()
+                    if p["wins"] + p["losses"] >= min_games
+                ]
+                top_candidates = qualified_players or list(players.values())
+                top = max(
+                    top_candidates,
+                    key=lambda p: (
+                        calculate_avatar_score(p["wins"], p["losses"]),
+                        p["wins"] / (p["wins"] + p["losses"]) if p["wins"] + p["losses"] > 0 else 0,
+                        p["wins"],
+                    ),
+                )
                 top_total = top["wins"] + top["losses"]
                 entry["top_player"] = {
                     "name": top["name"],

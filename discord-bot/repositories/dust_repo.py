@@ -1,0 +1,167 @@
+"""Repository for dust code storage and drop tracking."""
+
+import datetime
+import sqlite3
+from contextlib import contextmanager
+
+
+@contextmanager
+def _get_connection():
+    """Context manager for match_records.db connections."""
+    conn = sqlite3.connect("match_records.db")
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def create_dust_tables():
+    """Create dust_codes and dust_drops tables if they don't exist."""
+    with _get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("""CREATE TABLE IF NOT EXISTS dust_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'available',
+            donor_id INTEGER,
+            donor_name TEXT,
+            claimed_by_id INTEGER,
+            claimed_by_name TEXT,
+            donated_at TEXT NOT NULL,
+            claimed_at TEXT,
+            season_name TEXT
+        )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS dust_drops (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            games_since_reset INTEGER NOT NULL DEFAULT 0,
+            last_reset_at TEXT NOT NULL,
+            last_drop_game_number INTEGER
+        )""")
+        # Ensure exactly one tracking row exists
+        cur.execute("SELECT COUNT(*) FROM dust_drops")
+        if cur.fetchone()[0] == 0:
+            cur.execute(
+                "INSERT INTO dust_drops (games_since_reset, last_reset_at) VALUES (0, ?)",
+                (datetime.datetime.now().isoformat(),),
+            )
+
+
+def add_dust_code(code, donor_id, donor_name):
+    """Store a new dust code as available."""
+    with _get_connection() as conn:
+        conn.cursor().execute(
+            """INSERT INTO dust_codes (code, status, donor_id, donor_name, donated_at)
+               VALUES (?, 'available', ?, ?, ?)""",
+            (code, donor_id, donor_name, datetime.datetime.now().isoformat()),
+        )
+
+
+def get_available_code_count():
+    """Return the number of unclaimed dust codes."""
+    with _get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM dust_codes WHERE status = 'available'")
+        return cur.fetchone()[0]
+
+
+def claim_next_code(player_id, player_name, season_name):
+    """Claim the oldest available code for a player.
+
+    Returns the code string, or None if no codes are available.
+    """
+    with _get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, code FROM dust_codes WHERE status = 'available' ORDER BY id ASC LIMIT 1"
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        code_id, code = row
+        cur.execute(
+            """UPDATE dust_codes
+               SET status = 'claimed', claimed_by_id = ?, claimed_by_name = ?,
+                   claimed_at = ?, season_name = ?
+               WHERE id = ?""",
+            (player_id, player_name, datetime.datetime.now().isoformat(), season_name, code_id),
+        )
+        return code
+
+
+def has_player_claimed_this_season(player_id, season_name):
+    """Check if a player already received a dust code this season."""
+    with _get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM dust_codes WHERE claimed_by_id = ? AND season_name = ?",
+            (player_id, season_name),
+        )
+        return cur.fetchone()[0] > 0
+
+
+def increment_game_counter():
+    """Increment the global game counter and return (games_since_reset, drop_chance).
+
+    Resets the counter back to 0 when it reaches 100.
+    Returns the counter value BEFORE any reset (so the caller sees 1-100).
+    """
+    with _get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT games_since_reset FROM dust_drops WHERE id = 1")
+        current = cur.fetchone()[0]
+        new_count = current + 1
+
+        if new_count >= 100:
+            # Reset after 100 games
+            cur.execute(
+                "UPDATE dust_drops SET games_since_reset = 0, last_reset_at = ? WHERE id = 1",
+                (datetime.datetime.now().isoformat(),),
+            )
+        else:
+            cur.execute(
+                "UPDATE dust_drops SET games_since_reset = ? WHERE id = 1",
+                (new_count,),
+            )
+
+        # Drop chance: 0.5% per game, capped at 50%
+        drop_chance = min(new_count * 0.005, 0.50)
+        return new_count, drop_chance
+
+
+def record_drop(game_number):
+    """Record that a drop happened at this game number."""
+    with _get_connection() as conn:
+        conn.cursor().execute(
+            "UPDATE dust_drops SET last_drop_game_number = ? WHERE id = 1",
+            (game_number,),
+        )
+
+
+def get_drop_status():
+    """Return current drop tracking info as a dict."""
+    with _get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT games_since_reset, last_reset_at, last_drop_game_number FROM dust_drops WHERE id = 1"
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "games_since_reset": row[0],
+            "current_chance": f"{min(row[0] * 0.5, 50.0):.1f}%",
+            "last_reset_at": row[1],
+            "last_drop_game": row[2],
+        }
+
+
+def code_exists(code):
+    """Check if a code has already been loaded."""
+    with _get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM dust_codes WHERE code = ?", (code,))
+        return cur.fetchone()[0] > 0

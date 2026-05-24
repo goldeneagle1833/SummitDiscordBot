@@ -81,6 +81,11 @@ from services.pilots_service import is_pilot_active  # noqa: F401
 # Audit logging
 from repositories.audit_repo import log_admin_action  # noqa: F401
 
+# Dust code system
+from repositories.dust_repo import (  # noqa: F401
+    create_dust_tables,
+)
+
 # Community data access functions
 from repositories.community_repo import (  # noqa: F401
     create_community_tables,

@@ -327,12 +327,14 @@ class MatchConfirmationRepository:
         cursor.execute(
             """
             SELECT COUNT(*) FROM match_confirmations
-            WHERE submitter_discord_id = ?
-              AND opponent_discord_id = ?
+            WHERE ((submitter_discord_id = ? AND opponent_discord_id = ?)
+                OR (submitter_discord_id = ? AND opponent_discord_id = ?))
               AND status = 'pending'
               AND created_at > ?
             """,
-            (str(submitter_id), str(opponent_id), one_hour_ago),
+            (str(submitter_id), str(opponent_id),
+             str(opponent_id), str(submitter_id),
+             one_hour_ago),
         )
 
         count = cursor.fetchone()[0]

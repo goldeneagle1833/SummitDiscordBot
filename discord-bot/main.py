@@ -19,6 +19,7 @@ from cogs.reaction_roles import ReactionRolesCog
 from cogs.match_confirmation_jobs import MatchConfirmationJobs
 from cogs.pilots import PilotsCog
 from cogs.daily_summary import DailySummaryCog
+from cogs.dust import DustCog
 from cogs.lfg.persistent_confirm import (
     PersistentConfirmButton,
     PersistentDisputeButton,
@@ -160,6 +161,7 @@ async def setup_cogs():
     await bot.add_cog(PilotsCog(bot))  # Feature flag management
     await bot.add_cog(DailySummaryCog(bot))  # Daily summary at 11:30 PM EST
     await bot.add_cog(ChatCog(bot))  # AI chat responses to mentions/replies
+    await bot.add_cog(DustCog(bot))  # Dust code reward system
 
 
 async def main():

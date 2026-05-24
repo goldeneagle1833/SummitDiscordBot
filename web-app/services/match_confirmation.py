@@ -477,8 +477,8 @@ class MatchConfirmationService:
 
         if has_duplicate:
             raise RuntimeError(
-                "You already have a pending match report with this opponent. "
-                "Please wait for confirmation or expiration."
+                "There is already a pending match report between you and this opponent. "
+                "Please confirm or wait for the existing report to expire."
             )
 
         # Step 3: Validate season_id if provided

@@ -143,13 +143,12 @@ class MatchConfirmationService:
         # Pattern supports: http/https, optional www, alphanumeric ID with hyphens/underscores, optional query params
         deck_url_pattern = r"^https?://(www\.)?curiosa\.io/decks/[a-zA-Z0-9_-]+(\?.*)?$"
 
-        # Submitter deck URL is now REQUIRED
-        if not submitter_deck_url:
-            errors["submitter_deck_url"] = "Your deck URL is required"
-        elif not re.match(deck_url_pattern, submitter_deck_url):
-            errors[
-                "submitter_deck_url"
-            ] = "Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id]"
+        # Submitter deck URL is optional, but must be valid if provided
+        if submitter_deck_url:
+            if not re.match(deck_url_pattern, submitter_deck_url):
+                errors[
+                    "submitter_deck_url"
+                ] = "Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id]"
 
         # Opponent deck URL is optional (provided during confirmation)
         if opponent_deck_url:

@@ -20,7 +20,8 @@ async function request(method, url, body) {
   const res = await fetch(`${API_BASE_URL}${url}`, options)
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new ApiError(res.status, data.error || res.statusText)
+    const msg = data.error?.message || data.error || res.statusText
+    throw new ApiError(res.status, msg)
   }
   return res.json()
 }

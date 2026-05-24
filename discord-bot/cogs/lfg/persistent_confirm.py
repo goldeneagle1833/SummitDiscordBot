@@ -462,62 +462,61 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
         logger.error(f"Failed to send milestone announcement: {e}", exc_info=True)
 
     # ── dust code drop ──
-    if data.get("match_type") != "testing":
-        try:
-            event = get_active_event()
-            season_name = event["event_name"] if event else "no_season"
-            result = try_dust_drop(
-                data["winner_id"], data["winner_global"],
-                data["loser_id"], data["loser_global"],
-                season_name,
-            )
-            if result:
-                winner_id, winner_name, code = result
-                # DM the winner
-                dm_sent = False
-                try:
-                    winner_user = await bot.fetch_user(winner_id)
-                    await winner_user.send(
-                        f"**You won a Dust Code!**\n\n"
-                        f"Here is your code: `{code}`\n\n"
-                        f"Redeem it for 100 Dust reward points. Enjoy!"
+    try:
+        event = get_active_event()
+        season_name = event["event_name"] if event else "no_season"
+        result = try_dust_drop(
+            data["winner_id"], data["winner_global"],
+            data["loser_id"], data["loser_global"],
+            season_name,
+        )
+        if result:
+            winner_id, winner_name, code = result
+            # DM the winner
+            dm_sent = False
+            try:
+                winner_user = await bot.fetch_user(winner_id)
+                await winner_user.send(
+                    f"**You won a Dust Code!**\n\n"
+                    f"Here is your code: `{code}`\n\n"
+                    f"Redeem it for 100 Dust reward points. Enjoy!"
+                )
+                dm_sent = True
+            except discord.Forbidden:
+                logger.warning(f"Could not DM dust code to {winner_name} ({winner_id})")
+            except Exception as e:
+                logger.error(f"Error DMing dust code to {winner_name}: {e}")
+
+            # Announce in LFG channel
+            lfg_channel = bot.get_channel(config.LFG_CHANNEL_ID)
+            if lfg_channel:
+                if dm_sent:
+                    announcement = (
+                        f"<@{winner_id}> just won a Dust Code! "
+                        f"DM the bot with `!donatedust 11111 22222 33333 44444` "
+                        f"if you'd like to donate a code."
                     )
-                    dm_sent = True
-                except discord.Forbidden:
-                    logger.warning(f"Could not DM dust code to {winner_name} ({winner_id})")
-                except Exception as e:
-                    logger.error(f"Error DMing dust code to {winner_name}: {e}")
+                else:
+                    announcement = (
+                        f"<@{winner_id}> just won a Dust Code! "
+                        f"Please contact an admin to receive your code. "
+                        f"DM the bot with `!donatedust 11111 22222 33333 44444` "
+                        f"if you'd like to donate a code."
+                    )
+                await lfg_channel.send(announcement)
 
-                # Announce in LFG channel
-                lfg_channel = bot.get_channel(config.LFG_CHANNEL_ID)
-                if lfg_channel:
-                    if dm_sent:
-                        announcement = (
-                            f"<@{winner_id}> just won a Dust Code! "
-                            f"DM the bot with `!donatedust 11111 22222 33333 44444` "
-                            f"if you'd like to donate a code."
-                        )
-                    else:
-                        announcement = (
-                            f"<@{winner_id}> just won a Dust Code! "
-                            f"Please contact an admin to receive your code. "
-                            f"DM the bot with `!donatedust 11111 22222 33333 44444` "
-                            f"if you'd like to donate a code."
-                        )
-                    await lfg_channel.send(announcement)
-
-                # Check if codes ran out
-                if get_available_code_count() == 0:
-                    try:
-                        owner = await bot.fetch_user(config.OWNER_ID)
-                        await owner.send(
-                            "**Dust Code Alert:** All dust codes have been claimed or given out. "
-                            "No more codes are available for drops."
-                        )
-                    except Exception:
-                        pass
-        except Exception as e:
-            logger.error(f"Error in dust code drop: {e}", exc_info=True)
+            # Check if codes ran out
+            if get_available_code_count() == 0:
+                try:
+                    owner = await bot.fetch_user(config.OWNER_ID)
+                    await owner.send(
+                        "**Dust Code Alert:** All dust codes have been claimed or given out. "
+                        "No more codes are available for drops."
+                    )
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.error(f"Error in dust code drop: {e}", exc_info=True)
 
 
 async def _execute_match_dispute(interaction: discord.Interaction, confirmation_id: int, data: dict):

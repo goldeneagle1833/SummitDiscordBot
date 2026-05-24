@@ -134,6 +134,16 @@ class UtilityCog(commands.Cog):
             inline=False,
         )
 
+        # Dust Codes
+        embed.add_field(
+            name="Dust Codes",
+            value=(
+                "`!donatedust` - Donate a dust code (DM only)\n"
+                "Codes drop randomly after matches!"
+            ),
+            inline=False,
+        )
+
         # Utility
         embed.add_field(
             name="🛠️ Utility",
@@ -189,6 +199,17 @@ class UtilityCog(commands.Cog):
                 "`!mystats` - Get a summary of your match history\n"
                 "`!mygames` - List your recent games\n"
                 "`!replay` - Replay your last match"
+            ),
+            inline=False,
+        )
+
+        # Dust Code System
+        embed.add_field(
+            name="Dust Codes",
+            value=(
+                "`!donatedust 11111 22222 33333 44444` - Donate a dust code (DM only)\n"
+                "`!dustcodes` - Check remaining codes (admin only)\n"
+                "Dust codes drop randomly after confirmed matches. One per player per season."
             ),
             inline=False,
         )

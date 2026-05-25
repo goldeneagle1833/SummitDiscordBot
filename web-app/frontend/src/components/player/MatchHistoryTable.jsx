@@ -67,7 +67,15 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                       {m.result}
                     </span>
                   </td>
-                  {isOwner && <td className="py-2 px-3 text-sm">{m.player_avatar || '-'}</td>}
+                  {isOwner && (
+                    <td className="py-2 px-3 text-sm">
+                      {m.player_avatar ? (
+                        <Link to={`/avatar/${encodeURIComponent(m.player_avatar)}`} className="text-secondary hover:underline">
+                          {m.player_avatar}
+                        </Link>
+                      ) : '-'}
+                    </td>
+                  )}
                   {isOwner && (
                     <td className="py-2 px-3">
                       <ElementIcons elements={m.deck_elements} />
@@ -78,7 +86,15 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                       {m.opponent}
                     </Link>
                   </td>
-                  {isOwner && <td className="py-2 px-3 text-sm">{m.opponent_avatar || '-'}</td>}
+                  {isOwner && (
+                    <td className="py-2 px-3 text-sm">
+                      {m.opponent_avatar ? (
+                        <Link to={`/avatar/${encodeURIComponent(m.opponent_avatar)}`} className="text-secondary hover:underline">
+                          {m.opponent_avatar}
+                        </Link>
+                      ) : '-'}
+                    </td>
+                  )}
                   {isOwner && (
                     <td className="py-2 px-3">
                       <ElementIcons elements={m.opponent_elements} />

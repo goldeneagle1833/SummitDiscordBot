@@ -242,7 +242,7 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             match_type = lfg_cog.resolve_match_type(queue_type, matched_queue_type)
 
             if matched_ladder_info:
-                from utils.database import get_user_event_elo, save_ladder_challenge
+                from utils.database import get_user_event_elo, save_ladder_challenge, delete_ladder_challenge
 
                 if not matched_ladder_info.get("challenge_id"):
                     challenge_id = save_ladder_challenge(matched_ladder_info["challenger_id"])
@@ -299,7 +299,19 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             match_type_emoji = "⭐"
             match_type_label = "Casual"
 
-        matched_user = await bot.fetch_user(matched_user_id)
+        try:
+            matched_user = await bot.fetch_user(matched_user_id)
+        except Exception as e:
+            logger.error(f"Failed to fetch matched user {matched_user_id}: {e}")
+            # Rollback ladder challenge so daily usage is not consumed
+            if matched_ladder_info and matched_ladder_info.get("challenge_id"):
+                delete_ladder_challenge(matched_ladder_info["challenge_id"])
+            await interaction.followup.send(
+                "Error: Could not find matched player. Please try again.",
+                ephemeral=True,
+            )
+            return
+
         lfg_channel = bot.get_channel(lfg_cog.lfg_channel_id)
         joiner_global = interaction.user.global_name or interaction.user.display_name
         matched_global = matched_user.global_name or matched_user.display_name
@@ -309,6 +321,9 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             logger.error(
                 f"Cannot save pairing: guild_id is None for users {interaction.user.id} and {matched_user_id}"
             )
+            # Rollback ladder challenge so daily usage is not consumed
+            if matched_ladder_info and matched_ladder_info.get("challenge_id"):
+                delete_ladder_challenge(matched_ladder_info["challenge_id"])
             await interaction.followup.send(
                 "Error: Could not save match pairing. Please try using !lfg command instead.",
                 ephemeral=True,
@@ -344,6 +359,9 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                 f"Failed to save pairing for users {interaction.user.id} and {matched_user_id}: {e}",
                 exc_info=True,
             )
+            # Rollback ladder challenge so daily usage is not consumed
+            if matched_ladder_info and matched_ladder_info.get("challenge_id"):
+                delete_ladder_challenge(matched_ladder_info["challenge_id"])
             await interaction.followup.send(
                 "Error: Could not save match pairing to database. Please contact an admin.",
                 ephemeral=True,

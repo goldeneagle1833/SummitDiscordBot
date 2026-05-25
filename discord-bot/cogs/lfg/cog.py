@@ -37,6 +37,7 @@ from utils.database import (
     get_top_8_user_ids,
     get_ladder_challenge_today,
     save_ladder_challenge,
+    delete_ladder_challenge,
     complete_ladder_challenge,
     get_user_elo,
     get_user_event_elo,
@@ -1247,7 +1248,21 @@ class LFGCog(commands.Cog):
         # Handle result outside the lock
         if matched_user_id:
             # Match found! Process the match
-            matched_user = await self.bot.fetch_user(matched_user_id)
+            try:
+                matched_user = await self.bot.fetch_user(matched_user_id)
+            except Exception as e:
+                logger.error(f"Failed to fetch matched user {matched_user_id}: {e}")
+                # Rollback: delete the challenge so daily usage is not consumed
+                if challenge_id:
+                    delete_ladder_challenge(challenge_id)
+                try:
+                    await ctx.author.send(
+                        "Error: Could not find matched player. Your daily challenge was not consumed — try again!"
+                    )
+                except discord.Forbidden:
+                    pass
+                return
+
             lfg_channel = self.bot.get_channel(self.lfg_channel_id)
             matched_global = matched_user.global_name or matched_user.display_name
 
@@ -1258,6 +1273,9 @@ class LFGCog(commands.Cog):
                 logger.error(
                     f"Cannot save pairing: guild_id is None for challenge by {user_id}"
                 )
+                # Rollback: delete the challenge so daily usage is not consumed
+                if challenge_id:
+                    delete_ladder_challenge(challenge_id)
                 return
 
             try:
@@ -1278,9 +1296,12 @@ class LFGCog(commands.Cog):
                     f"Failed to save pairing for ladder challenge: {e}",
                     exc_info=True,
                 )
+                # Rollback: delete the challenge so daily usage is not consumed
+                if challenge_id:
+                    delete_ladder_challenge(challenge_id)
                 try:
                     await ctx.author.send(
-                        "Error: Could not save match pairing. Please contact an admin."
+                        "Error: Could not save match pairing. Your daily challenge was not consumed — try again!"
                     )
                 except discord.Forbidden:
                     pass

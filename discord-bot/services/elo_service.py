@@ -1433,6 +1433,33 @@ def recalculate_event_elo() -> dict:
     }
 
 
+def get_match_players(match_id: int) -> dict:
+    """Get the winner and loser IDs/names for a match.
+
+    Returns:
+        dict with keys: winner_id, loser_id, winner_name, loser_name.
+
+    Raises:
+        ValueError: If match_id not found.
+    """
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT winner_id, losser_id, winner_display_name, losser_display_name FROM match_records WHERE rowid = ?",
+        (match_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise ValueError(f"Match ID #{match_id} not found.")
+    return {
+        "winner_id": row[0],
+        "loser_id": row[1],
+        "winner_name": row[2],
+        "loser_name": row[3],
+    }
+
+
 def correct_match_record(match_id: int) -> dict:
     """Flip winner/loser of a match and cascade-recalculate all subsequent ELO.
 

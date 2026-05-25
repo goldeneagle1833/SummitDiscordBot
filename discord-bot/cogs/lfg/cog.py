@@ -3020,71 +3020,163 @@ class LFGCog(commands.Cog):
             await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
-    @is_bot_admin()
     async def correct_match(self, ctx, match_id: int = None):
         """Correct a match by flipping outcome and cascade-recalculating ELO. Usage: !correct_match <match_id>"""
+        from cogs.lfg.persistent_confirm import (
+            ensure_pending_corrections_table,
+            save_pending_correction,
+            PersistentCorrectionConfirmView,
+        )
+        from utils.database import get_match_players
+
         if match_id is None:
             await ctx.send("Please provide a match ID. Usage: `!correct_match <match_id>`")
             return
 
-        status_msg = await ctx.send("Analyzing match history...")
+        # Check if user is an admin
+        is_admin = False
+        if ctx.author.guild_permissions.administrator:
+            is_admin = True
+        elif any(role.id == config.BOT_ADMIN_ROLE_ID for role in ctx.author.roles):
+            is_admin = True
+        elif any(role.id == config.JUDGE_ROLE_ID for role in ctx.author.roles):
+            is_admin = True
+
+        # Admin flow - immediate correction (existing behavior)
+        if is_admin:
+            status_msg = await ctx.send("Analyzing match history...")
+            try:
+                result = correct_match_record(match_id)
+
+                success_embed = discord.Embed(
+                    title="Match Corrected",
+                    description=(
+                        f"**Match ID:** #{match_id}\n\n"
+                        f"**Original Result:**\n"
+                        f"~~Winner: {result['original_winner_name']}~~\n"
+                        f"~~Loser: {result['original_loser_name']}~~\n\n"
+                        f"**Corrected Result:**\n"
+                        f"Winner: **{result['new_winner_name']}** ({result['new_winner_elo_change']:+d} ELO)\n"
+                        f"Loser: **{result['new_loser_name']}** ({result['new_loser_elo_change']:+d} ELO)"
+                    ),
+                    color=discord.Color.green(),
+                )
+                success_embed.add_field(
+                    name="Cascade Recalculation",
+                    value=f"Recalculated **{result['recalculated_count']}** subsequent matches\nAffected **{len(result['affected_players'])}** players",
+                    inline=False,
+                )
+                success_embed.set_footer(text=f"Corrected by {ctx.author.display_name}")
+                await status_msg.edit(content=None, embed=success_embed)
+                await self.update_leaderboard()
+
+                log_admin_action(
+                    ctx.author.id,
+                    ctx.author.display_name,
+                    "correct_match",
+                    target_id=match_id,
+                    previous_state={
+                        "winner_name": result["original_winner_name"],
+                        "loser_name": result["original_loser_name"],
+                    },
+                    new_state={
+                        "winner_name": result["new_winner_name"],
+                        "loser_name": result["new_loser_name"],
+                        "recalculated_matches": result["recalculated_count"],
+                    },
+                    details=f"Corrected match #{match_id}: winner flipped from {result['original_winner_name']} to {result['new_winner_name']}, {result['recalculated_count']} subsequent matches recalculated",
+                )
+            except ValueError as e:
+                await status_msg.edit(content=str(e))
+            except Exception as e:
+                error_embed = discord.Embed(
+                    title="Match Correction Failed",
+                    description=f"An error occurred: {str(e)}",
+                    color=discord.Color.red(),
+                )
+                await status_msg.edit(content=None, embed=error_embed)
+                logger.error(f"Match correction failed: {e}")
+            return
+
+        # Non-admin flow - verify participant and send confirmation to other player
         try:
-            result = correct_match_record(match_id)
-
-            success_embed = discord.Embed(
-                title="Match Corrected",
-                description=(
-                    f"**Match ID:** #{match_id}\n\n"
-                    f"**Original Result:**\n"
-                    f"~~Winner: {result['original_winner_name']}~~\n"
-                    f"~~Loser: {result['original_loser_name']}~~\n\n"
-                    f"**Corrected Result:**\n"
-                    f"Winner: **{result['new_winner_name']}** ({result['new_winner_elo_change']:+d} ELO)\n"
-                    f"Loser: **{result['new_loser_name']}** ({result['new_loser_elo_change']:+d} ELO)"
-                ),
-                color=discord.Color.green(),
-            )
-            success_embed.add_field(
-                name="Cascade Recalculation",
-                value=f"Recalculated **{result['recalculated_count']}** subsequent matches\nAffected **{len(result['affected_players'])}** players",
-                inline=False,
-            )
-            success_embed.set_footer(text=f"Corrected by {ctx.author.display_name}")
-            await status_msg.edit(content=None, embed=success_embed)
-            await self.update_leaderboard()
-
-            log_admin_action(
-                ctx.author.id,
-                ctx.author.display_name,
-                "correct_match",
-                target_id=match_id,
-                previous_state={
-                    "winner_name": result["original_winner_name"],
-                    "loser_name": result["original_loser_name"],
-                },
-                new_state={
-                    "winner_name": result["new_winner_name"],
-                    "loser_name": result["new_loser_name"],
-                    "recalculated_matches": result["recalculated_count"],
-                },
-                details=f"Corrected match #{match_id}: winner flipped from {result['original_winner_name']} to {result['new_winner_name']}, {result['recalculated_count']} subsequent matches recalculated",
-            )
+            match_info = get_match_players(match_id)
         except ValueError as e:
-            await status_msg.edit(content=str(e))
-        except Exception as e:
-            error_embed = discord.Embed(
-                title="Match Correction Failed",
-                description=f"An error occurred: {str(e)}",
-                color=discord.Color.red(),
+            await ctx.send(str(e))
+            return
+
+        author_id = ctx.author.id
+        winner_id = match_info["winner_id"]
+        loser_id = match_info["loser_id"]
+
+        # Check if user was part of this match
+        if author_id != winner_id and author_id != loser_id:
+            await ctx.send("You were not a part of that match.")
+            return
+
+        # Determine the other player
+        if author_id == winner_id:
+            other_player_id = loser_id
+            other_player_name = match_info["loser_name"]
+        else:
+            other_player_id = winner_id
+            other_player_name = match_info["winner_name"]
+
+        # Save the pending correction request
+        ensure_pending_corrections_table()
+        correction_id = save_pending_correction({
+            "match_id": match_id,
+            "requester_id": author_id,
+            "requester_name": ctx.author.display_name,
+            "other_player_id": other_player_id,
+            "other_player_name": other_player_name,
+        })
+
+        # Send confirmation request to the other player
+        confirm_embed = discord.Embed(
+            title="Match Correction Request",
+            description=(
+                f"**{ctx.author.display_name}** is requesting to correct Match #{match_id}.\n\n"
+                f"**Current Result:**\n"
+                f"Winner: {match_info['winner_name']}\n"
+                f"Loser: {match_info['loser_name']}\n\n"
+                f"**If corrected, the result will be flipped:**\n"
+                f"Winner: {match_info['loser_name']}\n"
+                f"Loser: {match_info['winner_name']}\n\n"
+                f"Do you confirm this correction?"
+            ),
+            color=discord.Color.orange(),
+        )
+
+        view = PersistentCorrectionConfirmView(correction_id)
+
+        try:
+            other_user = await self.bot.fetch_user(other_player_id)
+            await other_user.send(embed=confirm_embed, view=view)
+            await ctx.send(
+                f"A correction request for Match #{match_id} has been sent to **{other_player_name}** for confirmation."
             )
-            await status_msg.edit(content=None, embed=error_embed)
-            logger.error(f"Match correction failed: {e}")
+        except discord.Forbidden:
+            # If DMs are disabled, send in a channel
+            match_report_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+            if match_report_channel:
+                await match_report_channel.send(
+                    f"<@{other_player_id}>", embed=confirm_embed, view=view
+                )
+                await ctx.send(
+                    f"A correction request for Match #{match_id} has been sent to **{other_player_name}** for confirmation."
+                )
+            else:
+                await ctx.send(
+                    "Could not send the correction request. The other player has DMs disabled and no fallback channel is configured."
+                )
+        except Exception as e:
+            logger.error(f"Failed to send correction request: {e}")
+            await ctx.send(f"An error occurred while sending the correction request: {e}")
 
     @correct_match.error
     async def correct_match_error(self, ctx, error):
-        if isinstance(error, commands.MissingPermissions):
-            await ctx.send("You need administrator permissions to use this command.")
-        elif isinstance(error, commands.BadArgument):
+        if isinstance(error, commands.BadArgument):
             await ctx.send("Invalid match ID. Please provide a valid number.")
         else:
             logger.error(f"correct_match error: {error}")

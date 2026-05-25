@@ -62,6 +62,7 @@ from services.elo_service import (  # noqa: F401
     check_milestone,
     solo_match_report,
     recalculate_event_elo,
+    get_match_players,
     correct_match_record,
     remove_match_record,
     remove_player as remove_player_service,

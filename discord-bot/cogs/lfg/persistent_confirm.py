@@ -834,3 +834,279 @@ def create_confirmation_view(
     }
     confirmation_id = save_pending_confirmation(data)
     return PersistentMatchConfirmView(confirmation_id)
+
+
+# ──────────────────────────────────────────────
+#  Match Correction Confirmation (non-admin flow)
+# ──────────────────────────────────────────────
+
+def ensure_pending_corrections_table():
+    """Create the pending_corrections table if it doesn't exist."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pending_corrections (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            match_id        INTEGER NOT NULL,
+            requester_id    INTEGER NOT NULL,
+            requester_name  TEXT    NOT NULL,
+            other_player_id INTEGER NOT NULL,
+            other_player_name TEXT  NOT NULL,
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def save_pending_correction(data: dict) -> int:
+    """Persist correction request and return the new row id."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO pending_corrections (
+            match_id, requester_id, requester_name,
+            other_player_id, other_player_name
+        ) VALUES (?,?,?,?,?)
+        """,
+        (
+            data["match_id"],
+            data["requester_id"],
+            data["requester_name"],
+            data["other_player_id"],
+            data["other_player_name"],
+        ),
+    )
+    correction_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return correction_id
+
+
+def load_pending_correction(correction_id: int):
+    """Return correction dict or None."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM pending_corrections WHERE id = ?", (correction_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return dict(row)
+
+
+def delete_pending_correction(correction_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM pending_corrections WHERE id = ?", (correction_id,))
+    conn.commit()
+    conn.close()
+
+
+class PersistentCorrectionConfirmButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"pcorrect_confirm:(?P<id>\d+)",
+):
+    def __init__(self, correction_id: int):
+        super().__init__(
+            discord.ui.Button(
+                label="Confirm Correction",
+                style=discord.ButtonStyle.success,
+                custom_id=f"pcorrect_confirm:{correction_id}",
+            )
+        )
+        self.correction_id = correction_id
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(correction_id=int(match["id"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        from utils.database import correct_match_record, log_admin_action
+
+        try:
+            data = load_pending_correction(self.correction_id)
+            if not data:
+                await interaction.response.send_message(
+                    "This correction request has expired or was already processed.",
+                    ephemeral=True,
+                )
+                return
+
+            # Only the other player can confirm
+            if interaction.user.id != data["other_player_id"]:
+                await interaction.response.send_message(
+                    "Only the other player in this match can confirm this correction.",
+                    ephemeral=True,
+                )
+                return
+
+            await interaction.response.defer()
+
+            # Execute the correction
+            result = correct_match_record(data["match_id"])
+
+            success_embed = discord.Embed(
+                title="Match Corrected",
+                description=(
+                    f"**Match ID:** #{data['match_id']}\n\n"
+                    f"**Original Result:**\n"
+                    f"~~Winner: {result['original_winner_name']}~~\n"
+                    f"~~Loser: {result['original_loser_name']}~~\n\n"
+                    f"**Corrected Result:**\n"
+                    f"Winner: **{result['new_winner_name']}** ({result['new_winner_elo_change']:+d} ELO)\n"
+                    f"Loser: **{result['new_loser_name']}** ({result['new_loser_elo_change']:+d} ELO)"
+                ),
+                color=discord.Color.green(),
+            )
+            success_embed.add_field(
+                name="Cascade Recalculation",
+                value=f"Recalculated **{result['recalculated_count']}** subsequent matches\nAffected **{len(result['affected_players'])}** players",
+                inline=False,
+            )
+            success_embed.set_footer(
+                text=f"Requested by {data['requester_name']} | Confirmed by {interaction.user.display_name}"
+            )
+
+            await interaction.message.edit(embed=success_embed, view=None)
+
+            log_admin_action(
+                data["requester_id"],
+                data["requester_name"],
+                "correct_match",
+                target_id=data["match_id"],
+                previous_state={
+                    "winner_name": result["original_winner_name"],
+                    "loser_name": result["original_loser_name"],
+                },
+                new_state={
+                    "winner_name": result["new_winner_name"],
+                    "loser_name": result["new_loser_name"],
+                    "recalculated_matches": result["recalculated_count"],
+                },
+                details=f"Corrected match #{data['match_id']} (player request confirmed by {interaction.user.display_name}): winner flipped from {result['original_winner_name']} to {result['new_winner_name']}, {result['recalculated_count']} subsequent matches recalculated",
+            )
+
+            # Notify requester
+            try:
+                requester = await interaction.client.fetch_user(data["requester_id"])
+                await requester.send(
+                    f"{data['other_player_name']} has confirmed your match correction request for Match #{data['match_id']}. "
+                    f"The match has been corrected."
+                )
+            except Exception:
+                pass
+
+            # Update leaderboard
+            lfg_cog = interaction.client.get_cog("LFGCog")
+            if lfg_cog:
+                try:
+                    await lfg_cog.update_leaderboard()
+                except Exception as e:
+                    logger.error(f"Failed to update leaderboard after correction: {e}")
+
+            delete_pending_correction(self.correction_id)
+
+        except ValueError as e:
+            await interaction.followup.send(str(e), ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error in PersistentCorrectionConfirmButton: {e}", exc_info=True)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "An error occurred while processing the correction. Please try again or contact an admin.",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "An error occurred while processing the correction. Please try again or contact an admin.",
+                        ephemeral=True,
+                    )
+            except Exception:
+                pass
+
+
+class PersistentCorrectionDenyButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"pcorrect_deny:(?P<id>\d+)",
+):
+    def __init__(self, correction_id: int):
+        super().__init__(
+            discord.ui.Button(
+                label="Deny Correction",
+                style=discord.ButtonStyle.danger,
+                custom_id=f"pcorrect_deny:{correction_id}",
+            )
+        )
+        self.correction_id = correction_id
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(correction_id=int(match["id"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            data = load_pending_correction(self.correction_id)
+            if not data:
+                await interaction.response.send_message(
+                    "This correction request has expired or was already processed.",
+                    ephemeral=True,
+                )
+                return
+
+            # Only the other player can deny
+            if interaction.user.id != data["other_player_id"]:
+                await interaction.response.send_message(
+                    "Only the other player in this match can respond to this correction request.",
+                    ephemeral=True,
+                )
+                return
+
+            await interaction.response.send_message(
+                "You have denied the match correction request.", ephemeral=True
+            )
+
+            await interaction.message.edit(
+                content=f"Match correction for Match #{data['match_id']} was denied by {data['other_player_name']}.",
+                embed=None,
+                view=None,
+            )
+
+            # Notify requester
+            try:
+                requester = await interaction.client.fetch_user(data["requester_id"])
+                await requester.send(
+                    f"{data['other_player_name']} has denied your match correction request for Match #{data['match_id']}. "
+                    f"If you believe this is an error, please contact an admin."
+                )
+            except Exception:
+                pass
+
+            delete_pending_correction(self.correction_id)
+
+        except Exception as e:
+            logger.error(f"Error in PersistentCorrectionDenyButton: {e}", exc_info=True)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "An error occurred. Please try again or contact an admin.",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "An error occurred. Please try again or contact an admin.",
+                        ephemeral=True,
+                    )
+            except Exception:
+                pass
+
+
+class PersistentCorrectionConfirmView(discord.ui.View):
+    """Confirm / Deny correction view whose buttons survive bot restarts."""
+
+    def __init__(self, correction_id: int):
+        super().__init__(timeout=None)
+        self.add_item(PersistentCorrectionConfirmButton(correction_id))
+        self.add_item(PersistentCorrectionDenyButton(correction_id))

@@ -23,7 +23,10 @@ from cogs.dust import DustCog
 from cogs.lfg.persistent_confirm import (
     PersistentConfirmButton,
     PersistentDisputeButton,
+    PersistentCorrectionConfirmButton,
+    PersistentCorrectionDenyButton,
     ensure_pending_confirmations_table,
+    ensure_pending_corrections_table,
 )
 from repositories.elo_repo import migrate_to_dual_elo_system
 from services.elo_service import backfill_deck_data
@@ -169,8 +172,12 @@ async def main():
         # Run DB schema migrations before handling any interactions
         migrate_to_dual_elo_system()
         ensure_pending_confirmations_table()
+        ensure_pending_corrections_table()
         # Register DynamicItem buttons so Confirm/Dispute survive bot restarts
-        bot.add_dynamic_items(PersistentConfirmButton, PersistentDisputeButton)
+        bot.add_dynamic_items(
+            PersistentConfirmButton, PersistentDisputeButton,
+            PersistentCorrectionConfirmButton, PersistentCorrectionDenyButton,
+        )
         await setup_cogs()
         await bot.start(TOKEN)
 

@@ -5,6 +5,7 @@ import sqlite3
 import json
 import logging
 import random
+from urllib.parse import quote
 
 import config
 from cogs.lfg import LFGReportButtons
@@ -451,7 +452,8 @@ class EloCog(commands.Cog):
                         if total_avatar_matches > 0
                         else 0
                     )
-                    response += f"{avatar_name}: {wins}-{losses} (W-L) - {avatar_win_rate:.1f}%\n"
+                    avatar_url = f"https://sorcererssummit.com/avatar/{quote(avatar_name)}"
+                    response += f"[{avatar_name}]({avatar_url}): {wins}-{losses} (W-L) - {avatar_win_rate:.1f}%\n"
             else:
                 response += f"\nNo avatar data found in your match records."
 

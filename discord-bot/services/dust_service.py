@@ -17,13 +17,15 @@ from repositories.audit_repo import log_admin_action
 
 logger = logging.getLogger("discord_bot")
 
-# Regex: exactly 4 groups of 5 digits separated by spaces
-DUST_CODE_PATTERN = re.compile(r"^\d{5} \d{5} \d{5} \d{5}$")
+# Regex: 4 groups of 5 digits OR 5 groups of 4 digits separated by spaces
+DUST_CODE_PATTERN_4x5 = re.compile(r"^\d{5} \d{5} \d{5} \d{5}$")
+DUST_CODE_PATTERN_5x4 = re.compile(r"^\d{4} \d{4} \d{4} \d{4} \d{4}$")
 
 
 def validate_dust_code(code_str):
     """Validate a dust code format. Returns True if valid."""
-    return bool(DUST_CODE_PATTERN.match(code_str.strip()))
+    stripped = code_str.strip()
+    return bool(DUST_CODE_PATTERN_4x5.match(stripped) or DUST_CODE_PATTERN_5x4.match(stripped))
 
 
 def donate_code(code_str, donor_id, donor_name):
@@ -33,7 +35,7 @@ def donate_code(code_str, donor_id, donor_name):
     """
     code_str = code_str.strip()
     if not validate_dust_code(code_str):
-        return False, "Invalid format. Codes must be 4 groups of 5 digits: `11111 22222 33333 44444`"
+        return False, "Invalid format. Codes must be 4 groups of 5 digits (`11111 22222 33333 44444`) or 5 groups of 4 digits (`1111 2222 3333 4444 5555`)"
 
     if code_exists(code_str):
         return False, "This code has already been loaded."

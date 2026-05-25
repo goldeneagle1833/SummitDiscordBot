@@ -63,11 +63,11 @@ class TestDustRepo:
     def test_increment_game_counter(self):
         game_num, chance = increment_game_counter()
         assert game_num == 1
-        assert chance == pytest.approx(0.005)
+        assert chance == pytest.approx(0.0002)
 
         game_num, chance = increment_game_counter()
         assert game_num == 2
-        assert chance == pytest.approx(0.01)
+        assert chance == pytest.approx(0.0004)
 
     def test_game_counter_resets_at_100(self):
         for _ in range(99):
@@ -75,20 +75,19 @@ class TestDustRepo:
         # Game 100 should trigger reset
         game_num, chance = increment_game_counter()
         assert game_num == 100
-        assert chance == pytest.approx(0.50)  # capped at 50%
+        assert chance == pytest.approx(0.02)  # capped at 2%
 
         # Next game should be 1 (counter reset)
         game_num, chance = increment_game_counter()
         assert game_num == 1
-        assert chance == pytest.approx(0.005)
+        assert chance == pytest.approx(0.0002)
 
-    def test_drop_chance_caps_at_50_percent(self):
-        # Even though we reset at 100, test the math
-        # At game 100: 100 * 0.005 = 0.50 = 50%
+    def test_drop_chance_caps_at_2_percent(self):
+        # At game 100: 100 * 0.0002 = 0.02 = 2%
         for _ in range(99):
             increment_game_counter()
         game_num, chance = increment_game_counter()
-        assert chance == pytest.approx(0.50)
+        assert chance == pytest.approx(0.02)
 
     def test_record_drop_and_status(self):
         record_drop(42)
@@ -98,7 +97,7 @@ class TestDustRepo:
     def test_get_drop_status(self):
         status = get_drop_status()
         assert status["games_since_reset"] == 0
-        assert status["current_chance"] == "0.0%"
+        assert status["current_chance"] == "0.00%"
         assert status["last_drop_game"] is None
 
 
@@ -118,11 +117,20 @@ class TestDustCodeValidation:
     def test_invalid_letters(self):
         assert not validate_dust_code("abcde 22222 33333 44444")
 
-    def test_invalid_wrong_group_size(self):
+    def test_invalid_mixed_group_sizes(self):
         assert not validate_dust_code("1111 22222 33333 44444")
 
-    def test_invalid_extra_groups(self):
+    def test_valid_5_groups_of_4(self):
+        assert validate_dust_code("1111 2222 3333 4444 5555")
+
+    def test_valid_5_groups_of_4_with_whitespace(self):
+        assert validate_dust_code("  1111 2222 3333 4444 5555  ")
+
+    def test_invalid_5_groups_of_5(self):
         assert not validate_dust_code("11111 22222 33333 44444 55555")
+
+    def test_invalid_4_groups_of_4(self):
+        assert not validate_dust_code("1111 2222 3333 4444")
 
     def test_empty_string(self):
         assert not validate_dust_code("")
@@ -152,7 +160,7 @@ class TestTryDustDrop:
         result = try_dust_drop(100, "P1", 200, "P2", "Season 1")
         assert result is None
 
-    @patch("services.dust_service.random.random", return_value=0.001)
+    @patch("services.dust_service.random.random", return_value=0.0001)
     @patch("services.dust_service.random.choice", return_value=(100, "P1"))
     def test_drop_succeeds(self, mock_choice, mock_random):
         add_dust_code("11111 22222 33333 44444", 300, "Donor")
@@ -169,7 +177,7 @@ class TestTryDustDrop:
         result = try_dust_drop(100, "P1", 200, "P2", "Season 1")
         assert result is None
 
-    @patch("services.dust_service.random.random", return_value=0.001)
+    @patch("services.dust_service.random.random", return_value=0.0001)
     def test_drop_skips_if_both_claimed(self, mock_random):
         add_dust_code("11111 11111 11111 11111", 300, "Donor")
         add_dust_code("22222 22222 22222 22222", 300, "Donor")
@@ -180,7 +188,7 @@ class TestTryDustDrop:
         result = try_dust_drop(100, "P1", 200, "P2", "Season 1")
         assert result is None
 
-    @patch("services.dust_service.random.random", return_value=0.001)
+    @patch("services.dust_service.random.random", return_value=0.0001)
     def test_drop_rerolls_to_eligible_player(self, mock_random):
         add_dust_code("11111 11111 11111 11111", 300, "Donor")
         add_dust_code("22222 22222 22222 22222", 300, "Donor")
@@ -192,7 +200,7 @@ class TestTryDustDrop:
         assert winner_id == 200
         assert winner_name == "P2"
 
-    @patch("services.dust_service.random.random", return_value=0.001)
+    @patch("services.dust_service.random.random", return_value=0.0001)
     def test_one_code_per_season(self, mock_random):
         add_dust_code("11111 11111 11111 11111", 300, "Donor")
         add_dust_code("22222 22222 22222 22222", 300, "Donor")

@@ -127,8 +127,8 @@ def increment_game_counter():
                 (new_count,),
             )
 
-        # Drop chance: 0.5% per game, capped at 50%
-        drop_chance = min(new_count * 0.005, 0.50)
+        # Drop chance: 0.02% per game, capped at 2%
+        drop_chance = min(new_count * 0.0002, 0.02)
         return new_count, drop_chance
 
 
@@ -153,7 +153,7 @@ def get_drop_status():
             return None
         return {
             "games_since_reset": row[0],
-            "current_chance": f"{min(row[0] * 0.5, 50.0):.1f}%",
+            "current_chance": f"{min(row[0] * 0.02, 2.0):.2f}%",
             "last_reset_at": row[1],
             "last_drop_game": row[2],
         }

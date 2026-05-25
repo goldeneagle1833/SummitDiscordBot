@@ -29,7 +29,7 @@ class DustCog(commands.Cog):
     @commands.command(name="donatedust")
     @commands.dm_only()
     async def donate_dust(self, ctx, *, code: str):
-        """Donate a dust code via DM. Usage: !donatedust 11111 22222 33333 44444"""
+        """Donate a dust code via DM. Usage: !donatedust 11111 22222 33333 44444 or !donatedust 1111 2222 3333 4444 5555"""
         success, message = donate_code(
             code.strip(),
             ctx.author.id,
@@ -48,7 +48,7 @@ class DustCog(commands.Cog):
         if isinstance(error, commands.PrivateMessageOnly):
             await ctx.send("This command can only be used in DMs with the bot.")
         elif isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send("Please provide a code. Usage: `!donatedust 11111 22222 33333 44444`")
+            await ctx.send("Please provide a code. Usage: `!donatedust 11111 22222 33333 44444` or `!donatedust 1111 2222 3333 4444 5555`")
         else:
             logger.error(f"Error in donatedust: {error}", exc_info=True)
 

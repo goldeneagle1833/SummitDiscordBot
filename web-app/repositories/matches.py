@@ -994,6 +994,78 @@ class MatchRepository:
         else:
             return None
 
+    # --- Rumble matches ---
+
+    def get_rumble_standings(self) -> list[dict]:
+        """Get player win/loss records for rumble matches."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                SELECT player_id, display_name,
+                       SUM(wins) as wins, SUM(losses) as losses
+                FROM (
+                    SELECT winner_id as player_id,
+                           winner_display_name as display_name,
+                           1 as wins, 0 as losses
+                    FROM rumble_match_records
+                    UNION ALL
+                    SELECT losser_id as player_id,
+                           losser_display_name as display_name,
+                           0 as wins, 1 as losses
+                    FROM rumble_match_records
+                )
+                GROUP BY player_id
+                ORDER BY wins DESC, losses ASC
+            """)
+            rows = cur.fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+        conn.close()
+        return [
+            {"user_id": str(row[0]), "display_name": row[1], "wins": row[2], "losses": row[3]}
+            for row in rows
+        ]
+
+    def get_rumble_matches(self, limit: int = 50) -> list[dict]:
+        """Get recent rumble match history."""
+        if not isinstance(limit, int) or limit < 1:
+            limit = 50
+        if limit > 200:
+            limit = 200
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                SELECT
+                    rowid as match_id,
+                    winner_display_name,
+                    losser_display_name,
+                    match_time,
+                    timestamp,
+                    winner_id,
+                    losser_id
+                FROM rumble_match_records
+                ORDER BY rowid DESC
+                LIMIT ?
+            """, (limit,))
+            rows = cur.fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+        conn.close()
+        return [
+            {
+                "match_id": row[0],
+                "winner": row[1] or "Unknown",
+                "loser": row[2] or "Unknown",
+                "match_time": row[3] or 0,
+                "timestamp": row[4],
+                "winner_id": str(row[5]),
+                "loser_id": str(row[6]),
+            }
+            for row in rows
+        ]
+
     # --- Limited Arena (limited_match_records, limited_arena_runs, limited_elo) ---
 
     def get_limited_matches_for_player(self, player_id: str, limit: int = 20) -> list[dict]:

@@ -12,6 +12,7 @@ import asyncio
 #         "ranked": {"timestamp", "timeframe", "deck_url", "ladder_info" (optional)},
 #         "testing": {"timestamp", "timeframe", "deck_url"},
 #         "limited": {"timestamp", "timeframe", "deck_url", "run_id"},
+#         "rumble": {"timestamp", "timeframe", "deck_url"},
 #     }
 # }
 # When a player is matched, they are removed from ALL queues.

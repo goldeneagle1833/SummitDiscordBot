@@ -438,7 +438,7 @@ def _resolve_lifetime_match_result(row, winner_after, loser_after, ladder_specia
             "Lifetime Elo cannot be reconstructed exactly for top cut matches because historical lifetime deltas were not stored."
         )
 
-    if row.get("match_type") == "testing":
+    if row.get("match_type") in ("testing", "rumble"):
         return {
             "winner_before": winner_after,
             "winner_after": winner_after,
@@ -655,7 +655,7 @@ def get_current_event_match_elo_snapshot(match_id: int):
         loser_before_event = event_state.get(loser_id, 1500)
 
         is_top_cut = match_id_value in top_cut_match_ids
-        is_testing = row.get("match_type") == "testing"
+        is_testing = row.get("match_type") in ("testing", "rumble")
         is_casual = is_testing and not is_top_cut
         ladder_special = False
 
@@ -861,7 +861,7 @@ def _is_valid_deck_url(url: str) -> bool:
     return bool(deck_id)
 
 
-async def _update_deck_data(match_id: int, winner_url: str, loser_url: str) -> None:
+async def _update_deck_data(match_id: int, winner_url: str, loser_url: str, table: str = "match_records") -> None:
     """Background task: fetch deck JSON from Curiosa and update the match record.
 
     Runs after record_match() completes so that deck scraping never blocks the
@@ -885,13 +885,19 @@ async def _update_deck_data(match_id: int, winner_url: str, loser_url: str) -> N
 
     try:
         conn = sqlite3.connect("match_records.db")
-        conn.execute(
-            "UPDATE match_records SET json_deck_data = ?, json_deck_data_winner = ?, json_deck_data_loser = ? WHERE rowid = ?",
-            (winner_json, winner_json, loser_json, match_id),
-        )
+        if table == "rumble_match_records":
+            conn.execute(
+                "UPDATE rumble_match_records SET json_deck_data_winner = ?, json_deck_data_loser = ? WHERE rowid = ?",
+                (winner_json, loser_json, match_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE match_records SET json_deck_data = ?, json_deck_data_winner = ?, json_deck_data_loser = ? WHERE rowid = ?",
+                (winner_json, winner_json, loser_json, match_id),
+            )
         conn.commit()
         conn.close()
-        logger.info("_update_deck_data: updated deck data for match_id=%s", match_id)
+        logger.info("_update_deck_data: updated deck data for match_id=%s in %s", match_id, table)
     except Exception as exc:
         logger.warning("_update_deck_data: failed to write deck data for match %s: %s", match_id, exc)
 
@@ -1009,7 +1015,7 @@ async def record_match(
     )
 
     # ── Step 1: calculate ELO changes ──
-    if match_type == "testing":
+    if match_type in ("testing", "rumble"):
         winner_elo_change = 0
         loser_elo_change = 0
         winner_lifetime_change = 0
@@ -1066,7 +1072,7 @@ async def record_match(
             loser_new_event_elo = loser_event_elo + loser_elo_change
 
     # ── Step 2: write both ELOs atomically ──
-    if match_type != "testing" and event_active:
+    if match_type not in ("testing", "rumble") and event_active:
         update_both_player_elos(
             winner_id, winner_global,
             winner_new_elo, winner_new_event_elo,
@@ -1084,47 +1090,79 @@ async def record_match(
 
     # ── Step 3: insert match record (deck data filled in async below) ──
     create_db()
+    now_iso = datetime.datetime.now().isoformat()
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO match_records (reporter_id, winner_id, winner_display_name, "
-        "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
-        "curiosa_url, curiosa_url_winner, curiosa_url_loser, match_comment, "
-        "json_deck_data, json_deck_data_winner, json_deck_data_loser, "
-        "winner_elo_change, loser_elo_change, "
-        "winner_lifetime_elo_change, loser_lifetime_elo_change, "
-        "winner_went_first, loser_went_first, match_type) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            reporter_id,
-            winner_id, winner_global,
-            loser_id, loser_global,
-            True,
-            datetime.datetime.now().isoformat(),
-            first_player,
-            match_time,
-            winner_deck_url,  # curiosa_url (backward compat)
-            winner_deck_url,
-            loser_deck_url,
-            match_comment,
-            "{}",  # json_deck_data — filled in by _update_deck_data background task
-            "{}",  # json_deck_data_winner
-            "{}",  # json_deck_data_loser
-            winner_elo_change,
-            loser_elo_change,
-            winner_lifetime_change,
-            loser_lifetime_change,
-            winner_went_first,
-            loser_went_first,
-            match_type,
-        ),
-    )
+
+    if match_type == "rumble":
+        # Rumble matches go into a separate table to keep them out of overall stats
+        cur.execute(
+            "INSERT INTO rumble_match_records (reporter_id, winner_id, winner_display_name, "
+            "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
+            "curiosa_url_winner, curiosa_url_loser, match_comment, "
+            "json_deck_data_winner, json_deck_data_loser, "
+            "winner_went_first, loser_went_first) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                reporter_id,
+                winner_id, winner_global,
+                loser_id, loser_global,
+                True,
+                now_iso,
+                first_player,
+                match_time,
+                winner_deck_url,
+                loser_deck_url,
+                match_comment,
+                "{}",  # json_deck_data_winner
+                "{}",  # json_deck_data_loser
+                winner_went_first,
+                loser_went_first,
+            ),
+        )
+        table_name = "rumble_match_records"
+    else:
+        cur.execute(
+            "INSERT INTO match_records (reporter_id, winner_id, winner_display_name, "
+            "losser_id, losser_display_name, did_win, timestamp, first_player, match_time, "
+            "curiosa_url, curiosa_url_winner, curiosa_url_loser, match_comment, "
+            "json_deck_data, json_deck_data_winner, json_deck_data_loser, "
+            "winner_elo_change, loser_elo_change, "
+            "winner_lifetime_elo_change, loser_lifetime_elo_change, "
+            "winner_went_first, loser_went_first, match_type) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                reporter_id,
+                winner_id, winner_global,
+                loser_id, loser_global,
+                True,
+                now_iso,
+                first_player,
+                match_time,
+                winner_deck_url,  # curiosa_url (backward compat)
+                winner_deck_url,
+                loser_deck_url,
+                match_comment,
+                "{}",  # json_deck_data — filled in by _update_deck_data background task
+                "{}",  # json_deck_data_winner
+                "{}",  # json_deck_data_loser
+                winner_elo_change,
+                loser_elo_change,
+                winner_lifetime_change,
+                loser_lifetime_change,
+                winner_went_first,
+                loser_went_first,
+                match_type,
+            ),
+        )
+        table_name = "match_records"
+
     match_id = cur.lastrowid
     conn.commit()
     conn.close()
 
     # ── Step 4: scrape deck data asynchronously (non-blocking) ──
-    asyncio.create_task(_update_deck_data(match_id, winner_deck_url, loser_deck_url))
+    asyncio.create_task(_update_deck_data(match_id, winner_deck_url, loser_deck_url, table_name))
 
     return (match_id, winner_elo_change, loser_elo_change, winner_lifetime_change, loser_lifetime_change, event_active)
 
@@ -1383,7 +1421,7 @@ def recalculate_event_elo() -> dict:
                timestamp, match_type
         FROM match_records
         WHERE timestamp >= ?
-          AND (match_type IS NULL OR match_type != 'testing')
+          AND (match_type IS NULL OR match_type NOT IN ('testing', 'rumble'))
         ORDER BY timestamp ASC
         """,
         (event_start_str,),

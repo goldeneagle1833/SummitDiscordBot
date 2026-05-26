@@ -8,7 +8,7 @@ from contextlib import contextmanager
 logger = logging.getLogger("discord_bot")
 
 ELO_COUNTING_MATCH_FILTER = """
-    (match_type IS NULL OR match_type != 'testing')
+    (match_type IS NULL OR match_type NOT IN ('testing', 'rumble'))
     AND (
         winner_elo_change IS NULL
         OR loser_elo_change IS NULL
@@ -142,6 +142,27 @@ def create_db():
                     match_comment TEXT,
                     report_date DATETIME,
                     json_deck_data TEXT
+                   )""")
+
+    # Create rumble_match_records table (separate from ranked matches)
+    cur.execute("""CREATE TABLE IF NOT EXISTS rumble_match_records
+                   (match_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    reporter_id INTEGER,
+                    winner_id INTEGER,
+                    winner_display_name TEXT,
+                    losser_id INTEGER,
+                    losser_display_name TEXT,
+                    did_win BOOLEAN,
+                    timestamp TEXT,
+                    first_player TEXT,
+                    match_time INTEGER,
+                    curiosa_url_winner TEXT,
+                    curiosa_url_loser TEXT,
+                    match_comment TEXT,
+                    json_deck_data_winner TEXT,
+                    json_deck_data_loser TEXT,
+                    winner_went_first TEXT,
+                    loser_went_first TEXT
                    )""")
 
     conn.commit()

@@ -926,7 +926,7 @@ class LFGReportButtons(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         # Check if reporter needs to provide a deck URL (skip for testing matches)
-        if not self.reporter_deck_url and self.match_type != "testing":
+        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble"):
             # Show modal to collect deck URL before proceeding
             modal = ReporterDeckURLModal(self, interaction, is_win=True)
             await interaction.response.send_modal(modal)
@@ -1095,7 +1095,7 @@ class LFGReportButtons(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         # Check if reporter needs to provide a deck URL (skip for testing matches)
-        if not self.reporter_deck_url and self.match_type != "testing":
+        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble"):
             # Show modal to collect deck URL before proceeding
             modal = ReporterDeckURLModal(self, interaction, is_win=False)
             await interaction.response.send_modal(modal)
@@ -1418,7 +1418,7 @@ class MatchCardView(discord.ui.View):
         )
 
         msg = "**Report Match Result:**\nSelect who went first, then who won, then click **Submit Report**."
-        if not reporter_deck_url and self.match_type != "testing":
+        if not reporter_deck_url and self.match_type not in ("testing", "rumble"):
             msg += "\nYou'll be asked for your deck URL after selecting."
 
         await interaction.followup.send(msg, view=view, ephemeral=True)
@@ -1581,7 +1581,7 @@ class ReportResultSelectView(discord.ui.View):
             return
 
         self._submit_interaction = interaction
-        if not self.reporter_deck_url and self.match_type != "testing":
+        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble"):
             modal = MatchReportDeckModal(self)
             await interaction.response.send_modal(modal)
         else:

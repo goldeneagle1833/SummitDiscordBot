@@ -291,7 +291,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
         elo_multiplier_winner = 1.0
         elo_multiplier_loser = 1.0
         ladder_info = data.get("ladder_info")
-        if ladder_info and data.get("match_type") not in ("testing", "limited"):
+        if ladder_info and data.get("match_type") not in ("testing", "rumble", "limited"):
             challenger_id = ladder_info["challenger_id"]
             if data["winner_id"] != challenger_id:
                 # Non-Top16 player won — apply stakes multipliers
@@ -316,7 +316,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
             elo_multiplier_loser=elo_multiplier_loser,
         )
 
-        if ladder_info and data["match_type"] != "testing":
+        if ladder_info and data["match_type"] not in ("testing", "rumble"):
             stakes_msg = await _apply_ladder_elo(
                 bot,
                 ladder_info,
@@ -328,8 +328,8 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 event_active,
             )
 
-        if data["match_type"] == "testing":
-            elo_msg = " *(⭐ Casual match - ELO not affected)*"
+        if data["match_type"] in ("testing", "rumble"):
+            elo_msg = " *(Casual match - ELO not affected)*"
         elif not event_active:
             elo_msg = " *(No active event - ELO not affected)*"
 
@@ -601,7 +601,7 @@ class PersistentConfirmButton(
 
             # If confirmer still needs a deck URL, show the modal
             confirmer_deck_url = data["winner_deck_url"] if data["is_winner"] else data["loser_deck_url"]
-            if not confirmer_deck_url and data.get("match_type") != "testing":
+            if not confirmer_deck_url and data.get("match_type") not in ("testing", "rumble"):
                 modal = PersistentConfirmDeckModal(self.confirmation_id, data["is_winner"])
                 try:
                     await interaction.response.send_modal(modal)

@@ -551,6 +551,34 @@ class LFGCog(commands.Cog):
                         inline=False,
                     )
 
+            # Rumble queue section (only show when pilot is active)
+            if is_pilot_active("RumbleQueue"):
+                rumble_details = []
+                for user_id, user_data in lfg_queue.items():
+                    entry = user_data.get("queues", {}).get("rumble")
+                    if entry:
+                        time_elapsed = (now - entry["timestamp"]).total_seconds() / 60
+                        time_remaining = entry["timeframe"] - time_elapsed
+                        placeholder = SORCERY_NICKNAMES[
+                            randrange(0, len(SORCERY_NICKNAMES))
+                        ]
+                        rumble_details.append(
+                            f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`"
+                        )
+
+                if rumble_details:
+                    embed.add_field(
+                        name="\U0001f4a5 Rumble Queue",
+                        value="\n".join(rumble_details),
+                        inline=False,
+                    )
+                else:
+                    embed.add_field(
+                        name="\U0001f4a5 Rumble Queue",
+                        value="`Empty`",
+                        inline=False,
+                    )
+
             embed.set_footer(text="Status updates automatically")
 
         # Create the appropriate button view based on queue status
@@ -790,6 +818,8 @@ class LFGCog(commands.Cog):
         """
         if type_a == "limited" or type_b == "limited":
             return "limited"
+        if type_a == "rumble" or type_b == "rumble":
+            return "rumble"
         if type_a == "testing" or type_b == "testing":
             return "testing"
         return "ranked"
@@ -804,8 +834,8 @@ class LFGCog(commands.Cog):
         best_match = None
         best_timestamp = None
 
-        # Casual (testing) has no pairing restrictions
-        is_casual = queue_type == "testing"
+        # Casual (testing) and rumble have no pairing restrictions
+        is_casual = queue_type in ("testing", "rumble")
 
         for user_id, user_data in lfg_queue.items():
             if user_id == ctx.author.id:

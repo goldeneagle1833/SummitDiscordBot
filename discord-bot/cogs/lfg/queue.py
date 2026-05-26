@@ -311,6 +311,9 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
         elif match_type == "ranked":
             match_type_emoji = "⚔️"
             match_type_label = "Ranked"
+        elif match_type == "rumble":
+            match_type_emoji = "💥"
+            match_type_label = "Rumble"
         else:
             match_type_emoji = "⭐"
             match_type_label = "Casual"
@@ -572,6 +575,8 @@ class JoinQueueButtons(discord.ui.View):
             self.remove_item(self.join_testing_button)
         if not is_pilot_active("GrewWolves"):
             self.remove_item(self.join_limited_button)
+        if not is_pilot_active("RumbleQueue"):
+            self.remove_item(self.join_rumble_button)
 
     async def _handle_join(self, interaction: discord.Interaction, queue_type: str):
         """Shared handler for all join buttons"""
@@ -632,6 +637,21 @@ class JoinQueueButtons(discord.ui.View):
             )
             return
         await self._handle_join(interaction, "limited")
+
+    @discord.ui.button(
+        label="Join Rumble",
+        style=discord.ButtonStyle.primary,
+        custom_id="join_lfg_rumble",
+    )
+    async def join_rumble_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        if not is_pilot_active("RumbleQueue"):
+            await interaction.response.send_message(
+                "Rumble queue is not currently available.", ephemeral=True
+            )
+            return
+        await self._handle_join(interaction, "rumble")
 
     @discord.ui.button(
         label="📋 Report Last Match",
@@ -717,6 +737,9 @@ class JoinQueueButtons(discord.ui.View):
             elif match_type == "ranked":
                 match_type_emoji = "⚔️"
                 match_type_label = "Ranked"
+            elif match_type == "rumble":
+                match_type_emoji = "💥"
+                match_type_label = "Rumble"
             else:
                 match_type_emoji = "⭐"
                 match_type_label = "Casual"

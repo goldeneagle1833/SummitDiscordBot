@@ -288,14 +288,14 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                 run_id=run_id,
             )
 
-    # Notify limited ping channel when someone is waiting (no match found)
+    # Notify in LFG channel when someone is waiting for a limited game
     if not matched_user_id and queue_type == "limited":
         try:
-            limited_channel = bot.get_channel(config.LIMITED_PING_CHANNEL_ID)
-            if limited_channel:
-                await limited_channel.send(
+            lfg_channel = bot.get_channel(lfg_cog.lfg_channel_id) if lfg_cog else None
+            if lfg_channel:
+                await lfg_channel.send(
                     f"<@&{config.LIMITED_PING_ROLE_ID}> There is a brave soul looking for a Limited game! "
-                    f"Head over to the LFG channel and join the queue!"
+                    f"Join the queue!"
                 )
         except Exception as e:
             logger.error(f"Failed to send limited queue notification: {e}")

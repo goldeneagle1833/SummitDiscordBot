@@ -47,6 +47,8 @@ def create_dust_tables():
         columns = [row[1] for row in cur.fetchall()]
         if "dropped_this_cycle" not in columns:
             cur.execute("ALTER TABLE dust_drops ADD COLUMN dropped_this_cycle INTEGER NOT NULL DEFAULT 0")
+            # If a drop already happened this cycle, lock it
+            cur.execute("UPDATE dust_drops SET dropped_this_cycle = 1 WHERE last_drop_game_number IS NOT NULL")
         # Ensure exactly one tracking row exists
         cur.execute("SELECT COUNT(*) FROM dust_drops")
         if cur.fetchone()[0] == 0:

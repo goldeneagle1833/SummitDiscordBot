@@ -82,10 +82,16 @@ class DustCog(commands.Cog):
                 inline=True,
             )
             embed.add_field(
-                name="Current Drop Chance",
+                name="Next Drop Chance",
                 value=status["current_chance"],
                 inline=True,
             )
+            if status["dropped_this_cycle"]:
+                embed.add_field(
+                    name="Cycle Status",
+                    value="Locked (already dropped this cycle)",
+                    inline=False,
+                )
             if status["last_drop_game"] is not None:
                 embed.add_field(
                     name="Last Drop At Game #",

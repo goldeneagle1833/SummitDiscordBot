@@ -61,11 +61,12 @@ class TestDustRepo:
         assert code_exists("11111 11111 11111 11111")
 
     def test_increment_game_counter(self):
-        game_num, chance = increment_game_counter()
+        game_num, chance, locked = increment_game_counter()
         assert game_num == 1
         assert chance == pytest.approx(0.0002)
+        assert not locked
 
-        game_num, chance = increment_game_counter()
+        game_num, chance, locked = increment_game_counter()
         assert game_num == 2
         assert chance == pytest.approx(0.0004)
 
@@ -73,21 +74,31 @@ class TestDustRepo:
         for _ in range(99):
             increment_game_counter()
         # Game 100 should trigger reset
-        game_num, chance = increment_game_counter()
+        game_num, chance, locked = increment_game_counter()
         assert game_num == 100
         assert chance == pytest.approx(0.02)  # capped at 2%
 
         # Next game should be 1 (counter reset)
-        game_num, chance = increment_game_counter()
+        game_num, chance, locked = increment_game_counter()
         assert game_num == 1
         assert chance == pytest.approx(0.0002)
+        assert not locked
 
-    def test_drop_chance_caps_at_2_percent(self):
-        # At game 100: 100 * 0.0002 = 0.02 = 2%
-        for _ in range(99):
+    def test_locked_after_drop(self):
+        increment_game_counter()
+        record_drop(1)
+        game_num, chance, locked = increment_game_counter()
+        assert game_num == 2
+        assert locked
+
+    def test_lock_resets_at_100(self):
+        record_drop(1)
+        for _ in range(100):
             increment_game_counter()
-        game_num, chance = increment_game_counter()
-        assert chance == pytest.approx(0.02)
+        # After reset, should be unlocked
+        game_num, chance, locked = increment_game_counter()
+        assert game_num == 1
+        assert not locked
 
     def test_record_drop_and_status(self):
         record_drop(42)
@@ -97,8 +108,15 @@ class TestDustRepo:
     def test_get_drop_status(self):
         status = get_drop_status()
         assert status["games_since_reset"] == 0
-        assert status["current_chance"] == "0.00%"
+        assert status["current_chance"] == "0.02%"
         assert status["last_drop_game"] is None
+        assert not status["dropped_this_cycle"]
+
+    def test_get_drop_status_locked(self):
+        record_drop(5)
+        status = get_drop_status()
+        assert status["current_chance"] == "LOCKED"
+        assert status["dropped_this_cycle"]
 
 
 # ── Service Tests ──

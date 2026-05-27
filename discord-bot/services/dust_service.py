@@ -62,12 +62,17 @@ def try_dust_drop(player1_id, player1_name, player2_id, player2_name, season_nam
     if available == 0:
         return None
 
-    game_number, drop_chance = increment_game_counter()
+    game_number, drop_chance, locked = increment_game_counter()
+
+    # Already dropped a code this 100-game cycle
+    if locked:
+        logger.info(f"Dust drop skipped: game #{game_number}, cycle locked (already dropped)")
+        return None
 
     # Roll for drop
     roll = random.random()
     logger.info(
-        f"Dust drop roll: game #{game_number}, chance {drop_chance:.1%}, rolled {roll:.4f}"
+        f"Dust drop roll: game #{game_number}, chance {drop_chance:.2%}, rolled {roll:.4f}"
     )
     if roll > drop_chance:
         return None
@@ -105,7 +110,7 @@ def try_dust_drop(player1_id, player1_name, player2_id, player2_name, season_nam
         target_id=str(winner_id),
         target_name=winner_name,
         new_state={"season": season_name, "game_number": game_number},
-        details=f"{winner_name} won a dust code drop (game #{game_number}, chance was {drop_chance:.1%})",
+        details=f"{winner_name} won a dust code drop (game #{game_number}, chance was {drop_chance:.2%})",
     )
 
     logger.info(f"Dust code dropped to {winner_name} (game #{game_number})")

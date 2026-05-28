@@ -158,13 +158,19 @@ class EventRepository:
             pass
         return {}
 
-    def update_event_metadata(self, folder: str, name: str | None = None, rating: int | None = None) -> dict:
-        """Update display name and/or rating for an event.
+    def get_event_description(self, folder: str) -> str:
+        """Get the description for an event, or empty string if none set."""
+        overrides = self._load_metadata_overrides()
+        return overrides.get(folder, {}).get("description", "")
+
+    def update_event_metadata(self, folder: str, name: str | None = None, rating: int | None = None, description: str | None = None) -> dict:
+        """Update display name, rating, and/or description for an event.
 
         Args:
             folder: The event folder name.
             name: New display name (or None to keep current).
             rating: New star rating 1-3 (or None to keep current).
+            description: Event description text (or None to keep current).
 
         Returns:
             dict with "success" bool and optional "error" string.
@@ -178,6 +184,8 @@ class EventRepository:
             if not isinstance(rating, int) or rating < 1 or rating > 3:
                 return {"success": False, "error": "Rating must be 1, 2, or 3"}
             entry["rating"] = rating
+        if description is not None:
+            entry["description"] = description
 
         overrides[folder] = entry
 

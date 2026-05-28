@@ -36,10 +36,12 @@ def get_event_detail(event_folder: str):
 
         stats = repo.get_event_stats(event_folder)
         element_stats = repo.get_event_element_stats(event_folder)
+        description = repo.get_event_description(event_folder)
 
         return jsonify({
             "event_name": format_event_name(event_folder),
             "event_folder": event_folder,
+            "description": description,
             "top8_decks": decks["top8_decks"],
             "all_decks": decks["all_decks"],
             "card_data": stats["card_data"] if stats else [],
@@ -61,6 +63,7 @@ def update_event_metadata(event_folder):
 
     name = data.get("name")
     rating = data.get("rating")
+    description = data.get("description")
 
     if name is not None and (not isinstance(name, str) or not name.strip()):
         return jsonify({"success": False, "error": "Name must be a non-empty string"}), 400
@@ -69,11 +72,15 @@ def update_event_metadata(event_folder):
         if not isinstance(rating, int) or rating < 1 or rating > 3:
             return jsonify({"success": False, "error": "Rating must be 1, 2, or 3"}), 400
 
+    if description is not None and not isinstance(description, str):
+        return jsonify({"success": False, "error": "Description must be a string"}), 400
+
     repo = EventRepository()
     result = repo.update_event_metadata(
         event_folder,
         name=name.strip() if name else None,
         rating=rating,
+        description=description.strip() if description else description,
     )
 
     status = 200 if result.get("success") else 400

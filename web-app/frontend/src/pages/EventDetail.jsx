@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getEvent } from '@/api/events'
+import { getEvent, updateEventMetadata } from '@/api/events'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -264,6 +264,9 @@ export default function EventDetail() {
   const [error, setError] = useState(null)
   const [reorderDirty, setReorderDirty] = useState({})
   const [saving, setSaving] = useState(null)
+  const [editingDesc, setEditingDesc] = useState(false)
+  const [descDraft, setDescDraft] = useState('')
+  const [savingDesc, setSavingDesc] = useState(false)
 
   usePageTitle(data?.event_name || 'Event Detail')
 
@@ -306,13 +309,81 @@ export default function EventDetail() {
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
   if (!data) return null
 
-  const { event_name, top8_decks, all_decks, card_data, element_stats, is_admin } = data
+  const { event_name, top8_decks, all_decks, card_data, element_stats, is_admin, description } = data
+
+  const saveDescription = async () => {
+    setSavingDesc(true)
+    try {
+      const result = await updateEventMetadata(folder, { description: descDraft })
+      if (result.success) {
+        setData((prev) => ({ ...prev, description: descDraft }))
+        setEditingDesc(false)
+      }
+    } catch { /* ignore */ }
+    finally { setSavingDesc(false) }
+  }
+
+  // Convert URLs in description text to clickable links
+  const renderDescription = (text) => {
+    if (!text) return null
+    const urlRegex = /(https?:\/\/[^\s]+)/g
+    const parts = text.split(urlRegex)
+    return parts.map((part, i) =>
+      urlRegex.test(part) ? (
+        <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-secondary hover:underline break-all">{part}</a>
+      ) : (
+        <span key={i}>{part}</span>
+      )
+    )
+  }
 
   return (
     <div className="space-y-6">
       <Link to="/top-8" className="text-sm text-secondary hover:underline">&larr; Back to Events</Link>
 
       <h1 className="text-2xl font-display text-text-primary">{event_name}</h1>
+
+      {/* Description */}
+      {(description || is_admin) && (
+        <div className="bg-bg-surface border border-border rounded-lg p-4">
+          {description && !editingDesc && (
+            <p className="text-text-secondary text-sm whitespace-pre-wrap">{renderDescription(description)}</p>
+          )}
+          {is_admin && !editingDesc && (
+            <button
+              className="text-xs text-secondary hover:underline mt-2"
+              onClick={() => { setDescDraft(description || ''); setEditingDesc(true) }}
+            >
+              {description ? 'Edit Description' : 'Add Description'}
+            </button>
+          )}
+          {editingDesc && (
+            <div className="space-y-2">
+              <textarea
+                className="w-full bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm text-text-primary min-h-[80px]"
+                value={descDraft}
+                onChange={(e) => setDescDraft(e.target.value)}
+                placeholder="Event description (URLs will become clickable links)..."
+              />
+              <div className="flex gap-2">
+                <button
+                  className="text-xs bg-secondary text-black px-3 py-1 rounded font-semibold disabled:opacity-50"
+                  onClick={saveDescription}
+                  disabled={savingDesc}
+                >
+                  {savingDesc ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  className="text-xs bg-bg-raised text-text-muted px-3 py-1 rounded border border-border"
+                  onClick={() => setEditingDesc(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Element Charts */}
       {element_stats && (

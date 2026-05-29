@@ -336,14 +336,27 @@ class SeasonsService:
         match_id = f"web_{max_num + 1}"
 
         # Update paper ELO (unless repeat matchup)
+        winner_elo_change = 0
+        loser_elo_change = 0
         if is_repeat:
             logger.info(
                 "Repeat matchup: %s vs %s — paper ELO skipped", winner_id, loser_id
             )
         else:
             from services.paper_elo import update_paper_elo
-            update_paper_elo(winner_id, winner_name, did_win=True, opponent_id=loser_id)
-            update_paper_elo(loser_id, loser_name, did_win=False, opponent_id=winner_id)
+            (
+                _winner_new_elo, _winner_change,
+                _winner_new_event_elo, winner_event_elo_change,
+                event_active,
+            ) = update_paper_elo(winner_id, winner_name, did_win=True, opponent_id=loser_id)
+            (
+                _loser_new_elo, _loser_change,
+                _loser_new_event_elo, loser_event_elo_change,
+                _,
+            ) = update_paper_elo(loser_id, loser_name, did_win=False, opponent_id=winner_id)
+            if event_active:
+                winner_elo_change = winner_event_elo_change
+                loser_elo_change = loser_event_elo_change
 
         # Insert match record into match_reports_web
         now = datetime.utcnow().isoformat()
@@ -368,7 +381,7 @@ class SeasonsService:
                 "Admin reported match", "Admin reported match",
                 "Season creator reported match",
                 "{}", "{}", "{}",
-                0, 0, None, None,
+                winner_elo_change, loser_elo_change, None, None,
                 "Web", "ranked", season_id,
             ),
         )

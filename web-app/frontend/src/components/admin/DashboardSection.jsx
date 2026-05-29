@@ -202,6 +202,23 @@ function ActiveUsersCard() {
   )
 }
 
+function UniqueUsersCard() {
+  const [stats, setStats] = useState(null)
+
+  useEffect(() => {
+    get('/api/analytics/unique-visitors')
+      .then(d => { if (d.success) setStats(d) })
+      .catch(() => {})
+  }, [])
+
+  return (
+    <Link to="/admin/unique-users" className="bg-bg-raised border border-border rounded-lg p-4 text-center hover:border-purple-400/50 transition-colors cursor-pointer block">
+      <div className="text-2xl font-bold text-purple-400">{stats?.total?.toLocaleString() ?? '--'}</div>
+      <div className="text-xs text-text-muted mt-1 leading-tight">Unique Users</div>
+    </Link>
+  )
+}
+
 export default function DashboardSection() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -242,8 +259,9 @@ export default function DashboardSection() {
         <p className="text-xs text-text-muted">Community health at a glance</p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-3">
         <ActiveUsersCard />
+        <UniqueUsersCard />
         {summaryCards.map(c => (
           <div key={c.label} className="bg-bg-raised border border-border rounded-lg p-4 text-center">
             <div className="text-2xl font-bold text-secondary">{c.value ?? '--'}</div>

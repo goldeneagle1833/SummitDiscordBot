@@ -191,6 +191,116 @@ class AnalyticsRepository:
         except Exception:
             return []
 
+    # --- Unique Visitors (IP-based) ---
+
+    _unique_visitors_ready = False
+
+    def _ensure_unique_visitors_table(self):
+        """Create unique_visitors table if it doesn't exist."""
+        if AnalyticsRepository._unique_visitors_ready:
+            return
+        conn = self._connect()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS unique_visitors (
+                ip TEXT PRIMARY KEY,
+                first_seen TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+                last_seen TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+                visit_count INTEGER NOT NULL DEFAULT 1,
+                user_agent TEXT,
+                timezone TEXT
+            )
+        """)
+        conn.commit()
+        conn.close()
+        AnalyticsRepository._unique_visitors_ready = True
+
+    def record_unique_visitor(self, ip: str, user_agent: str | None = None,
+                              timezone: str | None = None):
+        """Record a visitor IP. Increments visit_count for returning visitors."""
+        if not ip:
+            return
+        try:
+            self._ensure_unique_visitors_table()
+            conn = self._connect()
+            conn.execute(
+                """INSERT INTO unique_visitors (ip, user_agent, timezone)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(ip)
+                   DO UPDATE SET last_seen = strftime('%Y-%m-%d %H:%M:%S', 'now'),
+                                visit_count = visit_count + 1,
+                                user_agent = COALESCE(excluded.user_agent, unique_visitors.user_agent),
+                                timezone = COALESCE(excluded.timezone, unique_visitors.timezone)""",
+                (ip, user_agent, timezone),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.debug(f"Failed to record unique visitor: {e}")
+
+    def get_unique_visitor_stats(self) -> dict:
+        """Get unique visitor statistics."""
+        try:
+            self._ensure_unique_visitors_table()
+            conn = self._connect()
+            cur = conn.cursor()
+
+            cur.execute("SELECT COUNT(*) FROM unique_visitors")
+            total = cur.fetchone()[0]
+
+            cur.execute(
+                "SELECT COUNT(*) FROM unique_visitors WHERE date(first_seen) = date('now')"
+            )
+            today = cur.fetchone()[0]
+
+            cur.execute(
+                "SELECT COUNT(*) FROM unique_visitors WHERE first_seen >= date('now', '-7 days')"
+            )
+            this_week = cur.fetchone()[0]
+
+            cur.execute(
+                "SELECT COUNT(*) FROM unique_visitors WHERE first_seen >= date('now', '-30 days')"
+            )
+            this_month = cur.fetchone()[0]
+
+            cur.execute(
+                """SELECT date(first_seen) as day, COUNT(*) as cnt
+                   FROM unique_visitors
+                   WHERE first_seen >= date('now', '-30 days')
+                   GROUP BY day ORDER BY day"""
+            )
+            daily_new = [{"date": r[0], "count": r[1]} for r in cur.fetchall()]
+
+            cur.execute(
+                """SELECT strftime('%Y-%W', first_seen) as week, COUNT(*) as cnt
+                   FROM unique_visitors
+                   GROUP BY week ORDER BY week"""
+            )
+            weekly_new = [{"week": r[0], "count": r[1]} for r in cur.fetchall()]
+
+            cur.execute("SELECT COUNT(*) FROM unique_visitors WHERE visit_count > 1")
+            returning = cur.fetchone()[0]
+
+            cur.execute(
+                """SELECT ip, first_seen, last_seen, visit_count, user_agent, timezone
+                   FROM unique_visitors ORDER BY visit_count DESC LIMIT 20"""
+            )
+            top_visitors = [{
+                "ip": r[0], "first_seen": r[1], "last_seen": r[2],
+                "visit_count": r[3], "user_agent": r[4], "timezone": r[5],
+            } for r in cur.fetchall()]
+
+            conn.close()
+            return {
+                "total": total, "today": today, "this_week": this_week,
+                "this_month": this_month, "returning": returning,
+                "daily_new": daily_new, "weekly_new": weekly_new,
+                "top_visitors": top_visitors,
+            }
+        except Exception as e:
+            logger.debug(f"Failed to get unique visitor stats: {e}")
+            return {"total": 0, "today": 0, "this_week": 0, "this_month": 0,
+                    "returning": 0, "daily_new": [], "weekly_new": [], "top_visitors": []}
+
     # --- Promo Banners ---
 
     def _ensure_promo_table(self):

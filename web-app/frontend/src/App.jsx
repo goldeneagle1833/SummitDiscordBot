@@ -53,6 +53,7 @@ const ExplorerStandings = lazy(() => import('@/pages/ExplorerStandings'))
 // Phase 7: Admin
 import AuditLog from '@/pages/admin/AuditLog'
 import ActiveConnections from '@/pages/admin/ActiveConnections'
+import UniqueUsers from '@/pages/admin/UniqueUsers'
 
 // Error pages
 import ErrorPage from '@/pages/ErrorPage'
@@ -163,6 +164,7 @@ const router = createBrowserRouter([
       // Phase 7: Admin
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
       { path: '/admin/active-connections', element: <AdminGuard><ActiveConnections /></AdminGuard> },
+      { path: '/admin/unique-users', element: <AdminGuard><UniqueUsers /></AdminGuard> },
       // Error & 404
       { path: '/error', element: <ErrorPage /> },
       { path: '*', element: <NotFound /> },

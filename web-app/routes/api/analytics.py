@@ -51,7 +51,9 @@ def heartbeat():
     ua = request.headers.get("User-Agent")
     path = data.get("path", "")[:200] if data.get("path") else None
     tz = data.get("timezone", "")[:60] if data.get("timezone") else None
-    AnalyticsRepository().record_heartbeat(session_id, ip=ip, user_agent=ua, path=path, timezone=tz)
+    repo = AnalyticsRepository()
+    repo.record_heartbeat(session_id, ip=ip, user_agent=ua, path=path, timezone=tz)
+    repo.record_unique_visitor(ip, user_agent=ua, timezone=tz)
     return "", 204
 
 
@@ -69,6 +71,14 @@ def active_sessions_list():
     """Get all active sessions with metadata (admin only)."""
     sessions = AnalyticsRepository().get_active_sessions()
     return jsonify({"success": True, "sessions": sessions})
+
+
+@analytics_bp.route("/analytics/unique-visitors", methods=["GET"])
+@require_admin
+def unique_visitors():
+    """Get unique visitor statistics (admin only)."""
+    stats = AnalyticsRepository().get_unique_visitor_stats()
+    return jsonify({"success": True, **stats})
 
 
 @analytics_bp.route("/analytics/stats", methods=["GET"])

@@ -19,6 +19,7 @@ import EditDeckModal from '@/components/player/EditDeckModal'
 import AdminControls from '@/components/player/AdminControls'
 import EloHistory from '@/components/player/EloHistory'
 import PlayerSeasons from '@/components/player/PlayerSeasons'
+import PrivacySettingsModal from '@/components/player/PrivacySettingsModal'
 import { useAuth } from '@/context/AuthContext'
 
 const PER_PAGE_OPTIONS = [15, 25, 50]
@@ -48,6 +49,7 @@ export default function Player() {
 
   // Modal state
   const [showReportModal, setShowReportModal] = useState(false)
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false)
   const [editDeck, setEditDeck] = useState(null)
 
   // Collapsible sections
@@ -131,6 +133,9 @@ export default function Player() {
 
   const stats = statsType === 'casual' ? data.casual_stats : data
   const pastEvents = events?.events?.filter((e) => !e.is_active) || []
+  const vis = data.profile_visibility || {}
+  const sectionVisible = (key) => data.is_owner || vis[key]
+  const isProfilePrivate = !data.is_owner && Object.values(vis).every((v) => !v)
 
   return (
     <div className="space-y-6">
@@ -169,37 +174,58 @@ export default function Player() {
         canSeeLifetime={canSeeLifetime}
       />
 
-      {/* Report Game button (owner only) */}
+      {/* Report Game & Privacy Settings buttons (owner only) */}
       {data.is_owner && (
-        <button
-          onClick={() => setShowReportModal(true)}
-          className="px-4 py-2 text-sm bg-secondary text-black rounded hover:opacity-90 transition-opacity"
-        >
-          Report a Game
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => setShowReportModal(true)}
+            className="px-4 py-2 text-sm bg-secondary text-black rounded hover:opacity-90 transition-opacity"
+          >
+            Report a Game
+          </button>
+          <button
+            onClick={() => setShowPrivacyModal(true)}
+            className="px-4 py-2 text-sm rounded border border-border text-text-muted hover:text-text-primary hover:border-secondary/50 transition-colors"
+          >
+            Privacy Settings
+          </button>
+        </div>
       )}
 
-      <OverallStats
-        data={data}
-        stats={stats}
-        statsType={statsType}
-        onStatsTypeChange={setStatsType}
-      />
+      {isProfilePrivate && (
+        <div className="text-center py-8 text-text-muted border border-border rounded-lg bg-bg-surface">
+          <p className="text-lg mb-1">This profile is private</p>
+          <p className="text-sm">This player has not made any profile sections public.</p>
+        </div>
+      )}
 
-      <EloHistory
-        eloHistory={data.elo_history}
-        currentElo={data.elo}
-        open={openSections.eloHistory}
-        onToggle={() => toggle('eloHistory')}
-      />
+      {sectionVisible('overall_stats') && (
+        <OverallStats
+          data={data}
+          stats={stats}
+          statsType={statsType}
+          onStatsTypeChange={setStatsType}
+        />
+      )}
 
-      <EloBrackets
-        brackets={data.elo_vs_brackets}
-        open={openSections.eloBrackets}
-        onToggle={() => toggle('eloBrackets')}
-      />
+      {sectionVisible('elo_history') && (
+        <EloHistory
+          eloHistory={data.elo_history}
+          currentElo={data.elo}
+          open={openSections.eloHistory}
+          onToggle={() => toggle('eloHistory')}
+        />
+      )}
 
-      {data.is_owner && (
+      {sectionVisible('elo_brackets') && (
+        <EloBrackets
+          brackets={data.elo_vs_brackets}
+          open={openSections.eloBrackets}
+          onToggle={() => toggle('eloBrackets')}
+        />
+      )}
+
+      {sectionVisible('avatar_performance') && (
         <AvatarPerformance
           avatars={data.avatar_performance}
           open={openSections.avatarPerf}
@@ -207,7 +233,7 @@ export default function Player() {
         />
       )}
 
-      {data.is_owner && (
+      {sectionVisible('avatar_matchups') && (
         <AvatarMatchups
           matchups={data.avatar_matchups}
           open={openSections.avatarMatchups}
@@ -215,7 +241,7 @@ export default function Player() {
         />
       )}
 
-      {data.is_owner && (
+      {sectionVisible('recent_decks') && (
         <RecentDecks
           decks={data.recent_decks}
           playerId={playerId}
@@ -224,7 +250,7 @@ export default function Player() {
         />
       )}
 
-      {data.is_owner && (
+      {sectionVisible('limited_arena') && (
         <LimitedArena
           limited={data.limited}
           playerId={playerId}
@@ -233,20 +259,22 @@ export default function Player() {
         />
       )}
 
-      <MatchHistoryTable
-        title="Ranked Match History"
-        matches={data.matches}
-        pagination={data.pagination}
-        playerId={playerId}
-        isOwner={data.is_owner}
-        perPage={perPage}
-        perPageOptions={PER_PAGE_OPTIONS}
-        onPageChange={(p) => refetch(undefined, p)}
-        onPerPageChange={(pp) => refetch(undefined, 1, undefined, undefined, pp)}
-        onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
-      />
+      {sectionVisible('match_history') && (
+        <MatchHistoryTable
+          title="Ranked Match History"
+          matches={data.matches}
+          pagination={data.pagination}
+          playerId={playerId}
+          isOwner={data.is_owner}
+          perPage={perPage}
+          perPageOptions={PER_PAGE_OPTIONS}
+          onPageChange={(p) => refetch(undefined, p)}
+          onPerPageChange={(pp) => refetch(undefined, 1, undefined, undefined, pp)}
+          onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
+        />
+      )}
 
-      {data.casual_matches?.length > 0 && (
+      {sectionVisible('match_history') && data.casual_matches?.length > 0 && (
         <MatchHistoryTable
           title="Casual Match History"
           subtitle="Casual games do not affect ELO ratings."
@@ -259,7 +287,7 @@ export default function Player() {
         />
       )}
 
-      {data.is_owner && <RecordedGames games={data.recorded_games} />}
+      {sectionVisible('recorded_games') && <RecordedGames games={data.recorded_games} />}
 
       {/* Modals */}
       {showReportModal && (
@@ -276,6 +304,14 @@ export default function Player() {
           currentUrl={editDeck.url}
           eloSource={eloSource}
           onClose={() => setEditDeck(null)}
+          onSaved={refreshCurrentPage}
+        />
+      )}
+
+      {showPrivacyModal && (
+        <PrivacySettingsModal
+          playerId={playerId}
+          onClose={() => setShowPrivacyModal(false)}
           onSaved={refreshCurrentPage}
         />
       )}

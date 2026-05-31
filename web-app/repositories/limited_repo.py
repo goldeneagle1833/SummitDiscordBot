@@ -436,3 +436,123 @@ def get_all_archived_matches_for_user(user_id):
             "timestamp": row[5],
         })
     return matches
+
+
+def get_trophy_runs(limit=20):
+    """Get completed 4-0 arena runs, newest first."""
+    create_limited_tables()
+    conn = _match_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT run_id, user_id, user_display_name, deck_url, wins, losses,
+                  starting_elo, created_at, completed_at
+           FROM limited_arena_runs
+           WHERE status = 'completed' AND wins = 4 AND losses <= 2
+           ORDER BY completed_at DESC
+           LIMIT ?""",
+        (limit,),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "run_id": r[0],
+            "user_id": r[1],
+            "user_display_name": r[2],
+            "deck_url": r[3],
+            "wins": r[4],
+            "losses": r[5],
+            "starting_elo": r[6],
+            "created_at": r[7],
+            "completed_at": r[8],
+        }
+        for r in rows
+    ]
+
+
+def get_run_matchups(run_id):
+    """Get detailed matchup info for a run, including opponent deck URLs when their run is done."""
+    create_limited_tables()
+    conn = _match_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT m.match_id, m.winner_id, m.winner_display_name,
+                  m.loser_id, m.loser_display_name,
+                  m.timestamp, m.winner_elo_change, m.loser_elo_change,
+                  m.match_time, m.curiosa_url_winner, m.curiosa_url_loser,
+                  m.winner_run_id, m.loser_run_id
+           FROM limited_match_records m
+           WHERE m.winner_run_id = ? OR m.loser_run_id = ?
+           ORDER BY m.timestamp ASC""",
+        (run_id, run_id),
+    )
+    rows = cur.fetchall()
+
+    # Look up opponent run statuses to decide deck visibility
+    run_ids = set()
+    for r in rows:
+        if r[11]:
+            run_ids.add(r[11])
+        if r[12]:
+            run_ids.add(r[12])
+    run_ids.discard(run_id)
+
+    opponent_run_status = {}
+    for rid in run_ids:
+        cur.execute("SELECT status FROM limited_arena_runs WHERE run_id = ?", (rid,))
+        row = cur.fetchone()
+        if row:
+            opponent_run_status[rid] = row[0]
+
+    conn.close()
+
+    matches = []
+    for r in rows:
+        is_viewer_winner = r[11] == run_id
+        opp_run_id = r[12] if is_viewer_winner else r[11]
+        opp_status = opponent_run_status.get(opp_run_id)
+        opp_run_done = opp_status in ("completed", "forfeited") if opp_status else True
+
+        match = {
+            "match_id": r[0],
+            "winner_id": r[1],
+            "winner_name": r[2],
+            "loser_id": r[3],
+            "loser_name": r[4],
+            "timestamp": r[5],
+            "winner_elo_change": r[6],
+            "loser_elo_change": r[7],
+            "match_time": r[8],
+            "viewer_deck_url": r[9] if is_viewer_winner else r[10],
+            "opponent_deck_url": (r[10] if is_viewer_winner else r[9]) if opp_run_done else None,
+        }
+        matches.append(match)
+
+    return matches
+
+
+def get_limited_leaderboard_stats():
+    """Get aggregate limited stats: total runs, total matches, trophy count."""
+    create_limited_tables()
+    conn = _match_conn()
+    cur = conn.cursor()
+
+    cur.execute("SELECT COUNT(*) FROM limited_arena_runs WHERE status IN ('completed', 'forfeited')")
+    total_runs = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM limited_match_records")
+    total_matches = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM limited_arena_runs WHERE status = 'completed' AND wins = 4")
+    trophy_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(DISTINCT user_id) FROM limited_arena_runs")
+    unique_players = cur.fetchone()[0]
+
+    conn.close()
+    return {
+        "total_runs": total_runs,
+        "total_matches": total_matches,
+        "trophy_runs": trophy_count,
+        "unique_players": unique_players,
+    }

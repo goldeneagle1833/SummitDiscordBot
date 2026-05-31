@@ -75,16 +75,24 @@ def get_paper_event_leaderboard():
 
 @leaderboard_bp.route("/leaderboard/limited")
 def get_limited_leaderboard():
-    """Get limited format ELO leaderboard. Requires pilot or admin."""
+    """Get limited format ELO leaderboard with stats and trophy runs."""
     from utils.auth import is_admin
     from services.pilots import is_pilot_active
 
     if not is_admin() and not is_pilot_active("limited_leaderboard"):
         return jsonify({"error": "Limited leaderboard is not currently available."}), 403
     try:
+        from repositories.limited_repo import get_trophy_runs, get_limited_leaderboard_stats
+
         service = LeaderboardService()
         leaderboard_data = service.get_limited_leaderboard()
-        return jsonify(leaderboard_data)
+        trophy_runs = get_trophy_runs(limit=20)
+        stats = get_limited_leaderboard_stats()
+        return jsonify({
+            "leaderboard": leaderboard_data,
+            "trophy_runs": trophy_runs,
+            "stats": stats,
+        })
     except Exception as e:
         logger.error(f"Error fetching limited leaderboard: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500

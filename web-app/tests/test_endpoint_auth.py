@@ -52,6 +52,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.deck_snapshot",
     "api.players.get_deck_stats",
     "api.players.set_display_name",
+    "api.players.get_profile_visibility",
+    "api.players.set_profile_visibility",
 
     # -- Card / avatar stats (public read-only) --
     "api.cards.get_cards",
@@ -126,11 +128,12 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.match_reporting.get_pending_confirmations",
     "api.match_reporting.search_opponents",
 
-    # -- Limited (API key checked internally) --
+    # -- Limited (API key checked internally / public read-only) --
     "api.limited.post_report_match",
     "api.limited.post_user_run",
     "api.limited.post_end_run",
     "api.limited.get_user_status",
+    "api.limited.get_run_matchups_endpoint",
 
     # -- Static file serving --
     "static",

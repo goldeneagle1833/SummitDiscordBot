@@ -15,6 +15,7 @@ from repositories.limited_repo import (
     get_latest_arena_run_from_archive,
     get_matches_for_archived_run,
     get_all_archived_matches_for_user,
+    get_run_matchups,
 )
 from services.limited_service import (
     MAX_ARENA_LOSSES,
@@ -232,6 +233,33 @@ def post_report_match():
     except Exception as e:
         logger.error("Unexpected error in POST report-match: %s", e)
         return jsonify({"success": False, "error": "Internal server error"}), 500
+
+
+@limited_bp.route("/run/<int:run_id>/matchups", methods=["GET"])
+def get_run_matchups_endpoint(run_id):
+    """Get detailed matchups for an arena run. Public endpoint.
+
+    Opponent deck URLs are only visible when the opponent's run is no longer active.
+    """
+    try:
+        run = get_arena_run(run_id)
+        if not run:
+            return jsonify({"error": "Run not found"}), 404
+
+        matchups = get_run_matchups(run_id)
+        return jsonify({
+            "run_id": run_id,
+            "user_id": run["user_id"],
+            "user_display_name": run["user_display_name"],
+            "deck_url": run["deck_url"],
+            "wins": run["wins"],
+            "losses": run["losses"],
+            "status": run["status"],
+            "matchups": matchups,
+        })
+    except Exception as e:
+        logger.error("Error fetching run matchups for run %d: %s", run_id, e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @limited_bp.route("/user/<user_id>/end-run", methods=["POST"])

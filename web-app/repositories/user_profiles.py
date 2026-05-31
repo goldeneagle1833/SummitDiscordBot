@@ -1,5 +1,6 @@
 """Repository for user profile storage in match_records.db."""
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -63,6 +64,7 @@ class UserProfileRepository:
             'locale': 'TEXT',
             'raw_oauth_data': 'TEXT',
             'custom_display_name': 'TEXT',
+            'profile_public_sections': 'TEXT',
         }
 
         # Add missing columns
@@ -313,6 +315,58 @@ class UserProfileRepository:
         row = cur.fetchone()
         conn.close()
         return row[0] if row and row[0] else None
+
+    # --- Profile visibility settings ---
+
+    VISIBILITY_SECTIONS = [
+        "overall_stats",
+        "elo_history",
+        "elo_brackets",
+        "avatar_performance",
+        "avatar_matchups",
+        "recent_decks",
+        "limited_arena",
+        "match_history",
+        "recorded_games",
+    ]
+
+    def get_profile_visibility(self, user_id: str) -> dict:
+        """Get profile visibility settings. All sections default to False (private)."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT profile_public_sections FROM user_profiles WHERE user_id = ?",
+            (str(user_id),),
+        )
+        row = cur.fetchone()
+        conn.close()
+
+        defaults = {s: False for s in self.VISIBILITY_SECTIONS}
+        if row and row[0]:
+            try:
+                saved = json.loads(row[0])
+                for key in self.VISIBILITY_SECTIONS:
+                    if key in saved:
+                        defaults[key] = bool(saved[key])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return defaults
+
+    def set_profile_visibility(self, user_id: str, sections: dict) -> bool:
+        """Update profile visibility settings. Only valid section keys are stored."""
+        filtered = {
+            k: bool(v) for k, v in sections.items() if k in self.VISIBILITY_SECTIONS
+        }
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_profiles SET profile_public_sections = ? WHERE user_id = ?",
+            (json.dumps(filtered), str(user_id)),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return updated
 
     def set_custom_display_name(self, user_id: str, provider: str, custom_name: str) -> bool:
         """Set the user's custom display name (one-time only).

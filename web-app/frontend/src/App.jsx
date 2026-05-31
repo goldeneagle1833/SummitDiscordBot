@@ -9,6 +9,7 @@ import Spinner from '@/components/ui/Spinner'
 
 // Phase 3: Core data pages
 import Leaderboard from '@/pages/Leaderboard'
+import LimitedLeaderboard from '@/pages/LimitedLeaderboard'
 import Season from '@/pages/Season'
 import Player from '@/pages/Player'
 import DeckStats from '@/pages/DeckStats'
@@ -122,7 +123,7 @@ const router = createBrowserRouter([
       { path: '/', element: <Home /> },
       // Phase 3: Core data pages
       { path: '/elo', element: <Leaderboard /> },
-      { path: '/elo/limited', element: <Leaderboard /> },
+      { path: '/elo/limited', element: <LimitedLeaderboard /> },
       { path: '/elo/global', element: <Leaderboard /> },
       { path: '/elo/server/:serverId', element: <Leaderboard /> },
       { path: '/season/:seasonId', element: <Season /> },

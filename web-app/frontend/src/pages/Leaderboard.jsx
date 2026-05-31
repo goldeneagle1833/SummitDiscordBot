@@ -277,12 +277,16 @@ export default function Leaderboard() {
         )}
       </section>
 
-      {/* Limited Leaderboard */}
+      {/* Limited Leaderboard Link */}
       {limitedData !== null && (
         <section className="mb-8">
-          <h2 className="text-xl font-display text-secondary mb-1">Limited Format Leaderboard</h2>
-          <p className="text-sm text-text-muted mb-4">Rankings for limited format matches</p>
-          <LeaderboardTable data={limitedData} columns="lifetime" />
+          <Link
+            to="/elo/limited"
+            className="block bg-bg-surface border border-border rounded-soft p-4 hover:border-primary/50 transition-colors"
+          >
+            <h2 className="text-xl font-display text-secondary mb-1">Limited Format Leaderboard</h2>
+            <p className="text-sm text-text-muted">View arena draft rankings, trophy runs, and limited stats &rarr;</p>
+          </Link>
         </section>
       )}
 

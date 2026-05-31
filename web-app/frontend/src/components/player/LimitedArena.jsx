@@ -1,6 +1,79 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import CollapsibleSection from './CollapsibleSection'
 import StatCard from './StatCard'
+import { getRunMatchups } from '@/api/leaderboard'
+
+function RunMatchups({ runId, userId }) {
+  const [matchups, setMatchups] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [open, setOpen] = useState(false)
+
+  const toggle = () => {
+    if (!open && matchups === null) {
+      setLoading(true)
+      getRunMatchups(runId)
+        .then((data) => setMatchups(data.matchups || []))
+        .catch(() => setMatchups([]))
+        .finally(() => setLoading(false))
+    }
+    setOpen(!open)
+  }
+
+  return (
+    <div>
+      <button
+        onClick={toggle}
+        className="text-xs text-secondary hover:underline"
+      >
+        {open ? 'Hide' : 'Matchups'}
+      </button>
+      {open && (
+        <div className="mt-2">
+          {loading && <span className="text-xs text-text-muted">Loading...</span>}
+          {matchups && matchups.length === 0 && (
+            <span className="text-xs text-text-muted">No matches recorded</span>
+          )}
+          {matchups && matchups.length > 0 && (
+            <div className="space-y-1">
+              {matchups.map((m) => {
+                const isWin = String(m.winner_id) === String(userId)
+                const oppName = isWin ? m.loser_name : m.winner_name
+                const oppId = isWin ? m.loser_id : m.winner_id
+                const eloChange = isWin ? m.winner_elo_change : m.loser_elo_change
+
+                return (
+                  <div key={m.match_id} className="flex items-center gap-2 text-xs">
+                    <span className={isWin ? 'text-accent-green font-medium' : 'text-accent-red font-medium'}>
+                      {isWin ? 'W' : 'L'}
+                    </span>
+                    <span className="text-text-muted">vs</span>
+                    <Link to={`/player/${oppId}`} className="text-secondary hover:underline">
+                      {oppName}
+                    </Link>
+                    <span className={isWin ? 'text-accent-green' : 'text-accent-red'}>
+                      ({isWin ? '+' : ''}{eloChange})
+                    </span>
+                    {m.opponent_deck_url && (
+                      <a
+                        href={m.opponent_deck_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-secondary/70 hover:text-secondary hover:underline"
+                      >
+                        [deck]
+                      </a>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function LimitedArena({ limited, playerId, open, onToggle }) {
   if (!limited?.has_data) return null
@@ -27,15 +100,19 @@ export default function LimitedArena({ limited, playerId, open, onToggle }) {
                   <th className="py-2 px-3 text-text-muted font-semibold">Deck</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Starting ELO</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Date</th>
+                  <th className="py-2 px-3 text-text-muted font-semibold">Details</th>
                 </tr>
               </thead>
               <tbody>
                 {limited.arena_runs.map((run) => (
-                  <tr key={run.run_id} className="border-b border-border/50">
+                  <tr key={run.run_id} className="border-b border-border/50 align-top">
                     <td className="py-2 px-3">
                       <span className="text-accent-green">{run.wins}</span>
                       {' - '}
                       <span className="text-accent-red">{run.losses}</span>
+                      {run.wins === 4 && run.losses === 0 && (
+                        <span className="ml-1" title="Perfect run!">&#127942;</span>
+                      )}
                     </td>
                     <td className="py-2 px-3 text-text-muted capitalize">{run.status}</td>
                     <td className="py-2 px-3">
@@ -47,6 +124,11 @@ export default function LimitedArena({ limited, playerId, open, onToggle }) {
                     </td>
                     <td className="py-2 px-3 text-text-muted">{run.starting_elo}</td>
                     <td className="py-2 px-3 text-text-muted">{run.created_at ?? '-'}</td>
+                    <td className="py-2 px-3">
+                      {run.status !== 'active' && (
+                        <RunMatchups runId={run.run_id} userId={playerId} />
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

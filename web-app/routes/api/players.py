@@ -1828,26 +1828,40 @@ def player_api(player_id):
     admin = is_admin()
     show_lifetime = admin or is_owner
 
+    # Profile visibility: check which sections the profile owner made public
+    profile_repo_vis = UserProfileRepository()
+    visibility = profile_repo_vis.get_profile_visibility(player_id_normalized)
+
+    def _section_visible(section_key):
+        """Return True if the section should be shown to the current viewer."""
+        if is_owner:
+            return True
+        return visibility.get(section_key, False)
+
+    # Build stats conditionally
+    show_overall = _section_visible("overall_stats")
+    show_match_history = _section_visible("match_history")
+
     return jsonify(
         {
             "id": player_id_normalized,
             "name": player_name,
             "elo": player_elo if show_lifetime else None,
-            "event_elo": event_elo,
-            "displayed_elo": displayed_elo if event_filter != "lifetime" or show_lifetime else event_elo,
+            "event_elo": event_elo if show_overall else None,
+            "displayed_elo": (displayed_elo if event_filter != "lifetime" or show_lifetime else event_elo) if show_overall else None,
             "rank": rank if show_lifetime else None,
-            "displayed_rank": displayed_rank if event_filter != "lifetime" or show_lifetime else 0,
+            "displayed_rank": (displayed_rank if event_filter != "lifetime" or show_lifetime else 0) if show_overall else 0,
             "event_filter": event_filter,
-            "wins": wins,
-            "losses": losses,
-            "win_rate": round(win_rate, 1),
-            "on_play_wins": first_player_wins,
-            "on_play_matches": first_player_matches,
-            "on_play_win_rate": round(first_player_win_rate, 1),
-            "on_draw_wins": draw_wins,
-            "on_draw_matches": draw_matches,
-            "on_draw_win_rate": round(draw_win_rate, 1),
-            "avg_match_time": round(avg_match_time, 1),
+            "wins": wins if show_overall else None,
+            "losses": losses if show_overall else None,
+            "win_rate": round(win_rate, 1) if show_overall else None,
+            "on_play_wins": first_player_wins if show_overall else None,
+            "on_play_matches": first_player_matches if show_overall else None,
+            "on_play_win_rate": round(first_player_win_rate, 1) if show_overall else None,
+            "on_draw_wins": draw_wins if show_overall else None,
+            "on_draw_matches": draw_matches if show_overall else None,
+            "on_draw_win_rate": round(draw_win_rate, 1) if show_overall else None,
+            "avg_match_time": round(avg_match_time, 1) if show_overall else None,
             "casual_stats": {
                 "wins": casual_wins,
                 "losses": casual_losses,
@@ -1860,43 +1874,44 @@ def player_api(player_id):
                 "on_draw_wins": casual_draw_wins,
                 "on_draw_matches": casual_draw_matches,
                 "on_draw_win_rate": round(casual_draw_win_rate, 1),
-            },
-            "avatar_performance": avatar_performance if is_owner else [],
-            "avatar_matchups": avatar_matchups if is_owner else [],
-            "recent_decks": recent_decks,
-            "elo_history": elo_history,
-            "matches": match_history,
-            "casual_matches": casual_match_history,
-            "recorded_games": recorded_games if is_owner else [],
+            } if show_overall else None,
+            "avatar_performance": avatar_performance if _section_visible("avatar_performance") else [],
+            "avatar_matchups": avatar_matchups if _section_visible("avatar_matchups") else [],
+            "recent_decks": recent_decks if _section_visible("recent_decks") else [],
+            "elo_history": elo_history if _section_visible("elo_history") else [],
+            "matches": match_history if show_match_history else [],
+            "casual_matches": casual_match_history if show_match_history else [],
+            "recorded_games": recorded_games if _section_visible("recorded_games") else [],
             "is_owner": is_owner,
             "is_admin": is_admin(),
             "has_custom_display_name": has_custom_display_name,
-            "elo_vs_brackets": elo_vs_brackets,
+            "elo_vs_brackets": elo_vs_brackets if _section_visible("elo_brackets") else [],
+            "profile_visibility": visibility,
             "pagination": {
                 "current_page": page,
                 "per_page": per_page,
-                "total_matches": total_ranked_matches,
-                "total_pages": total_pages,
-                "has_previous": page > 1,
-                "has_next": page < total_pages,
+                "total_matches": total_ranked_matches if show_match_history else 0,
+                "total_pages": total_pages if show_match_history else 0,
+                "has_previous": page > 1 if show_match_history else False,
+                "has_next": page < total_pages if show_match_history else False,
             },
             "casual_pagination": {
                 "current_page": casual_page,
                 "per_page": per_page,
-                "total_matches": total_casual_matches,
-                "total_pages": total_casual_pages,
-                "has_previous": casual_page > 1,
-                "has_next": casual_page < total_casual_pages,
+                "total_matches": total_casual_matches if show_match_history else 0,
+                "total_pages": total_casual_pages if show_match_history else 0,
+                "has_previous": casual_page > 1 if show_match_history else False,
+                "has_next": casual_page < total_casual_pages if show_match_history else False,
             },
             # Dual ELO system fields
             "elo_source": source,
             "has_web_matches": has_web_matches,
             "has_bot_matches": has_bot_matches,
-            "paper_elo": paper_elo,
-            "online_elo": online_elo,
-            "paper_event_elo": paper_event_elo,
-            "online_event_elo": online_event_elo,
-            "limited": limited_stats,
+            "paper_elo": paper_elo if show_overall else None,
+            "online_elo": online_elo if show_overall else None,
+            "paper_event_elo": paper_event_elo if show_overall else None,
+            "online_event_elo": online_event_elo if show_overall else None,
+            "limited": limited_stats if _section_visible("limited_arena") else None,
         }
     )
 
@@ -1979,3 +1994,38 @@ def set_display_name(player_id):
     except Exception as e:
         logger.error(f"Error setting display name: {e}", exc_info=True)
         return jsonify({"error": "Failed to set display name"}), 500
+
+
+@players_bp.route("/player/<player_id>/visibility", methods=["GET"])
+def get_profile_visibility(player_id):
+    """Get profile visibility settings for a player."""
+    profile_repo = UserProfileRepository()
+    sections = profile_repo.get_profile_visibility(str(player_id))
+    return jsonify({"sections": sections})
+
+
+@players_bp.route("/player/<player_id>/visibility", methods=["POST"])
+def set_profile_visibility(player_id):
+    """Update profile visibility settings (owner only)."""
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+
+    logged_in_id_str = str(logged_in_user_id)
+    player_id_normalized = str(player_id)
+    if logged_in_id_str.startswith("google_"):
+        logged_in_id_str = logged_in_id_str[7:]
+    if player_id_normalized.startswith("google_"):
+        player_id_normalized = player_id_normalized[7:]
+
+    if logged_in_id_str != player_id_normalized and not is_admin():
+        return jsonify({"error": "You can only update your own visibility settings"}), 403
+
+    data = request.get_json()
+    if not data or "sections" not in data:
+        return jsonify({"error": "sections field is required"}), 400
+
+    profile_repo = UserProfileRepository()
+    profile_repo.set_profile_visibility(str(player_id), data["sections"])
+    updated = profile_repo.get_profile_visibility(str(player_id))
+    return jsonify({"success": True, "sections": updated})

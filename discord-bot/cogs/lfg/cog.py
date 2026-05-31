@@ -56,7 +56,7 @@ from utils.text import find_best_command_match
 from utils.checks import is_bot_admin
 from services.pilots_service import is_pilot_active
 from services.limited_service import limited_winner_report, limited_elo_only_report, get_run_summary, forfeit_arena_run, start_arena_run
-from repositories.limited_repo import get_active_arena_run, get_limited_elo, upsert_limited_elo
+from repositories.limited_repo import get_active_arena_run, get_limited_elo, upsert_limited_elo, get_all_limited_standings, get_limited_wins_count, get_limited_losses_count
 
 logger = logging.getLogger("discord_bot")
 
@@ -68,6 +68,7 @@ class LFGCog(commands.Cog):
         self.check_expired_queue.start()  # Start the background task
         self.cleanup_old_status_messages.start()  # Clean up old messages on startup
         self.cleanup_old_leaderboard_messages.start()  # Clean up old leaderboard on startup
+        self.cleanup_old_limited_leaderboard_messages.start()  # Clean up old limited leaderboard on startup
         self.cleanup_database_pairings.start()  # Clean up old pairings periodically
 
     def cog_unload(self):
@@ -75,6 +76,7 @@ class LFGCog(commands.Cog):
         self.check_expired_queue.cancel()
         self.cleanup_old_status_messages.cancel()
         self.cleanup_old_leaderboard_messages.cancel()
+        self.cleanup_old_limited_leaderboard_messages.cancel()
         self.cleanup_database_pairings.cancel()
 
     @tasks.loop(count=1)
@@ -154,6 +156,34 @@ class LFGCog(commands.Cog):
     @cleanup_old_leaderboard_messages.before_loop
     async def before_cleanup_old_leaderboard_messages(self):
         """Wait for bot to be ready before cleanup"""
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(count=1)
+    async def cleanup_old_limited_leaderboard_messages(self):
+        """One-time cleanup of old limited leaderboard messages on bot startup"""
+        try:
+            channel = self.bot.get_channel(config.LIMITED_LEADERBOARD_CHANNEL_ID)
+            if not channel:
+                return
+
+            async for message in channel.history(limit=50):
+                if (
+                    message.author.id == self.bot.user.id
+                    and message.embeds
+                    and any("Limited Leaderboard" in str(e.title) for e in message.embeds)
+                ):
+                    try:
+                        await message.delete()
+                    except Exception:
+                        pass
+
+            await self.update_limited_leaderboard()
+            logger.info("Old limited leaderboard messages cleaned up and new one created")
+        except Exception as e:
+            logger.error(f"Error cleaning up old limited leaderboard messages: {e}")
+
+    @cleanup_old_limited_leaderboard_messages.before_loop
+    async def before_cleanup_old_limited_leaderboard_messages(self):
         await self.bot.wait_until_ready()
 
     async def update_leaderboard(self):
@@ -389,6 +419,105 @@ class LFGCog(commands.Cog):
                     await leaderboard_channel.send(f"Error updating leaderboard: ```{e}```")
             except Exception:
                 pass
+
+    async def update_limited_leaderboard(self):
+        """Update the limited leaderboard in the designated channel."""
+        channel_id = config.LIMITED_LEADERBOARD_CHANNEL_ID
+        channel = self.bot.get_channel(channel_id)
+
+        if not channel:
+            logger.warning(f"Limited leaderboard channel {channel_id} not found")
+            return
+
+        try:
+            standings = get_all_limited_standings()
+
+            # Count total limited matches
+            total_matches = 0
+            player_data = []
+            for s in standings:
+                uid = s["user_id"]
+                wins = get_limited_wins_count(uid)
+                losses = get_limited_losses_count(uid)
+                total_matches += wins
+                display_name = s["display_name"]
+
+                if not display_name or display_name == "None":
+                    try:
+                        user = await self.bot.fetch_user(uid)
+                        display_name = user.global_name or user.display_name
+                    except Exception:
+                        display_name = f"User#{uid}"
+
+                player_data.append({
+                    "display_name": display_name,
+                    "elo": s["elo"],
+                    "wins": wins,
+                    "losses": losses,
+                    "games": wins + losses,
+                })
+
+            embed = discord.Embed(
+                title=f"Limited Leaderboard ({total_matches} matches played)",
+                color=discord.Color.purple(),
+            )
+
+            if player_data:
+                # Overall Rankings (top 16)
+                lines = []
+                for idx, p in enumerate(player_data[:16], 1):
+                    win_pct = round(p["wins"] / p["games"] * 100) if p["games"] > 0 else 0
+                    lines.append(
+                        f"{idx}. {p['display_name']} - {p['elo']} ({p['wins']}W/{p['losses']}L, {win_pct}%)"
+                    )
+                embed.add_field(
+                    name="Rankings",
+                    value="\n".join(lines) if lines else "No players ranked yet.",
+                    inline=False,
+                )
+            else:
+                embed.add_field(
+                    name="Rankings",
+                    value="No players ranked yet.",
+                    inline=False,
+                )
+
+            embed.set_footer(text="Lifetime limited ELO \u2022 Updates after each match")
+
+            # Send new message, delete old one
+            new_message = await channel.send(embed=embed)
+            old_message_id = lfg_state.limited_leaderboard_message_id
+            lfg_state.limited_leaderboard_message_id = new_message.id
+
+            if old_message_id:
+                try:
+                    old_message = await channel.fetch_message(old_message_id)
+                    await old_message.delete()
+                except discord.NotFound:
+                    pass
+                except Exception as e:
+                    logger.warning(f"Could not delete old limited leaderboard message: {e}")
+
+            # Clean up any other limited leaderboard messages from this bot
+            async for message in channel.history(limit=50):
+                if (
+                    message.id != new_message.id
+                    and message.author.id == self.bot.user.id
+                    and message.embeds
+                    and any(
+                        "Limited Leaderboard" in str(e.title)
+                        for e in message.embeds
+                    )
+                ):
+                    try:
+                        await message.delete()
+                    except Exception:
+                        pass
+
+            logger.info("Limited leaderboard updated successfully")
+
+        except Exception as e:
+            logger.error(f"Error updating limited leaderboard: {e}", exc_info=True)
 
     @tasks.loop(minutes=1)
     async def check_expired_queue(self):
@@ -2187,6 +2316,8 @@ class LFGCog(commands.Cog):
                 f"Admin {ctx.author} (ID: {ctx.author.id}) reported limited match: {winner_name} beat {loser_name}"
             )
 
+            await self.update_limited_leaderboard()
+
         except Exception as e:
             error_embed = discord.Embed(
                 title="Limited Match Report Failed",
@@ -2288,6 +2419,8 @@ class LFGCog(commands.Cog):
             logger.info(
                 f"Limited ELO-only match reported by {ctx.author} (ID: {ctx.author.id}): {winner_name} beat {loser_name}"
             )
+
+            await self.update_limited_leaderboard()
 
         except Exception as e:
             error_embed = discord.Embed(
@@ -2916,6 +3049,23 @@ class LFGCog(commands.Cog):
         else:
             logger.error(f"refresh_leaderboard error: {error}")
             await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def refresh_limited_leaderboard(self, ctx):
+        """Admin command to force-refresh the limited leaderboard. Usage: !refresh_limited_leaderboard"""
+        try:
+            channel_id = config.LIMITED_LEADERBOARD_CHANNEL_ID
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                await ctx.send(f"Limited leaderboard channel not found! `LIMITED_LEADERBOARD_CHANNEL_ID` = `{channel_id}`")
+                return
+            await ctx.send(f"Refreshing limited leaderboard in <#{channel_id}>...")
+            await self.update_limited_leaderboard()
+            await ctx.send("Limited leaderboard refreshed.")
+        except Exception as e:
+            logger.error(f"Failed to refresh limited leaderboard: {e}")
+            await ctx.send(f"Error refreshing limited leaderboard: {e}")
 
     @commands.command()
     @is_bot_admin()

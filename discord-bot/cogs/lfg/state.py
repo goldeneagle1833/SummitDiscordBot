@@ -41,6 +41,9 @@ lfg_status_message_id = None
 # Store the leaderboard message ID
 leaderboard_message_id = None
 
+# Store the limited leaderboard message ID
+limited_leaderboard_message_id = None
+
 # In-memory ladder challenge queues
 # Key: challenger_id, Value: {challenger_global, joiners: [...], message, channel, challenge_id, task}
 active_ladder_challenges = {}

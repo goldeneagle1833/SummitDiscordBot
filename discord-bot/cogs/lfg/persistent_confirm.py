@@ -427,6 +427,12 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
         except Exception as e:
             logger.error(f"Failed to update leaderboard: {e}")
 
+        if data["match_type"] == "limited":
+            try:
+                await lfg_cog.update_limited_leaderboard()
+            except Exception as e:
+                logger.error(f"Failed to update limited leaderboard: {e}")
+
     # ── ladder announcement ──
     if data.get("ladder_info") and lfg_cog:
         try:

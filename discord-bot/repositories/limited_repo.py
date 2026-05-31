@@ -363,6 +363,50 @@ def upsert_limited_elo(user_id: int, display_name: str, new_elo: int):
     conn.close()
 
 
+def get_all_limited_standings() -> list[dict]:
+    """Get all limited ELO standings sorted by ELO descending."""
+    create_limited_tables()
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT user_id, user_display_name, elo FROM limited_elo ORDER BY elo DESC"
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {"user_id": row[0], "display_name": row[1], "elo": row[2]}
+        for row in rows
+    ]
+
+
+def get_limited_wins_count(user_id: int) -> int:
+    """Get total limited match wins for a user."""
+    create_limited_tables()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM limited_match_records WHERE winner_id = ?",
+        (user_id,),
+    )
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
+
+
+def get_limited_losses_count(user_id: int) -> int:
+    """Get total limited match losses for a user."""
+    create_limited_tables()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM limited_match_records WHERE loser_id = ?",
+        (user_id,),
+    )
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
+
+
 # --- Limited Pairings Operations ---
 
 

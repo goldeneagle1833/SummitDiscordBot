@@ -199,14 +199,12 @@ export default function Player() {
         </div>
       )}
 
-      {sectionVisible('overall_stats') && (
-        <OverallStats
-          data={data}
-          stats={stats}
-          statsType={statsType}
-          onStatsTypeChange={setStatsType}
-        />
-      )}
+      <OverallStats
+        data={data}
+        stats={stats}
+        statsType={statsType}
+        onStatsTypeChange={setStatsType}
+      />
 
       {sectionVisible('elo_history') && (
         <EloHistory
@@ -250,14 +248,12 @@ export default function Player() {
         />
       )}
 
-      {sectionVisible('limited_arena') && (
-        <LimitedArena
-          limited={data.limited}
-          playerId={playerId}
-          open={openSections.limitedArena}
-          onToggle={() => toggle('limitedArena')}
-        />
-      )}
+      <LimitedArena
+        limited={data.limited}
+        playerId={playerId}
+        open={openSections.limitedArena}
+        onToggle={() => toggle('limitedArena')}
+      />
 
       {sectionVisible('match_history') && (
         <MatchHistoryTable

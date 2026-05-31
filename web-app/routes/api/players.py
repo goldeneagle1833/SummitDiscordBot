@@ -1839,7 +1839,6 @@ def player_api(player_id):
         return visibility.get(section_key, False)
 
     # Build stats conditionally
-    show_overall = _section_visible("overall_stats")
     show_match_history = _section_visible("match_history")
 
     return jsonify(
@@ -1847,21 +1846,21 @@ def player_api(player_id):
             "id": player_id_normalized,
             "name": player_name,
             "elo": player_elo if show_lifetime else None,
-            "event_elo": event_elo if show_overall else None,
-            "displayed_elo": (displayed_elo if event_filter != "lifetime" or show_lifetime else event_elo) if show_overall else None,
+            "event_elo": event_elo,
+            "displayed_elo": displayed_elo if event_filter != "lifetime" or show_lifetime else event_elo,
             "rank": rank if show_lifetime else None,
-            "displayed_rank": (displayed_rank if event_filter != "lifetime" or show_lifetime else 0) if show_overall else 0,
+            "displayed_rank": displayed_rank if event_filter != "lifetime" or show_lifetime else 0,
             "event_filter": event_filter,
-            "wins": wins if show_overall else None,
-            "losses": losses if show_overall else None,
-            "win_rate": round(win_rate, 1) if show_overall else None,
-            "on_play_wins": first_player_wins if show_overall else None,
-            "on_play_matches": first_player_matches if show_overall else None,
-            "on_play_win_rate": round(first_player_win_rate, 1) if show_overall else None,
-            "on_draw_wins": draw_wins if show_overall else None,
-            "on_draw_matches": draw_matches if show_overall else None,
-            "on_draw_win_rate": round(draw_win_rate, 1) if show_overall else None,
-            "avg_match_time": round(avg_match_time, 1) if show_overall else None,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": round(win_rate, 1),
+            "on_play_wins": first_player_wins,
+            "on_play_matches": first_player_matches,
+            "on_play_win_rate": round(first_player_win_rate, 1),
+            "on_draw_wins": draw_wins,
+            "on_draw_matches": draw_matches,
+            "on_draw_win_rate": round(draw_win_rate, 1),
+            "avg_match_time": round(avg_match_time, 1),
             "casual_stats": {
                 "wins": casual_wins,
                 "losses": casual_losses,
@@ -1874,7 +1873,7 @@ def player_api(player_id):
                 "on_draw_wins": casual_draw_wins,
                 "on_draw_matches": casual_draw_matches,
                 "on_draw_win_rate": round(casual_draw_win_rate, 1),
-            } if show_overall else None,
+            },
             "avatar_performance": avatar_performance if _section_visible("avatar_performance") else [],
             "avatar_matchups": avatar_matchups if _section_visible("avatar_matchups") else [],
             "recent_decks": recent_decks if _section_visible("recent_decks") else [],
@@ -1907,11 +1906,11 @@ def player_api(player_id):
             "elo_source": source,
             "has_web_matches": has_web_matches,
             "has_bot_matches": has_bot_matches,
-            "paper_elo": paper_elo if show_overall else None,
-            "online_elo": online_elo if show_overall else None,
-            "paper_event_elo": paper_event_elo if show_overall else None,
-            "online_event_elo": online_event_elo if show_overall else None,
-            "limited": limited_stats if _section_visible("limited_arena") else None,
+            "paper_elo": paper_elo,
+            "online_elo": online_elo,
+            "paper_event_elo": paper_event_elo,
+            "online_event_elo": online_event_elo,
+            "limited": limited_stats,
         }
     )
 

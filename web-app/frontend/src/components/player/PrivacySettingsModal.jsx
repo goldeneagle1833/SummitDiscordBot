@@ -2,25 +2,21 @@ import { useState, useEffect } from 'react'
 import { getProfileVisibility, setProfileVisibility } from '@/api/players'
 
 const SECTION_LABELS = {
-  overall_stats: 'Overall Stats',
   elo_history: 'ELO History',
   elo_brackets: 'ELO Brackets',
   avatar_performance: 'Avatar Performance',
   avatar_matchups: 'Avatar Matchups',
   recent_decks: 'Recent Decks',
-  limited_arena: 'Limited Arena',
   match_history: 'Match History',
   recorded_games: 'Self-Reported Games',
 }
 
 const SECTION_ORDER = [
-  'overall_stats',
   'elo_history',
   'elo_brackets',
   'avatar_performance',
   'avatar_matchups',
   'recent_decks',
-  'limited_arena',
   'match_history',
   'recorded_games',
 ]

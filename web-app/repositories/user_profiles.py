@@ -319,13 +319,11 @@ class UserProfileRepository:
     # --- Profile visibility settings ---
 
     VISIBILITY_SECTIONS = [
-        "overall_stats",
         "elo_history",
         "elo_brackets",
         "avatar_performance",
         "avatar_matchups",
         "recent_decks",
-        "limited_arena",
         "match_history",
         "recorded_games",
     ]

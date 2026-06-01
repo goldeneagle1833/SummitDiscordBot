@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getEvent, updateEventMetadata, updateEventDecks } from '@/api/events'
+import { getEvent, updateEventMetadata, updateEventDecks, refreshEvent } from '@/api/events'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -271,6 +271,9 @@ export default function EventDetail() {
   const [deckUrls, setDeckUrls] = useState('')
   const [deckSaving, setDeckSaving] = useState(false)
   const [deckError, setDeckError] = useState(null)
+  const [deckResult, setDeckResult] = useState(null) // { decks_added, warnings }
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshResult, setRefreshResult] = useState(null)
 
   usePageTitle(data?.event_name || 'Event Detail')
 
@@ -313,6 +316,7 @@ export default function EventDetail() {
     setDeckModal({ table, mode })
     setDeckUrls('')
     setDeckError(null)
+    setDeckResult(null)
   }
 
   const handleDeckSubmit = useCallback(async () => {
@@ -321,6 +325,7 @@ export default function EventDetail() {
     if (!urls.length) return
     setDeckSaving(true)
     setDeckError(null)
+    setDeckResult(null)
     try {
       const result = await updateEventDecks(folder, {
         table: deckModal.table,
@@ -328,10 +333,16 @@ export default function EventDetail() {
         urls,
       })
       if (result.success) {
-        setDeckModal(null)
         // Reload event data
         const fresh = await getEvent(folder)
         setData(fresh)
+        // Show result summary (warnings or counts) before closing
+        if (result.warnings?.length) {
+          setDeckResult(result)
+          setDeckUrls('')
+        } else {
+          setDeckModal(null)
+        }
       } else {
         setDeckError(result.error || 'Failed to update decks')
       }
@@ -341,6 +352,20 @@ export default function EventDetail() {
       setDeckSaving(false)
     }
   }, [deckModal, deckUrls, folder])
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    setRefreshResult(null)
+    try {
+      const result = await refreshEvent(folder)
+      if (result.success) {
+        const fresh = await getEvent(folder)
+        setData(fresh)
+        setRefreshResult(result)
+      }
+    } catch { /* ignore */ }
+    finally { setRefreshing(false) }
+  }, [folder])
 
   if (loading) return <Spinner className="py-20" />
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
@@ -378,7 +403,34 @@ export default function EventDetail() {
     <div className="space-y-6">
       <Link to="/top-8" className="text-sm text-secondary hover:underline">&larr; Back to Events</Link>
 
-      <h1 className="text-2xl font-display text-text-primary">{event_name}</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-display text-text-primary">{event_name}</h1>
+        {is_admin && (
+          <button
+            className="text-xs bg-bg-raised text-text-muted px-3 py-1.5 rounded border border-border hover:text-text disabled:opacity-50"
+            onClick={handleRefresh}
+            disabled={refreshing}
+          >
+            {refreshing ? 'Refreshing...' : 'Refresh from Curiosa'}
+          </button>
+        )}
+      </div>
+
+      {refreshResult && (
+        <div className="p-3 bg-bg-surface rounded-lg border border-border">
+          <p className="text-xs text-green-400">
+            {refreshResult.refreshed} deck{refreshResult.refreshed !== 1 ? 's' : ''} refreshed from Curiosa.
+          </p>
+          {refreshResult.warnings?.length > 0 && (
+            <div className="mt-1">
+              <p className="text-xs text-yellow-400">{refreshResult.warnings.length} warning{refreshResult.warnings.length !== 1 ? 's' : ''}:</p>
+              <ul className="text-xs text-text-muted space-y-0.5 mt-0.5">
+                {refreshResult.warnings.map((w, i) => <li key={i}>{w}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Description */}
       {(description || is_admin) && (
@@ -578,13 +630,28 @@ export default function EventDetail() {
               <p className="text-accent-red text-xs mb-3">{deckError}</p>
             )}
 
+            {deckResult && (
+              <div className="mb-3 p-3 bg-bg-raised rounded border border-border">
+                <p className="text-xs text-green-400 mb-1">{deckResult.decks_added} deck{deckResult.decks_added !== 1 ? 's' : ''} added successfully.</p>
+                {deckResult.warnings?.length > 0 && (
+                  <div className="mt-1">
+                    <p className="text-xs text-yellow-400 mb-1">Failed to fetch {deckResult.warnings.length} URL{deckResult.warnings.length !== 1 ? 's' : ''}:</p>
+                    <ul className="text-xs text-text-muted space-y-0.5">
+                      {deckResult.warnings.map((w, i) => <li key={i} className="truncate">{w}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
               <button
                 className="text-xs px-3 py-1.5 rounded border border-border text-text-muted hover:text-text"
                 onClick={() => setDeckModal(null)}
               >
-                Cancel
+                {deckResult ? 'Done' : 'Cancel'}
               </button>
+              {!deckResult && (
               <button
                 className={`text-xs px-3 py-1.5 rounded font-semibold disabled:opacity-50 ${
                   deckModal.mode === 'replace' ? 'bg-accent-red text-white' : 'bg-secondary text-black'
@@ -594,6 +661,7 @@ export default function EventDetail() {
               >
                 {deckSaving ? 'Saving...' : deckModal.mode === 'replace' ? 'Replace Decks' : 'Add Decks'}
               </button>
+              )}
             </div>
           </div>
         </div>

@@ -621,16 +621,23 @@ class EventRepository:
                 logger.error(f"Failed to write top8 JSON: {e}")
                 return {"success": False, "error": "Failed to write top 8 data"}
 
-        # Write full event JSON (bulk decks combined with top8)
-        all_decks = list(top8_decks) + (bulk_decks or [])
-        if all_decks:
+        # Write full event JSON only if there are bulk decks beyond the top 8
+        # (no point duplicating top8 into all participants)
+        if bulk_decks:
             full_path = event_path / f"{folder_name}.json"
             try:
                 with open(full_path, "w", encoding="utf-8") as f:
-                    json.dump(all_decks, f, indent=2, ensure_ascii=False)
+                    json.dump(bulk_decks, f, indent=2, ensure_ascii=False)
             except Exception as e:
                 logger.error(f"Failed to write full event JSON: {e}")
                 # top8 was already written, partial success
+
+        # Generate card stats CSVs
+        all_decks_for_stats = list(top8_decks) + (bulk_decks or [])
+        if top8_decks:
+            self.generate_card_stats_csv(folder_name, top8_decks, "top8")
+        if all_decks_for_stats:
+            self.generate_card_stats_csv(folder_name, all_decks_for_stats)
 
         # Write latest_event.json for the "recent event" banner
         try:
@@ -644,6 +651,81 @@ class EventRepository:
             pass  # Non-critical
 
         return {"success": True, "folder": folder_name}
+
+    def generate_card_stats_csv(self, event_folder: str, decks: list[dict], suffix: str = "") -> None:
+        """Generate card usage statistics CSV from deck JSON data.
+
+        Produces a CSV with columns matching the cardPercentages.py format:
+        Name, Type, Element, Count, Rarity, Set, Average_Played, Percent_of_Decks_with_at_least_one_copy
+
+        Args:
+            event_folder: The event folder name.
+            decks: List of deck data dicts (Curiosa format).
+            suffix: Filename suffix, e.g. "top8" for top8-only stats.
+        """
+        event_path = self._validate_event_folder(event_folder)
+        if event_path is None or not event_path.exists() or not decks:
+            return
+
+        total_decks = len(decks)
+        # Collect card stats: {card_name: {type, element, rarity, set, total_qty, decks_with}}
+        card_stats = {}
+
+        for deck in decks:
+            # Track which cards appear in this deck (for % of decks calculation)
+            seen_in_deck = set()
+            for group_name in ("avatar", "spellbook", "atlas"):
+                group = deck.get(group_name, [])
+                for card in group:
+                    name = card.get("name", "")
+                    if not name:
+                        continue
+                    qty = card.get("quantity", 1)
+
+                    if name not in card_stats:
+                        # Determine element - cards can have "elements" as string
+                        elements = card.get("elements", "None")
+                        card_stats[name] = {
+                            "type": card.get("type", "Unknown"),
+                            "element": elements,
+                            "rarity": card.get("rarity", "Unknown"),
+                            "set": "",
+                            "total_qty": 0,
+                            "decks_with": 0,
+                        }
+
+                    card_stats[name]["total_qty"] += qty
+                    if name not in seen_in_deck:
+                        card_stats[name]["decks_with"] += 1
+                        seen_in_deck.add(name)
+
+        # Build CSV rows
+        rows = [["Name", "Type", "Element", "Count", "Rarity", "Set", "Average_Played",
+                 "Percent_of_Decks_with_at_least_one_copy"]]
+
+        for name, stats in sorted(card_stats.items()):
+            decks_with = stats["decks_with"]
+            avg_played = round(stats["total_qty"] / decks_with) if decks_with else 0
+            deck_percent = round((decks_with / total_decks) * 100) if total_decks else 0
+            rows.append([
+                name,
+                stats["type"],
+                stats["element"],
+                stats["total_qty"],
+                stats["rarity"],
+                stats["set"],
+                avg_played,
+                deck_percent,
+            ])
+
+        csv_name = f"{event_folder}{suffix}.csv"
+        csv_path = event_path / csv_name
+        try:
+            with open(csv_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerows(rows)
+        except Exception as e:
+            logger.error(f"Failed to write card stats CSV {csv_name}: {e}")
 
     def update_event_decks(self, event_folder: str, table_type: str, new_decks: list[dict], mode: str = "replace") -> dict:
         """Add or replace decks in an existing event's JSON file.
@@ -684,4 +766,94 @@ class EventRepository:
             logger.error(f"Failed to write {table_type} JSON for {event_folder}: {e}")
             return {"success": False, "error": f"Failed to write {table_type} data"}
 
+        # Regenerate card stats CSV for the updated list
+        suffix = "top8" if table_type == "top8" else ""
+        self.generate_card_stats_csv(event_folder, new_decks, suffix)
+
         return {"success": True}
+
+    def refresh_event_decks(self, event_folder: str, curiosa_service) -> dict:
+        """Re-fetch all deck data from Curiosa using stored deck IDs.
+
+        Reads existing JSON files, extracts deck IDs, fetches fresh data,
+        and rewrites both JSON files and CSVs.
+
+        Args:
+            event_folder: The event folder name.
+            curiosa_service: CuriosaService instance for API calls.
+
+        Returns:
+            dict with success, counts, and any errors.
+        """
+        files = self._find_json_files(event_folder)
+        if files is None:
+            return {"success": False, "error": "Event not found"}
+
+        errors = []
+        refreshed = {"top8": 0, "all": 0}
+
+        # Refresh top8
+        if files["top8"] and files["top8"].exists():
+            try:
+                with open(files["top8"], "r", encoding="utf-8") as f:
+                    old_decks = json.load(f)
+            except Exception:
+                old_decks = []
+
+            new_decks = []
+            for deck in old_decks:
+                deck_id = deck.get("id", "")
+                if not deck_id:
+                    new_decks.append(deck)  # Keep as-is if no ID
+                    continue
+                fresh = curiosa_service.fetch_deck_by_id(deck_id)
+                if fresh:
+                    new_decks.append(fresh)
+                    refreshed["top8"] += 1
+                else:
+                    errors.append(f"Failed to refresh deck: {deck.get('name', deck_id)}")
+                    new_decks.append(deck)  # Keep old data on failure
+
+            try:
+                with open(files["top8"], "w", encoding="utf-8") as f:
+                    json.dump(new_decks, f, indent=2, ensure_ascii=False)
+                self.generate_card_stats_csv(event_folder, new_decks, "top8")
+            except Exception as e:
+                logger.error(f"Failed to write refreshed top8: {e}")
+                errors.append("Failed to save refreshed top 8 data")
+
+        # Refresh full/all
+        if files["full"] and files["full"].exists():
+            try:
+                with open(files["full"], "r", encoding="utf-8") as f:
+                    old_decks = json.load(f)
+            except Exception:
+                old_decks = []
+
+            new_decks = []
+            for deck in old_decks:
+                deck_id = deck.get("id", "")
+                if not deck_id:
+                    new_decks.append(deck)
+                    continue
+                fresh = curiosa_service.fetch_deck_by_id(deck_id)
+                if fresh:
+                    new_decks.append(fresh)
+                    refreshed["all"] += 1
+                else:
+                    errors.append(f"Failed to refresh deck: {deck.get('name', deck_id)}")
+                    new_decks.append(deck)
+
+            try:
+                with open(files["full"], "w", encoding="utf-8") as f:
+                    json.dump(new_decks, f, indent=2, ensure_ascii=False)
+                self.generate_card_stats_csv(event_folder, new_decks)
+            except Exception as e:
+                logger.error(f"Failed to write refreshed all decks: {e}")
+                errors.append("Failed to save refreshed all participants data")
+
+        total = refreshed["top8"] + refreshed["all"]
+        result = {"success": True, "refreshed": total}
+        if errors:
+            result["warnings"] = errors
+        return result

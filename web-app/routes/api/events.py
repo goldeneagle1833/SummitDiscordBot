@@ -173,8 +173,11 @@ def create_event():
     repo = EventRepository()
     result = repo.create_event(title, top8_decks, bulk_decks if bulk_decks else None)
 
-    if result.get("success") and errors:
-        result["warnings"] = errors
+    if result.get("success"):
+        result["top8_added"] = len(top8_decks)
+        result["bulk_added"] = len(bulk_decks)
+        if errors:
+            result["warnings"] = errors
 
     status = 200 if result.get("success") else 400
     return jsonify(result), status
@@ -225,8 +228,24 @@ def update_event_decks(event_folder):
     repo = EventRepository()
     result = repo.update_event_decks(event_folder, table_type, decks, mode)
 
-    if result.get("success") and errors:
-        result["warnings"] = errors
+    if result.get("success"):
+        result["decks_added"] = len(decks)
+        if errors:
+            result["warnings"] = errors
+
+    status = 200 if result.get("success") else 400
+    return jsonify(result), status
+
+
+@events_bp.route("/events/<event_folder>/refresh", methods=["POST"])
+@require_admin
+def refresh_event(event_folder):
+    """Re-fetch all deck data from Curiosa for an event (admin only)."""
+    from services.curiosa import CuriosaService
+    curiosa = CuriosaService()
+
+    repo = EventRepository()
+    result = repo.refresh_event_decks(event_folder, curiosa)
 
     status = 200 if result.get("success") else 400
     return jsonify(result), status

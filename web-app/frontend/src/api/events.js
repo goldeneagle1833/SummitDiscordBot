@@ -10,3 +10,4 @@ export const createEvent = ({ title, ranked_urls, bulk_urls }) =>
   post('/api/events/create', { title, ranked_urls, bulk_urls })
 export const updateEventDecks = (folder, { table, mode, urls }) =>
   post(`/api/events/${folder}/decks`, { table, mode, urls })
+export const refreshEvent = (folder) => post(`/api/events/${folder}/refresh`)

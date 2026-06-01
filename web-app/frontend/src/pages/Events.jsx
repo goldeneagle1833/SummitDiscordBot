@@ -24,6 +24,7 @@ export default function Events() {
   const [createForm, setCreateForm] = useState({ title: '', ranked: Array(8).fill(''), bulk: '' })
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState(null)
+  const [createResult, setCreateResult] = useState(null)
 
   useEffect(() => {
     getEventsWithAdmin()
@@ -95,6 +96,7 @@ export default function Events() {
   const openCreateModal = () => {
     setCreateForm({ title: '', ranked: Array(8).fill(''), bulk: '' })
     setCreateError(null)
+    setCreateResult(null)
     setCreateModal(true)
   }
 
@@ -102,6 +104,7 @@ export default function Events() {
     if (!createForm.title.trim()) return
     setCreating(true)
     setCreateError(null)
+    setCreateResult(null)
     try {
       const bulk_urls = createForm.bulk
         .split('\n')
@@ -113,10 +116,15 @@ export default function Events() {
         bulk_urls,
       })
       if (result.success) {
-        setCreateModal(false)
         // Reload events
         const data = await getEventsWithAdmin()
         setEvents(data.events || [])
+        // Show result summary or close
+        if (result.warnings?.length) {
+          setCreateResult(result)
+        } else {
+          setCreateModal(false)
+        }
       } else {
         setCreateError(result.error || 'Failed to create event')
       }
@@ -307,20 +315,38 @@ export default function Events() {
               <p className="text-accent-red text-xs mb-3">{createError}</p>
             )}
 
+            {createResult && (
+              <div className="mb-3 p-3 bg-bg-raised rounded border border-border">
+                <p className="text-xs text-green-400 mb-1">
+                  Event created: {createResult.top8_added} top 8 deck{createResult.top8_added !== 1 ? 's' : ''}, {createResult.bulk_added} other deck{createResult.bulk_added !== 1 ? 's' : ''} added.
+                </p>
+                {createResult.warnings?.length > 0 && (
+                  <div className="mt-1">
+                    <p className="text-xs text-yellow-400 mb-1">Failed to fetch {createResult.warnings.length} URL{createResult.warnings.length !== 1 ? 's' : ''}:</p>
+                    <ul className="text-xs text-text-muted space-y-0.5">
+                      {createResult.warnings.map((w, i) => <li key={i} className="truncate">{w}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
               <button
                 className="text-xs px-3 py-1.5 rounded border border-border text-text-muted hover:text-text"
                 onClick={() => setCreateModal(false)}
               >
-                Cancel
+                {createResult ? 'Done' : 'Cancel'}
               </button>
-              <button
-                className="text-xs bg-secondary text-black px-3 py-1.5 rounded font-semibold disabled:opacity-50"
-                onClick={handleCreate}
-                disabled={creating || !createForm.title.trim()}
-              >
-                {creating ? 'Creating...' : 'Create Event'}
-              </button>
+              {!createResult && (
+                <button
+                  className="text-xs bg-secondary text-black px-3 py-1.5 rounded font-semibold disabled:opacity-50"
+                  onClick={handleCreate}
+                  disabled={creating || !createForm.title.trim()}
+                >
+                  {creating ? 'Creating...' : 'Create Event'}
+                </button>
+              )}
             </div>
           </div>
         </div>

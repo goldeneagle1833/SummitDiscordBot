@@ -55,3 +55,19 @@ class CuriosaService:
         except (json.JSONDecodeError, IndexError, KeyError) as e:
             logger.warning(f"Failed to parse Curiosa response: {e}")
             return "{}"
+
+    def fetch_deck_by_id(self, deck_id: str) -> dict | None:
+        """Fetch a single deck by its Curiosa ID. Returns deck dict or None."""
+        try:
+            response = requests.get(
+                f"{self.BASE_URL}/decks?ids={deck_id}",
+                timeout=30,
+            )
+            if response.status_code != 200:
+                return None
+            data = response.json()
+            if isinstance(data, list) and len(data) > 0:
+                return data[0]
+        except Exception as e:
+            logger.warning(f"Failed to fetch deck {deck_id}: {e}")
+        return None

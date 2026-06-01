@@ -1,6 +1,5 @@
 """API routes for event deck management."""
 
-import json
 import logging
 
 from flask import Blueprint, jsonify, request
@@ -133,35 +132,28 @@ def create_event():
     if not isinstance(bulk_urls, list):
         return jsonify({"success": False, "error": "bulk_urls must be a list"}), 400
 
+    # Filter to valid non-empty URLs
+    valid_ranked = [u.strip() for u in ranked_urls if u and isinstance(u, str) and u.strip()]
+    valid_bulk = [u.strip() for u in bulk_urls if u and isinstance(u, str) and u.strip()]
+
+    if not valid_ranked and not valid_bulk:
+        return jsonify({"success": False, "error": "At least one deck URL is required"}), 400
+
     from services.curiosa import CuriosaService
     curiosa = CuriosaService()
 
-    # Fetch ranked deck data
-    top8_decks = []
+    # Batch fetch all URLs (ranked + bulk) in minimal API calls
     errors = []
-    for i, url in enumerate(ranked_urls):
-        if not url or not isinstance(url, str) or not url.strip():
-            continue
-        url = url.strip()
-        deck_json = curiosa.fetch_deck_data(url)
-        if deck_json == "{}":
-            errors.append(f"Failed to fetch deck for place {i + 1}: {url}")
-            continue
-        deck_data = json.loads(deck_json)
-        top8_decks.append(deck_data)
-
-    # Fetch bulk deck data
+    top8_decks = []
     bulk_decks = []
-    for url in bulk_urls:
-        if not url or not isinstance(url, str) or not url.strip():
-            continue
-        url = url.strip()
-        deck_json = curiosa.fetch_deck_data(url)
-        if deck_json == "{}":
-            errors.append(f"Failed to fetch bulk deck: {url}")
-            continue
-        deck_data = json.loads(deck_json)
-        bulk_decks.append(deck_data)
+
+    if valid_ranked:
+        top8_decks, ranked_errors = curiosa.fetch_decks_batch(valid_ranked)
+        errors.extend(ranked_errors)
+
+    if valid_bulk:
+        bulk_decks, bulk_errors = curiosa.fetch_decks_batch(valid_bulk)
+        errors.extend(bulk_errors)
 
     if not top8_decks and not bulk_decks:
         return jsonify({
@@ -206,17 +198,7 @@ def update_event_decks(event_folder):
     from services.curiosa import CuriosaService
     curiosa = CuriosaService()
 
-    decks = []
-    errors = []
-    for url in urls:
-        if not url or not isinstance(url, str) or not url.strip():
-            continue
-        url = url.strip()
-        deck_json = curiosa.fetch_deck_data(url)
-        if deck_json == "{}":
-            errors.append(f"Failed to fetch: {url}")
-            continue
-        decks.append(json.loads(deck_json))
+    decks, errors = curiosa.fetch_decks_batch(urls)
 
     if not decks:
         return jsonify({

@@ -831,11 +831,67 @@ class EventRepository:
 
         return {"success": True}
 
+    def _refresh_json_file(self, json_path, curiosa_service, label: str) -> tuple[int, list[str]]:
+        """Refresh decks in a single JSON file using batched Curiosa API calls.
+
+        Returns (refreshed_count, error_list).
+        """
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                old_decks = json.load(f)
+        except Exception:
+            old_decks = []
+
+        if not old_decks:
+            return 0, []
+
+        # Collect deck IDs, preserving order
+        deck_ids = []
+        old_by_id = {}
+        no_id_decks = []
+        for deck in old_decks:
+            deck_id = deck.get("id", "")
+            if deck_id:
+                deck_ids.append(deck_id)
+                old_by_id[deck_id] = deck
+            else:
+                no_id_decks.append(deck)
+
+        if not deck_ids:
+            return 0, []
+
+        fresh_decks, failed_ids = curiosa_service.fetch_decks_by_ids(deck_ids)
+        fresh_by_id = {d.get("id"): d for d in fresh_decks}
+
+        # Rebuild list in original order
+        errors = []
+        new_decks = []
+        refreshed = 0
+        for deck in old_decks:
+            deck_id = deck.get("id", "")
+            if not deck_id:
+                new_decks.append(deck)
+                continue
+            if deck_id in fresh_by_id:
+                new_decks.append(fresh_by_id[deck_id])
+                refreshed += 1
+            else:
+                errors.append(f"Failed to refresh {label} deck: {deck.get('name', deck_id)}")
+                new_decks.append(deck)  # Keep old data on failure
+
+        try:
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(new_decks, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Failed to write refreshed {label}: {e}")
+            errors.append(f"Failed to save refreshed {label} data")
+
+        return refreshed, errors
+
     def refresh_event_decks(self, event_folder: str, curiosa_service) -> dict:
         """Re-fetch all deck data from Curiosa using stored deck IDs.
 
-        Reads existing JSON files, extracts deck IDs, fetches fresh data,
-        and rewrites both JSON files and CSVs.
+        Uses batched API calls to minimize request count and respect rate limits.
 
         Args:
             event_folder: The event folder name.
@@ -849,70 +905,33 @@ class EventRepository:
             return {"success": False, "error": "Event not found"}
 
         errors = []
-        refreshed = {"top8": 0, "all": 0}
+        total_refreshed = 0
 
         # Refresh top8
         if files["top8"] and files["top8"].exists():
-            try:
-                with open(files["top8"], "r", encoding="utf-8") as f:
-                    old_decks = json.load(f)
-            except Exception:
-                old_decks = []
-
-            new_decks = []
-            for deck in old_decks:
-                deck_id = deck.get("id", "")
-                if not deck_id:
-                    new_decks.append(deck)  # Keep as-is if no ID
-                    continue
-                fresh = curiosa_service.fetch_deck_by_id(deck_id)
-                if fresh:
-                    new_decks.append(fresh)
-                    refreshed["top8"] += 1
-                else:
-                    errors.append(f"Failed to refresh deck: {deck.get('name', deck_id)}")
-                    new_decks.append(deck)  # Keep old data on failure
-
-            try:
-                with open(files["top8"], "w", encoding="utf-8") as f:
-                    json.dump(new_decks, f, indent=2, ensure_ascii=False)
-                self.generate_card_stats_csv(event_folder, new_decks, "top8")
-            except Exception as e:
-                logger.error(f"Failed to write refreshed top8: {e}")
-                errors.append("Failed to save refreshed top 8 data")
+            count, errs = self._refresh_json_file(files["top8"], curiosa_service, "top 8")
+            total_refreshed += count
+            errors.extend(errs)
+            if count > 0:
+                try:
+                    with open(files["top8"], "r", encoding="utf-8") as f:
+                        self.generate_card_stats_csv(event_folder, json.load(f), "top8")
+                except Exception:
+                    pass
 
         # Refresh full/all
         if files["full"] and files["full"].exists():
-            try:
-                with open(files["full"], "r", encoding="utf-8") as f:
-                    old_decks = json.load(f)
-            except Exception:
-                old_decks = []
+            count, errs = self._refresh_json_file(files["full"], curiosa_service, "all participants")
+            total_refreshed += count
+            errors.extend(errs)
+            if count > 0:
+                try:
+                    with open(files["full"], "r", encoding="utf-8") as f:
+                        self.generate_card_stats_csv(event_folder, json.load(f))
+                except Exception:
+                    pass
 
-            new_decks = []
-            for deck in old_decks:
-                deck_id = deck.get("id", "")
-                if not deck_id:
-                    new_decks.append(deck)
-                    continue
-                fresh = curiosa_service.fetch_deck_by_id(deck_id)
-                if fresh:
-                    new_decks.append(fresh)
-                    refreshed["all"] += 1
-                else:
-                    errors.append(f"Failed to refresh deck: {deck.get('name', deck_id)}")
-                    new_decks.append(deck)
-
-            try:
-                with open(files["full"], "w", encoding="utf-8") as f:
-                    json.dump(new_decks, f, indent=2, ensure_ascii=False)
-                self.generate_card_stats_csv(event_folder, new_decks)
-            except Exception as e:
-                logger.error(f"Failed to write refreshed all decks: {e}")
-                errors.append("Failed to save refreshed all participants data")
-
-        total = refreshed["top8"] + refreshed["all"]
-        result = {"success": True, "refreshed": total}
+        result = {"success": True, "refreshed": total_refreshed}
         if errors:
             result["warnings"] = errors
         return result

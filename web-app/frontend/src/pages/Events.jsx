@@ -129,7 +129,10 @@ export default function Events() {
         setCreateError(result.error || 'Failed to create event')
       }
     } catch (err) {
-      setCreateError(err.message || 'Failed to create event')
+      const msg = err.status === 502 || err.status === 504 || err.message === 'Failed to fetch'
+        ? 'Request timed out — the server may still be processing. Try with fewer URLs or check the event list.'
+        : err.message || 'Failed to create event'
+      setCreateError(msg)
     } finally {
       setCreating(false)
     }

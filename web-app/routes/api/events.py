@@ -237,6 +237,17 @@ def update_event_decks(event_folder):
     return jsonify(result), status
 
 
+@events_bp.route("/events/<event_folder>", methods=["DELETE"])
+@require_admin
+def delete_event(event_folder):
+    """Delete an event and all its data (admin only)."""
+    repo = EventRepository()
+    result = repo.delete_event(event_folder)
+
+    status = 200 if result.get("success") else 400
+    return jsonify(result), status
+
+
 @events_bp.route("/events/<event_folder>/refresh", methods=["POST"])
 @require_admin
 def refresh_event(event_folder):

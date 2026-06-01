@@ -4,6 +4,7 @@ import json
 import csv
 import logging
 import re
+import shutil
 import time
 from pathlib import Path
 
@@ -436,30 +437,45 @@ class EventRepository:
         }
 
     def _load_all_decks(self, event_folder: str) -> list[dict] | None:
-        """Load all deck JSON data for an event (full list preferred, falls back to top8)."""
-        event_path = self._validate_event_folder(event_folder)
-        if event_path is None or not event_path.exists():
+        """Load all deck JSON data for an event, combining top8 and full lists.
+
+        Merges both files (deduplicating by deck ID) so element stats
+        cover all decks in the event.
+        """
+        files = self._find_json_files(event_folder)
+        if files is None:
             return None
 
-        json_files = list(event_path.glob("*.json"))
-        full_json = None
-        top8_json = None
+        all_decks = []
+        seen_ids = set()
 
-        for json_file in json_files:
-            if "top8" in json_file.name.lower() or "top 8" in json_file.name.lower():
-                top8_json = json_file
-            elif json_file.name.lower().startswith(event_folder.lower()):
-                full_json = json_file
+        # Load top8 first
+        if files["top8"] and files["top8"].exists():
+            try:
+                with open(files["top8"], "r", encoding="utf-8") as f:
+                    for deck in json.load(f):
+                        deck_id = deck.get("id", "")
+                        all_decks.append(deck)
+                        if deck_id:
+                            seen_ids.add(deck_id)
+            except Exception:
+                pass
 
-        json_path = full_json or top8_json
-        if not json_path:
-            return None
+        # Add full/all participants, skipping duplicates
+        if files["full"] and files["full"].exists() and files["full"] != files.get("top8"):
+            try:
+                with open(files["full"], "r", encoding="utf-8") as f:
+                    for deck in json.load(f):
+                        deck_id = deck.get("id", "")
+                        if deck_id and deck_id in seen_ids:
+                            continue
+                        all_decks.append(deck)
+                        if deck_id:
+                            seen_ids.add(deck_id)
+            except Exception:
+                pass
 
-        try:
-            with open(json_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return None
+        return all_decks if all_decks else None
 
     def get_event_element_stats(self, event_folder: str) -> dict | None:
         """Compute element presence and dominant element distribution from event deck data."""
@@ -769,6 +785,49 @@ class EventRepository:
         # Regenerate card stats CSV for the updated list
         suffix = "top8" if table_type == "top8" else ""
         self.generate_card_stats_csv(event_folder, new_decks, suffix)
+
+        return {"success": True}
+
+    def delete_event(self, event_folder: str) -> dict:
+        """Delete an event folder and all its contents.
+
+        Also removes the event from metadata overrides and saved order.
+
+        Args:
+            event_folder: The event folder name.
+
+        Returns:
+            dict with "success" bool and optional "error" string.
+        """
+        event_path = self._validate_event_folder(event_folder)
+        if event_path is None or not event_path.exists():
+            return {"success": False, "error": "Event not found"}
+
+        try:
+            shutil.rmtree(event_path)
+        except Exception as e:
+            logger.error(f"Failed to delete event folder {event_folder}: {e}")
+            return {"success": False, "error": "Failed to delete event folder"}
+
+        # Remove from metadata overrides
+        try:
+            overrides = self._load_metadata_overrides()
+            if event_folder in overrides:
+                del overrides[event_folder]
+                with open(self._get_metadata_file(), "w", encoding="utf-8") as f:
+                    json.dump(overrides, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass  # Non-critical
+
+        # Remove from saved order
+        try:
+            saved_order = self._load_event_order()
+            if saved_order and event_folder in saved_order:
+                saved_order.remove(event_folder)
+                with open(self._get_order_file(), "w", encoding="utf-8") as f:
+                    json.dump(saved_order, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass  # Non-critical
 
         return {"success": True}
 

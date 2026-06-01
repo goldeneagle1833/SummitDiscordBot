@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { getEvent, updateEventMetadata, updateEventDecks, refreshEvent } from '@/api/events'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { getEvent, updateEventMetadata, updateEventDecks, refreshEvent, deleteEvent } from '@/api/events'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -259,6 +259,7 @@ function CardStatsTable({ cardData }) {
 /* ---- Main Page ---- */
 export default function EventDetail() {
   const { folder } = useParams()
+  const navigate = useNavigate()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -274,6 +275,8 @@ export default function EventDetail() {
   const [deckResult, setDeckResult] = useState(null) // { decks_added, warnings }
   const [refreshing, setRefreshing] = useState(false)
   const [refreshResult, setRefreshResult] = useState(null)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   usePageTitle(data?.event_name || 'Event Detail')
 
@@ -367,6 +370,17 @@ export default function EventDetail() {
     finally { setRefreshing(false) }
   }, [folder])
 
+  const handleDelete = useCallback(async () => {
+    setDeleting(true)
+    try {
+      const result = await deleteEvent(folder)
+      if (result.success) {
+        navigate('/top-8')
+      }
+    } catch { /* ignore */ }
+    finally { setDeleting(false) }
+  }, [folder, navigate])
+
   if (loading) return <Spinner className="py-20" />
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
   if (!data) return null
@@ -406,13 +420,21 @@ export default function EventDetail() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-display text-text-primary">{event_name}</h1>
         {is_admin && (
-          <button
-            className="text-xs bg-bg-raised text-text-muted px-3 py-1.5 rounded border border-border hover:text-text disabled:opacity-50"
-            onClick={handleRefresh}
-            disabled={refreshing}
-          >
-            {refreshing ? 'Refreshing...' : 'Refresh from Curiosa'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              className="text-xs bg-bg-raised text-text-muted px-3 py-1.5 rounded border border-border hover:text-text disabled:opacity-50"
+              onClick={handleRefresh}
+              disabled={refreshing}
+            >
+              {refreshing ? 'Refreshing...' : 'Refresh from Curiosa'}
+            </button>
+            <button
+              className="text-xs bg-accent-red/20 text-accent-red px-3 py-1.5 rounded border border-accent-red/30 hover:bg-accent-red/30 disabled:opacity-50"
+              onClick={() => setDeleteConfirm(true)}
+            >
+              Delete Event
+            </button>
+          </div>
         )}
       </div>
 
@@ -662,6 +684,33 @@ export default function EventDetail() {
                 {deckSaving ? 'Saving...' : deckModal.mode === 'replace' ? 'Replace Decks' : 'Add Decks'}
               </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setDeleteConfirm(false)}>
+          <div className="bg-bg-surface border border-border rounded-lg p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-display text-accent-red mb-2">Delete Event</h3>
+            <p className="text-sm text-text-muted mb-4">
+              Are you sure you want to delete <span className="font-semibold text-text-primary">{event_name}</span>? This will permanently remove all deck data, statistics, and metadata for this event.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                className="text-xs px-3 py-1.5 rounded border border-border text-text-muted hover:text-text"
+                onClick={() => setDeleteConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="text-xs bg-accent-red text-white px-3 py-1.5 rounded font-semibold disabled:opacity-50"
+                onClick={handleDelete}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting...' : 'Delete Permanently'}
+              </button>
             </div>
           </div>
         </div>

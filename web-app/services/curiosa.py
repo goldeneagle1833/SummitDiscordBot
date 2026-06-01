@@ -2,15 +2,29 @@
 
 import json
 import logging
+import time
 import requests
 
 logger = logging.getLogger(__name__)
+
+# Rate limit: minimum seconds between Curiosa API requests
+CURIOSA_REQUEST_DELAY = 20
 
 
 class CuriosaService:
     """Service for interacting with Curiosa API."""
 
     BASE_URL = "https://curiosa.io/api"
+
+    def __init__(self):
+        self._last_request_time = 0
+
+    def _rate_limit(self):
+        """Wait if needed to respect the delay between API requests."""
+        elapsed = time.time() - self._last_request_time
+        if elapsed < CURIOSA_REQUEST_DELAY and self._last_request_time > 0:
+            time.sleep(CURIOSA_REQUEST_DELAY - elapsed)
+        self._last_request_time = time.time()
 
     def get_deck_id_from_url(self, url: str) -> str:
         """Extract deck ID from Curiosa URL."""
@@ -29,6 +43,7 @@ class CuriosaService:
                 logger.warning("Could not extract deck ID from URL")
                 return "{}"
 
+            self._rate_limit()
             response = requests.get(
                 f"{self.BASE_URL}/decks?ids={deck_id}",
                 timeout=30,
@@ -59,6 +74,7 @@ class CuriosaService:
     def fetch_deck_by_id(self, deck_id: str) -> dict | None:
         """Fetch a single deck by its Curiosa ID. Returns deck dict or None."""
         try:
+            self._rate_limit()
             response = requests.get(
                 f"{self.BASE_URL}/decks?ids={deck_id}",
                 timeout=30,

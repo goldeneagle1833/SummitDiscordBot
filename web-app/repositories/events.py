@@ -583,3 +583,105 @@ class EventRepository:
             "element_data": element_data,
             "card_data": card_data,
         }
+
+    def create_event(self, folder_name: str, top8_decks: list[dict], bulk_decks: list[dict] | None = None) -> dict:
+        """Create a new event folder with deck JSON files.
+
+        Args:
+            folder_name: Name for the event folder.
+            top8_decks: List of deck data dicts for the top 8 JSON file.
+            bulk_decks: Optional list of additional deck data for the full event JSON file.
+
+        Returns:
+            dict with "success" bool and optional "error" string.
+        """
+        if not folder_name or not isinstance(folder_name, str):
+            return {"success": False, "error": "Folder name is required"}
+
+        if not self.SAFE_FOLDER_PATTERN.match(folder_name):
+            return {"success": False, "error": "Folder name contains invalid characters"}
+
+        event_path = self._events_dir / folder_name
+        if event_path.exists():
+            return {"success": False, "error": "An event with this name already exists"}
+
+        try:
+            event_path.mkdir(parents=True, exist_ok=False)
+        except Exception as e:
+            logger.error(f"Failed to create event directory: {e}")
+            return {"success": False, "error": "Failed to create event directory"}
+
+        # Write top8 JSON (the ranked placements)
+        if top8_decks:
+            top8_path = event_path / f"{folder_name}top8.json"
+            try:
+                with open(top8_path, "w", encoding="utf-8") as f:
+                    json.dump(top8_decks, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.error(f"Failed to write top8 JSON: {e}")
+                return {"success": False, "error": "Failed to write top 8 data"}
+
+        # Write full event JSON (bulk decks combined with top8)
+        all_decks = list(top8_decks) + (bulk_decks or [])
+        if all_decks:
+            full_path = event_path / f"{folder_name}.json"
+            try:
+                with open(full_path, "w", encoding="utf-8") as f:
+                    json.dump(all_decks, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.error(f"Failed to write full event JSON: {e}")
+                # top8 was already written, partial success
+
+        # Write latest_event.json for the "recent event" banner
+        try:
+            latest_path = self._events_dir / "latest_event.json"
+            with open(latest_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "folder": folder_name,
+                    "added_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                }, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass  # Non-critical
+
+        return {"success": True, "folder": folder_name}
+
+    def update_event_decks(self, event_folder: str, table_type: str, new_decks: list[dict], mode: str = "replace") -> dict:
+        """Add or replace decks in an existing event's JSON file.
+
+        Args:
+            event_folder: The event folder name.
+            table_type: "top8" or "all" to select which JSON file.
+            new_decks: List of deck data dicts to add or replace with.
+            mode: "replace" overwrites the file, "append" adds to existing decks.
+
+        Returns:
+            dict with "success" bool and optional "error" string.
+        """
+        event_path = self._validate_event_folder(event_folder)
+        if event_path is None or not event_path.exists():
+            return {"success": False, "error": "Event not found"}
+
+        if table_type == "top8":
+            json_path = event_path / f"{event_folder}top8.json"
+        elif table_type == "all":
+            json_path = event_path / f"{event_folder}.json"
+        else:
+            return {"success": False, "error": "Invalid table type"}
+
+        if mode == "append" and json_path.exists():
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+                if isinstance(existing, list):
+                    new_decks = existing + new_decks
+            except Exception:
+                pass  # Fall through to write new_decks only
+
+        try:
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(new_decks, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Failed to write {table_type} JSON for {event_folder}: {e}")
+            return {"success": False, "error": f"Failed to write {table_type} data"}
+
+        return {"success": True}

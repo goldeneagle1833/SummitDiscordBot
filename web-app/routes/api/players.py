@@ -1838,9 +1838,6 @@ def player_api(player_id):
             return True
         return visibility.get(section_key, False)
 
-    # Build stats conditionally
-    show_match_history = _section_visible("match_history")
-
     return jsonify(
         {
             "id": player_id_normalized,
@@ -1878,8 +1875,8 @@ def player_api(player_id):
             "avatar_matchups": avatar_matchups if _section_visible("avatar_matchups") else [],
             "recent_decks": recent_decks if _section_visible("recent_decks") else [],
             "elo_history": elo_history if _section_visible("elo_history") else [],
-            "matches": match_history if show_match_history else [],
-            "casual_matches": casual_match_history if show_match_history else [],
+            "matches": match_history,
+            "casual_matches": casual_match_history,
             "recorded_games": recorded_games if _section_visible("recorded_games") else [],
             "is_owner": is_owner,
             "is_admin": is_admin(),
@@ -1889,18 +1886,18 @@ def player_api(player_id):
             "pagination": {
                 "current_page": page,
                 "per_page": per_page,
-                "total_matches": total_ranked_matches if show_match_history else 0,
-                "total_pages": total_pages if show_match_history else 0,
-                "has_previous": page > 1 if show_match_history else False,
-                "has_next": page < total_pages if show_match_history else False,
+                "total_matches": total_ranked_matches,
+                "total_pages": total_pages,
+                "has_previous": page > 1,
+                "has_next": page < total_pages,
             },
             "casual_pagination": {
                 "current_page": casual_page,
                 "per_page": per_page,
-                "total_matches": total_casual_matches if show_match_history else 0,
-                "total_pages": total_casual_pages if show_match_history else 0,
-                "has_previous": casual_page > 1 if show_match_history else False,
-                "has_next": casual_page < total_casual_pages if show_match_history else False,
+                "total_matches": total_casual_matches,
+                "total_pages": total_casual_pages,
+                "has_previous": casual_page > 1,
+                "has_next": casual_page < total_casual_pages,
             },
             # Dual ELO system fields
             "elo_source": source,

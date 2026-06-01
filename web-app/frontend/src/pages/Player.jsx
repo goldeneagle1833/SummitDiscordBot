@@ -193,9 +193,8 @@ export default function Player() {
       )}
 
       {isProfilePrivate && (
-        <div className="text-center py-8 text-text-muted border border-border rounded-lg bg-bg-surface">
-          <p className="text-lg mb-1">This profile is private</p>
-          <p className="text-sm">This player has not made any profile sections public.</p>
+        <div className="text-center py-4 text-text-muted border border-border rounded-lg bg-bg-surface">
+          <p className="text-sm">Some sections of this profile are private.</p>
         </div>
       )}
 
@@ -255,22 +254,20 @@ export default function Player() {
         onToggle={() => toggle('limitedArena')}
       />
 
-      {sectionVisible('match_history') && (
-        <MatchHistoryTable
-          title="Ranked Match History"
-          matches={data.matches}
-          pagination={data.pagination}
-          playerId={playerId}
-          isOwner={data.is_owner}
-          perPage={perPage}
-          perPageOptions={PER_PAGE_OPTIONS}
-          onPageChange={(p) => refetch(undefined, p)}
-          onPerPageChange={(pp) => refetch(undefined, 1, undefined, undefined, pp)}
-          onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
-        />
-      )}
+      <MatchHistoryTable
+        title="Ranked Match History"
+        matches={data.matches}
+        pagination={data.pagination}
+        playerId={playerId}
+        isOwner={data.is_owner}
+        perPage={perPage}
+        perPageOptions={PER_PAGE_OPTIONS}
+        onPageChange={(p) => refetch(undefined, p)}
+        onPerPageChange={(pp) => refetch(undefined, 1, undefined, undefined, pp)}
+        onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
+      />
 
-      {sectionVisible('match_history') && data.casual_matches?.length > 0 && (
+      {data.casual_matches?.length > 0 && (
         <MatchHistoryTable
           title="Casual Match History"
           subtitle="Casual games do not affect ELO ratings."

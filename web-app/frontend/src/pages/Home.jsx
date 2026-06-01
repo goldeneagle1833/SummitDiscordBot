@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { get } from '@/api/client'
 import { getEventLeaderboard, getPaperEventLeaderboard, getLimitedLeaderboard } from '@/api/leaderboard'
+import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -502,7 +503,10 @@ export default function Home() {
     try {
       if (src === 'limited') {
         const data = await getLimitedLeaderboard()
-        setEventData({ limited: true, leaderboard: data })
+        const lb = data.leaderboard || data
+        const stats = data.stats || {}
+        const trophyRuns = data.trophy_runs || []
+        setEventData({ limited: true, leaderboard: Array.isArray(lb) ? lb : [], stats, trophyRuns })
       } else {
         const data = src === 'paper' ? await getPaperEventLeaderboard() : await getEventLeaderboard()
         setEventData(data)
@@ -596,8 +600,25 @@ export default function Home() {
             </div>
             <EloToggle source={source} onChange={handleSourceChange} />
           </div>
-          {!isLimited && <StatBar leaderboard={leaderboard} />}
-          <EventLeaderboardTable leaderboard={leaderboard} eloKey={isLimited ? 'elo' : 'event_elo'} />
+          {isLimited ? (
+            <>
+              {eventData.stats?.unique_players > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+                  <StatBox label="Players" value={eventData.stats.unique_players} />
+                  <StatBox label="Runs Completed" value={eventData.stats.total_runs} />
+                  <StatBox label="Matches Played" value={eventData.stats.total_matches} />
+                  <StatBox label="Trophy Runs (4-0)" value={eventData.stats.trophy_runs} />
+                </div>
+              )}
+              <LimitedLeaderboardTable data={leaderboard} />
+              <TrophyRuns runs={eventData.trophyRuns} />
+            </>
+          ) : (
+            <>
+              <StatBar leaderboard={leaderboard} />
+              <EventLeaderboardTable leaderboard={leaderboard} />
+            </>
+          )}
         </section>
       ) : (
         <section className="text-center py-8">

@@ -324,7 +324,6 @@ class UserProfileRepository:
         "avatar_performance",
         "avatar_matchups",
         "recent_decks",
-        "match_history",
         "recorded_games",
     ]
 

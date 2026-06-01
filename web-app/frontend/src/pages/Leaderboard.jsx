@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import LeaderboardTable from '@/components/leaderboard/LeaderboardTable'
+import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
 import Spinner from '@/components/ui/Spinner'
 import {
   getCombinedLeaderboard,
@@ -277,18 +278,36 @@ export default function Leaderboard() {
         )}
       </section>
 
-      {/* Limited Leaderboard Link */}
-      {limitedData !== null && (
-        <section className="mb-8">
-          <Link
-            to="/elo/limited"
-            className="block bg-bg-surface border border-border rounded-soft p-4 hover:border-primary/50 transition-colors"
-          >
-            <h2 className="text-xl font-display text-secondary mb-1">Limited Format Leaderboard</h2>
-            <p className="text-sm text-text-muted">View arena draft rankings, trophy runs, and limited stats &rarr;</p>
-          </Link>
-        </section>
-      )}
+      {/* Limited Leaderboard */}
+      {limitedData !== null && (() => {
+        const leaderboard = limitedData.leaderboard || limitedData
+        const trophyRuns = limitedData.trophy_runs || []
+        const stats = limitedData.stats || {}
+
+        return (
+          <>
+            <section className="mb-8">
+              <Link to="/elo/limited" className="hover:text-primary transition-colors">
+                <h2 className="text-xl font-display text-secondary mb-1">Limited Format Leaderboard</h2>
+              </Link>
+              <p className="text-sm text-text-muted mb-4">Arena draft rankings - lifetime ELO</p>
+
+              {stats.unique_players > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+                  <StatBox label="Players" value={stats.unique_players} />
+                  <StatBox label="Runs Completed" value={stats.total_runs} />
+                  <StatBox label="Matches Played" value={stats.total_matches} />
+                  <StatBox label="Trophy Runs (4-0)" value={stats.trophy_runs} />
+                </div>
+              )}
+
+              <LimitedLeaderboardTable data={Array.isArray(leaderboard) ? leaderboard : []} />
+            </section>
+
+            <TrophyRuns runs={trophyRuns} />
+          </>
+        )
+      })()}
 
       {/* Archived Events */}
       <ArchivedEvents />

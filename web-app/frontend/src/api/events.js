@@ -6,3 +6,7 @@ export const getEvent = (folder) => get(`/api/events/${folder}`)
 export const reorderEvents = (order) => post('/api/events/reorder', { order })
 export const updateEventMetadata = (folder, { name, rating, description }) =>
   put(`/api/events/${folder}/metadata`, { name, rating, description })
+export const createEvent = ({ title, ranked_urls, bulk_urls }) =>
+  post('/api/events/create', { title, ranked_urls, bulk_urls })
+export const updateEventDecks = (folder, { table, mode, urls }) =>
+  post(`/api/events/${folder}/decks`, { table, mode, urls })

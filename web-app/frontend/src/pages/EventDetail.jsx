@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getEvent, updateEventMetadata } from '@/api/events'
+import { getEvent, updateEventMetadata, updateEventDecks } from '@/api/events'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -267,6 +267,10 @@ export default function EventDetail() {
   const [editingDesc, setEditingDesc] = useState(false)
   const [descDraft, setDescDraft] = useState('')
   const [savingDesc, setSavingDesc] = useState(false)
+  const [deckModal, setDeckModal] = useState(null) // { table: 'top8'|'all', mode: 'replace'|'append' }
+  const [deckUrls, setDeckUrls] = useState('')
+  const [deckSaving, setDeckSaving] = useState(false)
+  const [deckError, setDeckError] = useState(null)
 
   usePageTitle(data?.event_name || 'Event Detail')
 
@@ -304,6 +308,39 @@ export default function EventDetail() {
     } catch { /* ignore */ }
     finally { setSaving(null) }
   }, [data, folder])
+
+  const openDeckModal = (table, mode) => {
+    setDeckModal({ table, mode })
+    setDeckUrls('')
+    setDeckError(null)
+  }
+
+  const handleDeckSubmit = useCallback(async () => {
+    if (!deckModal) return
+    const urls = deckUrls.split('\n').map((u) => u.trim()).filter(Boolean)
+    if (!urls.length) return
+    setDeckSaving(true)
+    setDeckError(null)
+    try {
+      const result = await updateEventDecks(folder, {
+        table: deckModal.table,
+        mode: deckModal.mode,
+        urls,
+      })
+      if (result.success) {
+        setDeckModal(null)
+        // Reload event data
+        const fresh = await getEvent(folder)
+        setData(fresh)
+      } else {
+        setDeckError(result.error || 'Failed to update decks')
+      }
+    } catch (err) {
+      setDeckError(err.message || 'Failed to update decks')
+    } finally {
+      setDeckSaving(false)
+    }
+  }, [deckModal, deckUrls, folder])
 
   if (loading) return <Spinner className="py-20" />
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
@@ -404,56 +441,100 @@ export default function EventDetail() {
       )}
 
       {/* Top 8 */}
-      {top8_decks?.length > 0 && (
+      {(top8_decks?.length > 0 || is_admin) && (
         <section>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-lg font-semibold text-text-primary border-b-2 border-border pb-1">Top 8</h2>
-            {is_admin && reorderDirty.top8 && (
-              <button
-                className="text-xs bg-secondary text-black px-3 py-1 rounded font-semibold disabled:opacity-50"
-                onClick={() => saveOrder('top8')}
-                disabled={saving === 'top8'}
-              >
-                {saving === 'top8' ? 'Saving...' : 'Save Order'}
-              </button>
-            )}
+            <div className="flex gap-2">
+              {is_admin && (
+                <>
+                  <button
+                    className="text-xs bg-primary text-black px-2 py-1 rounded font-semibold"
+                    onClick={() => openDeckModal('top8', top8_decks?.length ? 'append' : 'replace')}
+                  >
+                    + Add Decks
+                  </button>
+                  {top8_decks?.length > 0 && (
+                    <button
+                      className="text-xs bg-bg-raised text-text-muted px-2 py-1 rounded border border-border hover:text-text"
+                      onClick={() => openDeckModal('top8', 'replace')}
+                    >
+                      Replace List
+                    </button>
+                  )}
+                </>
+              )}
+              {is_admin && reorderDirty.top8 && (
+                <button
+                  className="text-xs bg-secondary text-black px-3 py-1 rounded font-semibold disabled:opacity-50"
+                  onClick={() => saveOrder('top8')}
+                  disabled={saving === 'top8'}
+                >
+                  {saving === 'top8' ? 'Saving...' : 'Save Order'}
+                </button>
+              )}
+            </div>
           </div>
-          <div className="bg-bg-surface border border-border rounded-lg overflow-hidden">
-            <DeckTable
-              decks={top8_decks}
-              isAdmin={is_admin}
-              tableType="top8"
-              eventFolder={folder}
-              onReorder={handleReorder}
-            />
-          </div>
+          {top8_decks?.length > 0 && (
+            <div className="bg-bg-surface border border-border rounded-lg overflow-hidden">
+              <DeckTable
+                decks={top8_decks}
+                isAdmin={is_admin}
+                tableType="top8"
+                eventFolder={folder}
+                onReorder={handleReorder}
+              />
+            </div>
+          )}
         </section>
       )}
 
       {/* All Participants */}
-      {all_decks?.length > 0 && (
+      {(all_decks?.length > 0 || is_admin) && (
         <section>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-lg font-semibold text-text-primary border-b-2 border-border pb-1">All Participants</h2>
-            {is_admin && reorderDirty.all && (
-              <button
-                className="text-xs bg-secondary text-black px-3 py-1 rounded font-semibold disabled:opacity-50"
-                onClick={() => saveOrder('all')}
-                disabled={saving === 'all'}
-              >
-                {saving === 'all' ? 'Saving...' : 'Save Order'}
-              </button>
-            )}
+            <div className="flex gap-2">
+              {is_admin && (
+                <>
+                  <button
+                    className="text-xs bg-primary text-black px-2 py-1 rounded font-semibold"
+                    onClick={() => openDeckModal('all', all_decks?.length ? 'append' : 'replace')}
+                  >
+                    + Add Decks
+                  </button>
+                  {all_decks?.length > 0 && (
+                    <button
+                      className="text-xs bg-bg-raised text-text-muted px-2 py-1 rounded border border-border hover:text-text"
+                      onClick={() => openDeckModal('all', 'replace')}
+                    >
+                      Replace List
+                    </button>
+                  )}
+                </>
+              )}
+              {is_admin && reorderDirty.all && (
+                <button
+                  className="text-xs bg-secondary text-black px-3 py-1 rounded font-semibold disabled:opacity-50"
+                  onClick={() => saveOrder('all')}
+                  disabled={saving === 'all'}
+                >
+                  {saving === 'all' ? 'Saving...' : 'Save Order'}
+                </button>
+              )}
+            </div>
           </div>
-          <div className="bg-bg-surface border border-border rounded-lg overflow-hidden">
-            <DeckTable
-              decks={all_decks}
-              isAdmin={is_admin}
-              tableType="all"
-              eventFolder={folder}
-              onReorder={handleReorder}
-            />
-          </div>
+          {all_decks?.length > 0 && (
+            <div className="bg-bg-surface border border-border rounded-lg overflow-hidden">
+              <DeckTable
+                decks={all_decks}
+                isAdmin={is_admin}
+                tableType="all"
+                eventFolder={folder}
+                onReorder={handleReorder}
+              />
+            </div>
+          )}
         </section>
       )}
 
@@ -468,8 +549,54 @@ export default function EventDetail() {
       )}
 
       {/* No data at all */}
-      {!top8_decks?.length && !all_decks?.length && !card_data?.length && (
+      {!top8_decks?.length && !all_decks?.length && !card_data?.length && !is_admin && (
         <p className="text-center text-text-muted py-8">No data available for this event.</p>
+      )}
+
+      {/* Deck Management Modal */}
+      {deckModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setDeckModal(null)}>
+          <div className="bg-bg-surface border border-border rounded-lg p-6 w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-display text-secondary mb-1">
+              {deckModal.mode === 'replace' ? 'Replace' : 'Add to'} {deckModal.table === 'top8' ? 'Top 8' : 'All Participants'}
+            </h3>
+            <p className="text-xs text-text-muted mb-4">
+              {deckModal.mode === 'replace'
+                ? 'This will replace all existing decks in this list.'
+                : 'New decks will be appended to the existing list.'}
+            </p>
+
+            <label className="text-xs text-text-muted block mb-1">Curiosa Deck URLs (one per line)</label>
+            <textarea
+              className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-4 min-h-[120px]"
+              placeholder={"https://curiosa.io/decks/...\nhttps://curiosa.io/decks/..."}
+              value={deckUrls}
+              onChange={(e) => setDeckUrls(e.target.value)}
+            />
+
+            {deckError && (
+              <p className="text-accent-red text-xs mb-3">{deckError}</p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button
+                className="text-xs px-3 py-1.5 rounded border border-border text-text-muted hover:text-text"
+                onClick={() => setDeckModal(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className={`text-xs px-3 py-1.5 rounded font-semibold disabled:opacity-50 ${
+                  deckModal.mode === 'replace' ? 'bg-accent-red text-white' : 'bg-secondary text-black'
+                }`}
+                onClick={handleDeckSubmit}
+                disabled={deckSaving || !deckUrls.trim()}
+              >
+                {deckSaving ? 'Saving...' : deckModal.mode === 'replace' ? 'Replace Decks' : 'Add Decks'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

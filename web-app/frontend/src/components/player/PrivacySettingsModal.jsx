@@ -7,7 +7,6 @@ const SECTION_LABELS = {
   avatar_performance: 'Avatar Performance',
   avatar_matchups: 'Avatar Matchups',
   recent_decks: 'Recent Decks',
-  match_history: 'Match History',
   recorded_games: 'Self-Reported Games',
 }
 
@@ -17,7 +16,6 @@ const SECTION_ORDER = [
   'avatar_performance',
   'avatar_matchups',
   'recent_decks',
-  'match_history',
   'recorded_games',
 ]
 

@@ -1,5 +1,6 @@
 """API routes for event deck management."""
 
+import json
 import logging
 
 from flask import Blueprint, jsonify, request
@@ -105,6 +106,127 @@ def reorder_event_decks(event_folder):
 
     repo = EventRepository()
     result = repo.reorder_event_decks(event_folder, table_type, new_order)
+
+    status = 200 if result.get("success") else 400
+    return jsonify(result), status
+
+
+@events_bp.route("/events/create", methods=["POST"])
+@require_admin
+def create_event():
+    """Create a new event from Curiosa deck URLs (admin only)."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "Request body required"}), 400
+
+    title = data.get("title", "").strip()
+    if not title:
+        return jsonify({"success": False, "error": "Title is required"}), 400
+
+    # Ranked URLs: 1st through 8th place (all optional)
+    ranked_urls = data.get("ranked_urls", [])
+    if not isinstance(ranked_urls, list):
+        return jsonify({"success": False, "error": "ranked_urls must be a list"}), 400
+
+    # Bulk URLs: additional decks beyond the top 8
+    bulk_urls = data.get("bulk_urls", [])
+    if not isinstance(bulk_urls, list):
+        return jsonify({"success": False, "error": "bulk_urls must be a list"}), 400
+
+    from services.curiosa import CuriosaService
+    curiosa = CuriosaService()
+
+    # Fetch ranked deck data
+    top8_decks = []
+    errors = []
+    for i, url in enumerate(ranked_urls):
+        if not url or not isinstance(url, str) or not url.strip():
+            continue
+        url = url.strip()
+        deck_json = curiosa.fetch_deck_data(url)
+        if deck_json == "{}":
+            errors.append(f"Failed to fetch deck for place {i + 1}: {url}")
+            continue
+        deck_data = json.loads(deck_json)
+        top8_decks.append(deck_data)
+
+    # Fetch bulk deck data
+    bulk_decks = []
+    for url in bulk_urls:
+        if not url or not isinstance(url, str) or not url.strip():
+            continue
+        url = url.strip()
+        deck_json = curiosa.fetch_deck_data(url)
+        if deck_json == "{}":
+            errors.append(f"Failed to fetch bulk deck: {url}")
+            continue
+        deck_data = json.loads(deck_json)
+        bulk_decks.append(deck_data)
+
+    if not top8_decks and not bulk_decks:
+        return jsonify({
+            "success": False,
+            "error": "No decks could be fetched. Check your URLs.",
+            "fetch_errors": errors,
+        }), 400
+
+    repo = EventRepository()
+    result = repo.create_event(title, top8_decks, bulk_decks if bulk_decks else None)
+
+    if result.get("success") and errors:
+        result["warnings"] = errors
+
+    status = 200 if result.get("success") else 400
+    return jsonify(result), status
+
+
+@events_bp.route("/events/<event_folder>/decks", methods=["POST"])
+@require_admin
+def update_event_decks(event_folder):
+    """Add or replace decks in an existing event via Curiosa URLs (admin only)."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "Request body required"}), 400
+
+    table_type = data.get("table")
+    if table_type not in ("top8", "all"):
+        return jsonify({"success": False, "error": "table must be 'top8' or 'all'"}), 400
+
+    mode = data.get("mode", "replace")
+    if mode not in ("replace", "append"):
+        return jsonify({"success": False, "error": "mode must be 'replace' or 'append'"}), 400
+
+    urls = data.get("urls", [])
+    if not isinstance(urls, list):
+        return jsonify({"success": False, "error": "urls must be a list"}), 400
+
+    from services.curiosa import CuriosaService
+    curiosa = CuriosaService()
+
+    decks = []
+    errors = []
+    for url in urls:
+        if not url or not isinstance(url, str) or not url.strip():
+            continue
+        url = url.strip()
+        deck_json = curiosa.fetch_deck_data(url)
+        if deck_json == "{}":
+            errors.append(f"Failed to fetch: {url}")
+            continue
+        decks.append(json.loads(deck_json))
+
+    if not decks:
+        return jsonify({
+            "success": False,
+            "error": "No decks could be fetched. Check your URLs.",
+            "fetch_errors": errors,
+        }), 400
+
+    repo = EventRepository()
+    result = repo.update_event_decks(event_folder, table_type, decks, mode)
+
+    if result.get("success") and errors:
+        result["warnings"] = errors
 
     status = 200 if result.get("success") else 400
     return jsonify(result), status

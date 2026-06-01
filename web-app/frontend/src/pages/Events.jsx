@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { getEventsWithAdmin, reorderEvents, updateEventMetadata } from '@/api/events'
+import { getEventsWithAdmin, reorderEvents, updateEventMetadata, createEvent } from '@/api/events'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -20,6 +20,10 @@ export default function Events() {
   const [saving, setSaving] = useState(false)
   const [editModal, setEditModal] = useState(null) // { folder, name, rating }
   const [editSaving, setEditSaving] = useState(false)
+  const [createModal, setCreateModal] = useState(false)
+  const [createForm, setCreateForm] = useState({ title: '', ranked: Array(8).fill(''), bulk: '' })
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState(null)
 
   useEffect(() => {
     getEventsWithAdmin()
@@ -88,6 +92,41 @@ export default function Events() {
     finally { setEditSaving(false) }
   }, [editModal])
 
+  const openCreateModal = () => {
+    setCreateForm({ title: '', ranked: Array(8).fill(''), bulk: '' })
+    setCreateError(null)
+    setCreateModal(true)
+  }
+
+  const handleCreate = useCallback(async () => {
+    if (!createForm.title.trim()) return
+    setCreating(true)
+    setCreateError(null)
+    try {
+      const bulk_urls = createForm.bulk
+        .split('\n')
+        .map((u) => u.trim())
+        .filter(Boolean)
+      const result = await createEvent({
+        title: createForm.title.trim(),
+        ranked_urls: createForm.ranked,
+        bulk_urls,
+      })
+      if (result.success) {
+        setCreateModal(false)
+        // Reload events
+        const data = await getEventsWithAdmin()
+        setEvents(data.events || [])
+      } else {
+        setCreateError(result.error || 'Failed to create event')
+      }
+    } catch (err) {
+      setCreateError(err.message || 'Failed to create event')
+    } finally {
+      setCreating(false)
+    }
+  }, [createForm])
+
   if (loading) return <Spinner className="py-20" />
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
 
@@ -133,6 +172,14 @@ export default function Events() {
         <span className="text-text-muted text-xs ml-auto self-end pb-1">
           {filtered.length} of {events.length} events
         </span>
+        {isAdmin && (
+          <button
+            className="text-xs bg-primary text-black px-3 py-1.5 rounded font-semibold self-end"
+            onClick={openCreateModal}
+          >
+            + Add Event
+          </button>
+        )}
         {isAdmin && dirty && (
           <button
             className="text-xs bg-secondary text-black px-3 py-1.5 rounded font-semibold disabled:opacity-50 self-end"
@@ -210,6 +257,72 @@ export default function Events() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Create Event Modal */}
+      {createModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setCreateModal(false)}>
+          <div className="bg-bg-surface border border-border rounded-lg p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-display text-secondary mb-4">Add New Event</h3>
+
+            <label className="text-xs text-text-muted block mb-1">Event Title</label>
+            <input
+              type="text"
+              className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-4"
+              placeholder="e.g. SCG Con Dallas 2026"
+              value={createForm.title}
+              onChange={(e) => setCreateForm((f) => ({ ...f, title: e.target.value }))}
+            />
+
+            <p className="text-xs text-text-muted mb-2">Curiosa Deck URLs by Placement (all optional)</p>
+            <div className="space-y-2 mb-4">
+              {createForm.ranked.map((url, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-xs text-text-muted w-8 text-right shrink-0">{i === 0 ? '1st' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i + 1}th`}</span>
+                  <input
+                    type="text"
+                    className="flex-1 bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                    placeholder="https://curiosa.io/decks/..."
+                    value={url}
+                    onChange={(e) => {
+                      const next = [...createForm.ranked]
+                      next[i] = e.target.value
+                      setCreateForm((f) => ({ ...f, ranked: next }))
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <label className="text-xs text-text-muted block mb-1">Bulk Deck URLs (one per line)</label>
+            <textarea
+              className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-4 min-h-[80px]"
+              placeholder={"https://curiosa.io/decks/...\nhttps://curiosa.io/decks/..."}
+              value={createForm.bulk}
+              onChange={(e) => setCreateForm((f) => ({ ...f, bulk: e.target.value }))}
+            />
+
+            {createError && (
+              <p className="text-accent-red text-xs mb-3">{createError}</p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button
+                className="text-xs px-3 py-1.5 rounded border border-border text-text-muted hover:text-text"
+                onClick={() => setCreateModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="text-xs bg-secondary text-black px-3 py-1.5 rounded font-semibold disabled:opacity-50"
+                onClick={handleCreate}
+                disabled={creating || !createForm.title.trim()}
+              >
+                {creating ? 'Creating...' : 'Create Event'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

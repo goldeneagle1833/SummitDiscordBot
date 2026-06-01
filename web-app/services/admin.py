@@ -194,6 +194,17 @@ class AdminService:
 
         updates = {}
 
+        def _update_cols(cur, table, columns, new_id, old_id):
+            """Update columns in a table, skipping columns that don't exist."""
+            count = 0
+            for col in columns:
+                try:
+                    cur.execute(f"UPDATE {table} SET {col} = ? WHERE {col} = ?", (new_id, old_id))
+                    count += cur.rowcount
+                except sqlite3.OperationalError:
+                    pass  # Column doesn't exist in this schema version
+            return count
+
         # ── match_records.db tables ──
         try:
             conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
@@ -206,42 +217,27 @@ class AdminService:
             for table in ("match_records", "match_records_archive"):
                 if table not in tables:
                     continue
-                count = 0
-                for col in ("winner_id", "losser_id", "reporter_id"):
-                    cur.execute(f"UPDATE {table} SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
-                    count += cur.rowcount
+                count = _update_cols(cur, table, ("winner_id", "losser_id", "reporter_id"), new_user_id, old_user_id)
                 updates[table] = count
 
-            # match_reports_web: winner_id, losser_id
+            # match_reports_web: winner_id, losser_id, reporter_id
             if "match_reports_web" in tables:
-                count = 0
-                for col in ("winner_id", "losser_id"):
-                    cur.execute(f"UPDATE match_reports_web SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
-                    count += cur.rowcount
+                count = _update_cols(cur, "match_reports_web", ("winner_id", "losser_id", "reporter_id"), new_user_id, old_user_id)
                 updates["match_reports_web"] = count
 
             # rumble_match_records: winner_id, losser_id, reporter_id
             if "rumble_match_records" in tables:
-                count = 0
-                for col in ("winner_id", "losser_id", "reporter_id"):
-                    cur.execute(f"UPDATE rumble_match_records SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
-                    count += cur.rowcount
+                count = _update_cols(cur, "rumble_match_records", ("winner_id", "losser_id", "reporter_id"), new_user_id, old_user_id)
                 updates["rumble_match_records"] = count
 
             # match_confirmations: reporter_id, winner_id, loser_id
             if "match_confirmations" in tables:
-                count = 0
-                for col in ("reporter_id", "winner_id", "loser_id"):
-                    cur.execute(f"UPDATE match_confirmations SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
-                    count += cur.rowcount
+                count = _update_cols(cur, "match_confirmations", ("reporter_id", "winner_id", "loser_id"), new_user_id, old_user_id)
                 updates["match_confirmations"] = count
 
             # pairings: player_1_id, player_2_id
             if "pairings" in tables:
-                count = 0
-                for col in ("player_1_id", "player_2_id"):
-                    cur.execute(f"UPDATE pairings SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
-                    count += cur.rowcount
+                count = _update_cols(cur, "pairings", ("player_1_id", "player_2_id"), new_user_id, old_user_id)
                 updates["pairings"] = count
 
             # season_members: user_id (UNIQUE on user_id+season_id)
@@ -254,10 +250,7 @@ class AdminService:
 
             # season_match_elo: reporter_id, winner_id, loser_id
             if "season_match_elo" in tables:
-                count = 0
-                for col in ("reporter_id", "winner_id", "loser_id"):
-                    cur.execute(f"UPDATE season_match_elo SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
-                    count += cur.rowcount
+                count = _update_cols(cur, "season_match_elo", ("reporter_id", "winner_id", "loser_id"), new_user_id, old_user_id)
                 updates["season_match_elo"] = count
 
             # creator_access: user_id
@@ -271,8 +264,11 @@ class AdminService:
 
             # curio_entries: user_id
             if "curio_entries" in tables:
-                cur.execute("UPDATE curio_entries SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
-                updates["curio_entries"] = cur.rowcount
+                try:
+                    cur.execute("UPDATE curio_entries SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
+                    updates["curio_entries"] = cur.rowcount
+                except sqlite3.OperationalError:
+                    pass
 
             # user_profiles: user_id (PRIMARY KEY)
             if "user_profiles" in tables:
@@ -287,21 +283,18 @@ class AdminService:
 
             # limited tables in match_records.db
             if "limited_match_records" in tables:
-                count = 0
-                for col in ("winner_id", "loser_id", "reporter_id"):
-                    cur.execute(f"UPDATE limited_match_records SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
-                    count += cur.rowcount
+                count = _update_cols(cur, "limited_match_records", ("winner_id", "loser_id", "reporter_id"), new_user_id, old_user_id)
                 updates["limited_match_records"] = count
 
             if "limited_arena_runs" in tables:
-                cur.execute("UPDATE limited_arena_runs SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
-                updates["limited_arena_runs"] = cur.rowcount
+                try:
+                    cur.execute("UPDATE limited_arena_runs SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
+                    updates["limited_arena_runs"] = cur.rowcount
+                except sqlite3.OperationalError:
+                    pass
 
             if "limited_active_pairings" in tables:
-                count = 0
-                for col in ("player_1_id", "player_2_id"):
-                    cur.execute(f"UPDATE limited_active_pairings SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
-                    count += cur.rowcount
+                count = _update_cols(cur, "limited_active_pairings", ("player_1_id", "player_2_id"), new_user_id, old_user_id)
                 updates["limited_active_pairings"] = count
 
             conn.commit()
@@ -360,10 +353,7 @@ class AdminService:
 
             # limited_match_records_archive
             if "limited_match_records_archive" in tables:
-                count = 0
-                for col in ("winner_id", "loser_id"):
-                    cur.execute(f"UPDATE limited_match_records_archive SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
-                    count += cur.rowcount
+                count = _update_cols(cur, "limited_match_records_archive", ("winner_id", "loser_id"), new_user_id, old_user_id)
                 updates["limited_match_records_archive"] = count
 
             # limited_arena_runs_archive

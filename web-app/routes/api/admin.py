@@ -895,6 +895,38 @@ def remove_creator_access(user_id):
     return jsonify({"success": True}), 200
 
 
+@admin_bp.route("/admin/transfer-history", methods=["POST"])
+@require_admin
+def transfer_history():
+    """Transfer all history from one user account to another (admin only)."""
+    data = request.get_json(silent=True)
+    if not data or not data.get("old_user_id") or not data.get("new_user_id"):
+        return jsonify({"success": False, "error": "old_user_id and new_user_id are required"}), 400
+
+    old_user_id = str(data["old_user_id"]).strip()
+    new_user_id = str(data["new_user_id"]).strip()
+
+    if not old_user_id or not new_user_id:
+        return jsonify({"success": False, "error": "Both user IDs must be non-empty"}), 400
+
+    service = AdminService()
+    result = service.transfer_history(old_user_id, new_user_id)
+
+    if result.get("success"):
+        admin_id, admin_name = _get_admin_info()
+        audit = AuditRepository()
+        audit.log_action(
+            admin_id, admin_name, "web_transfer_history",
+            target_id=f"{old_user_id} -> {new_user_id}",
+            previous_state={"old_user_id": old_user_id},
+            new_state={"new_user_id": new_user_id, "details": result.get("details")},
+            details=f"Transferred history from {old_user_id} to {new_user_id}",
+        )
+
+    status = 200 if result.get("success") else 400
+    return jsonify(result), status
+
+
 @admin_bp.route("/admin/search-users", methods=["GET"])
 @require_admin
 def search_users():

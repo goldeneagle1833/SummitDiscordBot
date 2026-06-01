@@ -1,9 +1,11 @@
 """Service for admin operations on players and matches."""
 
 import logging
+import sqlite3
 
 from repositories.elo import EloRepository
 from repositories.matches import MatchRepository
+from webapp_config import ELO_DB_PATH, MATCH_RECORDS_DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +182,210 @@ class AdminService:
         msg = "ELO updated - " + ", ".join(results)
         logger.info(f"Admin set ELO for {user_id}: {msg}")
         return {"success": True, "message": msg}
+
+    def transfer_history(self, old_user_id: str, new_user_id: str) -> dict:
+        """Transfer all history from old_user_id to new_user_id across all tables.
+
+        Updates every table that references a player ID so the new account
+        inherits the old account's full history.
+        """
+        if old_user_id == new_user_id:
+            return {"success": False, "error": "Source and destination accounts are the same"}
+
+        updates = {}
+
+        # ── match_records.db tables ──
+        try:
+            conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+            cur = conn.cursor()
+
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = {row[0] for row in cur.fetchall()}
+
+            # match_records + archive: winner_id, losser_id, reporter_id
+            for table in ("match_records", "match_records_archive"):
+                if table not in tables:
+                    continue
+                count = 0
+                for col in ("winner_id", "losser_id", "reporter_id"):
+                    cur.execute(f"UPDATE {table} SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
+                    count += cur.rowcount
+                updates[table] = count
+
+            # match_reports_web: winner_id, losser_id
+            if "match_reports_web" in tables:
+                count = 0
+                for col in ("winner_id", "losser_id"):
+                    cur.execute(f"UPDATE match_reports_web SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
+                    count += cur.rowcount
+                updates["match_reports_web"] = count
+
+            # rumble_match_records: winner_id, losser_id, reporter_id
+            if "rumble_match_records" in tables:
+                count = 0
+                for col in ("winner_id", "losser_id", "reporter_id"):
+                    cur.execute(f"UPDATE rumble_match_records SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
+                    count += cur.rowcount
+                updates["rumble_match_records"] = count
+
+            # match_confirmations: reporter_id, winner_id, loser_id
+            if "match_confirmations" in tables:
+                count = 0
+                for col in ("reporter_id", "winner_id", "loser_id"):
+                    cur.execute(f"UPDATE match_confirmations SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
+                    count += cur.rowcount
+                updates["match_confirmations"] = count
+
+            # pairings: player_1_id, player_2_id
+            if "pairings" in tables:
+                count = 0
+                for col in ("player_1_id", "player_2_id"):
+                    cur.execute(f"UPDATE pairings SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
+                    count += cur.rowcount
+                updates["pairings"] = count
+
+            # season_members: user_id (UNIQUE on user_id+season_id)
+            if "season_members" in tables:
+                try:
+                    cur.execute("UPDATE season_members SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
+                    updates["season_members"] = cur.rowcount
+                except sqlite3.IntegrityError:
+                    updates["season_members"] = "skipped (new user already in season)"
+
+            # season_match_elo: reporter_id, winner_id, loser_id
+            if "season_match_elo" in tables:
+                count = 0
+                for col in ("reporter_id", "winner_id", "loser_id"):
+                    cur.execute(f"UPDATE season_match_elo SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
+                    count += cur.rowcount
+                updates["season_match_elo"] = count
+
+            # creator_access: user_id
+            if "creator_access" in tables:
+                try:
+                    cur.execute("UPDATE creator_access SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
+                    updates["creator_access"] = cur.rowcount
+                except sqlite3.IntegrityError:
+                    cur.execute("DELETE FROM creator_access WHERE user_id = ?", (old_user_id,))
+                    updates["creator_access"] = "merged (new user already had access)"
+
+            # curio_entries: user_id
+            if "curio_entries" in tables:
+                cur.execute("UPDATE curio_entries SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
+                updates["curio_entries"] = cur.rowcount
+
+            # user_profiles: user_id (PRIMARY KEY)
+            if "user_profiles" in tables:
+                cur.execute("SELECT 1 FROM user_profiles WHERE user_id = ?", (new_user_id,))
+                new_exists = cur.fetchone() is not None
+                if new_exists:
+                    cur.execute("DELETE FROM user_profiles WHERE user_id = ?", (old_user_id,))
+                    updates["user_profiles"] = "old profile removed (new profile kept)"
+                else:
+                    cur.execute("UPDATE user_profiles SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
+                    updates["user_profiles"] = cur.rowcount
+
+            # limited tables in match_records.db
+            if "limited_match_records" in tables:
+                count = 0
+                for col in ("winner_id", "loser_id", "reporter_id"):
+                    cur.execute(f"UPDATE limited_match_records SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
+                    count += cur.rowcount
+                updates["limited_match_records"] = count
+
+            if "limited_arena_runs" in tables:
+                cur.execute("UPDATE limited_arena_runs SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
+                updates["limited_arena_runs"] = cur.rowcount
+
+            if "limited_active_pairings" in tables:
+                count = 0
+                for col in ("player_1_id", "player_2_id"):
+                    cur.execute(f"UPDATE limited_active_pairings SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
+                    count += cur.rowcount
+                updates["limited_active_pairings"] = count
+
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to transfer match_records.db: {e}")
+            return {"success": False, "error": f"Failed during match records transfer: {e}"}
+
+        # ── elo.db tables ──
+        try:
+            conn = sqlite3.connect(str(ELO_DB_PATH))
+            cur = conn.cursor()
+
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = {row[0] for row in cur.fetchall()}
+
+            # overall_standings: user_id (PRIMARY KEY)
+            if "overall_standings" in tables:
+                cur.execute("SELECT 1 FROM overall_standings WHERE user_id = ?", (new_user_id,))
+                if cur.fetchone():
+                    cur.execute("DELETE FROM overall_standings WHERE user_id = ?", (old_user_id,))
+                    updates["overall_standings"] = "old removed (new user already has standings)"
+                else:
+                    cur.execute("UPDATE overall_standings SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
+                    updates["overall_standings"] = cur.rowcount
+
+            # paper_standings: user_id (PRIMARY KEY)
+            if "paper_standings" in tables:
+                cur.execute("SELECT 1 FROM paper_standings WHERE user_id = ?", (new_user_id,))
+                if cur.fetchone():
+                    cur.execute("DELETE FROM paper_standings WHERE user_id = ?", (old_user_id,))
+                    updates["paper_standings"] = "old removed (new user already has standings)"
+                else:
+                    cur.execute("UPDATE paper_standings SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
+                    updates["paper_standings"] = cur.rowcount
+
+            # limited_elo: user_id
+            if "limited_elo" in tables:
+                cur.execute("SELECT 1 FROM limited_elo WHERE user_id = ?", (new_user_id,))
+                if cur.fetchone():
+                    cur.execute("DELETE FROM limited_elo WHERE user_id = ?", (old_user_id,))
+                    updates["limited_elo"] = "old removed (new user already has limited elo)"
+                else:
+                    cur.execute("UPDATE limited_elo SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
+                    updates["limited_elo"] = cur.rowcount
+
+            # event_standings_archive: user_id
+            if "event_standings_archive" in tables:
+                cur.execute("UPDATE event_standings_archive SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
+                updates["event_standings_archive"] = cur.rowcount
+
+            # limited_event_standings_archive
+            if "limited_event_standings_archive" in tables:
+                cur.execute("UPDATE limited_event_standings_archive SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
+                updates["limited_event_standings_archive"] = cur.rowcount
+
+            # limited_match_records_archive
+            if "limited_match_records_archive" in tables:
+                count = 0
+                for col in ("winner_id", "loser_id"):
+                    cur.execute(f"UPDATE limited_match_records_archive SET {col} = ? WHERE {col} = ?", (new_user_id, old_user_id))
+                    count += cur.rowcount
+                updates["limited_match_records_archive"] = count
+
+            # limited_arena_runs_archive
+            if "limited_arena_runs_archive" in tables:
+                cur.execute("UPDATE limited_arena_runs_archive SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
+                updates["limited_arena_runs_archive"] = cur.rowcount
+
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to transfer elo.db: {e}")
+            return {"success": False, "error": f"Failed during ELO transfer: {e}"}
+
+        summary = {k: v for k, v in updates.items() if v}
+        total_rows = sum(v for v in updates.values() if isinstance(v, int))
+
+        logger.info(f"Admin transferred history from {old_user_id} to {new_user_id}: {summary}")
+        return {
+            "success": True,
+            "message": f"Transferred history from {old_user_id} to {new_user_id} ({total_rows} rows updated)",
+            "details": summary,
+        }
 
     def rename_player(self, user_id: str, new_name: str) -> dict:
         """Rename a player's display name in all standings and match history."""

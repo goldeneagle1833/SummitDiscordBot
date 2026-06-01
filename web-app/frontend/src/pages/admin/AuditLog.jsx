@@ -3,6 +3,7 @@ import DashboardSection from '@/components/admin/DashboardSection'
 import AnalyticsSection from '@/components/admin/AnalyticsSection'
 import BannersSection from '@/components/admin/BannersSection'
 import AdminActionsSection from '@/components/admin/AdminActionsSection'
+import TransferHistorySection from '@/components/admin/TransferHistorySection'
 import AuditLogTable from '@/components/admin/AuditLogTable'
 
 export default function AuditLog() {
@@ -17,6 +18,7 @@ export default function AuditLog() {
       <DashboardSection />
       <AnalyticsSection />
       <BannersSection />
+      <TransferHistorySection />
       <AdminActionsSection />
       <AuditLogTable />
     </div>

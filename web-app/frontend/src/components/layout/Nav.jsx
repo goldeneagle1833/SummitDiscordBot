@@ -526,6 +526,7 @@ export default function Nav() {
           {user?.is_admin && (
             <SidebarLink to="/cards" label="Card Winrates" location={location} onClick={close} />
           )}
+          <SidebarLink to="/rumble" label="Rumble" location={location} onClick={close} />
           <SidebarLink to="/elo" label="ELO Leaderboards" location={location} onClick={close} />
           <SidebarLink to="/elo/limited" label="Limited Leaderboard" location={location} onClick={close} />
           <SidebarLink to="/match-history" label="Match History" location={location} onClick={close} />

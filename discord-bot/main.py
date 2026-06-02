@@ -113,7 +113,7 @@ async def on_member_join(member):
             name="Key Channels",
             value=(
                 "<#1336912830867439676> - Find games with the **Join Queue** button\n"
-                "<#1379476865089142844> - Event decks & decklists\n"
+                "<#1319404888039489607> - Get your roles via emoji reactions\n"
                 "<#1402265039951368273> - Fun & games / bot spam"
             ),
             inline=False,

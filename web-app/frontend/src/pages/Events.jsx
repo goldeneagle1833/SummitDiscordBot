@@ -1,11 +1,28 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { getEventsWithAdmin, reorderEvents, updateEventMetadata, createEvent } from '@/api/events'
+import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
 const YEARS = ['2026', '2025', '2024', '2023']
 const FORMATS = ['cornerstone', 'crossroads']
+
+function getAvatarImagePath(name, files) {
+  if (!name || !files?.length) return null
+  const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const n = norm(name)
+  for (const f of files) {
+    if (norm(f.replace(/\.\w+$/, '')) === n) return f
+  }
+  for (const f of files) {
+    if (norm(f.replace(/\.\w+$/, '')).includes(n)) return f
+  }
+  for (const f of files) {
+    if (n.includes(norm(f.replace(/\.\w+$/, '')))) return f
+  }
+  return null
+}
 
 export default function Events() {
   usePageTitle('Top 8 Decks by Event')
@@ -25,6 +42,13 @@ export default function Events() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState(null)
   const [createResult, setCreateResult] = useState(null)
+  const [imageFiles, setImageFiles] = useState([])
+
+  useEffect(() => {
+    getAvatarImageFiles()
+      .then((files) => setImageFiles(files || []))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     getEventsWithAdmin()
@@ -61,14 +85,19 @@ export default function Events() {
     setDragIdx(null)
   }, [dragIdx])
 
+  const [saveError, setSaveError] = useState(null)
+
   const saveOrder = useCallback(async () => {
     setSaving(true)
+    setSaveError(null)
     try {
       const order = events.map((e) => e.folder)
       const result = await reorderEvents(order)
       if (result.success) setDirty(false)
-    } catch { /* ignore */ }
-    finally { setSaving(false) }
+      else setSaveError(result.error || 'Failed to save order')
+    } catch (err) {
+      setSaveError(err.message || 'Failed to save order')
+    } finally { setSaving(false) }
   }, [events])
 
   const saveMetadata = useCallback(async () => {
@@ -206,30 +235,46 @@ export default function Events() {
       {isAdmin && !canDrag && dirty && (
         <p className="text-xs text-text-muted mb-2">Clear filters to drag and reorder events.</p>
       )}
+      {saveError && (
+        <p className="text-xs text-red-400 mb-2">Error saving order: {saveError}</p>
+      )}
 
       {/* Featured Latest Event */}
       {filtered.length > 0 && (() => {
         const featured = filtered[0]
+        const featuredImg = getAvatarImagePath(featured.winner_avatar, imageFiles)
         return (
           <Link
             to={`/top-8/${featured.folder}`}
-            className="block mb-6 bg-bg-surface border-2 border-primary/30 rounded-lg p-5 hover:border-primary/60 hover:-translate-y-0.5 transition-all"
+            className="relative block mb-6 bg-bg-surface border-2 border-primary/30 rounded-lg overflow-hidden hover:border-primary/60 hover:-translate-y-0.5 transition-all"
+            style={{ minHeight: '120px' }}
           >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-semibold text-primary uppercase tracking-wide">Latest Event</span>
-              {featured.event_date_display && (
-                <span className="text-sm text-text-muted">{featured.event_date_display}</span>
-              )}
-            </div>
-            <h2 className="text-xl font-display text-secondary mb-2">{featured.name || featured.folder}</h2>
-            <div className="flex flex-wrap items-center gap-4 text-sm text-text-muted">
-              {featured.winner_username && (
-                <span>
-                  Winner: <span className="text-text">{featured.winner_username}</span>
-                  {featured.winner_avatar && <span className="text-text-muted"> ({featured.winner_avatar})</span>}
-                </span>
-              )}
-              <span>{featured.player_count || 0} decks</span>
+            {featuredImg && (
+              <>
+                <div
+                  className="absolute inset-0 bg-cover bg-center"
+                  style={{ backgroundImage: `url('/avatar-images/${featuredImg}')`, opacity: 0.35, filter: 'brightness(0.8)' }}
+                />
+                <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/40 to-transparent" />
+              </>
+            )}
+            <div className="relative p-5">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-semibold text-primary uppercase tracking-wide">Latest Event</span>
+                {featured.event_date_display && (
+                  <span className="text-sm text-text-muted">{featured.event_date_display}</span>
+                )}
+              </div>
+              <h2 className="text-xl font-display text-secondary mb-2">{featured.name || featured.folder}</h2>
+              <div className="flex flex-wrap items-center gap-4 text-sm text-text-muted">
+                {featured.winner_username && (
+                  <span>
+                    Winner: <span className="text-text">{featured.winner_username}</span>
+                    {featured.winner_avatar && <span className="text-text-muted"> ({featured.winner_avatar})</span>}
+                  </span>
+                )}
+                <span>{featured.player_count || 0} decks</span>
+              </div>
             </div>
           </Link>
         )
@@ -250,33 +295,49 @@ export default function Events() {
                 className={canDrag ? 'cursor-grab active:cursor-grabbing' : ''}
               >
                 <div className="relative h-full">
-                  <Link
-                    to={`/top-8/${event.folder}`}
-                    className="block bg-bg-surface border border-border rounded-lg p-4 hover:border-primary/50 hover:-translate-y-0.5 transition-all h-full"
-                    draggable={false}
-                  >
-                    <div className="flex items-start gap-2">
-                      {canDrag && (
-                        <span className="text-text-muted/50 select-none mt-0.5">⠁⠁</span>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2 mb-1">
-                          <h3 className="font-semibold truncate">{event.name || event.folder}</h3>
-                          {event.event_date_display && (
-                            <span className="text-xs text-text-muted whitespace-nowrap shrink-0">{event.event_date_display}</span>
-                          )}
-                        </div>
-                        {event.winner_username && (
-                          <p className="text-sm text-text-muted mb-1 truncate">
-                            Winner: {event.winner_username}{event.winner_avatar ? ` (${event.winner_avatar})` : ''}
-                          </p>
+                  {(() => {
+                    const cardImg = getAvatarImagePath(event.winner_avatar, imageFiles)
+                    return (
+                      <Link
+                        to={`/top-8/${event.folder}`}
+                        className="block bg-bg-surface border border-border rounded-lg overflow-hidden hover:border-primary/50 hover:-translate-y-0.5 transition-all h-full relative"
+                        draggable={false}
+                      >
+                        {cardImg && (
+                          <>
+                            <div
+                              className="absolute inset-0 bg-cover bg-center"
+                              style={{ backgroundImage: `url('/avatar-images/${cardImg}')`, opacity: 0.2, filter: 'brightness(0.7)' }}
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent" />
+                          </>
                         )}
-                        <div className="text-sm text-text-muted">
-                          {event.player_count || 0} decks
+                        <div className="relative p-4">
+                          <div className="flex items-start gap-2">
+                            {canDrag && (
+                              <span className="text-text-muted/50 select-none mt-0.5">⠁⠁</span>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2 mb-1">
+                                <h3 className="font-semibold truncate">{event.name || event.folder}</h3>
+                                {event.event_date_display && (
+                                  <span className="text-xs text-text-muted whitespace-nowrap shrink-0">{event.event_date_display}</span>
+                                )}
+                              </div>
+                              {event.winner_username && (
+                                <p className="text-sm text-text-muted mb-1 truncate">
+                                  Winner: {event.winner_username}{event.winner_avatar ? ` (${event.winner_avatar})` : ''}
+                                </p>
+                              )}
+                              <div className="text-sm text-text-muted">
+                                {event.player_count || 0} decks
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  </Link>
+                      </Link>
+                    )
+                  })()}
                   {isAdmin && (
                     <button
                       onClick={(e) => {

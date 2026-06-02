@@ -1,130 +1,108 @@
-# Tasks: Explorer Standings
+# Tasks: Top-8 Events Page Redesign
 
 **Input**: Design documents from `specs/main/`
-**Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/explorer-api.md
+**Prerequisites**: plan.md, research.md, data-model.md, contracts/api-changes.md, quickstart.md
 
-**Organization**: Grouped by user story — each phase is independently testable.
-**Tests**: In final Polish phase (not TDD; spec does not require upfront tests).
+**Tests**: Not explicitly requested — test tasks omitted. Run existing test suites after implementation to verify no regressions.
+
+**Organization**: Tasks grouped by user story for independent implementation and testing.
 
 ## Format: `[ID] [P?] [Story] Description`
-- **[P]**: Parallelizable (different files, no pending dependencies)
-- **[Story]**: User story this task belongs to
+
+- **[P]**: Can run in parallel (different files, no dependencies)
+- **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
+- Include exact file paths in descriptions
+
+## Path Conventions
+
+- **Backend**: `web-app/` (Flask)
+- **Frontend**: `web-app/frontend/src/` (React)
 
 ---
 
-## Phase 1: Setup (Shared Infrastructure)
+## Phase 1: Setup
 
-**Purpose**: Wire the new database path, schema migration, and blueprint into the existing app. No user-facing changes.
+**Purpose**: No new project structure needed — this feature modifies existing files only. Setup is read-only orientation.
 
-- [ ] T001 Add `EXPLORER_DB_PATH` to `web-app/webapp_config.py` — `Path(os.environ.get("EXPLORER_DB_PATH", BASE_DIR / "explorer.db"))`, following the `ANALYTICS_DB_PATH` pattern
-- [ ] T002 Create `web-app/migrations/create_explorer_tables.py` — `create_explorer_tables()` opens `EXPLORER_DB_PATH` and creates all 4 tables (`explorer_seasons`, `explorer_events`, `explorer_results`, `explorer_admins`) with schema from spec.md using `CREATE TABLE IF NOT EXISTS`
-- [ ] T003 Import and call `create_explorer_tables()` in `web-app/app.py` `create_app()` startup block (alongside existing `create_analytics_tables()` call)
-
-**Checkpoint**: App starts without errors; `explorer.db` is auto-created in `web-app/`
+- [x] T001 Read and understand current `extract_year_from_name()` and `format_event_name()` in `web-app/utils/formatting.py`
+- [x] T002 [P] Read and understand current `get_all_events()` in `web-app/repositories/events.py` (lines 242-302)
+- [x] T003 [P] Read and understand current event card rendering in `web-app/frontend/src/pages/Events.jsx`
 
 ---
 
-## Phase 2: Foundational (Blocking Prerequisites)
+## Phase 2: Foundational (Backend Utilities)
 
-**Purpose**: Repository layer, auth utilities, and blueprint shell. All user story phases depend on these.
+**Purpose**: Date extraction and name cleanup utilities that all user stories depend on
 
-**CRITICAL**: No user story work can begin until this phase is complete.
+**CRITICAL**: Frontend changes depend on these backend utilities being complete
 
-- [ ] T004 [P] Create `web-app/repositories/explorer.py` with `ExplorerRepository` class and methods: `create_season`, `get_all_seasons` (with `event_count`), `get_season`, `create_event`, `get_events_for_season`, `get_event_by_cardeio_id`, `save_results` (bulk insert list of result dicts), `get_results_for_season` (JOIN across events+results), `delete_event` (cascade deletes results), `add_explorer_admin`, `get_explorer_admins`, `remove_explorer_admin`, `is_explorer_admin`
-- [ ] T005 [P] Add `is_explorer_admin() -> bool` and `require_explorer_admin` decorator to `web-app/utils/auth.py` — pattern mirrors `is_curio_editor()` / `require_creator`; `is_explorer_admin` returns True if `is_admin()` OR session user is in `explorer_admins` table; decorator sets `_auth_required = True`
-- [ ] T006 [P] Create `web-app/routes/api/explorer.py` — define `explorer_bp = Blueprint("explorer", __name__)` and `DEFAULT_POINTS_CONFIG` dict; no routes yet
-- [ ] T007 Register `explorer_bp` in `web-app/routes/__init__.py` with url prefix `/api/explorer` (follow existing blueprint registration pattern)
+- [x] T004 Add `extract_date_from_name(folder_name: str) -> str | None` function to `web-app/utils/formatting.py` — parse ISO date from folder name patterns: `YYYY M D`, `M_D_YYYY`, `M D YYYY`, `Month D-D YYYY` per research.md R1. Return None for unparseable names like `GenCon2024Stats`.
+- [x] T005 [P] Add `strip_date_from_name(name: str) -> str` function to `web-app/utils/formatting.py` — remove date components from display names (e.g., "Ascanrask III 2026 4 4" -> "Ascanrask III", "Battle of Elverson Fields May 23rd 2026" -> "Battle of Elverson Fields"). Strip trailing whitespace after removal.
+- [x] T006 [P] Add `format_date_display(iso_date: str | None, year: int | None) -> str | None` function to `web-app/utils/formatting.py` — format ISO date to human-readable (e.g., "2026-04-04" -> "Apr 4, 2026"). If iso_date is None but year is provided, return year string (e.g., "2024"). Return None if both are None.
 
-**Checkpoint**: App starts; `/api/explorer/...` returns 404 (blueprint wired, no routes); auth module imports cleanly
-
----
-
-## Phase 3: User Story 4 — Explorer Admin Management
-
-**Goal**: Global admins can grant/revoke Explorer admin access through the API and a UI panel.
-
-**Independent Test**: `POST /api/explorer/admins` with Discord ID → `GET /api/explorer/admins` returns the user → `DELETE` removes them. Non-admin gets 403.
-
-- [ ] T008 [P] [US4] Implement `GET /api/explorer/admins` in `web-app/routes/api/explorer.py` — `@require_admin`, returns `ExplorerRepository().get_explorer_admins()`
-- [ ] T009 [P] [US4] Implement `POST /api/explorer/admins` in `web-app/routes/api/explorer.py` — `@require_admin`, body `{discord_user_id, display_name}`, calls `repo.add_explorer_admin()`, returns 201
-- [ ] T010 [US4] Implement `DELETE /api/explorer/admins/<discord_user_id>` in `web-app/routes/api/explorer.py` — `@require_admin`, calls `repo.remove_explorer_admin()`; returns 404 if not found
-- [ ] T011 [US4] Create `web-app/frontend/src/components/explorer/ExplorerAdminPanel.jsx` — lists current Explorer admins (ID, name, added_at); "Add Admin" form calls `POST /api/explorer/admins`; remove button calls `DELETE`; rendered only when `user.is_admin` from AuthContext
-
-**Checkpoint**: Admin can add/remove Explorer admins via panel; non-admins receive 403
+**Checkpoint**: Date utilities ready — repository and frontend work can begin
 
 ---
 
-## Phase 4: User Story 2 — Season Management
+## Phase 3: User Story 1 - Readable Event Cards with Dates and Winner Info (Priority: P1) MVP
 
-**Goal**: Explorer admins can create named seasons; anyone can list them and their events.
+**Goal**: Replace confusing stars with meaningful info: event date, winner name + avatar, clean event name. Sort events by most recent date.
 
-**Independent Test**: `POST /api/explorer/seasons` with a name → `GET /api/explorer/seasons` returns it with `event_count: 0`; duplicate name returns 409.
+**Independent Test**: `GET /api/top-8-events` returns events with `event_date`, `event_date_display`, `winner_username`, `winner_avatar`, `winner_avatar_id` fields. Events sorted by date descending. Card UI shows date, clean name, winner info — no stars.
 
-- [ ] T012 [P] [US2] Implement `GET /api/explorer/seasons` in `web-app/routes/api/explorer.py` — public (no auth decorator), returns `repo.get_all_seasons()` with `points_config` parsed from JSON
-- [ ] T013 [P] [US2] Implement `POST /api/explorer/seasons` in `web-app/routes/api/explorer.py` — `@require_explorer_admin`; body `{name, description, points_config}`; uses `DEFAULT_POINTS_CONFIG` if `points_config` is null; catches UNIQUE constraint to return 409
-- [ ] T014 [US2] Implement `GET /api/explorer/seasons/<int:season_id>/events` in `web-app/routes/api/explorer.py` — public; returns `repo.get_events_for_season(season_id)`; 404 if season not found
-- [ ] T015 [US2] Create `web-app/frontend/src/api/explorer.js` — export async functions: `fetchSeasons()`, `createSeason(name, description, pointsConfig)`, `fetchSeasonEvents(seasonId)`; use `credentials: "include"` on all fetches
-- [ ] T016 [US2] Create `web-app/frontend/src/components/explorer/AddSeasonModal.jsx` — Season Name (required) + Description inputs; submit calls `createSeason()`; 409 shows "Season already exists" error inline; on success closes and refreshes season list; only rendered for Explorer admins
+### Implementation for User Story 1
 
-**Checkpoint**: Explorer admin creates a season; season appears in UI dropdown; non-Explorer-admin gets 403
+- [x] T007 [US1] Extend `get_all_events()` in `web-app/repositories/events.py` to extract winner data from top8 JSON first entry: add `winner_username` (from `data[0]["username"]`), `winner_avatar` (from `data[0]["avatar"][0]["name"]`), `winner_avatar_id` (from `data[0]["avatar"][0]["identifier"]`) to each event dict. Set all three to None if no top8 JSON or data is empty. Use try/except for safety.
+- [x] T008 [US1] Extend `get_all_events()` in `web-app/repositories/events.py` to add date fields: check metadata override `event_date` field first, then call `extract_date_from_name(folder.name)` for `event_date`. Call `format_date_display(event_date, extract_year_from_name(name))` for `event_date_display`. Import new functions from `utils.formatting`.
+- [x] T009 [US1] Update `name` field in `get_all_events()` in `web-app/repositories/events.py` — when no admin name override exists, apply `strip_date_from_name(format_event_name(folder.name))` instead of just `format_event_name(folder.name)`. Import `strip_date_from_name` from `utils.formatting`.
+- [x] T010 [US1] Update default sort in `get_all_events()` in `web-app/repositories/events.py` — replace `extract_year_from_name()` sort key with `event_date` field (ISO string sorts correctly). Events with None dates sort last. Admin custom order (`_event_order.json`) still takes priority when present.
+- [x] T011 [US1] Redesign event card layout in `web-app/frontend/src/pages/Events.jsx` — remove star rating display (the `[1,2,3].map` block rendering gold/white stars), replace card content with: event date (top-right, muted text), clean event name (prominent h3), winner line showing "Winner: {username} ({avatar})" if available, deck count. Keep admin drag handle and edit button unchanged.
+- [x] T012 [US1] Update page hero section in `web-app/frontend/src/pages/Events.jsx` — update subtitle text, remove "Top 8 Available" badge from cards (since winner info now indicates top 8 presence).
 
----
-
-## Phase 5: User Story 3 — Event Import
-
-**Goal**: Explorer admins can import event results from a sorcerytcg.com URL with a two-step preview/confirm flow.
-
-**Independent Test**: `POST /api/explorer/events/preview` with a valid URL returns player list with win counts. `POST /api/explorer/events` saves to DB. Duplicate URL returns 409.
-
-- [ ] T017 [US3] Create `web-app/services/explorer.py` with `ExplorerFetchError` exception and `ExplorerService` class. Implement `fetch_event_data(url: str) -> dict`: (1) validate/extract UUID from `https://play.sorcerytcg.com/events/{uuid}` — raise `ValueError` on mismatch; (2) call `https://api.carde.io/api/play/events/{uuid}` with 10s timeout — raise `ExplorerFetchError` on non-200 or timeout; (3) identify Swiss phase (stage "1") and final phase (highest stage number); (4) fetch Swiss roster from `/activityPhases/{swiss_phase_id}/roster?sortBy=seed`; (5) derive `wins = player["tieBreakers"].get("points", 0) // 3` per player; (6) if final phase exists, fetch `/tournaments/{final_tournament_id}/standings`; (7) call `_merge_standings()` and return structured dict with `{event_name, event_date, total_players, venue_name, play_format, top_cut_size, cardeio_event_id, cardeio_swiss_phase_id, cardeio_final_tournament_id, results}`
-- [ ] T018 [US3] Add `_merge_standings(swiss_roster, top_cut_standings: dict) -> list[dict]` to `ExplorerService` in `web-app/services/explorer.py` — top-cut players use `top_cut_standings[uid]` for `final_standing`; remaining players get Swiss `standing` offset by `len(top_cut_standings)`; sort ascending by `final_standing`; each result: `{cardeio_user_id, display_name, final_standing, wins, total_players, image_url, team_name}`; handles Swiss-only (empty `top_cut_standings`)
-- [ ] T019 [P] [US3] Implement `POST /api/explorer/events/preview` in `web-app/routes/api/explorer.py` — `@require_explorer_admin`; body `{url, season_id}`; duplicate check via `repo.get_event_by_cardeio_id()`; calls `ExplorerService().fetch_event_data(url)`; returns preview dict without saving; maps `ValueError` → 400, `ExplorerFetchError` → 502, duplicate → 409
-- [ ] T020 [US3] Implement `POST /api/explorer/events` in `web-app/routes/api/explorer.py` — `@require_explorer_admin`; same duplicate check; fetches via service; calls `repo.create_event()` then `repo.save_results()`; returns 201 with saved event summary
-- [ ] T021 [US3] Implement `DELETE /api/explorer/events/<int:event_id>` in `web-app/routes/api/explorer.py` — `@require_explorer_admin`; calls `repo.delete_event()`; 404 if not found
-- [ ] T022 [US3] Add to `web-app/frontend/src/api/explorer.js`: `previewEvent(url, seasonId)`, `saveEvent(url, seasonId)`, `deleteEvent(eventId)`
-- [ ] T023 [US3] Create `web-app/frontend/src/components/explorer/AddEventModal.jsx` — two-step: (1) URL input + season selector → calls `previewEvent()` → shows preview table (event name, date, venue, player count, standings list with standing/wins columns); (2) Confirm saves via `saveEvent()`; error states for 400 (bad URL), 409 (duplicate), 502 (fetch failed); cancel resets to step 1
-
-**Checkpoint**: Explorer admin pastes a real sorcerytcg.com URL, previews results with wins, confirms import; event appears in season event list; duplicate rejected
+**Checkpoint**: Event cards now show date, winner, clean name. Sorted by recent date. Stars removed from card display. MVP complete.
 
 ---
 
-## Phase 6: User Story 5 — Leaderboard Computation
+## Phase 4: User Story 2 - Featured "Latest Event" Hero Section (Priority: P2)
 
-**Goal**: Compute three-track standings (Pathfinder, Persecutor, Grand Explorer) from stored event results.
+**Goal**: Add a large, visually distinct card at the top of the page for the most recent event, breaking up the grid monotony.
 
-**Independent Test**: After importing the example event from spec.md, `GET /api/explorer/leaderboard/{season_id}` returns Brandon P with `{pathfinder: 10, persecutor: 10, grand_explorer: 20}` and Tony D with `{pathfinder: 13, persecutor: 0, grand_explorer: 13}`.
+**Independent Test**: Page shows a full-width hero card above the grid for `filtered[0]` (most recent event). Hero card links to event detail page. Grid starts from `filtered[1]` onward.
 
-- [ ] T024 [US5] Add `compute_leaderboard(season_id: int) -> dict` to `web-app/services/explorer.py`: (1) fetch season + parse `points_config` (fall back to `DEFAULT_POINTS_CONFIG`); (2) fetch all results via `repo.get_results_for_season(season_id)`; (3) group by `cardeio_user_id`; per-player per-event: `pathfinder = config["participation"] + config["bonus_pathfinder"].get(str(wins), 0)`, `persecutor = config["persecutor"].get(str(final_standing), 0)`, `grand_explorer = pathfinder + persecutor`; (4) aggregate season totals; `qualified = persecutor_total >= config["trials_threshold"]`; (5) sort by `grand_explorer` desc then `persecutor_total` desc then `pathfinder_total` desc; (6) return full response shape per contracts/explorer-api.md
-- [ ] T025 [US5] Implement `GET /api/explorer/leaderboard/<int:season_id>` in `web-app/routes/api/explorer.py` — public; calls `ExplorerService().compute_leaderboard(season_id)`; 404 if season not found
-- [ ] T026 [US5] Add `fetchLeaderboard(seasonId)` to `web-app/frontend/src/api/explorer.js`
+### Implementation for User Story 2
 
-**Checkpoint**: `GET /api/explorer/leaderboard/1` returns correctly computed standings matching spec point examples
+- [x] T013 [US2] Add featured event section in `web-app/frontend/src/pages/Events.jsx` — render `filtered[0]` as a full-width hero card between the filter bar and the grid. Show: "Latest Event" label, event name (large text), formatted date, player/deck count, winner name + avatar name. Wrap in `<Link to={/top-8/${folder}}>`. Use accent border (`border-primary/50`) and distinct background. Only render when `filtered.length > 0`.
+- [x] T014 [US2] Adjust grid rendering in `web-app/frontend/src/pages/Events.jsx` — change grid data source from `filtered` to `filtered.slice(1)` to avoid duplicating the featured event. Handle edge case: if only 1 event exists, show hero only with empty grid section hidden. If 0 events, show "No events match your filters" message (existing behavior).
 
----
-
-## Phase 7: User Story 1 — Public Leaderboard Page
-
-**Goal**: The React page that ties together all data and admin components into a single public-facing view.
-
-**Independent Test**: Navigate to `/explorer` — season selector populates; selecting a season loads the three-column table (Grand Explorer, Pathfinder, Persecutor); Qualified badge shows for threshold-reaching players; admin controls visible only when logged in as Explorer admin.
-
-- [ ] T027 [US1] Create `web-app/frontend/src/pages/ExplorerStandings.jsx` — on mount calls `fetchSeasons()` and selects latest; on season change calls `fetchLeaderboard(seasonId)`; table columns: Rank, Avatar+Name, Grand Explorer, Pathfinder, Persecutor, Events, Qualified; expandable rows showing per-event detail (event name, standing, wins, per-track points); admin controls (Add Season button, Add Event button, admin panel toggle) conditional on `user.is_explorer_admin`; loading + error states
-- [ ] T028 [US1] Add `is_explorer_admin` field to `/api/me` response — find the `/api/me` endpoint and add `"is_explorer_admin": is_explorer_admin()` to the returned dict; import `is_explorer_admin` from `utils.auth`
-- [ ] T029 [US1] Add `/explorer` route in `web-app/frontend/src/App.jsx` — import `ExplorerStandings` from `@/pages/ExplorerStandings`, add `{ path: "/explorer", element: <ExplorerStandings /> }` to router
-- [ ] T030 [US1] Add "Explorer" nav link in `web-app/frontend/src/components/layout/Nav.jsx` — link to `/explorer`, visible to all users
-
-**Checkpoint**: Full page renders at `/explorer`; season selector and leaderboard table work end-to-end; admin modals open for authorized users only
+**Checkpoint**: Page has visual hierarchy — featured hero + grid. Both US1 and US2 functional.
 
 ---
 
-## Phase 8: Polish & Cross-Cutting Concerns
+## Phase 5: User Story 3 - Admin Date Override (Priority: P3)
 
-- [ ] T031 [P] Update `web-app/tests/test_endpoint_auth.py` — add public endpoints (`GET /api/explorer/seasons`, `GET /api/explorer/seasons/<id>/events`, `GET /api/explorer/leaderboard/<id>`) to `KNOWN_PUBLIC_ENDPOINTS`; verify protected endpoints have `_auth_required = True` via the existing introspection test
-- [ ] T032 [P] Create `web-app/tests/test_explorer_repo.py` — unit tests for `ExplorerRepository` against a temp in-memory SQLite DB: season CRUD, event CRUD, bulk result save, `get_results_for_season` JOIN, cascade delete, admin add/remove/list/check
-- [ ] T033 [P] Create `web-app/tests/test_explorer_service.py` — unit tests for `ExplorerService`: `_merge_standings` with Swiss-only and Swiss+top-8 fixtures; `compute_leaderboard` point math with known inputs (verify Tony D = 13, Brandon P = 20 per event using spec tables); mock `requests.get` for `fetch_event_data` URL validation and error handling
-- [ ] T034 [P] Create `web-app/tests/test_explorer_routes.py` — Flask test client tests: season create/list, event preview (mock service), event save/delete, leaderboard endpoint, admin 403 guards
+**Goal**: Allow admins to manually set event dates for events with unparseable folder names (e.g., "OchoaDecklists").
 
-**Checkpoint**: `cd web-app && pytest tests/test_explorer*.py -v` all pass; `pytest tests/test_endpoint_auth.py -v` still passes
+**Independent Test**: Admin edit modal shows date field. Saving date persists to `_event_metadata.json`. Event card displays the overridden date. API `PUT /api/events/{folder}/metadata` accepts `event_date` field.
+
+### Implementation for User Story 3
+
+- [x] T015 [P] [US3] Update `update_event_metadata()` in `web-app/repositories/events.py` to accept and persist optional `event_date: str | None` parameter to `_event_metadata.json`. Add `event_date` to the metadata dict alongside existing `name`, `rating`, `description` fields.
+- [x] T016 [P] [US3] Update metadata endpoint in `web-app/routes/api/events.py` — extract `event_date` from `request.json` and pass to `repo.update_event_metadata()` in the existing `update_event_metadata_route()` function.
+- [x] T017 [US3] Add date input field to edit modal in `web-app/frontend/src/pages/Events.jsx` — add `<input type="date">` for `event_date` in the edit modal (between title and stars fields), initialize `editModal` state to include `event_date` from `event.event_date`, include `event_date` in the `saveMetadata()` API call to `updateEventMetadata()`.
+- [x] T018 [US3] Update `updateEventMetadata()` in `web-app/frontend/src/api/events.js` — add `event_date` to the request body passed to `PUT /api/events/{folder}/metadata`.
+
+**Checkpoint**: Admins can override dates for any event. All 3 user stories complete.
+
+---
+
+## Phase 6: Polish & Cross-Cutting Concerns
+
+**Purpose**: Verify nothing broke and clean up
+
+- [x] T019 Run backend tests: `cd web-app && pytest tests/ -v` — fix any failures caused by changed `get_all_events()` response shape or `format_event_name()` behavior
+- [x] T020 [P] Run frontend tests: `cd web-app/frontend && npm test` — fix any failures in Events page tests if they exist
+- [x] T021 [P] Run Python syntax check: `cd web-app && python -m py_compile utils/formatting.py && python -m py_compile repositories/events.py`
+- [x] T022 Verify admin workflows still work: drag-reorder, edit modal (with new date field), create event modal — no regressions in existing functionality
 
 ---
 
@@ -133,50 +111,83 @@
 ### Phase Dependencies
 
 ```
-Phase 1 (Setup)
-  └→ Phase 2 (Foundational)
-        ├→ Phase 3 (US4 Admin Mgmt)  ─────┐
-        └→ Phase 4 (US2 Seasons)           │
-              └→ Phase 5 (US3 Events)      │
-                    └→ Phase 6 (US5 LB)    │
-                          └→ Phase 7 (US1) ┘
-                                └→ Phase 8 (Polish)
+Phase 1 (Setup — read only)
+  └-> Phase 2 (Foundational — date utilities)
+        └-> Phase 3 (US1 — cards + sort + winner) MVP
+              ├-> Phase 4 (US2 — featured hero)
+              └-> Phase 5 (US3 — admin date override)
+                    └-> Phase 6 (Polish)
 ```
 
-Phases 3 and 4 can run in parallel after Phase 2.
+### User Story Dependencies
+
+- **US1 (P1)**: Depends on Foundational only — core MVP, delivers all major user feedback
+- **US2 (P2)**: Depends on US1 (needs redesigned cards + date-sorted `filtered` array)
+- **US3 (P3)**: Depends on US1 backend (needs `event_date` field in API response). Independent of US2.
+
+### Within Each User Story
+
+- Backend changes before frontend changes
+- Repository changes before route changes
+- Core rendering before edge cases
 
 ### Parallel Opportunities
 
-| Phase | Parallel Tasks |
-|-------|---------------|
-| Phase 2 | T004, T005, T006 (different files) |
-| Phase 3 | T008, T009 (different endpoints) |
-| Phase 4 | T012, T013 (different endpoints) |
-| Phase 6 | T025, T026 (after T024) |
-| Phase 8 | T031, T032, T033, T034 (all different files) |
+| Phase | Parallel Tasks | Reason |
+|-------|---------------|--------|
+| Phase 1 | T001, T002, T003 | Read-only, different files |
+| Phase 2 | T004, T005, T006 | Independent functions in same file |
+| Phase 5 | T015, T016 | Different files (repo vs route) |
+| Phase 6 | T019, T020, T021 | Independent test suites |
+
+---
+
+## Parallel Example: Phase 2 (Foundational)
+
+```
+# These add independent functions to formatting.py:
+T004: extract_date_from_name() in web-app/utils/formatting.py
+T005: strip_date_from_name() in web-app/utils/formatting.py
+T006: format_date_display() in web-app/utils/formatting.py
+```
+
+## Parallel Example: User Story 3
+
+```
+# Different files, no dependencies between them:
+T015: Update repository in web-app/repositories/events.py
+T016: Update route in web-app/routes/api/events.py
+# Then sequentially:
+T017: Update frontend edit modal in web-app/frontend/src/pages/Events.jsx
+T018: Update API client in web-app/frontend/src/api/events.js
+```
 
 ---
 
 ## Implementation Strategy
 
-### MVP (Fastest working leaderboard)
+### MVP First (User Story 1 Only)
 
-1. Phase 1 + Phase 2 (infrastructure)
-2. Phase 4 T012–T014 backend only (season endpoints)
-3. Phase 5 T017–T021 backend only (event import)
-4. Phase 6 T024–T025 backend only (leaderboard)
-5. **Validate** with curl: standings compute correctly
-6. Then add frontend (Phase 7), admin UI (Phase 3), tests (Phase 8)
+1. Complete Phase 2: Foundational (3 utility functions)
+2. Complete Phase 3: US1 (backend + frontend card redesign)
+3. **STOP and VALIDATE**: Cards show dates, winner info, no stars. Sorted by date.
+4. Deploy if ready — this alone addresses all major user complaints
 
-### Full Delivery
+### Incremental Delivery
 
-Complete phases in order: 1 → 2 → 3+4 (parallel) → 5 → 6 → 7 → 8
+1. Phase 2 (Foundational) -> Date utilities ready
+2. US1 -> Cards redesigned, dates + winners, stars removed -> **Deploy (MVP!)**
+3. US2 -> Featured hero section added -> Deploy
+4. US3 -> Admin date override -> Deploy
+5. Each story adds value without breaking previous stories
 
 ---
 
 ## Notes
 
-- `DEFAULT_POINTS_CONFIG` defined once in `web-app/routes/api/explorer.py` (or `services/explorer.py`) and imported where needed
-- `ExplorerFetchError` custom exception defined in `web-app/services/explorer.py`
-- Win derivation: `tieBreakers.get("points", 0) // 3` — empty `{}` (seen in some API responses) defaults to 0 wins, which is correct
-- The `is_explorer_admin` field on `/api/me` lets React show admin controls without a separate auth call
+- No new files created — all modifications to existing files
+- `rating` field kept in metadata and admin edit modal but removed from card display
+- `_event_order.json` custom sort still overrides date sort when set by admin
+- Winner data extraction is best-effort — events without top8 JSON get null winner fields
+- Date parsing is best-effort — unparseable folder names get null dates (sort last)
+- Total: 22 tasks across 6 phases

@@ -1,104 +1,102 @@
-# Implementation Plan: [FEATURE]
+# Implementation Plan: Top-8 Events Page Redesign
 
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
-
-**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
+**Branch**: `main` | **Date**: 2026-06-01 | **Spec**: User feedback (Discord conversation)
+**Input**: User feedback from Zuul and GoldenEagle1833 about Events page UX issues
 
 ## Summary
 
-[Extract from feature spec: primary requirement + technical approach from research]
+Redesign the Top-8 Events page (`Events.jsx`) to improve readability and user experience. Key changes: remove confusing star ratings, add event date and deck count to cards, sort by most recent date, add a featured "Most Recent Event" hero section, show the winning avatar on each event card, and clean up event names with better formatting.
 
 ## Technical Context
 
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
-
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Language/Version**: Python 3.11+ (Flask backend), React 18 (Vite frontend)
+**Primary Dependencies**: Flask, React, Tailwind CSS, Curiosa API (avatar images)
+**Storage**: JSON files in `web-app/top-8-decks-by-event/` + `_event_metadata.json`
+**Testing**: pytest (backend 73+ tests), Vitest (frontend 61+ tests)
+**Target Platform**: Web (desktop + mobile responsive)
+**Project Type**: Full-stack web application (Flask API + React SPA)
+**Performance Goals**: No new API calls on page load beyond existing `GET /api/top-8-events`
+**Constraints**: Must not break admin drag-reorder or event create/edit workflows
+**Scale/Scope**: ~30-40 events, purely frontend-driven changes with minor backend data additions
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+*GATE: No project constitution defined (template only). Proceeding without gate enforcement.*
 
-[Gates determined based on constitution file]
+No violations — the constitution is unpopulated (template placeholders only).
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```text
-specs/[###-feature]/
-├── plan.md              # This file (/speckit.plan command output)
-├── research.md          # Phase 0 output (/speckit.plan command)
-├── data-model.md        # Phase 1 output (/speckit.plan command)
-├── quickstart.md        # Phase 1 output (/speckit.plan command)
-├── contracts/           # Phase 1 output (/speckit.plan command)
-└── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
+specs/main/
+├── plan.md              # This file
+├── research.md          # Phase 0 output
+├── data-model.md        # Phase 1 output
+├── quickstart.md        # Phase 1 output
+└── contracts/           # Phase 1 output
+    └── api-changes.md   # API response shape changes
 ```
 
 ### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
 
 ```text
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
-
-tests/
-├── contract/
-├── integration/
-└── unit/
-
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+web-app/
+├── frontend/src/
+│   ├── pages/Events.jsx           # PRIMARY: Redesigned event listing page
+│   └── api/events.js              # Minor: no changes expected
+├── repositories/events.py         # MODIFIED: Add event_date + winner avatar to response
+├── routes/api/events.py           # MINOR: Pass new fields through
+└── utils/formatting.py            # MINOR: Date extraction improvements
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+**Structure Decision**: This is a UI-focused redesign within the existing web app structure. No new files needed — modifications to existing components and backend response shapes.
 
 ## Complexity Tracking
 
-> **Fill ONLY if Constitution Check has violations that must be justified**
+No violations to justify.
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+---
+
+## Changes Summary
+
+### 1. Remove Stars (Rating System)
+**Problem**: Stars (1-3 rating) are meaningless to users — no tooltip, no legend, no explanation.
+**Solution**: Remove stars from event cards entirely. Keep `rating` field in metadata for admin use (event tier for potential future use) but don't display it on cards.
+
+### 2. Add Event Date to Cards
+**Problem**: No date shown on event cards. Users can't tell when events happened.
+**Solution**: Extract date from event folder name (already contains date info like `2026 4 4`) and/or from the deck JSON data. Display formatted date on each card (e.g., "Apr 4, 2026").
+**Backend change**: Add `event_date` field to the `get_all_events()` response.
+
+### 3. Sort by Most Recent Date (Default)
+**Problem**: Current sort is by year (coarse) or custom admin order.
+**Solution**: Default sort by extracted date descending (most recent first). Admin custom order still overrides when set.
+
+### 4. Featured "Most Recent Event" Hero Section
+**Problem**: Page is a uniform grid — monotonous, no visual hierarchy.
+**Solution**: Add a large featured card at the top for the most recent event. Shows event name, date, deck count, and winner's avatar/deck info. Visually distinct from the grid below.
+
+### 5. Show Winning Avatar on Event Cards
+**Problem**: Cards are plain text with no visual interest.
+**Solution**: Display the 1st-place avatar name as a badge on each event card. Optionally show avatar image if available from Curiosa CDN.
+**Backend change**: Add `winner_avatar` and `winner_name` fields to event list response (extracted from first deck in top8 JSON).
+
+### 6. Improved Event Name Formatting
+**Problem**: Names derived from folder names are "jank" — inconsistent formatting, raw dates embedded.
+**Solution**: Better `format_event_name()` logic to separate event name from date. Display name and date on separate lines in the card. Allow admin override via existing edit modal.
+
+### 7. Card Layout Redesign
+**Current**: Name, stars, deck count, "Top 8 Available" badge
+**New**:
+```
+┌─────────────────────────────┐
+│ [Avatar Badge]   Apr 4, 2026│
+│                              │
+│ Ascanrask III                │
+│                              │
+│ Winner: Dado (Necromancer)   │
+│ 24 decks                     │
+└─────────────────────────────┘
+```

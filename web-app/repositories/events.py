@@ -9,7 +9,13 @@ import time
 from pathlib import Path
 
 from webapp_config import TOP_8_DIR, EVENT_RATINGS
-from utils.formatting import format_event_name, extract_year_from_name
+from utils.formatting import (
+    format_event_name,
+    extract_year_from_name,
+    extract_date_from_name,
+    strip_date_from_name,
+    format_date_display,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -164,14 +170,15 @@ class EventRepository:
         overrides = self._load_metadata_overrides()
         return overrides.get(folder, {}).get("description", "")
 
-    def update_event_metadata(self, folder: str, name: str | None = None, rating: int | None = None, description: str | None = None) -> dict:
-        """Update display name, rating, and/or description for an event.
+    def update_event_metadata(self, folder: str, name: str | None = None, rating: int | None = None, description: str | None = None, event_date: str | None = None) -> dict:
+        """Update display name, rating, description, and/or date for an event.
 
         Args:
             folder: The event folder name.
             name: New display name (or None to keep current).
             rating: New star rating 1-3 (or None to keep current).
             description: Event description text (or None to keep current).
+            event_date: ISO date string override (or None to keep current).
 
         Returns:
             dict with "success" bool and optional "error" string.
@@ -187,6 +194,8 @@ class EventRepository:
             entry["rating"] = rating
         if description is not None:
             entry["description"] = description
+        if event_date is not None:
+            entry["event_date"] = event_date if event_date else None
 
         overrides[folder] = entry
 
@@ -272,20 +281,54 @@ class EventRepository:
                     with open(json_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
                         overrides = metadata_overrides.get(folder.name, {})
+
+                        # T009: Clean name — strip date from auto-formatted names
+                        if "name" in overrides:
+                            display_name = overrides["name"]
+                        else:
+                            display_name = strip_date_from_name(
+                                format_event_name(folder.name)
+                            )
+
+                        # T008: Extract event date — metadata override first, then parse
+                        event_date = overrides.get("event_date") or extract_date_from_name(folder.name)
+                        year = extract_year_from_name(folder.name)
+                        event_date_display = format_date_display(event_date, year)
+
+                        # T007: Extract winner data from first top8 deck
+                        winner_username = None
+                        winner_avatar = None
+                        winner_avatar_id = None
+                        if top8_json is not None and data:
+                            try:
+                                first_deck = data[0]
+                                winner_username = first_deck.get("username")
+                                avatar_list = first_deck.get("avatar", [])
+                                if avatar_list:
+                                    winner_avatar = avatar_list[0].get("name")
+                                    winner_avatar_id = avatar_list[0].get("identifier")
+                            except (IndexError, KeyError, TypeError):
+                                pass
+
                         events.append(
                             {
                                 "folder": folder.name,
-                                "name": overrides.get("name", format_event_name(folder.name)),
+                                "name": display_name,
                                 "player_count": len(data),
                                 "has_top8": top8_json is not None,
                                 "has_full": full_json is not None,
                                 "rating": overrides.get("rating", EVENT_RATINGS.get(folder.name, 1)),
+                                "event_date": event_date,
+                                "event_date_display": event_date_display,
+                                "winner_username": winner_username,
+                                "winner_avatar": winner_avatar,
+                                "winner_avatar_id": winner_avatar_id,
                             }
                         )
                 except Exception:
                     pass
 
-        # Use saved custom order if available, otherwise sort by year
+        # T010: Sort by date descending; admin custom order overrides
         saved_order = self._load_event_order()
         if saved_order:
             order_map = {name: i for i, name in enumerate(saved_order)}
@@ -293,8 +336,8 @@ class EventRepository:
         else:
             events.sort(
                 key=lambda e: (
-                    extract_year_from_name(e["name"]) > 0,
-                    extract_year_from_name(e["name"]),
+                    e.get("event_date") is not None,
+                    e.get("event_date") or "",
                 ),
                 reverse=True,
             )

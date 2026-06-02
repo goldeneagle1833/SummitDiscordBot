@@ -64,6 +64,7 @@ def update_event_metadata(event_folder):
     name = data.get("name")
     rating = data.get("rating")
     description = data.get("description")
+    event_date = data.get("event_date")
 
     if name is not None and (not isinstance(name, str) or not name.strip()):
         return jsonify({"success": False, "error": "Name must be a non-empty string"}), 400
@@ -81,6 +82,7 @@ def update_event_metadata(event_folder):
         name=name.strip() if name else None,
         rating=rating,
         description=description.strip() if description else description,
+        event_date=event_date.strip() if isinstance(event_date, str) else event_date,
     )
 
     status = 200 if result.get("success") else 400

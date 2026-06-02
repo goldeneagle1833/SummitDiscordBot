@@ -78,12 +78,13 @@ export default function Events() {
       const result = await updateEventMetadata(editModal.folder, {
         name: editModal.name,
         rating: editModal.rating,
+        event_date: editModal.event_date || null,
       })
       if (result.success) {
         setEvents((prev) =>
           prev.map((e) =>
             e.folder === editModal.folder
-              ? { ...e, name: editModal.name, rating: editModal.rating }
+              ? { ...e, name: editModal.name, rating: editModal.rating, event_date: editModal.event_date || null }
               : e
           )
         )
@@ -145,8 +146,8 @@ export default function Events() {
     <div>
       {/* Hero */}
       <section className="text-center mb-6">
-        <h1 className="text-2xl font-display text-secondary mb-2">Top 8 Decks by Event</h1>
-        <p className="text-text-muted text-sm">Browse winning decks from competitive events</p>
+        <h1 className="text-2xl font-display text-secondary mb-2">Event Results</h1>
+        <p className="text-text-muted text-sm">Browse winning decks from competitive Sorcery events</p>
         <p className="text-text-muted/50 text-xs mt-1">
           Want to see your event here? Send me a list of Curiosa deck URLs on the{' '}
           <a href="https://discord.gg/ZDqHSK9VGx" target="_blank" rel="noopener noreferrer" className="text-[#5865f2] hover:underline">
@@ -206,20 +207,46 @@ export default function Events() {
         <p className="text-xs text-text-muted mb-2">Clear filters to drag and reorder events.</p>
       )}
 
+      {/* Featured Latest Event */}
+      {filtered.length > 0 && (() => {
+        const featured = filtered[0]
+        return (
+          <Link
+            to={`/top-8/${featured.folder}`}
+            className="block mb-6 bg-bg-surface border-2 border-primary/30 rounded-lg p-5 hover:border-primary/60 hover:-translate-y-0.5 transition-all"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-semibold text-primary uppercase tracking-wide">Latest Event</span>
+              {featured.event_date_display && (
+                <span className="text-sm text-text-muted">{featured.event_date_display}</span>
+              )}
+            </div>
+            <h2 className="text-xl font-display text-secondary mb-2">{featured.name || featured.folder}</h2>
+            <div className="flex flex-wrap items-center gap-4 text-sm text-text-muted">
+              {featured.winner_username && (
+                <span>
+                  Winner: <span className="text-text">{featured.winner_username}</span>
+                  {featured.winner_avatar && <span className="text-text-muted"> ({featured.winner_avatar})</span>}
+                </span>
+              )}
+              <span>{featured.player_count || 0} decks</span>
+            </div>
+          </Link>
+        )
+      })()}
+
       {/* Grid */}
-      {filtered.length === 0 ? (
-        <p className="text-center text-text-muted py-8">No events match your filters.</p>
+      {filtered.length <= 1 ? (
+        filtered.length === 0 && <p className="text-center text-text-muted py-8">No events match your filters.</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((event, idx) => {
-            const stars = event.rating || 1
-            return (
+          {filtered.slice(1).map((event, idx) => (
               <div
                 key={event.folder}
                 draggable={canDrag}
-                onDragStart={() => handleDragStart(idx)}
+                onDragStart={() => handleDragStart(idx + 1)}
                 onDragOver={handleDragOver}
-                onDrop={() => handleDrop(idx)}
+                onDrop={() => handleDrop(idx + 1)}
                 className={canDrag ? 'cursor-grab active:cursor-grabbing' : ''}
               >
                 <div className="relative h-full">
@@ -233,20 +260,20 @@ export default function Events() {
                         <span className="text-text-muted/50 select-none mt-0.5">⠁⠁</span>
                       )}
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold truncate mb-1">{event.name || event.folder}</h3>
-                        <div className="flex gap-0.5 mb-1">
-                          {[1, 2, 3].map((i) => (
-                            <span key={i} className={i <= stars ? 'text-yellow-400' : 'text-white/20'}>★</span>
-                          ))}
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <h3 className="font-semibold truncate">{event.name || event.folder}</h3>
+                          {event.event_date_display && (
+                            <span className="text-xs text-text-muted whitespace-nowrap shrink-0">{event.event_date_display}</span>
+                          )}
                         </div>
+                        {event.winner_username && (
+                          <p className="text-sm text-text-muted mb-1 truncate">
+                            Winner: {event.winner_username}{event.winner_avatar ? ` (${event.winner_avatar})` : ''}
+                          </p>
+                        )}
                         <div className="text-sm text-text-muted">
                           {event.player_count || 0} decks
                         </div>
-                        {event.has_top8 && (
-                          <span className="inline-block mt-1.5 text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">
-                            Top 8 Available
-                          </span>
-                        )}
                       </div>
                     </div>
                   </Link>
@@ -254,7 +281,7 @@ export default function Events() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
-                        setEditModal({ folder: event.folder, name: event.name || event.folder, rating: stars })
+                        setEditModal({ folder: event.folder, name: event.name || event.folder, rating: event.rating || 1, event_date: event.event_date || '' })
                       }}
                       className="absolute top-2 right-2 p-1.5 rounded bg-bg-raised/80 hover:bg-bg-raised text-text-muted hover:text-secondary transition-colors"
                       title="Edit event"
@@ -266,8 +293,7 @@ export default function Events() {
                   )}
                 </div>
               </div>
-            )
-          })}
+          ))}
         </div>
       )}
 
@@ -367,7 +393,14 @@ export default function Events() {
               value={editModal.name}
               onChange={(e) => setEditModal((m) => ({ ...m, name: e.target.value }))}
             />
-            <label className="text-xs text-text-muted block mb-1">Stars</label>
+            <label className="text-xs text-text-muted block mb-1">Event Date</label>
+            <input
+              type="date"
+              className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-4"
+              value={editModal.event_date || ''}
+              onChange={(e) => setEditModal((m) => ({ ...m, event_date: e.target.value }))}
+            />
+            <label className="text-xs text-text-muted block mb-1">Tier</label>
             <div className="flex gap-1 mb-4">
               {[1, 2, 3].map((i) => (
                 <button

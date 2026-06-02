@@ -75,10 +75,6 @@ def create_rumble_tables():
             ("round_win", "Round Win", "match", 3, 2),
             ("round_tie", "Round Tie", "match", 2, 3),
             ("grovel", "Grovel (per season)", "match", 1, 4),
-            ("place_1st", "1st Place", "placement", 13, 10),
-            ("place_2nd", "2nd Place", "placement", 6, 11),
-            ("place_3rd", "3rd Place", "placement", 6, 12),
-            ("place_4th", "4th Place", "placement", 6, 13),
             ("fart_champ", "Fart Game Seasonal Champ", "outside", 13, 20),
             ("bad_movie_night", "Bad Movie Night Attendance", "outside", 6, 21),
         ]
@@ -105,8 +101,7 @@ def create_rumble_tables():
     if cursor.fetchone()[0] == 0:
         default_prizes = [
             ("TTS for a reluctant friend", 0, None, "TTS purchased for a friend who is reluctant to play because they don't want to buy TTS", 1, 1),
-            ("Clown Emoji", 0, 10, None, 2, 1),
-            ("Lester Crayon Drawing Alt Art Proxy", 0, None, "Lester crayon drawing alternate art proxy of any avatar (costs clown emojis)", 3, 1),
+            ("Lester Crayon Drawing Alt Art Proxy", 0, None, "Lester crayon drawing alternate art proxy of any avatar", 2, 1),
             ("Foil Ordinary", 0, None, None, 10, 1),
             ("Foil Exceptional", 0, None, None, 11, 1),
             ("Foil Elite", 0, None, None, 12, 1),

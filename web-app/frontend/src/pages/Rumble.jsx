@@ -6,7 +6,6 @@ import { useAuth } from '@/context/AuthContext'
 
 function PrizeWall({ prizes, earnings }) {
   const matchEarnings = earnings?.filter((e) => e.category === 'match') || []
-  const placementEarnings = earnings?.filter((e) => e.category === 'placement') || []
   const outsideEarnings = earnings?.filter((e) => e.category === 'outside') || []
 
   return (
@@ -14,25 +13,12 @@ function PrizeWall({ prizes, earnings }) {
       <h2 className="text-lg font-semibold text-text-primary mb-4 text-center">Rumble Rewards</h2>
 
       {/* Earnings Tables */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         {matchEarnings.length > 0 && (
           <div>
             <h3 className="text-sm font-semibold text-text-muted mb-2 uppercase tracking-wide">Match Earnings</h3>
             <div className="space-y-1">
               {matchEarnings.map((e) => (
-                <div key={e.key} className="flex justify-between text-sm">
-                  <span>{e.label}</span>
-                  <span className="font-mono">{e.bones} bone{e.bones !== 1 ? 's' : ''}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {placementEarnings.length > 0 && (
-          <div>
-            <h3 className="text-sm font-semibold text-text-muted mb-2 uppercase tracking-wide">Placement Earnings</h3>
-            <div className="space-y-1">
-              {placementEarnings.map((e) => (
                 <div key={e.key} className="flex justify-between text-sm">
                   <span>{e.label}</span>
                   <span className="font-mono">{e.bones} bone{e.bones !== 1 ? 's' : ''}</span>

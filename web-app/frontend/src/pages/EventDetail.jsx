@@ -264,6 +264,7 @@ export default function EventDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [reorderDirty, setReorderDirty] = useState({})
+  const [originalOrder, setOriginalOrder] = useState({}) // { top8: [...originalDecks], all: [...originalDecks] }
   const [saving, setSaving] = useState(null)
   const [editingDesc, setEditingDesc] = useState(false)
   const [descDraft, setDescDraft] = useState('')
@@ -289,17 +290,25 @@ export default function EventDetail() {
   }, [folder])
 
   const handleReorder = useCallback((tableType, newOrder) => {
+    const key = tableType === 'top8' ? 'top8_decks' : 'all_decks'
+    setOriginalOrder((prev) => {
+      // Snapshot the original order before the first drag
+      if (!prev[tableType]) return { ...prev, [tableType]: data[key] }
+      return prev
+    })
     setData((prev) => ({
       ...prev,
-      [tableType === 'top8' ? 'top8_decks' : 'all_decks']: newOrder,
+      [key]: newOrder,
     }))
     setReorderDirty((prev) => ({ ...prev, [tableType]: true }))
-  }, [])
+  }, [data])
 
   const saveOrder = useCallback(async (tableType) => {
     const key = tableType === 'top8' ? 'top8_decks' : 'all_decks'
-    const decks = data[key]
-    const order = decks.map((_, i) => i)
+    const currentDecks = data[key]
+    const original = originalOrder[tableType] || currentDecks
+    // Build order: for each position in the new list, find where that deck was in the original
+    const order = currentDecks.map((deck) => original.indexOf(deck))
     setSaving(tableType)
     try {
       const res = await fetch(`/api/events/${encodeURIComponent(folder)}/reorder`, {
@@ -310,10 +319,11 @@ export default function EventDetail() {
       const result = await res.json()
       if (result.success) {
         setReorderDirty((prev) => ({ ...prev, [tableType]: false }))
+        setOriginalOrder((prev) => ({ ...prev, [tableType]: null }))
       }
     } catch { /* ignore */ }
     finally { setSaving(null) }
-  }, [data, folder])
+  }, [data, folder, originalOrder])
 
   const openDeckModal = (table, mode) => {
     setDeckModal({ table, mode })

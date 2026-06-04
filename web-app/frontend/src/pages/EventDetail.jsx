@@ -81,7 +81,7 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder }) {
             <th className="py-3 px-4 text-left font-semibold">Player</th>
             <th className="py-3 px-4 text-left font-semibold">Avatar</th>
             <th className="py-3 px-4 text-left font-semibold">Deck</th>
-            <th className="py-3 px-4 text-left font-semibold w-36">Deck Rec</th>
+            <th className="py-3 px-4 text-left font-semibold w-36">Deck List</th>
           </tr>
         </thead>
         <tbody>
@@ -108,7 +108,7 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder }) {
                       to={`/deck-rec/${deck.deck_id}`}
                       className="text-secondary border border-secondary rounded px-3 py-1 text-xs hover:bg-secondary hover:text-black transition-colors"
                     >
-                      Deck Rec
+                      Deck List
                     </Link>
                   ) : null}
                 </td>

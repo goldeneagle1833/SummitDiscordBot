@@ -2025,3 +2025,41 @@ def set_profile_visibility(player_id):
     profile_repo.set_profile_visibility(str(player_id), data["sections"])
     updated = profile_repo.get_profile_visibility(str(player_id))
     return jsonify({"success": True, "sections": updated})
+
+
+@players_bp.route("/player/<path:player_id>/account", methods=["DELETE"])
+def delete_own_account(player_id):
+    """Delete the logged-in user's own account and all associated data."""
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+
+    logged_in_id_str = str(logged_in_user_id)
+    player_id_normalized = str(player_id)
+    if logged_in_id_str.startswith("google_"):
+        logged_in_id_str = logged_in_id_str[7:]
+    if player_id_normalized.startswith("google_"):
+        player_id_normalized = player_id_normalized[7:]
+
+    if logged_in_id_str != player_id_normalized:
+        return jsonify({"error": "You can only delete your own account"}), 403
+
+    from services.admin import AdminService
+    from repositories.audit import AuditRepository
+
+    service = AdminService()
+    display_name = session.get("username", str(player_id))
+    result = service.delete_account(str(player_id))
+
+    if result.get("success"):
+        audit = AuditRepository()
+        audit.log_action(
+            str(player_id), display_name, "self_delete_account",
+            target_id=str(player_id),
+            target_name=display_name,
+            details=f"User {display_name} ({player_id}) deleted their own account",
+        )
+        session.clear()
+
+    status = 200 if result.get("success") else 500
+    return jsonify(result), status

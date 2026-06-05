@@ -1,4 +1,4 @@
-import { get, post } from './client'
+import { get, post, del } from './client'
 
 export const getPlayer = (id, { event, source, page, perPage, casualPage } = {}) => {
   const params = new URLSearchParams()
@@ -16,3 +16,4 @@ export const setDisplayName = (id, name) => post(`/api/player/${id}/set-display-
 export const searchPlayers = (query) => get(`/api/players/search?q=${encodeURIComponent(query)}`)
 export const getProfileVisibility = (id) => get(`/api/player/${id}/visibility`)
 export const setProfileVisibility = (id, sections) => post(`/api/player/${id}/visibility`, { sections })
+export const deleteOwnAccount = (id) => del(`/api/player/${id}/account`)

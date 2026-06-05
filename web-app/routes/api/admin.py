@@ -895,6 +895,35 @@ def remove_creator_access(user_id):
     return jsonify({"success": True}), 200
 
 
+@admin_bp.route("/admin/delete-account/<path:user_id>", methods=["DELETE"])
+@require_admin
+def delete_account(user_id):
+    """Permanently delete a player account and all associated data (admin only)."""
+    service = AdminService()
+
+    # Capture some state before deletion for audit
+    current_elo = service._elo_repo.get_user_elo(user_id)
+    paper_elo = service._elo_repo.get_user_paper_elo(str(user_id))
+    profile_repo = UserProfileRepository()
+    profile = profile_repo.get_by_user_id(str(user_id))
+    display_name = profile.get("display_name", str(user_id)) if profile else str(user_id)
+
+    result = service.delete_account(str(user_id))
+    if result.get("success"):
+        admin_id, admin_name = _get_admin_info()
+        audit = AuditRepository()
+        audit.log_action(
+            admin_id, admin_name, "web_delete_account",
+            target_id=str(user_id),
+            target_name=display_name,
+            previous_state={"elo": current_elo, "paper_elo": paper_elo, "display_name": display_name},
+            new_state={"result": "account deleted", "details": result.get("details")},
+            details=f"Deleted account {user_id} ({display_name})",
+        )
+    status = 200 if result.get("success") else 500
+    return jsonify(result), status
+
+
 @admin_bp.route("/admin/transfer-history", methods=["POST"])
 @require_admin
 def transfer_history():

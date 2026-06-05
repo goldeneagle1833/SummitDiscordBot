@@ -30,3 +30,5 @@ export const updateAvatarImageSettings = (avatarName, settings) =>
 
 export const resetAvatarImageSettings = (avatarName) =>
   del(`/api/admin/avatar-image-settings/${encodeURIComponent(avatarName)}`)
+
+export const deleteAccount = (userId) => del(`/api/admin/delete-account/${userId}`)

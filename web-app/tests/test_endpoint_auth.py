@@ -54,6 +54,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.set_display_name",
     "api.players.get_profile_visibility",
     "api.players.set_profile_visibility",
+    "api.players.delete_own_account",
 
     # -- Card / avatar stats (public read-only) --
     "api.cards.get_cards",

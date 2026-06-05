@@ -5,7 +5,7 @@ import sqlite3
 
 from repositories.elo import EloRepository
 from repositories.matches import MatchRepository
-from webapp_config import ELO_DB_PATH, MATCH_RECORDS_DB_PATH
+from webapp_config import ELO_DB_PATH, MATCH_RECORDS_DB_PATH, RUMBLE_DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -374,6 +374,148 @@ class AdminService:
         return {
             "success": True,
             "message": f"Transferred history from {old_user_id} to {new_user_id} ({total_rows} rows updated)",
+            "details": summary,
+        }
+
+    def delete_account(self, user_id: str) -> dict:
+        """Delete a player account and all associated data across all databases.
+
+        Removes: ELO standings, match records, profile, season data, limited data,
+        rumble data, pairings, confirmations, and creator access.
+        """
+        deleted = {}
+
+        def _safe_count(label):
+            """Decorator-like helper to track deletion counts."""
+            deleted[label] = 0
+            return label
+
+        def _delete_rows(cur, table, columns, uid):
+            """Delete rows matching uid in any of the given columns."""
+            count = 0
+            for col in columns:
+                try:
+                    cur.execute(f"DELETE FROM {table} WHERE {col} = ?", (uid,))
+                    count += cur.rowcount
+                except sqlite3.OperationalError:
+                    pass
+            return count
+
+        # ── match_records.db ──
+        try:
+            conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = {row[0] for row in cur.fetchall()}
+
+            for table in ("match_records", "match_records_archive"):
+                if table in tables:
+                    deleted[table] = _delete_rows(cur, table, ("winner_id", "losser_id"), user_id)
+
+            if "match_reports_web" in tables:
+                deleted["match_reports_web"] = _delete_rows(cur, "match_reports_web", ("winner_id", "losser_id"), user_id)
+
+            if "match_confirmations" in tables:
+                deleted["match_confirmations"] = _delete_rows(cur, "match_confirmations", ("reporter_id", "winner_id", "loser_id"), user_id)
+
+            if "pairings" in tables:
+                deleted["pairings"] = _delete_rows(cur, "pairings", ("player_1_id", "player_2_id"), user_id)
+
+            if "rumble_match_records" in tables:
+                deleted["rumble_match_records"] = _delete_rows(cur, "rumble_match_records", ("winner_id", "losser_id"), user_id)
+
+            if "season_members" in tables:
+                cur.execute("DELETE FROM season_members WHERE user_id = ?", (user_id,))
+                deleted["season_members"] = cur.rowcount
+
+            if "season_match_elo" in tables:
+                deleted["season_match_elo"] = _delete_rows(cur, "season_match_elo", ("winner_id", "loser_id"), user_id)
+
+            if "limited_match_records" in tables:
+                deleted["limited_match_records"] = _delete_rows(cur, "limited_match_records", ("winner_id", "loser_id"), user_id)
+
+            if "limited_arena_runs" in tables:
+                cur.execute("DELETE FROM limited_arena_runs WHERE user_id = ?", (user_id,))
+                deleted["limited_arena_runs"] = cur.rowcount
+
+            if "limited_active_pairings" in tables:
+                deleted["limited_active_pairings"] = _delete_rows(cur, "limited_active_pairings", ("player_1_id", "player_2_id"), user_id)
+
+            if "creator_access" in tables:
+                cur.execute("DELETE FROM creator_access WHERE user_id = ?", (user_id,))
+                deleted["creator_access"] = cur.rowcount
+
+            if "user_profiles" in tables:
+                cur.execute("DELETE FROM user_profiles WHERE user_id = ?", (user_id,))
+                deleted["user_profiles"] = cur.rowcount
+
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to delete from match_records.db: {e}")
+            return {"success": False, "error": f"Failed during match records deletion: {e}"}
+
+        # ── elo.db ──
+        try:
+            conn = sqlite3.connect(str(ELO_DB_PATH))
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = {row[0] for row in cur.fetchall()}
+
+            for table in ("overall_standings", "paper_standings", "limited_elo"):
+                if table in tables:
+                    cur.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+                    deleted[table] = cur.rowcount
+
+            if "event_standings_archive" in tables:
+                cur.execute("DELETE FROM event_standings_archive WHERE user_id = ?", (user_id,))
+                deleted["event_standings_archive"] = cur.rowcount
+
+            if "limited_event_standings_archive" in tables:
+                cur.execute("DELETE FROM limited_event_standings_archive WHERE user_id = ?", (user_id,))
+                deleted["limited_event_standings_archive"] = cur.rowcount
+
+            if "limited_match_records_archive" in tables:
+                deleted["limited_match_records_archive"] = _delete_rows(cur, "limited_match_records_archive", ("winner_id", "loser_id"), user_id)
+
+            if "limited_arena_runs_archive" in tables:
+                cur.execute("DELETE FROM limited_arena_runs_archive WHERE user_id = ?", (user_id,))
+                deleted["limited_arena_runs_archive"] = cur.rowcount
+
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to delete from elo.db: {e}")
+            return {"success": False, "error": f"Failed during ELO deletion: {e}"}
+
+        # ── rumble.db ──
+        try:
+            if RUMBLE_DB_PATH.exists():
+                conn = sqlite3.connect(str(RUMBLE_DB_PATH))
+                cur = conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = {row[0] for row in cur.fetchall()}
+
+                if "rumble_bones" in tables:
+                    cur.execute("DELETE FROM rumble_bones WHERE discord_user_id = ?", (user_id,))
+                    deleted["rumble_bones"] = cur.rowcount
+
+                if "rumble_bone_transactions" in tables:
+                    cur.execute("DELETE FROM rumble_bone_transactions WHERE discord_user_id = ?", (user_id,))
+                    deleted["rumble_bone_transactions"] = cur.rowcount
+
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            logger.warning(f"Failed to delete from rumble.db (non-critical): {e}")
+
+        summary = {k: v for k, v in deleted.items() if v}
+        total_rows = sum(v for v in deleted.values() if isinstance(v, int))
+        logger.info(f"Deleted account {user_id}: {total_rows} rows removed across {len(summary)} tables")
+
+        return {
+            "success": True,
+            "message": f"Account {user_id} deleted ({total_rows} rows removed)",
             "details": summary,
         }
 

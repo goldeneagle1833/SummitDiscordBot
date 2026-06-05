@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { removePlayer, removeMatch, resetElo, renamePlayer } from '@/api/admin'
+import { removePlayer, removeMatch, resetElo, renamePlayer, deleteAccount } from '@/api/admin'
 
 export default function AdminControls({ playerId, playerName, onAction }) {
   const [modal, setModal] = useState(null)
@@ -28,6 +28,12 @@ export default function AdminControls({ playerId, playerName, onAction }) {
   const handleRemovePlayer = () => {
     if (!confirm(`Remove player "${playerName}" from the leaderboard? This cannot be undone.`)) return
     doAction(() => removePlayer(playerId))
+  }
+
+  const handleDeleteAccount = () => {
+    if (!confirm(`DELETE ACCOUNT for "${playerName}"? This will permanently remove ALL data (ELO, matches, profile, etc). This cannot be undone.`)) return
+    if (!confirm(`Are you absolutely sure? Type the player name to confirm.\n\nThis will delete: "${playerName}"`)) return
+    doAction(() => deleteAccount(playerId))
   }
 
   const handleRemoveMatch = () => {
@@ -63,6 +69,9 @@ export default function AdminControls({ playerId, playerName, onAction }) {
           </button>
           <button onClick={() => { setNewName(playerName || ''); setModal('rename') }} className="px-3 py-1.5 text-xs bg-bg-raised border border-border rounded text-text-muted hover:text-text-primary">
             Rename Player
+          </button>
+          <button onClick={handleDeleteAccount} className="px-3 py-1.5 text-xs bg-accent-red/20 text-accent-red border border-accent-red/30 rounded hover:bg-accent-red/30">
+            Delete Account
           </button>
         </div>
       </div>

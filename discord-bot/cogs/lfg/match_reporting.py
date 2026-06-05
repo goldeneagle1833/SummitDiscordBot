@@ -1714,3 +1714,170 @@ class MatchReportDeckModal(discord.ui.Modal, title="Enter Your Deck"):
         await self.report_view._submit(interaction, deck_url=url or None)
 
 
+# ──────────────────────────────────────────────
+#  Limited Report Flow (!limited_report @opponent)
+# ──────────────────────────────────────────────
+
+class LimitedReportView(discord.ui.View):
+    """DM view sent to the reporter for !limited_report.
+
+    Contains two dropdowns (who went first, who won) and a submit button.
+    On submit, sends a confirmation to the opponent.
+    """
+
+    def __init__(
+        self,
+        bot,
+        reporter_id: int,
+        reporter_global: str,
+        opponent_id: int,
+        opponent_global: str,
+        opponent_user: discord.User,
+        guild_id: int,
+    ):
+        super().__init__(timeout=300)  # 5 minute timeout
+        self.bot = bot
+        self.reporter_id = reporter_id
+        self.reporter_global = reporter_global
+        self.opponent_id = opponent_id
+        self.opponent_global = opponent_global
+        self.opponent_user = opponent_user
+        self.guild_id = guild_id
+        self.match_start_time = datetime.datetime.now()
+
+        # Add the select menus
+        self.went_first_select = discord.ui.Select(
+            placeholder="Who went first?",
+            options=[
+                discord.SelectOption(label=reporter_global, value=str(reporter_id)),
+                discord.SelectOption(label=opponent_global, value=str(opponent_id)),
+            ],
+            row=0,
+        )
+        self.who_won_select = discord.ui.Select(
+            placeholder="Who won?",
+            options=[
+                discord.SelectOption(label=reporter_global, value=str(reporter_id)),
+                discord.SelectOption(label=opponent_global, value=str(opponent_id)),
+            ],
+            row=1,
+        )
+        self.add_item(self.went_first_select)
+        self.add_item(self.who_won_select)
+
+    @discord.ui.button(label="Submit", style=discord.ButtonStyle.success, row=2)
+    async def submit_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        # Validate selections
+        if not self.went_first_select.values:
+            await interaction.response.send_message(
+                "Please select who went first.", ephemeral=True
+            )
+            return
+        if not self.who_won_select.values:
+            await interaction.response.send_message(
+                "Please select who won.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer()
+
+        # Disable all controls
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.message.edit(view=self)
+        except Exception:
+            pass
+
+        went_first_id = int(self.went_first_select.values[0])
+        winner_id = int(self.who_won_select.values[0])
+        loser_id = self.opponent_id if winner_id == self.reporter_id else self.reporter_id
+        winner_global = self.reporter_global if winner_id == self.reporter_id else self.opponent_global
+        loser_global = self.opponent_global if loser_id == self.opponent_id else self.reporter_global
+
+        # Determine first_player from the reporter's perspective
+        first_player = "y" if went_first_id == self.reporter_id else "n"
+
+        # Check for existing pending report
+        if (self.reporter_id, self.opponent_id) in pending_match_reports or (
+            self.opponent_id, self.reporter_id
+        ) in pending_match_reports:
+            await interaction.followup.send(
+                "A report for this match is already pending confirmation."
+            )
+            return
+
+        # Store pending report
+        pending_match_reports[(self.reporter_id, self.opponent_id)] = {
+            "winner_id": winner_id,
+            "winner_global": winner_global,
+            "loser_id": loser_id,
+            "loser_global": loser_global,
+            "reporter_id": self.reporter_id,
+            "reporter_global": self.reporter_global,
+            "is_winner": winner_id == self.reporter_id,
+            "opponent_message": None,
+            "match_start_time": self.match_start_time,
+            "reporter_deck_url": None,
+            "opponent_deck_url": None,
+            "first_player": first_player,
+            "guild_id": self.guild_id,
+            "ladder_info": None,
+            "match_type": "limited",
+        }
+
+        # Determine what the opponent sees
+        opponent_is_winner = winner_id == self.opponent_id
+        if opponent_is_winner:
+            confirm_msg = f"**Limited Match Report Confirmation**\n\nYou **WON** against {self.reporter_global}\n\nPlease confirm or dispute this result:"
+        else:
+            confirm_msg = f"**Limited Match Report Confirmation**\n\nYou **LOST** against {self.reporter_global}\n\nPlease confirm or dispute this result:"
+
+        confirmation_view = create_confirmation_view(
+            reporter_id=self.reporter_id,
+            reporter_global=self.reporter_global,
+            opponent_id=self.opponent_id,
+            opponent_global=self.opponent_global,
+            winner_id=winner_id,
+            winner_global=winner_global,
+            loser_id=loser_id,
+            loser_global=loser_global,
+            is_winner=opponent_is_winner,
+            match_start_time=self.match_start_time,
+            first_player=first_player,
+            winner_deck_url=None,
+            loser_deck_url=None,
+            ladder_info=None,
+            match_type="limited",
+            guild_id=self.guild_id,
+            winner_run_id=None,
+            loser_run_id=None,
+        )
+
+        try:
+            await _send_confirmation_to_opponent(
+                self.bot, self.opponent_user, self.opponent_id, self.opponent_global,
+                confirm_msg, confirmation_view,
+                interaction, self.guild_id,
+            )
+        except Exception as e:
+            logger.error(f"Error sending limited confirmation to opponent: {e}", exc_info=True)
+            await interaction.followup.send(
+                "An error occurred while sending confirmation to your opponent."
+            )
+            return
+
+        # Update reporter's message
+        try:
+            await interaction.message.edit(
+                content=f"Limited match report sent to **{self.opponent_global}**. Waiting for confirmation...",
+                view=None,
+            )
+        except Exception:
+            pass
+
+        self.stop()
+
+

@@ -115,7 +115,7 @@ def increment_game_counter():
     """Increment the global game counter and return (games_since_reset, drop_chance, locked).
 
     Resets the counter and lock back to 0 when it reaches 100.
-    Drop chance starts at 0.1% and increases by 0.05% each game.
+    Drop chance starts at 0.0156% and increases by 0.0156% per game.
     Once a code drops in a 100-game cycle, locked=True for the rest.
     """
     with _get_connection() as conn:
@@ -136,8 +136,8 @@ def increment_game_counter():
                 (new_count,),
             )
 
-        # Drop chance: 0.02% per game, capped at 2%
-        drop_chance = min(new_count * 0.0002, 0.02)
+        # Drop chance: 0.0156% per game, increasing each game (game 1=0.0156%, game 50=0.78%, game 100=1.56%)
+        drop_chance = new_count * 0.000156
         locked = bool(dropped)
         return new_count, drop_chance, locked
 
@@ -163,8 +163,8 @@ def get_drop_status():
             return None
         games = row[0]
         dropped = bool(row[3])
-        # Next game would be games+1, chance = 0.02% per game, capped at 2%
-        next_chance = min((games + 1) * 0.0002, 0.02)
+        # 0.0156% per game, increasing each game
+        next_chance = (games + 1) * 0.000156
         return {
             "games_since_reset": games,
             "current_chance": "LOCKED" if dropped else f"{next_chance:.2%}",

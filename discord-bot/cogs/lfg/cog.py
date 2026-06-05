@@ -2347,6 +2347,107 @@ class LFGCog(commands.Cog):
             await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
+    async def admin_limited_elo_report(
+        self, ctx, winner: discord.Member = None, loser: discord.Member = None
+    ):
+        """Admin command to report a limited match that only affects ELO (no arena runs). Usage: !admin_limited_elo_report @winner @loser"""
+        DRAFT_SORCERY_USER_ID = 247563860746305536
+
+        # Permission check: bot admins, judges, or Draft Sorcery user
+        is_admin = False
+        if ctx.author.id == DRAFT_SORCERY_USER_ID:
+            is_admin = True
+        elif ctx.author.guild_permissions.administrator:
+            is_admin = True
+        elif any(role.id == config.BOT_ADMIN_ROLE_ID for role in ctx.author.roles):
+            is_admin = True
+        elif any(role.id == config.JUDGE_ROLE_ID for role in ctx.author.roles):
+            is_admin = True
+
+        if not is_admin:
+            await ctx.send("You don't have permission to use this command.")
+            return
+
+        if winner is None or loser is None:
+            await ctx.send(
+                "Please mention both players. Usage: `!admin_limited_elo_report @winner @loser`"
+            )
+            return
+
+        if winner.id == loser.id:
+            await ctx.send("Winner and loser cannot be the same player!")
+            return
+
+        if winner.bot or loser.bot:
+            await ctx.send("Cannot report matches for bots!")
+            return
+
+        try:
+            winner_name = winner.global_name or winner.display_name
+            loser_name = loser.global_name or loser.display_name
+
+            match_id, winner_new_elo, loser_new_elo = limited_elo_only_report(
+                reporter_id=ctx.author.id,
+                winner_id=winner.id,
+                winner_display_name=winner_name,
+                loser_id=loser.id,
+                loser_display_name=loser_name,
+                match_comment="Admin limited ELO-only report",
+            )
+
+            description = (
+                f"**Match ID:** #{match_id}\n"
+                f"**Winner:** {winner.mention} ({winner_name})\n"
+                f"**Loser:** {loser.mention} ({loser_name})\n\n"
+                f"**Limited ELO:**\n"
+                f"{winner_name}: **{winner_new_elo}**\n"
+                f"{loser_name}: **{loser_new_elo}**\n\n"
+                f"*This match does not affect arena runs.*"
+            )
+
+            success_embed = discord.Embed(
+                title="Limited Match Reported (ELO Only)",
+                description=description,
+                color=discord.Color.green(),
+            )
+            success_embed.set_footer(text=f"Reported by {ctx.author.display_name}")
+            await ctx.send(embed=success_embed)
+
+            log_admin_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "admin_limited_elo_report",
+                target_id=winner.id,
+                target_name=winner_name,
+                previous_state={"winner_id": winner.id, "loser_id": loser.id},
+                new_state={"match_id": match_id},
+                details=f"Admin limited ELO-only match #{match_id}: {winner_name} beat {loser_name}",
+            )
+
+            logger.info(
+                f"Admin {ctx.author} (ID: {ctx.author.id}) reported limited ELO-only match: {winner_name} beat {loser_name}"
+            )
+
+            await self.update_limited_leaderboard()
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Limited Match Report Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"Admin limited ELO-only report failed: {e}")
+
+    @admin_limited_elo_report.error
+    async def admin_limited_elo_report_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You don't have permission to use this command.")
+        else:
+            logger.error(f"admin_limited_elo_report error: {error}")
+            await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
     async def limited_report(self, ctx, opponent: discord.Member = None):
         """Report a limited match result. Usage: !limited_report @opponent"""
         if opponent is None:

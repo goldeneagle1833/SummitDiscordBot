@@ -1365,35 +1365,46 @@ class LFGCog(commands.Cog):
                 challenge_id = save_ladder_challenge(user_id)
                 ladder_info["challenge_id"] = challenge_id
 
-                # Get matched user info before removing from queue
-                matched_entry = lfg_queue.get(matched_user_id, {}).get("queues", {}).get("ranked", {})
-                matched_user_deck_url = matched_entry.get("deck_url")
-                matched_queue_type = "ranked"
+                try:
+                    # Get matched user info before removing from queue
+                    matched_entry = lfg_queue.get(matched_user_id, {}).get("queues", {}).get("ranked", {})
+                    matched_user_deck_url = matched_entry.get("deck_url")
+                    matched_queue_type = "ranked"
 
-                # Adjust ladder multipliers based on ELO difference
-                challenger_elo = get_user_event_elo(user_id)
-                opponent_elo = get_user_event_elo(matched_user_id)
-                elo_diff = abs(challenger_elo - opponent_elo)
+                    # Adjust ladder multipliers based on ELO difference
+                    challenger_elo = get_user_event_elo(user_id)
+                    opponent_elo = get_user_event_elo(matched_user_id)
+                    elo_diff = abs(challenger_elo - opponent_elo)
 
-                if elo_diff < 100:
-                    ladder_info["elo_multiplier_winner"] = 1.0
-                    ladder_info["elo_multiplier_loser"] = 1.0
+                    if elo_diff < 100:
+                        ladder_info["elo_multiplier_winner"] = 1.0
+                        ladder_info["elo_multiplier_loser"] = 1.0
+                        logger.info(
+                            f"Ladder challenge match: ELO diff {elo_diff} < 100 - normal stakes"
+                        )
+                    else:
+                        logger.info(
+                            f"Ladder challenge match: ELO diff {elo_diff} >= 100 - special stakes (2x/0.5x)"
+                        )
+
+                    match_type = self.resolve_match_type("ranked", matched_queue_type)
+
+                    # Remove both players from all queues
+                    lfg_queue.pop(matched_user_id, None)
+                    lfg_queue.pop(user_id, None)
                     logger.info(
-                        f"Ladder challenge match: ELO diff {elo_diff} < 100 - normal stakes"
+                        f"Lock acquired: Matching challenger {user_id} with {matched_user_id} (match_type={match_type})"
                     )
-                else:
-                    logger.info(
-                        f"Ladder challenge match: ELO diff {elo_diff} >= 100 - special stakes (2x/0.5x)"
+                except Exception as e:
+                    # Rollback: delete the challenge so daily usage is not consumed
+                    logger.error(
+                        f"Error processing ladder challenge match for {user_id} vs {matched_user_id}: {e}",
+                        exc_info=True,
                     )
-
-                match_type = self.resolve_match_type("ranked", matched_queue_type)
-
-                # Remove both players from all queues
-                lfg_queue.pop(matched_user_id, None)
-                lfg_queue.pop(user_id, None)
-                logger.info(
-                    f"Lock acquired: Matching challenger {user_id} with {matched_user_id} (match_type={match_type})"
-                )
+                    delete_ladder_challenge(challenge_id)
+                    matched_user_id = None
+                    challenge_id = None
+                    ladder_info["challenge_id"] = None
             else:
                 # No match found - add to queue (does NOT count against daily limit)
                 self.add_to_lfg_queue(

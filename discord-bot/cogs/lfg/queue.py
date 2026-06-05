@@ -251,22 +251,32 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                         f"Ladder challenge saved on match for challenger {matched_ladder_info['challenger_id']}, challenge_id: {challenge_id}"
                     )
 
-                challenger_elo = get_user_event_elo(
-                    matched_ladder_info["challenger_id"]
-                )
-                opponent_elo = get_user_event_elo(interaction.user.id)
-                elo_diff = abs(challenger_elo - opponent_elo)
+                try:
+                    challenger_elo = get_user_event_elo(
+                        matched_ladder_info["challenger_id"]
+                    )
+                    opponent_elo = get_user_event_elo(interaction.user.id)
+                    elo_diff = abs(challenger_elo - opponent_elo)
 
-                if elo_diff < 100:
-                    matched_ladder_info["elo_multiplier_winner"] = 1.0
-                    matched_ladder_info["elo_multiplier_loser"] = 1.0
-                    logger.info(
-                        f"Ladder challenge match: ELO diff {elo_diff} < 100 - using normal stakes"
+                    if elo_diff < 100:
+                        matched_ladder_info["elo_multiplier_winner"] = 1.0
+                        matched_ladder_info["elo_multiplier_loser"] = 1.0
+                        logger.info(
+                            f"Ladder challenge match: ELO diff {elo_diff} < 100 - using normal stakes"
+                        )
+                    else:
+                        logger.info(
+                            f"Ladder challenge match: ELO diff {elo_diff} >= 100 - using special stakes (2x/0.5x)"
+                        )
+                except Exception as e:
+                    # Rollback: delete the challenge so daily usage is not consumed
+                    logger.error(
+                        f"Error processing ladder ELO for challenge {matched_ladder_info.get('challenge_id')}: {e}",
+                        exc_info=True,
                     )
-                else:
-                    logger.info(
-                        f"Ladder challenge match: ELO diff {elo_diff} >= 100 - using special stakes (2x/0.5x)"
-                    )
+                    if matched_ladder_info.get("challenge_id"):
+                        delete_ladder_challenge(matched_ladder_info["challenge_id"])
+                    matched_ladder_info = None
 
             lfg_queue.pop(matched_user_id, None)
             # Also remove the joiner from any other queues they may be in

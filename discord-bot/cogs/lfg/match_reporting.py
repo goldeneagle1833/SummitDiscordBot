@@ -1745,7 +1745,11 @@ class LimitedReportView(discord.ui.View):
         self.guild_id = guild_id
         self.match_start_time = datetime.datetime.now()
 
-        # Add the select menus
+        # Track selected values across interactions
+        self.selected_went_first = None
+        self.selected_winner = None
+
+        # Add the select menus with callbacks
         self.went_first_select = discord.ui.Select(
             placeholder="Who went first?",
             options=[
@@ -1754,6 +1758,8 @@ class LimitedReportView(discord.ui.View):
             ],
             row=0,
         )
+        self.went_first_select.callback = self._went_first_callback
+
         self.who_won_select = discord.ui.Select(
             placeholder="Who won?",
             options=[
@@ -1762,20 +1768,30 @@ class LimitedReportView(discord.ui.View):
             ],
             row=1,
         )
+        self.who_won_select.callback = self._who_won_callback
+
         self.add_item(self.went_first_select)
         self.add_item(self.who_won_select)
+
+    async def _went_first_callback(self, interaction: discord.Interaction):
+        self.selected_went_first = int(self.went_first_select.values[0])
+        await interaction.response.defer()
+
+    async def _who_won_callback(self, interaction: discord.Interaction):
+        self.selected_winner = int(self.who_won_select.values[0])
+        await interaction.response.defer()
 
     @discord.ui.button(label="Submit", style=discord.ButtonStyle.success, row=2)
     async def submit_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         # Validate selections
-        if not self.went_first_select.values:
+        if self.selected_went_first is None:
             await interaction.response.send_message(
                 "Please select who went first.", ephemeral=True
             )
             return
-        if not self.who_won_select.values:
+        if self.selected_winner is None:
             await interaction.response.send_message(
                 "Please select who won.", ephemeral=True
             )
@@ -1791,8 +1807,8 @@ class LimitedReportView(discord.ui.View):
         except Exception:
             pass
 
-        went_first_id = int(self.went_first_select.values[0])
-        winner_id = int(self.who_won_select.values[0])
+        went_first_id = self.selected_went_first
+        winner_id = self.selected_winner
         loser_id = self.opponent_id if winner_id == self.reporter_id else self.reporter_id
         winner_global = self.reporter_global if winner_id == self.reporter_id else self.opponent_global
         loser_global = self.opponent_global if loser_id == self.opponent_id else self.reporter_global

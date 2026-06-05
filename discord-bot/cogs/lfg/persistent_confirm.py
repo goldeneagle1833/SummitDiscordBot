@@ -607,7 +607,7 @@ class PersistentConfirmButton(
 
             # If confirmer still needs a deck URL, show the modal
             confirmer_deck_url = data["winner_deck_url"] if data["is_winner"] else data["loser_deck_url"]
-            if not confirmer_deck_url and data.get("match_type") not in ("testing", "rumble"):
+            if not confirmer_deck_url and data.get("match_type") not in ("testing", "rumble", "limited"):
                 modal = PersistentConfirmDeckModal(self.confirmation_id, data["is_winner"])
                 try:
                     await interaction.response.send_modal(modal)

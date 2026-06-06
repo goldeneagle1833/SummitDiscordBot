@@ -8,10 +8,13 @@ from flask import Blueprint, jsonify, request
 from utils.api_auth import require_api_key
 from repositories.limited_repo import (
     get_active_arena_run,
+    get_all_limited_match_history,
+    get_all_runs_for_user,
     get_arena_run,
     get_latest_arena_run,
     get_limited_elo,
     get_matches_for_run,
+    get_matches_for_run_with_decks,
     get_latest_arena_run_from_archive,
     get_matches_for_archived_run,
     get_all_archived_matches_for_user,
@@ -260,6 +263,75 @@ def get_run_matchups_endpoint(run_id):
     except Exception as e:
         logger.error("Error fetching run matchups for run %d: %s", run_id, e)
         return jsonify({"error": "Internal server error"}), 500
+
+
+@limited_bp.route("/match-history", methods=["GET"])
+@require_api_key
+def get_match_history():
+    """Get limited match history with deck links.
+
+    Query params:
+    - user_id: Return all runs and per-run match history for this user.
+    - run_id: Return match history for a specific run (deck).
+    - Neither: Return all match records globally.
+    """
+    user_id = request.args.get("user_id")
+    run_id = request.args.get("run_id")
+
+    try:
+        if user_id and run_id:
+            return jsonify({"success": False, "error": "Provide user_id or run_id, not both"}), 400
+
+        if run_id:
+            try:
+                rid = int(run_id)
+            except ValueError:
+                return jsonify({"success": False, "error": "Invalid run_id"}), 400
+
+            run = get_arena_run(rid)
+            if not run:
+                return jsonify({"success": False, "error": "Run not found"}), 404
+
+            matches = get_matches_for_run_with_decks(rid)
+            return jsonify({
+                "success": True,
+                "run": _run_to_dict(run),
+                "matches": matches,
+            })
+
+        if user_id:
+            try:
+                uid = int(user_id)
+            except ValueError:
+                return jsonify({"success": False, "error": "Invalid user_id"}), 400
+
+            runs = get_all_runs_for_user(uid)
+            runs_with_matches = []
+            for run in runs:
+                matches = get_matches_for_run_with_decks(run["run_id"])
+                run_data = _run_to_dict(run)
+                run_data["matches"] = matches
+                runs_with_matches.append(run_data)
+
+            return jsonify({
+                "success": True,
+                "user_id": user_id,
+                "runs": runs_with_matches,
+            })
+
+        # No filters — return global match history
+        matches = get_all_limited_match_history()
+        return jsonify({
+            "success": True,
+            "matches": matches,
+        })
+
+    except sqlite3.Error as e:
+        logger.error("Database error in GET match-history: %s", e)
+        return jsonify({"success": False, "error": "Database error"}), 500
+    except Exception as e:
+        logger.error("Unexpected error in GET match-history: %s", e)
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
 @limited_bp.route("/user/<user_id>/end-run", methods=["POST"])

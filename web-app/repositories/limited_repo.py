@@ -531,6 +531,76 @@ def get_run_matchups(run_id):
     return matches
 
 
+def get_all_limited_match_history():
+    """Get all limited match records with deck links, ordered by newest first."""
+    create_limited_tables()
+    conn = _match_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT match_id, winner_id, winner_display_name, loser_id, loser_display_name,
+                  timestamp, curiosa_url_winner, curiosa_url_loser,
+                  winner_elo_change, loser_elo_change,
+                  winner_run_id, loser_run_id
+           FROM limited_match_records
+           ORDER BY timestamp DESC"""
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [_match_row_to_dict(r) for r in rows]
+
+
+def get_all_runs_for_user(user_id):
+    """Get all arena runs for a user with win/loss records, ordered by newest first."""
+    create_limited_tables()
+    conn = _match_conn()
+    cur = conn.cursor()
+    cur.execute(
+        _RUN_SELECT + " WHERE user_id = ? ORDER BY created_at DESC",
+        (user_id,),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [_run_from_row(r) for r in rows]
+
+
+def get_matches_for_run_with_decks(run_id):
+    """Get all match records for a run including deck links."""
+    create_limited_tables()
+    conn = _match_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT match_id, winner_id, winner_display_name, loser_id, loser_display_name,
+                  timestamp, curiosa_url_winner, curiosa_url_loser,
+                  winner_elo_change, loser_elo_change,
+                  winner_run_id, loser_run_id
+           FROM limited_match_records
+           WHERE winner_run_id = ? OR loser_run_id = ?
+           ORDER BY timestamp ASC""",
+        (run_id, run_id),
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [_match_row_to_dict(r) for r in rows]
+
+
+def _match_row_to_dict(row):
+    """Convert a match record row to a dict with deck links."""
+    return {
+        "match_id": row[0],
+        "winner_id": row[1],
+        "winner_display_name": row[2],
+        "loser_id": row[3],
+        "loser_display_name": row[4],
+        "timestamp": row[5],
+        "winner_deck_url": row[6],
+        "loser_deck_url": row[7],
+        "winner_elo_change": row[8],
+        "loser_elo_change": row[9],
+        "winner_run_id": row[10],
+        "loser_run_id": row[11],
+    }
+
+
 def get_limited_leaderboard_stats():
     """Get aggregate limited stats: total runs, total matches, trophy count."""
     create_limited_tables()

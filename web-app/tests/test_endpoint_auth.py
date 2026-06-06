@@ -135,6 +135,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.limited.post_end_run",
     "api.limited.get_user_status",
     "api.limited.get_run_matchups_endpoint",
+    "api.limited.get_match_history",
 
     # -- Static file serving --
     "static",

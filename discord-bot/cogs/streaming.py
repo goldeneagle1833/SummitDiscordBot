@@ -12,7 +12,6 @@ import datetime
 import logging
 from pathlib import Path
 
-from config import AVATAR_ROLE_CHANNELS
 from repositories.audit_repo import log_admin_action
 from utils.checks import is_bot_admin
 
@@ -57,23 +56,6 @@ class StreamingCog(commands.Cog):
 
     def cog_unload(self):
         self.cleanup_stale_streamers.cancel()
-
-    async def _notify_avatar_channels(self, member: discord.Member, stream_url: str | None = None, stream_title: str | None = None):
-        """Send @here notification to avatar private channels when a member starts streaming."""
-        member_role_ids = {role.id for role in member.roles}
-        for role_id, (channel_id, avatar_name) in AVATAR_ROLE_CHANNELS.items():
-            if role_id in member_role_ids:
-                channel = self.bot.get_channel(channel_id)
-                if channel:
-                    msg = f"@here **{member.display_name}** ({avatar_name}) is streaming!"
-                    if stream_url:
-                        msg += f"\n{stream_url}"
-                    elif stream_title:
-                        msg += f"\n{stream_title}"
-                    try:
-                        await channel.send(msg, allowed_mentions=discord.AllowedMentions(everyone=True))
-                    except discord.Forbidden:
-                        logger.warning(f"Cannot send streaming notification to #{channel.name}")
 
     def _get_streaming_activity(
         self, member: discord.Member
@@ -209,7 +191,6 @@ class StreamingCog(commands.Cog):
                 f"{after.display_name} started streaming: {after_streaming.url}"
             )
             self._add_streamer(after, after_streaming)
-            await self._notify_avatar_channels(after, stream_url=after_streaming.url)
 
         # Stopped streaming
         elif before_streaming and not after_streaming:
@@ -240,7 +221,6 @@ class StreamingCog(commands.Cog):
                     f"{member.display_name} started Go Live in #{after.channel.name}"
                 )
                 self._add_voice_streamer(member, after.channel)
-                await self._notify_avatar_channels(member, stream_title=f"Live in #{after.channel.name}")
 
         # Stopped streaming (turned off Go Live or left channel)
         elif before.self_stream and not after.self_stream:

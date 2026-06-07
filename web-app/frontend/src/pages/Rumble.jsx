@@ -4,7 +4,7 @@ import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useAuth } from '@/context/AuthContext'
 
-function PrizeWall({ prizes, earnings }) {
+function PrizeWall({ prizes, earnings, userBones, userId, onRedeem }) {
   const matchEarnings = earnings?.filter((e) => e.category === 'match') || []
   const outsideEarnings = earnings?.filter((e) => e.category === 'outside') || []
 
@@ -46,6 +46,11 @@ function PrizeWall({ prizes, earnings }) {
       {prizes?.length > 0 && (
         <>
           <h3 className="text-sm font-semibold text-text-muted mb-2 uppercase tracking-wide text-center">Prize Wall</h3>
+          {userId && userBones !== null && (
+            <p className="text-center text-sm text-text-muted mb-2">
+              Your balance: <span className="font-mono font-semibold text-text-primary">{userBones}</span> bone{userBones !== 1 ? 's' : ''}
+            </p>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -54,21 +59,45 @@ function PrizeWall({ prizes, earnings }) {
                   <th className="py-1.5 px-2 text-text-muted font-semibold">Cost</th>
                   <th className="py-1.5 px-2 text-text-muted font-semibold">Stock</th>
                   <th className="py-1.5 px-2 text-text-muted font-semibold">Description</th>
+                  {userId && <th className="py-1.5 px-2 text-text-muted font-semibold"></th>}
                 </tr>
               </thead>
               <tbody>
-                {prizes.map((p) => (
-                  <tr key={p.id} className="border-b border-border/50">
-                    <td className="py-1.5 px-2 font-medium">{p.name}</td>
-                    <td className="py-1.5 px-2 font-mono">
-                      {p.cost > 0 ? `${p.cost} bone${p.cost !== 1 ? 's' : ''}` : 'TBD'}
-                    </td>
-                    <td className="py-1.5 px-2 text-text-muted">
-                      {p.stock != null ? p.stock : 'Unlimited'}
-                    </td>
-                    <td className="py-1.5 px-2 text-text-muted text-xs">{p.description || '-'}</td>
-                  </tr>
-                ))}
+                {prizes.map((p) => {
+                  const canAfford = userBones !== null && userBones >= p.cost && p.cost > 0
+                  const inStock = p.stock == null || p.stock > 0
+                  return (
+                    <tr key={p.id} className="border-b border-border/50">
+                      <td className="py-1.5 px-2 font-medium">{p.name}</td>
+                      <td className="py-1.5 px-2 font-mono">
+                        {p.cost > 0 ? `${p.cost} bone${p.cost !== 1 ? 's' : ''}` : 'TBD'}
+                      </td>
+                      <td className="py-1.5 px-2 text-text-muted">
+                        {p.stock != null ? p.stock : 'Unlimited'}
+                      </td>
+                      <td className="py-1.5 px-2 text-text-muted text-xs">{p.description || '-'}</td>
+                      {userId && (
+                        <td className="py-1.5 px-2">
+                          {p.cost > 0 && inStock ? (
+                            <button
+                              onClick={() => onRedeem(p.id, p.name, p.cost)}
+                              disabled={!canAfford}
+                              className={`text-xs px-2 py-0.5 rounded font-medium ${
+                                canAfford
+                                  ? 'bg-secondary text-bg-primary hover:opacity-90'
+                                  : 'bg-border text-text-muted cursor-not-allowed'
+                              }`}
+                            >
+                              Redeem
+                            </button>
+                          ) : !inStock ? (
+                            <span className="text-xs text-text-muted">Sold out</span>
+                          ) : null}
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -107,6 +136,39 @@ function BonesLeaderboard({ bones }) {
   )
 }
 
+function RedemptionHistory({ redemptions }) {
+  if (!redemptions?.length) return null
+  return (
+    <div className="bg-bg-surface border border-border rounded-lg p-4">
+      <h2 className="text-base font-semibold text-text-primary mb-3">Redemption History</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-left">
+              <th className="py-1.5 px-2 text-text-muted font-semibold">Player</th>
+              <th className="py-1.5 px-2 text-text-muted font-semibold">Prize</th>
+              <th className="py-1.5 px-2 text-text-muted font-semibold">Cost</th>
+              <th className="py-1.5 px-2 text-text-muted font-semibold">Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {redemptions.map((r) => (
+              <tr key={r.id} className="border-b border-border/50">
+                <td className="py-1.5 px-2 font-medium">{r.display_name || 'Unknown'}</td>
+                <td className="py-1.5 px-2">{r.prize_name || 'Deleted prize'}</td>
+                <td className="py-1.5 px-2 font-mono">{r.cost}</td>
+                <td className="py-1.5 px-2 text-text-muted">
+                  {r.created_at ? new Date(r.created_at + 'Z').toLocaleDateString() : '-'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function AdminPanel({ data, onRefresh }) {
   const [activeTab, setActiveTab] = useState('bones')
   const [loading, setLoading] = useState(false)
@@ -123,6 +185,10 @@ function AdminPanel({ data, onRefresh }) {
   const [prizeCost, setPrizeCost] = useState('')
   const [prizeStock, setPrizeStock] = useState('')
   const [prizeDesc, setPrizeDesc] = useState('')
+
+  // Prize editing
+  const [editingPrize, setEditingPrize] = useState(null)
+  const [editForm, setEditForm] = useState({})
 
   // Admin form
   const [adminUserId, setAdminUserId] = useState('')
@@ -200,10 +266,11 @@ function AdminPanel({ data, onRefresh }) {
     }
   }
 
-  const handleUpdatePrize = async (id, field, value) => {
+  const handleUpdatePrize = async (id, updates) => {
     try {
-      await put(`/api/rumble/admin/prizes/${id}`, { [field]: value })
+      await put(`/api/rumble/admin/prizes/${id}`, updates)
       flash('Prize updated')
+      setEditingPrize(null)
       onRefresh()
     } catch (err) {
       flash(err.message, true)
@@ -219,6 +286,40 @@ function AdminPanel({ data, onRefresh }) {
     } catch (err) {
       flash(err.message, true)
     }
+  }
+
+  const handleReorder = async (prizeIndex, direction) => {
+    const prizes = data.prizes
+    const targetIndex = prizeIndex + direction
+    if (targetIndex < 0 || targetIndex >= prizes.length) return
+    try {
+      await post('/api/rumble/admin/prizes/reorder', {
+        prize_id_a: prizes[prizeIndex].id,
+        prize_id_b: prizes[targetIndex].id,
+      })
+      onRefresh()
+    } catch (err) {
+      flash(err.message, true)
+    }
+  }
+
+  const startEditing = (prize) => {
+    setEditingPrize(prize.id)
+    setEditForm({
+      name: prize.name,
+      cost: prize.cost,
+      stock: prize.stock ?? '',
+      description: prize.description || '',
+    })
+  }
+
+  const saveEditing = (id) => {
+    handleUpdatePrize(id, {
+      name: editForm.name,
+      cost: parseInt(editForm.cost) || 0,
+      stock: editForm.stock === '' ? null : parseInt(editForm.stock),
+      description: editForm.description || null,
+    })
   }
 
   const handleAddAdmin = async (e) => {
@@ -360,38 +461,97 @@ function AdminPanel({ data, onRefresh }) {
       {activeTab === 'prizes' && (
         <div className="space-y-4">
           {/* Existing prizes */}
-          {data.prizes?.map((p) => (
-            <div key={p.id} className="flex items-center gap-2 text-sm border-b border-border/50 pb-2">
-              <span className="flex-1 font-medium">{p.name}</span>
-              <input
-                type="number"
-                defaultValue={p.cost}
-                placeholder="Cost"
-                className="w-20 bg-bg-primary border border-border rounded px-2 py-1 text-sm text-center"
-                onBlur={(ev) => {
-                  const val = parseInt(ev.target.value)
-                  if (!isNaN(val) && val !== p.cost) handleUpdatePrize(p.id, 'cost', val)
-                }}
-                onKeyDown={(ev) => { if (ev.key === 'Enter') ev.target.blur() }}
-              />
-              <input
-                type="number"
-                defaultValue={p.stock ?? ''}
-                placeholder="Stock"
-                className="w-20 bg-bg-primary border border-border rounded px-2 py-1 text-sm text-center"
-                onBlur={(ev) => {
-                  const raw = ev.target.value
-                  const val = raw === '' ? null : parseInt(raw)
-                  if (val !== p.stock) handleUpdatePrize(p.id, 'stock', val)
-                }}
-                onKeyDown={(ev) => { if (ev.key === 'Enter') ev.target.blur() }}
-              />
-              <button
-                onClick={() => handleDeletePrize(p.id)}
-                className="text-accent-red hover:text-accent-red/80 text-xs px-2"
-              >
-                Delete
-              </button>
+          {data.prizes?.map((p, idx) => (
+            <div key={p.id} className="border-b border-border/50 pb-2">
+              {editingPrize === p.id ? (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      placeholder="Name"
+                      className="bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+                    />
+                    <input
+                      type="number"
+                      value={editForm.cost}
+                      onChange={(e) => setEditForm({ ...editForm, cost: e.target.value })}
+                      placeholder="Cost"
+                      className="bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+                    />
+                    <input
+                      type="number"
+                      value={editForm.stock}
+                      onChange={(e) => setEditForm({ ...editForm, stock: e.target.value })}
+                      placeholder="Stock (empty = unlimited)"
+                      className="bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={editForm.description}
+                      onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                      placeholder="Description"
+                      className="bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveEditing(p.id)}
+                      className="bg-secondary text-bg-primary px-3 py-1 rounded text-xs font-medium hover:opacity-90"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditingPrize(null)}
+                      className="text-text-muted hover:text-text-primary text-xs px-3 py-1"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm">
+                  {/* Reorder buttons */}
+                  <div className="flex flex-col">
+                    <button
+                      onClick={() => handleReorder(idx, -1)}
+                      disabled={idx === 0}
+                      className="text-text-muted hover:text-text-primary disabled:opacity-30 text-xs leading-none"
+                      title="Move up"
+                    >
+                      &#9650;
+                    </button>
+                    <button
+                      onClick={() => handleReorder(idx, 1)}
+                      disabled={idx === data.prizes.length - 1}
+                      className="text-text-muted hover:text-text-primary disabled:opacity-30 text-xs leading-none"
+                      title="Move down"
+                    >
+                      &#9660;
+                    </button>
+                  </div>
+                  <span className="flex-1 font-medium">{p.name}</span>
+                  <span className="text-text-muted text-xs w-16 text-center">
+                    {p.cost > 0 ? `${p.cost}b` : 'TBD'}
+                  </span>
+                  <span className="text-text-muted text-xs w-16 text-center">
+                    {p.stock != null ? `${p.stock} left` : 'Unlim'}
+                  </span>
+                  <button
+                    onClick={() => startEditing(p)}
+                    className="text-secondary hover:text-secondary/80 text-xs px-2"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeletePrize(p.id)}
+                    className="text-accent-red hover:text-accent-red/80 text-xs px-2"
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
             </div>
           ))}
 
@@ -490,6 +650,7 @@ export default function Rumble() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [redeemMessage, setRedeemMessage] = useState(null)
 
   const fetchData = useCallback(() => {
     get('/api/rumble')
@@ -509,6 +670,23 @@ export default function Rumble() {
   const { standings, matches, total_matches } = data
   const isRumbleAdmin = user && (user.is_admin || user.is_rumble_admin)
 
+  // Find user's bone balance
+  const userId = user ? user.user_id : null
+  const userBoneEntry = userId ? data.bones?.find((b) => b.discord_user_id === String(userId)) : null
+  const userBones = userBoneEntry ? userBoneEntry.balance : (userId ? 0 : null)
+
+  const handleRedeem = async (prizeId, prizeName, cost) => {
+    if (!confirm(`Redeem "${prizeName}" for ${cost} bone${cost !== 1 ? 's' : ''}?`)) return
+    try {
+      const res = await post(`/api/rumble/redeem/${prizeId}`)
+      setRedeemMessage({ text: `Redeemed "${res.prize_name}"! New balance: ${res.new_balance}`, error: false })
+      fetchData()
+    } catch (err) {
+      setRedeemMessage({ text: err.message, error: true })
+    }
+    setTimeout(() => setRedeemMessage(null), 4000)
+  }
+
   return (
     <div className="space-y-6">
       <div className="text-center py-6">
@@ -518,8 +696,20 @@ export default function Rumble() {
         </p>
       </div>
 
+      {redeemMessage && (
+        <div className={`p-3 rounded text-sm text-center ${redeemMessage.error ? 'bg-accent-red/20 text-accent-red' : 'bg-accent-green/20 text-accent-green'}`}>
+          {redeemMessage.text}
+        </div>
+      )}
+
       {/* Prize Wall & Earnings */}
-      <PrizeWall prizes={data.prizes} earnings={data.earnings} />
+      <PrizeWall
+        prizes={data.prizes}
+        earnings={data.earnings}
+        userBones={userBones}
+        userId={userId}
+        onRedeem={handleRedeem}
+      />
 
       {/* Bone Balances */}
       <BonesLeaderboard bones={data.bones} />
@@ -593,6 +783,9 @@ export default function Rumble() {
           </div>
         </div>
       )}
+
+      {/* Redemption History */}
+      <RedemptionHistory redemptions={data.redemptions} />
 
       {!standings?.length && !matches?.length && !data.bones?.length && (
         <p className="text-center text-text-muted py-8">No rumble data yet.</p>

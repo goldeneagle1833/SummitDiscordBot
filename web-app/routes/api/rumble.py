@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request, session
 
 from repositories.matches import MatchRepository
 from repositories.rumble_repo import RumbleRepository
-from utils.auth import require_admin, require_rumble_admin
+from utils.auth import require_admin, require_auth, require_rumble_admin
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ def get_rumble():
         balances = rumble_repo.get_all_balances()
         prizes = rumble_repo.get_prizes(active_only=True)
         earnings = rumble_repo.get_earnings_config()
+        redemptions = rumble_repo.get_redemptions(limit=100)
 
         return jsonify({
             "standings": standings,
@@ -36,6 +37,7 @@ def get_rumble():
             "bones": balances,
             "prizes": prizes,
             "earnings": earnings,
+            "redemptions": redemptions,
         })
     except Exception as e:
         logger.error(f"Error fetching rumble data: {e}")
@@ -181,6 +183,45 @@ def delete_prize(prize_id):
     if repo.delete_prize(prize_id):
         return jsonify({"success": True})
     return jsonify({"error": "Prize not found"}), 404
+
+
+@rumble_bp.route("/rumble/admin/prizes/reorder", methods=["POST"])
+@require_rumble_admin
+def reorder_prizes():
+    """Swap sort_order between two prizes."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    prize_id_a = data.get("prize_id_a")
+    prize_id_b = data.get("prize_id_b")
+    if not prize_id_a or not prize_id_b:
+        return jsonify({"error": "prize_id_a and prize_id_b are required"}), 400
+
+    repo = RumbleRepository()
+    if repo.swap_prize_order(int(prize_id_a), int(prize_id_b)):
+        return jsonify({"success": True})
+    return jsonify({"error": "One or both prizes not found"}), 404
+
+
+# --- Player redemption (requires login) ---
+
+@rumble_bp.route("/rumble/redeem/<int:prize_id>", methods=["POST"])
+@require_auth
+def redeem_prize(prize_id):
+    """Redeem a prize using bones."""
+    user_id = session.get("user_id")
+    username = session.get("username")
+
+    repo = RumbleRepository()
+    result = repo.redeem_prize(
+        discord_user_id=str(user_id),
+        prize_id=prize_id,
+        display_name=username,
+    )
+    if "error" in result:
+        return jsonify(result), 400
+    return jsonify(result)
 
 
 # --- Rumble admin management (global admins only) ---

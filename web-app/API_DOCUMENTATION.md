@@ -1,6 +1,6 @@
-# Summit Discord Bot - Match Reporting API
+# Summit API Documentation
 
-This document describes how to use the Match Reporting API to submit match results from external applications.
+External API for third-party applications to report match results and manage limited arena runs.
 
 ## Base URL
 
@@ -8,223 +8,151 @@ This document describes how to use the Match Reporting API to submit match resul
 https://sorcererssummit.com
 ```
 
-For local development:
-
-```
-http://localhost:5000
-```
-
 ## Authentication
 
-All API endpoints require authentication using an API key. The API key must be included in the request headers.
-
-### Header Format
-
-**Option 1: X-API-Key Header**
+All endpoints require an API key via the `X-API-Key` header:
 
 ```
 X-API-Key: your_api_key_here
 ```
 
-**Option 2: Bearer Token**
+Contact the server administrator to obtain an API key.
 
-```
-Authorization: Bearer your_api_key_here
-```
-
-### Getting an API Key
-
-Contact your server administrator to obtain an API key. The API key is configured in the server's environment variables.
-
-## Endpoints
-
-### 1. Health Check
-
-Check if the API server is running.
-
-**Endpoint:** `GET /api/status`
-
-**Authentication:** Not required
-
-**Response:**
+Unauthorized requests return:
 
 ```json
-{
-  "status": "online",
-  "message": "Summit Web App is running!"
-}
+{ "success": false, "error": "Invalid API key" }
 ```
 
 ---
 
-### 2. Report Match Result
+## Health Check
 
-Submit a match result between two players. This endpoint will:
+**`GET /api/status`** (no auth required)
 
-- Record the match in the database
-- Update ELO ratings for both players
-- Optionally scrape and store deck data from Curiosa URLs
+```json
+{ "status": "online", "message": "Summit Web App is running!" }
+```
 
-**Endpoint:** `POST /api/report-match`
+---
 
-**Authentication:** Required
+## Ranked Match Reporting
 
-**Content-Type:** `application/json`
+### Report External Match
 
-#### Request Body
+**`POST /api/report-external-match`**
 
-##### Required Fields
+Record a ranked match result. Updates unified ELO ratings and stores deck data.
 
-| Field         | Type    | Description                        |
-| ------------- | ------- | ---------------------------------- |
-| `winner_name` | string  | Display name of the winning player |
-| `winner_id`   | integer | Discord user ID of the winner      |
-| `loser_name`  | string  | Display name of the losing player  |
-| `loser_id`    | integer | Discord user ID of the loser       |
+#### Required Fields
 
-##### Optional Fields
+| Field            | Type   | Description                              |
+| ---------------- | ------ | ---------------------------------------- |
+| `winner_id`      | string | Discord user ID of the winner            |
+| `loser_id`       | string | Discord user ID of the loser             |
+| `winner_deck_url`| string | Winner's deck URL (Curiosa.io)           |
+| `loser_deck_url` | string | Loser's deck URL (Curiosa.io)            |
+| `source`         | string | Identifier for the reporting application |
 
-| Field             | Type    | Default             | Description                                                           |
-| ----------------- | ------- | ------------------- | --------------------------------------------------------------------- |
-| `first_player`    | string  | `"n"`               | Who went first: `"y"` (winner went first) or `"n"` (loser went first) |
-| `match_time`      | integer | `0`                 | Duration of the match in minutes                                      |
-| `winner_deck_url` | string  | `"No URL provided"` | URL to winner's deck on Curiosa.io                                    |
-| `loser_deck_url`  | string  | `"No URL provided"` | URL to loser's deck on Curiosa.io                                     |
-| `match_comment`   | string  | `""`                | Additional notes or comments about the match                          |
-| `reporter_id`     | integer | `winner_id`         | Discord user ID of the person reporting the match                     |
+#### Optional Fields
+
+| Field              | Type    | Description                                           |
+| ------------------ | ------- | ----------------------------------------------------- |
+| `winner_name`      | string  | Display name of the winner                            |
+| `loser_name`       | string  | Display name of the loser                             |
+| `winner_went_first`| boolean | `true` if winner went first, `false` if loser did     |
+| `match_time`       | integer | Match duration in seconds                             |
+| `match_comment`    | string  | Additional notes about the match                      |
 
 #### Example Request
 
 ```bash
-curl -X POST https://sorcererssummit.com/api/report-match \
+curl -X POST https://sorcererssummit.com/api/report-external-match \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key_here" \
   -d '{
-    "winner_name": "PlayerOne",
-    "winner_id": 123456789,
-    "loser_name": "PlayerTwo",
-    "loser_id": 987654321,
-    "first_player": "y",
-    "match_time": 25,
+    "winner_id": "123456789012345678",
+    "loser_id": "987654321098765432",
     "winner_deck_url": "https://curiosa.io/decks/abc123",
     "loser_deck_url": "https://curiosa.io/decks/xyz789",
-    "match_comment": "Great game! Close match."
+    "source": "draft-sorcery",
+    "winner_name": "Alice",
+    "loser_name": "Bob",
+    "winner_went_first": true,
+    "match_time": 1800,
+    "match_comment": "Great game"
   }'
 ```
 
-#### Success Response
-
-**Status Code:** `201 Created`
+#### Success Response (200)
 
 ```json
 {
   "success": true,
-  "match_id": 1234,
-  "winner": {
-    "name": "PlayerOne",
-    "id": 123456789,
-    "elo": 1532,
-    "elo_change": 16
-  },
-  "loser": {
-    "name": "PlayerTwo",
-    "id": 987654321,
-    "elo": 1484,
-    "elo_change": -16
-  }
+  "message": "External match recorded successfully",
+  "report_id": 42,
+  "winner_id": "123456789012345678",
+  "loser_id": "987654321098765432",
+  "winner_elo": 1516,
+  "loser_elo": 1484,
+  "winner_elo_change": 16,
+  "loser_elo_change": -16,
+  "source": "draft-sorcery",
+  "timestamp": "2026-06-07T14:30:00.000000"
 }
 ```
 
 #### Error Responses
 
-**Missing Required Fields (400 Bad Request)**
-
-```json
-{
-  "error": "Missing required fields",
-  "missing": ["winner_id", "loser_name"]
-}
-```
-
-**Invalid Data Type (400 Bad Request)**
-
-```json
-{
-  "error": "Invalid data type",
-  "detail": "invalid literal for int() with base 10: 'abc'"
-}
-```
-
-**Invalid first_player Value (400 Bad Request)**
-
-```json
-{
-  "error": "Invalid value for first_player",
-  "detail": "Must be 'y' or 'n'"
-}
-```
-
-**Authentication Error (401 Unauthorized)**
-
-```json
-{
-  "error": "Invalid or missing API key"
-}
-```
-
-**Server Error (500 Internal Server Error)**
-
-```json
-{
-  "error": "Failed to report match",
-  "detail": "Database connection failed"
-}
-```
+| Status | Condition                  | Example Body                                                        |
+| ------ | -------------------------- | ------------------------------------------------------------------- |
+| 400    | Missing required fields    | `{"success": false, "error": "Missing required fields: source"}`    |
+| 400    | Same winner and loser      | `{"success": false, "error": "winner_id and loser_id must be different"}` |
+| 400    | Empty source               | `{"success": false, "error": "source cannot be empty"}`             |
+| 400    | Invalid data               | `{"success": false, "error": "Invalid data: ..."}`                  |
+| 401    | Bad or missing API key     | `{"success": false, "error": "Invalid API key"}`                    |
+| 500    | Server error               | `{"success": false, "error": "Internal server error"}`              |
 
 ---
 
-### 3. Get Match Data by Date Range
+### Get Matches by Date Range
 
-Retrieve all ranked match results between two dates (inclusive). Returns winner/loser names, ELO changes, match duration, and timestamps.
+**`GET /api/matches/date-range`**
 
-**Endpoint:** `GET /api/matches/date-range`
-
-**Authentication:** Required
+Retrieve ranked match results between two dates (inclusive).
 
 #### Query Parameters
 
-| Parameter    | Required | Format       | Description                      |
-| ------------ | -------- | ------------ | -------------------------------- |
-| `start_date` | Yes      | `YYYY-MM-DD` | Start of date range (inclusive)  |
-| `end_date`   | Yes      | `YYYY-MM-DD` | End of date range (inclusive)    |
+| Parameter    | Required | Format       | Description                     |
+| ------------ | -------- | ------------ | ------------------------------- |
+| `start_date` | Yes      | `YYYY-MM-DD` | Start of date range (inclusive) |
+| `end_date`   | Yes      | `YYYY-MM-DD` | End of date range (inclusive)   |
 
 #### Example Request
 
 ```bash
 curl -H "X-API-Key: your_api_key_here" \
-  "https://sorcererssummit.com/api/matches/date-range?start_date=2026-05-01&end_date=2026-05-15"
+  "https://sorcererssummit.com/api/matches/date-range?start_date=2026-06-01&end_date=2026-06-07"
 ```
 
-#### Success Response
-
-**Status Code:** `200 OK`
+#### Success Response (200)
 
 ```json
 {
-  "start_date": "2026-05-01",
-  "end_date": "2026-05-15",
+  "start_date": "2026-06-01",
+  "end_date": "2026-06-07",
   "total_matches": 2,
   "matches": [
     {
       "match_id": 1542,
-      "winner": "PlayerOne",
+      "winner": "Alice",
+      "winner_id": "123456789012345678",
       "winner_elo_change": 16,
-      "loser": "PlayerTwo",
+      "loser": "Bob",
+      "loser_id": "987654321098765432",
       "loser_elo_change": -16,
       "match_time": 1823,
-      "timestamp": "2026-05-14 19:32:05",
-      "winner_id": "123456789012345678",
-      "loser_id": "987654321098765432",
+      "timestamp": "2026-06-05 19:32:05",
       "winner_deck": {
         "avatar": "Fen Cleric",
         "spellbook": ["Card A", "Card B"],
@@ -235,48 +163,295 @@ curl -H "X-API-Key: your_api_key_here" \
         "spellbook": ["Card C", "Card D"],
         "atlas": ["Land C", "Land D"]
       }
-    },
-    {
-      "match_id": 1541,
-      "winner": "PlayerThree",
-      "winner_elo_change": 12,
-      "loser": "PlayerOne",
-      "loser_elo_change": -12,
-      "match_time": 2105,
-      "timestamp": "2026-05-13 15:10:22",
-      "winner_id": "111222333444555666",
-      "loser_id": "123456789012345678",
-      "winner_deck": null,
-      "loser_deck": null
     }
   ]
 }
 ```
 
-#### Response Fields
-
-| Field              | Type        | Description                                      |
-| ------------------ | ----------- | ------------------------------------------------ |
-| `match_id`         | int         | Unique match identifier                          |
-| `winner`           | string      | Winner's display name                            |
-| `winner_elo_change`| int         | ELO points gained by winner                      |
-| `loser`            | string      | Loser's display name                             |
-| `loser_elo_change` | int         | ELO points lost by loser (negative)              |
-| `match_time`       | int         | Match duration in seconds (0 if unknown)         |
-| `timestamp`        | string      | When the match was played (UTC)                  |
-| `winner_id`        | string      | Winner's Discord user ID                         |
-| `loser_id`         | string      | Loser's Discord user ID                          |
-| `winner_deck`      | object/null | Winner's deck contents (null if not available)   |
-| `loser_deck`       | object/null | Loser's deck contents (null if not available)    |
-
 #### Error Responses
 
-| Status | Body |
-| ------ | ---- |
-| 400    | `{"error": "start_date and end_date query params are required"}` |
-| 400    | `{"error": "Dates must be in YYYY-MM-DD format"}` |
-| 400    | `{"error": "start_date must be before or equal to end_date"}` |
-| 401    | `{"error": "Invalid or missing API key"}` |
+| Status | Condition                         | Body                                                              |
+| ------ | --------------------------------- | ----------------------------------------------------------------- |
+| 400    | Missing params                    | `{"error": "start_date and end_date query params are required"}`  |
+| 400    | Invalid format                    | `{"error": "Dates must be in YYYY-MM-DD format"}`                 |
+| 400    | start_date after end_date         | `{"error": "start_date must be before or equal to end_date"}`     |
+| 401    | Bad or missing API key            | `{"success": false, "error": "Invalid API key"}`                  |
+
+---
+
+## Limited Arena API
+
+Endpoints for managing limited (draft/sealed) arena runs. All prefixed with `/api/limited`.
+
+### Get User Status
+
+**`GET /api/limited/user/{user_id}/status`**
+
+Get a player's current limited arena status, active run, match history, and ELO.
+
+#### Example Request
+
+```bash
+curl -H "X-API-Key: your_api_key_here" \
+  "https://sorcererssummit.com/api/limited/user/123456789012345678/status"
+```
+
+#### Success Response (200)
+
+```json
+{
+  "success": true,
+  "user_id": "123456789012345678",
+  "has_active_run": true,
+  "run": {
+    "run_id": 5,
+    "deck_url": "https://curiosa.io/decks/abc123",
+    "wins": 3,
+    "losses": 1,
+    "status": "active",
+    "starting_elo": 1500,
+    "created_at": "2026-06-05T10:00:00"
+  },
+  "match_history": [],
+  "limited_elo": 1532,
+  "can_queue": true,
+  "is_archived": false
+}
+```
+
+| Field            | Type    | Description                                            |
+| ---------------- | ------- | ------------------------------------------------------ |
+| `has_active_run`  | boolean | Whether the player has an in-progress run              |
+| `run`             | object  | Current or most recent run (null if none)              |
+| `match_history`   | array   | Matches for the current/latest run                     |
+| `limited_elo`     | integer | Player's limited format ELO rating                     |
+| `can_queue`       | boolean | Whether the player can queue for another match         |
+| `is_archived`     | boolean | Whether the data is from a previous event's archive    |
+
+---
+
+### Start Arena Run / Forfeit Run
+
+**`POST /api/limited/user/{user_id}/run`**
+
+Start a new arena run or forfeit the current one.
+
+#### Start New Run
+
+```json
+{
+  "deck_url": "https://curiosa.io/decks/abc123",
+  "display_name": "Alice"
+}
+```
+
+**Success Response (201):**
+
+```json
+{
+  "success": true,
+  "action": "created",
+  "run": {
+    "run_id": 6,
+    "deck_url": "https://curiosa.io/decks/abc123",
+    "wins": 0,
+    "losses": 0,
+    "status": "active",
+    "starting_elo": 1500,
+    "created_at": "2026-06-07T10:00:00"
+  },
+  "limited_elo": 1500
+}
+```
+
+#### Forfeit Current Run
+
+```json
+{
+  "forfeit": true
+}
+```
+
+**Success Response (200):**
+
+```json
+{
+  "success": true,
+  "action": "forfeited",
+  "run": { "..." },
+  "limited_elo": 1480,
+  "penalty_summary": "..."
+}
+```
+
+#### Errors
+
+| Status | Condition                          | Body                                                                         |
+| ------ | ---------------------------------- | ---------------------------------------------------------------------------- |
+| 400    | Missing deck_url or display_name   | `{"success": false, "error": "deck_url and display_name are required..."}`   |
+| 400    | Business logic error               | `{"success": false, "error": "..."}`                                         |
+| 400    | Invalid user_id                    | `{"success": false, "error": "Invalid user_id"}`                             |
+
+---
+
+### Report Limited Match
+
+**`POST /api/limited/report-match`**
+
+Submit a limited format match result. Both players must have active arena runs.
+
+#### Required Fields
+
+| Field                  | Type    | Description                     |
+| ---------------------- | ------- | ------------------------------- |
+| `winner_id`            | integer | Discord user ID of the winner   |
+| `loser_id`             | integer | Discord user ID of the loser    |
+| `winner_display_name`  | string  | Display name of the winner      |
+| `loser_display_name`   | string  | Display name of the loser       |
+
+#### Optional Fields
+
+| Field           | Type    | Description                                       |
+| --------------- | ------- | ------------------------------------------------- |
+| `first_player`  | string  | Who went first (implementation-dependent)         |
+| `match_time`    | integer | Match duration                                    |
+| `match_comment` | string  | Additional notes                                  |
+
+#### Example Request
+
+```bash
+curl -X POST https://sorcererssummit.com/api/limited/report-match \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "winner_id": 123456789012345678,
+    "loser_id": 987654321098765432,
+    "winner_display_name": "Alice",
+    "loser_display_name": "Bob"
+  }'
+```
+
+#### Success Response (201)
+
+```json
+{
+  "success": true,
+  "match_id": 15,
+  "..."
+}
+```
+
+#### Errors
+
+| Status | Condition                           | Body                                                                              |
+| ------ | ----------------------------------- | --------------------------------------------------------------------------------- |
+| 400    | Missing required fields             | `{"success": false, "error": "winner_id, loser_id, winner_display_name, and loser_display_name are required"}` |
+| 400    | Invalid IDs                         | `{"success": false, "error": "winner_id and loser_id must be valid integers"}`    |
+| 400    | Same player                         | `{"success": false, "error": "winner_id and loser_id must be different"}`         |
+| 400    | No active run / business error      | `{"success": false, "error": "..."}`                                              |
+
+---
+
+### End Arena Run
+
+**`POST /api/limited/user/{user_id}/end-run`**
+
+End the current active run early, applying remaining losses as ELO penalties.
+
+#### Example Request
+
+```bash
+curl -X POST https://sorcererssummit.com/api/limited/user/123456789012345678/end-run \
+  -H "X-API-Key: your_api_key_here"
+```
+
+#### Success Response (200)
+
+```json
+{
+  "success": true,
+  "run": { "..." },
+  "limited_elo": 1465,
+  "losses_applied": 2,
+  "penalty_summary": "..."
+}
+```
+
+---
+
+### Get Limited Match History
+
+**`GET /api/limited/match-history`**
+
+Get limited match history with deck links. Supports three query modes:
+
+| Query Param | Description                                    |
+| ----------- | ---------------------------------------------- |
+| (none)      | All match records globally                     |
+| `user_id`   | All runs and per-run history for a user        |
+| `run_id`    | Match history for a specific run               |
+
+Cannot provide both `user_id` and `run_id`.
+
+#### Example: By User
+
+```bash
+curl -H "X-API-Key: your_api_key_here" \
+  "https://sorcererssummit.com/api/limited/match-history?user_id=123456789012345678"
+```
+
+```json
+{
+  "success": true,
+  "user_id": "123456789012345678",
+  "runs": [
+    {
+      "run_id": 5,
+      "deck_url": "https://curiosa.io/decks/abc123",
+      "wins": 7,
+      "losses": 3,
+      "status": "completed",
+      "starting_elo": 1500,
+      "created_at": "2026-06-01T10:00:00",
+      "completed_at": "2026-06-03T15:30:00",
+      "matches": []
+    }
+  ]
+}
+```
+
+### Get Run Matchups (Public)
+
+**`GET /api/limited/run/{run_id}/matchups`** (no auth required)
+
+Get detailed matchups for a specific arena run. Opponent deck URLs are hidden while the opponent's run is still active.
+
+```json
+{
+  "run_id": 5,
+  "user_id": 123456789012345678,
+  "user_display_name": "Alice",
+  "deck_url": "https://curiosa.io/decks/abc123",
+  "wins": 7,
+  "losses": 3,
+  "status": "completed",
+  "matchups": []
+}
+```
+
+---
+
+## ELO System
+
+Both ranked and limited formats use standard ELO:
+
+- **Starting ELO:** 1500
+- **K-factor:** 32
+- **Formula:** `new_elo = old_elo + K * (actual - expected)`
+  - `expected = 1 / (1 + 10^((opponent_elo - player_elo) / 400))`
+  - `actual = 1` for win, `0` for loss
+
+New players start at 1500 and are created automatically on first match.
 
 ---
 
@@ -287,272 +462,63 @@ curl -H "X-API-Key: your_api_key_here" \
 ```python
 import requests
 
-API_URL = "https://sorcererssummit.com/api/report-match"
 API_KEY = "your_api_key_here"
+BASE = "https://sorcererssummit.com"
+HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 
-headers = {
-    "Content-Type": "application/json",
-    "X-API-Key": API_KEY
-}
-
-match_data = {
+# Report a ranked match
+response = requests.post(f"{BASE}/api/report-external-match", headers=HEADERS, json={
+    "winner_id": "123456789012345678",
+    "loser_id": "987654321098765432",
+    "winner_deck_url": "https://curiosa.io/decks/abc123",
+    "loser_deck_url": "https://curiosa.io/decks/xyz789",
+    "source": "my-app",
     "winner_name": "Alice",
-    "winner_id": 111111111,
     "loser_name": "Bob",
-    "loser_id": 222222222,
-    "first_player": "y",
-    "match_time": 30,
-    "winner_deck_url": "https://curiosa.io/decks/alice-deck",
-    "loser_deck_url": "https://curiosa.io/decks/bob-deck",
-    "match_comment": "Tournament semifinal match"
-}
+    "winner_went_first": True,
+    "match_time": 1800,
+})
 
-response = requests.post(API_URL, json=match_data, headers=headers)
-
-if response.status_code == 201:
-    result = response.json()
-    print(f"Match recorded successfully! Match ID: {result['match_id']}")
-    print(f"Winner ELO: {result['winner']['elo']} ({result['winner']['elo_change']:+d})")
-    print(f"Loser ELO: {result['loser']['elo']} ({result['loser']['elo_change']:+d})")
-else:
-    print(f"Error: {response.status_code}")
-    print(response.json())
+result = response.json()
+if result["success"]:
+    print(f"Match #{result['report_id']} recorded")
+    print(f"Winner ELO: {result['winner_elo']} ({result['winner_elo_change']:+d})")
+    print(f"Loser ELO: {result['loser_elo']} ({result['loser_elo_change']:+d})")
 ```
 
-### JavaScript (Node.js)
+### JavaScript
 
 ```javascript
-const axios = require("axios");
-
-const API_URL = "https://sorcererssummit.com/api/report-match";
 const API_KEY = "your_api_key_here";
+const BASE = "https://sorcererssummit.com";
 
-const matchData = {
-  winner_name: "Alice",
-  winner_id: 111111111,
-  loser_name: "Bob",
-  loser_id: 222222222,
-  first_player: "y",
-  match_time: 30,
-  winner_deck_url: "https://curiosa.io/decks/alice-deck",
-  loser_deck_url: "https://curiosa.io/decks/bob-deck",
-  match_comment: "Tournament semifinal match",
-};
+const res = await fetch(`${BASE}/api/report-external-match`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
+  body: JSON.stringify({
+    winner_id: "123456789012345678",
+    loser_id: "987654321098765432",
+    winner_deck_url: "https://curiosa.io/decks/abc123",
+    loser_deck_url: "https://curiosa.io/decks/xyz789",
+    source: "my-app",
+    winner_name: "Alice",
+    loser_name: "Bob",
+    winner_went_first: true,
+    match_time: 1800,
+  }),
+});
 
-axios
-  .post(API_URL, matchData, {
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": API_KEY,
-    },
-  })
-  .then((response) => {
-    const result = response.data;
-    console.log(`Match recorded successfully! Match ID: ${result.match_id}`);
-    console.log(
-      `Winner ELO: ${result.winner.elo} (${
-        result.winner.elo_change >= 0 ? "+" : ""
-      }${result.winner.elo_change})`
-    );
-    console.log(
-      `Loser ELO: ${result.loser.elo} (${
-        result.loser.elo_change >= 0 ? "+" : ""
-      }${result.loser.elo_change})`
-    );
-  })
-  .catch((error) => {
-    console.error("Error:", error.response?.status);
-    console.error(error.response?.data);
-  });
+const result = await res.json();
+console.log(result);
 ```
-
-### cURL
-
-```bash
-curl -X POST https://sorcererssummit.com/api/report-match \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your_api_key_here" \
-  -d '{
-    "winner_name": "Alice",
-    "winner_id": 111111111,
-    "loser_name": "Bob",
-    "loser_id": 222222222,
-    "first_player": "y",
-    "match_time": 30,
-    "winner_deck_url": "https://curiosa.io/decks/alice-deck",
-    "loser_deck_url": "https://curiosa.io/decks/bob-deck",
-    "match_comment": "Tournament semifinal match"
-  }'
-```
-
----
-
-## Data Validation
-
-### Player IDs
-
-- Must be valid Discord user IDs (integers)
-- Winner and loser IDs must be different
-- Players will be automatically created in the ELO database if they don't exist (starting at 1500 ELO)
-
-### First Player
-
-- Must be either `"y"` or `"n"` (case-insensitive)
-- `"y"` indicates the winner went first
-- `"n"` indicates the loser went first
-
-### Match Time
-
-- Must be a positive integer representing minutes
-- Set to `0` if unknown
-
-### Deck URLs
-
-- Should be valid Curiosa.io deck URLs
-- If provided, the system will attempt to scrape deck data for statistics
-- Invalid URLs will not cause the API call to fail
-
----
-
-## ELO System
-
-The bot uses a standard ELO rating system with the following parameters:
-
-- **Starting ELO:** 1500
-- **K-factor:** 32
-- **Formula:** `new_elo = old_elo + K * (actual_score - expected_score)`
-
-Where:
-
-- `expected_score = 1 / (1 + 10^((opponent_elo - player_elo) / 400))`
-- `actual_score = 1` for wins, `0` for losses
-
-Both players' ELO ratings are updated automatically when a match is reported.
 
 ---
 
 ## Best Practices
 
-1. **Store the API key securely** - Never commit API keys to version control
-2. **Validate input** - Ensure player IDs and names are correct before submitting
-3. **Handle errors gracefully** - Check response status codes and handle errors appropriately
-4. **Use HTTPS in production** - Always use HTTPS when deployed to protect API keys
-5. **Rate limiting** - Be considerate with API requests; the system is not rate-limited but excessive requests may impact performance
-6. **Report matches promptly** - For accurate ELO tracking, report matches as soon as they're completed
-
----
-
-## Troubleshooting
-
-### "Invalid or missing API key"
-
-- Verify your API key is correct
-- Check that you're including the API key in the request headers
-- Contact your server administrator if the issue persists
-
-### "Missing required fields"
-
-- Ensure all required fields are included in your request body
-- Check for typos in field names (they are case-sensitive)
-- Verify that your JSON is properly formatted
-
-### "Invalid data type"
-
-- Ensure `winner_id`, `loser_id`, and `match_time` are integers, not strings
-- Convert numeric values to proper types before sending
-
-### Match not appearing in Discord
-
-- The API only records matches in the database
-- Discord notifications are handled separately by the bot
-- Check the web interface at `/match-history` to verify the match was recorded
-
----
-
-## Support
-
-For additional support or questions:
-
-- Check the main bot documentation
-- Contact your server administrator
-- Review the API logs on the server for detailed error messages
-
----
-
-## Changelog
-
-### Version 1.0 (Initial Release)
-
-- POST /api/report-match endpoint
-- API key authentication
-- ELO calculation and updates
-- Deck data scraping from Curiosa.io
-- Comprehensive error handling
-
-Summary of Changes
-
-1. API Authentication System (web-app/app.py)
-   Added API key authentication using the @require_api_key decorator
-   Supports both X-API-Key header and Authorization: Bearer formats
-   Secure validation with logging of unauthorized attempts
-2. Match Reporting Endpoint (web-app/app.py)
-   Endpoint: POST /api/report-match
-   Required fields:
-   winner_name and winner_id
-   loser_name and loser_id
-   Optional fields:
-   first_player (y/n)
-   match_time (minutes)
-   winner_deck_url and loser_deck_url
-   match_comment
-   reporter_id
-   Automatically updates ELO ratings for both players
-   Returns match ID and updated ELO stats
-3. Comprehensive Documentation (web-app/API_DOCUMENTATION.md)
-   Complete API reference with all endpoints
-   Code examples in Python, JavaScript, and cURL
-   Error handling guide
-   Best practices and troubleshooting tips
-4. Environment Configuration (discord-bot/.env)
-   Added API_KEY variable (currently set to a placeholder)
-   IMPORTANT: Change the API key before deploying to production!
-   Quick Start
-   Example API Call
-
-import requests
-
-response = requests.post(
-"https://sorcererssummit.com/api/report-match",
-headers={
-"Content-Type": "application/json",
-"X-API-Key": "summit_api_key_change_this_in_production_12345"
-},
-json={
-"winner_name": "Alice",
-"winner_id": 123456789,
-"loser_name": "Bob",
-"loser_id": 987654321,
-"match_time": 25,
-"winner_deck_url": "https://curiosa.io/decks/abc123"
-}
-)
-
-print(response.json())
-
-# Returns: {"success": true, "match_id": 1234, "winner": {...}, "loser": {...}}
-
-Next Steps
-Change the API Key - Update the API_KEY in discord-bot/.env to a secure random value before production use
-
-Test the API - Start your Flask web app and test the endpoint:
-
-cd web-app
-python app.py
-Share Documentation - Provide API_DOCUMENTATION.md to other developers who need to integrate with your bot
-
-Deploy Securely - When deploying to production:
-
-Use HTTPS
-Generate a cryptographically secure API key
-Consider rate limiting if needed
-The API is fully integrated with your existing database and ELO system, so all matches reported through the API will appear in your match history and update player rankings automatically!
+1. **Store the API key securely** -- never commit it to version control
+2. **Always use HTTPS** in production
+3. **Validate input** before submitting (correct Discord IDs, valid deck URLs)
+4. **Handle errors** by checking `success` field and HTTP status codes
+5. **Report matches promptly** for accurate ELO tracking
+6. **Use the `source` field** consistently to identify your application

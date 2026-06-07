@@ -189,9 +189,103 @@ class RumbleRepository:
         conn.close()
         return prize_id
 
+    def swap_prize_order(self, prize_id_a: int, prize_id_b: int) -> bool:
+        """Swap sort_order between two prizes."""
+        conn = self._connect()
+        a = conn.execute("SELECT sort_order FROM rumble_prizes WHERE id = ?", (prize_id_a,)).fetchone()
+        b = conn.execute("SELECT sort_order FROM rumble_prizes WHERE id = ?", (prize_id_b,)).fetchone()
+        if not a or not b:
+            conn.close()
+            return False
+        conn.execute("UPDATE rumble_prizes SET sort_order = ? WHERE id = ?", (b["sort_order"], prize_id_a))
+        conn.execute("UPDATE rumble_prizes SET sort_order = ? WHERE id = ?", (a["sort_order"], prize_id_b))
+        conn.commit()
+        conn.close()
+        return True
+
     def delete_prize(self, prize_id: int) -> bool:
         conn = self._connect()
         cursor = conn.execute("DELETE FROM rumble_prizes WHERE id = ?", (prize_id,))
         conn.commit()
         conn.close()
         return cursor.rowcount > 0
+
+    # --- Redemptions ---
+
+    def redeem_prize(self, discord_user_id: str, prize_id: int, display_name: str | None = None) -> dict:
+        """Redeem a prize: deduct bones, decrement stock, log redemption. Returns result dict."""
+        conn = self._connect()
+        try:
+            prize = conn.execute(
+                "SELECT id, name, cost, stock, active FROM rumble_prizes WHERE id = ?",
+                (prize_id,),
+            ).fetchone()
+            if not prize:
+                return {"error": "Prize not found"}
+            if not prize["active"]:
+                return {"error": "Prize is no longer available"}
+            if prize["stock"] is not None and prize["stock"] <= 0:
+                return {"error": "Prize is out of stock"}
+
+            balance_row = conn.execute(
+                "SELECT balance FROM rumble_bones WHERE discord_user_id = ?",
+                (discord_user_id,),
+            ).fetchone()
+            balance = balance_row["balance"] if balance_row else 0
+            if balance < prize["cost"]:
+                return {"error": f"Not enough bones (have {balance}, need {prize['cost']})"}
+
+            # Deduct bones
+            conn.execute(
+                "INSERT OR IGNORE INTO rumble_bones (discord_user_id, display_name, balance) VALUES (?, ?, 0)",
+                (discord_user_id, display_name),
+            )
+            conn.execute(
+                "UPDATE rumble_bones SET balance = balance - ? WHERE discord_user_id = ?",
+                (prize["cost"], discord_user_id),
+            )
+            conn.execute(
+                "INSERT INTO rumble_bone_transactions (discord_user_id, amount, reason, admin_user_id) VALUES (?, ?, ?, ?)",
+                (discord_user_id, -prize["cost"], f"Redeemed: {prize['name']}", None),
+            )
+
+            # Decrement stock if tracked
+            if prize["stock"] is not None:
+                conn.execute(
+                    "UPDATE rumble_prizes SET stock = stock - 1 WHERE id = ?",
+                    (prize_id,),
+                )
+
+            # Log redemption
+            conn.execute(
+                "INSERT INTO rumble_redemptions (discord_user_id, prize_id, cost) VALUES (?, ?, ?)",
+                (discord_user_id, prize_id, prize["cost"]),
+            )
+
+            new_balance = conn.execute(
+                "SELECT balance FROM rumble_bones WHERE discord_user_id = ?",
+                (discord_user_id,),
+            ).fetchone()["balance"]
+
+            conn.commit()
+            return {"success": True, "new_balance": new_balance, "prize_name": prize["name"]}
+        except Exception as e:
+            conn.rollback()
+            return {"error": str(e)}
+        finally:
+            conn.close()
+
+    def get_redemptions(self, limit: int = 50) -> list[dict]:
+        """Get recent prize redemptions with prize name and player info."""
+        conn = self._connect()
+        rows = conn.execute(
+            "SELECT r.id, r.discord_user_id, r.prize_id, r.cost, r.created_at, "
+            "p.name AS prize_name, b.display_name "
+            "FROM rumble_redemptions r "
+            "LEFT JOIN rumble_prizes p ON r.prize_id = p.id "
+            "LEFT JOIN rumble_bones b ON r.discord_user_id = b.discord_user_id "
+            "ORDER BY r.created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]

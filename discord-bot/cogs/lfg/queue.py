@@ -604,8 +604,8 @@ class JoinQueueButtons(discord.ui.View):
         await interaction.response.send_modal(modal)
 
     @discord.ui.button(
-        label="Join Ranked",
-        style=discord.ButtonStyle.green,
+        label="⚔️ Join Ranked",
+        style=discord.ButtonStyle.primary,
         custom_id="join_lfg_ranked",
     )
     async def join_ranked_button(
@@ -619,7 +619,7 @@ class JoinQueueButtons(discord.ui.View):
         await self._handle_join(interaction, "ranked")
 
     @discord.ui.button(
-        label="Join Casual",
+        label="⭐ Join Casual",
         style=discord.ButtonStyle.primary,
         custom_id="join_lfg_testing",
     )
@@ -634,7 +634,7 @@ class JoinQueueButtons(discord.ui.View):
         await self._handle_join(interaction, "testing")
 
     @discord.ui.button(
-        label="Join Limited",
+        label="🎲 Join Limited",
         style=discord.ButtonStyle.primary,
         custom_id="join_lfg_limited",
     )
@@ -649,7 +649,7 @@ class JoinQueueButtons(discord.ui.View):
         await self._handle_join(interaction, "limited")
 
     @discord.ui.button(
-        label="Join Rumble",
+        label="💥 Join Rumble",
         style=discord.ButtonStyle.primary,
         custom_id="join_lfg_rumble",
     )
@@ -665,7 +665,7 @@ class JoinQueueButtons(discord.ui.View):
 
     @discord.ui.button(
         label="📋 Report Last Match",
-        style=discord.ButtonStyle.primary,
+        style=discord.ButtonStyle.secondary,
         custom_id="report_last_match",
         row=1,
     )

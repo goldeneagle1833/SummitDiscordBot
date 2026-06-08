@@ -228,9 +228,9 @@ class LFGCog(commands.Cog):
                 all_players = [row for row in cursor_elo.fetchall() if row[0] in event_participants]
             else:
                 cursor_elo.execute("""
-                    SELECT user_id, user_display_name, elo
+                    SELECT user_id, user_display_name, online_elo
                     FROM overall_standings
-                    ORDER BY elo DESC
+                    ORDER BY online_elo DESC
                 """)
                 all_players = cursor_elo.fetchall()
             conn_elo.close()

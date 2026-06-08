@@ -22,6 +22,8 @@ export default function Creator() {
   const [elementFilter, setElementFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [collectionOnly, setCollectionOnly] = useState(false)
+  const [sortKey, setSortKey] = useState('percent_of_decks')
+  const [sortDir, setSortDir] = useState('desc')
   const [hoverCard, setHoverCard] = useState({ image: null, rect: null })
 
   // Admin: creator access management
@@ -103,12 +105,32 @@ export default function Creator() {
   const elements = [...new Set(cards.map((c) => c.element).filter((e) => e && e !== 'None'))].sort()
   const types = [...new Set(cards.map((c) => c.type).filter((t) => t && t !== 'Unknown'))].sort()
 
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'name' ? 'asc' : 'desc')
+    }
+  }
+
   const filtered = cards.filter((card) => {
     if (search && !card.name.toLowerCase().includes(search.toLowerCase())) return false
     if (elementFilter && card.element !== elementFilter) return false
     if (typeFilter && card.type !== typeFilter) return false
     if (collectionOnly && !card.sideboard_count) return false
     return true
+  })
+
+  const sorted = [...filtered].sort((a, b) => {
+    let aVal = a[sortKey]
+    let bVal = b[sortKey]
+    if (typeof aVal === 'string') {
+      aVal = (aVal || '').toLowerCase()
+      bVal = (bVal || '').toLowerCase()
+      return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+    }
+    return sortDir === 'asc' ? (aVal || 0) - (bVal || 0) : (bVal || 0) - (aVal || 0)
   })
 
   return (
@@ -203,19 +225,32 @@ export default function Creator() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-text-muted">
-                  <th className="py-2 px-3">Card</th>
-                  <th className="py-2 px-3">Element</th>
-                  <th className="py-2 px-3">Type</th>
-                  <th className="py-2 px-3">Rarity</th>
-                  <th className="py-2 px-3 text-right">% of Decks</th>
-                  <th className="py-2 px-3 text-right">Avg Copies</th>
-                  <th className="py-2 px-3 text-right">Total Copies</th>
-                  <th className="py-2 px-3 text-right">Collection</th>
-                  <th className="py-2 px-3 text-right">Decks With</th>
+                  {[
+                    { key: 'name', label: 'Card' },
+                    { key: 'element', label: 'Element' },
+                    { key: 'type', label: 'Type' },
+                    { key: 'rarity', label: 'Rarity' },
+                    { key: 'percent_of_decks', label: '% of Decks', right: true },
+                    { key: 'average_played', label: 'Avg Copies', right: true },
+                    { key: 'count', label: 'Total Copies', right: true },
+                    { key: 'sideboard_count', label: 'Collection', right: true },
+                    { key: 'decks_with_card', label: 'Decks With', right: true },
+                  ].map((col) => (
+                    <th
+                      key={col.key}
+                      className={`py-2 px-3 cursor-pointer select-none hover:text-text ${col.right ? 'text-right' : ''}`}
+                      onClick={() => handleSort(col.key)}
+                    >
+                      {col.label}
+                      {sortKey === col.key && (
+                        <span className="ml-1">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                      )}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((card) => (
+                {sorted.map((card) => (
                   <CardRow
                     key={card.name}
                     card={card}

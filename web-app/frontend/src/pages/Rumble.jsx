@@ -84,7 +84,7 @@ function PrizeWall({ prizes, earnings, userBones, userId, onRedeem }) {
                               disabled={!canAfford}
                               className={`text-xs px-2 py-0.5 rounded font-medium ${
                                 canAfford
-                                  ? 'bg-secondary text-bg-primary hover:opacity-90'
+                                  ? 'bg-secondary text-black hover:opacity-90'
                                   : 'bg-border text-text-muted cursor-not-allowed'
                               }`}
                             >
@@ -426,7 +426,7 @@ function AdminPanel({ data, onRefresh }) {
           <button
             type="submit"
             disabled={loading}
-            className="bg-secondary text-bg-primary px-4 py-1.5 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
+            className="bg-secondary text-black px-4 py-1.5 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
           >
             Adjust Bones
           </button>
@@ -498,7 +498,7 @@ function AdminPanel({ data, onRefresh }) {
                   <div className="flex gap-2">
                     <button
                       onClick={() => saveEditing(p.id)}
-                      className="bg-secondary text-bg-primary px-3 py-1 rounded text-xs font-medium hover:opacity-90"
+                      className="bg-secondary text-black px-3 py-1 rounded text-xs font-medium hover:opacity-90"
                     >
                       Save
                     </button>
@@ -592,7 +592,7 @@ function AdminPanel({ data, onRefresh }) {
             <button
               type="submit"
               disabled={loading}
-              className="bg-secondary text-bg-primary px-4 py-1.5 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
+              className="bg-secondary text-black px-4 py-1.5 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
             >
               Add Prize
             </button>
@@ -633,7 +633,7 @@ function AdminPanel({ data, onRefresh }) {
             <button
               type="submit"
               disabled={loading}
-              className="bg-secondary text-bg-primary px-4 py-1.5 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
+              className="bg-secondary text-black px-4 py-1.5 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
             >
               Add
             </button>

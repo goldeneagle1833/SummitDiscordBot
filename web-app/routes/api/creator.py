@@ -232,9 +232,11 @@ def get_creator_popular_cards():
                     continue
 
                 if card_name not in card_stats:
-                    card_stats[card_name] = {"total_count": 0, "decks_with_card": 0}
+                    card_stats[card_name] = {"total_count": 0, "decks_with_card": 0, "sideboard_count": 0}
 
                 card_stats[card_name]["total_count"] += quantity
+                if section == "sideboard":
+                    card_stats[card_name]["sideboard_count"] += quantity
 
                 if card_name not in cards_in_deck:
                     card_stats[card_name]["decks_with_card"] += 1
@@ -264,6 +266,7 @@ def get_creator_popular_cards():
             "percent_of_decks": percent_of_decks,
             "decks_with_card": decks_with,
             "total_decks": total_decks,
+            "sideboard_count": stats["sideboard_count"],
         })
 
     # Add card images

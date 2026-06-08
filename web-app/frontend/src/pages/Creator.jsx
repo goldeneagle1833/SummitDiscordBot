@@ -21,6 +21,7 @@ export default function Creator() {
   const [search, setSearch] = useState('')
   const [elementFilter, setElementFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const [collectionOnly, setCollectionOnly] = useState(false)
   const [hoverCard, setHoverCard] = useState({ image: null, rect: null })
 
   // Admin: creator access management
@@ -106,6 +107,7 @@ export default function Creator() {
     if (search && !card.name.toLowerCase().includes(search.toLowerCase())) return false
     if (elementFilter && card.element !== elementFilter) return false
     if (typeFilter && card.type !== typeFilter) return false
+    if (collectionOnly && !card.sideboard_count) return false
     return true
   })
 
@@ -146,6 +148,14 @@ export default function Creator() {
               </button>
             ))}
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            className={`px-3 py-1 text-xs font-medium rounded-lg border transition-colors ${collectionOnly ? 'bg-primary text-bg border-primary' : 'bg-bg-surface text-text-muted border-border hover:text-text'}`}
+            onClick={() => setCollectionOnly((v) => !v)}
+          >
+            Collection Only
+          </button>
         </div>
       </div>
 
@@ -200,6 +210,7 @@ export default function Creator() {
                   <th className="py-2 px-3 text-right">% of Decks</th>
                   <th className="py-2 px-3 text-right">Avg Copies</th>
                   <th className="py-2 px-3 text-right">Total Copies</th>
+                  <th className="py-2 px-3 text-right">Collection</th>
                   <th className="py-2 px-3 text-right">Decks With</th>
                 </tr>
               </thead>
@@ -326,6 +337,7 @@ function CardRow({ card, onHover, onLeave }) {
       <td className="py-2 px-3 text-right font-mono">{card.percent_of_decks}%</td>
       <td className="py-2 px-3 text-right font-mono">{card.average_played}</td>
       <td className="py-2 px-3 text-right font-mono">{card.count}</td>
+      <td className="py-2 px-3 text-right font-mono">{card.sideboard_count || 0}</td>
       <td className="py-2 px-3 text-right font-mono">{card.decks_with_card}</td>
     </tr>
   )

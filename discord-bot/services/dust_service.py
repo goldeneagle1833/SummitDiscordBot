@@ -110,7 +110,7 @@ def try_dust_drop(player1_id, player1_name, player2_id, player2_name, season_nam
         target_id=str(winner_id),
         target_name=winner_name,
         new_state={"season": season_name, "game_number": game_number},
-        details=f"{winner_name} won a dust code drop (game #{game_number}, chance was {drop_chance:.2%})",
+        details=f"{winner_name} won a dust code drop (game #{game_number}, chance was {drop_chance:.2%}), code: {code}",
     )
 
     logger.info(f"Dust code dropped to {winner_name} (game #{game_number})")

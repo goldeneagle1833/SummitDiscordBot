@@ -46,7 +46,7 @@ def donate_code(code_str, donor_id, donor_name):
         admin_id=donor_id,
         admin_name=donor_name,
         action="dust_code_donated",
-        details=f"{donor_name} donated a dust code",
+        details=f"{donor_name} donated a dust code: {code_str}",
     )
 
     remaining = get_available_code_count()

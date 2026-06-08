@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
+import {
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+} from 'recharts'
 import { get } from '@/api/client'
 import { getCreatorAccess, addCreatorAccess, removeCreatorAccess, searchUsers } from '@/api/admin'
 import { useAuth } from '@/context/AuthContext'
@@ -24,6 +27,7 @@ export default function Creator() {
   const [collectionOnly, setCollectionOnly] = useState(false)
   const [sortKey, setSortKey] = useState('percent_of_decks')
   const [sortDir, setSortDir] = useState('desc')
+  const [expandedCard, setExpandedCard] = useState(null)
   const [hoverCard, setHoverCard] = useState({ image: null, rect: null })
 
   // Admin: creator access management
@@ -254,6 +258,9 @@ export default function Creator() {
                   <CardRow
                     key={card.name}
                     card={card}
+                    expanded={expandedCard === card.name}
+                    onToggle={() => setExpandedCard(expandedCard === card.name ? null : card.name)}
+                    sourceFilter={sourceFilter}
                     onHover={handleHover}
                     onLeave={handleLeave}
                   />
@@ -345,7 +352,20 @@ export default function Creator() {
   )
 }
 
-function CardRow({ card, onHover, onLeave }) {
+function CardRow({ card, expanded, onToggle, sourceFilter, onHover, onLeave }) {
+  const [history, setHistory] = useState(null)
+  const [histLoading, setHistLoading] = useState(false)
+
+  useEffect(() => {
+    if (!expanded) return
+    setHistLoading(true)
+    const params = new URLSearchParams({ card: card.name, source: sourceFilter })
+    get(`/api/creator/card-history?${params}`)
+      .then(setHistory)
+      .catch(() => setHistory([]))
+      .finally(() => setHistLoading(false))
+  }, [expanded, card.name, sourceFilter])
+
   const handleMouseEnter = (e) => {
     if (card.image) {
       onHover(card.image, e.currentTarget.getBoundingClientRect())
@@ -353,27 +373,95 @@ function CardRow({ card, onHover, onLeave }) {
   }
 
   return (
-    <tr
-      className="border-b border-border/50 hover:bg-bg-surface/50"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={onLeave}
-    >
-      <td className="py-2 px-3">
-        <Link
-          to={`/card/${encodeURIComponent(card.name)}`}
-          className="text-primary hover:text-primary-light transition-colors font-medium"
-        >
-          {card.name}
-        </Link>
-      </td>
-      <td className="py-2 px-3">{card.element}</td>
-      <td className="py-2 px-3">{card.type}</td>
-      <td className="py-2 px-3">{card.rarity}</td>
-      <td className="py-2 px-3 text-right font-mono">{card.percent_of_decks}%</td>
-      <td className="py-2 px-3 text-right font-mono">{card.average_played}</td>
-      <td className="py-2 px-3 text-right font-mono">{card.count}</td>
-      <td className="py-2 px-3 text-right font-mono">{card.sideboard_count || 0}</td>
-      <td className="py-2 px-3 text-right font-mono">{card.decks_with_card}</td>
-    </tr>
+    <>
+      <tr
+        className="border-b border-border/50 hover:bg-bg-surface/50 cursor-pointer"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={onLeave}
+        onClick={onToggle}
+      >
+        <td className="py-2 px-3">
+          <span className="text-primary hover:text-primary-light transition-colors font-medium">
+            {expanded ? '▾' : '▸'} {card.name}
+          </span>
+        </td>
+        <td className="py-2 px-3">{card.element}</td>
+        <td className="py-2 px-3">{card.type}</td>
+        <td className="py-2 px-3">{card.rarity}</td>
+        <td className="py-2 px-3 text-right font-mono">{card.percent_of_decks}%</td>
+        <td className="py-2 px-3 text-right font-mono">{card.average_played}</td>
+        <td className="py-2 px-3 text-right font-mono">{card.count}</td>
+        <td className="py-2 px-3 text-right font-mono">{card.sideboard_count || 0}</td>
+        <td className="py-2 px-3 text-right font-mono">{card.decks_with_card}</td>
+      </tr>
+      {expanded && (
+        <tr className="border-b border-border/50">
+          <td colSpan={9} className="py-4 px-3">
+            <div className="flex items-center gap-3 mb-2">
+              <span className="text-sm font-medium text-text-primary">{card.name} — Popularity Over Time</span>
+              <Link
+                to={`/card/${encodeURIComponent(card.name)}`}
+                className="text-xs text-primary hover:text-primary-light"
+              >
+                View card page →
+              </Link>
+            </div>
+            {histLoading && <p className="text-xs text-text-muted">Loading chart...</p>}
+            {!histLoading && history && history.length === 0 && (
+              <p className="text-xs text-text-muted">No monthly data available.</p>
+            )}
+            {!histLoading && history && history.length > 0 && (
+              <div style={{ height: 200 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={history} margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id={`popGrad-${card.name}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="rgba(77,184,255,0.4)" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="rgba(77,184,255,0.4)" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                    <XAxis
+                      dataKey="month"
+                      tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }}
+                      tickLine={false}
+                      axisLine={false}
+                      width={40}
+                      tickFormatter={(v) => `${v}%`}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: '#1a1a2e',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: 4,
+                        fontSize: 11,
+                      }}
+                      formatter={(value, _name, props) => {
+                        const p = props.payload
+                        return [`${value}% (${p.decks_with_card}/${p.total_decks} decks)`, '% of Decks']
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="percent_of_decks"
+                      stroke="rgba(77,184,255,0.85)"
+                      fill={`url(#popGrad-${card.name})`}
+                      strokeWidth={2}
+                      dot={{ fill: 'rgba(77,184,255,0.95)', r: 3 }}
+                      activeDot={{ r: 5 }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
   )
 }

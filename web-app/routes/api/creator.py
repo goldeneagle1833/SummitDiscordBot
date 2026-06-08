@@ -3,6 +3,7 @@
 import json
 import logging
 import sqlite3
+from collections import defaultdict
 
 from flask import Blueprint, jsonify, request
 
@@ -277,3 +278,128 @@ def get_creator_popular_cards():
     card_list.sort(key=lambda x: (x["percent_of_decks"], x["count"]), reverse=True)
 
     return jsonify(card_list)
+
+
+@creator_bp.route("/card-history")
+@require_creator
+def get_card_history():
+    """Monthly popularity trend for a specific card.
+
+    Query params:
+    - card: card name (required)
+    - source: "discord" | "web" | "all" (default: "all")
+
+    Returns list of {month, decks_with_card, total_decks, percent_of_decks} sorted chronologically.
+    """
+    card_name = request.args.get("card", "").strip()
+    if not card_name:
+        return jsonify({"error": "card parameter required"}), 400
+
+    source_filter = request.args.get("source", "all")
+
+    if source_filter == "discord":
+        source_clause = "AND (source = 'Discord' OR source IS NULL)"
+    elif source_filter == "web":
+        source_clause = "AND source != 'Discord' AND source IS NOT NULL"
+    else:
+        source_clause = ""
+
+    deck_where = ("((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
+                  " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))")
+    solo_deck_where = "json_deck_data IS NOT NULL AND json_deck_data != '' AND json_deck_data != '{}'"
+
+    sections = ["avatar", "spellbook", "atlas", "sideboard"]
+
+    # {month_str: {"total": int, "with_card": int}}
+    monthly = defaultdict(lambda: {"total": 0, "with_card": 0})
+
+    conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    cur = conn.cursor()
+
+    def _process_rows(rows, dual_column=True):
+        for row in rows:
+            ts = row[-1] or ""
+            month = ts[:7]  # "YYYY-MM"
+            if len(month) != 7:
+                continue
+
+            deck_jsons = []
+            if dual_column:
+                for deck_str in [row[0], row[1]]:
+                    if deck_str and deck_str not in ("", "{}"):
+                        try:
+                            deck_jsons.append(json.loads(deck_str))
+                        except json.JSONDecodeError:
+                            pass
+            else:
+                if row[0] and row[0] not in ("", "{}"):
+                    try:
+                        deck_jsons.append(json.loads(row[0]))
+                    except json.JSONDecodeError:
+                        pass
+
+            for deck in deck_jsons:
+                if isinstance(deck, list) and len(deck) > 0:
+                    deck = deck[0]
+
+                monthly[month]["total"] += 1
+
+                found = False
+                for section in sections:
+                    for c in deck.get(section, []) or []:
+                        if c.get("name") == card_name:
+                            found = True
+                            break
+                    if found:
+                        break
+                if found:
+                    monthly[month]["with_card"] += 1
+
+    # match_records (current)
+    try:
+        cur.execute(f"""
+            SELECT json_deck_data_winner, json_deck_data_loser, timestamp
+            FROM match_records
+            WHERE {deck_where} {source_clause}
+        """)
+        _process_rows(cur.fetchall())
+    except sqlite3.OperationalError:
+        pass
+
+    # match_records_archive
+    try:
+        cur.execute(f"""
+            SELECT json_deck_data_winner, json_deck_data_loser, timestamp
+            FROM match_records_archive
+            WHERE {deck_where}
+        """)
+        _process_rows(cur.fetchall())
+    except sqlite3.OperationalError:
+        pass
+
+    # solo_match_reports
+    try:
+        cur.execute(f"""
+            SELECT json_deck_data, report_date
+            FROM solo_match_reports
+            WHERE {solo_deck_where}
+        """)
+        _process_rows(cur.fetchall(), dual_column=False)
+    except sqlite3.OperationalError:
+        pass
+
+    conn.close()
+
+    result = []
+    for month in sorted(monthly.keys()):
+        data = monthly[month]
+        total = data["total"]
+        with_card = data["with_card"]
+        result.append({
+            "month": month,
+            "total_decks": total,
+            "decks_with_card": with_card,
+            "percent_of_decks": round((with_card / total) * 100, 1) if total > 0 else 0,
+        })
+
+    return jsonify(result)

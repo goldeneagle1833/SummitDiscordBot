@@ -1,6 +1,7 @@
 """Player service for player stats and profiles."""
 
 from repositories.elo import EloRepository
+from repositories.external_matches import ExternalMatchRepository
 from repositories.matches import MatchRepository
 
 
@@ -11,18 +12,24 @@ class PlayerService:
         self,
         elo_repo: EloRepository | None = None,
         match_repo: MatchRepository | None = None,
+        external_repo: ExternalMatchRepository | None = None,
     ):
         self._elo_repo = elo_repo or EloRepository()
         self._match_repo = match_repo or MatchRepository()
+        self._external_repo = external_repo or ExternalMatchRepository()
 
     def get_player_stats(self, player_id: str) -> dict | None:
-        """Get comprehensive stats for a player."""
+        """Get comprehensive stats for a player (includes external matches)."""
         # Keep player_id as string to avoid overflow with large Google IDs
         # SQLite's type affinity handles string-to-integer comparison automatically
         elo = self._elo_repo.get_user_elo(player_id)
-        wins = self._match_repo.get_wins_count(player_id)
-        losses = self._match_repo.get_losses_count(player_id)
+        ranked_wins = self._match_repo.get_wins_count(player_id)
+        ranked_losses = self._match_repo.get_losses_count(player_id)
+        ext_wins = self._external_repo.get_wins_count(player_id)
+        ext_losses = self._external_repo.get_losses_count(player_id)
 
+        wins = ranked_wins + ext_wins
+        losses = ranked_losses + ext_losses
         total_matches = wins + losses
         win_rate = (wins / total_matches * 100) if total_matches > 0 else 0
 
@@ -38,6 +45,10 @@ class PlayerService:
     def get_player_matches(self, player_id: str, limit: int = 100) -> list[dict]:
         """Get match history for a player."""
         return self._match_repo.get_player_matches(player_id, limit)
+
+    def get_external_matches(self, player_id: str, limit: int = 100) -> list[dict]:
+        """Get external match history for a player."""
+        return self._external_repo.get_player_matches(player_id, limit)
 
     def get_limited_stats(self, player_id: str) -> dict:
         """Get limited arena stats for a player."""

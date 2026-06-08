@@ -29,6 +29,7 @@ from migrations.add_season_id_to_match_reports_web import migrate as migrate_sea
 from migrations.create_analytics_tables import create_analytics_tables
 from migrations.create_explorer_tables import create_explorer_tables
 from migrations.create_rumble_tables import create_rumble_tables
+from migrations.create_external_matches_table import create_external_matches_table
 
 # Configure logging
 logging.basicConfig(
@@ -75,6 +76,11 @@ def create_app() -> Flask:
         create_rumble_tables()
     except Exception as e:
         logger.error(f"Failed to ensure rumble tables: {e}")
+
+    try:
+        create_external_matches_table()
+    except Exception as e:
+        logger.error(f"Failed to ensure external_matches table: {e}")
 
     # Register all blueprints
     register_blueprints(app)

@@ -11,6 +11,7 @@ import re
 
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, VALID_API_KEYS, SEASON_FILTERS, CARD_IMAGES_DIR
 from services.match import MatchService
+from repositories.external_matches import ExternalMatchRepository
 from repositories.user_profiles import UserProfileRepository
 from utils.auth import is_admin
 
@@ -1703,6 +1704,43 @@ def player_api(player_id):
     for row in paginated_casual_rows:
         casual_match_history.append(_build_match_entry(row))
 
+    # Fetch external matches (3rd-party reported, no ELO)
+    external_repo = ExternalMatchRepository()
+    external_matches_raw = external_repo.get_player_matches(str(player_id_normalized))
+    external_page = request.args.get("external_page", 1, type=int)
+    external_page = max(1, external_page)
+    total_external_matches = len(external_matches_raw)
+    total_external_pages = (total_external_matches + per_page - 1) // per_page if total_external_matches > 0 else 1
+    external_page = min(external_page, total_external_pages)
+    ext_start = (external_page - 1) * per_page
+    ext_end = ext_start + per_page
+    paginated_external = external_matches_raw[ext_start:ext_end]
+
+    external_match_history = []
+    ext_wins = 0
+    ext_losses = 0
+    for em in external_matches_raw:
+        if str(em["winner_id"]) == str(player_id_normalized):
+            ext_wins += 1
+        else:
+            ext_losses += 1
+    ext_total = ext_wins + ext_losses
+    ext_win_rate = (ext_wins / ext_total * 100) if ext_total > 0 else 0
+
+    for em in paginated_external:
+        did_win = str(em["winner_id"]) == str(player_id_normalized)
+        external_match_history.append({
+            "match_id": em["id"],
+            "did_win": did_win,
+            "winner": em["winner_display_name"] or "Unknown",
+            "loser": em["loser_display_name"] or "Unknown",
+            "timestamp": em["timestamp"],
+            "match_time": em.get("match_time") or 0,
+            "source": em.get("source", ""),
+            "winner_deck_url": em.get("winner_deck_url"),
+            "loser_deck_url": em.get("loser_deck_url"),
+        })
+
     # Build lightweight ELO history from ALL ranked matches (for the chart)
     elo_history = []
     for row in ranked_rows:
@@ -1877,6 +1915,21 @@ def player_api(player_id):
             "elo_history": elo_history if _section_visible("elo_history") else [],
             "matches": match_history,
             "casual_matches": casual_match_history,
+            "external_stats": {
+                "wins": ext_wins,
+                "losses": ext_losses,
+                "win_rate": round(ext_win_rate, 1),
+                "total": ext_total,
+            },
+            "external_matches": external_match_history,
+            "external_pagination": {
+                "current_page": external_page,
+                "per_page": per_page,
+                "total_matches": total_external_matches,
+                "total_pages": total_external_pages,
+                "has_previous": external_page > 1,
+                "has_next": external_page < total_external_pages,
+            },
             "recorded_games": recorded_games if _section_visible("recorded_games") else [],
             "is_owner": is_owner,
             "is_admin": is_admin(),

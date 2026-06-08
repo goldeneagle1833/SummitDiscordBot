@@ -328,7 +328,17 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 event_active,
             )
 
-        if data["match_type"] in ("testing", "rumble"):
+        if data["match_type"] == "rumble":
+            from utils.rumble_bones import award_match_bones
+            win_bones, loss_bones = award_match_bones(
+                data["winner_id"], data["winner_global"],
+                data["loser_id"], data["loser_global"],
+            )
+            if win_bones or loss_bones:
+                elo_msg = f" *(Rumble - {data['winner_global']} +{win_bones} bones, {data['loser_global']} +{loss_bones} bones)*"
+            else:
+                elo_msg = " *(Rumble match - ELO not affected)*"
+        elif data["match_type"] in ("testing",):
             elo_msg = " *(Casual match - ELO not affected)*"
         elif not event_active:
             elo_msg = " *(No active event - ELO not affected)*"

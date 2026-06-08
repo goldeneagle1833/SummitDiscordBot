@@ -644,64 +644,6 @@ class MatchRepository:
         conn.close()
         return rows
 
-    def insert_external_match(
-        self,
-        winner_id: str,
-        loser_id: str,
-        winner_name: str | None,
-        loser_name: str | None,
-        winner_deck_url: str | None,
-        loser_deck_url: str | None,
-        json_deck_data_winner: str | None,
-        json_deck_data_loser: str | None,
-        winner_went_first: str | None,
-        match_time: int | None,
-        match_comment: str | None,
-        source: str,
-        timestamp: str,
-        winner_elo_change: int,
-        loser_elo_change: int,
-    ) -> int:
-        """Insert an external match into match_records. Returns the rowid."""
-        conn = self._get_connection()
-        cur = conn.cursor()
-        cur.execute(
-            """INSERT INTO match_records
-               (reporter_id, winner_id, winner_display_name,
-                losser_id, losser_display_name, did_win,
-                timestamp, first_player, match_time, match_comment,
-                curiosa_url_winner, curiosa_url_loser,
-                json_deck_data_winner, json_deck_data_loser,
-                winner_elo_change, loser_elo_change,
-                winner_went_first, source, match_type)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                None,  # reporter_id
-                winner_id,
-                winner_name,
-                loser_id,  # maps to losser_id column
-                loser_name,  # maps to losser_display_name column
-                1,  # did_win (winner perspective)
-                timestamp,
-                winner_went_first,
-                match_time,
-                match_comment,
-                winner_deck_url,
-                loser_deck_url,
-                json_deck_data_winner,
-                json_deck_data_loser,
-                winner_elo_change,
-                loser_elo_change,
-                winner_went_first,
-                source,
-                "ranked",
-            ),
-        )
-        rowid = cur.lastrowid
-        conn.commit()
-        conn.close()
-        return rowid
-
     def get_match_full_details(self, match_id: int) -> dict | None:
         """Get full match details including ELO changes for admin operations."""
         conn = self._get_connection()

@@ -1,12 +1,13 @@
 import { get, post, del } from './client'
 
-export const getPlayer = (id, { event, source, page, perPage, casualPage } = {}) => {
+export const getPlayer = (id, { event, source, page, perPage, casualPage, externalPage } = {}) => {
   const params = new URLSearchParams()
   if (event && event !== 'lifetime') params.set('event', event)
   if (source) params.set('source', source)
   if (page) params.set('page', page)
   if (perPage) params.set('per_page', perPage)
   if (casualPage) params.set('casual_page', casualPage)
+  if (externalPage) params.set('external_page', externalPage)
   const qs = params.toString()
   return get(`/api/player/${id}${qs ? '?' + qs : ''}`)
 }

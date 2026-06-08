@@ -13,6 +13,7 @@ import RecentDecks from '@/components/player/RecentDecks'
 import LimitedArena from '@/components/player/LimitedArena'
 import MatchHistoryTable from '@/components/player/MatchHistoryTable'
 import RecordedGames from '@/components/player/RecordedGames'
+import ExternalMatches from '@/components/player/ExternalMatches'
 import DisplayNameBanner from '@/components/player/DisplayNameBanner'
 import ReportGameModal from '@/components/player/ReportGameModal'
 import EditDeckModal from '@/components/player/EditDeckModal'
@@ -45,6 +46,7 @@ export default function Player() {
   })
   const [page, setPage] = useState(1)
   const [casualPage, setCasualPage] = useState(1)
+  const [externalPage, setExternalPage] = useState(1)
   const [perPage, setPerPage] = useState(15)
   const [statsType, setStatsType] = useState('ranked')
 
@@ -69,9 +71,9 @@ export default function Player() {
   const toggle = (key) => setOpenSections((s) => ({ ...s, [key]: !s[key] }))
 
   const fetchData = useCallback(
-    (ev, pg, src, cpg, pp) => {
+    (ev, pg, src, cpg, pp, epg) => {
       setLoading(true)
-      getPlayer(playerId, { event: ev, source: src, page: pg, perPage: pp, casualPage: cpg })
+      getPlayer(playerId, { event: ev, source: src, page: pg, perPage: pp, casualPage: cpg, externalPage: epg })
         .then((d) => {
           setData(d)
           setError(null)
@@ -83,25 +85,27 @@ export default function Player() {
   )
 
   useEffect(() => {
-    fetchData(eventFilter, page, eloSource, casualPage, perPage)
+    fetchData(eventFilter, page, eloSource, casualPage, perPage, externalPage)
     get('/api/events').then(setEvents).catch(() => {})
   }, [playerId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const refetch = (ev, pg, src, cpg, pp) => {
+  const refetch = (ev, pg, src, cpg, pp, epg) => {
     const e = ev ?? eventFilter
     const p = pg ?? page
     const s = src ?? eloSource
     const c = cpg ?? casualPage
     const r = pp ?? perPage
+    const x = epg ?? externalPage
     setEventFilter(e)
     setPage(p)
     setEloSource(s)
     setCasualPage(c)
     setPerPage(r)
-    fetchData(e, p, s, c, r)
+    setExternalPage(x)
+    fetchData(e, p, s, c, r, x)
   }
 
-  const refreshCurrentPage = () => fetchData(eventFilter, page, eloSource, casualPage, perPage)
+  const refreshCurrentPage = () => fetchData(eventFilter, page, eloSource, casualPage, perPage, externalPage)
 
   const handleSourceChange = (src) => {
     localStorage.setItem('elo_source_preference', src)
@@ -302,6 +306,16 @@ export default function Player() {
           isOwner={data.is_owner}
           onPageChange={(p) => refetch(undefined, undefined, undefined, p)}
           onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
+        />
+      )}
+
+      {data.external_matches?.length > 0 && (
+        <ExternalMatches
+          matches={data.external_matches}
+          stats={data.external_stats}
+          pagination={data.external_pagination}
+          playerId={playerId}
+          onPageChange={(p) => refetch(undefined, undefined, undefined, undefined, undefined, p)}
         />
       )}
 

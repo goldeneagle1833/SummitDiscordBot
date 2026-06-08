@@ -36,13 +36,15 @@ Unauthorized requests return:
 
 ---
 
-## Ranked Match Reporting
+## External Match Reporting
 
 ### Report External Match
 
 **`POST /api/report-external-match`**
 
-Record a ranked match result. Updates unified ELO ratings and stores deck data.
+Record a match result from an external platform. Stores the match and deck data in a
+dedicated `external_matches` table. **External matches do not affect ELO ratings.**
+They are included in the player's overall win/loss stats and visible on their profile page.
 
 #### Required Fields
 
@@ -93,14 +95,12 @@ curl -X POST https://sorcererssummit.com/api/report-external-match \
   "report_id": 42,
   "winner_id": "123456789012345678",
   "loser_id": "987654321098765432",
-  "winner_elo": 1516,
-  "loser_elo": 1484,
-  "winner_elo_change": 16,
-  "loser_elo_change": -16,
   "source": "draft-sorcery",
   "timestamp": "2026-06-07T14:30:00.000000"
 }
 ```
+
+> **Note:** No ELO fields are returned. External matches are tracked for stats only.
 
 #### Error Responses
 
@@ -453,6 +453,9 @@ Both ranked and limited formats use standard ELO:
 
 New players start at 1500 and are created automatically on first match.
 
+> **Note:** External matches (via `/api/report-external-match`) do **not** affect ELO.
+> They are counted in win/loss stats and shown on the player profile under "External Matches".
+
 ---
 
 ## Code Examples
@@ -466,7 +469,7 @@ API_KEY = "your_api_key_here"
 BASE = "https://sorcererssummit.com"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 
-# Report a ranked match
+# Report an external match (no ELO impact)
 response = requests.post(f"{BASE}/api/report-external-match", headers=HEADERS, json={
     "winner_id": "123456789012345678",
     "loser_id": "987654321098765432",
@@ -482,8 +485,6 @@ response = requests.post(f"{BASE}/api/report-external-match", headers=HEADERS, j
 result = response.json()
 if result["success"]:
     print(f"Match #{result['report_id']} recorded")
-    print(f"Winner ELO: {result['winner_elo']} ({result['winner_elo_change']:+d})")
-    print(f"Loser ELO: {result['loser_elo']} ({result['loser_elo_change']:+d})")
 ```
 
 ### JavaScript

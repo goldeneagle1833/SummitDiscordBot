@@ -56,7 +56,7 @@ def _get_card_image_map() -> dict[str, str]:
 def _resolve_card_image(card_name: str) -> str | None:
     """Return image filename for a card name, or None if not found."""
     mapping = _get_card_image_map()
-    key = card_name.lower().replace(" ", "_").replace("'", "").replace(",", "")
+    key = re.sub(r"[^a-z0-9_]", "", card_name.lower().replace(" ", "_"))
     return mapping.get(key)
 
 

@@ -161,6 +161,7 @@ export default function AdminActionsSection({ onRefresh }) {
                 Total: <strong>{activityResult.total_matches}</strong>
                 {' · '}Online: {activityResult.bot_matches}
                 {' · '}Paper: {activityResult.web_matches}
+                {activityResult.external_matches > 0 && <>{' · '}External: {activityResult.external_matches}</>}
               </div>
               <div>Active Players: <strong>{activityResult.active_players}</strong></div>
               <div className="text-text-muted opacity-70">

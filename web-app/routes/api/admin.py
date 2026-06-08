@@ -283,6 +283,16 @@ def game_activity():
         )
         active_players = cur_match.fetchone()[0]
 
+        # External matches
+        try:
+            cur_match.execute(
+                "SELECT COUNT(*) FROM external_matches WHERE timestamp >= ?",
+                (cutoff_str,)
+            )
+            external_matches = cur_match.fetchone()[0]
+        except sqlite3.OperationalError:
+            external_matches = 0
+
         conn_match.close()
 
         total_matches = bot_matches + web_matches
@@ -293,6 +303,7 @@ def game_activity():
             "total_matches": total_matches,
             "bot_matches": bot_matches,
             "web_matches": web_matches,
+            "external_matches": external_matches,
             "active_players": active_players,
             "start_time": cutoff_str,
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -383,6 +394,13 @@ def dashboard_stats():
         if has_web:
             cur.execute("SELECT COUNT(*) FROM match_reports_web")
             total_web_matches = cur.fetchone()[0]
+
+        total_external_matches = 0
+        try:
+            cur.execute("SELECT COUNT(*) FROM external_matches")
+            total_external_matches = cur.fetchone()[0] or 0
+        except sqlite3.OperationalError:
+            pass
 
         # --- Summary: total unique players ---
         cur.execute(f"""
@@ -688,6 +706,7 @@ def dashboard_stats():
                 "total_matches": total_bot_matches + total_web_matches,
                 "total_bot_matches": total_bot_matches,
                 "total_web_matches": total_web_matches,
+                "total_external_matches": total_external_matches,
                 "total_players": total_players,
                 "avg_weekly_games": avg_weekly_games,
                 "total_logins": total_logins,

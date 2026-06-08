@@ -249,6 +249,7 @@ export default function DashboardSection() {
     { label: 'Avg Games/Week (12wk)', value: summary.avg_weekly_games },
     { label: 'Online Matches', value: summary.total_bot_matches?.toLocaleString() },
     { label: 'Paper Matches', value: summary.total_web_matches?.toLocaleString() },
+    { label: 'External Matches', value: (summary.total_external_matches || 0).toLocaleString() },
     { label: 'Users Logged In', value: (summary.total_logins || 0).toLocaleString() },
   ]
 

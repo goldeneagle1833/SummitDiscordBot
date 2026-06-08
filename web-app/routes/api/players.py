@@ -1321,6 +1321,10 @@ def player_api(player_id):
     ]
     casual_avg_match_time = sum(casual_match_times) / len(casual_match_times) if casual_match_times else 0
 
+    # Fetch external matches early so they can feed into avatar/deck stats
+    external_repo = ExternalMatchRepository()
+    external_matches_raw = external_repo.get_player_matches(str(player_id_normalized))
+
     # Avatar stats - only count the main avatar (type: "Avatar"), exclude sideboard
     avatar_stats = {}
     for row in all_rows:
@@ -1370,6 +1374,37 @@ def player_api(player_id):
                     avatar_stats[main_avatar_name]["losses"] += 1
             except (json.JSONDecodeError, KeyError, IndexError, TypeError):
                 continue
+
+    # Include external matches in avatar stats
+    for em in external_matches_raw:
+        did_win = str(em["winner_id"]) == str(player_id_normalized)
+        deck_json = em.get("json_deck_data_winner") if did_win else em.get("json_deck_data_loser")
+        if not deck_json or deck_json == "{}":
+            continue
+        try:
+            deck_data = json.loads(deck_json)
+            if not deck_data or not deck_data.get("avatar"):
+                continue
+            avatar_list = deck_data.get("avatar", [])
+            if not avatar_list:
+                continue
+            main_avatar_name = None
+            for av in avatar_list:
+                if av and av.get("type") == "Avatar" and av.get("name"):
+                    main_avatar_name = av.get("name")
+                    break
+            if not main_avatar_name and avatar_list[0] and avatar_list[0].get("name"):
+                main_avatar_name = avatar_list[0].get("name")
+            if not main_avatar_name:
+                continue
+            if main_avatar_name not in avatar_stats:
+                avatar_stats[main_avatar_name] = {"wins": 0, "losses": 0}
+            if did_win:
+                avatar_stats[main_avatar_name]["wins"] += 1
+            else:
+                avatar_stats[main_avatar_name]["losses"] += 1
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            continue
 
     avatar_performance = []
     for name, stats in avatar_stats.items():
@@ -1436,6 +1471,33 @@ def player_api(player_id):
         if opponent_avatar_name not in opponent_avatar_stats:
             opponent_avatar_stats[opponent_avatar_name] = {"wins": 0, "losses": 0}
 
+        if did_win:
+            opponent_avatar_stats[opponent_avatar_name]["wins"] += 1
+        else:
+            opponent_avatar_stats[opponent_avatar_name]["losses"] += 1
+
+    # Include external matches in opponent avatar stats
+    for em in external_matches_raw:
+        did_win = str(em["winner_id"]) == str(player_id_normalized)
+        opponent_deck_json = em.get("json_deck_data_loser") if did_win else em.get("json_deck_data_winner")
+        opponent_avatar_name = None
+        if opponent_deck_json and opponent_deck_json != "{}":
+            try:
+                deck_data = json.loads(opponent_deck_json)
+                if deck_data and deck_data.get("avatar"):
+                    avatar_list = deck_data.get("avatar", [])
+                    for av in avatar_list:
+                        if av and av.get("type") == "Avatar" and av.get("name"):
+                            opponent_avatar_name = av.get("name")
+                            break
+                    if not opponent_avatar_name and avatar_list and avatar_list[0] and avatar_list[0].get("name"):
+                        opponent_avatar_name = avatar_list[0].get("name")
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                pass
+        if not opponent_avatar_name:
+            continue
+        if opponent_avatar_name not in opponent_avatar_stats:
+            opponent_avatar_stats[opponent_avatar_name] = {"wins": 0, "losses": 0}
         if did_win:
             opponent_avatar_stats[opponent_avatar_name]["wins"] += 1
         else:
@@ -1704,9 +1766,7 @@ def player_api(player_id):
     for row in paginated_casual_rows:
         casual_match_history.append(_build_match_entry(row))
 
-    # Fetch external matches (3rd-party reported, no ELO)
-    external_repo = ExternalMatchRepository()
-    external_matches_raw = external_repo.get_player_matches(str(player_id_normalized))
+    # External match pagination (data already fetched above for avatar/deck stats)
     external_page = request.args.get("external_page", 1, type=int)
     external_page = max(1, external_page)
     total_external_matches = len(external_matches_raw)
@@ -1811,6 +1871,46 @@ def player_api(player_id):
         # Update last_date if this match is more recent
         if row[6] and (not deck_stats[player_deck_url]["last_date"] or row[6] > deck_stats[player_deck_url]["last_date"]):
             deck_stats[player_deck_url]["last_date"] = row[6]
+
+    # Include external matches in recent decks
+    for em in external_matches_raw:
+        did_win = str(em["winner_id"]) == str(player_id_normalized)
+        player_deck_url = em.get("winner_deck_url") if did_win else em.get("loser_deck_url")
+        player_deck_json = em.get("json_deck_data_winner") if did_win else em.get("json_deck_data_loser")
+
+        if not player_deck_url or not str(player_deck_url).startswith("https://curiosa.io"):
+            continue
+
+        player_deck_url = player_deck_url.split("?")[0]
+
+        if player_deck_url not in deck_stats:
+            avatar_name = "Unknown"
+            deck_name = "Unnamed Deck"
+            if player_deck_json and player_deck_json not in ("", "{}"):
+                try:
+                    deck_data = json.loads(player_deck_json)
+                    if deck_data.get("avatar") and len(deck_data["avatar"]) > 0:
+                        avatar_name = deck_data["avatar"][0].get("name", "Unknown")
+                    if deck_data.get("name"):
+                        deck_name = deck_data["name"]
+                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                    pass
+            deck_stats[player_deck_url] = {
+                "wins": 0,
+                "losses": 0,
+                "avatar": avatar_name,
+                "deck_name": deck_name,
+                "last_date": em.get("timestamp"),
+            }
+
+        if did_win:
+            deck_stats[player_deck_url]["wins"] += 1
+        else:
+            deck_stats[player_deck_url]["losses"] += 1
+
+        em_ts = em.get("timestamp")
+        if em_ts and (not deck_stats[player_deck_url]["last_date"] or em_ts > deck_stats[player_deck_url]["last_date"]):
+            deck_stats[player_deck_url]["last_date"] = em_ts
 
     # Convert to list and sort by most recent usage
     for deck_url, stats in sorted(deck_stats.items(), key=lambda x: x[1]["last_date"] or "", reverse=True):

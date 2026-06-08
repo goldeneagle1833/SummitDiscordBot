@@ -263,7 +263,7 @@ def _collect_discord_rows(cur, event_filter):
 
 
 def _collect_external_rows(cur, source_filter, event_start=None, event_end=None):
-    """Collect deck data rows from match_records for non-Discord sources.
+    """Collect deck data rows from match_records and external_matches for non-Discord sources.
 
     Returns rows as tuples of (winner_deck_json, loser_deck_json).
     """
@@ -293,6 +293,29 @@ def _collect_external_rows(cur, source_filter, event_start=None, event_end=None)
         rows = cur.fetchall()
     except sqlite3.OperationalError as e:
         logger.warning(f"Could not query match_records for external sources: {e}")
+
+    # Also collect from the dedicated external_matches table
+    try:
+        ext_params = []
+        ext_where = [
+            "((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
+            " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))",
+        ]
+        if source_filter not in ("all", "discord"):
+            ext_where.append("source = ?")
+            ext_params.append(source_filter)
+        if event_start:
+            ext_where.append("timestamp >= ?")
+            ext_params.append(event_start)
+        if event_end:
+            ext_where.append("timestamp <= ?")
+            ext_params.append(event_end)
+
+        query = f"SELECT json_deck_data_winner, json_deck_data_loser FROM external_matches WHERE {' AND '.join(ext_where)}"
+        cur.execute(query, ext_params)
+        rows += cur.fetchall()
+    except sqlite3.OperationalError:
+        pass  # Table may not exist yet
 
     return rows
 
@@ -396,6 +419,31 @@ def _collect_external_rows_with_players(cur, source_filter, event_start=None, ev
         rows = cur.fetchall()
     except sqlite3.OperationalError as e:
         logger.warning(f"Could not query match_records for external sources: {e}")
+
+    # Also collect from the dedicated external_matches table
+    try:
+        ext_params = []
+        ext_where = [
+            "((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
+            " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))",
+        ]
+        if source_filter not in ("all", "discord"):
+            ext_where.append("source = ?")
+            ext_params.append(source_filter)
+        if event_start:
+            ext_where.append("timestamp >= ?")
+            ext_params.append(event_start)
+        if event_end:
+            ext_where.append("timestamp <= ?")
+            ext_params.append(event_end)
+
+        query = f"""SELECT json_deck_data_winner, json_deck_data_loser,
+                           winner_id, winner_display_name, loser_id, loser_display_name
+                    FROM external_matches WHERE {' AND '.join(ext_where)}"""
+        cur.execute(query, ext_params)
+        rows += cur.fetchall()
+    except sqlite3.OperationalError:
+        pass  # Table may not exist yet
 
     return rows
 

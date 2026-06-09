@@ -27,7 +27,10 @@ DAILY_SUMMARY_PROMPT = (
     "Pick ONE style per day. Do not mix styles.\n\n"
     "OUTPUT FORMAT — follow this EXACTLY:\n"
     "COMMENTARY: [Your 2-3 sentence intro paragraph here]\n"
-    "MATCHES_PLAYED: [Flavored version, must include the actual number]\n"
+    "MATCHES_PLAYED: [Flavored version of ranked matches, must include the actual number]\n"
+    "CASUAL_MATCHES: [Flavored version of casual matches, must include the actual number]\n"
+    "LIMITED_MATCHES: [Flavored version of limited matches, must include the actual number]\n"
+    "RUMBLE_MATCHES: [Flavored version of rumble matches, must include the actual number]\n"
     "UNIQUE_PLAYERS: [Flavored version, must include the actual number]\n"
     "MOST_ACTIVE: [Flavored version, must include the player name and match count]\n"
     "TOP_GAINER: [Flavored version, must include the player name and ELO change]\n"
@@ -129,8 +132,9 @@ class DailySummaryCog(commands.Cog):
         if gpt is None:
             gpt = {}
 
-        if stats["total_matches"] == 0:
-            embed.description = gpt.get("COMMENTARY", "No ranked matches were played today.")
+        all_zero = stats["total_matches"] == 0 and stats["casual_matches"] == 0 and stats["limited_matches"] == 0 and stats["rumble_matches"] == 0
+        if all_zero:
+            embed.description = gpt.get("COMMENTARY", "No matches were played today.")
             logger.info("Zero-match day — posting quiet-day summary.")
             await channel.send(embed=embed)
             return
@@ -140,11 +144,33 @@ class DailySummaryCog(commands.Cog):
             embed.description = _truncate(gpt["COMMENTARY"], 200)
 
         # Core stats — GPT-flavored values with raw fallbacks
-        embed.add_field(
-            name="⚔️ Matches Played",
-            value=_truncate(gpt.get("MATCHES_PLAYED", str(stats["total_matches"])), 200),
-            inline=True,
-        )
+        if stats["total_matches"]:
+            embed.add_field(
+                name="⚔️ Ranked Matches",
+                value=_truncate(gpt.get("MATCHES_PLAYED", str(stats["total_matches"])), 200),
+                inline=True,
+            )
+
+        if stats["casual_matches"]:
+            embed.add_field(
+                name="🎲 Casual Matches",
+                value=_truncate(gpt.get("CASUAL_MATCHES", str(stats["casual_matches"])), 200),
+                inline=True,
+            )
+
+        if stats["limited_matches"]:
+            embed.add_field(
+                name="📦 Limited Matches",
+                value=_truncate(gpt.get("LIMITED_MATCHES", str(stats["limited_matches"])), 200),
+                inline=True,
+            )
+
+        if stats["rumble_matches"]:
+            embed.add_field(
+                name="💥 Rumble Matches",
+                value=_truncate(gpt.get("RUMBLE_MATCHES", str(stats["rumble_matches"])), 200),
+                inline=True,
+            )
 
         if stats.get("unique_players"):
             embed.add_field(
@@ -266,6 +292,9 @@ class DailySummaryCog(commands.Cog):
         """Query core and extended stats from match_records.db. Runs in a thread."""
         stats = {
             "total_matches": 0,
+            "casual_matches": 0,
+            "limited_matches": 0,
+            "rumble_matches": 0,
             "most_active": None,
             "top_gainer": None,
             "biggest_loser": None,
@@ -282,14 +311,22 @@ class DailySummaryCog(commands.Cog):
         try:
             cur = conn.cursor()
 
-            # 1. Total matches
+            # 1. Total matches (ranked)
             cur.execute(
                 "SELECT COUNT(*) FROM match_records WHERE timestamp LIKE ? AND match_type = 'ranked'",
                 (date_prefix,),
             )
             stats["total_matches"] = cur.fetchone()[0]
 
-            if stats["total_matches"] == 0:
+            # 1b. Casual, limited, rumble match counts
+            for match_type, key in [("testing", "casual_matches"), ("limited", "limited_matches"), ("rumble", "rumble_matches")]:
+                cur.execute(
+                    "SELECT COUNT(*) FROM match_records WHERE timestamp LIKE ? AND match_type = ?",
+                    (date_prefix, match_type),
+                )
+                stats[key] = cur.fetchone()[0]
+
+            if stats["total_matches"] == 0 and stats["casual_matches"] == 0 and stats["limited_matches"] == 0 and stats["rumble_matches"] == 0:
                 return stats
 
             # 2. Most active player
@@ -606,13 +643,19 @@ class DailySummaryCog(commands.Cog):
 
     def _format_stats_for_gpt(self, stats: dict) -> str:
         """Convert stats dict into human-readable text for GPT input."""
-        if stats["total_matches"] == 0:
+        all_zero = stats["total_matches"] == 0 and stats["casual_matches"] == 0 and stats["limited_matches"] == 0 and stats["rumble_matches"] == 0
+        if all_zero:
             return "No matches were played today."
 
-        lines = [
-            "Today's stats:",
-            f"- {stats['total_matches']} ranked matches played",
-        ]
+        lines = ["Today's stats:"]
+        if stats["total_matches"]:
+            lines.append(f"- {stats['total_matches']} ranked matches played")
+        if stats["casual_matches"]:
+            lines.append(f"- {stats['casual_matches']} casual matches played")
+        if stats["limited_matches"]:
+            lines.append(f"- {stats['limited_matches']} limited matches played")
+        if stats["rumble_matches"]:
+            lines.append(f"- {stats['rumble_matches']} rumble matches played")
 
         if stats.get("unique_players"):
             lines.append(f"- {stats['unique_players']} unique players")

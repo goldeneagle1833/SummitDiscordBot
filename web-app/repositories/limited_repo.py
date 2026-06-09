@@ -92,8 +92,16 @@ def create_limited_tables():
     cur.execute("""CREATE TABLE IF NOT EXISTS limited_elo (
         user_id INTEGER PRIMARY KEY,
         user_display_name TEXT,
-        elo INTEGER NOT NULL DEFAULT 1500
+        elo INTEGER NOT NULL DEFAULT 1500,
+        lifetime_elo INTEGER NOT NULL DEFAULT 1500
     )""")
+
+    # Migration: add lifetime_elo column if it doesn't exist yet
+    cur.execute("PRAGMA table_info(limited_elo)")
+    columns = [col[1] for col in cur.fetchall()]
+    if "lifetime_elo" not in columns:
+        cur.execute("ALTER TABLE limited_elo ADD COLUMN lifetime_elo INTEGER NOT NULL DEFAULT 1500")
+        cur.execute("UPDATE limited_elo SET lifetime_elo = elo WHERE lifetime_elo = 1500 AND elo != 1500")
 
     conn.commit()
     conn.close()
@@ -215,19 +223,34 @@ def get_limited_elo(user_id):
     return row[0] if row and row[0] else 1500
 
 
-def upsert_limited_elo(user_id, display_name, new_elo):
-    """Insert or update a user's Limited ELO rating."""
+def upsert_limited_elo(user_id, display_name, new_elo, elo_change=None):
+    """Insert or update a user's Limited ELO rating.
+
+    If elo_change is provided, lifetime_elo is also adjusted by that amount.
+    If elo_change is None (e.g. admin spot fix), only season elo is set.
+    """
     create_limited_tables()
     conn = _elo_conn()
     cur = conn.cursor()
-    cur.execute(
-        """INSERT INTO limited_elo (user_id, user_display_name, elo)
-           VALUES (?, ?, ?)
-           ON CONFLICT(user_id) DO UPDATE SET
-               user_display_name = excluded.user_display_name,
-               elo = excluded.elo""",
-        (user_id, display_name, new_elo),
-    )
+    if elo_change is not None:
+        cur.execute(
+            """INSERT INTO limited_elo (user_id, user_display_name, elo, lifetime_elo)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                   user_display_name = excluded.user_display_name,
+                   elo = excluded.elo,
+                   lifetime_elo = lifetime_elo + ?""",
+            (user_id, display_name, new_elo, 1500 + elo_change, elo_change),
+        )
+    else:
+        cur.execute(
+            """INSERT INTO limited_elo (user_id, user_display_name, elo)
+               VALUES (?, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                   user_display_name = excluded.user_display_name,
+                   elo = excluded.elo""",
+            (user_id, display_name, new_elo),
+        )
     conn.commit()
     conn.close()
 

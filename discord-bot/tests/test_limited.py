@@ -41,12 +41,15 @@ from repositories.limited_repo import (
     update_arena_run_record,
     complete_arena_run,
     get_limited_elo,
+    get_limited_lifetime_elo,
     upsert_limited_elo,
+    get_all_limited_standings,
     save_limited_pairing,
     get_limited_pairing_between_players,
     mark_limited_pairing_reported,
     cleanup_old_limited_pairings,
     insert_limited_match_record,
+    reset_limited_elo_to_default,
 )
 from services.limited_service import (
     update_limited_elo,
@@ -212,6 +215,63 @@ class TestLimitedElo:
         main_elo = cur.fetchone()[0]
         conn.close()
         assert main_elo == 1700
+
+
+# --- Lifetime ELO Tests ---
+
+
+class TestLifetimeElo:
+    """Test lifetime ELO tracking (never resets across seasons)."""
+
+    def test_default_lifetime_elo_is_1500(self):
+        elo = get_limited_lifetime_elo(8001)
+        assert elo == 1500
+
+    def test_lifetime_elo_updates_with_match(self):
+        """Lifetime ELO should change when a match is reported."""
+        new_elo, change = update_limited_elo(8002, "LTPlayer", True, 8003)
+        lifetime = get_limited_lifetime_elo(8002)
+        assert lifetime == 1500 + change
+
+    def test_lifetime_elo_preserved_on_season_reset(self):
+        """Season reset should not affect lifetime ELO."""
+        update_limited_elo(8004, "LTPreserve", True, 8005)
+        lifetime_before = get_limited_lifetime_elo(8004)
+        assert lifetime_before != 1500
+
+        reset_limited_elo_to_default()
+
+        season_elo = get_limited_elo(8004)
+        lifetime_after = get_limited_lifetime_elo(8004)
+        assert season_elo == 1500
+        assert lifetime_after == lifetime_before
+
+    def test_lifetime_elo_accumulates(self):
+        """Lifetime ELO should accumulate across multiple matches."""
+        update_limited_elo(8006, "Accum", True, 8007)
+        lt1 = get_limited_lifetime_elo(8006)
+        update_limited_elo(8006, "Accum", True, 8008)
+        lt2 = get_limited_lifetime_elo(8006)
+        assert lt2 > lt1
+
+    def test_standings_include_lifetime_elo(self):
+        """get_all_limited_standings should include lifetime_elo."""
+        upsert_limited_elo(8009, "StandingsP", 1600, elo_change=100)
+        standings = get_all_limited_standings()
+        player = next((s for s in standings if s["user_id"] == 8009), None)
+        assert player is not None
+        assert "lifetime_elo" in player
+        assert player["lifetime_elo"] == 1600
+
+    def test_admin_spot_fix_does_not_affect_lifetime(self):
+        """upsert without elo_change should not touch lifetime_elo."""
+        upsert_limited_elo(8010, "SpotFix", 1600, elo_change=100)
+        lt_before = get_limited_lifetime_elo(8010)
+        # Admin spot fix (no elo_change)
+        upsert_limited_elo(8010, "SpotFix", 1700)
+        lt_after = get_limited_lifetime_elo(8010)
+        assert lt_after == lt_before
+        assert get_limited_elo(8010) == 1700
 
 
 # --- Forfeit Tests ---

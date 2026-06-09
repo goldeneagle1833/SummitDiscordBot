@@ -50,7 +50,7 @@ def update_limited_elo(user_id: int, display_name: str, did_win: bool, opponent_
     new_elo = update_elo(player_elo, opponent_elo, did_win, k=32)
     elo_change = new_elo - player_elo
 
-    upsert_limited_elo(user_id, display_name, new_elo)
+    upsert_limited_elo(user_id, display_name, new_elo, elo_change=elo_change)
 
     logger.info(
         "Limited ELO update for %s: %d -> %d (%+d)",
@@ -300,6 +300,7 @@ def forfeit_arena_run(user_id: int) -> str:
 
     if losses_to_apply > 0:
         current_elo = get_limited_elo(user_id)
+        original_elo = current_elo
         starting_elo = run["starting_elo"]
 
         for i in range(losses_to_apply):
@@ -310,7 +311,7 @@ def forfeit_arena_run(user_id: int) -> str:
             )
             current_elo = new_elo
 
-        upsert_limited_elo(user_id, run["user_display_name"], current_elo)
+        upsert_limited_elo(user_id, run["user_display_name"], current_elo, elo_change=current_elo - original_elo)
 
     # Update run record to show full loss cap and mark as forfeited
     update_arena_run_record(run_id, run["wins"], MAX_ARENA_LOSSES)

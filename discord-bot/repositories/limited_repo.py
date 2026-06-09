@@ -87,8 +87,17 @@ def create_limited_tables():
     cur.execute("""CREATE TABLE IF NOT EXISTS limited_elo (
         user_id INTEGER PRIMARY KEY,
         user_display_name TEXT,
-        elo INTEGER NOT NULL DEFAULT 1500
+        elo INTEGER NOT NULL DEFAULT 1500,
+        lifetime_elo INTEGER NOT NULL DEFAULT 1500
     )""")
+
+    # Migration: add lifetime_elo column if it doesn't exist yet
+    cur.execute("PRAGMA table_info(limited_elo)")
+    columns = [col[1] for col in cur.fetchall()]
+    if "lifetime_elo" not in columns:
+        cur.execute("ALTER TABLE limited_elo ADD COLUMN lifetime_elo INTEGER NOT NULL DEFAULT 1500")
+        # Initialize lifetime_elo to current elo for existing players
+        cur.execute("UPDATE limited_elo SET lifetime_elo = elo WHERE lifetime_elo = 1500 AND elo != 1500")
 
     conn.commit()
     conn.close()
@@ -346,19 +355,48 @@ def get_limited_elo(user_id: int) -> int:
     return row[0] if row and row[0] else 1500
 
 
-def upsert_limited_elo(user_id: int, display_name: str, new_elo: int):
-    """Insert or update a user's Limited ELO rating."""
+def get_limited_lifetime_elo(user_id: int) -> int:
+    """Get a user's lifetime Limited ELO rating.
+
+    Returns 1500 if the user has no limited ELO record.
+    """
     create_limited_tables()
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
-    cur.execute(
-        """INSERT INTO limited_elo (user_id, user_display_name, elo)
-           VALUES (?, ?, ?)
-           ON CONFLICT(user_id) DO UPDATE SET
-               user_display_name = excluded.user_display_name,
-               elo = excluded.elo""",
-        (user_id, display_name, new_elo),
-    )
+    cur.execute("SELECT lifetime_elo FROM limited_elo WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row and row[0] else 1500
+
+
+def upsert_limited_elo(user_id: int, display_name: str, new_elo: int, elo_change: int = None):
+    """Insert or update a user's Limited ELO rating.
+
+    If elo_change is provided, lifetime_elo is also adjusted by that amount.
+    If elo_change is None (e.g. admin spot fix), only season elo is set.
+    """
+    create_limited_tables()
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+    if elo_change is not None:
+        cur.execute(
+            """INSERT INTO limited_elo (user_id, user_display_name, elo, lifetime_elo)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                   user_display_name = excluded.user_display_name,
+                   elo = excluded.elo,
+                   lifetime_elo = lifetime_elo + ?""",
+            (user_id, display_name, new_elo, 1500 + elo_change, elo_change),
+        )
+    else:
+        cur.execute(
+            """INSERT INTO limited_elo (user_id, user_display_name, elo)
+               VALUES (?, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                   user_display_name = excluded.user_display_name,
+                   elo = excluded.elo""",
+            (user_id, display_name, new_elo),
+        )
     conn.commit()
     conn.close()
 
@@ -369,12 +407,12 @@ def get_all_limited_standings() -> list[dict]:
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
     cur.execute(
-        "SELECT user_id, user_display_name, elo FROM limited_elo ORDER BY elo DESC"
+        "SELECT user_id, user_display_name, elo, lifetime_elo FROM limited_elo ORDER BY elo DESC"
     )
     rows = cur.fetchall()
     conn.close()
     return [
-        {"user_id": row[0], "display_name": row[1], "elo": row[2]}
+        {"user_id": row[0], "display_name": row[1], "elo": row[2], "lifetime_elo": row[3]}
         for row in rows
     ]
 
@@ -759,9 +797,9 @@ def archive_limited_arena_runs(event_id: int, archived_at: str) -> int:
 
 
 def reset_limited_elo_to_default():
-    """Reset all limited_elo entries to 1500."""
+    """Reset season limited_elo entries to 1500. Lifetime ELO is preserved."""
     conn = sqlite3.connect("elo.db")
     conn.execute("UPDATE limited_elo SET elo = 1500")
     conn.commit()
     conn.close()
-    logger.info("Reset all limited ELO ratings to 1500")
+    logger.info("Reset all limited season ELO ratings to 1500 (lifetime preserved)")

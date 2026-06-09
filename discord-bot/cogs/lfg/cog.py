@@ -452,6 +452,7 @@ class LFGCog(commands.Cog):
                 player_data.append({
                     "display_name": display_name,
                     "elo": s["elo"],
+                    "lifetime_elo": s.get("lifetime_elo", s["elo"]),
                     "wins": wins,
                     "losses": losses,
                     "games": wins + losses,
@@ -463,26 +464,26 @@ class LFGCog(commands.Cog):
             )
 
             if player_data:
-                # Overall Rankings (top 16)
+                # Season Rankings (top 16)
                 lines = []
                 for idx, p in enumerate(player_data[:16], 1):
                     win_pct = round(p["wins"] / p["games"] * 100) if p["games"] > 0 else 0
                     lines.append(
-                        f"{idx}. {p['display_name']} - {p['elo']} ({p['wins']}W/{p['losses']}L, {win_pct}%)"
+                        f"{idx}. {p['display_name']} - {p['elo']} | LT: {p['lifetime_elo']} ({p['wins']}W/{p['losses']}L, {win_pct}%)"
                     )
                 embed.add_field(
-                    name="Rankings",
+                    name="Rankings (Season | Lifetime)",
                     value="\n".join(lines) if lines else "No players ranked yet.",
                     inline=False,
                 )
             else:
                 embed.add_field(
-                    name="Rankings",
+                    name="Rankings (Season | Lifetime)",
                     value="No players ranked yet.",
                     inline=False,
                 )
 
-            embed.set_footer(text="Lifetime limited ELO \u2022 Updates after each match")
+            embed.set_footer(text="Season ELO | LT = Lifetime ELO \u2022 Updates after each match")
 
             # Send new message, delete old one
             new_message = await channel.send(embed=embed)

@@ -105,8 +105,8 @@ def report_match(winner_id, winner_display_name, loser_id, loser_display_name,
     winner_elo_change = new_winner_elo - winner_elo_before
     loser_elo_change = new_loser_elo - loser_elo_before
 
-    upsert_limited_elo(winner_id, winner_display_name, new_winner_elo)
-    upsert_limited_elo(loser_id, loser_display_name, new_loser_elo)
+    upsert_limited_elo(winner_id, winner_display_name, new_winner_elo, elo_change=winner_elo_change)
+    upsert_limited_elo(loser_id, loser_display_name, new_loser_elo, elo_change=loser_elo_change)
 
     # Determine who went first
     winner_went_first = "y" if first_player == str(winner_id) else "n"
@@ -188,6 +188,7 @@ def forfeit_arena_run(user_id):
 
     if losses_to_apply > 0:
         current_elo = get_limited_elo(user_id)
+        original_elo = current_elo
         starting_elo = run["starting_elo"]
 
         for i in range(losses_to_apply):
@@ -198,7 +199,7 @@ def forfeit_arena_run(user_id):
             )
             current_elo = new_elo
 
-        upsert_limited_elo(user_id, run["user_display_name"], current_elo)
+        upsert_limited_elo(user_id, run["user_display_name"], current_elo, elo_change=current_elo - original_elo)
 
     update_arena_run_record(run_id, run["wins"], MAX_ARENA_LOSSES)
     complete_arena_run(run_id, "forfeited")

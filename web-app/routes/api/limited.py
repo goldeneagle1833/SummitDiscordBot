@@ -8,11 +8,15 @@ from flask import Blueprint, jsonify, request
 from utils.api_auth import require_api_key
 from repositories.limited_repo import (
     get_active_arena_run,
+    get_all_archived_match_history,
+    get_all_archived_runs_for_user,
     get_all_limited_match_history,
     get_all_runs_for_user,
+    get_archived_arena_run,
     get_arena_run,
     get_latest_arena_run,
     get_limited_elo,
+    get_matches_for_archived_run_with_decks,
     get_matches_for_run,
     get_matches_for_run_with_decks,
     get_latest_arena_run_from_archive,
@@ -288,11 +292,18 @@ def get_match_history():
             except ValueError:
                 return jsonify({"success": False, "error": "Invalid run_id"}), 400
 
+            # Check live table first, then archive
             run = get_arena_run(rid)
+            if run:
+                matches = get_matches_for_run_with_decks(rid)
+            else:
+                run = get_archived_arena_run(rid)
+                if run:
+                    matches = get_matches_for_archived_run_with_decks(rid)
+
             if not run:
                 return jsonify({"success": False, "error": "Run not found"}), 404
 
-            matches = get_matches_for_run_with_decks(rid)
             return jsonify({
                 "success": True,
                 "run": _run_to_dict(run),
@@ -305,10 +316,17 @@ def get_match_history():
             except ValueError:
                 return jsonify({"success": False, "error": "Invalid user_id"}), 400
 
-            runs = get_all_runs_for_user(uid)
+            # Combine live runs and archived runs
             runs_with_matches = []
-            for run in runs:
+
+            for run in get_all_runs_for_user(uid):
                 matches = get_matches_for_run_with_decks(run["run_id"])
+                run_data = _run_to_dict(run)
+                run_data["matches"] = matches
+                runs_with_matches.append(run_data)
+
+            for run in get_all_archived_runs_for_user(uid):
+                matches = get_matches_for_archived_run_with_decks(run["run_id"])
                 run_data = _run_to_dict(run)
                 run_data["matches"] = matches
                 runs_with_matches.append(run_data)
@@ -319,8 +337,9 @@ def get_match_history():
                 "runs": runs_with_matches,
             })
 
-        # No filters — return global match history
-        matches = get_all_limited_match_history()
+        # No filters — return global match history (live + archived)
+        matches = get_all_limited_match_history() + get_all_archived_match_history()
+        matches.sort(key=lambda m: m["timestamp"], reverse=True)
         return jsonify({
             "success": True,
             "matches": matches,

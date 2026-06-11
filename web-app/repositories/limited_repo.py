@@ -624,6 +624,91 @@ def _match_row_to_dict(row):
     }
 
 
+def get_all_archived_match_history():
+    """Get all archived limited match records with deck links, ordered by newest first."""
+    conn = _match_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """SELECT original_match_id, winner_id, winner_display_name, loser_id, loser_display_name,
+                      timestamp, curiosa_url_winner, curiosa_url_loser,
+                      winner_elo_change, loser_elo_change,
+                      winner_run_id, loser_run_id
+               FROM limited_match_records_archive
+               ORDER BY timestamp DESC"""
+        )
+        rows = cur.fetchall()
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+    return [_match_row_to_dict(r) for r in rows]
+
+
+def get_all_archived_runs_for_user(user_id):
+    """Get all archived arena runs for a user, ordered by newest first."""
+    conn = _match_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """SELECT original_run_id, user_id, user_display_name, deck_url, NULL,
+                      wins, losses, starting_elo, status, created_at, completed_at
+               FROM limited_arena_runs_archive
+               WHERE user_id = ?
+               ORDER BY created_at DESC""",
+            (user_id,),
+        )
+        rows = cur.fetchall()
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+    return [_run_from_row(r) for r in rows]
+
+
+def get_archived_arena_run(run_id):
+    """Get an archived arena run by its original run_id."""
+    conn = _match_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """SELECT original_run_id, user_id, user_display_name, deck_url, NULL,
+                      wins, losses, starting_elo, status, created_at, completed_at
+               FROM limited_arena_runs_archive
+               WHERE original_run_id = ?""",
+            (run_id,),
+        )
+        row = cur.fetchone()
+    except Exception:
+        row = None
+    finally:
+        conn.close()
+    return _run_from_row(row)
+
+
+def get_matches_for_archived_run_with_decks(run_id):
+    """Get all archived match records for a run including deck links."""
+    conn = _match_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """SELECT original_match_id, winner_id, winner_display_name, loser_id, loser_display_name,
+                      timestamp, curiosa_url_winner, curiosa_url_loser,
+                      winner_elo_change, loser_elo_change,
+                      winner_run_id, loser_run_id
+               FROM limited_match_records_archive
+               WHERE winner_run_id = ? OR loser_run_id = ?
+               ORDER BY timestamp ASC""",
+            (run_id, run_id),
+        )
+        rows = cur.fetchall()
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+    return [_match_row_to_dict(r) for r in rows]
+
+
 def get_limited_leaderboard_stats():
     """Get aggregate limited stats: total runs, total matches, trophy count."""
     create_limited_tables()

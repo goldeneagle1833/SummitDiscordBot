@@ -249,7 +249,7 @@ export default function DashboardSection() {
     { label: 'Avg Games/Week (12wk)', value: summary.avg_weekly_games },
     { label: 'Online Matches', value: summary.total_bot_matches?.toLocaleString() },
     { label: 'Paper Matches', value: summary.total_web_matches?.toLocaleString() },
-    { label: 'External Matches', value: (summary.total_external_matches || 0).toLocaleString() },
+    { label: 'External Matches', value: (summary.total_external_matches || 0).toLocaleString(), link: '/admin/external-matches' },
     { label: 'Users Logged In', value: (summary.total_logins || 0).toLocaleString() },
   ]
 
@@ -263,12 +263,23 @@ export default function DashboardSection() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-3">
         <ActiveUsersCard />
         <UniqueUsersCard />
-        {summaryCards.map(c => (
-          <div key={c.label} className="bg-bg-raised border border-border rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-secondary">{c.value ?? '--'}</div>
-            <div className="text-xs text-text-muted mt-1 leading-tight">{c.label}</div>
-          </div>
-        ))}
+        {summaryCards.map(c => {
+          const inner = (
+            <>
+              <div className="text-2xl font-bold text-secondary">{c.value ?? '--'}</div>
+              <div className="text-xs text-text-muted mt-1 leading-tight">{c.label}</div>
+            </>
+          )
+          return c.link ? (
+            <Link key={c.label} to={c.link} className="bg-bg-raised border border-border rounded-lg p-4 text-center hover:border-secondary transition-colors cursor-pointer block">
+              {inner}
+            </Link>
+          ) : (
+            <div key={c.label} className="bg-bg-raised border border-border rounded-lg p-4 text-center">
+              {inner}
+            </div>
+          )
+        })}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

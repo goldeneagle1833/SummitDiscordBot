@@ -55,6 +55,7 @@ const ExplorerStandings = lazy(() => import('@/pages/ExplorerStandings'))
 import AuditLog from '@/pages/admin/AuditLog'
 import ActiveConnections from '@/pages/admin/ActiveConnections'
 import UniqueUsers from '@/pages/admin/UniqueUsers'
+import ExternalMatchesAdmin from '@/pages/admin/ExternalMatches'
 
 // Error pages
 import ErrorPage from '@/pages/ErrorPage'
@@ -166,6 +167,7 @@ const router = createBrowserRouter([
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
       { path: '/admin/active-connections', element: <AdminGuard><ActiveConnections /></AdminGuard> },
       { path: '/admin/unique-users', element: <AdminGuard><UniqueUsers /></AdminGuard> },
+      { path: '/admin/external-matches', element: <AdminGuard><ExternalMatchesAdmin /></AdminGuard> },
       // Error & 404
       { path: '/error', element: <ErrorPage /> },
       { path: '*', element: <NotFound /> },

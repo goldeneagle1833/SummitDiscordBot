@@ -12,6 +12,7 @@ from services.admin import AdminService
 from repositories.audit import AuditRepository
 from repositories.avatar_image_settings import AvatarImageSettingsRepository
 from repositories.creator_access import CreatorAccessRepository
+from repositories.external_matches import ExternalMatchRepository
 from repositories.user_profiles import UserProfileRepository
 from utils.auth import require_admin
 from webapp_config import ELO_DB_PATH, MATCH_RECORDS_DB_PATH, BOT_DIR
@@ -1006,3 +1007,30 @@ def delete_avatar_image_settings(avatar_name):
     )
 
     return jsonify({"success": True}), 200
+
+
+@admin_bp.route("/admin/external-matches", methods=["GET"])
+@require_admin
+def list_external_matches():
+    """List all external matches with pagination (admin only)."""
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+    page = max(1, page)
+    per_page = min(max(1, per_page), 100)
+
+    repo = ExternalMatchRepository()
+    matches, total = repo.get_all_matches(page=page, per_page=per_page)
+    total_pages = (total + per_page - 1) // per_page if total > 0 else 1
+
+    return jsonify({
+        "success": True,
+        "matches": matches,
+        "pagination": {
+            "current_page": page,
+            "per_page": per_page,
+            "total_matches": total,
+            "total_pages": total_pages,
+            "has_previous": page > 1,
+            "has_next": page < total_pages,
+        },
+    }), 200

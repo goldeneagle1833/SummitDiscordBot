@@ -92,6 +92,32 @@ class ExternalMatchRepository:
         conn.close()
         return count
 
+    def get_all_matches(self, page: int = 1, per_page: int = 50) -> tuple[list[dict], int]:
+        """Get all external matches with pagination. Returns (rows, total_count)."""
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT COUNT(*) FROM external_matches")
+            total = cur.fetchone()[0]
+            offset = (page - 1) * per_page
+            cur.execute(
+                """SELECT id, winner_id, loser_id,
+                          winner_display_name, loser_display_name,
+                          winner_deck_url, loser_deck_url,
+                          winner_went_first, match_time, match_comment,
+                          source, timestamp
+                   FROM external_matches
+                   ORDER BY timestamp DESC
+                   LIMIT ? OFFSET ?""",
+                (per_page, offset),
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+        except sqlite3.OperationalError:
+            rows, total = [], 0
+        conn.close()
+        return rows, total
+
     def get_player_matches(self, player_id: str, limit: int = 100) -> list[dict]:
         """Get external match history for a player."""
         conn = self._get_connection()

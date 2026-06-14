@@ -111,6 +111,51 @@ class RumbleRepository:
         diff = amount - current
         return self.adjust_bones(discord_user_id, diff, reason, display_name, admin_user_id)
 
+    def update_bone_entry(self, discord_user_id: str, display_name: str | None = None,
+                          balance: int | None = None, admin_user_id: str | None = None) -> bool:
+        """Update a bone entry's display name and/or balance."""
+        conn = self._connect()
+        row = conn.execute(
+            "SELECT balance FROM rumble_bones WHERE discord_user_id = ?",
+            (discord_user_id,),
+        ).fetchone()
+        if not row:
+            conn.close()
+            return False
+        if display_name is not None:
+            conn.execute(
+                "UPDATE rumble_bones SET display_name = ? WHERE discord_user_id = ?",
+                (display_name, discord_user_id),
+            )
+        if balance is not None:
+            diff = balance - row["balance"]
+            conn.execute(
+                "UPDATE rumble_bones SET balance = ? WHERE discord_user_id = ?",
+                (balance, discord_user_id),
+            )
+            conn.execute(
+                "INSERT INTO rumble_bone_transactions (discord_user_id, amount, reason, admin_user_id) VALUES (?, ?, ?, ?)",
+                (discord_user_id, diff, "Admin edit", admin_user_id),
+            )
+        conn.commit()
+        conn.close()
+        return True
+
+    def delete_bone_entry(self, discord_user_id: str) -> bool:
+        """Delete a player's bone balance and transaction history."""
+        conn = self._connect()
+        cursor = conn.execute(
+            "DELETE FROM rumble_bones WHERE discord_user_id = ?",
+            (discord_user_id,),
+        )
+        conn.execute(
+            "DELETE FROM rumble_bone_transactions WHERE discord_user_id = ?",
+            (discord_user_id,),
+        )
+        conn.commit()
+        conn.close()
+        return cursor.rowcount > 0
+
     def get_transactions(self, discord_user_id: str, limit: int = 50) -> list[dict]:
         conn = self._connect()
         rows = conn.execute(

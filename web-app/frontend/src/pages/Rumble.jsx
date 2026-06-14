@@ -199,7 +199,84 @@ function EditPlayerModal({ player, onClose, onSave, onDelete }) {
   )
 }
 
-function BonesLeaderboard({ bones }) {
+function EditBoneModal({ entry, onClose, onSave, onDelete }) {
+  const [displayName, setDisplayName] = useState(entry.display_name || '')
+  const [balance, setBalance] = useState(entry.balance)
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    await onSave(entry.discord_user_id, {
+      display_name: displayName,
+      balance: parseInt(balance) || 0,
+    })
+    setSaving(false)
+  }
+
+  const handleDelete = async () => {
+    if (!confirm(`Delete bone entry for "${entry.display_name}"? This removes their balance and transaction history.`)) return
+    setSaving(true)
+    await onDelete(entry.discord_user_id)
+    setSaving(false)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
+      <div
+        className="bg-bg-surface border border-border rounded-lg p-6 w-full max-w-sm mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-semibold text-text-primary mb-4">Edit Bone Entry</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Display Name</label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              className="w-full bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Balance</label>
+            <input
+              type="number"
+              value={balance}
+              onChange={(e) => setBalance(e.target.value)}
+              className="w-full bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+        </div>
+        <div className="flex justify-between mt-5">
+          <button
+            onClick={handleDelete}
+            disabled={saving}
+            className="text-accent-red hover:text-accent-red/80 text-sm font-medium disabled:opacity-50"
+          >
+            Delete Entry
+          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="text-text-muted hover:text-text-primary text-sm px-3 py-1.5"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="bg-secondary text-black px-4 py-1.5 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BonesLeaderboard({ bones, isAdmin, onEdit }) {
   if (!bones?.length) return null
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-4">
@@ -217,7 +294,18 @@ function BonesLeaderboard({ bones }) {
             {bones.map((b, i) => (
               <tr key={b.discord_user_id} className="border-b border-border/50">
                 <td className="py-1.5 px-2 text-text-muted">{i + 1}</td>
-                <td className="py-1.5 px-2 font-medium">{b.display_name || 'Unknown'}</td>
+                <td className="py-1.5 px-2 font-medium">
+                  {b.display_name || 'Unknown'}
+                  {isAdmin && (
+                    <button
+                      onClick={() => onEdit(b)}
+                      className="ml-1.5 text-text-muted hover:text-secondary inline-block align-middle"
+                      title="Edit entry"
+                    >
+                      &#9998;
+                    </button>
+                  )}
+                </td>
                 <td className="py-1.5 px-2 font-mono">{b.balance}</td>
               </tr>
             ))}
@@ -744,6 +832,7 @@ export default function Rumble() {
   const [error, setError] = useState(null)
   const [redeemMessage, setRedeemMessage] = useState(null)
   const [editingPlayer, setEditingPlayer] = useState(null)
+  const [editingBone, setEditingBone] = useState(null)
 
   const fetchData = useCallback(() => {
     get('/api/rumble')
@@ -800,6 +889,26 @@ export default function Rumble() {
     }
   }
 
+  const handleEditBone = async (discordUserId, updates) => {
+    try {
+      await put(`/api/rumble/admin/bones/${discordUserId}`, updates)
+      setEditingBone(null)
+      fetchData()
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+
+  const handleDeleteBone = async (discordUserId) => {
+    try {
+      await del(`/api/rumble/admin/bones/${discordUserId}`)
+      setEditingBone(null)
+      fetchData()
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="text-center py-6">
@@ -825,7 +934,7 @@ export default function Rumble() {
       />
 
       {/* Bone Balances */}
-      <BonesLeaderboard bones={data.bones} />
+      <BonesLeaderboard bones={data.bones} isAdmin={isRumbleAdmin} onEdit={setEditingBone} />
 
       {/* Standings */}
       {standings?.length > 0 && (
@@ -925,6 +1034,16 @@ export default function Rumble() {
           onClose={() => setEditingPlayer(null)}
           onSave={handleEditPlayer}
           onDelete={handleDeletePlayer}
+        />
+      )}
+
+      {/* Edit Bone Modal */}
+      {editingBone && (
+        <EditBoneModal
+          entry={editingBone}
+          onClose={() => setEditingBone(null)}
+          onSave={handleEditBone}
+          onDelete={handleDeleteBone}
         />
       )}
     </div>

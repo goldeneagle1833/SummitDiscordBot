@@ -113,6 +113,37 @@ def get_bone_transactions(discord_user_id):
     return jsonify({"transactions": transactions})
 
 
+@rumble_bp.route("/rumble/admin/bones/<discord_user_id>", methods=["PUT"])
+@require_rumble_admin
+def update_bone_entry(discord_user_id):
+    """Update a player's bone entry (display name, balance)."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    repo = RumbleRepository()
+    admin_id = session.get("user_id")
+    success = repo.update_bone_entry(
+        discord_user_id,
+        display_name=data.get("display_name"),
+        balance=int(data["balance"]) if data.get("balance") is not None else None,
+        admin_user_id=str(admin_id) if admin_id else None,
+    )
+    if success:
+        return jsonify({"success": True})
+    return jsonify({"error": "Player not found"}), 404
+
+
+@rumble_bp.route("/rumble/admin/bones/<discord_user_id>", methods=["DELETE"])
+@require_rumble_admin
+def delete_bone_entry(discord_user_id):
+    """Delete a player's bone balance and transaction history."""
+    repo = RumbleRepository()
+    if repo.delete_bone_entry(discord_user_id):
+        return jsonify({"success": True})
+    return jsonify({"error": "Player not found"}), 404
+
+
 @rumble_bp.route("/rumble/admin/earnings", methods=["PUT"])
 @require_rumble_admin
 def update_earnings_config():

@@ -1008,6 +1008,117 @@ class MatchRepository:
             for row in rows
         ]
 
+    def update_rumble_player(self, user_id: str, display_name: str | None = None,
+                              wins: int | None = None, losses: int | None = None) -> bool:
+        """Update a rumble player's display name and/or win/loss counts.
+
+        Display name is updated across all match records for this player.
+        Wins/losses are adjusted by adding or removing records as needed.
+        """
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            # Update display name across all records for this player
+            if display_name is not None:
+                cur.execute(
+                    "UPDATE rumble_match_records SET winner_display_name = ? WHERE winner_id = ?",
+                    (display_name, user_id),
+                )
+                cur.execute(
+                    "UPDATE rumble_match_records SET losser_display_name = ? WHERE losser_id = ?",
+                    (display_name, user_id),
+                )
+
+            # Adjust wins if specified
+            if wins is not None:
+                cur.execute(
+                    "SELECT COUNT(*) FROM rumble_match_records WHERE winner_id = ?", (user_id,)
+                )
+                current_wins = cur.fetchone()[0]
+                delta = wins - current_wins
+                name = display_name or "Unknown"
+                if delta > 0:
+                    for _ in range(delta):
+                        cur.execute(
+                            "INSERT INTO rumble_match_records "
+                            "(reporter_id, winner_id, winner_display_name, losser_id, losser_display_name, "
+                            "did_win, timestamp, first_player, match_time, curiosa_url_winner, curiosa_url_loser, "
+                            "match_comment, json_deck_data_winner, json_deck_data_loser, winner_went_first, loser_went_first) "
+                            "VALUES (?, ?, ?, 0, 'Admin Adjustment', 1, datetime('now'), '', 0, '', '', "
+                            "'Admin adjustment', '{}', '{}', '', '')",
+                            (user_id, user_id, name),
+                        )
+                elif delta < 0:
+                    cur.execute(
+                        "SELECT match_id FROM rumble_match_records WHERE winner_id = ? "
+                        "ORDER BY match_id DESC LIMIT ?",
+                        (user_id, abs(delta)),
+                    )
+                    ids = [r[0] for r in cur.fetchall()]
+                    if ids:
+                        placeholders = ",".join("?" * len(ids))
+                        cur.execute(
+                            f"DELETE FROM rumble_match_records WHERE match_id IN ({placeholders})",
+                            ids,
+                        )
+
+            # Adjust losses if specified
+            if losses is not None:
+                cur.execute(
+                    "SELECT COUNT(*) FROM rumble_match_records WHERE losser_id = ?", (user_id,)
+                )
+                current_losses = cur.fetchone()[0]
+                delta = losses - current_losses
+                name = display_name or "Unknown"
+                if delta > 0:
+                    for _ in range(delta):
+                        cur.execute(
+                            "INSERT INTO rumble_match_records "
+                            "(reporter_id, winner_id, winner_display_name, losser_id, losser_display_name, "
+                            "did_win, timestamp, first_player, match_time, curiosa_url_winner, curiosa_url_loser, "
+                            "match_comment, json_deck_data_winner, json_deck_data_loser, winner_went_first, loser_went_first) "
+                            "VALUES (0, 0, 'Admin Adjustment', ?, ?, 1, datetime('now'), '', 0, '', '', "
+                            "'Admin adjustment', '{}', '{}', '', '')",
+                            (user_id, name),
+                        )
+                elif delta < 0:
+                    cur.execute(
+                        "SELECT match_id FROM rumble_match_records WHERE losser_id = ? "
+                        "ORDER BY match_id DESC LIMIT ?",
+                        (user_id, abs(delta)),
+                    )
+                    ids = [r[0] for r in cur.fetchall()]
+                    if ids:
+                        placeholders = ",".join("?" * len(ids))
+                        cur.execute(
+                            f"DELETE FROM rumble_match_records WHERE match_id IN ({placeholders})",
+                            ids,
+                        )
+
+            conn.commit()
+            return True
+        except sqlite3.OperationalError:
+            return False
+        finally:
+            conn.close()
+
+    def delete_rumble_player(self, user_id: str) -> bool:
+        """Delete all rumble match records for a player (both wins and losses)."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "DELETE FROM rumble_match_records WHERE winner_id = ? OR losser_id = ?",
+                (user_id, user_id),
+            )
+            deleted = cur.rowcount > 0
+            conn.commit()
+            return deleted
+        except sqlite3.OperationalError:
+            return False
+        finally:
+            conn.close()
+
     # --- Limited Arena (limited_match_records, limited_arena_runs, limited_elo) ---
 
     def get_limited_matches_for_player(self, player_id: str, limit: int = 20) -> list[dict]:

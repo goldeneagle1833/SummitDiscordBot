@@ -13,11 +13,16 @@ from repositories.dust_repo import (
     record_drop,
     get_drop_status,
     code_exists,
+    add_alter_card_prize,
+    get_available_alter_card,
+    claim_alter_card,
+    get_alter_card_count,
 )
 from services.dust_service import (
     validate_dust_code,
     donate_code,
     try_dust_drop,
+    try_alter_card_drop,
 )
 
 
@@ -227,3 +232,74 @@ class TestTryDustDrop:
         # P1 is eligible in Season 2
         result = try_dust_drop(100, "P1", 200, "P2", "Season 2")
         assert result is not None
+
+
+# ── Alter Card Repository Tests ──
+
+
+class TestAlterCardRepo:
+    def test_add_and_count(self):
+        assert get_alter_card_count() == 0
+        add_alter_card_prize("Foil Dragon", 100, "Admin")
+        assert get_alter_card_count() == 1
+
+    def test_get_available_alter_card(self):
+        assert get_available_alter_card() is None
+        add_alter_card_prize("Foil Dragon", 100, "Admin")
+        card = get_available_alter_card()
+        assert card is not None
+        assert card["description"] == "Foil Dragon"
+
+    def test_claim_alter_card(self):
+        add_alter_card_prize("Foil Dragon", 100, "Admin")
+        card = get_available_alter_card()
+        desc = claim_alter_card(card["id"], 200, "Winner")
+        assert desc == "Foil Dragon"
+        assert get_alter_card_count() == 0
+        assert get_available_alter_card() is None
+
+    def test_claim_already_won(self):
+        add_alter_card_prize("Foil Dragon", 100, "Admin")
+        card = get_available_alter_card()
+        claim_alter_card(card["id"], 200, "Winner")
+        result = claim_alter_card(card["id"], 300, "Other")
+        assert result is None
+
+
+# ── Alter Card Service Tests ──
+
+
+class TestTryAlterCardDrop:
+    def test_no_drop_when_no_prize(self):
+        result = try_alter_card_drop(100, "P1", 200, "P2")
+        assert result is None
+
+    @patch("services.dust_service.random.random", return_value=0.0001)
+    @patch("services.dust_service.random.choice", return_value=(100, "P1"))
+    def test_drop_succeeds(self, mock_choice, mock_random):
+        add_alter_card_prize("Foil Dragon", 300, "Admin")
+        result = try_alter_card_drop(100, "P1", 200, "P2")
+        assert result is not None
+        winner_id, winner_name, description = result
+        assert winner_id == 100
+        assert description == "Foil Dragon"
+        assert get_alter_card_count() == 0
+
+    @patch("services.dust_service.random.random", return_value=0.999)
+    def test_drop_fails_on_bad_roll(self, mock_random):
+        add_alter_card_prize("Foil Dragon", 300, "Admin")
+        result = try_alter_card_drop(100, "P1", 200, "P2")
+        assert result is None
+        assert get_alter_card_count() == 1
+
+    @patch("services.dust_service.random.random", return_value=0.0001)
+    @patch("services.dust_service.random.choice", return_value=(100, "P1"))
+    def test_no_season_cap(self, mock_choice, mock_random):
+        """Alter cards have no season cap - same player can win multiple times."""
+        add_alter_card_prize("Foil Dragon", 300, "Admin")
+        add_alter_card_prize("Foil Phoenix", 300, "Admin")
+        result1 = try_alter_card_drop(100, "P1", 200, "P2")
+        assert result1 is not None
+        result2 = try_alter_card_drop(100, "P1", 200, "P2")
+        assert result2 is not None
+        assert result2[2] == "Foil Phoenix"

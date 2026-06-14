@@ -20,7 +20,7 @@ def _get_connection():
 
 
 def create_dust_tables():
-    """Create dust_codes and dust_drops tables if they don't exist."""
+    """Create dust_codes, dust_drops, and alter_card_prizes tables if they don't exist."""
     with _get_connection() as conn:
         cur = conn.cursor()
         cur.execute("""CREATE TABLE IF NOT EXISTS dust_codes (
@@ -41,6 +41,17 @@ def create_dust_tables():
             last_reset_at TEXT NOT NULL,
             last_drop_game_number INTEGER,
             dropped_this_cycle INTEGER NOT NULL DEFAULT 0
+        )""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS alter_card_prizes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            description TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'available',
+            added_by_id INTEGER,
+            added_by_name TEXT,
+            added_at TEXT NOT NULL,
+            won_by_id INTEGER,
+            won_by_name TEXT,
+            won_at TEXT
         )""")
         # Migrate: add dropped_this_cycle column if missing
         cur.execute("PRAGMA table_info(dust_drops)")
@@ -180,3 +191,56 @@ def code_exists(code):
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM dust_codes WHERE code = ?", (code,))
         return cur.fetchone()[0] > 0
+
+
+# ── Alter Card Prize functions ──
+
+def add_alter_card_prize(description, added_by_id, added_by_name):
+    """Store a new alter card prize as available."""
+    with _get_connection() as conn:
+        conn.cursor().execute(
+            """INSERT INTO alter_card_prizes (description, status, added_by_id, added_by_name, added_at)
+               VALUES (?, 'available', ?, ?, ?)""",
+            (description, added_by_id, added_by_name, datetime.datetime.now().isoformat()),
+        )
+
+
+def get_available_alter_card():
+    """Return the available alter card prize, or None."""
+    with _get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, description FROM alter_card_prizes WHERE status = 'available' ORDER BY id ASC LIMIT 1"
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "description": row[1]}
+
+
+def claim_alter_card(prize_id, winner_id, winner_name):
+    """Mark an alter card prize as won. Returns the description."""
+    with _get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT description FROM alter_card_prizes WHERE id = ? AND status = 'available'",
+            (prize_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        cur.execute(
+            """UPDATE alter_card_prizes
+               SET status = 'won', won_by_id = ?, won_by_name = ?, won_at = ?
+               WHERE id = ?""",
+            (winner_id, winner_name, datetime.datetime.now().isoformat(), prize_id),
+        )
+        return row[0]
+
+
+def get_alter_card_count():
+    """Return the number of available alter card prizes."""
+    with _get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM alter_card_prizes WHERE status = 'available'")
+        return cur.fetchone()[0]

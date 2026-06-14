@@ -13,6 +13,8 @@ from repositories.dust_repo import (
     create_dust_tables,
     get_available_code_count,
     get_drop_status,
+    add_alter_card_prize,
+    get_alter_card_count,
 )
 from services.dust_service import donate_code
 
@@ -72,9 +74,12 @@ class DustCog(commands.Cog):
 
         available = get_available_code_count()
         status = get_drop_status()
+        alter_cards = get_alter_card_count()
 
-        embed = discord.Embed(title="Dust Code Status", color=discord.Color.gold())
-        embed.add_field(name="Available Codes", value=str(available), inline=True)
+        embed = discord.Embed(title="Prize Status", color=discord.Color.gold())
+        embed.add_field(name="Dust Codes Available", value=str(available), inline=True)
+        embed.add_field(name="Alter Cards Available", value=str(alter_cards), inline=True)
+        embed.add_field(name="Alter Card Drop Chance", value="0.10% per game", inline=True)
         if status:
             embed.add_field(
                 name="Games Since Reset",
@@ -99,6 +104,35 @@ class DustCog(commands.Cog):
                     inline=True,
                 )
         await ctx.send(embed=embed)
+
+    @commands.command(name="setaltercard")
+    async def set_alter_card(self, ctx, *, description: str):
+        """Set the alter card prize (admin only). Usage: !setaltercard Foil Alternate Art Dragon"""
+        is_admin = False
+        if ctx.guild:
+            member = ctx.guild.get_member(ctx.author.id)
+            if member:
+                if member.guild_permissions.administrator:
+                    is_admin = True
+                elif any(role.id == config.BOT_ADMIN_ROLE_ID for role in member.roles):
+                    is_admin = True
+        if ctx.author.id == config.OWNER_ID:
+            is_admin = True
+
+        if not is_admin:
+            await ctx.send("You don't have permission to use this command.")
+            return
+
+        add_alter_card_prize(description.strip(), ctx.author.id, ctx.author.display_name)
+        count = get_alter_card_count()
+        await ctx.send(f"Alter card prize set: **{description.strip()}** ({count} available)")
+
+    @set_alter_card.error
+    async def set_alter_card_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("Please provide a description. Usage: `!setaltercard Foil Alternate Art Dragon`")
+        else:
+            logger.error(f"Error in setaltercard: {error}", exc_info=True)
 
     async def _notify_owner_no_codes(self):
         """DM the server owner that codes have run out."""

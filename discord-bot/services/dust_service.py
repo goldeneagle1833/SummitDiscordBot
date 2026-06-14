@@ -12,6 +12,8 @@ from repositories.dust_repo import (
     increment_game_counter,
     record_drop,
     code_exists,
+    get_available_alter_card,
+    claim_alter_card,
 )
 from repositories.audit_repo import log_admin_action
 
@@ -115,3 +117,46 @@ def try_dust_drop(player1_id, player1_name, player2_id, player2_name, season_nam
 
     logger.info(f"Dust code dropped to {winner_name} (game #{game_number})")
     return winner_id, winner_name, code
+
+
+# ── Alter Card Drop ──
+
+ALTER_CARD_DROP_CHANCE = 0.001  # 0.1% per game = ~1/1000
+
+
+def try_alter_card_drop(player1_id, player1_name, player2_id, player2_name):
+    """Called after a match is confirmed. Rolls for an alter card drop.
+
+    Flat 0.1% chance per game. No cycle, no season cap.
+    Returns (winner_id, winner_name, description) if a drop occurs, or None.
+    """
+    prize = get_available_alter_card()
+    if prize is None:
+        return None
+
+    roll = random.random()
+    logger.info(f"Alter card drop roll: chance {ALTER_CARD_DROP_CHANCE:.4%}, rolled {roll:.4f}")
+    if roll > ALTER_CARD_DROP_CHANCE:
+        return None
+
+    # Drop triggered! Pick a random player
+    winner_id, winner_name = random.choice(
+        [(player1_id, player1_name), (player2_id, player2_name)]
+    )
+
+    description = claim_alter_card(prize["id"], winner_id, winner_name)
+    if description is None:
+        logger.warning("Alter card drop triggered but prize unavailable at claim time")
+        return None
+
+    log_admin_action(
+        admin_id=winner_id,
+        admin_name=winner_name,
+        action="alter_card_won",
+        target_id=str(winner_id),
+        target_name=winner_name,
+        details=f"{winner_name} won an alter card: {description}",
+    )
+
+    logger.info(f"Alter card dropped to {winner_name}: {description}")
+    return winner_id, winner_name, description

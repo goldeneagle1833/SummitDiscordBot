@@ -24,7 +24,7 @@ from utils.database import (
     mark_pairing_reported,
     get_active_event,
 )
-from services.dust_service import try_dust_drop
+from services.dust_service import try_dust_drop, try_alter_card_drop
 from repositories.dust_repo import get_available_code_count
 from repositories.limited_repo import mark_limited_pairing_reported
 from services.limited_service import limited_winner_report, get_run_summary
@@ -533,6 +533,36 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                     pass
     except Exception as e:
         logger.error(f"Error in dust code drop: {e}", exc_info=True)
+
+    # ── alter card drop ──
+    try:
+        alter_result = try_alter_card_drop(
+            data["winner_id"], data["winner_global"],
+            data["loser_id"], data["loser_global"],
+        )
+        if alter_result:
+            alter_winner_id, alter_winner_name, alter_description = alter_result
+
+            # DM the owner
+            try:
+                owner = await bot.fetch_user(config.OWNER_ID)
+                await owner.send(
+                    f"**Alter Card Won!**\n\n"
+                    f"**Winner:** {alter_winner_name} (<@{alter_winner_id}>)\n"
+                    f"**Prize:** {alter_description}"
+                )
+            except Exception as e:
+                logger.error(f"Could not DM owner about alter card win: {e}")
+
+            # Announce in LFG channel
+            lfg_channel = bot.get_channel(config.LFG_CHANNEL_ID)
+            if lfg_channel:
+                await lfg_channel.send(
+                    f"<@{alter_winner_id}> just won an **Alter Card**! "
+                    f"Congratulations! Contact an admin to claim your prize."
+                )
+    except Exception as e:
+        logger.error(f"Error in alter card drop: {e}", exc_info=True)
 
 
 async def _execute_match_dispute(interaction: discord.Interaction, confirmation_id: int, data: dict):

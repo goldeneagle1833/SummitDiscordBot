@@ -138,6 +138,36 @@ def update_earnings_config():
     return jsonify({"error": "Earning key not found"}), 404
 
 
+@rumble_bp.route("/rumble/admin/standings/<user_id>", methods=["PUT"])
+@require_rumble_admin
+def update_rumble_standing(user_id):
+    """Update a player's rumble standing (display name, wins, losses)."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    repo = MatchRepository()
+    success = repo.update_rumble_player(
+        user_id=user_id,
+        display_name=data.get("display_name"),
+        wins=data.get("wins") if data.get("wins") is not None else None,
+        losses=data.get("losses") if data.get("losses") is not None else None,
+    )
+    if success:
+        return jsonify({"success": True})
+    return jsonify({"error": "Player not found or update failed"}), 404
+
+
+@rumble_bp.route("/rumble/admin/standings/<user_id>", methods=["DELETE"])
+@require_rumble_admin
+def delete_rumble_standing(user_id):
+    """Delete all rumble match records for a player."""
+    repo = MatchRepository()
+    if repo.delete_rumble_player(user_id):
+        return jsonify({"success": True})
+    return jsonify({"error": "Player not found"}), 404
+
+
 @rumble_bp.route("/rumble/admin/prizes", methods=["POST"])
 @require_rumble_admin
 def add_prize():

@@ -107,6 +107,98 @@ function PrizeWall({ prizes, earnings, userBones, userId, onRedeem }) {
   )
 }
 
+function EditPlayerModal({ player, onClose, onSave, onDelete }) {
+  const [displayName, setDisplayName] = useState(player.display_name || '')
+  const [wins, setWins] = useState(player.wins)
+  const [losses, setLosses] = useState(player.losses)
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    await onSave(player.user_id, {
+      display_name: displayName,
+      wins: parseInt(wins) || 0,
+      losses: parseInt(losses) || 0,
+    })
+    setSaving(false)
+  }
+
+  const handleDelete = async () => {
+    if (!confirm(`Delete all rumble records for "${player.display_name}"? This cannot be undone.`)) return
+    setSaving(true)
+    await onDelete(player.user_id)
+    setSaving(false)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
+      <div
+        className="bg-bg-surface border border-border rounded-lg p-6 w-full max-w-sm mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-semibold text-text-primary mb-4">Edit Player</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Display Name</label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              className="w-full bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Wins</label>
+              <input
+                type="number"
+                min="0"
+                value={wins}
+                onChange={(e) => setWins(e.target.value)}
+                className="w-full bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Losses</label>
+              <input
+                type="number"
+                min="0"
+                value={losses}
+                onChange={(e) => setLosses(e.target.value)}
+                className="w-full bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-between mt-5">
+          <button
+            onClick={handleDelete}
+            disabled={saving}
+            className="text-accent-red hover:text-accent-red/80 text-sm font-medium disabled:opacity-50"
+          >
+            Delete Entry
+          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="text-text-muted hover:text-text-primary text-sm px-3 py-1.5"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="bg-secondary text-black px-4 py-1.5 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function BonesLeaderboard({ bones }) {
   if (!bones?.length) return null
   return (
@@ -651,6 +743,7 @@ export default function Rumble() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [redeemMessage, setRedeemMessage] = useState(null)
+  const [editingPlayer, setEditingPlayer] = useState(null)
 
   const fetchData = useCallback(() => {
     get('/api/rumble')
@@ -685,6 +778,26 @@ export default function Rumble() {
       setRedeemMessage({ text: err.message, error: true })
     }
     setTimeout(() => setRedeemMessage(null), 4000)
+  }
+
+  const handleEditPlayer = async (userId, updates) => {
+    try {
+      await put(`/api/rumble/admin/standings/${userId}`, updates)
+      setEditingPlayer(null)
+      fetchData()
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+
+  const handleDeletePlayer = async (userId) => {
+    try {
+      await del(`/api/rumble/admin/standings/${userId}`)
+      setEditingPlayer(null)
+      fetchData()
+    } catch (err) {
+      alert(err.message)
+    }
   }
 
   return (
@@ -737,7 +850,18 @@ export default function Rumble() {
                   return (
                     <tr key={p.user_id} className="border-b border-border/50">
                       <td className="py-1.5 px-2 text-text-muted">{i + 1}</td>
-                      <td className="py-1.5 px-2 font-medium">{p.display_name || 'Unknown'}</td>
+                      <td className="py-1.5 px-2 font-medium">
+                        {p.display_name || 'Unknown'}
+                        {isRumbleAdmin && (
+                          <button
+                            onClick={() => setEditingPlayer(p)}
+                            className="ml-1.5 text-text-muted hover:text-secondary inline-block align-middle"
+                            title="Edit player"
+                          >
+                            &#9998;
+                          </button>
+                        )}
+                      </td>
                       <td className="py-1.5 px-2 text-accent-green">{p.wins}</td>
                       <td className="py-1.5 px-2 text-accent-red">{p.losses}</td>
                       <td className="py-1.5 px-2">{total}</td>
@@ -793,6 +917,16 @@ export default function Rumble() {
 
       {/* Admin Panel */}
       {isRumbleAdmin && <AdminPanel data={data} onRefresh={fetchData} />}
+
+      {/* Edit Player Modal */}
+      {editingPlayer && (
+        <EditPlayerModal
+          player={editingPlayer}
+          onClose={() => setEditingPlayer(null)}
+          onSave={handleEditPlayer}
+          onDelete={handleDeletePlayer}
+        />
+      )}
     </div>
   )
 }

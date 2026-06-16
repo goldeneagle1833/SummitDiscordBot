@@ -2180,6 +2180,34 @@ def set_profile_visibility(player_id):
     return jsonify({"success": True, "sections": updated})
 
 
+@players_bp.route("/nav-prefs", methods=["GET"])
+def get_nav_prefs():
+    """Get the logged-in user's nav bar preferences."""
+    user_id = session.get("user_id")
+    if user_id is None:
+        return jsonify({"labels": None})
+
+    profile_repo = UserProfileRepository()
+    labels = profile_repo.get_nav_preferences(str(user_id))
+    return jsonify({"labels": labels})
+
+
+@players_bp.route("/nav-prefs", methods=["POST"])
+def set_nav_prefs():
+    """Save the logged-in user's nav bar preferences."""
+    user_id = session.get("user_id")
+    if user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.get_json()
+    if not data or "labels" not in data or not isinstance(data["labels"], list):
+        return jsonify({"error": "labels array is required"}), 400
+
+    profile_repo = UserProfileRepository()
+    profile_repo.set_nav_preferences(str(user_id), data["labels"])
+    return jsonify({"success": True, "labels": data["labels"]})
+
+
 @players_bp.route("/player/<path:player_id>/account", methods=["DELETE"])
 def delete_own_account(player_id):
     """Delete the logged-in user's own account and all associated data."""

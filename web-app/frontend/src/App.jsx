@@ -44,6 +44,7 @@ import LifeCounter from '@/pages/LifeCounter'
 import FunStats from '@/pages/FunStats'
 import FartLeaderboard from '@/pages/FartLeaderboard'
 import Rumble from '@/pages/Rumble'
+import DeckBuilder from '@/pages/DeckBuilder'
 import Login from '@/pages/Login'
 import Creator from '@/pages/Creator'
 
@@ -159,6 +160,7 @@ const router = createBrowserRouter([
       { path: '/explorer', element: <LazyPage><ExplorerStandings /></LazyPage> },
       { path: '/fun-stats', element: <FunStats /> },
       { path: '/rumble', element: <Rumble /> },
+      { path: '/deck-builder', element: <DeckBuilder /> },
       { path: '/secret-fart-leaderboard', element: <FartLeaderboard /> },
       { path: '/login', element: <Login /> },
       // Creator

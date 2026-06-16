@@ -55,6 +55,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.get_profile_visibility",
     "api.players.set_profile_visibility",
     "api.players.delete_own_account",
+    "api.players.get_nav_prefs",
+    "api.players.set_nav_prefs",
 
     # -- Card / avatar stats (public read-only) --
     "api.cards.get_cards",
@@ -149,6 +151,10 @@ KNOWN_PUBLIC_ENDPOINTS = {
 
     # -- Rumble (public read-only) --
     "api.rumble.get_rumble",
+
+    # -- Deck Builder (public tool) --
+    "api.deck_builder.all_cards",
+    "api.deck_builder.fetch_deck",
 }
 
 

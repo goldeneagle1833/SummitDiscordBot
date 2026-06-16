@@ -29,6 +29,7 @@ COMMUNITY_DB_PATH = Path(os.environ.get("COMMUNITY_DB_PATH", BOT_DIR / "communit
 ANALYTICS_DB_PATH = Path(os.environ.get("ANALYTICS_DB_PATH", BASE_DIR / "analytics.db"))
 EXPLORER_DB_PATH = Path(os.environ.get("EXPLORER_DB_PATH", BASE_DIR / "explorer.db"))
 RUMBLE_DB_PATH = Path(os.environ.get("RUMBLE_DB_PATH", BASE_DIR / "rumble.db"))
+DECK_BUILDER_DB_PATH = Path(os.environ.get("DECK_BUILDER_DB_PATH", BASE_DIR / "deck_builder.db"))
 
 # Upload directories
 STATIC_DIR = BASE_DIR / "static"

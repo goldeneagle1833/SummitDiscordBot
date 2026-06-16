@@ -3,13 +3,45 @@ import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { getStreamerBanner } from '@/api/streamers'
 
-const NAV_LINKS = [
+const PERMANENT_LINKS = ['Home', 'Discord', 'About', 'Patreon']
+
+const ALL_NAV_OPTIONS = [
   { to: '/', label: 'Home' },
   { to: '/community', label: 'Community' },
   { href: 'https://discord.gg/ZDqHSK9VGx', label: 'Discord' },
   { href: 'https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink', label: 'Patreon' },
   { to: '/about', label: 'About' },
+  { to: '/avatars', label: 'Avatar Winrates' },
+  { to: '/avatars/top-players', label: 'Avatar Top 16' },
+  { to: '/deck-rec', label: 'Sorcery Deck Rec' },
+  { to: '/deck-builder', label: 'Deck Builder' },
+  { to: '/elements', label: 'Element Winrates' },
+  { to: '/explorer', label: 'Community Series' },
+  { to: '/top-8', label: 'Top 8 Decks' },
+  { to: '/fun-stats', label: 'Fun Stats' },
+  { to: '/rumble', label: 'Rumble' },
+  { to: '/elo', label: 'ELO Leaderboards' },
+  { to: '/elo/limited', label: 'Limited Leaderboard' },
+  { to: '/match-history', label: 'Match History' },
+  { to: '/life-counter', label: 'Life Counter' },
+  { to: '/help', label: 'Help' },
+  { to: '/curio-tracking', label: 'Curio Tracking' },
 ]
+
+const DEFAULT_NAV_LABELS = ['Home', 'Community', 'Discord', 'Patreon', 'About']
+const STORAGE_KEY = 'summit-nav-prefs'
+
+function getNavPrefs() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored) return JSON.parse(stored)
+  } catch {}
+  return null
+}
+
+function saveNavPrefs(labels) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(labels))
+}
 
 function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
   const [deckUrl, setDeckUrl] = useState('')
@@ -282,6 +314,97 @@ function NotificationBell({ user }) {
   )
 }
 
+function NavCustomizeModal({ activeLabels, onSave, onClose }) {
+  const [selected, setSelected] = useState(new Set(activeLabels))
+
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  const toggle = (label) => {
+    if (PERMANENT_LINKS.includes(label)) return
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
+  }
+
+  const handleSave = () => {
+    const labels = ALL_NAV_OPTIONS
+      .map((opt) => opt.label)
+      .filter((l) => selected.has(l))
+    onSave(labels)
+    onClose()
+  }
+
+  const handleReset = () => {
+    setSelected(new Set(DEFAULT_NAV_LABELS))
+  }
+
+  return (
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="bg-bg-surface border border-border rounded-lg w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="p-6">
+          <h3 className="text-lg font-semibold text-text-primary mb-1">Customize Nav Bar</h3>
+          <p className="text-xs text-text-muted mb-4">Choose which links appear in your navigation bar.</p>
+
+          <div className="space-y-1 max-h-72 overflow-y-auto">
+            {ALL_NAV_OPTIONS.map(({ label }) => {
+              const isPermanent = PERMANENT_LINKS.includes(label)
+              const isActive = selected.has(label)
+              return (
+                <label
+                  key={label}
+                  className={`flex items-center gap-3 px-3 py-2 rounded cursor-pointer transition-colors ${
+                    isPermanent ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/5'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isActive}
+                    disabled={isPermanent}
+                    onChange={() => toggle(label)}
+                    className="accent-secondary w-4 h-4"
+                  />
+                  <span className="text-sm text-text">{label}</span>
+                  {isPermanent && <span className="text-xs text-text-muted ml-auto">Required</span>}
+                </label>
+              )
+            })}
+          </div>
+
+          <div className="flex justify-between mt-4">
+            <button
+              onClick={handleReset}
+              className="px-3 py-1.5 text-xs text-text-muted hover:text-text transition-colors"
+            >
+              Reset to Default
+            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={onClose}
+                className="px-3 py-1.5 text-sm bg-bg-elevated border border-border rounded hover:border-secondary transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                className="px-3 py-1.5 text-sm bg-secondary text-white rounded hover:bg-secondary/80 transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function LiveIndicator() {
   const [streamer, setStreamer] = useState(null)
 
@@ -317,8 +440,40 @@ function LiveIndicator() {
 
 export default function Nav() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [customizeOpen, setCustomizeOpen] = useState(false)
+  const [navLabels, setNavLabels] = useState(() => getNavPrefs() || DEFAULT_NAV_LABELS)
   const { user, loading } = useAuth()
   const location = useLocation()
+
+  // Sync nav prefs from server when user logs in
+  useEffect(() => {
+    if (!user) return
+    fetch('/api/nav-prefs', { credentials: 'include' })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.labels) {
+          setNavLabels(data.labels)
+          saveNavPrefs(data.labels)
+        }
+      })
+      .catch(() => {})
+  }, [user])
+
+  const activeNavLinks = ALL_NAV_OPTIONS.filter((opt) => navLabels.includes(opt.label))
+
+  const handleSavePrefs = (labels) => {
+    setNavLabels(labels)
+    saveNavPrefs(labels)
+    // Save to server if logged in
+    if (user) {
+      fetch('/api/nav-prefs', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ labels }),
+      }).catch(() => {})
+    }
+  }
 
   const close = () => setSidebarOpen(false)
 
@@ -353,7 +508,7 @@ export default function Nav() {
             <LiveIndicator />
 
             {/* Nav links - visible on desktop */}
-            {NAV_LINKS.map(({ to, href, label }) =>
+            {activeNavLinks.map(({ to, href, label }) =>
               href ? (
                 <a
                   key={label}
@@ -375,6 +530,20 @@ export default function Nav() {
                   {label}
                 </Link>
               )
+            )}
+
+            {/* Customize nav pencil icon - only when logged in */}
+            {user && (
+              <button
+                onClick={() => setCustomizeOpen(true)}
+                className="hidden md:flex items-center justify-center w-8 h-8 rounded hover:bg-white/10 transition-colors"
+                aria-label="Customize navigation"
+                title="Customize nav bar"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-muted hover:text-secondary">
+                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                </svg>
+              </button>
             )}
 
             {/* Notification bell - single instance, always visible */}
@@ -519,6 +688,7 @@ export default function Nav() {
           <SidebarLink to="/avatars" label="Avatar Winrates" location={location} onClick={close} />
           <SidebarLink to="/avatars/top-players" label="Avatar Top 16" location={location} onClick={close} />
           <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
+          <SidebarLink to="/deck-builder" label="Deck Builder" location={location} onClick={close} />
           <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
           <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} />
           <SidebarLink to="/top-8" label="Top 8 Decks" location={location} onClick={close} />
@@ -536,6 +706,15 @@ export default function Nav() {
           <SidebarLink to="/curio-tracking" label="Curio Tracking" location={location} onClick={close} />
         </div>
       </aside>
+
+      {/* Nav customize modal */}
+      {customizeOpen && (
+        <NavCustomizeModal
+          activeLabels={navLabels}
+          onSave={handleSavePrefs}
+          onClose={() => setCustomizeOpen(false)}
+        />
+      )}
     </>
   )
 }

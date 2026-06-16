@@ -65,6 +65,7 @@ class UserProfileRepository:
             'raw_oauth_data': 'TEXT',
             'custom_display_name': 'TEXT',
             'profile_public_sections': 'TEXT',
+            'nav_preferences': 'TEXT',
         }
 
         # Add missing columns
@@ -407,3 +408,36 @@ class UserProfileRepository:
 
         logger.info(f"set_custom_display_name: SUCCESS - user_id={user_id}, rows_updated={rows_updated}")
         return True
+
+    # --- Nav bar preferences ---
+
+    def get_nav_preferences(self, user_id: str) -> list[str] | None:
+        """Get saved nav bar link labels for a user. Returns None if not set."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT nav_preferences FROM user_profiles WHERE user_id = ?",
+            (str(user_id),),
+        )
+        row = cur.fetchone()
+        conn.close()
+
+        if row and row[0]:
+            try:
+                return json.loads(row[0])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return None
+
+    def set_nav_preferences(self, user_id: str, labels: list[str]) -> bool:
+        """Save nav bar link labels for a user."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_profiles SET nav_preferences = ? WHERE user_id = ?",
+            (json.dumps(labels), str(user_id)),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return updated

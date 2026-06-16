@@ -30,6 +30,7 @@ from migrations.create_analytics_tables import create_analytics_tables
 from migrations.create_explorer_tables import create_explorer_tables
 from migrations.create_rumble_tables import create_rumble_tables
 from migrations.create_external_matches_table import create_external_matches_table
+from migrations.create_deck_builder_tables import create_deck_builder_tables
 
 # Configure logging
 logging.basicConfig(
@@ -81,6 +82,11 @@ def create_app() -> Flask:
         create_external_matches_table()
     except Exception as e:
         logger.error(f"Failed to ensure external_matches table: {e}")
+
+    try:
+        create_deck_builder_tables()
+    except Exception as e:
+        logger.error(f"Failed to ensure deck_builder tables: {e}")
 
     # Register all blueprints
     register_blueprints(app)

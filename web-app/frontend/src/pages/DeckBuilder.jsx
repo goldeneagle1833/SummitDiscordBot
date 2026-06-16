@@ -2190,7 +2190,7 @@ export default function DeckBuilder() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-display font-bold">Deck Builder</h1>
+      <h1 className="text-2xl font-display font-bold">Deck Visualizer</h1>
       <p className="text-sm text-text-muted">
         Paste a Curiosa deck URL to visualize, sort, filter, and organize your deck.
         Drag cards between mainboard and sideboard. Add custom tags for your own groupings.

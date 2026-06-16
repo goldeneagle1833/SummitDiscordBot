@@ -14,7 +14,7 @@ const ALL_NAV_OPTIONS = [
   { to: '/avatars', label: 'Avatar Winrates' },
   { to: '/avatars/top-players', label: 'Avatar Top 16' },
   { to: '/deck-rec', label: 'Sorcery Deck Rec' },
-  { to: '/deck-builder', label: 'Deck Builder' },
+  { to: '/deck-builder', label: 'Deck Visualizer' },
   { to: '/elements', label: 'Element Winrates' },
   { to: '/explorer', label: 'Community Series' },
   { to: '/top-8', label: 'Top 8 Decks' },
@@ -688,7 +688,7 @@ export default function Nav() {
           <SidebarLink to="/avatars" label="Avatar Winrates" location={location} onClick={close} />
           <SidebarLink to="/avatars/top-players" label="Avatar Top 16" location={location} onClick={close} />
           <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
-          <SidebarLink to="/deck-builder" label="Deck Builder" location={location} onClick={close} />
+          <SidebarLink to="/deck-builder" label="Deck Visualizer" location={location} onClick={close} />
           <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
           <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} />
           <SidebarLink to="/top-8" label="Top 8 Decks" location={location} onClick={close} />

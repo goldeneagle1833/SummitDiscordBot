@@ -563,50 +563,114 @@ function PowerCurve({ cards }) {
 
 /* ---- Threshold Demand ---- */
 function ThresholdDemand({ cards }) {
-  const demands = useMemo(() => {
-    const result = { air: {}, earth: {}, fire: {}, water: {} }
+  // For each element, count how many cards require threshold 1, 2, 3, etc. (exclude sites)
+  const { elements, maxThreshold, maxCount } = useMemo(() => {
+    // buckets[Element][thresholdLevel] = card count
+    const buckets = { Air: {}, Earth: {}, Fire: {}, Water: {} }
     cards.forEach((card) => {
+      if ((card.type || '').toLowerCase() === 'site') return
       const t = card.thresholds || {}
       const qty = card.quantity || 1
       Object.entries(t).forEach(([el, val]) => {
-        if (val > 0 && result[el]) {
-          result[el][val] = (result[el][val] || 0) + qty
+        if (val > 0) {
+          const key = el.charAt(0).toUpperCase() + el.slice(1)
+          if (buckets[key]) buckets[key][val] = (buckets[key][val] || 0) + qty
         }
       })
     })
-    return result
+    let maxT = 0
+    let maxC = 0
+    const els = []
+    for (const [el, b] of Object.entries(buckets)) {
+      const keys = Object.keys(b).map(Number)
+      if (keys.length === 0) continue
+      els.push({ el, buckets: b })
+      maxT = Math.max(maxT, ...keys)
+      maxC = Math.max(maxC, ...Object.values(b))
+    }
+    return { elements: els, maxThreshold: maxT, maxCount: maxC }
   }, [cards])
 
-  const hasAny = Object.values(demands).some((d) => Object.keys(d).length > 0)
-  if (!hasAny) return null
+  if (elements.length === 0) return null
 
-  const elOrder = ['air', 'earth', 'fire', 'water']
-  const elLabels = { air: 'Air', earth: 'Earth', fire: 'Fire', water: 'Water' }
+  const thresholds = Array.from({ length: maxThreshold }, (_, i) => i + 1)
+  const opacities = [1, 0.7, 0.45, 0.3]
+
+  // Vertical bar chart: each element is a group, sub-bars per threshold level
+  const padTop = 10
+  const padBottom = 30 // x-axis labels
+  const padLeft = 30   // y-axis count labels
+  const padRight = 10
+  const chartH = 120
+  const groupW = elements.length * thresholds.length * 14 + (elements.length - 1) * 16
+  const W = padLeft + groupW + padRight
+  const H = padTop + chartH + padBottom
+
+  // Y-axis gridlines
+  const yTicks = []
+  const step = maxCount <= 5 ? 1 : maxCount <= 15 ? 2 : 5
+  for (let v = 0; v <= maxCount; v += step) yTicks.push(v)
+  if (yTicks[yTicks.length - 1] < maxCount) yTicks.push(maxCount)
+
+  const yScale = (v) => padTop + chartH - (v / maxCount) * chartH
+
+  // Bar layout
+  const barW = 12
+  const barGapInGroup = 2
+  const groupGap = 16
 
   return (
-    <div className="space-y-1">
-      {elOrder.map((el) => {
-        const buckets = demands[el]
-        const keys = Object.keys(buckets).map(Number).sort((a, b) => a - b)
-        if (!keys.length) return null
-        const total = Object.values(buckets).reduce((s, v) => s + v, 0)
-        const elKey = el.charAt(0).toUpperCase() + el.slice(1)
+    <svg width={W} height={H} className="block">
+      {/* Y-axis gridlines */}
+      {yTicks.map((v) => (
+        <g key={v}>
+          <line x1={padLeft} x2={W - padRight} y1={yScale(v)} y2={yScale(v)}
+            stroke="currentColor" className="text-border" strokeWidth={1} strokeDasharray="3 3" />
+          <text x={padLeft - 4} y={yScale(v)} textAnchor="end" dominantBaseline="middle"
+            fill="currentColor" className="text-text-muted" fontSize={9}>
+            {v}
+          </text>
+        </g>
+      ))}
+      {/* Bars */}
+      {elements.map((e, gi) => {
+        const groupX = padLeft + gi * (thresholds.length * (barW + barGapInGroup) + groupGap)
         return (
-          <div key={el} className="flex items-center gap-2 text-xs">
-            <span className="w-10 font-medium shrink-0" style={{ color: ELEMENT_COLORS[elKey] }}>{elLabels[el]}</span>
-            <div className="flex gap-1 flex-1">
-              {keys.map((threshold) => (
-                <span key={threshold} className="px-1.5 py-0.5 rounded text-[10px]"
-                  style={{ backgroundColor: ELEMENT_COLORS[elKey] + '25', color: ELEMENT_COLORS[elKey] }}>
-                  {threshold}+ : {buckets[threshold]}
-                </span>
-              ))}
-            </div>
-            <span className="text-text-muted w-8 text-right">{total}</span>
-          </div>
+          <g key={e.el}>
+            {thresholds.map((t, ti) => {
+              const count = e.buckets[t] || 0
+              const x = groupX + ti * (barW + barGapInGroup)
+              const bh = maxCount > 0 ? (count / maxCount) * chartH : 0
+              return (
+                <g key={t}>
+                  {bh > 0 && (
+                    <rect x={x} y={yScale(count)} width={barW} height={bh} rx={2}
+                      fill={ELEMENT_COLORS[e.el]} opacity={opacities[Math.min(ti, opacities.length - 1)]} />
+                  )}
+                  {count > 0 && (
+                    <text x={x + barW / 2} y={yScale(count) - 3} textAnchor="middle"
+                      fill="currentColor" className="text-text-muted" fontSize={9}>
+                      {count}
+                    </text>
+                  )}
+                  {/* Threshold number below bar */}
+                  <text x={x + barW / 2} y={padTop + chartH + 12} textAnchor="middle"
+                    fill="currentColor" className="text-text-muted" fontSize={9}>
+                    {t}
+                  </text>
+                </g>
+              )
+            })}
+            {/* Element label below group */}
+            <text x={groupX + (thresholds.length * (barW + barGapInGroup) - barGapInGroup) / 2}
+              y={padTop + chartH + 24} textAnchor="middle"
+              fill={ELEMENT_COLORS[e.el]} fontSize={10} fontWeight={600}>
+              {e.el}
+            </text>
+          </g>
         )
       })}
-    </div>
+    </svg>
   )
 }
 

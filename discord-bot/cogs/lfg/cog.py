@@ -132,12 +132,14 @@ class LFGCog(commands.Cog):
 
             # Fetch recent messages (limit to last 50 messages to avoid rate limits)
             async for message in leaderboard_channel.history(limit=50):
-                # Check if message is from the bot and has an embed with "Leaderboard"
+                # Check if message is from the bot and has a constructed leaderboard embed
                 if (
                     message.author.id == self.bot.user.id
                     and message.embeds
                     and any(
-                        "Leaderboard" in str(embed.title) for embed in message.embeds
+                        "Leaderboard" in str(embed.title)
+                        and "Limited Leaderboard" not in str(embed.title)
+                        for embed in message.embeds
                     )
                 ):
                     try:
@@ -393,7 +395,7 @@ class LFGCog(commands.Cog):
                 except Exception as e:
                     logger.warning(f"Could not delete old leaderboard message: {e}")
 
-            # Ensure only one leaderboard message exists in the channel
+            # Ensure only one constructed leaderboard message exists in the channel
             async for message in leaderboard_channel.history(limit=50):
                 if (
                     message.id != new_message.id
@@ -401,6 +403,7 @@ class LFGCog(commands.Cog):
                     and message.embeds
                     and any(
                         "Leaderboard" in str(embed.title)
+                        and "Limited Leaderboard" not in str(embed.title)
                         for embed in message.embeds
                     )
                 ):

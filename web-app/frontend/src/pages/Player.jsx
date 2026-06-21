@@ -22,7 +22,6 @@ import EloHistory from '@/components/player/EloHistory'
 import PlayerSeasons from '@/components/player/PlayerSeasons'
 import PrivacySettingsModal from '@/components/player/PrivacySettingsModal'
 import { useAuth } from '@/context/AuthContext'
-import { deleteOwnAccount } from '@/api/players'
 
 const PER_PAGE_OPTIONS = [15, 25, 50]
 
@@ -53,11 +52,7 @@ export default function Player() {
   // Modal state
   const [showReportModal, setShowReportModal] = useState(false)
   const [showPrivacyModal, setShowPrivacyModal] = useState(false)
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [deleteConfirmText, setDeleteConfirmText] = useState('')
-  const [deleteError, setDeleteError] = useState(null)
-  const [deleting, setDeleting] = useState(false)
-  const [editDeck, setEditDeck] = useState(null)
+const [editDeck, setEditDeck] = useState(null)
 
   // Collapsible sections
   const [openSections, setOpenSections] = useState({
@@ -116,19 +111,6 @@ export default function Player() {
     setData((d) => d ? { ...d, name: newName, has_custom_display_name: true } : d)
   }
 
-  const handleDeleteAccount = async () => {
-    if (deleteConfirmText !== 'DELETE') return
-    setDeleting(true)
-    setDeleteError(null)
-    try {
-      await deleteOwnAccount(playerId)
-      window.location.href = '/'
-    } catch (err) {
-      setDeleteError(err.message || 'Failed to delete account')
-    } finally {
-      setDeleting(false)
-    }
-  }
 
   if (loading && !data) return <Spinner className="py-20" />
   if (error && !data) return <p className="text-center text-accent-red py-8">{error}</p>
@@ -211,12 +193,6 @@ export default function Player() {
             className="px-4 py-2 text-sm rounded border border-border text-text-muted hover:text-text-primary hover:border-secondary/50 transition-colors"
           >
             Privacy Settings
-          </button>
-          <button
-            onClick={() => { setDeleteConfirmText(''); setDeleteError(null); setShowDeleteModal(true) }}
-            className="px-4 py-2 text-sm rounded border border-accent-red/30 text-accent-red hover:bg-accent-red/10 transition-colors"
-          >
-            Delete Account
           </button>
         </div>
       )}
@@ -348,36 +324,6 @@ export default function Player() {
         />
       )}
 
-      {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowDeleteModal(false)}>
-          <div className="bg-bg-surface border border-border rounded-lg p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-accent-red mb-2">Delete Account</h3>
-            <p className="text-sm text-text-muted mb-3">
-              This will permanently delete your account and <strong>all</strong> associated data including ELO ratings, match history, and profile. This cannot be undone.
-            </p>
-            <label className="text-xs text-text-muted block mb-1">Type <strong>DELETE</strong> to confirm</label>
-            <input
-              type="text"
-              value={deleteConfirmText}
-              onChange={(e) => setDeleteConfirmText(e.target.value)}
-              placeholder="DELETE"
-              className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-3"
-              autoFocus
-            />
-            {deleteError && <p className="text-xs text-accent-red mb-3">{deleteError}</p>}
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setShowDeleteModal(false)} className="px-3 py-1.5 text-sm bg-bg-raised border border-border rounded hover:border-secondary">Cancel</button>
-              <button
-                onClick={handleDeleteAccount}
-                disabled={deleting || deleteConfirmText !== 'DELETE'}
-                className="px-3 py-1.5 text-sm rounded bg-accent-red text-white hover:opacity-90 disabled:opacity-40"
-              >
-                {deleting ? 'Deleting...' : 'Delete My Account'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -376,9 +376,14 @@ class ExplorerService:
             p["qualified"] = p["persecutor_total"] >= trials_threshold
             ranked.append(p)
 
+        unique_1_event = sum(1 for p in ranked if p["events_played"] >= 1)
+        unique_3_events = sum(1 for p in ranked if p["events_played"] >= 3)
+
         return {
             "season_id": season_id,
             "season_name": season.get("name", ""),
             "points_config": config,
             "players": ranked,
+            "unique_players_1_event": unique_1_event,
+            "unique_players_3_events": unique_3_events,
         }

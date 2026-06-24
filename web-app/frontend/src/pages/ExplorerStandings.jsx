@@ -340,6 +340,14 @@ export default function ExplorerStandings() {
             </div>
           )}
 
+          {/* Player stats */}
+          {leaderboard && leaderboard.players.length > 0 && (
+            <div className="mb-4 flex flex-wrap gap-4 text-xs text-text-muted">
+              <span><span className="text-text-primary font-medium">{leaderboard.unique_players_1_event}</span> unique players attended at least 1 event</span>
+              <span><span className="text-text-primary font-medium">{leaderboard.unique_players_3_events}</span> unique players attended at least 3 events</span>
+            </div>
+          )}
+
           {/* Leaderboard table */}
           {lbLoading ? (
             <div className="flex justify-center py-12"><Spinner /></div>

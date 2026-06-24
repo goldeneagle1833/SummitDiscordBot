@@ -624,11 +624,11 @@ class MatchConfirmationService:
 
         # Update opponent's deck URL if provided
         if opponent_deck_url:
-            # Validate deck URL format (strict: lowercase alphanumeric only)
+            # Validate deck URL format
             import re
-            deck_url_pattern = r"^https://curiosa\.io/decks/[a-z0-9]+$"
+            deck_url_pattern = r"^https://curiosa\.io/decks/[a-zA-Z0-9_-]+(\?.*)?$"
             if not re.match(deck_url_pattern, opponent_deck_url):
-                raise ValueError("Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id] (lowercase letters and numbers only)")
+                raise ValueError("Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id]")
 
             # Determine if opponent is winner or loser (direct string comparison - no normalization)
             is_winner = str(confirmation["winner_discord_id"]) == str(opponent_user_id)

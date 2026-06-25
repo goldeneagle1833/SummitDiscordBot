@@ -123,20 +123,67 @@ function BiggestUpsets({ data }) {
   )
 }
 
-function NemesisPairs({ data }) {
-  if (!data?.length) return null
+function RivalryTable({ rows }) {
+  if (!rows?.length) return <p className="text-sm text-text-muted text-center py-3">No data.</p>
   return (
-    <StatCard title="Nemesis Pairs">
-      <RankTable
-        headers={['Player', '', 'Player', 'Games', 'H2H']}
-        rows={data.map((p) => [
-          p.player1_name,
-          <span key="vs" className="text-text-muted">vs</span>,
-          p.player2_name,
-          <span key="e" className="font-medium">{p.encounters}</span>,
-          `${p.p1_wins}-${p.p2_wins}`,
-        ])}
-      />
+    <RankTable
+      headers={['Player', '', 'Player', 'Games', 'H2H']}
+      rows={rows.map((p) => [
+        p.player1_name,
+        <span key="vs" className="text-text-muted">vs</span>,
+        p.player2_name,
+        <span key="e" className="font-medium">{p.encounters}</span>,
+        `${p.p1_wins}-${p.p2_wins}`,
+      ])}
+    />
+  )
+}
+
+function NemesisPairs({ data }) {
+  const [view, setView] = useState('top')
+  // Support old format (array) and new format (object with categories)
+  const isLegacy = Array.isArray(data)
+  if (isLegacy && !data?.length) return null
+  if (!isLegacy && !data?.top?.length) return null
+
+  if (isLegacy) {
+    return (
+      <StatCard title="Rivalries">
+        <RivalryTable rows={data} />
+      </StatCard>
+    )
+  }
+
+  const tabs = [
+    { key: 'top', label: 'Top Rivals' },
+    { key: 'closest', label: 'Closest' },
+    { key: 'lopsided', label: 'Lopsided' },
+  ]
+
+  return (
+    <StatCard title="Rivalries">
+      <div className="inline-flex bg-bg-raised border border-border rounded-lg overflow-hidden mb-3">
+        {tabs.map((t) => (
+          <button key={t.key} onClick={() => setView(t.key)} className={`px-3 py-1 text-xs font-medium transition-colors ${view === t.key ? 'bg-secondary text-black' : 'text-text-muted hover:text-text-primary'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <RivalryTable rows={data[view] || []} />
+      {data.random && (
+        <div className="mt-4 pt-3 border-t border-border">
+          <p className="text-xs text-text-muted mb-2">Random Rivalry of the Day</p>
+          <div className="flex items-center justify-between bg-bg-raised rounded-lg px-3 py-2 text-sm">
+            <span>{data.random.player1_name}</span>
+            <span className="text-text-muted mx-2">vs</span>
+            <span>{data.random.player2_name}</span>
+            <span className="text-text-muted mx-2">|</span>
+            <span className="font-medium">{data.random.encounters} games</span>
+            <span className="text-text-muted mx-2">|</span>
+            <span>{data.random.p1_wins}-{data.random.p2_wins}</span>
+          </div>
+        </div>
+      )}
     </StatCard>
   )
 }

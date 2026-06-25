@@ -394,7 +394,7 @@ def _compute_biggest_upsets(rows):
 
 
 def _compute_nemesis_pairs(rows):
-    """Compute top 5 player pairs with most encounters."""
+    """Compute rivalry categories: top, closest, most lopsided, and random spotlight."""
     pairs = {}
     names = {}
 
@@ -409,18 +409,57 @@ def _compute_nemesis_pairs(rows):
         pairs[key]["encounters"] += 1
         pairs[key]["wins"][wid] += 1
 
-    result = []
-    for (p1, p2), data in pairs.items():
-        if data["encounters"] >= 3:
-            result.append({
-                "player1_name": names.get(p1, str(p1)),
-                "player2_name": names.get(p2, str(p2)),
-                "encounters": data["encounters"],
-                "p1_wins": data["wins"][p1],
-                "p2_wins": data["wins"][p2],
-            })
-    result.sort(key=lambda x: x["encounters"], reverse=True)
-    return result[:5]
+    def _make_entry(p1, p2, data):
+        return {
+            "player1_name": names.get(p1, str(p1)),
+            "player2_name": names.get(p2, str(p2)),
+            "encounters": data["encounters"],
+            "p1_wins": data["wins"][p1],
+            "p2_wins": data["wins"][p2],
+        }
+
+    qualified = [
+        ((p1, p2), data) for (p1, p2), data in pairs.items()
+        if data["encounters"] >= 3
+    ]
+
+    # Top rivalries — most encounters
+    top = sorted(qualified, key=lambda x: x[1]["encounters"], reverse=True)
+    top_entries = [_make_entry(*k, d) for k, d in top[:10]]
+
+    # Closest rivalries — nearest to 50/50 split, tiebreak by more games
+    def closeness(item):
+        k, d = item
+        w1 = d["wins"][k[0]]
+        w2 = d["wins"][k[1]]
+        return (abs(w1 - w2), -d["encounters"])
+    closest = sorted(qualified, key=closeness)
+    closest_entries = [_make_entry(*k, d) for k, d in closest[:10]]
+
+    # Most lopsided — biggest win% gap (one player dominating)
+    def lopsidedness(item):
+        k, d = item
+        w1 = d["wins"][k[0]]
+        w2 = d["wins"][k[1]]
+        return (-abs(w1 - w2), -d["encounters"])
+    lopsided = sorted(qualified, key=lopsidedness)
+    lopsided_entries = [_make_entry(*k, d) for k, d in lopsided[:10]]
+
+    # Random rivalry spotlight — deterministic per day so it doesn't change on refresh
+    import random as _random
+    from datetime import date as _date
+    random_entry = None
+    if qualified:
+        day_rng = _random.Random(_date.today().isoformat())
+        pick = day_rng.choice(qualified)
+        random_entry = _make_entry(*pick[0], pick[1])
+
+    return {
+        "top": top_entries,
+        "closest": closest_entries,
+        "lopsided": lopsided_entries,
+        "random": random_entry,
+    }
 
 
 def _compute_match_duration(rows):

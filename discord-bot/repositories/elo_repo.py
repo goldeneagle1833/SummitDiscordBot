@@ -721,6 +721,39 @@ def get_total_match_count():
     return count
 
 
+def get_user_latest_deck_url(user_id: int) -> str | None:
+    """Get the deck URL from the user's most recent pairing.
+
+    Checks active_pairings (any status) ordered by most recent first,
+    returning the deck URL belonging to this user.
+    """
+    create_active_pairings_table()
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT player1_id, player1_deck_url, player2_deck_url
+        FROM active_pairings
+        WHERE (player1_id = ? OR player2_id = ?)
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (user_id, user_id),
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    player1_id, p1_url, p2_url = row
+    deck_url = p1_url if player1_id == user_id else p2_url
+
+    if not deck_url or not deck_url.strip():
+        return None
+    return deck_url
+
+
 def get_ladder_challenge_today(user_id: int) -> bool:
     """
     Check if a user has already issued a ladder challenge today.

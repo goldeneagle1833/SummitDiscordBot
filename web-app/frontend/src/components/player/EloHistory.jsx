@@ -55,9 +55,12 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
     // Take the last `gameCount` matches
     const window = validMatches.slice(-gameCount)
 
-    // Starting ELO: currentElo minus sum of changes in the window
+    // Starting ELO: if showing all matches, anchor at 1500 (the true start);
+    // otherwise back-calculate from current ELO minus the window's changes.
     const windowChange = window.reduce((sum, m) => sum + (m.elo_change || 0), 0)
-    let elo = (currentElo || 1500) - windowChange
+    let elo = gameCount >= validMatches.length
+      ? 1500
+      : (currentElo || 1500) - windowChange
 
     return window.map((m) => {
       elo += m.elo_change || 0

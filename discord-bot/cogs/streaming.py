@@ -9,11 +9,15 @@ import discord
 from discord.ext import commands, tasks
 import sqlite3
 import datetime
+import json
 import logging
 from pathlib import Path
 
+import config
 from repositories.audit_repo import log_admin_action
+from repositories.elo_repo import get_user_latest_deck_url
 from utils.checks import is_bot_admin
+from utils.deck_checker import scrape_curosa_async
 
 logger = logging.getLogger("discord_bot")
 
@@ -65,6 +69,78 @@ class StreamingCog(commands.Cog):
             if isinstance(activity, discord.Streaming):
                 return activity
         return None
+
+    def _get_avatar_from_deck_json(self, deck_json: str) -> str | None:
+        """Extract avatar name from a JSON deck data string."""
+        try:
+            deck_data = json.loads(deck_json)
+            avatar = deck_data.get("avatar", [])
+            if avatar and len(avatar) > 0:
+                name = avatar[0].get("name")
+                if name and name != "Unknown":
+                    return name
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            pass
+        return None
+
+    def _get_channel_for_avatar(self, avatar_name: str) -> int | None:
+        """Look up the private channel ID for an avatar name (case-insensitive)."""
+        avatar_lower = avatar_name.lower()
+        for name, channel_id in config.AVATAR_CHANNEL_MAP.items():
+            if name.lower() == avatar_lower:
+                return channel_id
+        return None
+
+    async def _notify_avatar_channel(self, member: discord.Member, activity: discord.Streaming):
+        """Send a notification to the avatar's private channel when a member starts streaming."""
+        deck_url = get_user_latest_deck_url(member.id)
+        if not deck_url:
+            logger.debug(f"No recent pairing deck URL found for streamer {member.display_name}")
+            return
+
+        deck_json = await scrape_curosa_async(deck_url)
+        if not deck_json or deck_json == "{}":
+            logger.debug(f"Could not fetch deck data from {deck_url} for {member.display_name}")
+            return
+
+        avatar_name = self._get_avatar_from_deck_json(deck_json)
+        if not avatar_name:
+            logger.debug(f"Could not extract avatar from deck data for {member.display_name}")
+            return
+
+        channel_id = self._get_channel_for_avatar(avatar_name)
+        if not channel_id:
+            logger.debug(f"No private channel mapped for avatar '{avatar_name}'")
+            return
+
+        channel = self.bot.get_channel(channel_id)
+        if not channel:
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except Exception:
+                logger.error(f"Could not fetch avatar channel {channel_id} for '{avatar_name}'")
+                return
+
+        stream_url = activity.url or ""
+        stream_link = f"\n[Watch Stream]({stream_url})" if stream_url else ""
+
+        embed = discord.Embed(
+            title=f"🎮 {avatar_name} Player Streaming!",
+            description=(
+                f"**{member.display_name}** is now live playing with **{avatar_name}**!{stream_link}"
+            ),
+            color=discord.Color.purple(),
+        )
+        if member.display_avatar:
+            embed.set_thumbnail(url=member.display_avatar.url)
+        if activity.name:
+            embed.add_field(name="Stream Title", value=activity.name, inline=False)
+
+        try:
+            await channel.send(embed=embed)
+            logger.info(f"Sent streaming notification to '{avatar_name}' channel for {member.display_name}")
+        except Exception as e:
+            logger.error(f"Failed to send streaming notification to channel {channel_id}: {e}")
 
     def _add_streamer(self, member: discord.Member, activity: discord.Streaming):
         """Add or update a streamer in the database (for Twitch/YouTube streaming)."""
@@ -191,6 +267,7 @@ class StreamingCog(commands.Cog):
                 f"{after.display_name} started streaming: {after_streaming.url}"
             )
             self._add_streamer(after, after_streaming)
+            await self._notify_avatar_channel(after, after_streaming)
 
         # Stopped streaming
         elif before_streaming and not after_streaming:

@@ -202,6 +202,8 @@ class LeaderboardService:
             user_id = standing["user_id"]
             wins = get_limited_wins_count(user_id)
             losses = get_limited_losses_count(user_id)
+            if wins + losses == 0:
+                continue
             leaderboard_data.append(
                 {
                     "id": str(user_id),

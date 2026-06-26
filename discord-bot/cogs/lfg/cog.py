@@ -452,13 +452,17 @@ class LFGCog(commands.Cog):
                     except Exception:
                         display_name = f"User#{uid}"
 
+                games = wins + losses
+                if games == 0:
+                    continue
+
                 player_data.append({
                     "display_name": display_name,
                     "elo": s["elo"],
                     "lifetime_elo": s.get("lifetime_elo", s["elo"]),
                     "wins": wins,
                     "losses": losses,
-                    "games": wins + losses,
+                    "games": games,
                 })
 
             embed = discord.Embed(

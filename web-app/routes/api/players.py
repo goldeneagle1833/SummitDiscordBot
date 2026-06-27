@@ -473,6 +473,7 @@ def player_avatar_stats(player_id, avatar_name):
                 f"""
                 SELECT
                     CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                    first_player,
                     winner_display_name,
                     losser_display_name,
                     winner_id,
@@ -501,6 +502,7 @@ def player_avatar_stats(player_id, avatar_name):
                     f"""
                     SELECT
                         CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                        first_player,
                         winner_display_name,
                         losser_display_name,
                         winner_id,
@@ -564,17 +566,25 @@ def player_avatar_stats(player_id, avatar_name):
         loser_json = row["json_deck_data_loser"]
         legacy_json = row["json_deck_data"]
 
+        # For new schema: use the per-player deck columns
+        # For legacy schema: json_deck_data is the WINNER's deck
         player_json = winner_json if did_win else loser_json
         if not player_json or player_json == "{}":
-            player_json = legacy_json
+            # Legacy fallback: json_deck_data = winner's deck
+            # Only valid for the winner (player who won)
+            if did_win:
+                player_json = legacy_json
 
         player_avatar = _get_main_avatar(player_json)
         if not player_avatar or player_avatar.lower() != target_avatar.lower():
             continue
 
+        # Opponent deck: new columns first, then legacy fallback
         opp_json = loser_json if did_win else winner_json
         if not opp_json or opp_json == "{}":
-            opp_json = legacy_json if not did_win else None
+            # Legacy fallback: json_deck_data = winner's deck = opponent's deck when player lost
+            if not did_win:
+                opp_json = legacy_json
         opp_avatar = _get_main_avatar(opp_json) or "Unknown"
         opp_name = row["losser_display_name"] if did_win else row["winner_display_name"]
         opp_id = str(row["losser_id"]) if did_win else str(row["winner_id"])
@@ -592,11 +602,29 @@ def player_avatar_stats(player_id, avatar_name):
         else:
             vs_avatars[opp_avatar]["losses"] += 1
 
-        # Play/draw stats
+        # Play/draw stats - use new columns first, fallback to first_player
+        player_on_play = None
         went_first_val = row["winner_went_first"] if did_win else row["loser_went_first"]
         if went_first_val is not None:
-            on_play_flag = "y" in str(went_first_val).lower()
-            bucket = on_play if on_play_flag else on_draw
+            player_on_play = "y" in str(went_first_val).lower()
+        else:
+            # Fallback to old first_player column (for historical data)
+            first_player = row["first_player"]
+            if first_player:
+                fp_lower = str(first_player).lower()
+                if "y" in fp_lower:
+                    player_on_play = bool(did_win)
+                else:
+                    player_on_play = not bool(did_win)
+
+        if player_on_play is True:
+            bucket = on_play
+            if did_win:
+                bucket["wins"] += 1
+            else:
+                bucket["losses"] += 1
+        elif player_on_play is False:
+            bucket = on_draw
             if did_win:
                 bucket["wins"] += 1
             else:
@@ -613,6 +641,7 @@ def player_avatar_stats(player_id, avatar_name):
             "elo_change": elo_change,
             "match_time": row["match_time"],
             "match_type": match_type,
+            "first_player": "Play" if player_on_play else "Draw" if player_on_play is False else None,
         })
 
     # Include external matches

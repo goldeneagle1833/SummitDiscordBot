@@ -30,6 +30,7 @@ export default function PlayerAvatar() {
 
   const onPlay = data.on_play || {}
   const onDraw = data.on_draw || {}
+  const knownMatchups = (data.matchups || []).filter((m) => m.opponent_avatar !== 'Unknown')
 
   return (
     <div className="space-y-6">
@@ -68,14 +69,14 @@ export default function PlayerAvatar() {
       </div>
 
       {/* Matchups vs Avatars */}
-      {data.matchups?.length > 0 && (
+      {knownMatchups.length > 0 && (
         <CollapsibleSection
           title="Matchups vs Avatars"
           open={matchupsOpen}
           onToggle={() => setMatchupsOpen((o) => !o)}
         >
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {data.matchups.map((m) => (
+            {knownMatchups.map((m) => (
               <div
                 key={m.opponent_avatar}
                 className="bg-bg-raised border border-border rounded-lg p-3 text-center"
@@ -109,6 +110,7 @@ export default function PlayerAvatar() {
                   <th className="pb-2 pr-4">Opponent</th>
                   <th className="pb-2 pr-4">Opp. Avatar</th>
                   <th className="pb-2 pr-4">ELO</th>
+                  <th className="pb-2 pr-4">Play/Draw</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -129,7 +131,7 @@ export default function PlayerAvatar() {
                         m.opponent
                       )}
                     </td>
-                    <td className="py-2 pr-4 text-text-muted">{m.opponent_avatar}</td>
+                    <td className="py-2 pr-4 text-text-muted">{m.opponent_avatar !== 'Unknown' ? m.opponent_avatar : '-'}</td>
                     <td className="py-2 pr-4 text-text-muted">
                       {m.elo_change > 0
                         ? <span className="text-accent-green">+{m.elo_change}</span>
@@ -137,6 +139,7 @@ export default function PlayerAvatar() {
                           ? <span className="text-accent-red">{m.elo_change}</span>
                           : '-'}
                     </td>
+                    <td className="py-2 pr-4 text-text-muted">{m.first_player || '-'}</td>
                   </tr>
                 ))}
               </tbody>

@@ -41,7 +41,7 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
   const validMatches = useMemo(
     () =>
       [...(eloHistory || [])]
-        .filter((m) => m.elo_change != null && m.date)
+        .filter((m) => m.elo_after != null && m.date)
         .sort((a, b) => new Date(a.date) - new Date(b.date)),
     [eloHistory],
   )
@@ -52,26 +52,18 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
   const chartData = useMemo(() => {
     if (!validMatches.length) return []
 
-    // Take the last `gameCount` matches
+    // Take the last `gameCount` matches — elo_after is computed server-side
+    // with proper season resets, so no client-side reconstruction needed.
     const window = validMatches.slice(-gameCount)
 
-    // Back-calculate starting ELO from current ELO minus the window's changes.
-    // Always anchor to currentElo because ELO resets each season, so summing
-    // all historical changes from 1500 would overshoot the actual value.
-    const windowChange = window.reduce((sum, m) => sum + (m.elo_change || 0), 0)
-    let elo = (currentElo || 1500) - windowChange
-
-    return window.map((m) => {
-      elo += m.elo_change || 0
-      return {
-        date: new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        elo: Math.round(elo),
-        result: m.result,
-        opponent: m.opponent,
-        change: m.elo_change,
-      }
-    })
-  }, [validMatches, currentElo, gameCount])
+    return window.map((m) => ({
+      date: new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      elo: m.elo_after,
+      result: m.result,
+      opponent: m.opponent,
+      change: m.elo_change,
+    }))
+  }, [validMatches, gameCount])
 
   if (!validMatches.length) return null
 

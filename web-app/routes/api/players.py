@@ -1326,12 +1326,8 @@ def player_api(player_id):
 
     conn.close()
 
-    # Save current-event rows before merging (needed for ELO history graph,
-    # which can only back-calculate accurately within the current season).
-    current_event_rows = list(rows)
-
     # Combine current and archived matches
-    rows = current_event_rows + list(archived_rows)
+    rows = list(rows) + list(archived_rows)
 
     # Get solo match reports (bot-only)
     solo_rows = []
@@ -2172,30 +2168,49 @@ def player_api(player_id):
             "loser_deck_url": em.get("loser_deck_url"),
         })
 
-    # Build ELO history for the chart.
-    # For lifetime/current views, only use current-event matches because ELO
-    # resets each season — mixing archived matches produces impossible values.
-    # For specific past event/season views, use all rows (they're already
-    # filtered to a single event by the query).
-    if event_filter in ("lifetime", "current"):
-        elo_history_source = list(current_event_rows)
-        # Include current-event solo matches too
-        if solo_rows:
-            elo_history_source += solo_rows
-    else:
-        # Viewing a specific past event or season — all rows are within one ELO context
-        elo_history_source = list(rows)
-    elo_history_rows = [r for r in elo_history_source if not _is_casual_row(r)]
+    # Build ELO history with actual elo_after values for the chart.
+    # ELO resets to 1500 at each event boundary, so we query event start dates
+    # and walk forward chronologically, resetting at each boundary.
+    elo_history_source = [r for r in all_rows if not _is_casual_row(r)]
+    # Filter to rows with a date and elo_change
+    elo_history_source = [
+        r for r in elo_history_source
+        if r[6] and (r[7] if r[0] else r[8]) is not None
+    ]
+    # Sort chronologically
+    elo_history_source.sort(key=lambda r: r[6])
+
+    # Get event start dates to detect ELO reset boundaries
+    event_start_dates = []
+    try:
+        elo_conn_hist = sqlite3.connect(str(ELO_DB_PATH))
+        elo_cur_hist = elo_conn_hist.cursor()
+        elo_cur_hist.execute("SELECT start_date FROM events ORDER BY start_date")
+        event_start_dates = [row[0] for row in elo_cur_hist.fetchall() if row[0]]
+        elo_conn_hist.close()
+    except sqlite3.OperationalError:
+        pass
+
+    # Walk forward, resetting ELO to 1500 at each event boundary
+    elo = 1500
+    event_idx = 0
     elo_history = []
-    for row in elo_history_rows:
+    for row in elo_history_source:
         did_win = row[0]
         elo_change = row[7] if did_win else row[8]
-        if elo_change is None or not row[6]:
-            continue
+        match_date = row[6]
+
+        # Check if we've crossed into a new event (ELO reset)
+        while event_idx < len(event_start_dates) and match_date >= event_start_dates[event_idx]:
+            elo = 1500
+            event_idx += 1
+
+        elo += elo_change or 0
         opponent_name = row[5] if did_win else row[4]
         elo_history.append({
-            "date": row[6],
+            "date": match_date,
             "elo_change": elo_change,
+            "elo_after": round(elo),
             "result": "Win" if did_win else "Loss",
             "opponent": opponent_name,
         })

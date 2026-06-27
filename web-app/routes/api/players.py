@@ -1326,8 +1326,12 @@ def player_api(player_id):
 
     conn.close()
 
+    # Save current-event rows before merging (needed for ELO history graph,
+    # which can only back-calculate accurately within the current season).
+    current_event_rows = list(rows)
+
     # Combine current and archived matches
-    rows = list(rows) + list(archived_rows)
+    rows = current_event_rows + list(archived_rows)
 
     # Get solo match reports (bot-only)
     solo_rows = []
@@ -2168,11 +2172,22 @@ def player_api(player_id):
             "loser_deck_url": em.get("loser_deck_url"),
         })
 
-    # Build lightweight ELO history from ALL ranked matches (for the chart)
-    # Use ranked_stat_rows (includes solo matches) so the graph game count
-    # matches lifetime stats.  Allow elo_change == 0 (solo reports) through.
+    # Build ELO history for the chart.
+    # For lifetime/current views, only use current-event matches because ELO
+    # resets each season — mixing archived matches produces impossible values.
+    # For specific past event/season views, use all rows (they're already
+    # filtered to a single event by the query).
+    if event_filter in ("lifetime", "current"):
+        elo_history_source = list(current_event_rows)
+        # Include current-event solo matches too
+        if solo_rows:
+            elo_history_source += solo_rows
+    else:
+        # Viewing a specific past event or season — all rows are within one ELO context
+        elo_history_source = list(rows)
+    elo_history_rows = [r for r in elo_history_source if not _is_casual_row(r)]
     elo_history = []
-    for row in ranked_stat_rows:
+    for row in elo_history_rows:
         did_win = row[0]
         elo_change = row[7] if did_win else row[8]
         if elo_change is None or not row[6]:

@@ -13,6 +13,7 @@ import LimitedLeaderboard from '@/pages/LimitedLeaderboard'
 import Season from '@/pages/Season'
 import Player from '@/pages/Player'
 import DeckStats from '@/pages/DeckStats'
+import PlayerAvatar from '@/pages/PlayerAvatar'
 import Matches from '@/pages/Matches'
 import DeckSnapshot from '@/pages/DeckSnapshot'
 
@@ -132,6 +133,7 @@ const router = createBrowserRouter([
       { path: '/player/:playerId', element: <Player /> },
       { path: '/match-history', element: <Matches /> },
       { path: '/deck-stats/:playerId', element: <DeckStats /> },
+      { path: '/player/:playerId/avatar/:avatarName', element: <PlayerAvatar /> },
       { path: '/deck-snapshot/:matchId/:playerId', element: <DeckSnapshot /> },
       // Phase 4: Events & Decks
       { path: '/top-8', element: <Events /> },

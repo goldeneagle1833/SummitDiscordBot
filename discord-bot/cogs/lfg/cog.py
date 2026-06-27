@@ -3287,7 +3287,7 @@ class LFGCog(commands.Cog):
         elif any(role.id == config.JUDGE_ROLE_ID for role in ctx.author.roles):
             is_admin = True
 
-        # Admin flow - immediate correction (existing behavior)
+        # Admin flow - immediate correction, no participant check
         if is_admin:
             status_msg = await ctx.send("Analyzing match history...")
             try:

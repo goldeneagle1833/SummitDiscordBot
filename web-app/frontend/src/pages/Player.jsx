@@ -230,6 +230,7 @@ const [editDeck, setEditDeck] = useState(null)
       {sectionVisible('avatar_performance') && (
         <AvatarPerformance
           avatars={data.avatar_performance}
+          playerId={playerId}
           open={openSections.avatarPerf}
           onToggle={() => toggle('avatarPerf')}
         />

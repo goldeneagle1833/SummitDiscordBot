@@ -1,6 +1,7 @@
+import { Link } from 'react-router-dom'
 import CollapsibleSection from './CollapsibleSection'
 
-export default function AvatarPerformance({ avatars, open, onToggle }) {
+export default function AvatarPerformance({ avatars, playerId, open, onToggle }) {
   if (!avatars?.length) return null
 
   return (
@@ -17,7 +18,14 @@ export default function AvatarPerformance({ avatars, open, onToggle }) {
           <tbody>
             {avatars.map((av) => (
               <tr key={av.name} className="border-b border-border/50">
-                <td className="py-2 px-3">{av.name}</td>
+                <td className="py-2 px-3">
+                  <Link
+                    to={`/player/${playerId}/avatar/${encodeURIComponent(av.name)}`}
+                    className="text-secondary hover:underline"
+                  >
+                    {av.name}
+                  </Link>
+                </td>
                 <td className="py-2 px-3">
                   <span className="text-accent-green">{av.wins}W</span>
                   {' / '}

@@ -431,6 +431,277 @@ def get_deck_stats(player_id):
     })
 
 
+@players_bp.route("/player/<player_id>/avatar/<avatar_name>")
+def player_avatar_stats(player_id, avatar_name):
+    """Get detailed stats for a specific avatar used by a player."""
+    # Normalize player_id
+    player_id_str = str(player_id)
+    if player_id_str.startswith("google_"):
+        player_id = player_id_str[7:]
+
+    event_filter = request.args.get("event", "lifetime")
+
+    # Determine season date range if applicable
+    event_start_date = None
+    event_end_date = None
+    is_season_filter = isinstance(event_filter, str) and event_filter.startswith("season_")
+    if is_season_filter:
+        try:
+            season_id = int(event_filter.split("_")[1])
+            if season_id in SEASON_FILTERS:
+                event_start_date = SEASON_FILTERS[season_id]["start"]
+                event_end_date = SEASON_FILTERS[season_id]["end"]
+        except (ValueError, IndexError):
+            pass
+
+    conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    all_rows = []
+    for table in ["match_records", "match_records_archive"]:
+        date_filter = ""
+        params = [player_id, player_id, player_id]
+        if event_start_date:
+            date_filter += " AND timestamp >= ?"
+            params.append(event_start_date)
+        if event_end_date:
+            date_filter += " AND timestamp <= ?"
+            params.append(event_end_date)
+        try:
+            cur.execute(
+                f"""
+                SELECT
+                    CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                    winner_display_name,
+                    losser_display_name,
+                    winner_id,
+                    losser_id,
+                    timestamp,
+                    winner_elo_change,
+                    loser_elo_change,
+                    match_time,
+                    rowid as match_id,
+                    json_deck_data_winner,
+                    json_deck_data_loser,
+                    json_deck_data,
+                    winner_went_first,
+                    loser_went_first,
+                    match_type
+                FROM {table}
+                WHERE (winner_id = ? OR losser_id = ?){date_filter}
+                ORDER BY timestamp DESC
+                """,
+                params,
+            )
+            all_rows.extend(cur.fetchall())
+        except sqlite3.OperationalError:
+            try:
+                cur.execute(
+                    f"""
+                    SELECT
+                        CASE WHEN winner_id = ? THEN 1 ELSE 0 END as did_win,
+                        winner_display_name,
+                        losser_display_name,
+                        winner_id,
+                        losser_id,
+                        timestamp,
+                        winner_elo_change,
+                        loser_elo_change,
+                        match_time,
+                        rowid as match_id,
+                        NULL as json_deck_data_winner,
+                        NULL as json_deck_data_loser,
+                        json_deck_data,
+                        NULL as winner_went_first,
+                        NULL as loser_went_first,
+                        NULL as match_type
+                    FROM {table}
+                    WHERE (winner_id = ? OR losser_id = ?){date_filter}
+                    ORDER BY timestamp DESC
+                    """,
+                    params,
+                )
+                all_rows.extend(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass
+    conn.close()
+
+    # Also fetch external matches
+    external_repo = ExternalMatchRepository()
+    external_matches_raw = external_repo.get_player_matches(str(player_id))
+
+    wins = 0
+    losses = 0
+    on_play = {"wins": 0, "losses": 0}
+    on_draw = {"wins": 0, "losses": 0}
+    vs_avatars = {}
+    match_history = []
+
+    def _get_main_avatar(deck_json):
+        """Extract main avatar name from deck JSON string."""
+        if not deck_json or deck_json in ("{}", ""):
+            return None
+        try:
+            deck_data = json.loads(deck_json)
+            avatar_list = deck_data.get("avatar", [])
+            if not avatar_list:
+                return None
+            for av in avatar_list:
+                if av and av.get("type") == "Avatar" and av.get("name"):
+                    return av.get("name")
+            if avatar_list[0] and avatar_list[0].get("name"):
+                return avatar_list[0].get("name")
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+            pass
+        return None
+
+    target_avatar = avatar_name.replace("-", " ")
+
+    for row in all_rows:
+        did_win = row["did_win"]
+        winner_json = row["json_deck_data_winner"]
+        loser_json = row["json_deck_data_loser"]
+        legacy_json = row["json_deck_data"]
+
+        player_json = winner_json if did_win else loser_json
+        if not player_json or player_json == "{}":
+            player_json = legacy_json
+
+        player_avatar = _get_main_avatar(player_json)
+        if not player_avatar or player_avatar.lower() != target_avatar.lower():
+            continue
+
+        opp_json = loser_json if did_win else winner_json
+        if not opp_json or opp_json == "{}":
+            opp_json = legacy_json if not did_win else None
+        opp_avatar = _get_main_avatar(opp_json) or "Unknown"
+        opp_name = row["losser_display_name"] if did_win else row["winner_display_name"]
+        opp_id = str(row["losser_id"]) if did_win else str(row["winner_id"])
+        elo_change = row["winner_elo_change"] if did_win else row["loser_elo_change"]
+
+        if did_win:
+            wins += 1
+        else:
+            losses += 1
+
+        if opp_avatar not in vs_avatars:
+            vs_avatars[opp_avatar] = {"wins": 0, "losses": 0}
+        if did_win:
+            vs_avatars[opp_avatar]["wins"] += 1
+        else:
+            vs_avatars[opp_avatar]["losses"] += 1
+
+        # Play/draw stats
+        went_first_val = row["winner_went_first"] if did_win else row["loser_went_first"]
+        if went_first_val is not None:
+            on_play_flag = "y" in str(went_first_val).lower()
+            bucket = on_play if on_play_flag else on_draw
+            if did_win:
+                bucket["wins"] += 1
+            else:
+                bucket["losses"] += 1
+
+        match_type = row["match_type"] if row["match_type"] else "ranked"
+        match_history.append({
+            "match_id": row["match_id"],
+            "date": row["timestamp"],
+            "result": "Win" if did_win else "Loss",
+            "opponent": opp_name,
+            "opponent_id": opp_id,
+            "opponent_avatar": opp_avatar,
+            "elo_change": elo_change,
+            "match_time": row["match_time"],
+            "match_type": match_type,
+        })
+
+    # Include external matches
+    for em in external_matches_raw:
+        did_win = str(em["winner_id"]) == str(player_id)
+        deck_json = em.get("json_deck_data_winner") if did_win else em.get("json_deck_data_loser")
+        player_avatar = _get_main_avatar(deck_json)
+        if not player_avatar or player_avatar.lower() != target_avatar.lower():
+            continue
+
+        opp_json = em.get("json_deck_data_loser") if did_win else em.get("json_deck_data_winner")
+        opp_avatar = _get_main_avatar(opp_json) or "Unknown"
+        opp_name = em.get("loser_name", "Unknown") if did_win else em.get("winner_name", "Unknown")
+
+        if did_win:
+            wins += 1
+        else:
+            losses += 1
+
+        if opp_avatar not in vs_avatars:
+            vs_avatars[opp_avatar] = {"wins": 0, "losses": 0}
+        if did_win:
+            vs_avatars[opp_avatar]["wins"] += 1
+        else:
+            vs_avatars[opp_avatar]["losses"] += 1
+
+        match_history.append({
+            "date": em.get("timestamp", ""),
+            "result": "Win" if did_win else "Loss",
+            "opponent": opp_name,
+            "opponent_avatar": opp_avatar,
+            "match_type": "external",
+        })
+
+    total = wins + losses
+    win_rate = round(wins / total * 100, 1) if total > 0 else 0
+
+    matchups = []
+    for opp_av, rec in sorted(vs_avatars.items(), key=lambda x: x[1]["wins"] + x[1]["losses"], reverse=True):
+        t = rec["wins"] + rec["losses"]
+        matchups.append({
+            "opponent_avatar": opp_av,
+            "wins": rec["wins"],
+            "losses": rec["losses"],
+            "total": t,
+            "win_rate": round(rec["wins"] / t * 100, 1) if t > 0 else 0,
+        })
+
+    def _play_draw_stats(bucket):
+        t = bucket["wins"] + bucket["losses"]
+        return {"wins": bucket["wins"], "losses": bucket["losses"], "total": t,
+                "win_rate": round(bucket["wins"] / t * 100, 1) if t > 0 else 0}
+
+    # Resolve the canonical avatar name from the first match (preserves casing)
+    display_avatar_name = target_avatar
+    if match_history:
+        # We already matched, so use the properly cased name from the data
+        for row in all_rows:
+            did_win = row["did_win"]
+            pj = row["json_deck_data_winner"] if did_win else row["json_deck_data_loser"]
+            if not pj or pj == "{}":
+                pj = row["json_deck_data"]
+            av = _get_main_avatar(pj)
+            if av and av.lower() == target_avatar.lower():
+                display_avatar_name = av
+                break
+
+    # Get player name
+    player_name = "Unknown"
+    if all_rows:
+        first = all_rows[0]
+        player_name = first["winner_display_name"] if first["did_win"] else first["losser_display_name"]
+
+    return jsonify({
+        "player_id": player_id,
+        "player_name": player_name,
+        "avatar": display_avatar_name,
+        "wins": wins,
+        "losses": losses,
+        "total": total,
+        "win_rate": win_rate,
+        "matchups": matchups,
+        "on_play": _play_draw_stats(on_play),
+        "on_draw": _play_draw_stats(on_draw),
+        "matches": match_history,
+        "event_filter": event_filter,
+    })
+
+
 def _get_limited_stats(player_id: str) -> dict:
     """Fetch limited arena stats for a player from match_records.db and elo.db."""
     result = {

@@ -41,7 +41,7 @@ export default function EloHistory({ eloHistory, currentElo, open, onToggle }) {
   const validMatches = useMemo(
     () =>
       [...(eloHistory || [])]
-        .filter((m) => m.elo_change && m.date)
+        .filter((m) => m.elo_change != null && m.date)
         .sort((a, b) => new Date(a.date) - new Date(b.date)),
     [eloHistory],
   )

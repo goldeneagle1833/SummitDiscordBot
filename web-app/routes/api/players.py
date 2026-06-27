@@ -731,8 +731,13 @@ def player_avatar_stats(player_id, avatar_name):
     })
 
 
-def _get_limited_stats(player_id: str) -> dict:
-    """Fetch limited arena stats for a player from match_records.db and elo.db."""
+def _get_limited_stats(player_id: str, event_filter: str = "current") -> dict:
+    """Fetch limited arena stats for a player from match_records.db and elo.db.
+
+    When event_filter is "lifetime", uses lifetime_elo and includes archived data.
+    Otherwise shows current season elo and live data only.
+    """
+    show_lifetime = event_filter == "lifetime"
     result = {
         "has_data": False,
         "elo": 1500,
@@ -748,7 +753,8 @@ def _get_limited_stats(player_id: str) -> dict:
     try:
         elo_conn = sqlite3.connect(str(ELO_DB_PATH))
         elo_cur = elo_conn.cursor()
-        elo_cur.execute("SELECT elo FROM limited_elo WHERE user_id = ?", (player_id,))
+        elo_col = "lifetime_elo" if show_lifetime else "elo"
+        elo_cur.execute(f"SELECT {elo_col} FROM limited_elo WHERE user_id = ?", (player_id,))
         row = elo_cur.fetchone()
         if row:
             result["elo"] = row[0]
@@ -762,14 +768,27 @@ def _get_limited_stats(player_id: str) -> dict:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
 
-        # Arena runs
+        # Arena runs (live)
         cur.execute(
             """SELECT run_id, wins, losses, deck_url, status, starting_elo, created_at, completed_at
                FROM limited_arena_runs WHERE user_id = ? ORDER BY created_at DESC""",
             (player_id,),
         )
-        runs = cur.fetchall()
-        if runs:
+        all_runs = list(cur.fetchall())
+
+        # Include archived runs for lifetime view
+        if show_lifetime:
+            try:
+                cur.execute(
+                    """SELECT original_run_id, wins, losses, deck_url, status, starting_elo, created_at, completed_at
+                       FROM limited_arena_runs_archive WHERE user_id = ? ORDER BY created_at DESC""",
+                    (player_id,),
+                )
+                all_runs += list(cur.fetchall())
+            except sqlite3.OperationalError:
+                pass
+
+        if all_runs:
             result["has_data"] = True
             result["arena_runs"] = [
                 {
@@ -778,10 +797,10 @@ def _get_limited_stats(player_id: str) -> dict:
                     "created_at": r[6][:10] if r[6] else None,
                     "completed_at": r[7][:10] if r[7] else None,
                 }
-                for r in runs
+                for r in all_runs
             ]
 
-        # Recent limited matches
+        # Recent limited matches (live)
         cur.execute(
             """SELECT match_id, winner_id, winner_display_name, loser_id, loser_display_name,
                       timestamp, winner_elo_change, loser_elo_change, match_time
@@ -790,11 +809,59 @@ def _get_limited_stats(player_id: str) -> dict:
                ORDER BY timestamp DESC LIMIT 20""",
             (player_id, player_id),
         )
-        matches = cur.fetchall()
+        matches = list(cur.fetchall())
+
+        # Include archived matches for lifetime view
+        if show_lifetime:
+            try:
+                cur.execute(
+                    """SELECT original_match_id, winner_id, winner_display_name, loser_id, loser_display_name,
+                              timestamp, winner_elo_change, loser_elo_change, match_time
+                       FROM limited_match_records_archive
+                       WHERE winner_id = ? OR loser_id = ?
+                       ORDER BY timestamp DESC""",
+                    (player_id, player_id),
+                )
+                matches += list(cur.fetchall())
+                matches.sort(key=lambda m: m[5] or "", reverse=True)
+                matches = matches[:20]
+            except sqlite3.OperationalError:
+                pass
+
         if matches:
             result["has_data"] = True
-            total_wins = sum(1 for m in matches if str(m[1]) == str(player_id))
-            total_losses = sum(1 for m in matches if str(m[3]) == str(player_id))
+            # For lifetime, count wins/losses across ALL matches (not just recent 20)
+            if show_lifetime:
+                try:
+                    cur.execute(
+                        "SELECT COUNT(*) FROM limited_match_records WHERE winner_id = ?",
+                        (player_id,),
+                    )
+                    total_wins = cur.fetchone()[0]
+                    cur.execute(
+                        "SELECT COUNT(*) FROM limited_match_records WHERE loser_id = ?",
+                        (player_id,),
+                    )
+                    total_losses = cur.fetchone()[0]
+                    try:
+                        cur.execute(
+                            "SELECT COUNT(*) FROM limited_match_records_archive WHERE winner_id = ?",
+                            (player_id,),
+                        )
+                        total_wins += cur.fetchone()[0]
+                        cur.execute(
+                            "SELECT COUNT(*) FROM limited_match_records_archive WHERE loser_id = ?",
+                            (player_id,),
+                        )
+                        total_losses += cur.fetchone()[0]
+                    except sqlite3.OperationalError:
+                        pass
+                except sqlite3.OperationalError:
+                    total_wins = sum(1 for m in matches if str(m[1]) == str(player_id))
+                    total_losses = sum(1 for m in matches if str(m[3]) == str(player_id))
+            else:
+                total_wins = sum(1 for m in matches if str(m[1]) == str(player_id))
+                total_losses = sum(1 for m in matches if str(m[3]) == str(player_id))
             total = total_wins + total_losses
             result["total_wins"] = total_wins
             result["total_losses"] = total_losses
@@ -2102,11 +2169,13 @@ def player_api(player_id):
         })
 
     # Build lightweight ELO history from ALL ranked matches (for the chart)
+    # Use ranked_stat_rows (includes solo matches) so the graph game count
+    # matches lifetime stats.  Allow elo_change == 0 (solo reports) through.
     elo_history = []
-    for row in ranked_rows:
+    for row in ranked_stat_rows:
         did_win = row[0]
         elo_change = row[7] if did_win else row[8]
-        if not elo_change or not row[6]:
+        if elo_change is None or not row[6]:
             continue
         opponent_name = row[5] if did_win else row[4]
         elo_history.append({
@@ -2261,7 +2330,7 @@ def player_api(player_id):
     has_custom_display_name = bool(profile and profile.get("custom_display_name")) if profile else False
 
     # Fetch limited arena stats
-    limited_stats = _get_limited_stats(player_id_normalized)
+    limited_stats = _get_limited_stats(player_id_normalized, event_filter)
 
     admin = is_admin()
     show_lifetime = admin or is_owner

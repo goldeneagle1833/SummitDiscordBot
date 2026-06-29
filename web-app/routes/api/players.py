@@ -1121,7 +1121,9 @@ def player_api(player_id):
                     curiosa_url_loser,
                     winner_went_first,
                     loser_went_first,
-                    match_type
+                    match_type,
+                    winner_lifetime_elo_after,
+                    loser_lifetime_elo_after
                 FROM match_reports_web
                 WHERE (winner_id = ? OR losser_id = ?){date_filter}
                 ORDER BY timestamp DESC
@@ -1164,7 +1166,9 @@ def player_api(player_id):
                     curiosa_url_loser,
                     winner_went_first,
                     loser_went_first,
-                    match_type
+                    match_type,
+                    winner_lifetime_elo_after,
+                    loser_lifetime_elo_after
                 FROM match_records
                 WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                 ORDER BY timestamp DESC
@@ -1197,7 +1201,9 @@ def player_api(player_id):
                         curiosa_url_loser,
                         NULL as winner_went_first,
                         NULL as loser_went_first,
-                        NULL as match_type
+                        NULL as match_type,
+                        NULL as winner_lifetime_elo_after,
+                        NULL as loser_lifetime_elo_after
                     FROM match_records
                     WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                     ORDER BY timestamp DESC
@@ -1230,7 +1236,9 @@ def player_api(player_id):
                             NULL as curiosa_url_loser,
                             NULL as winner_went_first,
                             NULL as loser_went_first,
-                            NULL as match_type
+                            NULL as match_type,
+                            NULL as winner_lifetime_elo_after,
+                            NULL as loser_lifetime_elo_after
                         FROM match_records
                         WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                         ORDER BY timestamp DESC
@@ -1280,7 +1288,9 @@ def player_api(player_id):
                     curiosa_url_loser,
                     winner_went_first,
                     loser_went_first,
-                    NULL as match_type
+                    NULL as match_type,
+                    winner_lifetime_elo_after,
+                    loser_lifetime_elo_after
                 FROM match_records_archive
                 WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
                 ORDER BY timestamp DESC
@@ -1313,7 +1323,9 @@ def player_api(player_id):
                         curiosa_url_loser,
                         NULL as winner_went_first,
                         NULL as loser_went_first,
-                        NULL as match_type
+                        NULL as match_type,
+                        NULL as winner_lifetime_elo_after,
+                        NULL as loser_lifetime_elo_after
                     FROM match_records_archive
                     WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
                     ORDER BY timestamp DESC
@@ -2168,9 +2180,10 @@ def player_api(player_id):
             "loser_deck_url": em.get("loser_deck_url"),
         })
 
-    # Build ELO history with actual elo_after values for the chart.
-    # ELO resets to 1500 at each event boundary, so we query event start dates
-    # and walk forward chronologically, resetting at each boundary.
+    # Build ELO history for the chart.
+    # Prefer stored winner_lifetime_elo_after / loser_lifetime_elo_after
+    # (index 20/21) when available.  For older matches without that column,
+    # fall back to reconstructing by walking forward with event-boundary resets.
     elo_history_source = [r for r in all_rows if not _is_casual_row(r)]
     # Filter to rows with a date and elo_change
     elo_history_source = [
@@ -2180,7 +2193,7 @@ def player_api(player_id):
     # Sort chronologically
     elo_history_source.sort(key=lambda r: r[6])
 
-    # Get event start dates to detect ELO reset boundaries
+    # Get event start dates for fallback reconstruction
     event_start_dates = []
     try:
         elo_conn_hist = sqlite3.connect(str(ELO_DB_PATH))
@@ -2191,7 +2204,7 @@ def player_api(player_id):
     except sqlite3.OperationalError:
         pass
 
-    # Walk forward, resetting ELO to 1500 at each event boundary
+    # Walk forward, using stored lifetime ELO when available
     elo = 1500
     event_idx = 0
     elo_history = []
@@ -2200,12 +2213,20 @@ def player_api(player_id):
         elo_change = row[7] if did_win else row[8]
         match_date = row[6]
 
-        # Check if we've crossed into a new event (ELO reset)
-        while event_idx < len(event_start_dates) and match_date >= event_start_dates[event_idx]:
-            elo = 1500
-            event_idx += 1
+        # Try stored lifetime_elo_after first (index 20 = winner, 21 = loser)
+        stored_elo_after = None
+        if len(row) > 21:
+            stored_elo_after = row[20] if did_win else row[21]
 
-        elo += elo_change or 0
+        if stored_elo_after is not None:
+            elo = stored_elo_after
+        else:
+            # Fallback: reconstruct using event boundaries
+            while event_idx < len(event_start_dates) and match_date >= event_start_dates[event_idx]:
+                elo = 1500
+                event_idx += 1
+            elo += elo_change or 0
+
         opponent_name = row[5] if did_win else row[4]
         elo_history.append({
             "date": match_date,

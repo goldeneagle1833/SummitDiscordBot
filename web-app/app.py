@@ -26,6 +26,7 @@ from utils.auth import get_current_user, is_admin, is_curio_editor
 from routes import register_blueprints
 from migrations.create_match_reports_web import create_match_reports_web_table
 from migrations.add_season_id_to_match_reports_web import migrate as migrate_season_id
+from migrations.add_lifetime_elo_after import migrate as migrate_lifetime_elo_after
 from migrations.create_analytics_tables import create_analytics_tables
 from migrations.create_explorer_tables import create_explorer_tables
 from migrations.create_rumble_tables import create_rumble_tables
@@ -60,6 +61,7 @@ def create_app() -> Flask:
     try:
         create_match_reports_web_table()
         migrate_season_id()
+        migrate_lifetime_elo_after()
     except Exception as e:
         logger.error(f"Failed to ensure match_reports_web table: {e}")
 

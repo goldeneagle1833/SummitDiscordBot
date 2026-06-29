@@ -1129,8 +1129,9 @@ async def record_match(
             "json_deck_data, json_deck_data_winner, json_deck_data_loser, "
             "winner_elo_change, loser_elo_change, "
             "winner_lifetime_elo_change, loser_lifetime_elo_change, "
-            "winner_went_first, loser_went_first, match_type) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "winner_went_first, loser_went_first, match_type, "
+            "winner_lifetime_elo_after, loser_lifetime_elo_after) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 reporter_id,
                 winner_id, winner_global,
@@ -1153,6 +1154,8 @@ async def record_match(
                 winner_went_first,
                 loser_went_first,
                 match_type,
+                winner_new_elo,
+                loser_new_elo,
             ),
         )
         table_name = "match_records"
@@ -1322,8 +1325,9 @@ def end_current_event():
                 winner_elo_change, loser_elo_change,
                 winner_lifetime_elo_change, loser_lifetime_elo_change,
                 winner_went_first, loser_went_first,
+                winner_lifetime_elo_after, loser_lifetime_elo_after,
                 archived_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 event_id,
                 match_dict.get("match_id"),
@@ -1349,6 +1353,8 @@ def end_current_event():
                 match_dict.get("loser_lifetime_elo_change"),
                 match_dict.get("winner_went_first"),
                 match_dict.get("loser_went_first"),
+                match_dict.get("winner_lifetime_elo_after"),
+                match_dict.get("loser_lifetime_elo_after"),
                 archived_at,
             ),
         )
@@ -1613,12 +1619,14 @@ def correct_match_record(match_id: int) -> dict:
            SET winner_id = ?, winner_display_name = ?,
                losser_id = ?, losser_display_name = ?,
                winner_elo_change = ?, loser_elo_change = ?,
+               winner_lifetime_elo_after = ?, loser_lifetime_elo_after = ?,
                curiosa_url = ?,
                curiosa_url_winner = ?, curiosa_url_loser = ?,
                json_deck_data_winner = ?, json_deck_data_loser = ?
            WHERE rowid = ?""",
         (new_winner_id, new_winner_name, new_loser_id, new_loser_name,
          new_w_change, new_l_change,
+         nw_elo_after, nl_elo_after,
          orig_deck_url_loser,
          orig_deck_url_loser, orig_deck_url_winner,
          orig_deck_data_loser, orig_deck_data_winner,
@@ -1657,8 +1665,9 @@ def correct_match_record(match_id: int) -> dict:
             (l_elo_after, l_event_after, l_id),
         )
         match_cur.execute(
-            "UPDATE match_records SET winner_elo_change = ?, loser_elo_change = ? WHERE rowid = ?",
-            (w_change, l_change, m_id),
+            "UPDATE match_records SET winner_elo_change = ?, loser_elo_change = ?, "
+            "winner_lifetime_elo_after = ?, loser_lifetime_elo_after = ? WHERE rowid = ?",
+            (w_change, l_change, w_elo_after, l_elo_after, m_id),
         )
         recalculated += 1
 

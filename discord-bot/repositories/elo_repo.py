@@ -129,6 +129,16 @@ def create_db():
         pass  # Column already exists
     cur.execute("UPDATE match_records SET match_type = 'ranked' WHERE match_type IS NULL")
 
+    # Add lifetime elo_after columns to track absolute lifetime ELO at each match (for history graph)
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN winner_lifetime_elo_after INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN loser_lifetime_elo_after INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Create solo_match_reports table with auto-increment report_id
     cur.execute("""CREATE TABLE IF NOT EXISTS solo_match_reports
                    (report_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -274,6 +284,16 @@ def create_match_records_archive():
         pass  # Column already exists
     try:
         cur.execute("ALTER TABLE match_records_archive ADD COLUMN loser_went_first TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add lifetime elo_after columns to archive table (for history graph)
+    try:
+        cur.execute("ALTER TABLE match_records_archive ADD COLUMN winner_lifetime_elo_after INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cur.execute("ALTER TABLE match_records_archive ADD COLUMN loser_lifetime_elo_after INTEGER")
     except sqlite3.OperationalError:
         pass  # Column already exists
 

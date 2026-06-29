@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import time
 
 from flask import Blueprint, jsonify, request, session
 
@@ -113,14 +114,37 @@ def _enrich_card(card_dict: dict) -> dict:
     return card_dict
 
 
+_cluster_cache = None
+_cluster_cache_time = 0
+_CLUSTER_CACHE_TTL = 300  # 5 minutes
+
+
 def _load_and_cluster():
-    """Load all decks and build clusters. Returns (repo, seeds, community, clusters)."""
+    """Load all decks and build clusters. Returns (repo, seeds, community, clusters).
+
+    Results are cached for 5 minutes to avoid reloading 17k+ decks on every request.
+    """
+    global _cluster_cache, _cluster_cache_time
+    now = time.monotonic()
+    if _cluster_cache is not None and (now - _cluster_cache_time) < _CLUSTER_CACHE_TTL:
+        return _cluster_cache
+
     repo = DeckRecRepository()
     all_decks = repo.load_all_decks()
     seeds = [d for d in all_decks if d.is_seed]
     community = [d for d in all_decks if not d.is_seed]
     clusters = build_clusters(seeds, community)
-    return repo, seeds, community, clusters
+    result = (repo, seeds, community, clusters)
+    _cluster_cache = result
+    _cluster_cache_time = now
+    return result
+
+
+def _invalidate_cluster_cache():
+    """Clear the deck/cluster cache so the next request reloads fresh data."""
+    global _cluster_cache, _cluster_cache_time
+    _cluster_cache = None
+    _cluster_cache_time = 0
 
 
 @deck_rec_bp.route("/decks")
@@ -164,9 +188,8 @@ def get_decks():
 def get_deck_info(deck_id: str):
     """Return seed info + deck contents without expensive clustering."""
     try:
-        repo = DeckRecRepository()
-        all_decks = repo.load_all_decks()
-        seed = next((d for d in all_decks if d.is_seed and d.deck_id == deck_id), None)
+        _repo, seeds, _community, _clusters = _load_and_cluster()
+        seed = next((d for d in seeds if d.deck_id == deck_id), None)
         if seed is None:
             return jsonify({"error": f"Deck '{deck_id}' not found among archetype seeds"}), 404
 
@@ -373,9 +396,10 @@ def admin_add_deck():
             stars=stars,
         )
 
-        # Invalidate card image cache so new deck renders correctly
+        # Invalidate caches so new deck renders correctly
         global _card_image_map
         _card_image_map = None
+        _invalidate_cluster_cache()
 
         return jsonify({
             "ok": True,
@@ -403,6 +427,7 @@ def admin_update_deck(deck_id: str):
         updated = repo.update_admin_deck_meta(deck_id, primer, stars)
         if not updated:
             return jsonify({"error": "Deck not found"}), 404
+        _invalidate_cluster_cache()
         return jsonify({"ok": True})
     except Exception as e:
         logger.exception("Error in admin_update_deck for %s: %s", deck_id, e)
@@ -418,6 +443,7 @@ def admin_remove_deck(deck_id: str):
         deleted = repo.delete_admin_deck(deck_id)
         if not deleted:
             return jsonify({"error": "Deck not found"}), 404
+        _invalidate_cluster_cache()
         return jsonify({"ok": True})
     except Exception as e:
         logger.exception("Error in admin_remove_deck for %s: %s", deck_id, e)

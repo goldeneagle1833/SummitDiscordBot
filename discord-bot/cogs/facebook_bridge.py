@@ -12,6 +12,7 @@ from discord.ext import commands, tasks
 import aiohttp
 import sqlite3
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 import config
@@ -204,6 +205,11 @@ class FacebookBridgeCog(commands.Cog):
     async def before_poll(self):
         await self.bot.wait_until_ready()
 
+    def _iso_to_unix(self, iso_time):
+        """Convert Facebook ISO timestamp to Unix timestamp for the since parameter."""
+        dt = datetime.strptime(iso_time, "%Y-%m-%dT%H:%M:%S%z")
+        return str(int(dt.timestamp()))
+
     async def _check_new_posts(self):
         params = {
             "fields": "id,message,created_time,story",
@@ -213,10 +219,11 @@ class FacebookBridgeCog(commands.Cog):
         # Only fetch posts newer than what we've seen
         last_ts = self._get_sync_state("last_post_time")
         if last_ts:
-            params["since"] = last_ts
+            params["since"] = self._iso_to_unix(last_ts)
 
         data = await self._fb_get(f"{config.FACEBOOK_PAGE_ID}/feed", params)
         if not data or "data" not in data:
+            logger.warning("Facebook bridge: No data returned from feed endpoint")
             return
 
         posts = data["data"]
@@ -227,6 +234,8 @@ class FacebookBridgeCog(commands.Cog):
         if not channel:
             logger.error(f"Meta chat channel {config.META_CHAT_CHANNEL_ID} not found")
             return
+
+        logger.info(f"Facebook bridge: Found {len(posts)} posts to check")
 
         # Process oldest first so threads appear in chronological order
         for post in reversed(posts):
@@ -269,6 +278,21 @@ class FacebookBridgeCog(commands.Cog):
         newest_time = posts[0]["created_time"]
         self._set_sync_state("last_post_time", newest_time)
 
+    async def _get_thread(self, thread_id):
+        """Get a thread from cache or fetch it."""
+        thread = self.bot.get_channel(thread_id)
+        if thread:
+            return thread
+        try:
+            thread = await self.bot.fetch_channel(thread_id)
+            return thread
+        except discord.NotFound:
+            logger.warning(f"Facebook bridge: Thread {thread_id} not found")
+            return None
+        except discord.Forbidden:
+            logger.warning(f"Facebook bridge: No access to thread {thread_id}")
+            return None
+
     async def _check_new_comments(self):
         conn = sqlite3.connect(DB_PATH)
         post_threads = conn.execute("SELECT fb_post_id, discord_thread_id FROM post_threads").fetchall()
@@ -280,9 +304,10 @@ class FacebookBridgeCog(commands.Cog):
                 {"fields": "id,message,from,created_time", "limit": 25},
             )
             if not data or "data" not in data:
+                logger.debug(f"Facebook bridge: No comments data for post {fb_post_id}")
                 continue
 
-            thread = self.bot.get_channel(thread_id)
+            thread = await self._get_thread(thread_id)
             if not thread:
                 continue
 
@@ -327,6 +352,7 @@ class FacebookBridgeCog(commands.Cog):
 
         # Post as a comment on the Facebook post
         comment_text = f"[{message.author.display_name}]: {message.content}"
+        logger.info(f"Facebook bridge: Posting Discord msg to FB post {fb_post_id}")
         result = await self._fb_post(
             f"{fb_post_id}/comments",
             {"message": comment_text},
@@ -337,6 +363,10 @@ class FacebookBridgeCog(commands.Cog):
             self._mark_comment_seen(result["id"])
             logger.info(
                 f"Posted Discord message from {message.author} to FB post {fb_post_id}"
+            )
+        else:
+            logger.error(
+                f"Failed to post Discord message to FB post {fb_post_id}: {result}"
             )
 
 

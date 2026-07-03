@@ -21,6 +21,7 @@ from cogs.pilots import PilotsCog
 from cogs.daily_summary import DailySummaryCog
 from cogs.dust import DustCog
 from cogs.facebook_bridge import FacebookBridgeCog
+from cogs.reddit_bridge import RedditBridgeCog
 from cogs.lfg.persistent_confirm import (
     PersistentConfirmButton,
     PersistentDisputeButton,
@@ -167,6 +168,7 @@ async def setup_cogs():
     await bot.add_cog(ChatCog(bot))  # AI chat responses to mentions/replies
     await bot.add_cog(DustCog(bot))  # Dust code reward system
     await bot.add_cog(FacebookBridgeCog(bot))  # Facebook Page <-> Discord bridge
+    await bot.add_cog(RedditBridgeCog(bot))  # Reddit subreddit -> Discord bridge
 
 
 async def main():

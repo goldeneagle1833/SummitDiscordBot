@@ -337,18 +337,25 @@ class FacebookBridgeCog(commands.Cog):
             embed.set_author(name=f"{poster_name} (Facebook)")
             embed.set_footer(text="Facebook Post")
 
-            # Check if this is an avatar post
+            # Check if this is a direct-channel post (avatar or meta chat)
+            message_lower = message.lower()
             avatar_match = self._match_avatar(message)
+            is_meta_chat_post = message_lower.startswith("meta chat")
+
             if avatar_match:
                 avatar_name, avatar_channel_id = avatar_match
                 avatar_channel = self.bot.get_channel(avatar_channel_id)
                 if avatar_channel:
-                    # Post directly in the avatar channel (no thread)
                     await avatar_channel.send(embed=embed)
                     self._save_post_thread(fb_post_id, avatar_channel_id, is_avatar_channel=True)
                     logger.info(f"Posted FB post {fb_post_id} to {avatar_name} channel {avatar_channel_id}")
                 else:
                     logger.warning(f"Facebook bridge: Avatar channel {avatar_channel_id} for {avatar_name} not found")
+            elif is_meta_chat_post:
+                # Post directly in meta-chat (no thread)
+                await meta_channel.send(embed=embed)
+                self._save_post_thread(fb_post_id, meta_channel.id, is_avatar_channel=True)
+                logger.info(f"Posted FB post {fb_post_id} to meta-chat channel (direct)")
             else:
                 # Regular post -> create a thread in meta-chat
                 thread_name = message[:95].split("\n")[0]

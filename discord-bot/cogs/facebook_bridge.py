@@ -290,17 +290,19 @@ class FacebookBridgeCog(commands.Cog):
         return data["data"]
 
     async def _check_new_posts(self):
-        # Fetch from both the page feed and visitor posts
+        # Fetch from both the page feed and tagged posts
         feed_posts = await self._fetch_posts(f"{config.FACEBOOK_PAGE_ID}/feed", "last_post_time")
-        visitor_posts = await self._fetch_posts(f"{config.FACEBOOK_PAGE_ID}/visitor_posts", "last_visitor_post_time")
+        tagged_posts = await self._fetch_posts(f"{config.FACEBOOK_PAGE_ID}/tagged", "last_tagged_post_time")
 
-        # Merge and deduplicate (visitor posts may also appear in feed)
+        # Merge and deduplicate
         seen_ids = set()
         all_posts = []
-        for post in feed_posts + visitor_posts:
+        for post in feed_posts + tagged_posts:
             if post["id"] not in seen_ids:
                 seen_ids.add(post["id"])
                 all_posts.append(post)
+
+        logger.debug(f"Facebook bridge: feed={len(feed_posts)}, tagged={len(tagged_posts)}, total={len(all_posts)}")
 
         if not all_posts:
             return
@@ -364,8 +366,8 @@ class FacebookBridgeCog(commands.Cog):
         # Update the last seen timestamps
         if feed_posts:
             self._set_sync_state("last_post_time", feed_posts[0]["created_time"])
-        if visitor_posts:
-            self._set_sync_state("last_visitor_post_time", visitor_posts[0]["created_time"])
+        if tagged_posts:
+            self._set_sync_state("last_tagged_post_time", tagged_posts[0]["created_time"])
 
     async def _get_channel_or_thread(self, discord_id):
         """Get a thread or channel from cache or fetch it."""

@@ -274,24 +274,35 @@ class FacebookBridgeCog(commands.Cog):
                 return avatar_name, channel_id
         return None
 
-    async def _check_new_posts(self):
+    async def _fetch_posts(self, endpoint, sync_key):
+        """Fetch posts from a Facebook endpoint, filtering by last seen time."""
         params = {
             "fields": "id,message,created_time,story,from",
             "limit": 10,
         }
-
-        # Only fetch posts newer than what we've seen
-        last_ts = self._get_sync_state("last_post_time")
+        last_ts = self._get_sync_state(sync_key)
         if last_ts:
             params["since"] = self._iso_to_unix(last_ts)
 
-        data = await self._fb_get(f"{config.FACEBOOK_PAGE_ID}/feed", params)
+        data = await self._fb_get(endpoint, params)
         if not data or "data" not in data:
-            logger.warning("Facebook bridge: No data returned from feed endpoint")
-            return
+            return []
+        return data["data"]
 
-        posts = data["data"]
-        if not posts:
+    async def _check_new_posts(self):
+        # Fetch from both the page feed and visitor posts
+        feed_posts = await self._fetch_posts(f"{config.FACEBOOK_PAGE_ID}/feed", "last_post_time")
+        visitor_posts = await self._fetch_posts(f"{config.FACEBOOK_PAGE_ID}/visitor_posts", "last_visitor_post_time")
+
+        # Merge and deduplicate (visitor posts may also appear in feed)
+        seen_ids = set()
+        all_posts = []
+        for post in feed_posts + visitor_posts:
+            if post["id"] not in seen_ids:
+                seen_ids.add(post["id"])
+                all_posts.append(post)
+
+        if not all_posts:
             return
 
         meta_channel = self.bot.get_channel(config.META_CHAT_CHANNEL_ID)
@@ -299,7 +310,8 @@ class FacebookBridgeCog(commands.Cog):
             logger.error(f"Meta chat channel {config.META_CHAT_CHANNEL_ID} not found")
             return
 
-        logger.info(f"Facebook bridge: Found {len(posts)} posts to check")
+        logger.info(f"Facebook bridge: Found {len(all_posts)} posts to check")
+        posts = all_posts
 
         # Process oldest first so threads appear in chronological order
         for post in reversed(posts):
@@ -349,9 +361,11 @@ class FacebookBridgeCog(commands.Cog):
                 self._save_post_thread(fb_post_id, thread.id)
                 logger.info(f"Created thread {thread.id} for FB post {fb_post_id}")
 
-        # Update the last seen timestamp to the newest post
-        newest_time = posts[0]["created_time"]
-        self._set_sync_state("last_post_time", newest_time)
+        # Update the last seen timestamps
+        if feed_posts:
+            self._set_sync_state("last_post_time", feed_posts[0]["created_time"])
+        if visitor_posts:
+            self._set_sync_state("last_visitor_post_time", visitor_posts[0]["created_time"])
 
     async def _get_channel_or_thread(self, discord_id):
         """Get a thread or channel from cache or fetch it."""

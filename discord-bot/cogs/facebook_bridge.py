@@ -212,7 +212,7 @@ class FacebookBridgeCog(commands.Cog):
 
     async def _check_new_posts(self):
         params = {
-            "fields": "id,message,created_time,story",
+            "fields": "id,message,created_time,story,from",
             "limit": 10,
         }
 
@@ -267,7 +267,8 @@ class FacebookBridgeCog(commands.Cog):
                 color=discord.Color.blue(),
                 timestamp=discord.utils.parse_time(post["created_time"]),
             )
-            embed.set_author(name="Golden Eagle Cards (Facebook)")
+            poster_name = post.get("from", {}).get("name", "Unknown")
+            embed.set_author(name=f"{poster_name} (Facebook)")
             embed.set_footer(text="Facebook Post")
             await thread.send(embed=embed)
 

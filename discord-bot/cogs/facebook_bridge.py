@@ -1,10 +1,11 @@
 """
 Facebook Bridge Cog
 
-Bridges a Facebook Page with a Discord channel.
+Bridges a Facebook Page with Discord channels.
 - New Facebook posts create Discord threads in the meta-chat channel.
-- Facebook comments on those posts appear as messages in the Discord thread.
-- Discord messages in those threads get posted as comments on the Facebook post.
+- Avatar-specific posts (starting with avatar name) go directly to avatar channels.
+- Facebook comments appear in the corresponding Discord thread or avatar channel.
+- Discord messages in threads/avatar channels get posted as comments on the Facebook post.
 """
 
 import discord
@@ -56,18 +57,27 @@ AVATAR_CHANNEL_MAP = {
     "Battlemage": 1519450100638945402,
 }
 
+# Reverse lookup: channel_id -> avatar_name
+AVATAR_CHANNEL_IDS = {v: k for k, v in AVATAR_CHANNEL_MAP.items()}
+
 
 def init_database():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # Map Facebook post IDs to Discord thread IDs
+    # Map Facebook post IDs to Discord thread/channel IDs
     c.execute("""
         CREATE TABLE IF NOT EXISTS post_threads (
             fb_post_id TEXT PRIMARY KEY,
             discord_thread_id INTEGER NOT NULL,
+            is_avatar_channel INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # Add is_avatar_channel column if it doesn't exist (migration)
+    try:
+        c.execute("ALTER TABLE post_threads ADD COLUMN is_avatar_channel INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     # Track which Facebook comments we've already forwarded
     c.execute("""
         CREATE TABLE IF NOT EXISTS seen_comments (
@@ -96,14 +106,16 @@ class FacebookBridgeCog(commands.Cog):
         self.bot = bot
         init_database()
         self.session = None
-        self._tracked_threads = set()
-        self._load_tracked_threads()
+        self._tracked_threads = set()  # Thread IDs for meta-chat threads
+        self._tracked_avatar_channels = set()  # Avatar channel IDs with active FB posts
+        self._load_tracked()
         logger.info("FacebookBridgeCog initialized")
 
-    def _load_tracked_threads(self):
+    def _load_tracked(self):
         conn = sqlite3.connect(DB_PATH)
-        rows = conn.execute("SELECT discord_thread_id FROM post_threads").fetchall()
-        self._tracked_threads = {row[0] for row in rows}
+        rows = conn.execute("SELECT discord_thread_id, is_avatar_channel FROM post_threads").fetchall()
+        self._tracked_threads = {row[0] for row in rows if not row[1]}
+        self._tracked_avatar_channels = {row[0] for row in rows if row[1]}
         conn.close()
 
     async def cog_load(self):
@@ -114,9 +126,6 @@ class FacebookBridgeCog(commands.Cog):
         self.poll_facebook.cancel()
         if self.session:
             await self.session.close()
-
-    def _get_headers(self):
-        return {"Authorization": f"Bearer {config.FACEBOOK_PAGE_ACCESS_TOKEN}"}
 
     # -- Facebook API helpers --
 
@@ -179,15 +188,28 @@ class FacebookBridgeCog(commands.Cog):
         conn.close()
         return row[0] if row else None
 
-    def _save_post_thread(self, fb_post_id, thread_id):
+    def _get_latest_post_for_channel(self, channel_id):
+        """Get the most recent FB post mapped to an avatar channel."""
+        conn = sqlite3.connect(DB_PATH)
+        row = conn.execute(
+            "SELECT fb_post_id FROM post_threads WHERE discord_thread_id = ? AND is_avatar_channel = 1 ORDER BY created_at DESC LIMIT 1",
+            (channel_id,),
+        ).fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    def _save_post_thread(self, fb_post_id, discord_id, is_avatar_channel=False):
         conn = sqlite3.connect(DB_PATH)
         conn.execute(
-            "INSERT OR IGNORE INTO post_threads (fb_post_id, discord_thread_id) VALUES (?, ?)",
-            (fb_post_id, thread_id),
+            "INSERT OR IGNORE INTO post_threads (fb_post_id, discord_thread_id, is_avatar_channel) VALUES (?, ?, ?)",
+            (fb_post_id, discord_id, 1 if is_avatar_channel else 0),
         )
         conn.commit()
         conn.close()
-        self._tracked_threads.add(thread_id)
+        if is_avatar_channel:
+            self._tracked_avatar_channels.add(discord_id)
+        else:
+            self._tracked_threads.add(discord_id)
 
     def _is_comment_seen(self, fb_comment_id):
         conn = sqlite3.connect(DB_PATH)
@@ -244,6 +266,14 @@ class FacebookBridgeCog(commands.Cog):
         dt = datetime.strptime(iso_time, "%Y-%m-%dT%H:%M:%S%z")
         return str(int(dt.timestamp()))
 
+    def _match_avatar(self, message_text):
+        """Check if message starts with an avatar name. Returns (avatar_name, channel_id) or None."""
+        message_lower = message_text.lower()
+        for avatar_name, channel_id in AVATAR_CHANNEL_MAP.items():
+            if message_lower.startswith(avatar_name.lower()):
+                return avatar_name, channel_id
+        return None
+
     async def _check_new_posts(self):
         params = {
             "fields": "id,message,created_time,story,from",
@@ -275,7 +305,7 @@ class FacebookBridgeCog(commands.Cog):
         for post in reversed(posts):
             fb_post_id = post["id"]
 
-            # Skip if we already have a thread for this post
+            # Skip if we already have a mapping for this post
             if self._get_thread_for_post(fb_post_id):
                 continue
 
@@ -284,69 +314,68 @@ class FacebookBridgeCog(commands.Cog):
             if not message:
                 continue
 
-            # Route to avatar channel if post starts with an avatar name
-            channel = meta_channel
-            message_lower = message.lower()
-            for avatar_name, avatar_channel_id in AVATAR_CHANNEL_MAP.items():
-                if message_lower.startswith(avatar_name.lower()):
-                    avatar_channel = self.bot.get_channel(avatar_channel_id)
-                    if avatar_channel:
-                        channel = avatar_channel
-                        logger.info(f"Facebook bridge: Routing post to {avatar_name} channel")
-                    else:
-                        logger.warning(f"Facebook bridge: Avatar channel {avatar_channel_id} for {avatar_name} not found, using meta-chat")
-                    break
-
-            # Create a Discord thread
-            # Thread name: first 95 chars of the post (Discord limit is 100)
-            thread_name = message[:95].split("\n")[0]
-            if len(thread_name) < len(message.split("\n")[0]):
-                thread_name += "..."
-
-            thread = await channel.create_thread(
-                name=f"FB: {thread_name}"[:100],
-                type=discord.ChannelType.public_thread,
-            )
-
-            # Post the full Facebook message as the first message in the thread
+            poster_name = post.get("from", {}).get("name", "Unknown")
             embed = discord.Embed(
                 description=message,
                 color=discord.Color.blue(),
                 timestamp=discord.utils.parse_time(post["created_time"]),
             )
-            poster_name = post.get("from", {}).get("name", "Unknown")
             embed.set_author(name=f"{poster_name} (Facebook)")
             embed.set_footer(text="Facebook Post")
-            await thread.send(embed=embed)
 
-            self._save_post_thread(fb_post_id, thread.id)
-            logger.info(f"Created thread {thread.id} for FB post {fb_post_id}")
+            # Check if this is an avatar post
+            avatar_match = self._match_avatar(message)
+            if avatar_match:
+                avatar_name, avatar_channel_id = avatar_match
+                avatar_channel = self.bot.get_channel(avatar_channel_id)
+                if avatar_channel:
+                    # Post directly in the avatar channel (no thread)
+                    await avatar_channel.send(embed=embed)
+                    self._save_post_thread(fb_post_id, avatar_channel_id, is_avatar_channel=True)
+                    logger.info(f"Posted FB post {fb_post_id} to {avatar_name} channel {avatar_channel_id}")
+                else:
+                    logger.warning(f"Facebook bridge: Avatar channel {avatar_channel_id} for {avatar_name} not found")
+            else:
+                # Regular post -> create a thread in meta-chat
+                thread_name = message[:95].split("\n")[0]
+                if len(thread_name) < len(message.split("\n")[0]):
+                    thread_name += "..."
+
+                thread = await meta_channel.create_thread(
+                    name=f"FB: {thread_name}"[:100],
+                    type=discord.ChannelType.public_thread,
+                )
+                await thread.send(embed=embed)
+                self._save_post_thread(fb_post_id, thread.id)
+                logger.info(f"Created thread {thread.id} for FB post {fb_post_id}")
 
         # Update the last seen timestamp to the newest post
         newest_time = posts[0]["created_time"]
         self._set_sync_state("last_post_time", newest_time)
 
-    async def _get_thread(self, thread_id):
-        """Get a thread from cache or fetch it."""
-        thread = self.bot.get_channel(thread_id)
-        if thread:
-            return thread
+    async def _get_channel_or_thread(self, discord_id):
+        """Get a thread or channel from cache or fetch it."""
+        ch = self.bot.get_channel(discord_id)
+        if ch:
+            return ch
         try:
-            thread = await self.bot.fetch_channel(thread_id)
-            return thread
+            ch = await self.bot.fetch_channel(discord_id)
+            return ch
         except discord.NotFound:
-            logger.warning(f"Facebook bridge: Thread {thread_id} not found")
+            logger.warning(f"Facebook bridge: Channel/thread {discord_id} not found")
             return None
         except discord.Forbidden:
-            logger.warning(f"Facebook bridge: No access to thread {thread_id}")
+            logger.warning(f"Facebook bridge: No access to channel/thread {discord_id}")
             return None
 
     async def _check_new_comments(self):
         conn = sqlite3.connect(DB_PATH)
-        post_threads = conn.execute("SELECT fb_post_id, discord_thread_id FROM post_threads").fetchall()
+        post_mappings = conn.execute(
+            "SELECT fb_post_id, discord_thread_id, is_avatar_channel FROM post_threads"
+        ).fetchall()
         conn.close()
 
-        for fb_post_id, thread_id in post_threads:
+        for fb_post_id, discord_id, is_avatar in post_mappings:
             data = await self._fb_get(
                 f"{fb_post_id}/comments",
                 {"fields": "id,message,from,created_time", "limit": 25},
@@ -355,8 +384,8 @@ class FacebookBridgeCog(commands.Cog):
                 logger.debug(f"Facebook bridge: No comments data for post {fb_post_id}")
                 continue
 
-            thread = await self._get_thread(thread_id)
-            if not thread:
+            target = await self._get_channel_or_thread(discord_id)
+            if not target:
                 continue
 
             new_comments = []
@@ -382,14 +411,14 @@ class FacebookBridgeCog(commands.Cog):
             if not new_comments:
                 continue
 
-            # Unarchive thread if needed so the message bumps it to the top
-            if thread.archived:
-                await thread.edit(archived=False)
+            # Unarchive thread if needed (only applies to threads, not channels)
+            if isinstance(target, discord.Thread) and target.archived:
+                await target.edit(archived=False)
 
             for comment_id, commenter, message in new_comments:
-                await thread.send(f"**{commenter} (FB):** {message}")
+                await target.send(f"**{commenter} (FB):** {message}")
                 self._mark_comment_seen(comment_id)
-                logger.info(f"Forwarded FB comment {comment_id} to thread {thread_id}")
+                logger.info(f"Forwarded FB comment {comment_id} to {'channel' if is_avatar else 'thread'} {discord_id}")
 
     # -- Discord -> Facebook --
 
@@ -399,7 +428,14 @@ class FacebookBridgeCog(commands.Cog):
         if message.author.bot:
             return
 
-        # Only handle messages in tracked threads
+        # Check if this is an avatar channel message
+        if message.channel.id in self._tracked_avatar_channels:
+            fb_post_id = self._get_latest_post_for_channel(message.channel.id)
+            if fb_post_id:
+                await self._post_to_facebook(message, fb_post_id)
+            return
+
+        # Check if this is a tracked thread message
         if not isinstance(message.channel, discord.Thread):
             return
         if message.channel.id not in self._tracked_threads:
@@ -409,7 +445,10 @@ class FacebookBridgeCog(commands.Cog):
         if not fb_post_id:
             return
 
-        # Post as a comment on the Facebook post
+        await self._post_to_facebook(message, fb_post_id)
+
+    async def _post_to_facebook(self, message: discord.Message, fb_post_id: str):
+        """Post a Discord message as a comment on a Facebook post."""
         comment_text = f"[{message.author.display_name}]: {message.content}"
         logger.info(f"Facebook bridge: Posting Discord msg to FB post {fb_post_id}")
         result = await self._fb_post(

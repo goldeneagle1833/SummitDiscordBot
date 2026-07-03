@@ -22,6 +22,40 @@ logger = logging.getLogger("discord_bot")
 DB_PATH = Path(__file__).parent.parent / "facebook_bridge.db"
 GRAPH_API = "https://graph.facebook.com/v25.0"
 
+AVATAR_CHANNEL_MAP = {
+    "Archimago": 1494118715414024253,
+    "Waveshaper": 1511003284930953246,
+    "Avatar of Air": 1511382800534605884,
+    "Avatar of Earth": 1511386628034138162,
+    "Avatar of Fire": 1519315038689562644,
+    "Avatar of Water": 1519315255203987496,
+    "Geomancer": 1513873409417674752,
+    "Sparkmage": 1519314845185343498,
+    "Flamecaller": 1519314932565545100,
+    "Harbinger": 1513742725277810750,
+    "Imposter": 1511387750845382717,
+    "Druid": 1511415894885142768,
+    "Enchantress": 1511400819071909919,
+    "Pathfinder": 1514246289301176482,
+    "Elementalist": 1515890274574930001,
+    "Sorcerer": 1517149744416161893,
+    "Bladedancer": 1517185249044332616,
+    "Realm-Eater": 1519171306438922441,
+    "Necromancer": 1519316017950752789,
+    "Ironclad": 1519314777221103656,
+    "Interrogator": 1519316126990078064,
+    "Seer": 1519316391340019792,
+    "Dragonlord": 1519334832180564048,
+    "Templar": 1519334887260422184,
+    "Savior": 1519337220090106088,
+    "Magician": 1519340705279905922,
+    "Animist": 1519341208302915645,
+    "Witch": 1519342799437172786,
+    "Deathspeaker": 1519346928058634361,
+    "Corruptor": 1519353617419735081,
+    "Battlemage": 1519450100638945402,
+}
+
 
 def init_database():
     conn = sqlite3.connect(DB_PATH)
@@ -230,8 +264,8 @@ class FacebookBridgeCog(commands.Cog):
         if not posts:
             return
 
-        channel = self.bot.get_channel(config.META_CHAT_CHANNEL_ID)
-        if not channel:
+        meta_channel = self.bot.get_channel(config.META_CHAT_CHANNEL_ID)
+        if not meta_channel:
             logger.error(f"Meta chat channel {config.META_CHAT_CHANNEL_ID} not found")
             return
 
@@ -249,6 +283,19 @@ class FacebookBridgeCog(commands.Cog):
             message = post.get("message") or post.get("story")
             if not message:
                 continue
+
+            # Route to avatar channel if post starts with an avatar name
+            channel = meta_channel
+            message_lower = message.lower()
+            for avatar_name, avatar_channel_id in AVATAR_CHANNEL_MAP.items():
+                if message_lower.startswith(avatar_name.lower()):
+                    avatar_channel = self.bot.get_channel(avatar_channel_id)
+                    if avatar_channel:
+                        channel = avatar_channel
+                        logger.info(f"Facebook bridge: Routing post to {avatar_name} channel")
+                    else:
+                        logger.warning(f"Facebook bridge: Avatar channel {avatar_channel_id} for {avatar_name} not found, using meta-chat")
+                    break
 
             # Create a Discord thread
             # Thread name: first 95 chars of the post (Discord limit is 100)
@@ -312,6 +359,7 @@ class FacebookBridgeCog(commands.Cog):
             if not thread:
                 continue
 
+            new_comments = []
             for comment in data["data"]:
                 comment_id = comment["id"]
 
@@ -329,6 +377,16 @@ class FacebookBridgeCog(commands.Cog):
                     self._mark_comment_seen(comment_id)
                     continue
 
+                new_comments.append((comment_id, commenter, message))
+
+            if not new_comments:
+                continue
+
+            # Unarchive thread if needed so the message bumps it to the top
+            if thread.archived:
+                await thread.edit(archived=False)
+
+            for comment_id, commenter, message in new_comments:
                 await thread.send(f"**{commenter} (FB):** {message}")
                 self._mark_comment_seen(comment_id)
                 logger.info(f"Forwarded FB comment {comment_id} to thread {thread_id}")

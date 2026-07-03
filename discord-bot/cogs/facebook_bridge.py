@@ -422,7 +422,7 @@ class FacebookBridgeCog(commands.Cog):
                     self._mark_comment_seen(comment_id)
                     continue
 
-                commenter = comment.get("from", {}).get("name", "Unknown")
+                commenter = comment.get("from", {}).get("name", "Facebook User")
                 message = comment.get("message", "")
 
                 if not message:

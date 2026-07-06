@@ -86,6 +86,12 @@ def ensure_pending_confirmations_table():
         )
         """
     )
+    # Migrate: add confirmer_comment if missing (table may predate this column)
+    cursor = conn.execute("PRAGMA table_info(pending_confirmations)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "confirmer_comment" not in columns:
+        conn.execute("ALTER TABLE pending_confirmations ADD COLUMN confirmer_comment TEXT DEFAULT ''")
+
     conn.commit()
     conn.close()
 
@@ -827,17 +833,13 @@ class PersistentConfirmDeckModal(discord.ui.Modal, title="Enter Your Deck"):
 
         except Exception as e:
             logger.error(f"Unexpected error in PersistentConfirmDeckModal: {e}", exc_info=True)
+            error_detail = str(e) if str(e) else type(e).__name__
             try:
+                msg = f"An error occurred while processing your confirmation: {error_detail}\nPlease try again or contact an admin."
                 if interaction.response.is_done():
-                    await interaction.followup.send(
-                        "An unexpected error occurred while processing your confirmation. Please try again.",
-                        ephemeral=True,
-                    )
+                    await interaction.followup.send(msg, ephemeral=True)
                 else:
-                    await interaction.response.send_message(
-                        "An unexpected error occurred while processing your confirmation. Please try again.",
-                        ephemeral=True,
-                    )
+                    await interaction.response.send_message(msg, ephemeral=True)
             except Exception:
                 logger.error("Failed to send error message to user")
 
@@ -884,17 +886,13 @@ class PersistentConfirmCommentModal(discord.ui.Modal, title="Confirm Match"):
 
         except Exception as e:
             logger.error(f"Unexpected error in PersistentConfirmCommentModal: {e}", exc_info=True)
+            error_detail = str(e) if str(e) else type(e).__name__
             try:
+                msg = f"An error occurred while processing your confirmation: {error_detail}\nPlease try again or contact an admin."
                 if interaction.response.is_done():
-                    await interaction.followup.send(
-                        "An unexpected error occurred while processing your confirmation. Please try again.",
-                        ephemeral=True,
-                    )
+                    await interaction.followup.send(msg, ephemeral=True)
                 else:
-                    await interaction.response.send_message(
-                        "An unexpected error occurred while processing your confirmation. Please try again.",
-                        ephemeral=True,
-                    )
+                    await interaction.response.send_message(msg, ephemeral=True)
             except Exception:
                 logger.error("Failed to send error message to user")
 

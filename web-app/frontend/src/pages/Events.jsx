@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { getEventsWithAdmin, reorderEvents, updateEventMetadata, createEvent } from '@/api/events'
+import { getEventsWithAdmin, reorderEvents, updateEventMetadata, createEvent, setFeaturedEvent } from '@/api/events'
 import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -42,6 +42,7 @@ export default function Events() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState(null)
   const [createResult, setCreateResult] = useState(null)
+  const [featuredFolder, setFeaturedFolder] = useState(null)
   const [imageFiles, setImageFiles] = useState([])
 
   useEffect(() => {
@@ -55,6 +56,7 @@ export default function Events() {
       .then((data) => {
         setEvents(data.events || [])
         setIsAdmin(data.is_admin || false)
+        setFeaturedFolder(data.featured_event || null)
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
@@ -168,6 +170,20 @@ export default function Events() {
     }
   }, [createForm])
 
+  const handleSetFeatured = useCallback(async (folder) => {
+    try {
+      const result = await setFeaturedEvent(folder)
+      if (result.success) setFeaturedFolder(folder)
+    } catch { /* ignore */ }
+  }, [])
+
+  const handleClearFeatured = useCallback(async () => {
+    try {
+      const result = await setFeaturedEvent(null)
+      if (result.success) setFeaturedFolder(null)
+    } catch { /* ignore */ }
+  }, [])
+
   if (loading) return <Spinner className="py-20" />
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
 
@@ -241,7 +257,7 @@ export default function Events() {
 
       {/* Featured Latest Event */}
       {filtered.length > 0 && (() => {
-        const featured = filtered[0]
+        const featured = (featuredFolder && filtered.find((e) => e.folder === featuredFolder)) || filtered[0]
         const featuredImg = getAvatarImagePath(featured.winner_avatar, imageFiles)
         return (
           <Link
@@ -261,9 +277,20 @@ export default function Events() {
             <div className="relative p-5">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-primary uppercase tracking-wide">Latest Event</span>
-                {featured.event_date_display && (
-                  <span className="text-sm text-text-muted">{featured.event_date_display}</span>
-                )}
+                <span className="flex items-center gap-2">
+                  {isAdmin && featuredFolder && (
+                    <button
+                      onClick={(e) => { e.preventDefault(); handleClearFeatured() }}
+                      className="text-xs text-text-muted hover:text-accent-red transition-colors"
+                      title="Remove manual featured selection"
+                    >
+                      Unpin
+                    </button>
+                  )}
+                  {featured.event_date_display && (
+                    <span className="text-sm text-text-muted">{featured.event_date_display}</span>
+                  )}
+                </span>
               </div>
               <h2 className="text-xl font-display text-secondary mb-2">{featured.name || featured.folder}</h2>
               <div className="flex flex-wrap items-center gap-4 text-sm text-text-muted">
@@ -281,17 +308,22 @@ export default function Events() {
       })()}
 
       {/* Grid */}
-      {filtered.length <= 1 ? (
-        filtered.length === 0 && <p className="text-center text-text-muted py-8">No events match your filters.</p>
-      ) : (
+      {(() => {
+        const featured = (featuredFolder && filtered.find((e) => e.folder === featuredFolder)) || filtered[0]
+        const gridEvents = filtered.filter((e) => e.folder !== featured?.folder)
+        return gridEvents.length === 0 ? (
+          filtered.length === 0 && <p className="text-center text-text-muted py-8">No events match your filters.</p>
+        ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.slice(1).map((event, idx) => (
+          {gridEvents.map((event) => {
+            const eventsIdx = events.indexOf(event)
+            return (
               <div
                 key={event.folder}
                 draggable={canDrag}
-                onDragStart={() => handleDragStart(idx + 1)}
+                onDragStart={() => handleDragStart(eventsIdx)}
                 onDragOver={handleDragOver}
-                onDrop={() => handleDrop(idx + 1)}
+                onDrop={() => handleDrop(eventsIdx)}
                 className={canDrag ? 'cursor-grab active:cursor-grabbing' : ''}
               >
                 <div className="relative h-full">
@@ -339,24 +371,40 @@ export default function Events() {
                     )
                   })()}
                   {isAdmin && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setEditModal({ folder: event.folder, name: event.name || event.folder, rating: event.rating || 1, event_date: event.event_date || '' })
-                      }}
-                      className="absolute top-2 right-2 p-1.5 rounded bg-bg-raised/80 hover:bg-bg-raised text-text-muted hover:text-secondary transition-colors"
-                      title="Edit event"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                        <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
-                      </svg>
-                    </button>
+                    <div className="absolute top-2 right-2 flex gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleSetFeatured(event.folder)
+                        }}
+                        className="p-1.5 rounded bg-bg-raised/80 hover:bg-bg-raised text-text-muted hover:text-primary transition-colors"
+                        title="Set as featured event"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setEditModal({ folder: event.folder, name: event.name || event.folder, rating: event.rating || 1, event_date: event.event_date || '' })
+                        }}
+                        className="p-1.5 rounded bg-bg-raised/80 hover:bg-bg-raised text-text-muted hover:text-secondary transition-colors"
+                        title="Edit event"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                        </svg>
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
-          ))}
+            )
+          })}
         </div>
-      )}
+        )
+      })()}
 
       {/* Create Event Modal */}
       {createModal && (

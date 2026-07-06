@@ -208,6 +208,59 @@ class EventRepository:
 
         return {"success": True}
 
+    def _get_featured_file(self) -> Path:
+        """Get the path to the featured event JSON file."""
+        return self._events_dir / "_featured_event.json"
+
+    def get_featured_event(self) -> str | None:
+        """Get the manually-set featured event folder name, or None."""
+        featured_file = self._get_featured_file()
+        if not featured_file.exists():
+            return None
+        try:
+            with open(featured_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data.get("folder")
+        except Exception:
+            pass
+        return None
+
+    def set_featured_event(self, folder: str | None) -> dict:
+        """Set (or clear) the featured event.
+
+        Args:
+            folder: Event folder name to feature, or None to clear.
+
+        Returns:
+            dict with "success" bool and optional "error" string.
+        """
+        featured_file = self._get_featured_file()
+
+        if folder is None:
+            # Clear featured event
+            try:
+                if featured_file.exists():
+                    featured_file.unlink()
+            except Exception as e:
+                logger.error(f"Failed to clear featured event: {e}")
+                return {"success": False, "error": "Failed to clear featured event"}
+            return {"success": True}
+
+        # Validate the folder exists
+        event_path = self._validate_event_folder(folder)
+        if event_path is None or not event_path.exists():
+            return {"success": False, "error": "Event not found"}
+
+        try:
+            with open(featured_file, "w", encoding="utf-8") as f:
+                json.dump({"folder": folder}, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Failed to save featured event: {e}")
+            return {"success": False, "error": "Failed to save featured event"}
+
+        return {"success": True}
+
     def _get_order_file(self) -> Path:
         """Get the path to the event order JSON file."""
         return self._events_dir / "_event_order.json"
@@ -520,9 +573,9 @@ class EventRepository:
 
         return all_decks if all_decks else None
 
-    def get_event_element_stats(self, event_folder: str) -> dict | None:
-        """Compute element presence and dominant element distribution from event deck data."""
-        decks = self._load_all_decks(event_folder)
+    @staticmethod
+    def _compute_element_stats(decks: list[dict]) -> dict | None:
+        """Compute element presence and dominant element distribution from a list of decks."""
         if not decks:
             return None
 
@@ -576,6 +629,76 @@ class EventRepository:
             "dominant_element": dominant_element,
         }
 
+    def get_event_element_stats(self, event_folder: str) -> dict | None:
+        """Compute element presence and dominant element distribution from event deck data."""
+        decks = self._load_all_decks(event_folder)
+        return self._compute_element_stats(decks)
+
+    def get_event_element_stats_by_group(self, event_folder: str) -> dict | None:
+        """Compute element stats separately for top8 and all-participant decks.
+
+        Returns dict with 'top8' and 'all' keys (each an element stats dict or None),
+        or None if the event has no data.
+        """
+        files = self._find_json_files(event_folder)
+        if files is None:
+            return None
+
+        top8_decks = []
+        all_decks = []
+
+        if files["top8"] and files["top8"].exists():
+            try:
+                with open(files["top8"], "r", encoding="utf-8") as f:
+                    top8_decks = json.load(f)[:8]
+            except Exception:
+                pass
+
+        if files["full"] and files["full"].exists():
+            try:
+                with open(files["full"], "r", encoding="utf-8") as f:
+                    all_decks = json.load(f)
+            except Exception:
+                pass
+
+        top8_stats = self._compute_element_stats(top8_decks) if top8_decks else None
+        all_stats = self._compute_element_stats(all_decks) if all_decks else None
+
+        if not top8_stats and not all_stats:
+            return None
+
+        return {"top8": top8_stats, "all": all_stats}
+
+    @staticmethod
+    def _read_card_csv(csv_path) -> list[dict]:
+        """Read a card stats CSV and return list of card data dicts."""
+        card_data = []
+        if not csv_path:
+            return card_data
+        try:
+            with open(csv_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    count = int(row.get("Count", 0))
+                    if count > 0:
+                        card_data.append(
+                            {
+                                "name": row.get("Name", "Unknown"),
+                                "type": row.get("Type", "Unknown"),
+                                "element": row.get("Element", "Unknown"),
+                                "count": count,
+                                "rarity": row.get("Rarity", "Unknown"),
+                                "avg_played": row.get("Average_Played", "0"),
+                                "deck_percent": row.get(
+                                    "Percent_of_Decks_with_at_least_one_copy", "0"
+                                ),
+                            }
+                        )
+            card_data.sort(key=lambda x: x["count"], reverse=True)
+        except Exception:
+            pass
+        return card_data
+
     def get_event_stats(self, event_folder: str) -> dict:
         """Get statistics data for a specific event."""
         event_path = self._validate_event_folder(event_folder)
@@ -586,17 +709,18 @@ class EventRepository:
         csv_files = list(event_path.glob("*.csv"))
         elements_csv = None
         cards_csv = None
+        top8_cards_csv = None
 
         for csv_file in csv_files:
-            if "element" in csv_file.name.lower():
+            name_lower = csv_file.name.lower()
+            if "element" in name_lower:
                 elements_csv = csv_file
-            elif not any(
-                x in csv_file.name.lower() for x in ["element", "top8", "top 8"]
-            ):
+            elif "top8" in name_lower or "top 8" in name_lower:
+                top8_cards_csv = csv_file
+            else:
                 cards_csv = csv_file
 
         element_data = []
-        card_data = []
 
         if elements_csv:
             try:
@@ -614,33 +738,13 @@ class EventRepository:
             except Exception:
                 pass
 
-        if cards_csv:
-            try:
-                with open(cards_csv, "r", encoding="utf-8") as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        count = int(row.get("Count", 0))
-                        if count > 0:
-                            card_data.append(
-                                {
-                                    "name": row.get("Name", "Unknown"),
-                                    "type": row.get("Type", "Unknown"),
-                                    "element": row.get("Element", "Unknown"),
-                                    "count": count,
-                                    "rarity": row.get("Rarity", "Unknown"),
-                                    "avg_played": row.get("Average_Played", "0"),
-                                    "deck_percent": row.get(
-                                        "Percent_of_Decks_with_at_least_one_copy", "0"
-                                    ),
-                                }
-                            )
-                card_data.sort(key=lambda x: x["count"], reverse=True)
-            except Exception:
-                pass
+        card_data = self._read_card_csv(cards_csv)
+        top8_card_data = self._read_card_csv(top8_cards_csv)
 
         return {
             "element_data": element_data,
             "card_data": card_data,
+            "top8_card_data": top8_card_data,
         }
 
     def create_event(self, folder_name: str, top8_decks: list[dict], bulk_decks: list[dict] | None = None) -> dict:

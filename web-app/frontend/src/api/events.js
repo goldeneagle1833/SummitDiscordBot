@@ -12,3 +12,4 @@ export const updateEventDecks = (folder, { table, mode, urls }) =>
   post(`/api/events/${folder}/decks`, { table, mode, urls })
 export const refreshEvent = (folder) => post(`/api/events/${folder}/refresh`)
 export const deleteEvent = (folder) => del(`/api/events/${folder}`)
+export const setFeaturedEvent = (folder) => put('/api/events/featured', { folder })

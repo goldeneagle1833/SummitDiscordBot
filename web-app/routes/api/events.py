@@ -19,7 +19,8 @@ def list_top8_events():
     try:
         repo = EventRepository()
         events = repo.get_all_events()
-        return jsonify({"events": events, "is_admin": is_admin()})
+        featured = repo.get_featured_event()
+        return jsonify({"events": events, "is_admin": is_admin(), "featured_event": featured})
     except Exception as e:
         logger.exception("Error listing events: %s", e)
         return jsonify({"error": "Failed to load events"}), 500
@@ -36,6 +37,7 @@ def get_event_detail(event_folder: str):
 
         stats = repo.get_event_stats(event_folder)
         element_stats = repo.get_event_element_stats(event_folder)
+        element_stats_by_group = repo.get_event_element_stats_by_group(event_folder)
         description = repo.get_event_description(event_folder)
 
         return jsonify({
@@ -45,7 +47,9 @@ def get_event_detail(event_folder: str):
             "top8_decks": decks["top8_decks"],
             "all_decks": decks["all_decks"],
             "card_data": stats["card_data"] if stats else [],
+            "top8_card_data": stats["top8_card_data"] if stats else [],
             "element_stats": element_stats,
+            "element_stats_by_group": element_stats_by_group,
             "is_admin": is_admin(),
         })
     except Exception as e:
@@ -241,6 +245,25 @@ def refresh_event(event_folder):
 
     repo = EventRepository()
     result = repo.refresh_event_decks(event_folder, curiosa)
+
+    status = 200 if result.get("success") else 400
+    return jsonify(result), status
+
+
+@events_bp.route("/events/featured", methods=["PUT"])
+@require_admin
+def set_featured_event():
+    """Set or clear the featured (latest) event on the top 8 page (admin only)."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "Request body required"}), 400
+
+    folder = data.get("folder")  # None to clear
+    if folder is not None and (not isinstance(folder, str) or not folder.strip()):
+        return jsonify({"success": False, "error": "folder must be a non-empty string or null"}), 400
+
+    repo = EventRepository()
+    result = repo.set_featured_event(folder.strip() if folder else None)
 
     status = 200 if result.get("success") else 400
     return jsonify(result), status

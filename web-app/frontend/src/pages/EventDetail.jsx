@@ -55,6 +55,60 @@ function ElementChart({ title, subtitle, data, totalDecks }) {
   )
 }
 
+/* ---- Comparison Bar Chart (Top 8 vs All Participants) ---- */
+function ComparisonChart({ title, subtitle, top8Data, allData, top8Total, allTotal }) {
+  if (!top8Data?.length || !allData?.length) return null
+  const elements = ["Fire", "Water", "Earth", "Air"]
+  const top8Map = Object.fromEntries(top8Data.map((d) => [d.name, d]))
+  const allMap = Object.fromEntries(allData.map((d) => [d.name, d]))
+
+  // Sort by top8 percent descending
+  const sorted = [...elements].sort((a, b) => (top8Map[b]?.percent || 0) - (top8Map[a]?.percent || 0))
+
+  return (
+    <div className="bg-bg-surface border border-border rounded-lg p-4 flex-1">
+      <h3 className="text-center font-semibold text-text-primary mb-0.5">{title}</h3>
+      <p className="text-center text-xs text-text-muted mb-4">{subtitle}</p>
+      <div className="space-y-4">
+        {sorted.map((el) => {
+          const colors = ELEMENT_COLORS[el] || {}
+          const t8 = top8Map[el] || { percent: 0, count: 0 }
+          const all = allMap[el] || { percent: 0, count: 0 }
+          return (
+            <div key={el} className="space-y-1">
+              <span className={`font-bold text-sm ${colors.label || ''}`}>{el}</span>
+              <div className="flex items-center gap-2">
+                <span className="w-20 text-xs text-yellow-400 font-semibold">Top 8</span>
+                <div className="flex-1 h-5 bg-white/10 rounded overflow-hidden">
+                  <div
+                    className={`h-full rounded bg-gradient-to-r ${colors.bar || 'from-gray-500 to-gray-600'} flex items-center justify-end pr-2 transition-all duration-700`}
+                    style={{ width: `${Math.max(t8.percent, 3)}%` }}
+                  >
+                    <span className="text-[10px] font-bold text-white drop-shadow">{t8.percent}%</span>
+                  </div>
+                </div>
+                <span className="w-20 text-right text-[10px] text-text-muted">{t8.count}/{top8Total}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-20 text-xs text-text-muted">All</span>
+                <div className="flex-1 h-5 bg-white/10 rounded overflow-hidden">
+                  <div
+                    className={`h-full rounded bg-gradient-to-r ${colors.bar || 'from-gray-500 to-gray-600'} opacity-50 flex items-center justify-end pr-2 transition-all duration-700`}
+                    style={{ width: `${Math.max(all.percent, 3)}%` }}
+                  >
+                    <span className="text-[10px] font-bold text-white drop-shadow">{all.percent}%</span>
+                  </div>
+                </div>
+                <span className="w-20 text-right text-[10px] text-text-muted">{all.count}/{allTotal}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 /* ---- Deck Table ---- */
 function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder }) {
   const [dragIdx, setDragIdx] = useState(null)
@@ -122,18 +176,35 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder }) {
 }
 
 /* ---- Card Stats Table ---- */
-function CardStatsTable({ cardData }) {
+function CardStatsTable({ cardData, top8CardData }) {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [elementFilter, setElementFilter] = useState('')
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
 
-  const types = useMemo(() => [...new Set(cardData.map((c) => c.type))].sort(), [cardData])
-  const elements = useMemo(() => [...new Set(cardData.map((c) => c.element))].sort(), [cardData])
+  const hasComparison = top8CardData?.length > 0 && cardData?.length > 0
+
+  // Build lookup of top8 card stats by name
+  const top8Map = useMemo(() => {
+    if (!hasComparison) return {}
+    return Object.fromEntries(top8CardData.map((c) => [c.name, c]))
+  }, [top8CardData, hasComparison])
+
+  // Merge top8 data into card data for display
+  const mergedData = useMemo(() => {
+    if (!hasComparison) return cardData
+    return cardData.map((c) => ({
+      ...c,
+      top8_deck_percent: top8Map[c.name]?.deck_percent || '0',
+    }))
+  }, [cardData, top8Map, hasComparison])
+
+  const types = useMemo(() => [...new Set(mergedData.map((c) => c.type))].sort(), [mergedData])
+  const elements = useMemo(() => [...new Set(mergedData.map((c) => c.element))].sort(), [mergedData])
 
   const filtered = useMemo(() => {
-    let result = cardData
+    let result = mergedData
     if (search) {
       const q = search.toLowerCase()
       result = result.filter((c) => c.name.toLowerCase().includes(q))
@@ -155,7 +226,7 @@ function CardStatsTable({ cardData }) {
       })
     }
     return result
-  }, [cardData, search, typeFilter, elementFilter, sortCol, sortDir])
+  }, [mergedData, search, typeFilter, elementFilter, sortCol, sortDir])
 
   const handleSort = (col) => {
     if (sortCol === col) {
@@ -170,6 +241,8 @@ function CardStatsTable({ cardData }) {
     if (sortCol !== col) return <span className="text-text-muted/40 ml-1">⇅</span>
     return <span className="text-secondary ml-1">{sortDir === 'asc' ? '▲' : '▼'}</span>
   }
+
+  const colSpan = hasComparison ? 9 : 7
 
   return (
     <div>
@@ -223,13 +296,26 @@ function CardStatsTable({ cardData }) {
                 Avg{sortIcon('avg_played')}
               </th>
               <th className="py-3 px-3 text-left font-semibold cursor-pointer select-none w-24 hidden sm:table-cell" onClick={() => handleSort('deck_percent')}>
-                % Decks{sortIcon('deck_percent')}
+                {hasComparison ? 'All %' : '% Decks'}{sortIcon('deck_percent')}
               </th>
+              {hasComparison && (
+                <>
+                  <th className="py-3 px-3 text-left font-semibold cursor-pointer select-none w-28 hidden sm:table-cell" onClick={() => handleSort('top8_deck_percent')}>
+                    <span className="text-yellow-400">Top 8 %</span>{sortIcon('top8_deck_percent')}
+                  </th>
+                  <th className="py-3 px-3 text-left font-semibold w-16 hidden sm:table-cell">
+                    <span className="text-text-muted">Diff</span>
+                  </th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
             {filtered.map((card) => {
               const rarityClass = RARITY_CLASSES[card.rarity?.toLowerCase()] || 'bg-gray-500/20 text-gray-400'
+              const allPct = parseFloat(card.deck_percent) || 0
+              const top8Pct = parseFloat(card.top8_deck_percent) || 0
+              const diff = hasComparison ? top8Pct - allPct : 0
               return (
                 <tr key={card.name} className="border-t border-border/30 hover:bg-white/5">
                   <td className="py-2.5 px-3">{card.name}</td>
@@ -243,11 +329,23 @@ function CardStatsTable({ cardData }) {
                   </td>
                   <td className="py-2.5 px-3 font-semibold text-secondary hidden sm:table-cell">{card.avg_played}</td>
                   <td className="py-2.5 px-3 font-semibold text-secondary hidden sm:table-cell">{card.deck_percent}%</td>
+                  {hasComparison && (
+                    <>
+                      <td className="py-2.5 px-3 font-semibold text-yellow-400 hidden sm:table-cell">{top8Pct}%</td>
+                      <td className="py-2.5 px-3 font-semibold hidden sm:table-cell">
+                        {diff !== 0 && (
+                          <span className={diff > 0 ? 'text-green-400' : 'text-red-400'}>
+                            {diff > 0 ? '+' : ''}{diff}
+                          </span>
+                        )}
+                      </td>
+                    </>
+                  )}
                 </tr>
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="py-6 text-center text-text-muted">No cards match your filters.</td></tr>
+              <tr><td colSpan={colSpan} className="py-6 text-center text-text-muted">No cards match your filters.</td></tr>
             )}
           </tbody>
         </table>
@@ -395,7 +493,8 @@ export default function EventDetail() {
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
   if (!data) return null
 
-  const { event_name, top8_decks, all_decks, card_data, element_stats, is_admin, description } = data
+  const { event_name, top8_decks, all_decks, card_data, top8_card_data, element_stats, element_stats_by_group, is_admin, description } = data
+  const hasComparison = element_stats_by_group?.top8 && element_stats_by_group?.all
 
   const saveDescription = async () => {
     setSavingDesc(true)
@@ -524,6 +623,31 @@ export default function EventDetail() {
         </div>
       )}
 
+      {/* Top 8 vs All Participants Comparison Charts */}
+      {hasComparison && (
+        <section>
+          <h2 className="text-lg font-semibold text-text-primary border-b-2 border-border pb-1 mb-3">Top 8 vs All Participants</h2>
+          <div className="flex flex-col md:flex-row gap-4">
+            <ComparisonChart
+              title="Dominant Element Comparison"
+              subtitle="Top 8 vs All Participants — element with most cards per deck"
+              top8Data={element_stats_by_group.top8.dominant_element}
+              allData={element_stats_by_group.all.dominant_element}
+              top8Total={element_stats_by_group.top8.total_decks}
+              allTotal={element_stats_by_group.all.total_decks}
+            />
+            <ComparisonChart
+              title="Element Presence Comparison"
+              subtitle="Top 8 vs All Participants — % of decks with at least one card"
+              top8Data={element_stats_by_group.top8.element_presence}
+              allData={element_stats_by_group.all.element_presence}
+              top8Total={element_stats_by_group.top8.total_decks}
+              allTotal={element_stats_by_group.all.total_decks}
+            />
+          </div>
+        </section>
+      )}
+
       {/* Top 8 */}
       {(top8_decks?.length > 0 || is_admin) && (
         <section>
@@ -627,7 +751,7 @@ export default function EventDetail() {
         <section>
           <h2 className="text-lg font-semibold text-text-primary border-b-2 border-border pb-1 mb-3">Card Usage Statistics</h2>
           <div className="bg-bg-surface border border-border rounded-lg p-4">
-            <CardStatsTable cardData={card_data} />
+            <CardStatsTable cardData={card_data} top8CardData={top8_card_data} />
           </div>
         </section>
       )}

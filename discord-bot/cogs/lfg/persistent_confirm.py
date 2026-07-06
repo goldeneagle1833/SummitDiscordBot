@@ -491,9 +491,16 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 )
                 announcement = announcement.replace("WINNER", f"<@{data['winner_id']}>")
                 announcement = announcement.replace("LOSER", f"<@{data['loser_id']}>")
-                await lfg_channel.send(
-                    announcement + " Top 16: use `!issue_challenge` for special stakes!"
+                embed = discord.Embed(
+                    title="Ladder Challenge Result",
+                    description=announcement,
+                    color=discord.Color.orange(),
                 )
+                embed.add_field(
+                    name="ELO Stakes", value=stakes_text, inline=True,
+                )
+                embed.set_footer(text="Top 16: use !issue_challenge for special stakes!")
+                await lfg_channel.send(embed=embed)
         except Exception as e:
             logger.error(f"Failed to send ladder challenge announcement: {e}", exc_info=True)
 
@@ -532,20 +539,25 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
             # Announce in LFG channel
             lfg_channel = bot.get_channel(config.LFG_CHANNEL_ID)
             if lfg_channel:
+                embed = discord.Embed(
+                    title="Dust Code Drop!",
+                    color=discord.Color.green(),
+                )
                 if dm_sent:
-                    announcement = (
-                        f"<@{winner_id}> just won a Dust Code! "
+                    embed.description = (
+                        f"<@{winner_id}> just won a **Dust Code**!\n\n"
                         f"DM the bot with `!donatedust 11111 22222 33333 44444` "
                         f"if you'd like to donate a code."
                     )
                 else:
-                    announcement = (
-                        f"<@{winner_id}> just won a Dust Code! "
-                        f"Please contact an admin to receive your code. "
+                    embed.description = (
+                        f"<@{winner_id}> just won a **Dust Code**!\n"
+                        f"Please contact an admin to receive your code.\n\n"
                         f"DM the bot with `!donatedust 11111 22222 33333 44444` "
                         f"if you'd like to donate a code."
                     )
-                await lfg_channel.send(announcement)
+                embed.set_footer(text="Sorcery: Contested Realm")
+                await lfg_channel.send(embed=embed)
 
             # Check if codes ran out
             if get_available_code_count() == 0:
@@ -583,10 +595,16 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
             # Announce in LFG channel
             lfg_channel = bot.get_channel(config.LFG_CHANNEL_ID)
             if lfg_channel:
-                await lfg_channel.send(
-                    f"<@{alter_winner_id}> just won an **Alter Card**! "
-                    f"Congratulations! Contact an admin to claim your prize."
+                embed = discord.Embed(
+                    title="Alter Card Won!",
+                    description=(
+                        f"<@{alter_winner_id}> just won an **Alter Card**!\n\n"
+                        f"Congratulations! Contact an admin to claim your prize."
+                    ),
+                    color=discord.Color.purple(),
                 )
+                embed.set_footer(text="Sorcery: Contested Realm")
+                await lfg_channel.send(embed=embed)
     except Exception as e:
         logger.error(f"Error in alter card drop: {e}", exc_info=True)
 

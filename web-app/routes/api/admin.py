@@ -1009,6 +1009,119 @@ def delete_avatar_image_settings(avatar_name):
     return jsonify({"success": True}), 200
 
 
+@admin_bp.route("/admin/matches-with-notes", methods=["GET"])
+@require_admin
+def matches_with_notes():
+    """Get all matches that have a user-provided match comment (admin only)."""
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+    page = max(1, page)
+    per_page = min(max(1, per_page), 100)
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        # Detect available tables
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        existing_tables = {row[0] for row in cur.fetchall()}
+        has_web = "match_reports_web" in existing_tables
+        has_archive = "match_records_archive" in existing_tables
+
+        def _clean_comment(comment):
+            """Strip internal deck URL metadata from comment."""
+            if not comment:
+                return None
+            if comment in ("Web-confirmed match", ""):
+                return None
+            parts = comment.split(" | Winner deck:")
+            user_comment = parts[0].strip() if len(parts) > 1 else None
+            if user_comment and user_comment != comment:
+                return user_comment if user_comment else None
+            if comment.startswith("Winner deck:"):
+                return None
+            return comment
+
+        # Build UNION query across all match tables
+        queries = []
+        queries.append("""
+            SELECT
+                match_id, winner_display_name, losser_display_name,
+                winner_id, losser_id, winner_elo_change, loser_elo_change,
+                timestamp, match_time, match_comment, 'online' as source
+            FROM match_records
+            WHERE match_comment IS NOT NULL AND match_comment != ''
+        """)
+        if has_archive:
+            queries.append("""
+                SELECT
+                    match_id, winner_display_name, losser_display_name,
+                    winner_id, losser_id, winner_elo_change, loser_elo_change,
+                    timestamp, match_time, match_comment, 'archive' as source
+                FROM match_records_archive
+                WHERE match_comment IS NOT NULL AND match_comment != ''
+            """)
+        if has_web:
+            queries.append("""
+                SELECT
+                    match_id, winner_display_name, losser_display_name,
+                    winner_id, losser_id, winner_elo_change, loser_elo_change,
+                    timestamp, match_time, match_comment, 'paper' as source
+                FROM match_reports_web
+                WHERE match_comment IS NOT NULL AND match_comment != ''
+            """)
+
+        union_query = " UNION ALL ".join(queries)
+        full_query = f"""
+            SELECT * FROM ({union_query})
+            ORDER BY timestamp DESC
+        """
+        cur.execute(full_query)
+        all_rows = cur.fetchall()
+        conn.close()
+
+        # Filter rows that have a real user comment after cleaning
+        matches = []
+        for row in all_rows:
+            cleaned = _clean_comment(row[9])
+            if cleaned:
+                matches.append({
+                    "match_id": row[0],
+                    "winner_name": row[1],
+                    "loser_name": row[2],
+                    "winner_id": str(row[3]),
+                    "loser_id": str(row[4]),
+                    "winner_elo_change": row[5] or 0,
+                    "loser_elo_change": row[6] or 0,
+                    "date": row[7],
+                    "match_time": row[8],
+                    "match_comment": cleaned,
+                    "source": row[10],
+                })
+
+        total = len(matches)
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 1
+        start_idx = (page - 1) * per_page
+        paginated = matches[start_idx:start_idx + per_page]
+
+        return jsonify({
+            "success": True,
+            "matches": paginated,
+            "pagination": {
+                "current_page": page,
+                "per_page": per_page,
+                "total_matches": total,
+                "total_pages": total_pages,
+                "has_previous": page > 1,
+                "has_next": page < total_pages,
+            },
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get matches with notes: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @admin_bp.route("/admin/external-matches", methods=["GET"])
 @require_admin
 def list_external_matches():

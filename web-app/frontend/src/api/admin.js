@@ -32,3 +32,6 @@ export const resetAvatarImageSettings = (avatarName) =>
   del(`/api/admin/avatar-image-settings/${encodeURIComponent(avatarName)}`)
 
 export const deleteAccount = (userId) => del(`/api/admin/delete-account/${userId}`)
+
+export const getMatchesWithNotes = (page = 1, perPage = 50) =>
+  get(`/api/admin/matches-with-notes?page=${page}&per_page=${perPage}`)

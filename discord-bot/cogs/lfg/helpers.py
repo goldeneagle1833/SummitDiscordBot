@@ -3,6 +3,7 @@
 import re
 import logging
 
+import discord
 from openai import OpenAI
 
 import config
@@ -117,7 +118,13 @@ async def send_milestone_announcement(
                 message = generate_milestone_message(milestone)
                 message = message.replace("PLAYER1", f"<@{winner_id}>")
                 message = message.replace("PLAYER2", f"<@{loser_id}>")
-                await channel.send(message)
+                embed = discord.Embed(
+                    title=f"Match Milestone: {milestone} Games!",
+                    description=message,
+                    color=discord.Color.gold(),
+                )
+                embed.set_footer(text="Sorcery: Contested Realm")
+                await channel.send(embed=embed)
                 logger.info(f"Sent milestone announcement for {milestone} matches!")
             else:
                 logger.warning(

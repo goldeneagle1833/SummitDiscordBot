@@ -1043,10 +1043,11 @@ def matches_with_notes():
             return comment
 
         # Build UNION query across all match tables
+        # match_records/archive use rowid for IDs; match_reports_web has match_id column
         queries = []
         queries.append("""
             SELECT
-                match_id, winner_display_name, losser_display_name,
+                rowid as match_id, winner_display_name, losser_display_name,
                 winner_id, losser_id, winner_elo_change, loser_elo_change,
                 timestamp, match_time, match_comment, 'online' as source
             FROM match_records
@@ -1055,7 +1056,7 @@ def matches_with_notes():
         if has_archive:
             queries.append("""
                 SELECT
-                    match_id, winner_display_name, losser_display_name,
+                    rowid as match_id, winner_display_name, losser_display_name,
                     winner_id, losser_id, winner_elo_change, loser_elo_change,
                     timestamp, match_time, match_comment, 'archive' as source
                 FROM match_records_archive

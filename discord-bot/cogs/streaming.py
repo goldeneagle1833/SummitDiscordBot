@@ -91,7 +91,12 @@ class StreamingCog(commands.Cog):
                 return channel_id
         return None
 
-    async def _notify_avatar_channel(self, member: discord.Member, activity: discord.Streaming):
+    async def _notify_avatar_channel(
+        self,
+        member: discord.Member,
+        stream_title: str | None = None,
+        stream_url: str | None = None,
+    ):
         """Send a notification to the avatar's private channel when a member starts streaming."""
         deck_url = get_user_latest_deck_url(member.id)
         if not deck_url:
@@ -121,7 +126,6 @@ class StreamingCog(commands.Cog):
                 logger.error(f"Could not fetch avatar channel {channel_id} for '{avatar_name}'")
                 return
 
-        stream_url = activity.url or ""
         stream_link = f"\n[Watch Stream]({stream_url})" if stream_url else ""
 
         embed = discord.Embed(
@@ -133,8 +137,8 @@ class StreamingCog(commands.Cog):
         )
         if member.display_avatar:
             embed.set_thumbnail(url=member.display_avatar.url)
-        if activity.name:
-            embed.add_field(name="Stream Title", value=activity.name, inline=False)
+        if stream_title:
+            embed.add_field(name="Stream Title", value=stream_title, inline=False)
 
         try:
             await channel.send(embed=embed)
@@ -267,7 +271,6 @@ class StreamingCog(commands.Cog):
                 f"{after.display_name} started streaming: {after_streaming.url}"
             )
             self._add_streamer(after, after_streaming)
-            await self._notify_avatar_channel(after, after_streaming)
 
         # Stopped streaming
         elif before_streaming and not after_streaming:
@@ -298,6 +301,10 @@ class StreamingCog(commands.Cog):
                     f"{member.display_name} started Go Live in #{after.channel.name}"
                 )
                 self._add_voice_streamer(member, after.channel)
+                await self._notify_avatar_channel(
+                    member,
+                    stream_title=f"Live in #{after.channel.name}",
+                )
 
         # Stopped streaming (turned off Go Live or left channel)
         elif before.self_stream and not after.self_stream:

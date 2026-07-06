@@ -262,6 +262,13 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         required=True,
     )
 
+    match_comment = discord.ui.TextInput(
+        label="Match Comments",
+        placeholder="Any notes about the match? (optional)",
+        style=discord.TextStyle.paragraph,
+        required=False,
+    )
+
     def __init__(
         self, view: "LFGReportButtons", interaction: discord.Interaction, is_win: bool
     ):
@@ -274,6 +281,10 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         # Update the reporter's deck URL
         self.view.reporter_deck_url = (
             self.deck_url.value.strip() if self.deck_url.value else None
+        )
+        # Store the match comment on the view
+        self.view.match_comment = (
+            self.match_comment.value.strip() if self.match_comment.value else ""
         )
 
         # Continue with the original flow
@@ -376,6 +387,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 "guild_id": view.guild_id,
                 "ladder_info": view.ladder_info,
                 "match_type": view.match_type,
+                "match_comment": view.match_comment,
             }
             logger.info(f"Stored pending report for match between {original_interaction.user.id} and {opponent_id}")
 
@@ -396,6 +408,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                     is_winner=False,
                     match_start_time=view.match_start_time,
                     first_player=view.first_player,
+                    match_comment=view.match_comment,
                     winner_deck_url=view.reporter_deck_url,
                     loser_deck_url=view.opponent_deck_url,
                     ladder_info=view.ladder_info,
@@ -536,6 +549,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 "guild_id": view.guild_id,
                 "ladder_info": view.ladder_info,
                 "match_type": view.match_type,
+                "match_comment": view.match_comment,
             }
             logger.info(f"Stored pending report for match between {original_interaction.user.id} and {opponent_id}")
 
@@ -556,6 +570,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                     is_winner=True,
                     match_start_time=view.match_start_time,
                     first_player=view.first_player,
+                    match_comment=view.match_comment,
                     winner_deck_url=view.opponent_deck_url,
                     loser_deck_url=view.reporter_deck_url,
                     ladder_info=view.ladder_info,
@@ -918,6 +933,7 @@ class LFGReportButtons(discord.ui.View):
         self.opponent_run_id = opponent_run_id
         # Track when the match started for automatic match time calculation
         self.match_start_time = match_start_time or datetime.datetime.now()
+        self.match_comment = ""
 
     @discord.ui.button(
         label="I Won!", style=discord.ButtonStyle.success, custom_id="win_button"
@@ -1021,6 +1037,7 @@ class LFGReportButtons(discord.ui.View):
                 "guild_id": self.guild_id,
                 "ladder_info": self.ladder_info,
                 "match_type": self.match_type,
+                "match_comment": self.match_comment,
             }
             logger.info(f"Stored pending report for match between {interaction.user.id} and {opponent_id}")
 
@@ -1042,6 +1059,7 @@ class LFGReportButtons(discord.ui.View):
                     is_winner=False,  # For opponent, they lost
                     match_start_time=self.match_start_time,
                     first_player=self.first_player,
+                    match_comment=self.match_comment,
                     winner_deck_url=self.reporter_deck_url,  # Reporter won, so their deck is winner's
                     loser_deck_url=self.opponent_deck_url,  # Opponent lost, so their deck is loser's
                     ladder_info=self.ladder_info,
@@ -1190,6 +1208,7 @@ class LFGReportButtons(discord.ui.View):
                 "guild_id": self.guild_id,
                 "ladder_info": self.ladder_info,
                 "match_type": self.match_type,
+                "match_comment": self.match_comment,
             }
             logger.info(f"Stored pending report for match between {interaction.user.id} and {opponent_id}")
 
@@ -1211,6 +1230,7 @@ class LFGReportButtons(discord.ui.View):
                     is_winner=True,  # For opponent, they won
                     match_start_time=self.match_start_time,
                     first_player=self.first_player,
+                    match_comment=self.match_comment,
                     winner_deck_url=self.opponent_deck_url,  # Opponent won, so their deck is winner's
                     loser_deck_url=self.reporter_deck_url,  # Reporter lost, so their deck is loser's
                     ladder_info=self.ladder_info,
@@ -1512,6 +1532,7 @@ class ReportResultSelectView(discord.ui.View):
         self.selected_winner_id = None
         self.selected_first_id = None
         self._submit_interaction = None
+        self.match_comment = ""
 
         self.first_select = discord.ui.Select(
             placeholder="Who went first?",
@@ -1588,9 +1609,11 @@ class ReportResultSelectView(discord.ui.View):
             await interaction.response.defer()
             await self._submit(interaction)
 
-    async def _submit(self, interaction: discord.Interaction, deck_url: str = None):
+    async def _submit(self, interaction: discord.Interaction, deck_url: str = None, match_comment: str = ""):
         if deck_url:
             self.reporter_deck_url = deck_url
+        if match_comment:
+            self.match_comment = match_comment
 
         winner_id = self.selected_winner_id
         loser_id = self.player2_id if winner_id == self.player1_id else self.player1_id
@@ -1636,6 +1659,7 @@ class ReportResultSelectView(discord.ui.View):
             "guild_id": self.guild_id,
             "ladder_info": self.ladder_info,
             "match_type": self.match_type,
+            "match_comment": self.match_comment,
         }
 
         winner_run_id = self.reporter_run_id if is_reporter_winner else self.opponent_run_id
@@ -1661,6 +1685,7 @@ class ReportResultSelectView(discord.ui.View):
             is_winner=(winner_id == self.opponent_id),
             match_start_time=self.match_start_time,
             first_player=first_player,
+            match_comment=self.match_comment,
             winner_deck_url=winner_deck_url,
             loser_deck_url=loser_deck_url,
             ladder_info=self.ladder_info,
@@ -1704,6 +1729,13 @@ class MatchReportDeckModal(discord.ui.Modal, title="Enter Your Deck"):
         required=True,
     )
 
+    match_comment = discord.ui.TextInput(
+        label="Match Comments",
+        placeholder="Any notes about the match? (optional)",
+        style=discord.TextStyle.paragraph,
+        required=False,
+    )
+
     def __init__(self, report_view: "ReportResultSelectView"):
         super().__init__()
         self.report_view = report_view
@@ -1711,7 +1743,8 @@ class MatchReportDeckModal(discord.ui.Modal, title="Enter Your Deck"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
         url = self.deck_url.value.strip() if self.deck_url.value else None
-        await self.report_view._submit(interaction, deck_url=url or None)
+        comment = self.match_comment.value.strip() if self.match_comment.value else ""
+        await self.report_view._submit(interaction, deck_url=url or None, match_comment=comment)
 
 
 # ──────────────────────────────────────────────

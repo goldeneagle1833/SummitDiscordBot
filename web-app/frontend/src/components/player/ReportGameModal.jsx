@@ -102,6 +102,7 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
           final_life_opponent: lifeOpponent ? parseInt(lifeOpponent) : 0,
           match_type: mode,
           season_id: selectedSeason?.season_id || undefined,
+          match_comment: matchComment.trim() || undefined,
         })
         setSuccess('Match report submitted! Awaiting opponent confirmation.')
         onReported?.()
@@ -211,6 +212,18 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
                   <input type="number" value={lifeOpponent} onChange={(e) => setLifeOpponent(e.target.value)}
                     className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm" />
                 </div>
+              </div>
+
+              {/* Match Comments */}
+              <div className="mb-4">
+                <label className="text-xs text-text-muted block mb-1">Match Comments (optional)</label>
+                <textarea
+                  value={matchComment}
+                  onChange={(e) => setMatchComment(e.target.value)}
+                  placeholder="Any notes about the match?"
+                  rows={2}
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm resize-none"
+                />
               </div>
 
               {/* Season */}

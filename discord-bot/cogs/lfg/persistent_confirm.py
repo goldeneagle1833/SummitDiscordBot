@@ -377,10 +377,14 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
         logger.info(f"Interaction expired for confirmation {confirmation_id} — match #{match_id} saved successfully, skipping UI updates")
 
     # ── notify reporter ──
+    correct_match_tip = (
+        "\n\n**Tip:** If the result was reported incorrectly, use `!correct_match` "
+        "in <#1456299008023728302> on the Summit server to request a correction."
+    )
     try:
         reporter = await bot.fetch_user(data["reporter_id"])
         await reporter.send(
-            f"{data['opponent_global']} has confirmed your match report! Match has been recorded.{stakes_msg}"
+            f"{data['opponent_global']} has confirmed your match report! Match has been recorded.{stakes_msg}{correct_match_tip}"
         )
     except discord.Forbidden:
         match_report_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
@@ -388,7 +392,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
             await match_report_channel.send(
                 scrub_urls(
                     f"<@{data['reporter_id']}> {data['opponent_global']} has confirmed your match report! "
-                    f"Match has been recorded.{stakes_msg}"
+                    f"Match has been recorded.{stakes_msg}{correct_match_tip}"
                 )
             )
     except Exception:

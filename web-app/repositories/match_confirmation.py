@@ -111,6 +111,21 @@ class MatchConfirmationRepository:
         cursor.execute("PRAGMA table_info(match_confirmations)")
         columns = [row[1] for row in cursor.fetchall()]
 
+        if "match_comment" not in columns:
+            cursor.execute("""
+                ALTER TABLE match_confirmations
+                ADD COLUMN match_comment TEXT DEFAULT ''
+            """)
+            conn.commit()
+
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("Added match_comment column to match_confirmations table")
+
+        # Re-fetch columns
+        cursor.execute("PRAGMA table_info(match_confirmations)")
+        columns = [row[1] for row in cursor.fetchall()]
+
         if "season_id" not in columns:
             cursor.execute("""
                 ALTER TABLE match_confirmations
@@ -137,6 +152,7 @@ class MatchConfirmationRepository:
         loser_deck_url: Optional[str] = None,
         match_type: str = "ranked",
         season_id: Optional[int] = None,
+        match_comment: str = "",
     ) -> int:
         """
         Create a new match confirmation request.
@@ -172,8 +188,8 @@ class MatchConfirmationRepository:
                 winner_discord_id, loser_discord_id,
                 winner_deck_url, loser_deck_url,
                 final_life_winner, final_life_loser,
-                went_first, match_type, season_id, status, created_at, expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                went_first, match_type, season_id, match_comment, status, created_at, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
             """,
             (
                 str(submitter_id),
@@ -187,6 +203,7 @@ class MatchConfirmationRepository:
                 went_first,
                 match_type,
                 season_id,
+                match_comment,
                 created_at,
                 expires_at,
             ),

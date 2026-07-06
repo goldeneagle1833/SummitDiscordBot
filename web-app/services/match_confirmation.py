@@ -419,7 +419,8 @@ class MatchConfirmationService:
         final_life_submitter: int = 0,
         final_life_opponent: int = 0,
         match_type: str = "ranked",
-        season_id: Optional[int] = None
+        season_id: Optional[int] = None,
+        match_comment: str = "",
     ) -> dict:
         """
         Create a new match report with validation and duplicate detection.
@@ -434,6 +435,7 @@ class MatchConfirmationService:
             final_life_submitter: Submitter's final life total
             final_life_opponent: Opponent's final life total
             match_type: Match type ('ranked' or 'casual'), defaults to 'ranked'
+            match_comment: Optional notes about the match
 
         Returns:
             dict: {
@@ -537,7 +539,8 @@ class MatchConfirmationService:
             winner_deck_url=winner_deck_url,
             loser_deck_url=loser_deck_url,
             match_type=match_type,
-            season_id=season_id
+            season_id=season_id,
+            match_comment=match_comment,
         )
 
         expires_at = int(time.time()) + (48 * 60 * 60)
@@ -834,7 +837,7 @@ class MatchConfirmationService:
                     winner_deck_url,  # curiosa_url (backward compatibility)
                     winner_deck_url,  # curiosa_url_winner
                     loser_deck_url,   # curiosa_url_loser
-                    "Web-confirmed match",  # match_comment
+                    confirmation.get("match_comment") or "Web-confirmed match",  # match_comment
                     json_deck_data_winner,  # json_deck_data (backward compatibility)
                     json_deck_data_winner,  # json_deck_data_winner
                     json_deck_data_loser,   # json_deck_data_loser

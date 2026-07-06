@@ -1123,7 +1123,8 @@ def player_api(player_id):
                     loser_went_first,
                     match_type,
                     winner_lifetime_elo_after,
-                    loser_lifetime_elo_after
+                    loser_lifetime_elo_after,
+                    match_comment
                 FROM match_reports_web
                 WHERE (winner_id = ? OR losser_id = ?){date_filter}
                 ORDER BY timestamp DESC
@@ -1168,7 +1169,8 @@ def player_api(player_id):
                     loser_went_first,
                     match_type,
                     winner_lifetime_elo_after,
-                    loser_lifetime_elo_after
+                    loser_lifetime_elo_after,
+                    match_comment
                 FROM match_records
                 WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                 ORDER BY timestamp DESC
@@ -1203,7 +1205,8 @@ def player_api(player_id):
                         NULL as loser_went_first,
                         NULL as match_type,
                         NULL as winner_lifetime_elo_after,
-                        NULL as loser_lifetime_elo_after
+                        NULL as loser_lifetime_elo_after,
+                        NULL as match_comment
                     FROM match_records
                     WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                     ORDER BY timestamp DESC
@@ -1290,7 +1293,8 @@ def player_api(player_id):
                     loser_went_first,
                     NULL as match_type,
                     winner_lifetime_elo_after,
-                    loser_lifetime_elo_after
+                    loser_lifetime_elo_after,
+                    match_comment
                 FROM match_records_archive
                 WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
                 ORDER BY timestamp DESC
@@ -1325,7 +1329,8 @@ def player_api(player_id):
                         NULL as loser_went_first,
                         NULL as match_type,
                         NULL as winner_lifetime_elo_after,
-                        NULL as loser_lifetime_elo_after
+                        NULL as loser_lifetime_elo_after,
+                        NULL as match_comment
                     FROM match_records_archive
                     WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
                     ORDER BY timestamp DESC
@@ -2050,6 +2055,24 @@ def player_api(player_id):
     casual_end_idx = casual_start_idx + per_page
     paginated_casual_rows = casual_rows[casual_start_idx:casual_end_idx]
 
+    def _clean_match_comment(comment):
+        """Extract user-provided comment, stripping internal deck URL metadata."""
+        if not comment:
+            return None
+        # Bot stores comments like "User comment | Winner deck: ... | Loser deck: ..."
+        # or just "Winner deck: ... | Loser deck: ..."
+        # Also filter out "Web-confirmed match"
+        if comment in ("Web-confirmed match", ""):
+            return None
+        parts = comment.split(" | Winner deck:")
+        user_comment = parts[0].strip() if len(parts) > 1 else None
+        if user_comment and user_comment != comment:
+            return user_comment if user_comment else None
+        # No deck URL metadata — check if it's just deck metadata without user comment
+        if comment.startswith("Winner deck:"):
+            return None
+        return comment
+
     def _build_match_entry(row):
         """Convert a raw DB row into a match history dict."""
         did_win = row[0]
@@ -2137,6 +2160,7 @@ def player_api(player_id):
             "deck_elements": deck_elements,
             "opponent_avatar": opponent_avatar_name,
             "opponent_elements": opponent_elements,
+            "match_comment": _clean_match_comment(row[22] if len(row) > 22 else None),
         }
 
     for row in paginated_rows:

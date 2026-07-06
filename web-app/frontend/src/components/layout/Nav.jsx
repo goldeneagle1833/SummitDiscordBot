@@ -3,13 +3,13 @@ import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { getStreamerBanner } from '@/api/streamers'
 
-const PERMANENT_LINKS = ['Home', 'Discord', 'Facebook', 'About', 'Patreon']
+const PERMANENT_LINKS = ['Home', 'Discord', 'Reddit', 'About', 'Patreon']
 
 const ALL_NAV_OPTIONS = [
   { to: '/', label: 'Home' },
   { to: '/community', label: 'Community' },
   { href: 'https://discord.gg/ZDqHSK9VGx', label: 'Discord' },
-  { href: 'https://www.facebook.com/profile.php?id=61591584391229', label: 'Facebook' },
+  { href: 'https://www.reddit.com/r/SorcerersSummit/', label: 'Reddit' },
   { href: 'https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink', label: 'Patreon' },
   { to: '/about', label: 'About' },
   { to: '/avatars', label: 'Avatar Winrates' },
@@ -29,7 +29,7 @@ const ALL_NAV_OPTIONS = [
   { to: '/curio-tracking', label: 'Curio Tracking' },
 ]
 
-const DEFAULT_NAV_LABELS = ['Home', 'Community', 'Discord', 'Facebook', 'Patreon', 'About']
+const DEFAULT_NAV_LABELS = ['Home', 'Community', 'Discord', 'Reddit', 'Patreon', 'About']
 const STORAGE_KEY = 'summit-nav-prefs'
 
 function getNavPrefs() {
@@ -623,7 +623,7 @@ export default function Nav() {
           <SidebarLink to="/" label="Home" location={location} onClick={close} />
           <SidebarLink to="/community" label="Community" location={location} onClick={close} />
           <SidebarExternal href="https://discord.gg/ZDqHSK9VGx" label="Discord" />
-          <SidebarExternal href="https://www.facebook.com/profile.php?id=61591584391229" label="Facebook" />
+          <SidebarExternal href="https://www.reddit.com/r/SorcerersSummit/" label="Reddit" />
           <SidebarExternal href="https://patreon.com/TheSorcerersSummit?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_fan&utm_content=copyLink" label="Patreon" />
           <SidebarLink to="/about" label="About" location={location} onClick={close} />
         </div>

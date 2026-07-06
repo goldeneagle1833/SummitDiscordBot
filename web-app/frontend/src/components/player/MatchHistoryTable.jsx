@@ -50,6 +50,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
               <th className="py-2 px-3 text-text-muted font-semibold">Play/Draw</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Time</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Date</th>
+              <th className="py-2 px-3 text-text-muted font-semibold">Notes</th>
               {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Deck Link</th>}
               {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Snapshot</th>}
             </tr>
@@ -106,6 +107,18 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                   <td className="py-2 px-3 text-text-muted">{m.first_player || '-'}</td>
                   <td className="py-2 px-3 text-text-muted">{m.match_time ? `${m.match_time} min` : '-'}</td>
                   <td className="py-2 px-3 text-text-muted whitespace-nowrap">{m.date ? new Date(m.date).toLocaleDateString() : '-'}</td>
+                  <td className="py-2 px-3 text-text-muted max-w-[100px]">
+                    {m.match_comment ? (
+                      <span className="relative group cursor-default">
+                        <span className="truncate block max-w-[100px]">
+                          {m.match_comment.split(/\s+/).slice(0, 3).join(' ')}{m.match_comment.split(/\s+/).length > 3 ? '...' : ''}
+                        </span>
+                        <span className="absolute z-20 hidden group-hover:block bg-bg-surface border border-border rounded px-3 py-2 text-xs text-text-primary shadow-lg whitespace-normal min-w-[200px] max-w-[300px] bottom-full left-0 mb-1">
+                          {m.match_comment}
+                        </span>
+                      </span>
+                    ) : '-'}
+                  </td>
                   {isOwner && (
                     <td className="py-2 px-3">
                       <span className="flex items-center gap-1">

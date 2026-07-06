@@ -56,6 +56,9 @@ class StreamingCog(commands.Cog):
         self.bot = bot
         init_database()
         self.cleanup_stale_streamers.start()
+        # Track avatar channel notifications so we can delete them when streaming stops
+        # {user_id: (channel_id, message_id)}
+        self._avatar_notifications: dict[int, tuple[int, int]] = {}
         logger.info("StreamingCog initialized")
 
     def cog_unload(self):
@@ -141,10 +144,29 @@ class StreamingCog(commands.Cog):
             embed.add_field(name="Stream Title", value=stream_title, inline=False)
 
         try:
-            await channel.send(embed=embed)
+            msg = await channel.send(embed=embed)
+            self._avatar_notifications[member.id] = (channel_id, msg.id)
             logger.info(f"Sent streaming notification to '{avatar_name}' channel for {member.display_name}")
         except Exception as e:
             logger.error(f"Failed to send streaming notification to channel {channel_id}: {e}")
+
+    async def _delete_avatar_notification(self, user_id: int):
+        """Delete the avatar channel notification for a streamer who stopped."""
+        notif = self._avatar_notifications.pop(user_id, None)
+        if not notif:
+            return
+        channel_id, message_id = notif
+        try:
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                channel = await self.bot.fetch_channel(channel_id)
+            msg = await channel.fetch_message(message_id)
+            await msg.delete()
+            logger.info(f"Deleted streaming notification (msg {message_id}) from channel {channel_id}")
+        except (discord.NotFound, discord.Forbidden):
+            pass
+        except Exception as e:
+            logger.warning(f"Could not delete streaming notification: {e}")
 
     def _add_streamer(self, member: discord.Member, activity: discord.Streaming):
         """Add or update a streamer in the database (for Twitch/YouTube streaming)."""
@@ -248,8 +270,8 @@ class StreamingCog(commands.Cog):
         conn.close()
         logger.info(f"Added voice streamer: {member.display_name} in #{channel.name}")
 
-    def _remove_streamer(self, user_id: int):
-        """Remove a streamer from the database."""
+    async def _remove_streamer(self, user_id: int):
+        """Remove a streamer from the database and delete their avatar channel notification."""
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("DELETE FROM active_streamers WHERE user_id = ?", (user_id,))
@@ -258,6 +280,7 @@ class StreamingCog(commands.Cog):
         conn.close()
         if affected > 0:
             logger.info(f"Removed streamer with user_id: {user_id}")
+        await self._delete_avatar_notification(user_id)
 
     @commands.Cog.listener()
     async def on_presence_update(self, before: discord.Member, after: discord.Member):
@@ -275,7 +298,7 @@ class StreamingCog(commands.Cog):
         # Stopped streaming
         elif before_streaming and not after_streaming:
             logger.info(f"{after.display_name} stopped streaming")
-            self._remove_streamer(after.id)
+            await self._remove_streamer(after.id)
 
         # Updated stream info (e.g., changed game)
         elif after_streaming and before_streaming:
@@ -309,12 +332,12 @@ class StreamingCog(commands.Cog):
         # Stopped streaming (turned off Go Live or left channel)
         elif before.self_stream and not after.self_stream:
             logger.info(f"{member.display_name} stopped Go Live")
-            self._remove_streamer(member.id)
+            await self._remove_streamer(member.id)
 
         # Left voice channel while streaming
         elif before.self_stream and before.channel and not after.channel:
             logger.info(f"{member.display_name} left voice channel while streaming")
-            self._remove_streamer(member.id)
+            await self._remove_streamer(member.id)
 
     @tasks.loop(minutes=5)
     async def cleanup_stale_streamers(self):

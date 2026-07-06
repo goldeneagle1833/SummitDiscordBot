@@ -186,12 +186,18 @@ def get_decks():
 
 @deck_rec_bp.route("/<deck_id>/info")
 def get_deck_info(deck_id: str):
-    """Return seed info + deck contents without expensive clustering."""
+    """Return seed info + deck contents without expensive clustering.
+
+    Falls back to fetching directly from Curiosa if the deck isn't a seed
+    (e.g. event decks linked from the top-8 page).
+    """
     try:
         _repo, seeds, _community, _clusters = _load_and_cluster()
         seed = next((d for d in seeds if d.deck_id == deck_id), None)
+
+        # Fallback: fetch from Curiosa for non-seed decks (event page links)
         if seed is None:
-            return jsonify({"error": f"Deck '{deck_id}' not found among archetype seeds"}), 404
+            return _fetch_curiosa_deck_info(deck_id)
 
         # For admin/staff decks, fetch live from Curiosa
         detail_source = seed.card_details
@@ -255,6 +261,68 @@ def get_deck_info(deck_id: str):
         return jsonify({"error": "Failed to load deck info"}), 500
 
 
+def _fetch_curiosa_deck_info(deck_id: str):
+    """Fetch deck info directly from Curiosa API for non-seed decks."""
+    curiosa_url = f"https://curiosa.io/decks/{deck_id}"
+    try:
+        fresh_json = CuriosaService().fetch_deck_data(curiosa_url)
+        if not fresh_json or fresh_json in ("{}", ""):
+            return jsonify({"error": f"Deck '{deck_id}' not found on Curiosa"}), 404
+
+        fresh_data = json.loads(fresh_json)
+        deck_name = fresh_data.get("name", "Unnamed Deck")
+        username = fresh_data.get("username", "Unknown")
+        avatar_list = fresh_data.get("avatar", [])
+        avatar_name = avatar_list[0].get("name", "Unknown") if avatar_list else "Unknown"
+
+        detail_source = _get_card_details(
+            fresh_data.get("spellbook", []),
+            fresh_data.get("atlas", []),
+        )
+        sideboard_source = _get_card_details(fresh_data.get("sideboard", []))
+
+        seed_cards = [{"name": c["name"], "qty": c["qty"]} for c in detail_source]
+        seed_spellbook = [
+            _enrich_card({
+                "name": c["name"],
+                "qty": c["qty"],
+                "type": c["type"],
+                "threshold": c["threshold"],
+                "image": _resolve_card_image(c["name"]),
+            })
+            for c in detail_source
+        ]
+        seed_sideboard = [
+            _enrich_card({
+                "name": c["name"],
+                "qty": c["qty"],
+                "type": c["type"],
+                "threshold": c["threshold"],
+                "image": _resolve_card_image(c["name"]),
+            })
+            for c in sideboard_source
+        ]
+
+        return jsonify({
+            "seed": {
+                "deck_id": deck_id,
+                "deck_name": deck_name,
+                "avatar_name": avatar_name,
+                "player_name": username,
+                "event_name": "",
+                "card_count": sum(c["qty"] for c in detail_source),
+                "curiosa_url": curiosa_url,
+                "primer": "",
+            },
+            "seed_cards": seed_cards,
+            "seed_spellbook": seed_spellbook,
+            "seed_sideboard": seed_sideboard,
+        })
+    except Exception as e:
+        logger.warning("Could not fetch Curiosa deck %s: %s", deck_id, e)
+        return jsonify({"error": f"Deck '{deck_id}' not found"}), 404
+
+
 @deck_rec_bp.route("/<deck_id>/recommendations")
 def get_recommendations(deck_id: str):
     """Return aggregated archetype recommendation for a top-8 seed deck."""
@@ -264,7 +332,8 @@ def get_recommendations(deck_id: str):
         # Find the seed
         seed = next((s for s in seeds if s.deck_id == deck_id), None)
         if seed is None:
-            return jsonify({"error": f"Deck '{deck_id}' not found among archetype seeds"}), 404
+            # Non-seed deck (e.g. event page link) — no recommendations available
+            return jsonify({"tiers": [], "avg_similarity": 0, "similar_seeds": [], "cluster_size": 0})
 
         # Use inclusive matching so admin picks and tournament seeds are treated
         # identically — show all community decks above the threshold, not just

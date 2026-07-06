@@ -6,7 +6,7 @@ import logging
 import config
 from cogs.lfg.state import lfg_queue
 from cogs.lfg.helpers import scrub_urls
-from cogs.lfg.match_reporting import MatchTypeSelectionView
+from cogs.lfg.match_reporting import MatchCardView
 from utils.database import save_pairing
 
 logger = logging.getLogger("discord_bot")
@@ -175,6 +175,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         match_start_time = datetime.datetime.now()
 
         # Save pairing to database for validation during match reporting
+        pairing_id = 0
         if not self.guild_id:
             logger.warning(
                 f"guild_id is None for challenge between {self.challenger_id} and {interaction.user.id}, "
@@ -257,50 +258,68 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         )
         other_deck_text = f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
 
-        # Create match type selection view for the reporter
-        match_type_selection_view = MatchTypeSelectionView(
-            0,  # match_id not needed for direct challenges
-            reporter_id,
-            reporter_global,
-            other_id,
-            other_global,
-            interaction.client,
-            self.channel,
+        # Use pairing_id if we saved one, otherwise 0
+        challenge_pairing_id = pairing_id if self.guild_id else 0
+
+        # Create match card view for the reporter (same as normal LFG flow)
+        match_card_view = MatchCardView(
+            bot=interaction.client,
+            pairing_id=challenge_pairing_id,
+            player1_id=reporter_id,
+            player1_global=reporter_global,
+            player2_id=other_id,
+            player2_global=other_global,
+            player1_deck_url=reporter_deck_url,
+            player2_deck_url=other_deck_url,
             match_start_time=match_start_time,
-            reporter_deck_url=reporter_deck_url,
-            opponent_deck_url=other_deck_url,
-            opponent_user=other_user,
-            reporter_deck_text=reporter_deck_text,
             guild_id=self.guild_id,
+            match_type="ranked",
         )
 
-        # Send match type selection to the selected reporter
+        # Send match card to the selected reporter
         if reporter_is_accepter:
             # Reporter is the one who accepted - use followup since we deferred
             try:
                 await interaction.followup.send(
-                    f"**Challenge Accepted!** You're playing against {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n**Choose match type:**",
-                    view=match_type_selection_view,
+                    f"⚔️ **Challenge Accepted!** You're playing against {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n"
+                    f"Use the button below to report the result when your match is done.\n\n"
+                    f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** in the LFG channel for fresh ones!",
+                    view=match_card_view,
                     ephemeral=True,
                 )
             except Exception as e:
-                logger.error(f"Failed to send match type selection to accepter: {e}")
+                logger.error(f"Failed to send match card to accepter: {e}")
         else:
             # Reporter is the challenger - send via DM
             try:
                 await challenger.send(
-                    f"**Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\n**Choose match type:**",
-                    view=match_type_selection_view,
+                    f"⚔️ **Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\n"
+                    f"Use the button below to report the result when your match is done.\n\n"
+                    f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** in the LFG channel for fresh ones!",
+                    view=match_card_view,
                 )
             except discord.Forbidden:
                 try:
                     dm_channel = interaction.client.get_channel(config.DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
+                        guild = interaction.client.get_guild(config.GUILD_ID)
+                        if guild:
+                            member = guild.get_member(reporter_id)
+                            if member:
+                                await dm_channel.set_permissions(
+                                    member, read_messages=True, send_messages=True
+                                )
+                                role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+                                if role and role not in member.roles:
+                                    await member.add_roles(role)
+
                         await dm_channel.send(
                             scrub_urls(
-                                f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\n**Choose match type:**"
+                                f"{challenger.mention} ⚔️ **Challenge Accepted!** **{accepter_global}** accepted your challenge!\n\n"
+                                f"Use the button below to report the result when your match is done.\n\n"
+                                f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** for fresh ones!"
                             ),
-                            view=match_type_selection_view,
+                            view=match_card_view,
                         )
                 except Exception as e:
                     logger.error(f"Failed to handle DM failure for challenger: {e}")
@@ -310,8 +329,9 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
             # Other is the accepter - send followup
             try:
                 await interaction.followup.send(
-                    f"**Challenge Accepted!** You're playing against {reporter_user.mention} (**{reporter_global}**)!{other_deck_text}\n\n"
-                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button.",
+                    f"⚔️ **Challenge Accepted!** You're playing against {reporter_user.mention} (**{reporter_global}**)!{other_deck_text}\n\n"
+                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome.\n\n"
+                    f"💡 **Tip:** If you need fresh reporting buttons, click **'📋 Report Last Match'** in the LFG channel!",
                     ephemeral=True,
                 )
             except Exception as e:
@@ -320,17 +340,30 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
             # Other is the challenger - send via DM
             try:
                 await challenger.send(
-                    f"**Challenge Accepted!** **{accepter_global}** accepted your challenge!{other_deck_text}\n\n"
-                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button."
+                    f"⚔️ **Challenge Accepted!** **{accepter_global}** accepted your challenge!{other_deck_text}\n\n"
+                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome.\n\n"
+                    f"💡 **Tip:** If you need fresh reporting buttons, click **'📋 Report Last Match'** in the LFG channel!"
                 )
             except discord.Forbidden:
                 try:
                     dm_channel = interaction.client.get_channel(config.DM_DISABLED_CHANNEL_ID)
                     if dm_channel:
+                        guild = interaction.client.get_guild(config.GUILD_ID)
+                        if guild:
+                            member = guild.get_member(other_id)
+                            if member:
+                                await dm_channel.set_permissions(
+                                    member, read_messages=True, send_messages=True
+                                )
+                                role = guild.get_role(config.DM_DISABLED_ROLE_ID)
+                                if role and role not in member.roles:
+                                    await member.add_roles(role)
+
                         await dm_channel.send(
                             scrub_urls(
-                                f"{challenger.mention} **Challenge Accepted!** **{accepter_global}** accepted your challenge!{other_deck_text}\n\n"
-                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation button."
+                                f"{challenger.mention} ⚔️ **Challenge Accepted!** **{accepter_global}** accepted your challenge!\n\n"
+                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome.\n\n"
+                                f"💡 **Tip:** If you need fresh reporting buttons, click **'📋 Report Last Match'**!"
                             )
                         )
                 except Exception as e:

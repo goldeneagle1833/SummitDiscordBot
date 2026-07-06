@@ -81,6 +81,7 @@ def ensure_pending_confirmations_table():
             guild_id          INTEGER,
             winner_run_id     INTEGER,
             loser_run_id      INTEGER,
+            confirmer_comment TEXT    DEFAULT '',
             created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """
@@ -184,6 +185,13 @@ def update_confirmation_deck_url(confirmation_id: int, is_winner_deck: bool, dec
     conn.close()
 
 
+def update_confirmation_confirmer_comment(confirmation_id: int, comment: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("UPDATE pending_confirmations SET confirmer_comment = ? WHERE id = ?", (comment, confirmation_id))
+    conn.commit()
+    conn.close()
+
+
 # ──────────────────────────────────────────────
 #  Shared confirmation / dispute logic
 # ──────────────────────────────────────────────
@@ -235,8 +243,16 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
     winner_deck = data.get("winner_deck_url") or "No URL provided"
     loser_deck = data.get("loser_deck_url") or "No URL provided"
     combined_comment = f"Winner deck: {winner_deck} | Loser deck: {loser_deck}"
-    if data.get("match_comment"):
-        combined_comment = f"{data['match_comment']} | {combined_comment}"
+
+    # Merge reporter + confirmer comments
+    reporter_comment = (data.get("match_comment") or "").strip()
+    confirmer_comment = (data.get("confirmer_comment") or "").strip()
+    if reporter_comment and confirmer_comment:
+        combined_comment = f"{reporter_comment} | Opponent: {confirmer_comment} | {combined_comment}"
+    elif reporter_comment:
+        combined_comment = f"{reporter_comment} | {combined_comment}"
+    elif confirmer_comment:
+        combined_comment = f"Opponent: {confirmer_comment} | {combined_comment}"
 
     # ── first player ──
     reporter_went_first = data.get("first_player") and "y" in str(data["first_player"]).lower()
@@ -649,10 +665,19 @@ class PersistentConfirmButton(
                     pass
                 return
 
-            # If confirmer still needs a deck URL, show the modal
+            # If confirmer still needs a deck URL, show the deck+comment modal
             confirmer_deck_url = data["winner_deck_url"] if data["is_winner"] else data["loser_deck_url"]
             if not confirmer_deck_url and data.get("match_type") not in ("testing", "rumble", "limited"):
                 modal = PersistentConfirmDeckModal(self.confirmation_id, data["is_winner"])
+                try:
+                    await interaction.response.send_modal(modal)
+                except discord.errors.NotFound:
+                    pass
+                return
+
+            # Confirmer already has a deck URL — show comment-only modal
+            if data.get("match_type") not in ("testing", "rumble", "limited"):
+                modal = PersistentConfirmCommentModal(self.confirmation_id)
                 try:
                     await interaction.response.send_modal(modal)
                 except discord.errors.NotFound:
@@ -754,6 +779,13 @@ class PersistentConfirmDeckModal(discord.ui.Modal, title="Enter Your Deck"):
         required=True,
     )
 
+    match_comment = discord.ui.TextInput(
+        label="Match Comments",
+        placeholder="Any notes about the match? (optional)",
+        style=discord.TextStyle.paragraph,
+        required=False,
+    )
+
     def __init__(self, confirmation_id: int, is_winner: bool):
         super().__init__()
         self.confirmation_id = confirmation_id
@@ -768,6 +800,11 @@ class PersistentConfirmDeckModal(discord.ui.Modal, title="Enter Your Deck"):
             if deck_url:
                 update_confirmation_deck_url(self.confirmation_id, self.is_winner, deck_url)
                 logger.info(f"Updated deck URL for confirmation {self.confirmation_id}")
+
+            comment = self.match_comment.value.strip() if self.match_comment.value else ""
+            if comment:
+                update_confirmation_confirmer_comment(self.confirmation_id, comment)
+                logger.info(f"Updated confirmer comment for confirmation {self.confirmation_id}")
 
             data = load_pending_confirmation(self.confirmation_id)
             if not data:
@@ -790,6 +827,63 @@ class PersistentConfirmDeckModal(discord.ui.Modal, title="Enter Your Deck"):
 
         except Exception as e:
             logger.error(f"Unexpected error in PersistentConfirmDeckModal: {e}", exc_info=True)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "An unexpected error occurred while processing your confirmation. Please try again.",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "An unexpected error occurred while processing your confirmation. Please try again.",
+                        ephemeral=True,
+                    )
+            except Exception:
+                logger.error("Failed to send error message to user")
+
+
+class PersistentConfirmCommentModal(discord.ui.Modal, title="Confirm Match"):
+    """Comment-only modal shown when the confirmer already has a deck URL."""
+
+    match_comment = discord.ui.TextInput(
+        label="Match Comments (optional)",
+        placeholder="Any notes about the match?",
+        style=discord.TextStyle.paragraph,
+        required=False,
+    )
+
+    def __init__(self, confirmation_id: int):
+        super().__init__()
+        self.confirmation_id = confirmation_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            comment = self.match_comment.value.strip() if self.match_comment.value else ""
+            if comment:
+                update_confirmation_confirmer_comment(self.confirmation_id, comment)
+                logger.info(f"Updated confirmer comment for confirmation {self.confirmation_id}")
+
+            data = load_pending_confirmation(self.confirmation_id)
+            if not data:
+                await interaction.response.send_message(
+                    "This match confirmation has expired or was already processed.",
+                    ephemeral=True,
+                )
+                return
+
+            await interaction.response.defer()
+
+            # Try to disable buttons on the original message
+            try:
+                if interaction.message:
+                    await interaction.message.edit(view=None)
+            except Exception as edit_error:
+                logger.warning(f"Could not edit message to disable buttons: {edit_error}")
+
+            await _execute_match_confirmation(interaction, self.confirmation_id, data)
+
+        except Exception as e:
+            logger.error(f"Unexpected error in PersistentConfirmCommentModal: {e}", exc_info=True)
             try:
                 if interaction.response.is_done():
                     await interaction.followup.send(

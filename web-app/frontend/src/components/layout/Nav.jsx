@@ -46,6 +46,7 @@ function saveNavPrefs(labels) {
 
 function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
   const [deckUrl, setDeckUrl] = useState('')
+  const [matchComment, setMatchComment] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
@@ -65,7 +66,7 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deck_url: deckUrl.trim() || undefined }),
+        body: JSON.stringify({ deck_url: deckUrl.trim() || undefined, match_comment: matchComment.trim() || undefined }),
       })
       const data = await res.json()
       if (data.success) {
@@ -125,6 +126,18 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
               onChange={(e) => setDeckUrl(e.target.value)}
               placeholder="https://curiosa.io/decks/..."
               className="w-full bg-bg-elevated border border-border rounded px-3 py-2 text-sm"
+            />
+          </div>
+
+          {/* Match Comments */}
+          <div className="mb-4">
+            <label className="text-xs text-text-muted block mb-1">Match Comments (optional)</label>
+            <textarea
+              value={matchComment}
+              onChange={(e) => setMatchComment(e.target.value)}
+              placeholder="Any notes about the match?"
+              rows={2}
+              className="w-full bg-bg-elevated border border-border rounded px-3 py-2 text-sm resize-none"
             />
           </div>
 

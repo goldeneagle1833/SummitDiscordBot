@@ -344,6 +344,19 @@ class MatchConfirmationService:
         except (ValueError, TypeError, OverflowError):
             raise ValueError(f"Invalid user ID format: {user_id}")
 
+    @staticmethod
+    def _merge_comments(reporter_comment: Optional[str], confirmer_comment: str = "") -> str:
+        """Merge reporter and confirmer comments into a single string."""
+        r = (reporter_comment or "").strip()
+        c = (confirmer_comment or "").strip()
+        if r and c:
+            return f"{r} | Opponent: {c}"
+        if r:
+            return r
+        if c:
+            return f"Opponent: {c}"
+        return "Web-confirmed match"
+
     def _get_display_name_for_user(self, user_id: str) -> str:
         """
         Get display name for a user by checking both Discord and Google profiles.
@@ -565,7 +578,8 @@ class MatchConfirmationService:
         }
 
     def confirm_match_report(
-        self, confirmation_id: int, opponent_user_id: str, opponent_deck_url: Optional[str] = None
+        self, confirmation_id: int, opponent_user_id: str, opponent_deck_url: Optional[str] = None,
+        *, confirmer_comment: str = ""
     ) -> dict:
         """
         Confirm a pending match report.
@@ -837,7 +851,7 @@ class MatchConfirmationService:
                     winner_deck_url,  # curiosa_url (backward compatibility)
                     winner_deck_url,  # curiosa_url_winner
                     loser_deck_url,   # curiosa_url_loser
-                    confirmation.get("match_comment") or "Web-confirmed match",  # match_comment
+                    self._merge_comments(confirmation.get("match_comment"), confirmer_comment),  # match_comment
                     json_deck_data_winner,  # json_deck_data (backward compatibility)
                     json_deck_data_winner,  # json_deck_data_winner
                     json_deck_data_loser,   # json_deck_data_loser

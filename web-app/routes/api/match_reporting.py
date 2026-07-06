@@ -402,16 +402,17 @@ def confirm_match_report(confirmation_id):
             }
         }), 401
 
-    # Get optional deck URL from request body
+    # Get optional deck URL and comment from request body
     data = request.get_json() or {}
     deck_url = data.get("deck_url")
+    confirmer_comment = data.get("match_comment", "")
 
     try:
         current_user_id = session["user_id"]
         service = MatchConfirmationService()
 
         # Confirm the match report
-        result = service.confirm_match_report(confirmation_id, current_user_id, deck_url)
+        result = service.confirm_match_report(confirmation_id, current_user_id, deck_url, confirmer_comment=confirmer_comment)
 
         logger.info(
             f"Match confirmed: confirmation_id={confirmation_id}, "

@@ -107,6 +107,7 @@ class MagooMonitorCog(commands.Cog):
             for _, author, content in self.message_buffer
         )
 
+        score_text = ""
         try:
             response = openai_client.responses.create(
                 model="gpt-4.1-nano",

@@ -1124,7 +1124,8 @@ def player_api(player_id):
                     match_type,
                     winner_lifetime_elo_after,
                     loser_lifetime_elo_after,
-                    match_comment
+                    match_comment,
+                    reporter_id
                 FROM match_reports_web
                 WHERE (winner_id = ? OR losser_id = ?){date_filter}
                 ORDER BY timestamp DESC
@@ -1170,7 +1171,8 @@ def player_api(player_id):
                     match_type,
                     winner_lifetime_elo_after,
                     loser_lifetime_elo_after,
-                    match_comment
+                    match_comment,
+                    reporter_id
                 FROM match_records
                 WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                 ORDER BY timestamp DESC
@@ -1206,7 +1208,8 @@ def player_api(player_id):
                         NULL as match_type,
                         NULL as winner_lifetime_elo_after,
                         NULL as loser_lifetime_elo_after,
-                        NULL as match_comment
+                        NULL as match_comment,
+                        reporter_id
                     FROM match_records
                     WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                     ORDER BY timestamp DESC
@@ -1241,7 +1244,9 @@ def player_api(player_id):
                             NULL as loser_went_first,
                             NULL as match_type,
                             NULL as winner_lifetime_elo_after,
-                            NULL as loser_lifetime_elo_after
+                            NULL as loser_lifetime_elo_after,
+                            NULL as match_comment,
+                            reporter_id
                         FROM match_records
                         WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                         ORDER BY timestamp DESC
@@ -1294,7 +1299,8 @@ def player_api(player_id):
                     NULL as match_type,
                     winner_lifetime_elo_after,
                     loser_lifetime_elo_after,
-                    match_comment
+                    match_comment,
+                    reporter_id
                 FROM match_records_archive
                 WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
                 ORDER BY timestamp DESC
@@ -1330,7 +1336,8 @@ def player_api(player_id):
                         NULL as match_type,
                         NULL as winner_lifetime_elo_after,
                         NULL as loser_lifetime_elo_after,
-                        NULL as match_comment
+                        NULL as match_comment,
+                        reporter_id
                     FROM match_records_archive
                     WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
                     ORDER BY timestamp DESC
@@ -2055,23 +2062,28 @@ def player_api(player_id):
     casual_end_idx = casual_start_idx + per_page
     paginated_casual_rows = casual_rows[casual_start_idx:casual_end_idx]
 
-    def _clean_match_comment(comment):
-        """Extract user-provided comment, stripping internal deck URL metadata."""
+    def _clean_match_comment(comment, reporter_id, player_id):
+        """Extract the current player's own comment, stripping metadata and opponent's notes."""
         if not comment:
             return None
-        # Bot stores comments like "User comment | Winner deck: ... | Loser deck: ..."
-        # or just "Winner deck: ... | Loser deck: ..."
-        # Also filter out "Web-confirmed match"
         if comment in ("Web-confirmed match", ""):
             return None
+        # Strip deck URL metadata: "User comment | Winner deck: ... | Loser deck: ..."
         parts = comment.split(" | Winner deck:")
-        user_comment = parts[0].strip() if len(parts) > 1 else None
-        if user_comment and user_comment != comment:
-            return user_comment if user_comment else None
-        # No deck URL metadata — check if it's just deck metadata without user comment
+        comment = parts[0].strip() if len(parts) > 1 else comment
         if comment.startswith("Winner deck:"):
             return None
-        return comment
+        # Merged format from _merge_comments: "reporter comment | Opponent: confirmer comment"
+        # Split and return only the current player's portion
+        player_is_reporter = str(reporter_id) == str(player_id)
+        if " | Opponent: " in comment:
+            reporter_part, confirmer_part = comment.split(" | Opponent: ", 1)
+            return reporter_part.strip() if player_is_reporter else confirmer_part.strip()
+        if comment.startswith("Opponent: "):
+            # Only the confirmer commented
+            return comment[len("Opponent: "):].strip() if not player_is_reporter else None
+        # Only the reporter commented (or bot match with single comment)
+        return comment if player_is_reporter else None
 
     def _build_match_entry(row):
         """Convert a raw DB row into a match history dict."""
@@ -2160,7 +2172,11 @@ def player_api(player_id):
             "deck_elements": deck_elements,
             "opponent_avatar": opponent_avatar_name,
             "opponent_elements": opponent_elements,
-            "match_comment": _clean_match_comment(row[22] if len(row) > 22 else None),
+            "match_comment": _clean_match_comment(
+                row[22] if len(row) > 22 else None,
+                row[23] if len(row) > 23 else None,
+                query_player_id,
+            ) if is_owner else None,
         }
 
     for row in paginated_rows:

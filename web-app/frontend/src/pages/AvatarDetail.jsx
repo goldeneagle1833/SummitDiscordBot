@@ -542,14 +542,12 @@ export default function AvatarDetail() {
           <MatchupsSection avatarName={name} source={source} eventFilter={eventFilter} />
         </div>
 
-        {/* ELO Win Rate Matrix (admin only) */}
-        {isAdmin && (
-          <div className="p-6 border-t border-border">
-            <h3 className="text-lg font-semibold mb-1">Win Rate by ELO Bracket</h3>
-            <p className="text-xs text-text-muted mb-4">How this avatar performs across different ELO ranges (using current player ratings)</p>
-            <EloMatrix avatarName={name} source={source} eventFilter={eventFilter} />
-          </div>
-        )}
+        {/* ELO Win Rate Matrix */}
+        <div className="p-6 border-t border-border">
+          <h3 className="text-lg font-semibold mb-1">Win Rate by ELO Bracket</h3>
+          <p className="text-xs text-text-muted mb-4">How this avatar performs across different ELO ranges (using current player ratings)</p>
+          <EloMatrix avatarName={name} source={source} eventFilter={eventFilter} />
+        </div>
 
         {/* Deck Composition */}
         <div className="p-6 border-t border-border">

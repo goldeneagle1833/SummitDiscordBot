@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 const ELEMENT_IMG = '/static/images/elements/'
@@ -22,6 +23,8 @@ function ElementIcons({ elements }) {
 }
 
 export default function MatchHistoryTable({ title, subtitle, matches, pagination, playerId, isOwner, perPage, perPageOptions, onPageChange, onPerPageChange, onEditDeck }) {
+  const [noteModal, setNoteModal] = useState(null)
+
   if (!matches?.length) {
     return (
       <section>
@@ -110,14 +113,13 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                   {isOwner && (
                     <td className="py-2 px-3 text-text-muted max-w-[100px]">
                       {m.match_comment ? (
-                        <span className="relative group cursor-default">
-                          <span className="truncate block max-w-[100px]">
-                            {m.match_comment.split(/\s+/).slice(0, 3).join(' ')}{m.match_comment.split(/\s+/).length > 3 ? '...' : ''}
-                          </span>
-                          <span className="absolute z-20 hidden group-hover:block bg-bg-surface border border-border rounded px-3 py-2 text-xs text-text-primary shadow-lg whitespace-normal min-w-[200px] max-w-[300px] bottom-full left-0 mb-1">
-                            {m.match_comment}
-                          </span>
-                        </span>
+                        <button
+                          onClick={() => setNoteModal({ matchId: m.match_id, comment: m.match_comment })}
+                          className="text-left truncate block max-w-[100px] text-secondary hover:underline cursor-pointer bg-transparent border-none p-0 text-sm"
+                          title="Click to view full note"
+                        >
+                          {m.match_comment.split(/\s+/).slice(0, 3).join(' ')}{m.match_comment.split(/\s+/).length > 3 ? '...' : ''}
+                        </button>
                       ) : '-'}
                     </td>
                   )}
@@ -211,6 +213,17 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
           <span className="text-xs text-text-muted ml-2">
             {((pagination.current_page - 1) * pagination.per_page) + 1}-{Math.min(pagination.current_page * pagination.per_page, pagination.total_matches)} of {pagination.total_matches}
           </span>
+        </div>
+      )}
+      {noteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setNoteModal(null)}>
+          <div className="bg-bg-surface border border-border rounded-lg shadow-xl max-w-md w-full mx-4 p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-text-primary">Match #{noteModal.matchId} Notes</h4>
+              <button onClick={() => setNoteModal(null)} className="text-text-muted hover:text-text-primary text-lg leading-none">&times;</button>
+            </div>
+            <p className="text-sm text-text-secondary whitespace-pre-wrap break-words">{noteModal.comment}</p>
+          </div>
         </div>
       )}
     </section>

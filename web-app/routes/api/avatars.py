@@ -1509,14 +1509,12 @@ def get_all_avatars_popularity():
 
 @avatars_bp.route("/avatar/<avatar_name>/elo-matrix")
 def get_avatar_elo_matrix(avatar_name):
-    """Win rate matrix by ELO bracket for a specific avatar. Admin only.
+    """Win rate matrix by ELO bracket for a specific avatar.
 
     Rows = ELO bracket of the player using this avatar.
     Columns = ELO bracket of the opponent.
     Cells = win rate when row-bracket plays against column-bracket.
     """
-    if not is_admin():
-        return jsonify({"error": "Unauthorized"}), 403
 
     avatar_name = unquote(avatar_name)
     source = request.args.get("source", "discord")

@@ -111,3 +111,5 @@ SALES_DOC.md
 scripts/pull_logs.ps1
 web-app/.spotlight_desc_cache.json
 web-app/top-8-decks-by-event/latest_event.json
+# Store database backups (contain customer shipping addresses)
+web-app/backups/

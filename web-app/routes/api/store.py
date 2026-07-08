@@ -1,0 +1,224 @@
+"""Store API routes.
+
+Public:       product catalog
+Logged-in:    (phase 2) checkout / order creation
+Store admin:  product CRUD, order queue, mark shipped, backup download
+
+Registered via routes/api/__init__.py alongside the other sub-blueprints.
+"""
+
+import logging
+import sqlite3
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+from flask import Blueprint, jsonify, request, send_file, session
+
+from repositories.store import StoreRepository, ORDER_STATUSES, STORE_DB_PATH
+from utils.store_auth import require_store_admin
+
+logger = logging.getLogger(__name__)
+
+store_bp = Blueprint("store", __name__)
+
+
+def _repo() -> StoreRepository:
+    return StoreRepository()
+
+
+def _actor():
+    return str(session.get("user_id", 0)), session.get("username", "API/localhost")
+
+
+# ----------------------------------------------------------------------
+# Public catalog
+# ----------------------------------------------------------------------
+
+@store_bp.route("/store/products", methods=["GET"])
+def list_products():
+    products = _repo().list_products(include_inactive=False)
+    return jsonify({"products": products})
+
+
+# ----------------------------------------------------------------------
+# Store admin: product management
+# ----------------------------------------------------------------------
+
+@store_bp.route("/store/admin/products", methods=["GET"])
+@require_store_admin
+def admin_list_products():
+    return jsonify({"products": _repo().list_products(include_inactive=True)})
+
+
+@store_bp.route("/store/admin/products", methods=["POST"])
+@require_store_admin
+def admin_create_product():
+    data = request.get_json(silent=True) or {}
+    required = ("sku", "name", "price_cents")
+    missing = [f for f in required if not data.get(f) and data.get(f) != 0]
+    if missing:
+        return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
+    try:
+        price_cents = int(data["price_cents"])
+        stock = int(data.get("stock_quantity", 0))
+        if price_cents < 0 or stock < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"error": "price_cents and stock_quantity must be non-negative integers"}), 400
+
+    repo = _repo()
+    try:
+        product_id = repo.create_product(
+            sku=str(data["sku"]).strip(),
+            name=str(data["name"]).strip(),
+            price_cents=price_cents,
+            description=str(data.get("description", "")),
+            image_url=data.get("image_url"),
+            stock_quantity=stock,
+        )
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "A product with that SKU already exists"}), 409
+
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "create_product",
+                    f"id={product_id} sku={data['sku']}")
+    return jsonify({"id": product_id}), 201
+
+
+@store_bp.route("/store/admin/products/<int:product_id>", methods=["PATCH"])
+@require_store_admin
+def admin_update_product(product_id: int):
+    data = request.get_json(silent=True) or {}
+    repo = _repo()
+    if not repo.get_product(product_id):
+        return jsonify({"error": "Product not found"}), 404
+    try:
+        updated = repo.update_product(product_id, **data)
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "SKU conflict"}), 409
+    if not updated:
+        return jsonify({"error": "No valid fields to update"}), 400
+
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "update_product",
+                    f"id={product_id} fields={sorted(data.keys())}")
+    return jsonify({"success": True})
+
+
+@store_bp.route("/store/admin/products/<int:product_id>/deactivate", methods=["POST"])
+@require_store_admin
+def admin_deactivate_product(product_id: int):
+    """Soft delete: products referenced by orders must never be hard-deleted."""
+    repo = _repo()
+    if not repo.update_product(product_id, is_active=0):
+        return jsonify({"error": "Product not found"}), 404
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "deactivate_product", f"id={product_id}")
+    return jsonify({"success": True})
+
+
+# ----------------------------------------------------------------------
+# Store admin: order queue
+# ----------------------------------------------------------------------
+
+@store_bp.route("/store/admin/orders", methods=["GET"])
+@require_store_admin
+def admin_list_orders():
+    status = request.args.get("status")
+    try:
+        limit = min(int(request.args.get("limit", 100)), 500)
+        orders = _repo().list_orders(status=status, limit=limit)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"orders": orders, "statuses": ORDER_STATUSES})
+
+
+@store_bp.route("/store/admin/orders/<int:order_id>", methods=["GET"])
+@require_store_admin
+def admin_get_order(order_id: int):
+    order = _repo().get_order(order_id)
+    if not order:
+        return jsonify({"error": "Order not found"}), 404
+    return jsonify({"order": order})
+
+
+@store_bp.route("/store/admin/orders/<int:order_id>/ship", methods=["POST"])
+@require_store_admin
+def admin_ship_order(order_id: int):
+    data = request.get_json(silent=True) or {}
+    tracking = (data.get("tracking_number") or "").strip()
+    if not tracking:
+        return jsonify({"error": "tracking_number is required"}), 400
+
+    repo = _repo()
+    if not repo.mark_shipped(order_id, tracking, data.get("tracking_carrier")):
+        return jsonify({"error": "Order not found or not in 'paid' status"}), 409
+
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "ship_order",
+                    f"id={order_id} tracking={tracking}")
+    # Phase 3: notify the Discord bot here so the buyer gets a DM.
+    return jsonify({"success": True})
+
+
+@store_bp.route("/store/admin/orders/<int:order_id>/status", methods=["POST"])
+@require_store_admin
+def admin_set_order_status(order_id: int):
+    data = request.get_json(silent=True) or {}
+    status = data.get("status")
+    repo = _repo()
+    try:
+        if not repo.set_status(order_id, status):
+            return jsonify({"error": "Order not found"}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    if status == "cancelled":
+        repo.restock_order_items(order_id)
+
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "set_order_status",
+                    f"id={order_id} status={status}")
+    return jsonify({"success": True})
+
+
+@store_bp.route("/store/admin/audit", methods=["GET"])
+@require_store_admin
+def admin_audit_log():
+    return jsonify({"audit": _repo().list_audit()})
+
+
+# ----------------------------------------------------------------------
+# Store admin: backup download
+# ----------------------------------------------------------------------
+
+@store_bp.route("/store/admin/backup", methods=["GET"])
+@require_store_admin
+def admin_download_backup():
+    """Stream a consistent snapshot of store.db to the admin's machine.
+
+    Uses SQLite's online backup API, which is safe while the DB is in use
+    (a plain file copy of a live SQLite database can be corrupt).
+    """
+    src = sqlite3.connect(STORE_DB_PATH)
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp_path = Path(tmp.name)
+    tmp.close()
+    try:
+        dest = sqlite3.connect(tmp_path)
+        with dest:
+            src.backup(dest)
+        dest.close()
+    finally:
+        src.close()
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    actor_id, actor_name = _actor()
+    _repo().log_action(actor_id, actor_name, "download_backup", stamp)
+    return send_file(
+        tmp_path,
+        as_attachment=True,
+        download_name=f"store-backup-{stamp}.db",
+        mimetype="application/octet-stream",
+    )

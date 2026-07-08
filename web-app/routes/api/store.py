@@ -158,7 +158,11 @@ def admin_ship_order(order_id: int):
     actor_id, actor_name = _actor()
     repo.log_action(actor_id, actor_name, "ship_order",
                     f"id={order_id} tracking={tracking}")
-    # Phase 3: notify the Discord bot here so the buyer gets a DM.
+    try:
+        from services.store_notifications import StoreNotificationService
+        StoreNotificationService(repo).notify_order_shipped(repo.get_order(order_id))
+    except Exception:
+        logger.exception(f"Shipped notification failed for order {order_id}")
     return jsonify({"success": True})
 
 
@@ -258,6 +262,11 @@ def create_checkout():
     if missing:
         return jsonify({"error": f"Missing address fields: {', '.join(missing)}"}), 400
 
+    provider = session.get("auth_provider", "discord")
+    if provider != "discord" and not (data.get("email") or "").strip():
+        # Email is the only way to reach non-Discord buyers about their order
+        return jsonify({"error": "Email address is required"}), 400
+
     user_id = str(session.get("user_id", 0))
     username = session.get("username", "unknown")
 
@@ -268,6 +277,7 @@ def create_checkout():
             items=items,
             shipping_address=address,
             email=data.get("email"),
+            auth_provider=provider,
             address_validated=False,  # phase 4: Google address validation
         )
     except ValueError as e:
@@ -321,3 +331,45 @@ def stripe_webhook():
     # Always 200 for verified events so Stripe stops retrying ones we
     # deliberately ignored; mishandled orders are logged + audited.
     return jsonify(result), 200
+
+
+@store_bp.route("/store/checkout/prefill", methods=["GET"])
+@require_auth
+def checkout_prefill():
+    """Pre-populate the checkout form from the user's profile and last order.
+
+    Google users get name + email from their profile; repeat buyers of
+    either provider get their most recent shipping address.
+    """
+    user_id = str(session.get("user_id", 0))
+    provider = session.get("auth_provider", "discord")
+
+    prefill = {
+        "username": session.get("username"),
+        "auth_provider": provider,
+        "name": None,
+        "email": None,
+        "address": None,
+    }
+
+    try:
+        from repositories.user_profiles import UserProfileRepository
+        profile = UserProfileRepository().get_by_user_id(user_id)
+        if profile:
+            prefill["email"] = profile.get("email")
+            given = profile.get("given_name") or ""
+            family = profile.get("family_name") or ""
+            full = f"{given} {family}".strip()
+            prefill["name"] = full or profile.get("display_name")
+    except Exception:
+        logger.exception("Prefill profile lookup failed")
+
+    last = _repo().last_shipping_address(user_id)
+    if last:
+        prefill["address"] = {k: last[k] for k in
+                              ("name", "line1", "line2", "city",
+                               "state", "postal", "country")}
+        prefill["email"] = prefill["email"] or last.get("email")
+        prefill["name"] = prefill["name"] or last.get("name")
+
+    return jsonify(prefill)

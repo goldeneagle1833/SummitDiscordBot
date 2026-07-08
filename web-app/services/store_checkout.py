@@ -60,6 +60,7 @@ class StoreCheckoutService:
         items: list[dict],
         shipping_address: dict,
         email: str | None = None,
+        auth_provider: str = "discord",
         address_validated: bool = False,
     ) -> dict:
         """Create a pending order and a Stripe Checkout Session.
@@ -75,6 +76,7 @@ class StoreCheckoutService:
             items=items,
             shipping_address=shipping_address,
             email=email,
+            auth_provider=auth_provider,
             shipping_cents=FLAT_SHIPPING_CENTS,
             tax_cents=0,  # TODO phase 5+: Stripe Tax for Ohio nexus
             address_validated=address_validated,
@@ -207,7 +209,15 @@ class StoreCheckoutService:
                 f"order={order['order_number']} amount={amount}",
             )
             logger.info(f"Order paid: {order['order_number']}")
-            # Phase 3: notify Discord bot (admin channel ping + buyer DM).
+            try:
+                from services.store_notifications import StoreNotificationService
+                StoreNotificationService(self.repo).notify_order_paid(
+                    self.repo.get_order(order["id"])
+                )
+            except Exception:
+                logger.exception(
+                    f"Notification enqueue failed for {order['order_number']}"
+                )
             return {"handled": True, "order_number": order["order_number"]}
 
         # Already paid: webhook retry/duplicate. Fine.

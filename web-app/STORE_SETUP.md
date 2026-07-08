@@ -108,9 +108,33 @@ Notes:
 - Shipping is a flat rate via `STORE_FLAT_SHIPPING_CENTS` for now.
 - Tax is 0 for now — revisit with Stripe Tax once volume justifies it.
 
+## Phase 3a: Notifications + checkout prefill (included)
+
+Routing when an order is paid or shipped:
+- Admin channel ping — always (set `STORE_ORDERS_CHANNEL_ID` in bot config)
+- Buyer logged in with **Discord** — bot DM (plus email if given at checkout,
+  since DMs can be closed)
+- Buyer logged in with **Google** — email via SMTP
+
+How it works: the web app writes rows to a `notifications` outbox table in
+store.db; the bot's `StoreNotificationsCog` polls every 30s and delivers
+Discord messages; the web app sends email inline with failed sends left
+pending (retry via `StoreNotificationService.retry_pending_emails()`).
+Delivery attempts cap at 5, then the row is marked failed with the error
+recorded — visible via the audit/admin endpoints.
+
+`GET /api/store/checkout/prefill` (logged-in) returns `{username,
+auth_provider, name, email, address}` for pre-populating the checkout form:
+Google users get name/email from their profile, and repeat buyers of either
+provider get their most recent shipping address.
+
+SMTP setup is in `.env.example`. Without SMTP configured, email rows are
+marked failed with a clear error, and Discord users are unaffected.
+
 ## Next phases
 
-3. Admin order queue UI (React) + Discord bot notifications (admin channel
+3b. React store + admin UI (product management, order queue, checkout form).
+4. Admin order queue UI (React) + Discord bot notifications (admin channel
    ping on paid, buyer DM with tracking on shipped).
 4. Google Maps Address Validation on the checkout address form.
 5. PayPal, then crypto (NOWPayments or similar), reusing the same order flow.

@@ -36,6 +36,7 @@ MILESTONE_CHANNEL_ID = 000000000000000000  # Replace with your test channel ID
 LEADERBOARD_CHANNEL_ID = 000000000000000000  # Replace with your test channel ID
 DM_DISABLED_CHANNEL_ID = 000000000000000000  # Replace with your test channel ID
 DECKLISTS_CHANNEL_ID = 000000000000000000  # Replace with your test channel ID
+STORE_ORDERS_CHANNEL_ID = 000000000000000000  # Admin-only channel for paid-order pings
 
 # User/Role IDs
 # Replace these with your Discord user ID and test server role IDs

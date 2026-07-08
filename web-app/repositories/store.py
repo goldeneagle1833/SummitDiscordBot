@@ -61,6 +61,7 @@ class StoreRepository:
                     user_id TEXT NOT NULL,
                     username TEXT NOT NULL,
                     email TEXT,
+                    auth_provider TEXT DEFAULT 'discord',   -- discord | google
                     status TEXT NOT NULL DEFAULT 'pending_payment',
                     subtotal_cents INTEGER NOT NULL DEFAULT 0,
                     shipping_cents INTEGER NOT NULL DEFAULT 0,
@@ -104,6 +105,22 @@ class StoreRepository:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_id INTEGER REFERENCES orders(id),
+                    channel TEXT NOT NULL,      -- discord_dm | discord_admin | email
+                    recipient TEXT NOT NULL,    -- discord user id, channel id, or email
+                    subject TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',  -- pending | sent | failed
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT,
+                    created_at TEXT NOT NULL,
+                    sent_at TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_notif_pending
+                    ON notifications(status, channel);
                 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
                 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
                 CREATE INDEX IF NOT EXISTS idx_items_order ON order_items(order_id);
@@ -196,6 +213,7 @@ class StoreRepository:
         items: list[dict],          # [{product_id, quantity}]
         shipping_address: dict,     # keys: name, line1, line2, city, state, postal, country
         email: str | None = None,
+        auth_provider: str = "discord",
         shipping_cents: int = 0,
         tax_cents: int = 0,
         address_validated: bool = False,
@@ -237,16 +255,16 @@ class StoreRepository:
                 total = subtotal + shipping_cents + tax_cents
                 cur = conn.execute(
                     """INSERT INTO orders
-                       (order_number, user_id, username, email, status,
+                       (order_number, user_id, username, email, auth_provider, status,
                         subtotal_cents, shipping_cents, tax_cents, total_cents,
                         ship_name, ship_line1, ship_line2, ship_city, ship_state,
                         ship_postal, ship_country, address_validated,
                         created_at, updated_at)
-                       VALUES (?, ?, ?, ?, 'pending_payment',
+                       VALUES (?, ?, ?, ?, ?, 'pending_payment',
                                ?, ?, ?, ?,
                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        order_number, str(user_id), username, email,
+                        order_number, str(user_id), username, email, auth_provider,
                         subtotal, shipping_cents, tax_cents, total,
                         shipping_address.get("name"),
                         shipping_address.get("line1"),
@@ -386,3 +404,76 @@ class StoreRepository:
                     (limit,),
                 ).fetchall()
             ]
+
+    # ------------------------------------------------------------------
+    # Notifications outbox (web app writes, bot/email sender consumes)
+    # ------------------------------------------------------------------
+
+    def enqueue_notification(self, order_id: int | None, channel: str,
+                             recipient: str, subject: str, body: str) -> int:
+        with self._connect() as conn:
+            cur = conn.execute(
+                """INSERT INTO notifications
+                   (order_id, channel, recipient, subject, body, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (order_id, channel, str(recipient), subject, body, self._now()),
+            )
+            return cur.lastrowid
+
+    def fetch_pending_notifications(self, channels: tuple[str, ...],
+                                    max_attempts: int = 5,
+                                    limit: int = 20) -> list[dict]:
+        placeholders = ",".join("?" for _ in channels)
+        with self._connect() as conn:
+            return [
+                dict(r) for r in conn.execute(
+                    f"""SELECT * FROM notifications
+                        WHERE status = 'pending' AND channel IN ({placeholders})
+                          AND attempts < ?
+                        ORDER BY created_at ASC LIMIT ?""",
+                    (*channels, max_attempts, limit),
+                ).fetchall()
+            ]
+
+    def mark_notification(self, notification_id: int, success: bool,
+                          error: str | None = None) -> None:
+        with self._connect() as conn:
+            if success:
+                conn.execute(
+                    """UPDATE notifications SET status = 'sent', sent_at = ?,
+                       attempts = attempts + 1 WHERE id = ?""",
+                    (self._now(), notification_id),
+                )
+            else:
+                conn.execute(
+                    """UPDATE notifications
+                       SET attempts = attempts + 1, last_error = ?,
+                           status = CASE WHEN attempts + 1 >= 5
+                                    THEN 'failed' ELSE 'pending' END
+                       WHERE id = ?""",
+                    (error, notification_id),
+                )
+
+    # ------------------------------------------------------------------
+    # Prefill helpers
+    # ------------------------------------------------------------------
+
+    def last_shipping_address(self, user_id: str) -> dict | None:
+        """Most recent shipping address this user checked out with."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT ship_name, ship_line1, ship_line2, ship_city,
+                          ship_state, ship_postal, ship_country, email
+                   FROM orders WHERE user_id = ?
+                   ORDER BY created_at DESC LIMIT 1""",
+                (str(user_id),),
+            ).fetchone()
+            if row is None:
+                return None
+            d = dict(row)
+            return {
+                "name": d["ship_name"], "line1": d["ship_line1"],
+                "line2": d["ship_line2"], "city": d["ship_city"],
+                "state": d["ship_state"], "postal": d["ship_postal"],
+                "country": d["ship_country"], "email": d["email"],
+            }

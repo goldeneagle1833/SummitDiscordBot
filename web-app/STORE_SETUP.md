@@ -78,10 +78,38 @@ contain customer shipping addresses and must never be committed.
 - **Products are soft-deleted** (`is_active = 0`) because order rows
   reference them.
 
+## Phase 2: Stripe checkout (included)
+
+New endpoints:
+- `POST /api/store/checkout` (logged-in) — body `{items, shipping_address, email?}`;
+  creates a pending order (stock reserved), returns `{order_number, checkout_url}`.
+  Redirect the buyer to `checkout_url`.
+- `GET  /api/store/orders/mine` (logged-in) — buyer's own order history.
+- `POST /api/store/webhooks/stripe` — signature-verified; the ONLY code path
+  that marks an order paid. Never trust the success redirect page as payment
+  proof. Verifies amount + currency against the order; mismatches are audited
+  and left for manual review instead of auto-fulfilled. Expired sessions
+  cancel the order and restock.
+
+Setup:
+1. `pip install -r requirements.txt` (adds `stripe`)
+2. Set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in `.env`
+3. In the Stripe dashboard, add a webhook endpoint pointing to
+   `https://yourdomain.com/api/store/webhooks/stripe` listening for
+   `checkout.session.completed` and `checkout.session.expired`.
+4. Local testing without a public URL: `stripe listen --forward-to
+   localhost:5000/api/store/webhooks/stripe` (Stripe CLI prints the
+   `whsec_...` secret to use). Card `4242 4242 4242 4242` completes test
+   payments.
+
+Notes:
+- Prices are always read from the database; the client only sends product
+  IDs and quantities.
+- Shipping is a flat rate via `STORE_FLAT_SHIPPING_CENTS` for now.
+- Tax is 0 for now — revisit with Stripe Tax once volume justifies it.
+
 ## Next phases
 
-2. Stripe Checkout: checkout endpoint creating a session from a pending
-   order, webhook route with signature verification calling `mark_paid`.
 3. Admin order queue UI (React) + Discord bot notifications (admin channel
    ping on paid, buyer DM with tracking on shipped).
 4. Google Maps Address Validation on the checkout address form.

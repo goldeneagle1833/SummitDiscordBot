@@ -222,3 +222,102 @@ def admin_download_backup():
         download_name=f"store-backup-{stamp}.db",
         mimetype="application/octet-stream",
     )
+
+
+# ----------------------------------------------------------------------
+# Checkout (logged-in buyers)
+# ----------------------------------------------------------------------
+
+from utils.auth import require_auth  # noqa: E402
+from services.store_checkout import StoreCheckoutService  # noqa: E402
+
+
+@store_bp.route("/store/checkout", methods=["POST"])
+@require_auth
+def create_checkout():
+    """Create a pending order and return a Stripe hosted checkout URL.
+
+    Body: {
+      items: [{product_id, quantity}],
+      shipping_address: {name, line1, line2?, city, state, postal, country?},
+      email?: str
+    }
+    """
+    service = StoreCheckoutService()
+    if not service.is_configured():
+        return jsonify({"error": "Payments are not configured"}), 503
+
+    data = request.get_json(silent=True) or {}
+    items = data.get("items") or []
+    address = data.get("shipping_address") or {}
+
+    if not items:
+        return jsonify({"error": "Cart is empty"}), 400
+    required_addr = ("name", "line1", "city", "state", "postal")
+    missing = [f for f in required_addr if not (address.get(f) or "").strip()]
+    if missing:
+        return jsonify({"error": f"Missing address fields: {', '.join(missing)}"}), 400
+
+    user_id = str(session.get("user_id", 0))
+    username = session.get("username", "unknown")
+
+    try:
+        result = service.create_checkout(
+            user_id=user_id,
+            username=username,
+            items=items,
+            shipping_address=address,
+            email=data.get("email"),
+            address_validated=False,  # phase 4: Google address validation
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    except Exception:
+        logger.exception("Checkout creation failed")
+        return jsonify({"error": "Could not start checkout, please try again"}), 502
+
+    return jsonify(result), 201
+
+
+@store_bp.route("/store/orders/mine", methods=["GET"])
+@require_auth
+def my_orders():
+    """List the logged-in user's own orders (most recent first)."""
+    user_id = str(session.get("user_id", 0))
+    repo = _repo()
+    orders = [o for o in repo.list_orders(limit=200) if o["user_id"] == user_id]
+    # Buyers don't need internal/admin fields
+    public_fields = (
+        "order_number", "status", "total_cents", "currency",
+        "tracking_number", "tracking_carrier", "created_at", "paid_at", "shipped_at",
+    )
+    return jsonify({
+        "orders": [{k: o.get(k) for k in public_fields} for o in orders[:50]]
+    })
+
+
+# ----------------------------------------------------------------------
+# Stripe webhook (no session auth: verified by signature instead)
+# ----------------------------------------------------------------------
+
+@store_bp.route("/store/webhooks/stripe", methods=["POST"])
+def stripe_webhook():
+    """Receive Stripe events. This is the ONLY path that marks orders paid."""
+    service = StoreCheckoutService()
+    if not service.is_configured():
+        return jsonify({"error": "not configured"}), 503
+
+    payload = request.get_data()  # raw bytes: required for signature check
+    sig_header = request.headers.get("Stripe-Signature", "")
+    try:
+        event = service.construct_event(payload, sig_header)
+    except Exception:
+        logger.warning(
+            f"Stripe webhook signature verification failed from {request.remote_addr}"
+        )
+        return jsonify({"error": "invalid signature"}), 400
+
+    result = service.handle_event(event)
+    # Always 200 for verified events so Stripe stops retrying ones we
+    # deliberately ignored; mishandled orders are logged + audited.
+    return jsonify(result), 200

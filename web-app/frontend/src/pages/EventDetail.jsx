@@ -242,7 +242,7 @@ function CardStatsTable({ cardData, top8CardData }) {
     return <span className="text-secondary ml-1">{sortDir === 'asc' ? '▲' : '▼'}</span>
   }
 
-  const colSpan = hasComparison ? 9 : 7
+  const colSpan = hasComparison ? 10 : 7
 
   return (
     <div>
@@ -306,6 +306,9 @@ function CardStatsTable({ cardData, top8CardData }) {
                   <th className="py-3 px-3 text-left font-semibold w-16 hidden sm:table-cell">
                     <span className="text-text-muted">Diff</span>
                   </th>
+                  <th className="py-3 px-3 text-left font-semibold cursor-pointer select-none w-28 hidden sm:table-cell" onClick={() => handleSort('conversion_rate')}>
+                    Conv. Rate{sortIcon('conversion_rate')}
+                  </th>
                 </>
               )}
             </tr>
@@ -336,6 +339,13 @@ function CardStatsTable({ cardData, top8CardData }) {
                         {diff !== 0 && (
                           <span className={diff > 0 ? 'text-green-400' : 'text-red-400'}>
                             {diff > 0 ? '+' : ''}{diff}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 font-semibold hidden sm:table-cell">
+                        {card.conversion_rate != null && (
+                          <span className={parseFloat(card.conversion_rate) > 0 ? 'text-cyan-400' : 'text-text-muted'}>
+                            {card.conversion_rate}%
                           </span>
                         )}
                       </td>

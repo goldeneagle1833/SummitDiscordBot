@@ -751,6 +751,7 @@ class EventRepository:
                     "rarity": stats["rarity"],
                     "avg_played": str(avg_played),
                     "deck_percent": str(deck_percent),
+                    "decks_with": decks_with,
                 })
 
         result.sort(key=lambda x: x["count"], reverse=True)
@@ -796,7 +797,27 @@ class EventRepository:
         all_decks = self._load_all_decks(event_folder)
         card_data = self._compute_card_stats(all_decks) if all_decks else []
 
+        # Compute top8 card stats from JSON for conversion rate
+        files = self._find_json_files(event_folder)
+        top8_decks = []
+        if files and files["top8"] and files["top8"].exists():
+            try:
+                with open(files["top8"], "r", encoding="utf-8") as f:
+                    top8_decks = json.load(f)[:8]
+            except Exception:
+                pass
+
+        top8_card_stats = self._compute_card_stats(top8_decks) if top8_decks else []
         top8_card_data = self._read_card_csv(top8_cards_csv)
+
+        # Build top8 decks_with lookup for conversion rate
+        if top8_card_stats:
+            top8_decks_with = {c["name"]: c["decks_with"] for c in top8_card_stats}
+            for card in card_data:
+                t8 = top8_decks_with.get(card["name"], 0)
+                all_count = card["decks_with"]
+                card["conversion_rate"] = round(t8 / all_count * 100, 1) if all_count > 0 else 0
+                card["top8_decks_with"] = t8
 
         return {
             "element_data": element_data,

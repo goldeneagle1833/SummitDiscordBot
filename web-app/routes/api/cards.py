@@ -40,10 +40,11 @@ def _build_card_image_lookup():
     """Build card name -> image filename lookup."""
     card_image_lookup = {}
     if CARD_IMAGES_DIR.exists():
-        for filename in os.listdir(CARD_IMAGES_DIR):
-            if not filename.lower().endswith(".png"):
-                continue
-            base = filename[:-4].lower()
+        all_files = sorted(os.listdir(CARD_IMAGES_DIR))
+        png_files = [f for f in all_files if f.lower().endswith(".png")]
+        webp_files = [f for f in all_files if f.lower().endswith(".webp")]
+        for filename in png_files + webp_files:
+            base = re.sub(r"\.(png|jpg|jpeg|webp)$", "", filename, flags=re.IGNORECASE).lower()
             for suffix in ["-b-s", "-b-f", "-bt-s", "-bt-f", "-scg-f", "-bt-s-r"]:
                 if base.endswith(suffix):
                     base = base[:-len(suffix)]

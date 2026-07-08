@@ -101,12 +101,8 @@ function MatchTable({ matches, emptyText }) {
         <tbody>
           {matches.map((m, i) => (
             <tr key={i} className="border-b border-border/50 hover:bg-bg-elevated/50 transition-colors">
-              <td className="px-3 py-2">
-                <Link to={`/player/${m.winner_id}`} className="hover:text-primary transition-colors">{m.winner_name}</Link>
-              </td>
-              <td className="px-3 py-2">
-                <Link to={`/player/${m.loser_id}`} className="hover:text-primary transition-colors">{m.loser_name}</Link>
-              </td>
+              <td className="px-3 py-2">{m.winner_name}</td>
+              <td className="px-3 py-2">{m.loser_name}</td>
               <td className="px-3 py-2 text-text-muted whitespace-nowrap">
                 <span className="text-accent-green">+{m.winner_elo_change || 0}</span>
                 {' / '}

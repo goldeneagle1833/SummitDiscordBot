@@ -490,22 +490,25 @@ class EventRepository:
 
         top8_decks = []
         all_decks = []
+        seen_ids = set()
 
         if top8_json:
             try:
                 with open(top8_json, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     for deck in data[:8]:
-                        top8_decks.append(
-                            {
-                                "player": deck.get("username", "Unknown"),
-                                "avatar": deck.get("avatar", [{}])[0].get(
-                                    "name", "Unknown"
-                                ),
-                                "deck_name": deck.get("name", "Unnamed Deck"),
-                                "deck_id": deck.get("id", ""),
-                            }
-                        )
+                        deck_entry = {
+                            "player": deck.get("username", "Unknown"),
+                            "avatar": deck.get("avatar", [{}])[0].get(
+                                "name", "Unknown"
+                            ),
+                            "deck_name": deck.get("name", "Unnamed Deck"),
+                            "deck_id": deck.get("id", ""),
+                        }
+                        top8_decks.append(deck_entry)
+                        all_decks.append(deck_entry)
+                        if deck_entry["deck_id"]:
+                            seen_ids.add(deck_entry["deck_id"])
             except Exception:
                 pass
 
@@ -514,16 +517,20 @@ class EventRepository:
                 with open(full_json, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     for deck in data:
-                        all_decks.append(
-                            {
-                                "player": deck.get("username", "Unknown"),
-                                "avatar": deck.get("avatar", [{}])[0].get(
-                                    "name", "Unknown"
-                                ),
-                                "deck_name": deck.get("name", "Unnamed Deck"),
-                                "deck_id": deck.get("id", ""),
-                            }
-                        )
+                        deck_id = deck.get("id", "")
+                        if deck_id and deck_id in seen_ids:
+                            continue
+                        deck_entry = {
+                            "player": deck.get("username", "Unknown"),
+                            "avatar": deck.get("avatar", [{}])[0].get(
+                                "name", "Unknown"
+                            ),
+                            "deck_name": deck.get("name", "Unnamed Deck"),
+                            "deck_id": deck_id,
+                        }
+                        all_decks.append(deck_entry)
+                        if deck_id:
+                            seen_ids.add(deck_id)
             except Exception:
                 pass
 
@@ -645,7 +652,6 @@ class EventRepository:
             return None
 
         top8_decks = []
-        all_decks = []
 
         if files["top8"] and files["top8"].exists():
             try:
@@ -654,15 +660,11 @@ class EventRepository:
             except Exception:
                 pass
 
-        if files["full"] and files["full"].exists():
-            try:
-                with open(files["full"], "r", encoding="utf-8") as f:
-                    all_decks = json.load(f)
-            except Exception:
-                pass
+        # "all" combines top8 + full (deduplicated)
+        combined_decks = self._load_all_decks(event_folder) or []
 
         top8_stats = self._compute_element_stats(top8_decks) if top8_decks else None
-        all_stats = self._compute_element_stats(all_decks) if all_decks else None
+        all_stats = self._compute_element_stats(combined_decks) if combined_decks else None
 
         if not top8_stats and not all_stats:
             return None
@@ -699,6 +701,61 @@ class EventRepository:
             pass
         return card_data
 
+    def _compute_card_stats(self, decks: list[dict]) -> list[dict]:
+        """Compute card usage statistics from deck JSON data.
+
+        Returns a list of card stat dicts matching the format from _read_card_csv.
+        """
+        if not decks:
+            return []
+
+        total_decks = len(decks)
+        card_stats = {}
+
+        for deck in decks:
+            seen_in_deck = set()
+            for group_name in ("avatar", "spellbook", "atlas"):
+                group = deck.get(group_name, [])
+                for card in group:
+                    name = card.get("name", "")
+                    if not name:
+                        continue
+                    qty = card.get("quantity", 1)
+
+                    if name not in card_stats:
+                        elements = card.get("elements", "None")
+                        card_stats[name] = {
+                            "type": card.get("type", "Unknown"),
+                            "element": elements,
+                            "rarity": card.get("rarity", "Unknown"),
+                            "total_qty": 0,
+                            "decks_with": 0,
+                        }
+
+                    card_stats[name]["total_qty"] += qty
+                    if name not in seen_in_deck:
+                        card_stats[name]["decks_with"] += 1
+                        seen_in_deck.add(name)
+
+        result = []
+        for name, stats in sorted(card_stats.items()):
+            decks_with = stats["decks_with"]
+            avg_played = round(stats["total_qty"] / decks_with) if decks_with else 0
+            deck_percent = round((decks_with / total_decks) * 100) if total_decks else 0
+            if stats["total_qty"] > 0:
+                result.append({
+                    "name": name,
+                    "type": stats["type"],
+                    "element": stats["element"],
+                    "count": stats["total_qty"],
+                    "rarity": stats["rarity"],
+                    "avg_played": str(avg_played),
+                    "deck_percent": str(deck_percent),
+                })
+
+        result.sort(key=lambda x: x["count"], reverse=True)
+        return result
+
     def get_event_stats(self, event_folder: str) -> dict:
         """Get statistics data for a specific event."""
         event_path = self._validate_event_folder(event_folder)
@@ -708,7 +765,6 @@ class EventRepository:
 
         csv_files = list(event_path.glob("*.csv"))
         elements_csv = None
-        cards_csv = None
         top8_cards_csv = None
 
         for csv_file in csv_files:
@@ -717,8 +773,6 @@ class EventRepository:
                 elements_csv = csv_file
             elif "top8" in name_lower or "top 8" in name_lower:
                 top8_cards_csv = csv_file
-            else:
-                cards_csv = csv_file
 
         element_data = []
 
@@ -738,7 +792,10 @@ class EventRepository:
             except Exception:
                 pass
 
-        card_data = self._read_card_csv(cards_csv)
+        # Compute card_data from combined top8 + all participants deck JSON
+        all_decks = self._load_all_decks(event_folder)
+        card_data = self._compute_card_stats(all_decks) if all_decks else []
+
         top8_card_data = self._read_card_csv(top8_cards_csv)
 
         return {
@@ -929,9 +986,13 @@ class EventRepository:
             logger.error(f"Failed to write {table_type} JSON for {event_folder}: {e}")
             return {"success": False, "error": f"Failed to write {table_type} data"}
 
-        # Regenerate card stats CSV for the updated list
-        suffix = "top8" if table_type == "top8" else ""
-        self.generate_card_stats_csv(event_folder, new_decks, suffix)
+        # Regenerate card stats CSVs
+        if table_type == "top8":
+            self.generate_card_stats_csv(event_folder, new_decks, "top8")
+        # Always regenerate the combined "all" CSV from top8 + full
+        all_decks = self._load_all_decks(event_folder)
+        if all_decks:
+            self.generate_card_stats_csv(event_folder, all_decks)
 
         return {"success": True}
 
@@ -1071,12 +1132,12 @@ class EventRepository:
             count, errs = self._refresh_json_file(files["full"], curiosa_service, "all participants")
             total_refreshed += count
             errors.extend(errs)
-            if count > 0:
-                try:
-                    with open(files["full"], "r", encoding="utf-8") as f:
-                        self.generate_card_stats_csv(event_folder, json.load(f))
-                except Exception:
-                    pass
+
+        # Regenerate combined "all" CSV from top8 + full
+        if total_refreshed > 0:
+            all_decks = self._load_all_decks(event_folder)
+            if all_decks:
+                self.generate_card_stats_csv(event_folder, all_decks)
 
         result = {"success": True, "refreshed": total_refreshed}
         if errors:

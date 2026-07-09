@@ -326,6 +326,15 @@ class StoreRepository:
         with self._connect() as conn:
             return [dict(r) for r in conn.execute(query, params).fetchall()]
 
+    def list_orders_by_user(self, user_id: str, limit: int = 50) -> list[dict]:
+        with self._connect() as conn:
+            return [
+                dict(r) for r in conn.execute(
+                    "SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+                    (str(user_id), limit),
+                ).fetchall()
+            ]
+
     def attach_payment(self, order_id: int, provider: str, payment_ref: str) -> bool:
         with self._connect() as conn:
             cur = conn.execute(

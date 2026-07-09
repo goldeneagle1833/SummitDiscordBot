@@ -31,6 +31,7 @@ FLAT_SHIPPING_CENTS = int(os.environ.get("STORE_FLAT_SHIPPING_CENTS", "599"))
 CHECKOUT_EXPIRES_MINUTES = 60  # Stripe minimum is 30
 
 stripe.api_key = STRIPE_SECRET_KEY
+stripe.api_version = "2025-06-30.basil"
 
 
 def _site_url(path: str) -> str:

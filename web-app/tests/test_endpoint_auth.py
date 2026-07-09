@@ -156,6 +156,10 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # -- Deck Builder (public tool) --
     "api.deck_builder.all_cards",
     "api.deck_builder.fetch_deck",
+
+    # -- Store (public catalog + Stripe webhook verified by signature) --
+    "api.store.list_products",
+    "api.store.stripe_webhook",
 }
 
 

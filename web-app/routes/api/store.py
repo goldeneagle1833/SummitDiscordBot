@@ -295,14 +295,14 @@ def my_orders():
     """List the logged-in user's own orders (most recent first)."""
     user_id = str(session.get("user_id", 0))
     repo = _repo()
-    orders = [o for o in repo.list_orders(limit=200) if o["user_id"] == user_id]
+    orders = repo.list_orders_by_user(user_id, limit=50)
     # Buyers don't need internal/admin fields
     public_fields = (
         "order_number", "status", "total_cents", "currency",
         "tracking_number", "tracking_carrier", "created_at", "paid_at", "shipped_at",
     )
     return jsonify({
-        "orders": [{k: o.get(k) for k in public_fields} for o in orders[:50]]
+        "orders": [{k: o.get(k) for k in public_fields} for o in orders]
     })
 
 

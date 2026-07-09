@@ -37,6 +37,8 @@ CURIO_UPLOADS_DIR = STATIC_DIR / "uploads" / "curios"
 CURIO_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 BANNER_UPLOADS_DIR = STATIC_DIR / "uploads" / "banners"
 BANNER_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+STORE_UPLOADS_DIR = STATIC_DIR / "uploads" / "store"
+STORE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Flask configuration
 # SECURITY: SECRET_KEY must be set in production via environment variable

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   adminGetProducts, adminCreateProduct, adminUpdateProduct, adminDeactivateProduct,
   adminGetOrders, adminGetOrder, adminShipOrder, adminSetOrderStatus, formatMoney,
@@ -19,6 +19,32 @@ function ProductsPanel() {
   const [error, setError] = useState(null)
   const [form, setForm] = useState(EMPTY_PRODUCT)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef(null)
+
+  const uploadImage = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setError(null)
+    try {
+      const fd = new FormData()
+      fd.append('image', file)
+      const r = await fetch('/api/store/admin/products/upload-image', {
+        method: 'POST',
+        body: fd,
+        credentials: 'include',
+      })
+      const d = await r.json()
+      if (d.success) setForm((x) => ({ ...x, image_url: d.url }))
+      else setError(`Upload failed: ${d.error}`)
+    } catch {
+      setError('Upload failed')
+    } finally {
+      setUploading(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
 
   const load = useCallback(() => {
     adminGetProducts()
@@ -89,7 +115,41 @@ function ProductsPanel() {
           <input className={`${inputCls} sm:col-span-2`} placeholder="Description" value={form.description} onChange={set('description')} />
           <input className={inputCls} placeholder="Price (e.g. 12.99)" inputMode="decimal" value={form.price} onChange={set('price')} />
           <input className={inputCls} placeholder="Stock quantity" inputMode="numeric" value={form.stock_quantity} onChange={set('stock_quantity')} />
-          <input className={`${inputCls} sm:col-span-2`} placeholder="Image URL (optional)" value={form.image_url} onChange={set('image_url')} />
+          <div className="sm:col-span-2 flex items-center gap-3">
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".jpg,.jpeg,.png,.webp,.gif"
+              onChange={uploadImage}
+              className="hidden"
+              id="product-image-file"
+            />
+            <label
+              htmlFor="product-image-file"
+              className="cursor-pointer rounded border border-border bg-bg-elevated px-4 py-2 text-sm hover:border-primary transition-colors"
+            >
+              {uploading ? 'Uploading…' : 'Upload image'}
+            </label>
+            {form.image_url ? (
+              <>
+                <img src={form.image_url} alt="Product preview" className="h-12 w-12 object-cover rounded border border-border" />
+                <button
+                  type="button"
+                  onClick={() => setForm((x) => ({ ...x, image_url: '' }))}
+                  className="text-sm text-text-muted hover:text-accent-red"
+                >
+                  Remove
+                </button>
+              </>
+            ) : (
+              <input
+                className={`${inputCls} flex-1`}
+                placeholder="…or paste an image URL"
+                value={form.image_url}
+                onChange={set('image_url')}
+              />
+            )}
+          </div>
         </div>
         <button
           onClick={addProduct}
@@ -106,6 +166,7 @@ function ProductsPanel() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left">
+              <th className="py-2 px-3" />
               <th className="py-2 px-3 font-semibold text-text-muted">SKU</th>
               <th className="py-2 px-3 font-semibold text-text-muted">Name</th>
               <th className="py-2 px-3 font-semibold text-text-muted">Price</th>
@@ -117,6 +178,13 @@ function ProductsPanel() {
           <tbody>
             {products.map((p) => (
               <tr key={p.id} className="border-b border-border/50 hover:bg-bg-surface/50">
+                <td className="py-2 px-3">
+                  {p.image_url ? (
+                    <img src={p.image_url} alt="" className="h-10 w-10 object-cover rounded border border-border" />
+                  ) : (
+                    <div className="h-10 w-10 rounded border border-border bg-bg-elevated" />
+                  )}
+                </td>
                 <td className="py-2 px-3 font-mono text-xs">{p.sku}</td>
                 <td className="py-2 px-3">{p.name}</td>
                 <td className="py-2 px-3 text-secondary">{formatMoney(p.price_cents, p.currency)}</td>

@@ -373,3 +373,44 @@ def checkout_prefill():
         prefill["name"] = prefill["name"] or last.get("name")
 
     return jsonify(prefill)
+
+
+# ----------------------------------------------------------------------
+# Product image upload (same pattern as banner uploads)
+# ----------------------------------------------------------------------
+
+import os as _os  # noqa: E402
+import uuid as _uuid  # noqa: E402
+from webapp_config import STORE_UPLOADS_DIR  # noqa: E402
+
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
+
+
+@store_bp.route("/store/admin/products/upload-image", methods=["POST"])
+@require_store_admin
+def upload_product_image():
+    """Upload a product image. Returns the URL path to store on the product."""
+    file = request.files.get("image")
+    if not file or not file.filename:
+        return jsonify({"success": False, "error": "No image file provided"}), 400
+
+    ext = _os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        return jsonify({
+            "success": False,
+            "error": f"Invalid format. Allowed: {', '.join(sorted(ALLOWED_IMAGE_EXTENSIONS))}",
+        }), 400
+
+    file.seek(0, _os.SEEK_END)
+    size = file.tell()
+    file.seek(0)
+    if size > MAX_IMAGE_SIZE:
+        return jsonify({"success": False, "error": "Image too large. Maximum 5MB"}), 400
+
+    filename = f"{_uuid.uuid4()}{ext}"
+    file.save(str(STORE_UPLOADS_DIR / filename))
+
+    actor_id, actor_name = _actor()
+    _repo().log_action(actor_id, actor_name, "upload_product_image", filename)
+    return jsonify({"success": True, "url": f"/static/uploads/store/{filename}"})

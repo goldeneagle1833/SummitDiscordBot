@@ -11,6 +11,7 @@ from webapp_config import (
     ADMINS,
 )
 from utils.auth import is_admin, is_explorer_admin, is_rumble_admin, require_admin
+from utils.store_auth import is_store_admin
 
 misc_bp = Blueprint("misc", __name__)
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ def me():
         "is_creator": session.get("is_creator", False) or str(user_id) in ADMINS,
         "is_explorer_admin": is_explorer_admin(),
         "is_rumble_admin": is_rumble_admin(),
+        "is_store_admin": is_store_admin(),
     })
 
 

@@ -4,6 +4,7 @@ import { AuthProvider } from '@/context/AuthContext'
 import Nav from '@/components/layout/Nav'
 import Footer from '@/components/layout/Footer'
 import AdminGuard from '@/components/layout/AdminGuard'
+import StoreAdminGuard from '@/components/layout/StoreAdminGuard'
 import CreatorGuard from '@/components/layout/CreatorGuard'
 import Spinner from '@/components/ui/Spinner'
 
@@ -47,6 +48,11 @@ import FartLeaderboard from '@/pages/FartLeaderboard'
 import Rumble from '@/pages/Rumble'
 import DeckBuilder from '@/pages/DeckBuilder'
 import Login from '@/pages/Login'
+import Store from '@/pages/Store'
+import StoreCheckout from '@/pages/StoreCheckout'
+import StoreSuccess from '@/pages/StoreSuccess'
+import StoreCancelled from '@/pages/StoreCancelled'
+import MyOrders from '@/pages/MyOrders'
 import Creator from '@/pages/Creator'
 
 // Lazy-loaded pages
@@ -55,6 +61,7 @@ const ExplorerStandings = lazy(() => import('@/pages/ExplorerStandings'))
 
 // Phase 7: Admin
 import AuditLog from '@/pages/admin/AuditLog'
+import StoreAdmin from '@/pages/admin/StoreAdmin'
 import ActiveConnections from '@/pages/admin/ActiveConnections'
 import UniqueUsers from '@/pages/admin/UniqueUsers'
 import ExternalMatchesAdmin from '@/pages/admin/ExternalMatches'
@@ -168,6 +175,12 @@ const router = createBrowserRouter([
       // Creator
       { path: '/creator', element: <CreatorGuard><Creator /></CreatorGuard> },
       // Phase 7: Admin
+      { path: '/store', element: <Store /> },
+      { path: '/store/checkout', element: <StoreCheckout /> },
+      { path: '/store/success', element: <StoreSuccess /> },
+      { path: '/store/cancelled', element: <StoreCancelled /> },
+      { path: '/store/orders', element: <MyOrders /> },
+      { path: '/admin/store', element: <StoreAdminGuard><StoreAdmin /></StoreAdminGuard> },
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
       { path: '/admin/active-connections', element: <AdminGuard><ActiveConnections /></AdminGuard> },
       { path: '/admin/unique-users', element: <AdminGuard><UniqueUsers /></AdminGuard> },

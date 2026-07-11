@@ -22,6 +22,7 @@ from cogs.daily_summary import DailySummaryCog
 from cogs.dust import DustCog
 from cogs.reddit_bridge import RedditBridgeCog
 from cogs.magoo_monitor import MagooMonitorCog
+from cogs.store_notifications import StoreNotificationsCog
 from cogs.lfg.persistent_confirm import (
     PersistentConfirmButton,
     PersistentDisputeButton,
@@ -159,6 +160,7 @@ async def setup_cogs():
     await bot.add_cog(ShopCog(bot))
     await bot.add_cog(SlashCommandsCog(bot))
     await bot.add_cog(PurchaseTrackingCog(bot))
+    await bot.add_cog(StoreNotificationsCog(bot))  # Store order DMs + admin pings
     await bot.add_cog(StreamingCog(bot))  # Streaming detection for website banner
     await bot.add_cog(CommunityCog(bot))  # Community page management
     await bot.add_cog(ReactionRolesCog(bot))  # Reaction-based role assignment

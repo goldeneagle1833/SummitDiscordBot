@@ -59,7 +59,7 @@ class StoreCheckoutService:
         user_id: str,
         username: str,
         items: list[dict],
-        shipping_address: dict,
+        shipping_address: dict | None = None,
         email: str | None = None,
         auth_provider: str = "discord",
         address_validated: bool = False,
@@ -75,7 +75,7 @@ class StoreCheckoutService:
             user_id=user_id,
             username=username,
             items=items,
-            shipping_address=shipping_address,
+            shipping_address=shipping_address or {},
             email=email,
             auth_provider=auth_provider,
             shipping_cents=FLAT_SHIPPING_CENTS,
@@ -112,6 +112,9 @@ class StoreCheckoutService:
                 mode="payment",
                 line_items=line_items,
                 customer_email=email,
+                shipping_address_collection={
+                    "allowed_countries": ["US"],
+                },
                 metadata={
                     "order_id": str(order["id"]),
                     "order_number": order["order_number"],
@@ -156,7 +159,14 @@ class StoreCheckoutService:
     def handle_event(self, event) -> dict:
         """Process a verified Stripe event. Returns a status summary dict."""
         etype = event["type"]
-        obj = event["data"]["object"]
+        # Stripe Event objects don't support .get(); convert to plain dict
+        # so our handlers can use dict.get() safely.
+        raw = event["data"]["object"]
+        if not isinstance(raw, dict):
+            import json
+            obj = json.loads(str(raw))
+        else:
+            obj = raw
 
         if etype == "checkout.session.completed":
             return self._handle_completed(obj)
@@ -205,6 +215,19 @@ class StoreCheckoutService:
             return {"handled": False, "reason": "amount mismatch"}
 
         if self.repo.mark_paid(order["id"]):
+            # Save shipping address collected by Stripe Checkout
+            shipping = session_obj.get("shipping_details") or session_obj.get("shipping") or {}
+            if shipping.get("address"):
+                addr = shipping["address"]
+                self.repo.update_shipping_address(order["id"], {
+                    "name": shipping.get("name", ""),
+                    "line1": addr.get("line1", ""),
+                    "line2": addr.get("line2", ""),
+                    "city": addr.get("city", ""),
+                    "state": addr.get("state", ""),
+                    "postal": addr.get("postal_code", ""),
+                    "country": addr.get("country", "US"),
+                })
             self.repo.log_action(
                 "stripe-webhook", "system", "order_paid",
                 f"order={order['order_number']} amount={amount}",

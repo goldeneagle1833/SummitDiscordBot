@@ -234,6 +234,19 @@ class TestStoreRepositoryOrders:
         assert addr["name"] == "Alice"
         assert addr["line1"] == "1 First St"
 
+    def test_update_shipping_address(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, stock_quantity=10)
+        order = _seed_order(repo, product_id=pid, shipping_address={})
+        assert repo.update_shipping_address(order["id"], {
+            "name": "Jane Doe", "line1": "456 Oak Ave",
+            "city": "Portland", "state": "OR", "postal": "97201",
+        })
+        o = repo.get_order(order["id"])
+        assert o["ship_name"] == "Jane Doe"
+        assert o["ship_city"] == "Portland"
+        assert o["address_validated"] == 1
+
 
 class TestStoreRepositoryAudit:
     def test_log_and_list_audit(self, tmp_path):
@@ -369,6 +382,46 @@ class TestStoreCheckoutService:
             result = svc.handle_event(event)
         assert result["handled"] is True
         assert repo.get_order(order["id"])["status"] == "paid"
+
+    def test_handle_event_completed_saves_shipping(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, stock_quantity=10)
+        order = _seed_order(repo, product_id=pid, shipping_address={})
+        repo.attach_payment(order["id"], "stripe", "cs_test_ship")
+
+        svc = self._service(repo)
+        full_order = repo.get_order(order["id"])
+
+        event = {
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": "cs_test_ship",
+                    "payment_status": "paid",
+                    "amount_total": full_order["total_cents"],
+                    "currency": "usd",
+                    "metadata": {"order_id": str(order["id"])},
+                    "shipping_details": {
+                        "name": "Jane Doe",
+                        "address": {
+                            "line1": "456 Oak Ave",
+                            "line2": "Apt 3",
+                            "city": "Portland",
+                            "state": "OR",
+                            "postal_code": "97201",
+                            "country": "US",
+                        },
+                    },
+                }
+            },
+        }
+        with patch("services.store_notifications.StoreNotificationService"):
+            result = svc.handle_event(event)
+        assert result["handled"] is True
+        o = repo.get_order(order["id"])
+        assert o["ship_name"] == "Jane Doe"
+        assert o["ship_city"] == "Portland"
+        assert o["ship_postal"] == "97201"
 
     def test_handle_event_amount_mismatch(self, tmp_path):
         repo = _repo(tmp_path)
@@ -545,6 +598,27 @@ class TestStoreAdminRoutes:
         assert resp.status_code == 200
         assert store_repo.get_product(pid)["stock_quantity"] == 10
 
+    def test_admin_export_orders_csv(self, store_admin_session, store_repo):
+        pid = _seed_product(store_repo, stock_quantity=10)
+        _seed_order(store_repo, product_id=pid)
+        resp = store_admin_session.get("/api/store/admin/orders/export")
+        assert resp.status_code == 200
+        assert resp.content_type.startswith("text/csv")
+        lines = resp.data.decode().strip().split("\n")
+        assert len(lines) == 2  # header + 1 order
+        assert "order_number" in lines[0]
+
+    def test_admin_export_orders_filtered(self, store_admin_session, store_repo):
+        pid = _seed_product(store_repo, stock_quantity=20)
+        o1 = _seed_order(store_repo, product_id=pid)
+        _seed_order(store_repo, product_id=pid)
+        store_repo.mark_paid(o1["id"])
+
+        resp = store_admin_session.get("/api/store/admin/orders/export?status=paid")
+        assert resp.status_code == 200
+        lines = resp.data.decode().strip().split("\n")
+        assert len(lines) == 2  # header + 1 paid order
+
     def test_admin_audit_log(self, store_admin_session, store_repo):
         store_repo.log_action("a", "A", "test", "detail")
         resp = store_admin_session.get("/api/store/admin/audit")
@@ -561,23 +635,12 @@ class TestStoreBuyerRoutes:
         resp = buyer_session.post("/api/store/checkout", json={"items": []})
         assert resp.status_code == 400
 
-    def test_checkout_missing_address(self, buyer_session, store_repo):
-        pid = _seed_product(store_repo)
-        resp = buyer_session.post("/api/store/checkout", json={
-            "items": [{"product_id": pid, "quantity": 1}],
-            "shipping_address": {"name": "Test"},
-        })
-        assert resp.status_code == 400
-        assert "Missing address" in resp.get_json()["error"]
-
     def test_checkout_not_configured(self, buyer_session, store_repo):
         pid = _seed_product(store_repo)
         with patch("routes.api.store.StoreCheckoutService") as MockSvc:
             MockSvc.return_value.is_configured.return_value = False
             resp = buyer_session.post("/api/store/checkout", json={
                 "items": [{"product_id": pid, "quantity": 1}],
-                "shipping_address": {"name": "T", "line1": "1",
-                                     "city": "C", "state": "S", "postal": "0"},
             })
         assert resp.status_code == 503
 

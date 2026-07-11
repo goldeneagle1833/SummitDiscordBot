@@ -636,7 +636,7 @@ export default function Nav() {
         <div className="border-b border-border md:hidden">
           <SidebarLink to="/" label="Home" location={location} onClick={close} />
           <SidebarLink to="/community" label="Community" location={location} onClick={close} />
-          <SidebarLink to="/store" label="Store" location={location} onClick={close} />
+          {user?.is_store_admin && <SidebarLink to="/store" label="Store" location={location} onClick={close} />}
           <SidebarExternal href="https://discord.gg/ZDqHSK9VGx" label="Discord" />
           <SidebarExternal href="https://www.facebook.com/groups/858917126995929" label="Facebook" />
           <SidebarExternal href="https://www.reddit.com/r/SorcerersSummit/" label="Reddit" />
@@ -727,7 +727,7 @@ export default function Nav() {
           <SidebarLink to="/life-counter" label="Life Counter" location={location} onClick={close} />
           <SidebarLink to="/help" label="Help" location={location} onClick={close} />
           <SidebarLink to="/community" label="Community" location={location} onClick={close} />
-          <SidebarLink to="/store" label="Store" location={location} onClick={close} />
+          {user?.is_store_admin && <SidebarLink to="/store" label="Store" location={location} onClick={close} />}
           <SidebarLink to="/curio-tracking" label="Curio Tracking" location={location} onClick={close} />
         </div>
       </aside>

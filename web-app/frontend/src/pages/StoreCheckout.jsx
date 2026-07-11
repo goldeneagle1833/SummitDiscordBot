@@ -5,15 +5,12 @@ import { getCheckoutPrefill, createCheckout, formatMoney } from '@/api/store'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
-const EMPTY = { name: '', line1: '', line2: '', city: '', state: '', postal: '', country: 'US' }
-
 export default function StoreCheckout() {
   usePageTitle('Checkout')
   const { user } = useAuth()
   const location = useLocation()
   const items = location.state?.items || []
 
-  const [address, setAddress] = useState(EMPTY)
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -24,11 +21,9 @@ export default function StoreCheckout() {
   useEffect(() => {
     getCheckoutPrefill()
       .then((pre) => {
-        if (pre.address) setAddress((a) => ({ ...a, ...pre.address }))
-        else if (pre.name) setAddress((a) => ({ ...a, name: pre.name }))
         if (pre.email) setEmail(pre.email)
       })
-      .catch(() => {}) // prefill is best-effort
+      .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
@@ -36,7 +31,6 @@ export default function StoreCheckout() {
   if (loading) return <Spinner className="py-20" />
 
   const subtotal = items.reduce((s, i) => s + i.price_cents * i.quantity, 0)
-  const set = (field) => (e) => setAddress((a) => ({ ...a, [field]: e.target.value }))
 
   const submit = async () => {
     setError(null)
@@ -44,10 +38,9 @@ export default function StoreCheckout() {
     try {
       const { checkout_url } = await createCheckout({
         items: items.map(({ product_id, quantity }) => ({ product_id, quantity })),
-        shipping_address: address,
         email: email.trim() || undefined,
       })
-      window.location.assign(checkout_url) // hand off to Stripe's hosted page
+      window.location.assign(checkout_url)
     } catch (err) {
       setError(err.message)
       setSubmitting(false)
@@ -77,14 +70,7 @@ export default function StoreCheckout() {
         </div>
       </div>
 
-      <h2 className="font-semibold mb-3">Shipping address</h2>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <input className={`${inputCls} sm:col-span-2`} placeholder="Full name" value={address.name} onChange={set('name')} autoComplete="name" />
-        <input className={`${inputCls} sm:col-span-2`} placeholder="Street address" value={address.line1} onChange={set('line1')} autoComplete="address-line1" />
-        <input className={`${inputCls} sm:col-span-2`} placeholder="Apt, suite, etc. (optional)" value={address.line2 || ''} onChange={set('line2')} autoComplete="address-line2" />
-        <input className={inputCls} placeholder="City" value={address.city} onChange={set('city')} autoComplete="address-level2" />
-        <input className={inputCls} placeholder="State" value={address.state} onChange={set('state')} autoComplete="address-level1" />
-        <input className={inputCls} placeholder="ZIP code" value={address.postal} onChange={set('postal')} autoComplete="postal-code" />
+      <div className="mb-4">
         <input
           className={inputCls}
           placeholder={isGoogleUser ? 'Email (required)' : 'Email for updates (optional)'}
@@ -93,12 +79,12 @@ export default function StoreCheckout() {
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
         />
+        <p className="text-xs text-text-muted mt-2">
+          {isGoogleUser
+            ? "Order updates and tracking go to this email."
+            : "You'll get order updates by Discord DM. Add an email as backup if your DMs are closed."}
+        </p>
       </div>
-      <p className="text-xs text-text-muted mt-2">
-        {isGoogleUser
-          ? "Order updates and tracking go to this email."
-          : "You'll get order updates by Discord DM. Add an email as backup if your DMs are closed."}
-      </p>
 
       {error && <p className="text-accent-red text-sm mt-3">{error}</p>}
 
@@ -115,7 +101,7 @@ export default function StoreCheckout() {
         </Link>
       </div>
       <p className="text-xs text-text-muted mt-3">
-        Payment is handled securely by Stripe. Your card details never touch our servers.
+        You'll enter your shipping address and card details on the next page, handled securely by Stripe.
       </p>
     </div>
   )

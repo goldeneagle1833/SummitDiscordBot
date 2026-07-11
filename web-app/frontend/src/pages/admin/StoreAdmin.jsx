@@ -354,9 +354,14 @@ function OrdersPanel() {
   }, [filter])
   useEffect(load, [load])
 
+  const exportCsv = () => {
+    const url = `/api/store/admin/orders/export${filter ? `?status=${filter}` : ''}`
+    window.open(url, '_blank')
+  }
+
   return (
     <div>
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         {QUEUE_FILTERS.map((f) => (
           <button
             key={f.key}
@@ -370,6 +375,12 @@ function OrdersPanel() {
             {f.label}
           </button>
         ))}
+        <button
+          onClick={exportCsv}
+          className="ml-auto px-3 py-1.5 rounded text-sm border border-border text-text-muted hover:text-text hover:border-primary transition-colors"
+        >
+          Export CSV
+        </button>
       </div>
 
       {error && <p className="text-accent-red text-sm mb-3">{error}</p>}

@@ -335,6 +335,29 @@ class StoreRepository:
                 ).fetchall()
             ]
 
+    def update_shipping_address(self, order_id: int, address: dict) -> bool:
+        """Update the shipping address on an order (e.g. from Stripe shipping_details)."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                """UPDATE orders SET
+                   ship_name = ?, ship_line1 = ?, ship_line2 = ?,
+                   ship_city = ?, ship_state = ?, ship_postal = ?,
+                   ship_country = ?, address_validated = 1, updated_at = ?
+                   WHERE id = ?""",
+                (
+                    address.get("name", ""),
+                    address.get("line1", ""),
+                    address.get("line2", ""),
+                    address.get("city", ""),
+                    address.get("state", ""),
+                    address.get("postal", ""),
+                    address.get("country", "US"),
+                    self._now(),
+                    order_id,
+                ),
+            )
+            return cur.rowcount > 0
+
     def attach_payment(self, order_id: int, provider: str, payment_ref: str) -> bool:
         with self._connect() as conn:
             cur = conn.execute(

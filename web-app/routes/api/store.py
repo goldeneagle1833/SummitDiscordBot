@@ -187,6 +187,51 @@ def admin_set_order_status(order_id: int):
     return jsonify({"success": True})
 
 
+@store_bp.route("/store/admin/orders/export", methods=["GET"])
+@require_store_admin
+def admin_export_orders():
+    """Export orders as CSV for the current filter."""
+    import csv
+    import io
+
+    status = request.args.get("status")
+    repo = _repo()
+    try:
+        orders = repo.list_orders(status=status, limit=500)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "order_number", "status", "username", "email",
+        "total", "currency", "ship_name", "ship_line1", "ship_line2",
+        "ship_city", "ship_state", "ship_postal", "ship_country",
+        "tracking_number", "tracking_carrier",
+        "created_at", "paid_at", "shipped_at",
+    ])
+    for o in orders:
+        writer.writerow([
+            o.get("order_number"), o.get("status"), o.get("username"), o.get("email"),
+            f"{o.get('total_cents', 0) / 100:.2f}", o.get("currency"),
+            o.get("ship_name"), o.get("ship_line1"), o.get("ship_line2"),
+            o.get("ship_city"), o.get("ship_state"), o.get("ship_postal"), o.get("ship_country"),
+            o.get("tracking_number"), o.get("tracking_carrier"),
+            o.get("created_at"), o.get("paid_at"), o.get("shipped_at"),
+        ])
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    actor_id, actor_name = _actor()
+    repo.log_action(actor_id, actor_name, "export_orders", f"status={status or 'all'} count={len(orders)}")
+
+    from flask import Response
+    return Response(
+        buf.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=orders-{stamp}.csv"},
+    )
+
+
 @store_bp.route("/store/admin/audit", methods=["GET"])
 @require_store_admin
 def admin_audit_log():
@@ -243,9 +288,11 @@ def create_checkout():
 
     Body: {
       items: [{product_id, quantity}],
-      shipping_address: {name, line1, line2?, city, state, postal, country?},
       email?: str
     }
+
+    Shipping address is collected by Stripe Checkout (with autocomplete)
+    and saved via webhook when payment completes.
     """
     service = StoreCheckoutService()
     if not service.is_configured():
@@ -253,14 +300,9 @@ def create_checkout():
 
     data = request.get_json(silent=True) or {}
     items = data.get("items") or []
-    address = data.get("shipping_address") or {}
 
     if not items:
         return jsonify({"error": "Cart is empty"}), 400
-    required_addr = ("name", "line1", "city", "state", "postal")
-    missing = [f for f in required_addr if not (address.get(f) or "").strip()]
-    if missing:
-        return jsonify({"error": f"Missing address fields: {', '.join(missing)}"}), 400
 
     provider = session.get("auth_provider", "discord")
     if provider != "discord" and not (data.get("email") or "").strip():
@@ -275,10 +317,8 @@ def create_checkout():
             user_id=user_id,
             username=username,
             items=items,
-            shipping_address=address,
             email=data.get("email"),
             auth_provider=provider,
-            address_validated=False,  # phase 4: Google address validation
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 409
@@ -327,7 +367,14 @@ def stripe_webhook():
         )
         return jsonify({"error": "invalid signature"}), 400
 
-    result = service.handle_event(event)
+    try:
+        result = service.handle_event(event)
+    except Exception:
+        logger.exception(
+            f"Unhandled error processing Stripe event {event.get('type', '?')}"
+        )
+        return jsonify({"error": "internal error processing event"}), 200
+
     # Always 200 for verified events so Stripe stops retrying ones we
     # deliberately ignored; mishandled orders are logged + audited.
     return jsonify(result), 200
@@ -336,20 +383,14 @@ def stripe_webhook():
 @store_bp.route("/store/checkout/prefill", methods=["GET"])
 @require_auth
 def checkout_prefill():
-    """Pre-populate the checkout form from the user's profile and last order.
-
-    Google users get name + email from their profile; repeat buyers of
-    either provider get their most recent shipping address.
-    """
+    """Return email for pre-filling the checkout form."""
     user_id = str(session.get("user_id", 0))
     provider = session.get("auth_provider", "discord")
 
     prefill = {
         "username": session.get("username"),
         "auth_provider": provider,
-        "name": None,
         "email": None,
-        "address": None,
     }
 
     try:
@@ -357,20 +398,13 @@ def checkout_prefill():
         profile = UserProfileRepository().get_by_user_id(user_id)
         if profile:
             prefill["email"] = profile.get("email")
-            given = profile.get("given_name") or ""
-            family = profile.get("family_name") or ""
-            full = f"{given} {family}".strip()
-            prefill["name"] = full or profile.get("display_name")
     except Exception:
         logger.exception("Prefill profile lookup failed")
 
-    last = _repo().last_shipping_address(user_id)
-    if last:
-        prefill["address"] = {k: last[k] for k in
-                              ("name", "line1", "line2", "city",
-                               "state", "postal", "country")}
-        prefill["email"] = prefill["email"] or last.get("email")
-        prefill["name"] = prefill["name"] or last.get("name")
+    if not prefill["email"]:
+        last = _repo().last_shipping_address(user_id)
+        if last:
+            prefill["email"] = last.get("email")
 
     return jsonify(prefill)
 

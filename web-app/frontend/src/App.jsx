@@ -174,12 +174,12 @@ const router = createBrowserRouter([
       { path: '/login', element: <Login /> },
       // Creator
       { path: '/creator', element: <CreatorGuard><Creator /></CreatorGuard> },
-      // Phase 7: Admin
-      { path: '/store', element: <Store /> },
-      { path: '/store/checkout', element: <StoreCheckout /> },
-      { path: '/store/success', element: <StoreSuccess /> },
-      { path: '/store/cancelled', element: <StoreCancelled /> },
-      { path: '/store/orders', element: <MyOrders /> },
+      // Store (dark launch: admin-only until public launch)
+      { path: '/store', element: <StoreAdminGuard><Store /></StoreAdminGuard> },
+      { path: '/store/checkout', element: <StoreAdminGuard><StoreCheckout /></StoreAdminGuard> },
+      { path: '/store/success', element: <StoreAdminGuard><StoreSuccess /></StoreAdminGuard> },
+      { path: '/store/cancelled', element: <StoreAdminGuard><StoreCancelled /></StoreAdminGuard> },
+      { path: '/store/orders', element: <StoreAdminGuard><MyOrders /></StoreAdminGuard> },
       { path: '/admin/store', element: <StoreAdminGuard><StoreAdmin /></StoreAdminGuard> },
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
       { path: '/admin/active-connections', element: <AdminGuard><ActiveConnections /></AdminGuard> },

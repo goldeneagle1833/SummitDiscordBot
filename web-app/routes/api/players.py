@@ -2659,17 +2659,19 @@ def get_blocked_users(player_id):
         return jsonify({"error": "You can only view your own block list"}), 403
 
     repo = BlockedUsersRepository()
-    blocked_ids = repo.get_blocked_users(str(player_id))
+    blocked_entries = repo.get_blocked_users(str(player_id))
 
     # Resolve display names for the blocked users
     profile_repo = UserProfileRepository()
     blocked_users = []
-    for uid in blocked_ids:
+    for entry in blocked_entries:
+        uid = entry["blocked_user_id"]
         profile = profile_repo.get_by_user_id(uid)
         blocked_users.append({
             "user_id": uid,
             "display_name": profile["display_name"] if profile else uid,
             "avatar": profile.get("avatar") if profile else None,
+            "reason": entry["reason"],
         })
 
     return jsonify({"blocked_users": blocked_users})
@@ -2700,8 +2702,10 @@ def block_user(player_id):
     if blocked_user_id == str(player_id):
         return jsonify({"error": "You cannot block yourself"}), 400
 
+    reason = data.get("reason", "").strip() or None
+
     repo = BlockedUsersRepository()
-    added = repo.block_user(str(player_id), blocked_user_id)
+    added = repo.block_user(str(player_id), blocked_user_id, reason=reason)
     return jsonify({"success": True, "added": added})
 
 

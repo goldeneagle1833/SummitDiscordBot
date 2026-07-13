@@ -9,6 +9,8 @@ export default function BlockListModal({ playerId, onClose }) {
   const [searchResults, setSearchResults] = useState([])
   const [searching, setSearching] = useState(false)
   const [actionInProgress, setActionInProgress] = useState(null)
+  const [pendingBlock, setPendingBlock] = useState(null)
+  const [reason, setReason] = useState('')
   const searchTimeout = useRef(null)
 
   useEffect(() => {
@@ -53,17 +55,20 @@ export default function BlockListModal({ playerId, onClose }) {
     }, 300)
   }
 
-  const handleBlock = async (user) => {
-    setActionInProgress(user.user_id)
+  const handleConfirmBlock = async () => {
+    if (!pendingBlock) return
+    setActionInProgress(pendingBlock.user_id)
     setError(null)
     try {
-      await blockUser(playerId, user.user_id)
+      await blockUser(playerId, pendingBlock.user_id, reason || undefined)
       setBlockedUsers((prev) => [
-        { user_id: user.user_id, display_name: user.display_name, avatar: user.avatar },
+        { user_id: pendingBlock.user_id, display_name: pendingBlock.display_name, avatar: pendingBlock.avatar, reason: reason || null },
         ...prev,
       ])
-      setSearchResults((prev) => prev.filter((p) => p.user_id !== user.user_id))
+      setSearchResults((prev) => prev.filter((p) => p.user_id !== pendingBlock.user_id))
       setSearchQuery('')
+      setPendingBlock(null)
+      setReason('')
     } catch (err) {
       setError(err.message || 'Failed to block user')
     } finally {
@@ -107,7 +112,7 @@ export default function BlockListModal({ playerId, onClose }) {
             className="w-full px-3 py-2 text-sm rounded border border-border bg-bg-raised text-text-primary placeholder-text-muted focus:outline-none focus:border-secondary/50"
           />
           {searching && <p className="text-xs text-text-muted mt-1">Searching...</p>}
-          {searchResults.length > 0 && (
+          {searchResults.length > 0 && !pendingBlock && (
             <div className="mt-1 max-h-36 overflow-y-auto border border-border rounded bg-bg-raised">
               {searchResults.map((user) => (
                 <div
@@ -116,17 +121,48 @@ export default function BlockListModal({ playerId, onClose }) {
                 >
                   <span className="text-sm text-text-primary truncate">{user.display_name}</span>
                   <button
-                    onClick={() => handleBlock(user)}
-                    disabled={actionInProgress === user.user_id}
-                    className="text-xs px-2 py-1 rounded bg-accent-red/20 text-accent-red hover:bg-accent-red/30 disabled:opacity-50 shrink-0 ml-2"
+                    onClick={() => setPendingBlock(user)}
+                    className="text-xs px-2 py-1 rounded bg-accent-red/20 text-accent-red hover:bg-accent-red/30 shrink-0 ml-2"
                   >
-                    {actionInProgress === user.user_id ? '...' : 'Block'}
+                    Block
                   </button>
                 </div>
               ))}
             </div>
           )}
         </div>
+
+        {/* Reason prompt when blocking */}
+        {pendingBlock && (
+          <div className="mb-4 p-3 rounded border border-accent-red/30 bg-accent-red/5">
+            <p className="text-sm text-text-primary mb-2">
+              Block <span className="font-semibold">{pendingBlock.display_name}</span>?
+            </p>
+            <input
+              type="text"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Reason (optional)"
+              maxLength={200}
+              className="w-full px-3 py-2 text-sm rounded border border-border bg-bg-raised text-text-primary placeholder-text-muted focus:outline-none focus:border-secondary/50 mb-2"
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => { setPendingBlock(null); setReason('') }}
+                className="text-xs px-3 py-1 rounded border border-border text-text-muted hover:text-text-primary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmBlock}
+                disabled={actionInProgress === pendingBlock.user_id}
+                className="text-xs px-3 py-1 rounded bg-accent-red/20 text-accent-red hover:bg-accent-red/30 disabled:opacity-50"
+              >
+                {actionInProgress === pendingBlock.user_id ? '...' : 'Confirm Block'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Current block list */}
         <div className="space-y-1 max-h-52 overflow-y-auto">
@@ -139,7 +175,12 @@ export default function BlockListModal({ playerId, onClose }) {
               key={user.user_id}
               className="flex items-center justify-between px-3 py-2 rounded bg-bg-raised border border-border"
             >
-              <span className="text-sm text-text-primary truncate">{user.display_name}</span>
+              <div className="min-w-0">
+                <span className="text-sm text-text-primary truncate block">{user.display_name}</span>
+                {user.reason && (
+                  <span className="text-xs text-text-muted truncate block">{user.reason}</span>
+                )}
+              </div>
               <button
                 onClick={() => handleUnblock(user.user_id)}
                 disabled={actionInProgress === user.user_id}

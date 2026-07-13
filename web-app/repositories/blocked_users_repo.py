@@ -24,10 +24,16 @@ class BlockedUsersRepository:
             CREATE TABLE IF NOT EXISTS blocked_users (
                 user_id TEXT NOT NULL,
                 blocked_user_id TEXT NOT NULL,
+                reason TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 PRIMARY KEY (user_id, blocked_user_id)
             )
         """)
+        # Migration: add reason column to existing tables
+        try:
+            conn.execute("ALTER TABLE blocked_users ADD COLUMN reason TEXT")
+        except Exception:
+            pass
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_blocked_users_user_id
             ON blocked_users (user_id)
@@ -35,19 +41,20 @@ class BlockedUsersRepository:
         conn.commit()
         conn.close()
 
-    def get_blocked_users(self, user_id: str) -> list[str]:
-        """Get list of blocked user IDs for a player."""
+    def get_blocked_users(self, user_id: str) -> list[dict]:
+        """Get list of blocked user entries for a player."""
         conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute(
-            "SELECT blocked_user_id FROM blocked_users WHERE user_id = ? ORDER BY created_at DESC",
+            "SELECT blocked_user_id, reason FROM blocked_users WHERE user_id = ? ORDER BY created_at DESC",
             (str(user_id),),
         )
-        result = [row[0] for row in cur.fetchall()]
+        result = [{"blocked_user_id": row["blocked_user_id"], "reason": row["reason"]} for row in cur.fetchall()]
         conn.close()
         return result
 
-    def block_user(self, user_id: str, blocked_user_id: str) -> bool:
+    def block_user(self, user_id: str, blocked_user_id: str, reason: str | None = None) -> bool:
         """Block a user. Returns True if newly blocked, False if already blocked."""
         if str(user_id) == str(blocked_user_id):
             return False
@@ -55,8 +62,8 @@ class BlockedUsersRepository:
         cur = conn.cursor()
         try:
             cur.execute(
-                "INSERT INTO blocked_users (user_id, blocked_user_id) VALUES (?, ?)",
-                (str(user_id), str(blocked_user_id)),
+                "INSERT INTO blocked_users (user_id, blocked_user_id, reason) VALUES (?, ?, ?)",
+                (str(user_id), str(blocked_user_id), reason),
             )
             conn.commit()
             return True

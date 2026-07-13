@@ -17,7 +17,10 @@ class TestBlockedUsersRepository:
     def test_block_user(self, match_db):
         repo = BlockedUsersRepository(db_path=match_db)
         assert repo.block_user("100", "200") is True
-        assert repo.get_blocked_users("100") == ["200"]
+        blocked = repo.get_blocked_users("100")
+        assert len(blocked) == 1
+        assert blocked[0]["blocked_user_id"] == "200"
+        assert blocked[0]["reason"] is None
 
     def test_block_user_duplicate(self, match_db):
         repo = BlockedUsersRepository(db_path=match_db)
@@ -27,6 +30,12 @@ class TestBlockedUsersRepository:
     def test_block_self_rejected(self, match_db):
         repo = BlockedUsersRepository(db_path=match_db)
         assert repo.block_user("100", "100") is False
+
+    def test_block_user_with_reason(self, match_db):
+        repo = BlockedUsersRepository(db_path=match_db)
+        assert repo.block_user("100", "200", reason="Toxic behavior") is True
+        blocked = repo.get_blocked_users("100")
+        assert blocked[0]["reason"] == "Toxic behavior"
 
     def test_unblock_user(self, match_db):
         repo = BlockedUsersRepository(db_path=match_db)
@@ -44,13 +53,15 @@ class TestBlockedUsersRepository:
         repo.block_user("100", "300")
         repo.block_user("100", "400")
         blocked = repo.get_blocked_users("100")
-        assert set(blocked) == {"200", "300", "400"}
+        blocked_ids = {b["blocked_user_id"] for b in blocked}
+        assert blocked_ids == {"200", "300", "400"}
 
     def test_block_is_directional(self, match_db):
         """A blocking B does not mean B has blocked A."""
         repo = BlockedUsersRepository(db_path=match_db)
         repo.block_user("100", "200")
-        assert repo.get_blocked_users("100") == ["200"]
+        assert len(repo.get_blocked_users("100")) == 1
+        assert repo.get_blocked_users("100")[0]["blocked_user_id"] == "200"
         assert repo.get_blocked_users("200") == []
 
 
@@ -98,6 +109,7 @@ class TestBlockedUsersRoutes:
         assert len(data["blocked_users"]) == 1
         assert data["blocked_users"][0]["user_id"] == "target_user"
         assert data["blocked_users"][0]["display_name"] == "TargetPlayer"
+        assert data["blocked_users"][0]["reason"] is None
 
     def test_unblock_user(self, user_session, match_db):
         self._seed_user(match_db, "target_user", "TargetPlayer")
@@ -137,6 +149,18 @@ class TestBlockedUsersRoutes:
     def test_unblock_unauthenticated(self, client):
         resp = client.delete("/api/player/100/blocked-users/200")
         assert resp.status_code == 401
+
+    def test_block_with_reason(self, user_session, match_db):
+        self._seed_user(match_db, "rude_player", "RudePlayer")
+        resp = user_session.post(
+            "/api/player/regular_user_1/blocked-users",
+            json={"blocked_user_id": "rude_player", "reason": "Toxic in chat"},
+        )
+        assert resp.status_code == 200
+
+        resp = user_session.get("/api/player/regular_user_1/blocked-users")
+        data = resp.get_json()
+        assert data["blocked_users"][0]["reason"] == "Toxic in chat"
 
     def test_admin_can_view_others_block_list(self, admin_session, match_db):
         self._seed_user(match_db, "some_user", "SomeUser")

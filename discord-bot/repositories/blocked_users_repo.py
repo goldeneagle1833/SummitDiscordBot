@@ -29,10 +29,16 @@ def create_blocked_users_table():
             CREATE TABLE IF NOT EXISTS blocked_users (
                 user_id TEXT NOT NULL,
                 blocked_user_id TEXT NOT NULL,
+                reason TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 PRIMARY KEY (user_id, blocked_user_id)
             )
         """)
+        # Migration: add reason column to existing tables
+        try:
+            conn.execute("ALTER TABLE blocked_users ADD COLUMN reason TEXT")
+        except Exception:
+            pass
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_blocked_users_user_id
             ON blocked_users (user_id)

@@ -21,6 +21,7 @@ import AdminControls from '@/components/player/AdminControls'
 import EloHistory from '@/components/player/EloHistory'
 import PlayerSeasons from '@/components/player/PlayerSeasons'
 import PrivacySettingsModal from '@/components/player/PrivacySettingsModal'
+import BlockListModal from '@/components/player/BlockListModal'
 import { useAuth } from '@/context/AuthContext'
 
 const PER_PAGE_OPTIONS = [15, 25, 50]
@@ -52,6 +53,7 @@ export default function Player() {
   // Modal state
   const [showReportModal, setShowReportModal] = useState(false)
   const [showPrivacyModal, setShowPrivacyModal] = useState(false)
+  const [showBlockListModal, setShowBlockListModal] = useState(false)
 const [editDeck, setEditDeck] = useState(null)
 
   // Collapsible sections
@@ -194,6 +196,12 @@ const [editDeck, setEditDeck] = useState(null)
           >
             Privacy Settings
           </button>
+          <button
+            onClick={() => setShowBlockListModal(true)}
+            className="px-4 py-2 text-sm rounded border border-border text-text-muted hover:text-text-primary hover:border-secondary/50 transition-colors"
+          >
+            Block List
+          </button>
         </div>
       )}
 
@@ -322,6 +330,13 @@ const [editDeck, setEditDeck] = useState(null)
           playerId={playerId}
           onClose={() => setShowPrivacyModal(false)}
           onSaved={refreshCurrentPage}
+        />
+      )}
+
+      {showBlockListModal && (
+        <BlockListModal
+          playerId={playerId}
+          onClose={() => setShowBlockListModal(false)}
         />
       )}
 

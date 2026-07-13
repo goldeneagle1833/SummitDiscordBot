@@ -68,12 +68,12 @@ class TestDustRepo:
     def test_increment_game_counter(self):
         game_num, chance, locked = increment_game_counter()
         assert game_num == 1
-        assert chance == pytest.approx(0.0002)
+        assert chance == pytest.approx(0.000156)
         assert not locked
 
         game_num, chance, locked = increment_game_counter()
         assert game_num == 2
-        assert chance == pytest.approx(0.0004)
+        assert chance == pytest.approx(0.000312)
 
     def test_game_counter_resets_at_100(self):
         for _ in range(99):
@@ -81,12 +81,12 @@ class TestDustRepo:
         # Game 100 should trigger reset
         game_num, chance, locked = increment_game_counter()
         assert game_num == 100
-        assert chance == pytest.approx(0.02)  # capped at 2%
+        assert chance == pytest.approx(0.0156)  # 100 * 0.000156
 
         # Next game should be 1 (counter reset)
         game_num, chance, locked = increment_game_counter()
         assert game_num == 1
-        assert chance == pytest.approx(0.0002)
+        assert chance == pytest.approx(0.000156)
         assert not locked
 
     def test_locked_after_drop(self):

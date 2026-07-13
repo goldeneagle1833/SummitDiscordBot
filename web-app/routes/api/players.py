@@ -13,6 +13,7 @@ from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, VALID_API_KEYS, SE
 from services.match import MatchService
 from repositories.external_matches import ExternalMatchRepository
 from repositories.user_profiles import UserProfileRepository
+from repositories.blocked_users_repo import BlockedUsersRepository
 from utils.auth import is_admin
 
 logger = logging.getLogger(__name__)
@@ -2638,6 +2639,92 @@ def set_profile_visibility(player_id):
     profile_repo.set_profile_visibility(str(player_id), data["sections"])
     updated = profile_repo.get_profile_visibility(str(player_id))
     return jsonify({"success": True, "sections": updated})
+
+
+@players_bp.route("/player/<player_id>/blocked-users", methods=["GET"])
+def get_blocked_users(player_id):
+    """Get a player's block list (owner only)."""
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+
+    logged_in_id_str = str(logged_in_user_id)
+    player_id_normalized = str(player_id)
+    if logged_in_id_str.startswith("google_"):
+        logged_in_id_str = logged_in_id_str[7:]
+    if player_id_normalized.startswith("google_"):
+        player_id_normalized = player_id_normalized[7:]
+
+    if logged_in_id_str != player_id_normalized and not is_admin():
+        return jsonify({"error": "You can only view your own block list"}), 403
+
+    repo = BlockedUsersRepository()
+    blocked_ids = repo.get_blocked_users(str(player_id))
+
+    # Resolve display names for the blocked users
+    profile_repo = UserProfileRepository()
+    blocked_users = []
+    for uid in blocked_ids:
+        profile = profile_repo.get_by_user_id(uid)
+        blocked_users.append({
+            "user_id": uid,
+            "display_name": profile["display_name"] if profile else uid,
+            "avatar": profile.get("avatar") if profile else None,
+        })
+
+    return jsonify({"blocked_users": blocked_users})
+
+
+@players_bp.route("/player/<player_id>/blocked-users", methods=["POST"])
+def block_user(player_id):
+    """Add a user to the block list (owner only)."""
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+
+    logged_in_id_str = str(logged_in_user_id)
+    player_id_normalized = str(player_id)
+    if logged_in_id_str.startswith("google_"):
+        logged_in_id_str = logged_in_id_str[7:]
+    if player_id_normalized.startswith("google_"):
+        player_id_normalized = player_id_normalized[7:]
+
+    if logged_in_id_str != player_id_normalized and not is_admin():
+        return jsonify({"error": "You can only manage your own block list"}), 403
+
+    data = request.get_json()
+    if not data or "blocked_user_id" not in data:
+        return jsonify({"error": "blocked_user_id field is required"}), 400
+
+    blocked_user_id = str(data["blocked_user_id"])
+    if blocked_user_id == str(player_id):
+        return jsonify({"error": "You cannot block yourself"}), 400
+
+    repo = BlockedUsersRepository()
+    added = repo.block_user(str(player_id), blocked_user_id)
+    return jsonify({"success": True, "added": added})
+
+
+@players_bp.route("/player/<player_id>/blocked-users/<blocked_user_id>", methods=["DELETE"])
+def unblock_user(player_id, blocked_user_id):
+    """Remove a user from the block list (owner only)."""
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+
+    logged_in_id_str = str(logged_in_user_id)
+    player_id_normalized = str(player_id)
+    if logged_in_id_str.startswith("google_"):
+        logged_in_id_str = logged_in_id_str[7:]
+    if player_id_normalized.startswith("google_"):
+        player_id_normalized = player_id_normalized[7:]
+
+    if logged_in_id_str != player_id_normalized and not is_admin():
+        return jsonify({"error": "You can only manage your own block list"}), 403
+
+    repo = BlockedUsersRepository()
+    removed = repo.unblock_user(str(player_id), str(blocked_user_id))
+    return jsonify({"success": True, "removed": removed})
 
 
 @players_bp.route("/nav-prefs", methods=["GET"])

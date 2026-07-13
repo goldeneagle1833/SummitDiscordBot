@@ -87,6 +87,13 @@ from repositories.dust_repo import (  # noqa: F401
     create_dust_tables,
 )
 
+# Blocked users
+from repositories.blocked_users_repo import (  # noqa: F401
+    create_blocked_users_table,
+    get_blocked_user_ids,
+    is_blocked_pair,
+)
+
 # Community data access functions
 from repositories.community_repo import (  # noqa: F401
     create_community_tables,

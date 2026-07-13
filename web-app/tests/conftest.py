@@ -37,6 +37,7 @@ def _patch_db_paths(elo_db, match_db, tmp_path):
     import repositories.user_profiles
     import repositories.match_confirmation
     import repositories.audit
+    import repositories.blocked_users_repo
 
     webapp_config.ELO_DB_PATH = elo_db
     webapp_config.MATCH_RECORDS_DB_PATH = match_db
@@ -51,6 +52,7 @@ def _patch_db_paths(elo_db, match_db, tmp_path):
     repositories.user_profiles.MATCH_RECORDS_DB_PATH = match_db
     repositories.match_confirmation.MATCH_RECORDS_DB_PATH = match_db
     repositories.audit.MATCH_RECORDS_DB_PATH = match_db
+    repositories.blocked_users_repo.MATCH_RECORDS_DB_PATH = match_db
 
     # Patch auth module-level bindings
     import utils.auth

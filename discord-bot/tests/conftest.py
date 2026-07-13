@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import repositories.elo_repo as elo_repo
 
 from utils.database import create_db
+from repositories.blocked_users_repo import create_blocked_users_table
 
 
 @pytest.fixture(scope="session")
@@ -43,6 +44,7 @@ def setup_test_databases():
 
     # Create fresh test database
     create_db()
+    create_blocked_users_table()
 
     # Create ELO database
     conn = sqlite3.connect("elo.db")

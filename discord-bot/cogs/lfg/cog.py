@@ -50,6 +50,8 @@ from utils.database import (
     remove_match_record,
     remove_player_service,
     set_player_event_elo,
+    is_blocked_pair,
+    create_blocked_users_table,
 )
 from utils.constants import SORCERY_NICKNAMES
 from utils.text import find_best_command_match
@@ -65,6 +67,7 @@ class LFGCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.lfg_channel_id = config.LFG_CHANNEL_ID
+        create_blocked_users_table()
         self.check_expired_queue.start()  # Start the background task
         self.cleanup_old_status_messages.start()  # Clean up old messages on startup
         self.cleanup_old_leaderboard_messages.start()  # Clean up old leaderboard on startup
@@ -990,6 +993,13 @@ class LFGCog(commands.Cog):
             if (now - timestamp).total_seconds() >= timeframe * 60:
                 continue
 
+            # Skip if either player has blocked the other
+            if is_blocked_pair(ctx.author.id, user_id):
+                logger.info(
+                    f"Skipping {user_id} - block list conflict with {ctx.author.id}"
+                )
+                continue
+
             # Ranked/Limited: skip if they played each other in their last match
             if not is_casual and self.check_last_match_opponent(ctx.author.id, user_id):
                 logger.info(
@@ -1025,6 +1035,9 @@ class LFGCog(commands.Cog):
         now = datetime.datetime.now()
         for user_id, user_data in lfg_queue.items():
             if user_id == ctx.author.id:
+                continue
+            # Skip if either player has blocked the other
+            if is_blocked_pair(ctx.author.id, user_id):
                 continue
             # Check if any queue entry is still valid
             for qt, entry in user_data.get("queues", {}).items():

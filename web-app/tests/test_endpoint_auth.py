@@ -58,6 +58,9 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.get_nav_prefs",
     "api.players.set_nav_prefs",
     "api.players.player_avatar_stats",
+    "api.players.get_blocked_users",
+    "api.players.block_user",
+    "api.players.unblock_user",
 
     # -- Card / avatar stats (public read-only) --
     "api.cards.get_cards",

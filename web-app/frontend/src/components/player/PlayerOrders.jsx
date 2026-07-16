@@ -2,22 +2,13 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { getMyOrders, adminGetUserOrders, formatMoney } from '@/api/store'
 
-const STATUS_STYLES = {
-  pending_payment: 'text-text-muted',
-  paid: 'text-primary',
-  shipped: 'text-secondary',
-  delivered: 'text-accent-green',
-  cancelled: 'text-text-muted line-through',
-  refunded: 'text-accent-red',
-}
-
-const STATUS_LABELS = {
-  pending_payment: 'Awaiting payment',
-  paid: 'Paid',
-  shipped: 'Shipped',
-  delivered: 'Delivered',
-  cancelled: 'Cancelled',
-  refunded: 'Refunded',
+const STATUS_CONFIG = {
+  pending_payment: { label: 'Awaiting payment', bg: 'bg-text-muted/15', text: 'text-text-muted' },
+  paid:            { label: 'Paid', bg: 'bg-primary/15', text: 'text-primary' },
+  shipped:         { label: 'Shipped', bg: 'bg-secondary/15', text: 'text-secondary' },
+  delivered:       { label: 'Delivered', bg: 'bg-accent-green/15', text: 'text-accent-green' },
+  cancelled:       { label: 'Cancelled', bg: 'bg-text-muted/10', text: 'text-text-muted line-through' },
+  refunded:        { label: 'Refunded', bg: 'bg-accent-red/15', text: 'text-accent-red' },
 }
 
 export default function PlayerOrders({ playerId, isOwner, isAdmin }) {
@@ -46,7 +37,7 @@ export default function PlayerOrders({ playerId, isOwner, isAdmin }) {
         <h2 className="font-semibold text-text-primary">
           {isOwner ? 'My Orders' : 'Orders'}
         </h2>
-        <span className="text-text-muted text-sm">{open ? '▲' : '▼'}</span>
+        <span className="text-text-muted text-sm">{open ? '\u25B2' : '\u25BC'}</span>
       </button>
       {open && (
         <div className="border-t border-border px-4 py-3">
@@ -56,14 +47,19 @@ export default function PlayerOrders({ playerId, isOwner, isAdmin }) {
             <p className="text-text-muted text-sm py-4 text-center">No orders yet.</p>
           ) : (
             <div className="space-y-2">
-              {orders.map((o) => (
-                <div key={o.order_number} className="flex flex-wrap items-center justify-between gap-2 text-sm py-1.5 border-b border-border/50 last:border-0">
-                  <span className="font-mono text-xs">{o.order_number}</span>
-                  <span className={STATUS_STYLES[o.status] || ''}>{STATUS_LABELS[o.status] || o.status}</span>
-                  <span className="text-secondary font-medium">{formatMoney(o.total_cents, o.currency)}</span>
-                  <span className="text-text-muted text-xs">{new Date(o.created_at).toLocaleDateString()}</span>
-                </div>
-              ))}
+              {orders.map((o) => {
+                const cfg = STATUS_CONFIG[o.status] || { label: o.status, bg: 'bg-bg-elevated', text: 'text-text-muted' }
+                return (
+                  <div key={o.order_number} className="flex flex-wrap items-center justify-between gap-2 text-sm py-1.5 border-b border-border/50 last:border-0">
+                    <span className="font-mono text-xs">{o.order_number}</span>
+                    <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.text}`}>
+                      {cfg.label}
+                    </span>
+                    <span className="text-secondary font-medium">{formatMoney(o.total_cents, o.currency)}</span>
+                    <span className="text-text-muted text-xs">{new Date(o.created_at).toLocaleDateString()}</span>
+                  </div>
+                )
+              })}
             </div>
           )}
           {isOwner && (

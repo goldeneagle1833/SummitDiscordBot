@@ -74,19 +74,27 @@ class StoreNotificationService:
         self._notify_buyer(order, subject, body)
 
     def notify_order_shipped(self, order: dict) -> None:
+        tracking = order.get("tracking_number")
         carrier = order.get("tracking_carrier") or "Carrier"
         subject = f"{STORE_NAME}: order {order['order_number']} shipped!"
-        body = (
-            f"Good news — your order {order['order_number']} is on the way.\n\n"
-            f"{carrier} tracking: {order['tracking_number']}"
-        )
+        if tracking:
+            body = (
+                f"Good news — your order {order['order_number']} is on the way.\n\n"
+                f"{carrier} tracking: {tracking}"
+            )
+            notif_body = f"{carrier} tracking: {tracking}"
+        else:
+            body = (
+                f"Good news — your order {order['order_number']} is on the way."
+            )
+            notif_body = "Your order is on its way!"
         self._notify_buyer(order, subject, body)
 
         # In-app web notification
         self.repo.create_web_notification(
             order["user_id"], "order_shipped",
             f"Order {order['order_number']} shipped!",
-            f"{carrier} tracking: {order['tracking_number']}",
+            notif_body,
         )
 
     # ------------------------------------------------------------------

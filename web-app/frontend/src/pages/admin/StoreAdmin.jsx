@@ -256,11 +256,10 @@ function OrderRow({ order, onChanged }) {
   }
 
   const ship = async () => {
-    if (!tracking.trim()) return setError('Tracking number required')
     setBusy(true)
     setError(null)
     try {
-      await adminShipOrder(order.id, tracking.trim(), carrier)
+      await adminShipOrder(order.id, tracking.trim() || null, tracking.trim() ? carrier : null)
       onChanged()
     } catch (e) {
       setError(e.message)
@@ -312,21 +311,28 @@ function OrderRow({ order, onChanged }) {
           )}
 
           {order.status === 'paid' && (
-            <div className="flex flex-wrap items-center gap-2">
-              <input className={`${inputCls} flex-1 min-w-40`} placeholder="Tracking number" value={tracking} onChange={(e) => setTracking(e.target.value)} />
-              <select className={inputCls} value={carrier} onChange={(e) => setCarrier(e.target.value)}>
-                <option>USPS</option>
-                <option>UPS</option>
-                <option>FedEx</option>
-                <option>Other</option>
-              </select>
-              <button
-                onClick={ship}
-                disabled={busy}
-                className="bg-accent-green hover:opacity-90 text-white font-medium px-4 py-2 rounded disabled:opacity-50"
-              >
-                Mark shipped
-              </button>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input className={`${inputCls} flex-1 min-w-40`} placeholder="Tracking number (optional)" value={tracking} onChange={(e) => setTracking(e.target.value)} />
+                {tracking.trim() && (
+                  <select className={inputCls} value={carrier} onChange={(e) => setCarrier(e.target.value)}>
+                    <option>USPS</option>
+                    <option>UPS</option>
+                    <option>FedEx</option>
+                    <option>Other</option>
+                  </select>
+                )}
+                <button
+                  onClick={ship}
+                  disabled={busy}
+                  className="bg-accent-green hover:opacity-90 text-white font-medium px-4 py-2 rounded disabled:opacity-50"
+                >
+                  Mark shipped
+                </button>
+              </div>
+              {!tracking.trim() && (
+                <p className="text-xs text-text-muted mt-1">Tracking is only required for orders over $50.</p>
+              )}
             </div>
           )}
           {order.status === 'shipped' && (

@@ -164,17 +164,16 @@ def admin_get_order(order_id: int):
 @require_store_admin
 def admin_ship_order(order_id: int):
     data = request.get_json(silent=True) or {}
-    tracking = (data.get("tracking_number") or "").strip()
-    if not tracking:
-        return jsonify({"error": "tracking_number is required"}), 400
+    tracking = (data.get("tracking_number") or "").strip() or None
+    carrier = (data.get("tracking_carrier") or "").strip() or None
 
     repo = _repo()
-    if not repo.mark_shipped(order_id, tracking, data.get("tracking_carrier")):
+    if not repo.mark_shipped(order_id, tracking, carrier):
         return jsonify({"error": "Order not found or not in 'paid' status"}), 409
 
     actor_id, actor_name = _actor()
     repo.log_action(actor_id, actor_name, "ship_order",
-                    f"id={order_id} tracking={tracking}")
+                    f"id={order_id} tracking={tracking or 'none'}")
     try:
         from services.store_notifications import StoreNotificationService
         StoreNotificationService(repo).notify_order_shipped(repo.get_order(order_id))

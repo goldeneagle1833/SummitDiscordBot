@@ -75,6 +75,16 @@ DISCORD_REDIRECT_URI = os.environ.get(
 DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID", "1319120227643949211")
 CREATOR_ROLE_ID = os.environ.get("CREATOR_ROLE_ID", "1437891375717945495")
 
+# Discord role IDs that qualify for free shipping in the store
+FREE_SHIPPING_ROLE_IDS = {
+    "1455669646370799667",   # Patreon
+    "1515002025887268987",   # Season 5 ticket
+    "1497681939753209937",   # Summit ticket
+    "1445433610609102990",   # Summit ticket
+    "1468583538642128947",   # Summit ticket
+    "1483153414299979866",   # Summit ticket
+}
+
 # Google OAuth configuration
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")

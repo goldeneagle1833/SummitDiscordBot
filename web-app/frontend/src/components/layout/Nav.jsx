@@ -169,6 +169,7 @@ function NotificationBell({ user }) {
   const [count, setCount] = useState(0)
   const [open, setOpen] = useState(false)
   const [confirmations, setConfirmations] = useState([])
+  const [storeNotifs, setStoreNotifs] = useState([])
   const [acting, setActing] = useState({})
   const [feedback, setFeedback] = useState({})
   const [confirmModal, setConfirmModal] = useState(null)
@@ -180,10 +181,18 @@ function NotificationBell({ user }) {
       .then((d) => {
         const pending = d.pending_confirmations || []
         setConfirmations(pending)
-        setCount(pending.length)
       })
       .catch(() => {})
+
+    fetch('/api/store/notifications', { credentials: 'include' })
+      .then((r) => r.ok ? r.json() : { notifications: [] })
+      .then((d) => setStoreNotifs(d.notifications || []))
+      .catch(() => {})
   }
+
+  useEffect(() => {
+    setCount(confirmations.length + storeNotifs.length)
+  }, [confirmations, storeNotifs])
 
   useEffect(() => {
     if (!user) return
@@ -253,6 +262,36 @@ function NotificationBell({ user }) {
         </button>
         {open && (
           <div className="absolute right-0 top-full mt-2 w-80 max-h-96 bg-bg-elevated shadow-xl rounded-lg overflow-hidden z-[1001] border border-secondary/30">
+            {/* Store order notifications */}
+            {storeNotifs.length > 0 && (
+              <>
+                <div className="bg-primary/20 px-4 py-3 border-b border-white/10">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wide">Orders</h3>
+                </div>
+                <div>
+                  {storeNotifs.map((n) => (
+                    <div key={`store-${n.id}`} className="px-4 py-3 border-b border-white/5 flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-white">{n.title}</p>
+                        <p className="text-xs text-text-muted mt-0.5">{n.body}</p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          await fetch(`/api/store/notifications/${n.id}/dismiss`, {
+                            method: 'POST', credentials: 'include',
+                          })
+                          setStoreNotifs((prev) => prev.filter((x) => x.id !== n.id))
+                        }}
+                        className="text-xs text-text-muted hover:text-white shrink-0"
+                        aria-label="Dismiss"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
             <div className="bg-secondary/20 px-4 py-3 border-b border-white/10">
               <h3 className="text-sm font-bold text-white uppercase tracking-wide">Match Confirmations</h3>
             </div>

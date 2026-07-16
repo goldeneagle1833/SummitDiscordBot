@@ -67,6 +67,15 @@ def admin_create_product():
     except (TypeError, ValueError):
         return jsonify({"error": "price_cents and stock_quantity must be non-negative integers"}), 400
 
+    max_monthly = data.get("max_per_user_monthly")
+    if max_monthly is not None:
+        try:
+            max_monthly = int(max_monthly)
+            if max_monthly < 1:
+                raise ValueError
+        except (TypeError, ValueError):
+            return jsonify({"error": "max_per_user_monthly must be a positive integer"}), 400
+
     repo = _repo()
     try:
         product_id = repo.create_product(
@@ -76,6 +85,7 @@ def admin_create_product():
             description=str(data.get("description", "")),
             image_url=data.get("image_url"),
             stock_quantity=stock,
+            max_per_user_monthly=max_monthly,
         )
     except sqlite3.IntegrityError:
         return jsonify({"error": "A product with that SKU already exists"}), 409
@@ -125,10 +135,17 @@ def admin_deactivate_product(product_id: int):
 @store_bp.route("/store/admin/orders", methods=["GET"])
 @require_store_admin
 def admin_list_orders():
-    status = request.args.get("status")
+    status = request.args.get("status") or None
+    product_id = request.args.get("product_id", type=int)
+    search = request.args.get("search") or None
+    date_from = request.args.get("date_from") or None
+    date_to = request.args.get("date_to") or None
     try:
         limit = min(int(request.args.get("limit", 100)), 500)
-        orders = _repo().list_orders(status=status, limit=limit)
+        orders = _repo().list_orders_filtered(
+            status=status, product_id=product_id, search=search,
+            date_from=date_from, date_to=date_to, limit=limit,
+        )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     return jsonify({"orders": orders, "statuses": ORDER_STATUSES})
@@ -194,10 +211,17 @@ def admin_export_orders():
     import csv
     import io
 
-    status = request.args.get("status")
+    status = request.args.get("status") or None
+    product_id = request.args.get("product_id", type=int)
+    search = request.args.get("search") or None
+    date_from = request.args.get("date_from") or None
+    date_to = request.args.get("date_to") or None
     repo = _repo()
     try:
-        orders = repo.list_orders(status=status, limit=500)
+        orders = repo.list_orders_filtered(
+            status=status, product_id=product_id, search=search,
+            date_from=date_from, date_to=date_to, limit=500,
+        )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -279,6 +303,7 @@ def admin_download_backup():
 
 from utils.auth import require_auth  # noqa: E402
 from services.store_checkout import StoreCheckoutService  # noqa: E402
+from webapp_config import FREE_SHIPPING_ROLE_IDS  # noqa: E402
 
 
 @store_bp.route("/store/checkout", methods=["POST"])
@@ -312,6 +337,8 @@ def create_checkout():
     user_id = str(session.get("user_id", 0))
     username = session.get("username", "unknown")
 
+    discord_roles = session.get("discord_roles", [])
+
     try:
         result = service.create_checkout(
             user_id=user_id,
@@ -319,6 +346,7 @@ def create_checkout():
             items=items,
             email=data.get("email"),
             auth_provider=provider,
+            discord_roles=discord_roles,
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 409
@@ -344,6 +372,36 @@ def my_orders():
     return jsonify({
         "orders": [{k: o.get(k) for k in public_fields} for o in orders]
     })
+
+
+@store_bp.route("/store/orders/user/<user_id>", methods=["GET"])
+@require_store_admin
+def admin_user_orders(user_id: str):
+    """View a specific user's orders (admin only)."""
+    orders = _repo().list_orders_by_user(user_id, limit=50)
+    return jsonify({"orders": orders})
+
+
+# ----------------------------------------------------------------------
+# Web notifications (in-app bell)
+# ----------------------------------------------------------------------
+
+@store_bp.route("/store/notifications", methods=["GET"])
+@require_auth
+def list_web_notifications():
+    """Return undismissed web notifications for the logged-in user."""
+    user_id = str(session.get("user_id", 0))
+    notifications = _repo().list_web_notifications(user_id)
+    return jsonify({"notifications": notifications})
+
+
+@store_bp.route("/store/notifications/<int:nid>/dismiss", methods=["POST"])
+@require_auth
+def dismiss_web_notification(nid: int):
+    user_id = str(session.get("user_id", 0))
+    if not _repo().dismiss_web_notification(nid, user_id):
+        return jsonify({"error": "Notification not found"}), 404
+    return jsonify({"success": True})
 
 
 # ----------------------------------------------------------------------
@@ -387,10 +445,14 @@ def checkout_prefill():
     user_id = str(session.get("user_id", 0))
     provider = session.get("auth_provider", "discord")
 
+    discord_roles = session.get("discord_roles", [])
+    free_shipping = bool(FREE_SHIPPING_ROLE_IDS.intersection(discord_roles))
+
     prefill = {
         "username": session.get("username"),
         "auth_provider": provider,
         "email": None,
+        "free_shipping": free_shipping,
     }
 
     try:

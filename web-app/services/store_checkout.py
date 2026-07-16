@@ -21,7 +21,7 @@ import os
 import stripe
 
 from repositories.store import StoreRepository
-from webapp_config import FRONTEND_URL
+from webapp_config import FRONTEND_URL, FREE_SHIPPING_ROLE_IDS
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,11 @@ STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 FLAT_SHIPPING_CENTS = int(os.environ.get("STORE_FLAT_SHIPPING_CENTS", "599"))
 CHECKOUT_EXPIRES_MINUTES = 60  # Stripe minimum is 30
+
+# Stripe Shipping Rate IDs (create via Stripe Dashboard or API)
+STRIPE_SHIPPING_RATE_DOMESTIC = os.environ.get("STRIPE_SHIPPING_RATE_DOMESTIC", "")
+STRIPE_SHIPPING_RATE_INTERNATIONAL = os.environ.get("STRIPE_SHIPPING_RATE_INTERNATIONAL", "")
+STRIPE_SHIPPING_RATE_FREE = os.environ.get("STRIPE_SHIPPING_RATE_FREE", "")
 
 stripe.api_key = STRIPE_SECRET_KEY
 stripe.api_version = "2025-06-30.basil"
@@ -63,6 +68,7 @@ class StoreCheckoutService:
         email: str | None = None,
         auth_provider: str = "discord",
         address_validated: bool = False,
+        discord_roles: list[str] | None = None,
     ) -> dict:
         """Create a pending order and a Stripe Checkout Session.
 
@@ -71,6 +77,35 @@ class StoreCheckoutService:
         """
         import time
 
+        # Free shipping for Patreon / Summit ticket holders
+        has_free_shipping = bool(
+            discord_roles and FREE_SHIPPING_ROLE_IDS.intersection(discord_roles)
+        )
+
+        # Build Stripe shipping_options from Shipping Rate objects
+        use_shipping_rates = bool(
+            STRIPE_SHIPPING_RATE_DOMESTIC
+            and STRIPE_SHIPPING_RATE_INTERNATIONAL
+        )
+
+        if has_free_shipping and STRIPE_SHIPPING_RATE_FREE:
+            shipping_options = [
+                {"shipping_rate": STRIPE_SHIPPING_RATE_FREE},
+            ]
+            shipping_cents = 0
+        elif use_shipping_rates:
+            shipping_options = [
+                {"shipping_rate": STRIPE_SHIPPING_RATE_DOMESTIC},
+                {"shipping_rate": STRIPE_SHIPPING_RATE_INTERNATIONAL},
+            ]
+            # Actual shipping cost determined by Stripe at checkout;
+            # store 0 now, update from webhook when payment completes.
+            shipping_cents = 0
+        else:
+            # Fallback: flat-rate domestic-only (legacy / unconfigured)
+            shipping_options = None
+            shipping_cents = 0 if has_free_shipping else FLAT_SHIPPING_CENTS
+
         order = self.repo.create_order(
             user_id=user_id,
             username=username,
@@ -78,7 +113,7 @@ class StoreCheckoutService:
             shipping_address=shipping_address or {},
             email=email,
             auth_provider=auth_provider,
-            shipping_cents=FLAT_SHIPPING_CENTS,
+            shipping_cents=shipping_cents,
             tax_cents=0,  # TODO phase 5+: Stripe Tax for Ohio nexus
             address_validated=address_validated,
         )
@@ -95,38 +130,46 @@ class StoreCheckoutService:
             }
             for item in full_order["items"]
         ]
-        if FLAT_SHIPPING_CENTS:
+        # Only add shipping as a line item if NOT using Stripe Shipping Rates
+        if not use_shipping_rates and not has_free_shipping and shipping_cents:
             line_items.append(
                 {
                     "price_data": {
                         "currency": full_order["currency"].lower(),
                         "product_data": {"name": "Shipping"},
-                        "unit_amount": FLAT_SHIPPING_CENTS,
+                        "unit_amount": shipping_cents,
                     },
                     "quantity": 1,
                 }
             )
 
+        session_params = {
+            "mode": "payment",
+            "line_items": line_items,
+            "customer_email": email,
+            "metadata": {
+                "order_id": str(order["id"]),
+                "order_number": order["order_number"],
+            },
+            "success_url": _site_url(
+                f"/store/success?order={order['order_number']}"
+            ),
+            "cancel_url": _site_url(
+                f"/store/cancelled?order={order['order_number']}"
+            ),
+            "expires_at": int(time.time()) + CHECKOUT_EXPIRES_MINUTES * 60,
+        }
+
+        if shipping_options:
+            session_params["shipping_options"] = shipping_options
+        else:
+            # Legacy fallback: collect US-only address
+            session_params["shipping_address_collection"] = {
+                "allowed_countries": ["US"],
+            }
+
         try:
-            checkout_session = stripe.checkout.Session.create(
-                mode="payment",
-                line_items=line_items,
-                customer_email=email,
-                shipping_address_collection={
-                    "allowed_countries": ["US"],
-                },
-                metadata={
-                    "order_id": str(order["id"]),
-                    "order_number": order["order_number"],
-                },
-                success_url=_site_url(
-                    f"/store/success?order={order['order_number']}"
-                ),
-                cancel_url=_site_url(
-                    f"/store/cancelled?order={order['order_number']}"
-                ),
-                expires_at=int(time.time()) + CHECKOUT_EXPIRES_MINUTES * 60,
-            )
+            checkout_session = stripe.checkout.Session.create(**session_params)
         except stripe.StripeError:
             # Stripe rejected the session: release the reserved stock.
             self.repo.set_status(order["id"], "cancelled")
@@ -201,6 +244,24 @@ class StoreCheckoutService:
         # Verify what Stripe charged matches what we expected.
         amount = session_obj.get("amount_total")
         currency = (session_obj.get("currency") or "").upper()
+
+        # When using Stripe Shipping Rates, the order's shipping_cents is 0
+        # at creation time because Stripe determines it. Update the order
+        # with the actual shipping cost before comparing totals.
+        stripe_shipping = session_obj.get("shipping_cost") or {}
+        stripe_shipping_cents = stripe_shipping.get("amount_total", 0)
+        if stripe_shipping_cents and order["shipping_cents"] == 0:
+            new_total = order["subtotal_cents"] + stripe_shipping_cents + order["tax_cents"]
+            with self.repo._connect() as conn:
+                conn.execute(
+                    """UPDATE orders SET shipping_cents = ?, total_cents = ?,
+                       updated_at = ? WHERE id = ?""",
+                    (stripe_shipping_cents, new_total,
+                     self.repo._now(), order["id"]),
+                )
+            order["shipping_cents"] = stripe_shipping_cents
+            order["total_cents"] = new_total
+
         if amount != order["total_cents"] or currency != order["currency"]:
             self.repo.log_action(
                 "stripe-webhook", "system", "amount_mismatch",
@@ -217,6 +278,12 @@ class StoreCheckoutService:
         if self.repo.mark_paid(order["id"]):
             # Save shipping address collected by Stripe Checkout
             shipping = session_obj.get("shipping_details") or session_obj.get("shipping") or {}
+            logger.info(
+                f"Shipping data for {order['order_number']}: "
+                f"keys={list(session_obj.keys())} "
+                f"shipping_details={session_obj.get('shipping_details')} "
+                f"shipping={session_obj.get('shipping')}"
+            )
             if shipping.get("address"):
                 addr = shipping["address"]
                 self.repo.update_shipping_address(order["id"], {

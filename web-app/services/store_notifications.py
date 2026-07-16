@@ -57,6 +57,13 @@ class StoreNotificationService:
             f"Ship to: {order['ship_city']}, {order['ship_state']}",
         )
 
+        # In-app web notification
+        self.repo.create_web_notification(
+            order["user_id"], "order_paid",
+            f"Order {order['order_number']} confirmed",
+            f"Your order for {total} has been confirmed. We'll send tracking when it ships.",
+        )
+
         # Buyer confirmation
         subject = f"{STORE_NAME}: order {order['order_number']} confirmed"
         body = (
@@ -74,6 +81,13 @@ class StoreNotificationService:
             f"{carrier} tracking: {order['tracking_number']}"
         )
         self._notify_buyer(order, subject, body)
+
+        # In-app web notification
+        self.repo.create_web_notification(
+            order["user_id"], "order_shipped",
+            f"Order {order['order_number']} shipped!",
+            f"{carrier} tracking: {order['tracking_number']}",
+        )
 
     # ------------------------------------------------------------------
     # Routing

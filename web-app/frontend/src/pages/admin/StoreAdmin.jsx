@@ -11,7 +11,7 @@ const inputCls =
 
 // ---------------------------------------------------------------- Products
 
-const EMPTY_PRODUCT = { sku: '', name: '', description: '', price: '', stock_quantity: '', image_url: '' }
+const EMPTY_PRODUCT = { sku: '', name: '', description: '', price: '', stock_quantity: '', image_url: '', max_per_user_monthly: '' }
 
 function ProductsPanel() {
   const [products, setProducts] = useState([])
@@ -65,6 +65,7 @@ function ProductsPanel() {
     }
     setSaving(true)
     try {
+      const maxMonthly = form.max_per_user_monthly ? parseInt(form.max_per_user_monthly, 10) : undefined
       await adminCreateProduct({
         sku: form.sku.trim(),
         name: form.name.trim(),
@@ -72,6 +73,7 @@ function ProductsPanel() {
         price_cents,
         stock_quantity: parseInt(form.stock_quantity || '0', 10),
         image_url: form.image_url.trim() || undefined,
+        max_per_user_monthly: maxMonthly || undefined,
       })
       setForm(EMPTY_PRODUCT)
       load()
@@ -115,6 +117,7 @@ function ProductsPanel() {
           <input className={`${inputCls} sm:col-span-2`} placeholder="Description" value={form.description} onChange={set('description')} />
           <input className={inputCls} placeholder="Price (e.g. 12.99)" inputMode="decimal" value={form.price} onChange={set('price')} />
           <input className={inputCls} placeholder="Stock quantity" inputMode="numeric" value={form.stock_quantity} onChange={set('stock_quantity')} />
+          <input className={inputCls} placeholder="Monthly limit per user (blank = unlimited)" inputMode="numeric" value={form.max_per_user_monthly} onChange={set('max_per_user_monthly')} />
           <div className="sm:col-span-2 flex items-center gap-3">
             <input
               ref={fileRef}
@@ -171,6 +174,7 @@ function ProductsPanel() {
               <th className="py-2 px-3 font-semibold text-text-muted">Name</th>
               <th className="py-2 px-3 font-semibold text-text-muted">Price</th>
               <th className="py-2 px-3 font-semibold text-text-muted">Stock</th>
+              <th className="py-2 px-3 font-semibold text-text-muted">Limit/mo</th>
               <th className="py-2 px-3 font-semibold text-text-muted">Status</th>
               <th className="py-2 px-3" />
             </tr>
@@ -197,6 +201,9 @@ function ProductsPanel() {
                     className={`${inputCls} w-20 py-1`}
                     aria-label={`Stock for ${p.name}`}
                   />
+                </td>
+                <td className="py-2 px-3 text-text-muted text-sm">
+                  {p.max_per_user_monthly ?? '∞'}
                 </td>
                 <td className="py-2 px-3">
                   {p.is_active ? (
@@ -341,22 +348,43 @@ function OrderRow({ order, onChanged }) {
 
 function OrdersPanel() {
   const [filter, setFilter] = useState('paid')
+  const [productFilter, setProductFilter] = useState('')
+  const [search, setSearch] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [products, setProducts] = useState([])
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  useEffect(() => {
+    adminGetProducts().then((d) => setProducts(d.products || [])).catch(() => {})
+  }, [])
+
   const load = useCallback(() => {
     setLoading(true)
-    adminGetOrders(filter)
+    adminGetOrders({
+      status: filter,
+      product_id: productFilter || undefined,
+      search: search.trim() || undefined,
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+    })
       .then((d) => setOrders(d.orders || []))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [filter])
+  }, [filter, productFilter, search, dateFrom, dateTo])
   useEffect(load, [load])
 
   const exportCsv = () => {
-    const url = `/api/store/admin/orders/export${filter ? `?status=${filter}` : ''}`
-    window.open(url, '_blank')
+    const params = new URLSearchParams()
+    if (filter) params.set('status', filter)
+    if (productFilter) params.set('product_id', productFilter)
+    if (search.trim()) params.set('search', search.trim())
+    if (dateFrom) params.set('date_from', dateFrom)
+    if (dateTo) params.set('date_to', dateTo)
+    const qs = params.toString()
+    window.open(`/api/store/admin/orders/export${qs ? `?${qs}` : ''}`, '_blank')
   }
 
   return (
@@ -381,6 +409,47 @@ function OrdersPanel() {
         >
           Export CSV
         </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <input
+          className={`${inputCls} w-48`}
+          placeholder="Search user / order #"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select
+          className={`${inputCls} w-44`}
+          value={productFilter}
+          onChange={(e) => setProductFilter(e.target.value)}
+        >
+          <option value="">All products</option>
+          {products.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+        <input
+          type="date"
+          className={`${inputCls} w-36`}
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.target.value)}
+          title="From date"
+        />
+        <input
+          type="date"
+          className={`${inputCls} w-36`}
+          value={dateTo}
+          onChange={(e) => setDateTo(e.target.value)}
+          title="To date"
+        />
+        {(productFilter || search || dateFrom || dateTo) && (
+          <button
+            onClick={() => { setProductFilter(''); setSearch(''); setDateFrom(''); setDateTo('') }}
+            className="text-xs text-text-muted hover:text-accent-red"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {error && <p className="text-accent-red text-sm mb-3">{error}</p>}

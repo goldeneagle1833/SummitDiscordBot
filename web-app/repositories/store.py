@@ -51,6 +51,7 @@ class StoreRepository:
                     image_url TEXT,
                     stock_quantity INTEGER NOT NULL DEFAULT 0 CHECK (stock_quantity >= 0),
                     is_active INTEGER NOT NULL DEFAULT 1,
+                    max_per_user_monthly INTEGER,  -- NULL = unlimited
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -119,13 +120,30 @@ class StoreRepository:
                     sent_at TEXT
                 );
 
+                CREATE TABLE IF NOT EXISTS web_notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    type TEXT NOT NULL,          -- order_paid | order_shipped
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    dismissed INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_notif_pending
                     ON notifications(status, channel);
                 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
                 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
                 CREATE INDEX IF NOT EXISTS idx_items_order ON order_items(order_id);
+                CREATE INDEX IF NOT EXISTS idx_web_notif_user
+                    ON web_notifications(user_id, dismissed);
                 """
             )
+            # Migrations for columns added after initial schema
+            try:
+                conn.execute("ALTER TABLE products ADD COLUMN max_per_user_monthly INTEGER")
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
     @staticmethod
     def _now() -> str:
@@ -158,22 +176,23 @@ class StoreRepository:
         description: str = "",
         image_url: str | None = None,
         stock_quantity: int = 0,
+        max_per_user_monthly: int | None = None,
     ) -> int:
         now = self._now()
         with self._connect() as conn:
             cur = conn.execute(
                 """INSERT INTO products
                    (sku, name, description, price_cents, image_url,
-                    stock_quantity, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    stock_quantity, max_per_user_monthly, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (sku, name, description, price_cents, image_url,
-                 stock_quantity, now, now),
+                 stock_quantity, max_per_user_monthly, now, now),
             )
             return cur.lastrowid
 
     def update_product(self, product_id: int, **fields) -> bool:
         allowed = {"sku", "name", "description", "price_cents", "image_url",
-                   "stock_quantity", "is_active"}
+                   "stock_quantity", "is_active", "max_per_user_monthly"}
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return False
@@ -226,6 +245,9 @@ class StoreRepository:
         now = self._now()
         order_number = self._generate_order_number()
 
+        # Check monthly per-user limits before reserving stock
+        monthly_counts = self.user_monthly_product_counts(user_id)
+
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
@@ -241,6 +263,16 @@ class StoreRepository:
                     qty = int(item["quantity"])
                     if qty <= 0:
                         raise ValueError("Quantity must be positive")
+                    # Enforce per-user monthly limit
+                    cap = row["max_per_user_monthly"]
+                    if cap is not None:
+                        already = monthly_counts.get(row["id"], 0)
+                        if already + qty > cap:
+                            remaining = max(0, cap - already)
+                            raise ValueError(
+                                f"You can only buy {cap} of {row['name']} per month "
+                                f"({remaining} remaining)"
+                            )
                     updated = conn.execute(
                         """UPDATE products
                            SET stock_quantity = stock_quantity - ?, updated_at = ?
@@ -489,6 +521,112 @@ class StoreRepository:
     # ------------------------------------------------------------------
     # Prefill helpers
     # ------------------------------------------------------------------
+
+    def user_monthly_product_counts(self, user_id: str) -> dict[int, int]:
+        """Count how many of each product this user ordered this calendar month.
+
+        Only counts non-cancelled/refunded orders.
+        Returns {product_id: total_quantity}.
+        """
+        month_start = datetime.now(timezone.utc).replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        ).isoformat()
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT oi.product_id, SUM(oi.quantity) as total
+                   FROM order_items oi
+                   JOIN orders o ON o.id = oi.order_id
+                   WHERE o.user_id = ?
+                     AND o.status NOT IN ('cancelled', 'refunded')
+                     AND o.created_at >= ?
+                   GROUP BY oi.product_id""",
+                (str(user_id), month_start),
+            ).fetchall()
+            return {r["product_id"]: r["total"] for r in rows}
+
+    # ------------------------------------------------------------------
+    # Web notifications (in-app bell)
+    # ------------------------------------------------------------------
+
+    def create_web_notification(self, user_id: str, ntype: str,
+                                title: str, body: str) -> int:
+        with self._connect() as conn:
+            cur = conn.execute(
+                """INSERT INTO web_notifications
+                   (user_id, type, title, body, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (str(user_id), ntype, title, body, self._now()),
+            )
+            return cur.lastrowid
+
+    def list_web_notifications(self, user_id: str,
+                               limit: int = 50) -> list[dict]:
+        with self._connect() as conn:
+            return [
+                dict(r) for r in conn.execute(
+                    """SELECT * FROM web_notifications
+                       WHERE user_id = ? AND dismissed = 0
+                       ORDER BY created_at DESC LIMIT ?""",
+                    (str(user_id), limit),
+                ).fetchall()
+            ]
+
+    def dismiss_web_notification(self, notification_id: int,
+                                 user_id: str) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute(
+                """UPDATE web_notifications SET dismissed = 1
+                   WHERE id = ? AND user_id = ?""",
+                (notification_id, str(user_id)),
+            )
+            return cur.rowcount > 0
+
+    # ------------------------------------------------------------------
+    # Admin order filtering
+    # ------------------------------------------------------------------
+
+    def list_orders_filtered(self, status: str | None = None,
+                             product_id: int | None = None,
+                             search: str | None = None,
+                             date_from: str | None = None,
+                             date_to: str | None = None,
+                             limit: int = 100) -> list[dict]:
+        """List orders with optional filters for admin views."""
+        conditions = []
+        params: list = []
+
+        if status:
+            if status not in ORDER_STATUSES:
+                raise ValueError(f"Unknown status: {status}")
+            conditions.append("o.status = ?")
+            params.append(status)
+
+        if product_id:
+            conditions.append(
+                "o.id IN (SELECT order_id FROM order_items WHERE product_id = ?)"
+            )
+            params.append(product_id)
+
+        if search:
+            conditions.append(
+                "(o.username LIKE ? OR o.order_number LIKE ?)"
+            )
+            params.extend([f"%{search}%", f"%{search}%"])
+
+        if date_from:
+            conditions.append("o.created_at >= ?")
+            params.append(date_from)
+
+        if date_to:
+            conditions.append("o.created_at <= ?")
+            params.append(date_to)
+
+        where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+        query = f"SELECT * FROM orders o{where} ORDER BY o.created_at DESC LIMIT ?"
+        params.append(limit)
+
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(query, params).fetchall()]
 
     def last_shipping_address(self, user_id: str) -> dict | None:
         """Most recent shipping address this user checked out with."""

@@ -130,7 +130,7 @@ export default function Store() {
           <div className="text-sm">
             {cartItems.reduce((n, p) => n + cart[p.id], 0)} item(s) —{' '}
             <span className="text-secondary font-medium">{formatMoney(subtotal)}</span>
-            <span className="text-text-muted"> + shipping</span>
+            <span className="text-text-muted"> + shipping (free for supporters!)</span>
           </div>
           {user ? (
             <button

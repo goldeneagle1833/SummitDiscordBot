@@ -131,6 +131,7 @@ def discord_callback():
 
     # Check guild membership and roles
     is_creator = False
+    discord_roles = []
     if DISCORD_GUILD_ID and CREATOR_ROLE_ID:
         try:
             guild_url = f"https://discord.com/api/users/@me/guilds/{DISCORD_GUILD_ID}/member"
@@ -139,6 +140,7 @@ def discord_callback():
                 member_data = member_response.json()
                 member_roles = member_data.get("roles", [])
                 is_creator = CREATOR_ROLE_ID in member_roles
+                discord_roles = member_roles
         except requests.RequestException as e:
             logger.error(f"Failed to check guild roles: {e}")
 
@@ -149,6 +151,7 @@ def discord_callback():
     session["avatar"] = user_data.get("avatar")
     session["auth_provider"] = "discord"
     session["is_creator"] = is_creator
+    session["discord_roles"] = discord_roles
 
     # Save comprehensive user profile to database (non-blocking)
     try:

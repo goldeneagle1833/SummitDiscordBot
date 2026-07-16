@@ -12,6 +12,7 @@ export default function StoreCheckout() {
   const items = location.state?.items || []
 
   const [email, setEmail] = useState('')
+  const [freeShipping, setFreeShipping] = useState(false)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
@@ -22,6 +23,7 @@ export default function StoreCheckout() {
     getCheckoutPrefill()
       .then((pre) => {
         if (pre.email) setEmail(pre.email)
+        if (pre.free_shipping) setFreeShipping(true)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -65,7 +67,9 @@ export default function StoreCheckout() {
           </div>
         ))}
         <div className="flex justify-between text-sm pt-2 mt-2 border-t border-border">
-          <span className="text-text-muted">Subtotal (shipping added at payment)</span>
+          <span className="text-text-muted">
+            {freeShipping ? 'Subtotal (free shipping — thank you for your support!)' : 'Subtotal (shipping added at payment)'}
+          </span>
           <span className="text-secondary font-medium">{formatMoney(subtotal)}</span>
         </div>
       </div>

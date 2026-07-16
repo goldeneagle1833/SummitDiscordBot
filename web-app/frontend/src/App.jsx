@@ -174,7 +174,7 @@ const router = createBrowserRouter([
       { path: '/login', element: <Login /> },
       // Creator
       { path: '/creator', element: <CreatorGuard><Creator /></CreatorGuard> },
-      // Store (dark launch: admin-only until public launch)
+      // Store (dark launch: store-admin-only until public launch)
       { path: '/store', element: <StoreAdminGuard><Store /></StoreAdminGuard> },
       { path: '/store/checkout', element: <StoreAdminGuard><StoreCheckout /></StoreAdminGuard> },
       { path: '/store/success', element: <StoreAdminGuard><StoreSuccess /></StoreAdminGuard> },

@@ -22,7 +22,6 @@ import EloHistory from '@/components/player/EloHistory'
 import PlayerSeasons from '@/components/player/PlayerSeasons'
 import PrivacySettingsModal from '@/components/player/PrivacySettingsModal'
 import BlockListModal from '@/components/player/BlockListModal'
-import PlayerOrders from '@/components/player/PlayerOrders'
 import { useAuth } from '@/context/AuthContext'
 
 const PER_PAGE_OPTIONS = [15, 25, 50]
@@ -203,6 +202,14 @@ const [editDeck, setEditDeck] = useState(null)
           >
             Block List
           </button>
+          {authUser?.is_store_admin && (
+            <Link
+              to="/store/orders"
+              className="px-4 py-2 text-sm rounded border border-border text-text-muted hover:text-text-primary hover:border-secondary/50 transition-colors"
+            >
+              My Orders
+            </Link>
+          )}
         </div>
       )}
 
@@ -303,10 +310,6 @@ const [editDeck, setEditDeck] = useState(null)
           playerId={playerId}
           onPageChange={(p) => refetch(undefined, undefined, undefined, undefined, undefined, p)}
         />
-      )}
-
-      {(data.is_owner || data.is_admin) && authUser?.is_store_admin && (
-        <PlayerOrders playerId={playerId} isOwner={data.is_owner} isAdmin={data.is_admin} />
       )}
 
       {sectionVisible('recorded_games') && <RecordedGames games={data.recorded_games} />}

@@ -5,14 +5,62 @@ import { getProducts, formatMoney } from '@/api/store'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
+function LoginPromptModal({ onClose }) {
+  const returnUrl = encodeURIComponent(window.location.href)
+
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="bg-bg-surface border border-border rounded-lg w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="p-6 text-center">
+          <h3 className="text-lg font-display text-secondary mb-2">Welcome to the Store</h3>
+          <p className="text-sm text-text-muted mb-5">
+            Sign in to add items to your cart and check out, or browse as a guest.
+          </p>
+          <div className="space-y-3 mb-4">
+            <a
+              href={`/auth/discord?next=${returnUrl}`}
+              className="block w-full px-5 py-3 bg-[#5865F2] text-white rounded-lg font-medium hover:bg-[#4752C4] transition-colors"
+            >
+              Sign in with Discord
+            </a>
+            <a
+              href={`/auth/google?next=${returnUrl}`}
+              className="block w-full px-5 py-3 bg-bg-elevated border border-border rounded-lg font-medium hover:border-primary/50 transition-colors"
+            >
+              Sign in with Google
+            </a>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-sm text-text-muted hover:text-text transition-colors"
+          >
+            Continue as guest
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Store() {
   usePageTitle('Store')
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [cart, setCart] = useState({}) // { [productId]: quantity }
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false)
+
+  useEffect(() => {
+    if (!authLoading && !user) setShowLoginPrompt(true)
+  }, [authLoading, user])
 
   useEffect(() => {
     getProducts()
@@ -164,15 +212,17 @@ export default function Store() {
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </button>
           ) : (
-            <Link
-              to="/login"
+            <button
+              onClick={() => setShowLoginPrompt(true)}
               className="bg-primary hover:bg-primary-dark text-white font-medium px-5 py-2.5 rounded-lg transition-colors"
             >
               Log in to check out
-            </Link>
+            </button>
           )}
         </div>
       )}
+
+      {showLoginPrompt && <LoginPromptModal onClose={() => setShowLoginPrompt(false)} />}
     </div>
   )
 }

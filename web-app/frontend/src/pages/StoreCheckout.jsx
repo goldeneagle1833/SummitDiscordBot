@@ -69,6 +69,7 @@ export default function StoreCheckout() {
       .finally(() => setLoading(false))
   }, [])
 
+  if (!user) return <Navigate to={`/login?next=${encodeURIComponent('/store')}`} replace />
   if (items.length === 0) return <Navigate to="/store" replace />
   if (loading) return <Spinner className="py-20" />
 

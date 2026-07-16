@@ -628,6 +628,28 @@ class StoreRepository:
         with self._connect() as conn:
             return [dict(r) for r in conn.execute(query, params).fetchall()]
 
+    def get_items_for_orders(self, order_ids: list[int]) -> dict[int, list[dict]]:
+        """Return order items grouped by order_id, with product image_url."""
+        if not order_ids:
+            return {}
+        placeholders = ",".join("?" for _ in order_ids)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""SELECT oi.order_id, oi.product_name, oi.unit_price_cents,
+                           oi.quantity, p.image_url
+                    FROM order_items oi
+                    LEFT JOIN products p ON p.id = oi.product_id
+                    WHERE oi.order_id IN ({placeholders})
+                    ORDER BY oi.id""",
+                order_ids,
+            ).fetchall()
+        result: dict[int, list[dict]] = {}
+        for r in rows:
+            d = dict(r)
+            oid = d.pop("order_id")
+            result.setdefault(oid, []).append(d)
+        return result
+
     def last_shipping_address(self, user_id: str) -> dict | None:
         """Most recent shipping address this user checked out with."""
         with self._connect() as conn:

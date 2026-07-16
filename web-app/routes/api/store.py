@@ -363,14 +363,23 @@ def my_orders():
     user_id = str(session.get("user_id", 0))
     repo = _repo()
     orders = repo.list_orders_by_user(user_id, limit=50)
+
+    # Build a product image lookup for all items across orders
+    order_ids = [o["id"] for o in orders]
+    items_by_order = repo.get_items_for_orders(order_ids) if order_ids else {}
+
     # Buyers don't need internal/admin fields
     public_fields = (
         "order_number", "status", "total_cents", "currency",
         "tracking_number", "tracking_carrier", "created_at", "paid_at", "shipped_at",
     )
-    return jsonify({
-        "orders": [{k: o.get(k) for k in public_fields} for o in orders]
-    })
+    result = []
+    for o in orders:
+        entry = {k: o.get(k) for k in public_fields}
+        entry["items"] = items_by_order.get(o["id"], [])
+        result.append(entry)
+
+    return jsonify({"orders": result})
 
 
 @store_bp.route("/store/orders/user/<user_id>", methods=["GET"])

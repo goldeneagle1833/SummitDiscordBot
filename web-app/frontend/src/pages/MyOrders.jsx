@@ -22,6 +22,93 @@ function StatusBadge({ status }) {
   )
 }
 
+function OrderCard({ order }) {
+  const [expanded, setExpanded] = useState(false)
+  const items = order.items || []
+
+  return (
+    <div className="bg-bg-surface border border-border rounded-lg overflow-hidden hover:border-border/80 transition-colors">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full p-4 text-left"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-sm text-text-primary">{order.order_number}</span>
+            <span className="text-xs text-text-muted">
+              {new Date(order.created_at).toLocaleDateString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric',
+              })}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-secondary font-semibold">{formatMoney(order.total_cents, order.currency)}</span>
+            <StatusBadge status={order.status} />
+            <svg
+              width="16" height="16" viewBox="0 0 16 16" fill="none"
+              className={`text-text-muted transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+            >
+              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-border">
+          {items.length > 0 ? (
+            <div className="divide-y divide-border/50">
+              {items.map((item, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3">
+                  {item.image_url ? (
+                    <img
+                      src={item.image_url}
+                      alt={item.product_name}
+                      className="w-12 h-12 rounded-md object-cover border border-border shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-md bg-bg-elevated border border-border flex items-center justify-center shrink-0">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-border">
+                        <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
+                        <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
+                        <path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-text-primary truncate">{item.product_name}</p>
+                    <p className="text-xs text-text-muted">
+                      {formatMoney(item.unit_price_cents, order.currency)} x {item.quantity}
+                    </p>
+                  </div>
+                  <span className="text-sm font-medium text-text-primary shrink-0">
+                    {formatMoney(item.unit_price_cents * item.quantity, order.currency)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="px-4 py-3 text-sm text-text-muted">No item details available.</p>
+          )}
+
+          {order.tracking_number && (
+            <div className="border-t border-border/50 px-4 py-3 flex items-center gap-2 text-sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-muted shrink-0">
+                <rect x="1" y="3" width="15" height="13" rx="2" />
+                <polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
+                <circle cx="5.5" cy="18.5" r="2.5" />
+                <circle cx="18.5" cy="18.5" r="2.5" />
+              </svg>
+              <span className="text-text-muted">{order.tracking_carrier || 'Tracking'}:</span>
+              <span className="font-mono text-text-primary">{order.tracking_number}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function MyOrders() {
   usePageTitle('My Orders')
   const [orders, setOrders] = useState([])
@@ -57,34 +144,7 @@ export default function MyOrders() {
       ) : (
         <div className="space-y-3">
           {orders.map((o) => (
-            <div key={o.order_number} className="bg-bg-surface border border-border rounded-lg p-4 hover:border-border/80 transition-colors">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm text-text-primary">{o.order_number}</span>
-                  <span className="text-xs text-text-muted">
-                    {new Date(o.created_at).toLocaleDateString(undefined, {
-                      year: 'numeric', month: 'short', day: 'numeric',
-                    })}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-secondary font-semibold">{formatMoney(o.total_cents, o.currency)}</span>
-                  <StatusBadge status={o.status} />
-                </div>
-              </div>
-              {o.tracking_number && (
-                <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-2 text-sm">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-muted shrink-0">
-                    <rect x="1" y="3" width="15" height="13" rx="2" />
-                    <polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
-                    <circle cx="5.5" cy="18.5" r="2.5" />
-                    <circle cx="18.5" cy="18.5" r="2.5" />
-                  </svg>
-                  <span className="text-text-muted">{o.tracking_carrier || 'Tracking'}:</span>
-                  <span className="font-mono text-text-primary">{o.tracking_number}</span>
-                </div>
-              )}
-            </div>
+            <OrderCard key={o.order_number} order={o} />
           ))}
         </div>
       )}

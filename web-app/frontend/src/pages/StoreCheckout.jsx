@@ -75,13 +75,24 @@ export default function StoreCheckout() {
 
   const subtotal = items.reduce((s, i) => s + i.price_cents * i.quantity, 0)
 
+  const isValidEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
+
   const submit = async () => {
     setError(null)
+    const trimmed = email.trim()
+    if (trimmed && !isValidEmail(trimmed)) {
+      setError('Please enter a valid email address.')
+      return
+    }
+    if (isGoogleUser && !trimmed) {
+      setError('Email address is required.')
+      return
+    }
     setSubmitting(true)
     try {
       const { checkout_url } = await createCheckout({
         items: items.map(({ product_id, quantity }) => ({ product_id, quantity })),
-        email: email.trim() || undefined,
+        email: trimmed || undefined,
       })
       window.location.assign(checkout_url)
     } catch (err) {

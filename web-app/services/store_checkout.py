@@ -36,7 +36,6 @@ STRIPE_SHIPPING_RATE_INTERNATIONAL = os.environ.get("STRIPE_SHIPPING_RATE_INTERN
 STRIPE_SHIPPING_RATE_FREE = os.environ.get("STRIPE_SHIPPING_RATE_FREE", "")
 
 stripe.api_key = STRIPE_SECRET_KEY
-stripe.api_version = "2025-06-30.basil"
 
 
 def _site_url(path: str) -> str:

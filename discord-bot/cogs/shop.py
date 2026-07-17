@@ -92,8 +92,27 @@ class ShopCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
-        """Monitor for invalid commands in fart shop channel and suggest corrections"""
-        # Only handle CommandNotFound errors
+        """Handle shop command errors and suggest corrections for typos"""
+        # Unwrap CommandInvokeError to the original exception when present
+        error = getattr(error, "original", error)
+
+        # Short cooldowns were previously silent because this listener
+        # swallows non-CommandNotFound errors before the default handler.
+        if isinstance(error, commands.CommandOnCooldown):
+            if ctx.command and ctx.command.cog is self:
+                await ctx.send(
+                    f"{ctx.author.mention}, slow down! Try again in {error.retry_after:.0f}s."
+                )
+            return
+
+        if isinstance(error, commands.BadArgument):
+            if ctx.command and ctx.command.name == "fart_court":
+                await ctx.send(
+                    f"{ctx.author.mention}, usage: `!fart_court @user <amount>`"
+                )
+            return
+
+        # Only handle CommandNotFound typos below
         if not isinstance(error, commands.CommandNotFound):
             return
 
@@ -1365,7 +1384,6 @@ class ShopCog(commands.Cog):
         )
 
     @commands.command(name="fart_court")
-    @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_court(self, ctx, target: discord.Member = None, amount: int = None):
         """Take another specific player to court! 50% chance they pay you the specified amount, 50% chance you pay them. Once per week. Usage: !fart_court @user <amount>"""
         if ctx.channel.id != self.fart_channel_id:
@@ -1388,19 +1406,7 @@ class ShopCog(commands.Cog):
         if target.bot:
             return await ctx.send("You can't take a bot to court!")
 
-        author_score = await self.get_user_score(ctx.author.id)
-        target_score = await self.get_user_score(target.id)
-
-        if author_score < amount:
-            return await ctx.send(
-                f"You don't have enough points! You have {author_score} but tried to stake {amount}."
-            )
-        if target_score < amount:
-            return await ctx.send(
-                f"<@{target.id}> doesn't have enough points! They have {target_score} but need {amount}."
-            )
-
-        # Check weekly cooldown
+        # Weekly cooldown — same command_usage table as !big_banana
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
         try:
@@ -1423,52 +1429,54 @@ class ShopCog(commands.Cog):
                     next_available = last_used_date + datetime.timedelta(weeks=1)
                     if next_available > datetime.datetime.now().date():
                         days_remaining = (next_available - datetime.datetime.now().date()).days
+                        if days_remaining < 1:
+                            days_remaining = 1
                         return await ctx.send(
-                            f"You can only use Fart Court once per week! "
+                            f"{ctx.author.mention}, you've already used Fart Court this week! "
                             f"Try again in {days_remaining} day{'s' if days_remaining != 1 else ''}."
                         )
         finally:
             conn.close()
 
+        author_score = await self.get_user_score(ctx.author.id)
+        target_score = await self.get_user_score(target.id)
+
+        if author_score < amount:
+            return await ctx.send(
+                f"You don't have enough points! You have {author_score} but tried to stake {amount}."
+            )
+        if target_score < amount:
+            return await ctx.send(
+                f"<@{target.id}> doesn't have enough points! They have {target_score} but need {amount}."
+            )
+
         if random.random() < 0.5:
             # Target pays author
-            conn = sqlite3.connect("fart_scores.db")
-            cur = conn.cursor()
-            try:
-                cur.execute(
-                    "UPDATE fart_scores SET score = score - ? WHERE user_id = ?",
-                    (amount, target.id),
-                )
-                conn.commit()
-            finally:
-                conn.close()
-            await self.add_points(ctx.author.id, amount)
-            await ctx.send(
+            payer_id, payee_id = target.id, ctx.author.id
+            result_msg = (
                 f"<@{ctx.author.id}> took <@{target.id}> to court and **WON**! "
                 f"<@{target.id}> pays {amount} points!"
             )
         else:
             # Author pays target
-            conn = sqlite3.connect("fart_scores.db")
-            cur = conn.cursor()
-            try:
-                cur.execute(
-                    "UPDATE fart_scores SET score = score - ? WHERE user_id = ?",
-                    (amount, ctx.author.id),
-                )
-                conn.commit()
-            finally:
-                conn.close()
-            await self.add_points(target.id, amount)
-            await ctx.send(
+            payer_id, payee_id = ctx.author.id, target.id
+            result_msg = (
                 f"<@{ctx.author.id}> took <@{target.id}> to court and **LOST**! "
                 f"<@{ctx.author.id}> pays {amount} points!"
             )
 
-        # Update weekly cooldown
+        # Transfer points and record weekly usage before announcing
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
         try:
+            cur.execute(
+                "UPDATE fart_scores SET score = score - ? WHERE user_id = ?",
+                (amount, payer_id),
+            )
+            cur.execute(
+                "UPDATE fart_scores SET score = score + ? WHERE user_id = ?",
+                (amount, payee_id),
+            )
             cur.execute(
                 "INSERT OR REPLACE INTO command_usage (user_id, command_name, last_used) VALUES (?, 'fart_court', ?)",
                 (ctx.author.id, datetime.datetime.now().isoformat()),
@@ -1476,6 +1484,8 @@ class ShopCog(commands.Cog):
             conn.commit()
         finally:
             conn.close()
+
+        await ctx.send(result_msg)
 
     @commands.command(name="fart_leech")
     @commands.cooldown(1, 45, commands.BucketType.user)

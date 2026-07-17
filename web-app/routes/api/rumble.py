@@ -339,6 +339,7 @@ def add_fart_command():
             cost=int(data.get("cost", 0)),
             damage=int(data.get("damage", 0)),
             cooldown=data.get("cooldown", "daily"),
+            effect=data.get("effect"),
         )
     except Exception as e:
         if "UNIQUE" in str(e):
@@ -398,6 +399,7 @@ def add_fart_shop_item():
             cost=int(data.get("cost", 0)),
             damage=int(data.get("damage", 0)),
             cooldown=data.get("cooldown", "none"),
+            effect=data.get("effect"),
         )
     except Exception as e:
         if "UNIQUE" in str(e):

@@ -1,10 +1,56 @@
 """Repository for fart scores database access."""
 
+import json
 import sqlite3
 from pathlib import Path
 from random import randint
 
 from webapp_config import FART_SCORES_DB_PATH
+
+# Default effects for fart game commands (JSON-serialized)
+_CMD_EFFECTS = {
+    "fart": {"action": "roll", "formula": "1d100", "points": "roll_value"},
+    "attackfart": {"action": "damage", "target": "leader", "formula": "1d100"},
+    "syphonfart": {"action": "syphon", "target": "leader", "steal_percent": 50},
+    "fartprediction": {"action": "prediction", "correct_multiplier": 2, "wrong_multiplier": 0.5},
+    "bullfart": {"action": "bonus", "source": "last_fart_type",
+                 "bonuses": {"curio_shart": 50, "unique": 35, "elite": 25, "exceptional": 15, "ordinary": 10}},
+    "taxes": {"action": "redistribute", "from": "others", "to": "top5", "percent": 5},
+    "wealth": {"action": "redistribute", "from": "top5", "to": "others", "percent": 10},
+}
+
+_SHOP_EFFECTS = {
+    "blue_shell": {"action": "damage", "target": "leader", "formula": "3d20/2"},
+    "red_shell": {"action": "damage", "target": "ahead_1", "formula": "2d20/2"},
+    "green_shell": {"action": "damage", "target": "random_ahead", "formula": "2d20/2"},
+    "banana": {"action": "damage", "target": "random_behind", "formula": "2d20/2"},
+    "big_banana": {"action": "damage", "target": "random_behind", "formula": "4d10"},
+    "star": {"action": "protect", "duration": "24h", "cost_type": "percent", "cost_percent": 10},
+    "mushroom": {"action": "buff", "effect": "double_roll", "description": "Next fart rolls twice, take higher"},
+    "bobomb": {"action": "damage", "target": "top5", "formula": "3d20/2"},
+    "bluestar": {"action": "combo", "effects": [
+        {"action": "damage", "target": "leader", "formula": "4d20/2"},
+        {"action": "protect", "duration": "12h"},
+    ]},
+    "fart_star": {"action": "remove_buff", "target": "random_protected", "removes": "star",
+                  "cost_type": "percent", "cost_percent": 10},
+    "evil_star": {"action": "conditional", "condition": "score_equals", "value": 666,
+                  "on_true": {"action": "multiply_score", "multiplier": 2},
+                  "cost_type": "free"},
+    "thunder_fart": {"action": "damage", "target": "all", "formula": "1d5"},
+    "gas_shield": {"action": "shield", "reflect_percent": 50},
+    "stink_bomb": {"action": "damage", "target": "random_any", "formula": "3d20/2"},
+    "fart_rocket": {"action": "swap_scores", "target": "random"},
+    "fart_lance": {"action": "multi_damage", "target": "ahead_3",
+                   "formulas": ["3d20/2", "2d20/2", "1d20/2"]},
+    "fart_trap": {"action": "trap", "target": "random", "effect": "attack_backfire"},
+    "fart_twister": {"action": "launch", "target": "random",
+                     "damage_formula": "target_score/2", "uses_daily": True},
+    "stink_cloud": {"action": "block_shop", "target": "random", "duration": "30m"},
+    "gas_gamble": {"action": "gamble", "win_chance": 40, "win_multiplier": 2, "lose_multiplier": 0},
+    "fart_leech": {"action": "steal", "target": "random", "formula": "2d20/2"},
+    "fart_donation": {"action": "donate", "target": "specified", "cost_type": "custom"},
+}
 
 
 class FartRepository:
@@ -54,6 +100,14 @@ class FartRepository:
         conn.row_factory = sqlite3.Row
         return conn
 
+    @staticmethod
+    def _add_column_if_missing(conn, table: str, column: str, col_type: str = "TEXT"):
+        """Add a column to a table if it doesn't already exist."""
+        cols = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+        if column not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+            conn.commit()
+
     def _ensure_commands_table(self, conn):
         """Create fart_game_commands table and seed defaults if empty."""
         conn.execute("""
@@ -66,17 +120,34 @@ class FartRepository:
                 damage INTEGER NOT NULL DEFAULT 0,
                 cooldown TEXT NOT NULL DEFAULT 'daily',
                 enabled INTEGER NOT NULL DEFAULT 1,
-                sort_order INTEGER NOT NULL DEFAULT 0
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                effect TEXT
             )
         """)
+        self._add_column_if_missing(conn, "fart_game_commands", "effect", "TEXT")
         count = conn.execute("SELECT COUNT(*) FROM fart_game_commands").fetchone()[0]
         if count == 0:
-            conn.executemany(
-                "INSERT INTO fart_game_commands (name, label, description, cost, damage, cooldown, sort_order) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                self._DEFAULT_COMMANDS,
-            )
+            for name, label, desc, cost, damage, cooldown, sort_order in self._DEFAULT_COMMANDS:
+                effect_json = json.dumps(_CMD_EFFECTS.get(name, {}))
+                conn.execute(
+                    "INSERT INTO fart_game_commands (name, label, description, cost, damage, cooldown, sort_order, effect) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (name, label, desc, cost, damage, cooldown, sort_order, effect_json),
+                )
             conn.commit()
+        else:
+            # Backfill effect for existing rows that have NULL effect
+            rows = conn.execute(
+                "SELECT id, name FROM fart_game_commands WHERE effect IS NULL"
+            ).fetchall()
+            for row in rows:
+                effect = _CMD_EFFECTS.get(row["name"], {})
+                conn.execute(
+                    "UPDATE fart_game_commands SET effect = ? WHERE id = ?",
+                    (json.dumps(effect), row["id"]),
+                )
+            if rows:
+                conn.commit()
 
     def get_leaderboard(self) -> list[dict]:
         """Get fart leaderboard data ordered by score descending."""
@@ -108,22 +179,29 @@ class FartRepository:
         conn = self._get_connection()
         self._ensure_commands_table(conn)
         rows = conn.execute(
-            "SELECT id, name, label, description, cost, damage, cooldown, enabled, sort_order "
+            "SELECT id, name, label, description, cost, damage, cooldown, enabled, sort_order, effect "
             "FROM fart_game_commands ORDER BY sort_order"
         ).fetchall()
         conn.close()
-        return [dict(r) for r in rows]
+        results = []
+        for r in rows:
+            d = dict(r)
+            d["effect"] = json.loads(d["effect"]) if d.get("effect") else {}
+            results.append(d)
+        return results
 
     def add_command(self, name: str, label: str, description: str | None = None,
-                    cost: int = 0, damage: int = 0, cooldown: str = "daily") -> int:
+                    cost: int = 0, damage: int = 0, cooldown: str = "daily",
+                    effect: dict | None = None) -> int:
         """Add a new fart command config. Returns the new ID."""
         conn = self._get_connection()
         self._ensure_commands_table(conn)
         max_order = conn.execute("SELECT COALESCE(MAX(sort_order), 0) FROM fart_game_commands").fetchone()[0]
+        effect_json = json.dumps(effect) if effect else None
         cursor = conn.execute(
-            "INSERT INTO fart_game_commands (name, label, description, cost, damage, cooldown, sort_order) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (name, label, description, cost, damage, cooldown, max_order + 1),
+            "INSERT INTO fart_game_commands (name, label, description, cost, damage, cooldown, sort_order, effect) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (name, label, description, cost, damage, cooldown, max_order + 1, effect_json),
         )
         conn.commit()
         command_id = cursor.lastrowid
@@ -132,8 +210,15 @@ class FartRepository:
 
     def update_command(self, command_id: int, **fields) -> bool:
         """Update a fart command config. Returns True if updated."""
-        allowed = {"name", "label", "description", "cost", "damage", "cooldown", "enabled", "sort_order"}
-        updates = {k: v for k, v in fields.items() if k in allowed}
+        allowed = {"name", "label", "description", "cost", "damage", "cooldown", "enabled", "sort_order", "effect"}
+        updates = {}
+        for k, v in fields.items():
+            if k not in allowed:
+                continue
+            if k == "effect" and isinstance(v, dict):
+                updates[k] = json.dumps(v)
+            else:
+                updates[k] = v
         if not updates:
             return False
         set_clause = ", ".join(f"{k} = ?" for k in updates)
@@ -166,39 +251,63 @@ class FartRepository:
                 damage INTEGER NOT NULL DEFAULT 0,
                 cooldown TEXT NOT NULL DEFAULT 'none',
                 enabled INTEGER NOT NULL DEFAULT 1,
-                sort_order INTEGER NOT NULL DEFAULT 0
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                effect TEXT
             )
         """)
+        self._add_column_if_missing(conn, "fart_shop_items", "effect", "TEXT")
         count = conn.execute("SELECT COUNT(*) FROM fart_shop_items").fetchone()[0]
         if count == 0:
-            conn.executemany(
-                "INSERT INTO fart_shop_items (name, label, description, cost, damage, cooldown, sort_order) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [(n, l, d, c, dm, cd, i + 1) for i, (n, l, d, c, dm, cd) in enumerate(self._DEFAULT_SHOP_ITEMS)],
-            )
+            for i, (name, label, desc, cost, damage, cooldown) in enumerate(self._DEFAULT_SHOP_ITEMS):
+                effect_json = json.dumps(_SHOP_EFFECTS.get(name, {}))
+                conn.execute(
+                    "INSERT INTO fart_shop_items (name, label, description, cost, damage, cooldown, sort_order, effect) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (name, label, desc, cost, damage, cooldown, i + 1, effect_json),
+                )
             conn.commit()
+        else:
+            # Backfill effect for existing rows that have NULL effect
+            rows = conn.execute(
+                "SELECT id, name FROM fart_shop_items WHERE effect IS NULL"
+            ).fetchall()
+            for row in rows:
+                effect = _SHOP_EFFECTS.get(row["name"], {})
+                conn.execute(
+                    "UPDATE fart_shop_items SET effect = ? WHERE id = ?",
+                    (json.dumps(effect), row["id"]),
+                )
+            if rows:
+                conn.commit()
 
     def get_shop_items(self) -> list[dict]:
         """Get all fart shop item configs."""
         conn = self._get_connection()
         self._ensure_shop_table(conn)
         rows = conn.execute(
-            "SELECT id, name, label, description, cost, damage, cooldown, enabled, sort_order "
+            "SELECT id, name, label, description, cost, damage, cooldown, enabled, sort_order, effect "
             "FROM fart_shop_items ORDER BY sort_order"
         ).fetchall()
         conn.close()
-        return [dict(r) for r in rows]
+        results = []
+        for r in rows:
+            d = dict(r)
+            d["effect"] = json.loads(d["effect"]) if d.get("effect") else {}
+            results.append(d)
+        return results
 
     def add_shop_item(self, name: str, label: str, description: str | None = None,
-                      cost: int = 0, damage: int = 0, cooldown: str = "none") -> int:
+                      cost: int = 0, damage: int = 0, cooldown: str = "none",
+                      effect: dict | None = None) -> int:
         """Add a new fart shop item. Returns the new ID."""
         conn = self._get_connection()
         self._ensure_shop_table(conn)
         max_order = conn.execute("SELECT COALESCE(MAX(sort_order), 0) FROM fart_shop_items").fetchone()[0]
+        effect_json = json.dumps(effect) if effect else None
         cursor = conn.execute(
-            "INSERT INTO fart_shop_items (name, label, description, cost, damage, cooldown, sort_order) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (name, label, description, cost, damage, cooldown, max_order + 1),
+            "INSERT INTO fart_shop_items (name, label, description, cost, damage, cooldown, sort_order, effect) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (name, label, description, cost, damage, cooldown, max_order + 1, effect_json),
         )
         conn.commit()
         item_id = cursor.lastrowid
@@ -207,8 +316,15 @@ class FartRepository:
 
     def update_shop_item(self, item_id: int, **fields) -> bool:
         """Update a fart shop item. Returns True if updated."""
-        allowed = {"name", "label", "description", "cost", "damage", "cooldown", "enabled", "sort_order"}
-        updates = {k: v for k, v in fields.items() if k in allowed}
+        allowed = {"name", "label", "description", "cost", "damage", "cooldown", "enabled", "sort_order", "effect"}
+        updates = {}
+        for k, v in fields.items():
+            if k not in allowed:
+                continue
+            if k == "effect" and isinstance(v, dict):
+                updates[k] = json.dumps(v)
+            else:
+                updates[k] = v
         if not updates:
             return False
         set_clause = ", ".join(f"{k} = ?" for k in updates)

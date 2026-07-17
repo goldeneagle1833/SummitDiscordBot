@@ -349,6 +349,334 @@ function RedemptionHistory({ redemptions }) {
   )
 }
 
+const EFFECT_ACTIONS = [
+  { value: 'roll', label: 'Roll (score points)', fields: ['formula', 'points'] },
+  { value: 'damage', label: 'Damage (hurt a target)', fields: ['target', 'formula'] },
+  { value: 'syphon', label: 'Syphon (steal points)', fields: ['target', 'steal_percent'] },
+  { value: 'protect', label: 'Protect (shield from attacks)', fields: ['duration', 'cost_type', 'cost_percent'] },
+  { value: 'swap', label: 'Swap (trade scores)', fields: ['target'] },
+  { value: 'block', label: 'Block (prevent actions)', fields: ['target', 'duration'] },
+  { value: 'gamble', label: 'Gamble (risk points)', fields: ['win_chance', 'win_multiplier', 'lose_multiplier'] },
+  { value: 'redistribute', label: 'Redistribute (take from group)', fields: ['from', 'to', 'percent'] },
+  { value: 'bonus', label: 'Bonus (add flat points)', fields: ['amount'] },
+  { value: 'trap', label: 'Trap (delayed effect)', fields: ['target', 'trigger', 'trap_effect'] },
+  { value: 'buff', label: 'Buff (multiply next action)', fields: ['multiplier', 'duration'] },
+  { value: 'combo', label: 'Combo (multiple effects)', fields: ['effects'] },
+]
+
+const EFFECT_TARGETS = [
+  { value: 'leader', label: 'Leader' },
+  { value: 'ahead_1', label: 'Player 1 ahead' },
+  { value: 'random_ahead', label: 'Random (ahead)' },
+  { value: 'random_behind', label: 'Random (behind)' },
+  { value: 'random_any', label: 'Random (any)' },
+  { value: 'all', label: 'All players' },
+  { value: 'top5', label: 'Top 5' },
+  { value: 'self', label: 'Self' },
+  { value: 'specified', label: 'Specified by user' },
+]
+
+function EffectEditor({ value, onChange }) {
+  const [rawMode, setRawMode] = useState(false)
+  const [rawJson, setRawJson] = useState('')
+  const [jsonError, setJsonError] = useState(null)
+
+  const effect = value || {}
+  const actionDef = EFFECT_ACTIONS.find((a) => a.value === effect.action)
+
+  const update = (field, val) => {
+    onChange({ ...effect, [field]: val })
+  }
+
+  const switchToRaw = () => {
+    setRawJson(JSON.stringify(effect, null, 2))
+    setJsonError(null)
+    setRawMode(true)
+  }
+
+  const switchToVisual = () => {
+    try {
+      const parsed = JSON.parse(rawJson)
+      onChange(parsed)
+      setJsonError(null)
+      setRawMode(false)
+    } catch {
+      setJsonError('Invalid JSON')
+    }
+  }
+
+  const handleRawChange = (text) => {
+    setRawJson(text)
+    try {
+      const parsed = JSON.parse(text)
+      onChange(parsed)
+      setJsonError(null)
+    } catch {
+      setJsonError('Invalid JSON')
+    }
+  }
+
+  if (rawMode) {
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <label className="block text-xs text-text-muted font-semibold">Effect (JSON)</label>
+          <button type="button" onClick={switchToVisual} className="text-xs text-secondary hover:text-secondary/80">
+            Visual Editor
+          </button>
+        </div>
+        <textarea
+          value={rawJson}
+          onChange={(e) => handleRawChange(e.target.value)}
+          rows={6}
+          className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-xs font-mono"
+          spellCheck={false}
+        />
+        {jsonError && <p className="text-xs text-accent-red">{jsonError}</p>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="block text-xs text-text-muted font-semibold">Effect Logic</label>
+        <button type="button" onClick={switchToRaw} className="text-xs text-secondary hover:text-secondary/80">
+          Raw JSON
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-xs text-text-muted mb-0.5">Action</label>
+          <select
+            value={effect.action || ''}
+            onChange={(e) => onChange({ action: e.target.value })}
+            className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+          >
+            <option value="">-- select --</option>
+            {EFFECT_ACTIONS.map((a) => (
+              <option key={a.value} value={a.value}>{a.label}</option>
+            ))}
+          </select>
+        </div>
+        {actionDef?.fields.includes('target') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Target</label>
+            <select
+              value={effect.target || ''}
+              onChange={(e) => update('target', e.target.value)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            >
+              <option value="">-- select --</option>
+              {EFFECT_TARGETS.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {actionDef?.fields.includes('formula') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Formula</label>
+            <input
+              type="text"
+              placeholder="e.g. 1d100, 3d20/2"
+              value={effect.formula || ''}
+              onChange={(e) => update('formula', e.target.value)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            />
+          </div>
+        )}
+        {actionDef?.fields.includes('points') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Points Source</label>
+            <input
+              type="text"
+              placeholder="e.g. roll_value, fixed"
+              value={effect.points || ''}
+              onChange={(e) => update('points', e.target.value)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            />
+          </div>
+        )}
+        {actionDef?.fields.includes('steal_percent') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Steal %</label>
+            <input
+              type="number"
+              value={effect.steal_percent ?? ''}
+              onChange={(e) => update('steal_percent', parseInt(e.target.value) || 0)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            />
+          </div>
+        )}
+        {actionDef?.fields.includes('duration') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Duration</label>
+            <input
+              type="text"
+              placeholder="e.g. 24h, 1d, permanent"
+              value={effect.duration || ''}
+              onChange={(e) => update('duration', e.target.value)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            />
+          </div>
+        )}
+        {actionDef?.fields.includes('percent') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Percent</label>
+            <input
+              type="number"
+              value={effect.percent ?? ''}
+              onChange={(e) => update('percent', parseInt(e.target.value) || 0)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            />
+          </div>
+        )}
+        {actionDef?.fields.includes('cost_type') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Cost Type</label>
+            <select
+              value={effect.cost_type || 'flat'}
+              onChange={(e) => update('cost_type', e.target.value)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            >
+              <option value="flat">Flat</option>
+              <option value="percent">Percent of score</option>
+            </select>
+          </div>
+        )}
+        {actionDef?.fields.includes('cost_percent') && effect.cost_type === 'percent' && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Cost %</label>
+            <input
+              type="number"
+              value={effect.cost_percent ?? ''}
+              onChange={(e) => update('cost_percent', parseInt(e.target.value) || 0)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            />
+          </div>
+        )}
+        {actionDef?.fields.includes('win_chance') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Win Chance %</label>
+            <input
+              type="number"
+              value={effect.win_chance ?? ''}
+              onChange={(e) => update('win_chance', parseInt(e.target.value) || 0)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            />
+          </div>
+        )}
+        {actionDef?.fields.includes('win_multiplier') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Win Multiplier</label>
+            <input
+              type="number"
+              step="0.1"
+              value={effect.win_multiplier ?? ''}
+              onChange={(e) => update('win_multiplier', parseFloat(e.target.value) || 0)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            />
+          </div>
+        )}
+        {actionDef?.fields.includes('lose_multiplier') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Lose Multiplier</label>
+            <input
+              type="number"
+              step="0.1"
+              value={effect.lose_multiplier ?? ''}
+              onChange={(e) => update('lose_multiplier', parseFloat(e.target.value) || 0)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            />
+          </div>
+        )}
+        {actionDef?.fields.includes('multiplier') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Multiplier</label>
+            <input
+              type="number"
+              step="0.1"
+              value={effect.multiplier ?? ''}
+              onChange={(e) => update('multiplier', parseFloat(e.target.value) || 0)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            />
+          </div>
+        )}
+        {actionDef?.fields.includes('amount') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Amount</label>
+            <input
+              type="number"
+              value={effect.amount ?? ''}
+              onChange={(e) => update('amount', parseInt(e.target.value) || 0)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            />
+          </div>
+        )}
+        {actionDef?.fields.includes('from') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Take From</label>
+            <select
+              value={effect.from || ''}
+              onChange={(e) => update('from', e.target.value)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            >
+              <option value="">-- select --</option>
+              <option value="others">All others</option>
+              <option value="top5">Top 5</option>
+              <option value="bottom5">Bottom 5</option>
+            </select>
+          </div>
+        )}
+        {actionDef?.fields.includes('to') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Give To</label>
+            <select
+              value={effect.to || ''}
+              onChange={(e) => update('to', e.target.value)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            >
+              <option value="">-- select --</option>
+              <option value="self">Self</option>
+              <option value="top5">Top 5</option>
+              <option value="bottom5">Bottom 5</option>
+              <option value="all">All</option>
+            </select>
+          </div>
+        )}
+        {actionDef?.fields.includes('trigger') && (
+          <div>
+            <label className="block text-xs text-text-muted mb-0.5">Trigger</label>
+            <input
+              type="text"
+              placeholder="e.g. on_fart, on_attack"
+              value={effect.trigger || ''}
+              onChange={(e) => update('trigger', e.target.value)}
+              className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+            />
+          </div>
+        )}
+      </div>
+      {(actionDef?.fields.includes('combo') || actionDef?.fields.includes('effects') || actionDef?.fields.includes('trap_effect')) && (
+        <div>
+          <p className="text-xs text-text-muted mb-1">
+            Complex effects (combo/trap) &mdash; use Raw JSON to define nested effects.
+          </p>
+          <button type="button" onClick={switchToRaw} className="text-xs text-secondary hover:text-secondary/80">
+            Switch to Raw JSON
+          </button>
+        </div>
+      )}
+      {effect.action && (
+        <div className="mt-1 p-2 bg-bg-primary rounded border border-border/50">
+          <p className="text-xs text-text-muted font-mono break-all">{JSON.stringify(effect)}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function FartAdmin({ data, onRefresh }) {
   const [activeTab, setActiveTab] = useState('overview')
   const [loading, setLoading] = useState(false)
@@ -361,6 +689,7 @@ function FartAdmin({ data, onRefresh }) {
   const [cmdCost, setCmdCost] = useState('')
   const [cmdDamage, setCmdDamage] = useState('')
   const [cmdCooldown, setCmdCooldown] = useState('daily')
+  const [cmdEffect, setCmdEffect] = useState({})
 
   // Editing commands
   const [editingCmd, setEditingCmd] = useState(null)
@@ -373,6 +702,7 @@ function FartAdmin({ data, onRefresh }) {
   const [shopCost, setShopCost] = useState('')
   const [shopDamage, setShopDamage] = useState('')
   const [shopCooldown, setShopCooldown] = useState('none')
+  const [shopEffect, setShopEffect] = useState({})
 
   // Editing shop items
   const [editingShop, setEditingShop] = useState(null)
@@ -424,6 +754,7 @@ function FartAdmin({ data, onRefresh }) {
         cost: cmdCost ? parseInt(cmdCost) : 0,
         damage: cmdDamage ? parseInt(cmdDamage) : 0,
         cooldown: cmdCooldown,
+        effect: cmdEffect && Object.keys(cmdEffect).length > 0 ? cmdEffect : null,
       })
       flash('Command added')
       setCmdName('')
@@ -432,6 +763,7 @@ function FartAdmin({ data, onRefresh }) {
       setCmdCost('')
       setCmdDamage('')
       setCmdCooldown('daily')
+      setCmdEffect({})
       onRefresh()
     } catch (err) {
       flash(err.message, true)
@@ -471,6 +803,7 @@ function FartAdmin({ data, onRefresh }) {
       damage: cmd.damage,
       cooldown: cmd.cooldown,
       enabled: cmd.enabled,
+      effect: cmd.effect || {},
     })
   }
 
@@ -482,6 +815,7 @@ function FartAdmin({ data, onRefresh }) {
       damage: parseInt(editForm.damage) || 0,
       cooldown: editForm.cooldown,
       enabled: editForm.enabled ? 1 : 0,
+      effect: editForm.effect && Object.keys(editForm.effect).length > 0 ? editForm.effect : null,
     })
   }
 
@@ -499,6 +833,7 @@ function FartAdmin({ data, onRefresh }) {
         cost: shopCost ? parseInt(shopCost) : 0,
         damage: shopDamage ? parseInt(shopDamage) : 0,
         cooldown: shopCooldown,
+        effect: shopEffect && Object.keys(shopEffect).length > 0 ? shopEffect : null,
       })
       flash('Shop item added')
       setShopName('')
@@ -507,6 +842,7 @@ function FartAdmin({ data, onRefresh }) {
       setShopCost('')
       setShopDamage('')
       setShopCooldown('none')
+      setShopEffect({})
       onRefresh()
     } catch (err) {
       flash(err.message, true)
@@ -546,6 +882,7 @@ function FartAdmin({ data, onRefresh }) {
       damage: item.damage,
       cooldown: item.cooldown,
       enabled: item.enabled,
+      effect: item.effect || {},
     })
   }
 
@@ -557,6 +894,7 @@ function FartAdmin({ data, onRefresh }) {
       damage: parseInt(shopEditForm.damage) || 0,
       cooldown: shopEditForm.cooldown,
       enabled: shopEditForm.enabled ? 1 : 0,
+      effect: shopEditForm.effect && Object.keys(shopEditForm.effect).length > 0 ? shopEditForm.effect : null,
     })
   }
 
@@ -696,6 +1034,12 @@ function FartAdmin({ data, onRefresh }) {
                         Enabled
                       </label>
                     </div>
+                    <div className="col-span-2">
+                      <EffectEditor
+                        value={editForm.effect}
+                        onChange={(eff) => setEditForm({ ...editForm, effect: eff })}
+                      />
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -713,32 +1057,39 @@ function FartAdmin({ data, onRefresh }) {
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 text-sm">
-                  <span className={`flex-1 font-medium ${!cmd.enabled ? 'line-through text-text-muted' : ''}`}>
-                    !{cmd.name}
-                    <span className="text-text-muted font-normal ml-1.5">({cmd.label})</span>
-                  </span>
-                  <span className="text-text-muted text-xs w-16 text-center" title="Cost">
-                    {cmd.cost > 0 ? `${cmd.cost}c` : 'Free'}
-                  </span>
-                  <span className="text-text-muted text-xs w-16 text-center" title="Damage/Value">
-                    {cmd.damage > 0 ? `${cmd.damage}d` : '-'}
-                  </span>
-                  <span className="text-text-muted text-xs w-20 text-center" title="Cooldown">
-                    {cmd.cooldown.replace('_', ' ')}
-                  </span>
-                  <button
-                    onClick={() => startEditing(cmd)}
-                    className="text-secondary hover:text-secondary/80 text-xs px-2"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDeleteCommand(cmd.id)}
-                    className="text-accent-red hover:text-accent-red/80 text-xs px-2"
-                  >
-                    Delete
-                  </button>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className={`flex-1 font-medium ${!cmd.enabled ? 'line-through text-text-muted' : ''}`}>
+                      !{cmd.name}
+                      <span className="text-text-muted font-normal ml-1.5">({cmd.label})</span>
+                    </span>
+                    <span className="text-text-muted text-xs w-16 text-center" title="Cost">
+                      {cmd.cost > 0 ? `${cmd.cost}c` : 'Free'}
+                    </span>
+                    <span className="text-text-muted text-xs w-16 text-center" title="Damage/Value">
+                      {cmd.damage > 0 ? `${cmd.damage}d` : '-'}
+                    </span>
+                    <span className="text-text-muted text-xs w-20 text-center" title="Cooldown">
+                      {cmd.cooldown.replace('_', ' ')}
+                    </span>
+                    <button
+                      onClick={() => startEditing(cmd)}
+                      className="text-secondary hover:text-secondary/80 text-xs px-2"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDeleteCommand(cmd.id)}
+                      className="text-accent-red hover:text-accent-red/80 text-xs px-2"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  {cmd.effect?.action && (
+                    <span className="inline-block text-xs px-1.5 py-0.5 rounded bg-secondary/10 text-secondary font-mono">
+                      {cmd.effect.action}{cmd.effect.target ? ` → ${cmd.effect.target}` : ''}{cmd.effect.formula ? ` (${cmd.effect.formula})` : ''}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -796,6 +1147,7 @@ function FartAdmin({ data, onRefresh }) {
                 className="bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
               />
             </div>
+            <EffectEditor value={cmdEffect} onChange={setCmdEffect} />
             <button
               type="submit"
               disabled={loading}
@@ -875,6 +1227,12 @@ function FartAdmin({ data, onRefresh }) {
                         Enabled
                       </label>
                     </div>
+                    <div className="col-span-2">
+                      <EffectEditor
+                        value={shopEditForm.effect}
+                        onChange={(eff) => setShopEditForm({ ...shopEditForm, effect: eff })}
+                      />
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -892,29 +1250,36 @@ function FartAdmin({ data, onRefresh }) {
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 text-sm">
-                  <span className={`flex-1 font-medium ${!item.enabled ? 'line-through text-text-muted' : ''}`}>
-                    !{item.name}
-                    <span className="text-text-muted font-normal ml-1.5">({item.label})</span>
-                  </span>
-                  <span className="text-text-muted text-xs w-16 text-center" title="Cost">
-                    {item.cost > 0 ? `${item.cost}pts` : 'Free'}
-                  </span>
-                  <span className="text-text-muted text-xs w-16 text-center" title="Cooldown">
-                    {item.cooldown === 'none' ? '-' : item.cooldown}
-                  </span>
-                  <button
-                    onClick={() => startEditingShop(item)}
-                    className="text-secondary hover:text-secondary/80 text-xs px-2"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDeleteShopItem(item.id)}
-                    className="text-accent-red hover:text-accent-red/80 text-xs px-2"
-                  >
-                    Delete
-                  </button>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className={`flex-1 font-medium ${!item.enabled ? 'line-through text-text-muted' : ''}`}>
+                      !{item.name}
+                      <span className="text-text-muted font-normal ml-1.5">({item.label})</span>
+                    </span>
+                    <span className="text-text-muted text-xs w-16 text-center" title="Cost">
+                      {item.cost > 0 ? `${item.cost}pts` : 'Free'}
+                    </span>
+                    <span className="text-text-muted text-xs w-16 text-center" title="Cooldown">
+                      {item.cooldown === 'none' ? '-' : item.cooldown}
+                    </span>
+                    <button
+                      onClick={() => startEditingShop(item)}
+                      className="text-secondary hover:text-secondary/80 text-xs px-2"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDeleteShopItem(item.id)}
+                      className="text-accent-red hover:text-accent-red/80 text-xs px-2"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  {item.effect?.action && (
+                    <span className="inline-block text-xs px-1.5 py-0.5 rounded bg-secondary/10 text-secondary font-mono">
+                      {item.effect.action}{item.effect.target ? ` → ${item.effect.target}` : ''}{item.effect.formula ? ` (${item.effect.formula})` : ''}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -971,6 +1336,7 @@ function FartAdmin({ data, onRefresh }) {
                 className="bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
               />
             </div>
+            <EffectEditor value={shopEffect} onChange={setShopEffect} />
             <button
               type="submit"
               disabled={loading}

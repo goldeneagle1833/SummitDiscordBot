@@ -349,6 +349,410 @@ function RedemptionHistory({ redemptions }) {
   )
 }
 
+function FartAdmin({ data, onRefresh }) {
+  const [activeTab, setActiveTab] = useState('overview')
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState(null)
+
+  // New command form
+  const [cmdName, setCmdName] = useState('')
+  const [cmdLabel, setCmdLabel] = useState('')
+  const [cmdDesc, setCmdDesc] = useState('')
+  const [cmdCost, setCmdCost] = useState('')
+  const [cmdDamage, setCmdDamage] = useState('')
+  const [cmdCooldown, setCmdCooldown] = useState('daily')
+
+  // Editing
+  const [editingCmd, setEditingCmd] = useState(null)
+  const [editForm, setEditForm] = useState({})
+
+  const flash = (msg, isError = false) => {
+    setMessage({ text: msg, error: isError })
+    setTimeout(() => setMessage(null), 3000)
+  }
+
+  const handleReset = async () => {
+    if (!confirm('Reset the entire fart game? This clears ALL scores, history, and cooldowns. This cannot be undone.')) return
+    setLoading(true)
+    try {
+      const res = await post('/api/rumble/admin/fart/reset')
+      const total = Object.values(res.cleared).reduce((a, b) => a + b, 0)
+      flash(`Game reset! ${total} records cleared.`)
+      onRefresh()
+    } catch (err) {
+      flash(err.message, true)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleEvilStart = async () => {
+    if (!confirm('Evil Start: Reset the game and give all players random chaotic scores (-50 to 50). Continue?')) return
+    setLoading(true)
+    try {
+      const res = await post('/api/rumble/admin/fart/evil-start')
+      flash(`Evil start! ${res.players_affected} players given chaotic scores.`)
+      onRefresh()
+    } catch (err) {
+      flash(err.message, true)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAddCommand = async (e) => {
+    e.preventDefault()
+    if (!cmdName || !cmdLabel) return
+    setLoading(true)
+    try {
+      await post('/api/rumble/admin/fart/commands', {
+        name: cmdName,
+        label: cmdLabel,
+        description: cmdDesc || null,
+        cost: cmdCost ? parseInt(cmdCost) : 0,
+        damage: cmdDamage ? parseInt(cmdDamage) : 0,
+        cooldown: cmdCooldown,
+      })
+      flash('Command added')
+      setCmdName('')
+      setCmdLabel('')
+      setCmdDesc('')
+      setCmdCost('')
+      setCmdDamage('')
+      setCmdCooldown('daily')
+      onRefresh()
+    } catch (err) {
+      flash(err.message, true)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleUpdateCommand = async (id, updates) => {
+    try {
+      await put(`/api/rumble/admin/fart/commands/${id}`, updates)
+      flash('Command updated')
+      setEditingCmd(null)
+      onRefresh()
+    } catch (err) {
+      flash(err.message, true)
+    }
+  }
+
+  const handleDeleteCommand = async (id) => {
+    if (!confirm('Delete this command config?')) return
+    try {
+      await del(`/api/rumble/admin/fart/commands/${id}`)
+      flash('Command deleted')
+      onRefresh()
+    } catch (err) {
+      flash(err.message, true)
+    }
+  }
+
+  const startEditing = (cmd) => {
+    setEditingCmd(cmd.id)
+    setEditForm({
+      label: cmd.label,
+      description: cmd.description || '',
+      cost: cmd.cost,
+      damage: cmd.damage,
+      cooldown: cmd.cooldown,
+      enabled: cmd.enabled,
+    })
+  }
+
+  const saveEditing = (id) => {
+    handleUpdateCommand(id, {
+      label: editForm.label,
+      description: editForm.description || null,
+      cost: parseInt(editForm.cost) || 0,
+      damage: parseInt(editForm.damage) || 0,
+      cooldown: editForm.cooldown,
+      enabled: editForm.enabled ? 1 : 0,
+    })
+  }
+
+  const fartLeaderboard = data.fart_leaderboard || []
+  const fartCommands = data.fart_commands || []
+
+  const tabs = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'commands', label: 'Commands' },
+    { id: 'actions', label: 'Actions' },
+  ]
+
+  return (
+    <div className="bg-bg-surface border border-border rounded-lg p-4">
+      <h2 className="text-base font-semibold text-text-primary mb-3">Fart Game Admin</h2>
+
+      {message && (
+        <div className={`mb-3 p-2 rounded text-sm ${message.error ? 'bg-accent-red/20 text-accent-red' : 'bg-accent-green/20 text-accent-green'}`}>
+          {message.text}
+        </div>
+      )}
+
+      <div className="flex gap-2 mb-4 border-b border-border">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`pb-2 px-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === t.id
+                ? 'border-secondary text-secondary'
+                : 'border-transparent text-text-muted hover:text-text-primary'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Overview Tab - Fart Leaderboard */}
+      {activeTab === 'overview' && (
+        <div>
+          {fartLeaderboard.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left">
+                    <th className="py-1.5 px-2 text-text-muted font-semibold w-8">#</th>
+                    <th className="py-1.5 px-2 text-text-muted font-semibold">Player</th>
+                    <th className="py-1.5 px-2 text-text-muted font-semibold">Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fartLeaderboard.map((p) => (
+                    <tr key={p.user_id} className="border-b border-border/50">
+                      <td className="py-1.5 px-2 text-text-muted">{p.rank}</td>
+                      <td className="py-1.5 px-2 font-medium">{p.username || 'Unknown'}</td>
+                      <td className="py-1.5 px-2 font-mono">{p.score}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-text-muted text-sm">No fart scores yet.</p>
+          )}
+        </div>
+      )}
+
+      {/* Commands Tab */}
+      {activeTab === 'commands' && (
+        <div className="space-y-4">
+          {/* Existing commands */}
+          {fartCommands.map((cmd) => (
+            <div key={cmd.id} className="border-b border-border/50 pb-2">
+              {editingCmd === cmd.id ? (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-text-muted mb-0.5">Label</label>
+                      <input
+                        type="text"
+                        value={editForm.label}
+                        onChange={(e) => setEditForm({ ...editForm, label: e.target.value })}
+                        className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-text-muted mb-0.5">Cooldown</label>
+                      <select
+                        value={editForm.cooldown}
+                        onChange={(e) => setEditForm({ ...editForm, cooldown: e.target.value })}
+                        className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="once_per_reign">Once per reign</option>
+                        <option value="none">None</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-text-muted mb-0.5">Cost</label>
+                      <input
+                        type="number"
+                        value={editForm.cost}
+                        onChange={(e) => setEditForm({ ...editForm, cost: e.target.value })}
+                        className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-text-muted mb-0.5">Damage / Value</label>
+                      <input
+                        type="number"
+                        value={editForm.damage}
+                        onChange={(e) => setEditForm({ ...editForm, damage: e.target.value })}
+                        className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs text-text-muted mb-0.5">Description</label>
+                      <input
+                        type="text"
+                        value={editForm.description}
+                        onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                        className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!!editForm.enabled}
+                          onChange={(e) => setEditForm({ ...editForm, enabled: e.target.checked ? 1 : 0 })}
+                          className="rounded"
+                        />
+                        Enabled
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveEditing(cmd.id)}
+                      className="bg-secondary text-black px-3 py-1 rounded text-xs font-medium hover:opacity-90"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditingCmd(null)}
+                      className="text-text-muted hover:text-text-primary text-xs px-3 py-1"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className={`flex-1 font-medium ${!cmd.enabled ? 'line-through text-text-muted' : ''}`}>
+                    !{cmd.name}
+                    <span className="text-text-muted font-normal ml-1.5">({cmd.label})</span>
+                  </span>
+                  <span className="text-text-muted text-xs w-16 text-center" title="Cost">
+                    {cmd.cost > 0 ? `${cmd.cost}c` : 'Free'}
+                  </span>
+                  <span className="text-text-muted text-xs w-16 text-center" title="Damage/Value">
+                    {cmd.damage > 0 ? `${cmd.damage}d` : '-'}
+                  </span>
+                  <span className="text-text-muted text-xs w-20 text-center" title="Cooldown">
+                    {cmd.cooldown.replace('_', ' ')}
+                  </span>
+                  <button
+                    onClick={() => startEditing(cmd)}
+                    className="text-secondary hover:text-secondary/80 text-xs px-2"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeleteCommand(cmd.id)}
+                    className="text-accent-red hover:text-accent-red/80 text-xs px-2"
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Add new command */}
+          <form onSubmit={handleAddCommand} className="space-y-2 pt-2 border-t border-border">
+            <p className="text-xs text-text-muted font-semibold uppercase">Add Command</p>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="text"
+                placeholder="Command name (e.g. superfart)"
+                value={cmdName}
+                onChange={(e) => setCmdName(e.target.value)}
+                className="bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+                required
+              />
+              <input
+                type="text"
+                placeholder="Display Label"
+                value={cmdLabel}
+                onChange={(e) => setCmdLabel(e.target.value)}
+                className="bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+                required
+              />
+              <input
+                type="number"
+                placeholder="Cost (0 = free)"
+                value={cmdCost}
+                onChange={(e) => setCmdCost(e.target.value)}
+                className="bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+              />
+              <input
+                type="number"
+                placeholder="Damage / Value"
+                value={cmdDamage}
+                onChange={(e) => setCmdDamage(e.target.value)}
+                className="bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+              />
+              <select
+                value={cmdCooldown}
+                onChange={(e) => setCmdCooldown(e.target.value)}
+                className="bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="once_per_reign">Once per reign</option>
+                <option value="none">None</option>
+              </select>
+              <input
+                type="text"
+                placeholder="Description"
+                value={cmdDesc}
+                onChange={(e) => setCmdDesc(e.target.value)}
+                className="bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="bg-secondary text-black px-4 py-1.5 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              Add Command
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Actions Tab */}
+      {activeTab === 'actions' && (
+        <div className="space-y-4">
+          <div className="p-3 border border-border rounded-lg">
+            <h3 className="text-sm font-semibold mb-1">Reset Game</h3>
+            <p className="text-xs text-text-muted mb-3">
+              Clear all fart scores, history, cooldowns, and leader tracking. Players will start fresh.
+            </p>
+            <button
+              onClick={handleReset}
+              disabled={loading}
+              className="bg-accent-red text-white px-4 py-1.5 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              Reset Fart Game
+            </button>
+          </div>
+          <div className="p-3 border border-border rounded-lg">
+            <h3 className="text-sm font-semibold mb-1">Evil Start</h3>
+            <p className="text-xs text-text-muted mb-3">
+              Reset the game and give all existing players random chaotic starting scores between -50 and 50. Pure chaos.
+            </p>
+            <button
+              onClick={handleEvilStart}
+              disabled={loading}
+              className="bg-purple-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              Evil Start
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AdminPanel({ data, onRefresh }) {
   const [activeTab, setActiveTab] = useState('bones')
   const [loading, setLoading] = useState(false)
@@ -1023,6 +1427,9 @@ export default function Rumble() {
       {!standings?.length && !matches?.length && !data.bones?.length && (
         <p className="text-center text-text-muted py-8">No rumble data yet.</p>
       )}
+
+      {/* Fart Game Admin */}
+      {isRumbleAdmin && <FartAdmin data={data} onRefresh={fetchData} />}
 
       {/* Admin Panel */}
       {isRumbleAdmin && <AdminPanel data={data} onRefresh={fetchData} />}

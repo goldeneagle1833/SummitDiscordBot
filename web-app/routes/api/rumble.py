@@ -4,6 +4,7 @@ import logging
 
 from flask import Blueprint, jsonify, request, session
 
+from repositories.fart import FartRepository
 from repositories.matches import MatchRepository
 from repositories.rumble_repo import RumbleRepository
 from utils.auth import require_admin, require_auth, require_rumble_admin
@@ -23,12 +24,16 @@ def get_rumble():
         rumble_repo = RumbleRepository()
         limit = request.args.get("limit", 50, type=int)
 
+        fart_repo = FartRepository()
+
         standings = match_repo.get_rumble_standings()
         matches = match_repo.get_rumble_matches(limit=limit)
         balances = rumble_repo.get_all_balances()
         prizes = rumble_repo.get_prizes(active_only=True)
         earnings = rumble_repo.get_earnings_config()
         redemptions = rumble_repo.get_redemptions(limit=100)
+        fart_leaderboard = fart_repo.get_leaderboard()
+        fart_commands = fart_repo.get_commands()
 
         return jsonify({
             "standings": standings,
@@ -38,6 +43,8 @@ def get_rumble():
             "prizes": prizes,
             "earnings": earnings,
             "redemptions": redemptions,
+            "fart_leaderboard": fart_leaderboard,
+            "fart_commands": fart_commands,
         })
     except Exception as e:
         logger.error(f"Error fetching rumble data: {e}")
@@ -283,6 +290,83 @@ def redeem_prize(prize_id):
     if "error" in result:
         return jsonify(result), 400
     return jsonify(result)
+
+
+# --- Fart game admin endpoints ---
+
+@rumble_bp.route("/rumble/admin/fart/reset", methods=["POST"])
+@require_rumble_admin
+def reset_fart_game():
+    """Reset the fart game - clear all scores, history, and cooldowns."""
+    repo = FartRepository()
+    result = repo.reset_game()
+    return jsonify({"success": True, "cleared": result})
+
+
+@rumble_bp.route("/rumble/admin/fart/evil-start", methods=["POST"])
+@require_rumble_admin
+def evil_start_fart_game():
+    """Evil start - reset game and give players random chaotic starting scores."""
+    repo = FartRepository()
+    result = repo.evil_start()
+    return jsonify({"success": True, **result})
+
+
+@rumble_bp.route("/rumble/admin/fart/commands")
+@require_rumble_admin
+def get_fart_commands():
+    """Get all fart game command configs."""
+    repo = FartRepository()
+    return jsonify({"commands": repo.get_commands()})
+
+
+@rumble_bp.route("/rumble/admin/fart/commands", methods=["POST"])
+@require_rumble_admin
+def add_fart_command():
+    """Add a new fart game command config."""
+    data = request.get_json(silent=True)
+    if not data or not data.get("name") or not data.get("label"):
+        return jsonify({"error": "name and label are required"}), 400
+
+    repo = FartRepository()
+    try:
+        command_id = repo.add_command(
+            name=data["name"],
+            label=data["label"],
+            description=data.get("description"),
+            cost=int(data.get("cost", 0)),
+            damage=int(data.get("damage", 0)),
+            cooldown=data.get("cooldown", "daily"),
+        )
+    except Exception as e:
+        if "UNIQUE" in str(e):
+            return jsonify({"error": f"Command '{data['name']}' already exists"}), 400
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"success": True, "id": command_id})
+
+
+@rumble_bp.route("/rumble/admin/fart/commands/<int:command_id>", methods=["PUT"])
+@require_rumble_admin
+def update_fart_command(command_id):
+    """Update a fart game command config."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    repo = FartRepository()
+    if repo.update_command(command_id, **data):
+        return jsonify({"success": True})
+    return jsonify({"error": "Command not found or no valid fields"}), 404
+
+
+@rumble_bp.route("/rumble/admin/fart/commands/<int:command_id>", methods=["DELETE"])
+@require_rumble_admin
+def delete_fart_command(command_id):
+    """Delete a fart game command config."""
+    repo = FartRepository()
+    if repo.delete_command(command_id):
+        return jsonify({"success": True})
+    return jsonify({"error": "Command not found"}), 404
 
 
 # --- Rumble admin management (global admins only) ---

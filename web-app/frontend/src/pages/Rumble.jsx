@@ -362,9 +362,21 @@ function FartAdmin({ data, onRefresh }) {
   const [cmdDamage, setCmdDamage] = useState('')
   const [cmdCooldown, setCmdCooldown] = useState('daily')
 
-  // Editing
+  // Editing commands
   const [editingCmd, setEditingCmd] = useState(null)
   const [editForm, setEditForm] = useState({})
+
+  // New shop item form
+  const [shopName, setShopName] = useState('')
+  const [shopLabel, setShopLabel] = useState('')
+  const [shopDesc, setShopDesc] = useState('')
+  const [shopCost, setShopCost] = useState('')
+  const [shopDamage, setShopDamage] = useState('')
+  const [shopCooldown, setShopCooldown] = useState('none')
+
+  // Editing shop items
+  const [editingShop, setEditingShop] = useState(null)
+  const [shopEditForm, setShopEditForm] = useState({})
 
   const flash = (msg, isError = false) => {
     setMessage({ text: msg, error: isError })
@@ -473,12 +485,89 @@ function FartAdmin({ data, onRefresh }) {
     })
   }
 
+  // --- Shop item handlers ---
+
+  const handleAddShopItem = async (e) => {
+    e.preventDefault()
+    if (!shopName || !shopLabel) return
+    setLoading(true)
+    try {
+      await post('/api/rumble/admin/fart/shop', {
+        name: shopName,
+        label: shopLabel,
+        description: shopDesc || null,
+        cost: shopCost ? parseInt(shopCost) : 0,
+        damage: shopDamage ? parseInt(shopDamage) : 0,
+        cooldown: shopCooldown,
+      })
+      flash('Shop item added')
+      setShopName('')
+      setShopLabel('')
+      setShopDesc('')
+      setShopCost('')
+      setShopDamage('')
+      setShopCooldown('none')
+      onRefresh()
+    } catch (err) {
+      flash(err.message, true)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleUpdateShopItem = async (id, updates) => {
+    try {
+      await put(`/api/rumble/admin/fart/shop/${id}`, updates)
+      flash('Shop item updated')
+      setEditingShop(null)
+      onRefresh()
+    } catch (err) {
+      flash(err.message, true)
+    }
+  }
+
+  const handleDeleteShopItem = async (id) => {
+    if (!confirm('Delete this shop item?')) return
+    try {
+      await del(`/api/rumble/admin/fart/shop/${id}`)
+      flash('Shop item deleted')
+      onRefresh()
+    } catch (err) {
+      flash(err.message, true)
+    }
+  }
+
+  const startEditingShop = (item) => {
+    setEditingShop(item.id)
+    setShopEditForm({
+      label: item.label,
+      description: item.description || '',
+      cost: item.cost,
+      damage: item.damage,
+      cooldown: item.cooldown,
+      enabled: item.enabled,
+    })
+  }
+
+  const saveEditingShop = (id) => {
+    handleUpdateShopItem(id, {
+      label: shopEditForm.label,
+      description: shopEditForm.description || null,
+      cost: parseInt(shopEditForm.cost) || 0,
+      damage: parseInt(shopEditForm.damage) || 0,
+      cooldown: shopEditForm.cooldown,
+      enabled: shopEditForm.enabled ? 1 : 0,
+    })
+  }
+
   const fartLeaderboard = data.fart_leaderboard || []
   const fartCommands = data.fart_commands || []
+  const fartShopItems = data.fart_shop_items || []
 
   const tabs = [
     { id: 'overview', label: 'Overview' },
     { id: 'commands', label: 'Commands' },
+    { id: 'shop', label: 'Shop' },
     { id: 'actions', label: 'Actions' },
   ]
 
@@ -713,6 +802,181 @@ function FartAdmin({ data, onRefresh }) {
               className="bg-secondary text-black px-4 py-1.5 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
             >
               Add Command
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Shop Tab */}
+      {activeTab === 'shop' && (
+        <div className="space-y-4">
+          {/* Existing shop items */}
+          {fartShopItems.map((item) => (
+            <div key={item.id} className="border-b border-border/50 pb-2">
+              {editingShop === item.id ? (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-text-muted mb-0.5">Label</label>
+                      <input
+                        type="text"
+                        value={shopEditForm.label}
+                        onChange={(e) => setShopEditForm({ ...shopEditForm, label: e.target.value })}
+                        className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-text-muted mb-0.5">Cooldown</label>
+                      <select
+                        value={shopEditForm.cooldown}
+                        onChange={(e) => setShopEditForm({ ...shopEditForm, cooldown: e.target.value })}
+                        className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+                      >
+                        <option value="none">None</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-text-muted mb-0.5">Cost</label>
+                      <input
+                        type="number"
+                        value={shopEditForm.cost}
+                        onChange={(e) => setShopEditForm({ ...shopEditForm, cost: e.target.value })}
+                        className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-text-muted mb-0.5">Damage</label>
+                      <input
+                        type="number"
+                        value={shopEditForm.damage}
+                        onChange={(e) => setShopEditForm({ ...shopEditForm, damage: e.target.value })}
+                        className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs text-text-muted mb-0.5">Description</label>
+                      <input
+                        type="text"
+                        value={shopEditForm.description}
+                        onChange={(e) => setShopEditForm({ ...shopEditForm, description: e.target.value })}
+                        className="w-full bg-bg-primary border border-border rounded px-2 py-1 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!!shopEditForm.enabled}
+                          onChange={(e) => setShopEditForm({ ...shopEditForm, enabled: e.target.checked ? 1 : 0 })}
+                          className="rounded"
+                        />
+                        Enabled
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveEditingShop(item.id)}
+                      className="bg-secondary text-black px-3 py-1 rounded text-xs font-medium hover:opacity-90"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditingShop(null)}
+                      className="text-text-muted hover:text-text-primary text-xs px-3 py-1"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className={`flex-1 font-medium ${!item.enabled ? 'line-through text-text-muted' : ''}`}>
+                    !{item.name}
+                    <span className="text-text-muted font-normal ml-1.5">({item.label})</span>
+                  </span>
+                  <span className="text-text-muted text-xs w-16 text-center" title="Cost">
+                    {item.cost > 0 ? `${item.cost}pts` : 'Free'}
+                  </span>
+                  <span className="text-text-muted text-xs w-16 text-center" title="Cooldown">
+                    {item.cooldown === 'none' ? '-' : item.cooldown}
+                  </span>
+                  <button
+                    onClick={() => startEditingShop(item)}
+                    className="text-secondary hover:text-secondary/80 text-xs px-2"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeleteShopItem(item.id)}
+                    className="text-accent-red hover:text-accent-red/80 text-xs px-2"
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Add new shop item */}
+          <form onSubmit={handleAddShopItem} className="space-y-2 pt-2 border-t border-border">
+            <p className="text-xs text-text-muted font-semibold uppercase">Add Shop Item</p>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="text"
+                placeholder="Item name (e.g. mega_fart)"
+                value={shopName}
+                onChange={(e) => setShopName(e.target.value)}
+                className="bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+                required
+              />
+              <input
+                type="text"
+                placeholder="Display Label"
+                value={shopLabel}
+                onChange={(e) => setShopLabel(e.target.value)}
+                className="bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+                required
+              />
+              <input
+                type="number"
+                placeholder="Cost (0 = free)"
+                value={shopCost}
+                onChange={(e) => setShopCost(e.target.value)}
+                className="bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+              />
+              <input
+                type="number"
+                placeholder="Damage"
+                value={shopDamage}
+                onChange={(e) => setShopDamage(e.target.value)}
+                className="bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+              />
+              <select
+                value={shopCooldown}
+                onChange={(e) => setShopCooldown(e.target.value)}
+                className="bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+              >
+                <option value="none">No cooldown</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+              <input
+                type="text"
+                placeholder="Description"
+                value={shopDesc}
+                onChange={(e) => setShopDesc(e.target.value)}
+                className="bg-bg-primary border border-border rounded px-3 py-1.5 text-sm"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="bg-secondary text-black px-4 py-1.5 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              Add Shop Item
             </button>
           </form>
         </div>

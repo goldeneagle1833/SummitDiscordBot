@@ -10,6 +10,32 @@ from webapp_config import FART_SCORES_DB_PATH
 class FartRepository:
     """Data access for fart_scores.db."""
 
+    _DEFAULT_SHOP_ITEMS = [
+        # (name, label, description, cost, damage, cooldown)
+        ("blue_shell", "Blue Shell", "Hits the leader with 3d20/2 damage", 7, 0, "none"),
+        ("red_shell", "Red Shell", "Hits the player directly in front of you with 2d20/2 damage", 5, 0, "none"),
+        ("green_shell", "Green Shell", "Hits a random player in front of you with 2d20/2 damage", 5, 0, "none"),
+        ("banana", "Banana", "Hits a random player behind you with 2d20/2 damage", 5, 0, "none"),
+        ("big_banana", "Big Banana", "Hits a random player behind you with 4d10 damage", 10, 0, "weekly"),
+        ("star", "Star", "Protects you from all items for 24 hours (costs 10% of your points)", 0, 0, "none"),
+        ("mushroom", "Mushroom", "Next fart rolls twice, take higher!", 5, 0, "weekly"),
+        ("bobomb", "Bob-omb", "Hits the top 5 players with 3d20/2 damage", 25, 0, "none"),
+        ("bluestar", "Blue Star", "Hits leader with 4d20/2 damage AND protects you for 12 hours", 38, 0, "none"),
+        ("fart_star", "Fart Star", "Removes star protection from a random protected user", 0, 0, "none"),
+        ("evil_star", "Evil Star", "Doubles your points if you have exactly 666 points!", 0, 0, "none"),
+        ("thunder_fart", "Thunder Fart", "Hits ALL players for 1-5 damage each", 20, 0, "none"),
+        ("gas_shield", "Gas Shield", "Reflects 50% damage back at the next attacker", 8, 0, "none"),
+        ("stink_bomb", "Stink Bomb", "Hits a random player (anyone!) for 3d20/2 damage", 12, 0, "none"),
+        ("fart_rocket", "Fart Rocket", "Swap scores with a random player", 100, 0, "none"),
+        ("fart_lance", "Fart Lance", "Hits up to 3 players ahead with diminishing damage", 15, 0, "none"),
+        ("fart_trap", "Fart Trap", "A player's next attack backfires on them!", 20, 0, "none"),
+        ("fart_twister", "Fart Twister", "Launch a player into another! Damage = half launched player's score", 50, 0, "daily"),
+        ("stink_cloud", "Stink Cloud", "Blocks a random player from shop for 30 minutes", 5, 0, "none"),
+        ("gas_gamble", "Gas Gamble", "40% chance to double your bet, 60% to lose it all", 3, 0, "none"),
+        ("fart_leech", "Fart Leech", "Steal 2d20/2 points from a random player", 10, 0, "none"),
+        ("fart_donation", "Fart Donation", "Donate your points to another player", 0, 0, "none"),
+    ]
+
     _DEFAULT_COMMANDS = [
         ("fart", "Fart", "Roll for random fart points", 0, 0, "daily", 1),
         ("attackfart", "Attack Fart", "Attack the fart leader to reduce their score", 0, 100, "daily", 2),
@@ -122,6 +148,81 @@ class FartRepository:
         """Delete a fart command config."""
         conn = self._get_connection()
         cursor = conn.execute("DELETE FROM fart_game_commands WHERE id = ?", (command_id,))
+        conn.commit()
+        conn.close()
+        return cursor.rowcount > 0
+
+    # --- Shop items ---
+
+    def _ensure_shop_table(self, conn):
+        """Create fart_shop_items table and seed defaults if empty."""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS fart_shop_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                label TEXT NOT NULL,
+                description TEXT,
+                cost INTEGER NOT NULL DEFAULT 0,
+                damage INTEGER NOT NULL DEFAULT 0,
+                cooldown TEXT NOT NULL DEFAULT 'none',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        count = conn.execute("SELECT COUNT(*) FROM fart_shop_items").fetchone()[0]
+        if count == 0:
+            conn.executemany(
+                "INSERT INTO fart_shop_items (name, label, description, cost, damage, cooldown, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [(n, l, d, c, dm, cd, i + 1) for i, (n, l, d, c, dm, cd) in enumerate(self._DEFAULT_SHOP_ITEMS)],
+            )
+            conn.commit()
+
+    def get_shop_items(self) -> list[dict]:
+        """Get all fart shop item configs."""
+        conn = self._get_connection()
+        self._ensure_shop_table(conn)
+        rows = conn.execute(
+            "SELECT id, name, label, description, cost, damage, cooldown, enabled, sort_order "
+            "FROM fart_shop_items ORDER BY sort_order"
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def add_shop_item(self, name: str, label: str, description: str | None = None,
+                      cost: int = 0, damage: int = 0, cooldown: str = "none") -> int:
+        """Add a new fart shop item. Returns the new ID."""
+        conn = self._get_connection()
+        self._ensure_shop_table(conn)
+        max_order = conn.execute("SELECT COALESCE(MAX(sort_order), 0) FROM fart_shop_items").fetchone()[0]
+        cursor = conn.execute(
+            "INSERT INTO fart_shop_items (name, label, description, cost, damage, cooldown, sort_order) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (name, label, description, cost, damage, cooldown, max_order + 1),
+        )
+        conn.commit()
+        item_id = cursor.lastrowid
+        conn.close()
+        return item_id
+
+    def update_shop_item(self, item_id: int, **fields) -> bool:
+        """Update a fart shop item. Returns True if updated."""
+        allowed = {"name", "label", "description", "cost", "damage", "cooldown", "enabled", "sort_order"}
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return False
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [item_id]
+        conn = self._get_connection()
+        cursor = conn.execute(f"UPDATE fart_shop_items SET {set_clause} WHERE id = ?", values)
+        conn.commit()
+        conn.close()
+        return cursor.rowcount > 0
+
+    def delete_shop_item(self, item_id: int) -> bool:
+        """Delete a fart shop item."""
+        conn = self._get_connection()
+        cursor = conn.execute("DELETE FROM fart_shop_items WHERE id = ?", (item_id,))
         conn.commit()
         conn.close()
         return cursor.rowcount > 0

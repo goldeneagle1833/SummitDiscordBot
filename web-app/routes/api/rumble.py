@@ -34,6 +34,7 @@ def get_rumble():
         redemptions = rumble_repo.get_redemptions(limit=100)
         fart_leaderboard = fart_repo.get_leaderboard()
         fart_commands = fart_repo.get_commands()
+        fart_shop_items = fart_repo.get_shop_items()
 
         return jsonify({
             "standings": standings,
@@ -45,6 +46,7 @@ def get_rumble():
             "redemptions": redemptions,
             "fart_leaderboard": fart_leaderboard,
             "fart_commands": fart_commands,
+            "fart_shop_items": fart_shop_items,
         })
     except Exception as e:
         logger.error(f"Error fetching rumble data: {e}")
@@ -367,6 +369,65 @@ def delete_fart_command(command_id):
     if repo.delete_command(command_id):
         return jsonify({"success": True})
     return jsonify({"error": "Command not found"}), 404
+
+
+# --- Fart shop item admin endpoints ---
+
+@rumble_bp.route("/rumble/admin/fart/shop")
+@require_rumble_admin
+def get_fart_shop_items():
+    """Get all fart shop item configs."""
+    repo = FartRepository()
+    return jsonify({"items": repo.get_shop_items()})
+
+
+@rumble_bp.route("/rumble/admin/fart/shop", methods=["POST"])
+@require_rumble_admin
+def add_fart_shop_item():
+    """Add a new fart shop item."""
+    data = request.get_json(silent=True)
+    if not data or not data.get("name") or not data.get("label"):
+        return jsonify({"error": "name and label are required"}), 400
+
+    repo = FartRepository()
+    try:
+        item_id = repo.add_shop_item(
+            name=data["name"],
+            label=data["label"],
+            description=data.get("description"),
+            cost=int(data.get("cost", 0)),
+            damage=int(data.get("damage", 0)),
+            cooldown=data.get("cooldown", "none"),
+        )
+    except Exception as e:
+        if "UNIQUE" in str(e):
+            return jsonify({"error": f"Shop item '{data['name']}' already exists"}), 400
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"success": True, "id": item_id})
+
+
+@rumble_bp.route("/rumble/admin/fart/shop/<int:item_id>", methods=["PUT"])
+@require_rumble_admin
+def update_fart_shop_item(item_id):
+    """Update a fart shop item."""
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    repo = FartRepository()
+    if repo.update_shop_item(item_id, **data):
+        return jsonify({"success": True})
+    return jsonify({"error": "Shop item not found or no valid fields"}), 404
+
+
+@rumble_bp.route("/rumble/admin/fart/shop/<int:item_id>", methods=["DELETE"])
+@require_rumble_admin
+def delete_fart_shop_item(item_id):
+    """Delete a fart shop item."""
+    repo = FartRepository()
+    if repo.delete_shop_item(item_id):
+        return jsonify({"success": True})
+    return jsonify({"error": "Shop item not found"}), 404
 
 
 # --- Rumble admin management (global admins only) ---

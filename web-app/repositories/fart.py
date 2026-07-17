@@ -50,6 +50,7 @@ _SHOP_EFFECTS = {
     "gas_gamble": {"action": "gamble", "win_chance": 40, "win_multiplier": 2, "lose_multiplier": 0},
     "fart_leech": {"action": "steal", "target": "random", "formula": "2d20/2"},
     "fart_donation": {"action": "donate", "target": "specified", "cost_type": "custom"},
+    "fart_court": {"action": "court", "target": "specified", "win_chance": 50, "cost_type": "custom"},
 }
 
 
@@ -80,6 +81,7 @@ class FartRepository:
         ("gas_gamble", "Gas Gamble", "40% chance to double your bet, 60% to lose it all", 3, 0, "none"),
         ("fart_leech", "Fart Leech", "Steal 2d20/2 points from a random player", 10, 0, "none"),
         ("fart_donation", "Fart Donation", "Donate your points to another player", 0, 0, "none"),
+        ("fart_court", "Fart Court", "50% chance they pay you the amount, 50% chance you pay them", 0, 0, "none"),
     ]
 
     _DEFAULT_COMMANDS = [

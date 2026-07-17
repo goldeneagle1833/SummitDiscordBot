@@ -332,7 +332,11 @@ class StoreRepository:
             order = dict(row)
             order["items"] = [
                 dict(r) for r in conn.execute(
-                    "SELECT * FROM order_items WHERE order_id = ?", (order_id,)
+                    """SELECT oi.*, p.image_url
+                       FROM order_items oi
+                       LEFT JOIN products p ON p.id = oi.product_id
+                       WHERE oi.order_id = ?""",
+                    (order_id,),
                 ).fetchall()
             ]
             return order

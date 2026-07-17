@@ -159,13 +159,14 @@ class StoreCheckoutService:
             "expires_at": int(time.time()) + CHECKOUT_EXPIRES_MINUTES * 60,
         }
 
+        # Always collect a shipping address
+        session_params["shipping_address_collection"] = {
+            "allowed_countries": ["US", "CA", "GB", "AU", "DE", "FR",
+                                  "NL", "IT", "ES", "AT", "BE", "JP"],
+        }
+
         if shipping_options:
             session_params["shipping_options"] = shipping_options
-        else:
-            # Legacy fallback: collect US-only address
-            session_params["shipping_address_collection"] = {
-                "allowed_countries": ["US"],
-            }
 
         try:
             checkout_session = stripe.checkout.Session.create(**session_params)

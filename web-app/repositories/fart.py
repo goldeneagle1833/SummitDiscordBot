@@ -81,7 +81,7 @@ class FartRepository:
         ("gas_gamble", "Gas Gamble", "40% chance to double your bet, 60% to lose it all", 3, 0, "none"),
         ("fart_leech", "Fart Leech", "Steal 2d20/2 points from a random player", 10, 0, "none"),
         ("fart_donation", "Fart Donation", "Donate your points to another player", 0, 0, "none"),
-        ("fart_court", "Fart Court", "50% chance they pay you the amount, 50% chance you pay them", 0, 0, "none"),
+        ("fart_court", "Fart Court", "50% chance they pay you the amount, 50% chance you pay them", 0, 0, "weekly"),
     ]
 
     _DEFAULT_COMMANDS = [

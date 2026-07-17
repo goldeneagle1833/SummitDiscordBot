@@ -1367,7 +1367,7 @@ class ShopCog(commands.Cog):
     @commands.command(name="fart_court")
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_court(self, ctx, target: discord.Member = None, amount: int = None):
-        """Take another specific player to court! 50% chance they pay you the specified amount, 50% chance you pay them. Usage: !fart_court @user <amount>"""
+        """Take another specific player to court! 50% chance they pay you the specified amount, 50% chance you pay them. Once per week. Usage: !fart_court @user <amount>"""
         if ctx.channel.id != self.fart_channel_id:
             await ctx.send(
                 f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
@@ -1399,6 +1399,36 @@ class ShopCog(commands.Cog):
             return await ctx.send(
                 f"<@{target.id}> doesn't have enough points! They have {target_score} but need {amount}."
             )
+
+        # Check weekly cooldown
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS command_usage
+                (user_id INTEGER,
+                 command_name TEXT,
+                 last_used TEXT,
+                 PRIMARY KEY (user_id, command_name))
+            """)
+            cur.execute(
+                "SELECT last_used FROM command_usage WHERE user_id=? AND command_name='fart_court'",
+                (ctx.author.id,),
+            )
+            row = cur.fetchone()
+            if row:
+                parsed = safe_parse_datetime(row[0])
+                if parsed:
+                    last_used_date = parsed.date()
+                    next_available = last_used_date + datetime.timedelta(weeks=1)
+                    if next_available > datetime.datetime.now().date():
+                        days_remaining = (next_available - datetime.datetime.now().date()).days
+                        return await ctx.send(
+                            f"You can only use Fart Court once per week! "
+                            f"Try again in {days_remaining} day{'s' if days_remaining != 1 else ''}."
+                        )
+        finally:
+            conn.close()
 
         if random.random() < 0.5:
             # Target pays author
@@ -1434,6 +1464,18 @@ class ShopCog(commands.Cog):
                 f"<@{ctx.author.id}> took <@{target.id}> to court and **LOST**! "
                 f"<@{ctx.author.id}> pays {amount} points!"
             )
+
+        # Update weekly cooldown
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "INSERT OR REPLACE INTO command_usage (user_id, command_name, last_used) VALUES (?, 'fart_court', ?)",
+                (ctx.author.id, datetime.datetime.now().isoformat()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     @commands.command(name="fart_leech")
     @commands.cooldown(1, 45, commands.BucketType.user)
@@ -1824,7 +1866,7 @@ class ShopCog(commands.Cog):
             ),
             (
                 "Fart Court (!fart_court @user <amount>)",
-                "Take another player to court! 50% they pay you, 50% you pay them.\n*Justice is blind... and gaseous.*",
+                "Take another player to court! 50% they pay you, 50% you pay them. (Once per week)\n*Justice is blind... and gaseous.*",
                 "Custom",
             ),
         ]

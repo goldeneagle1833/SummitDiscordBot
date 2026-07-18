@@ -1406,7 +1406,8 @@ class ShopCog(commands.Cog):
         if target.bot:
             return await ctx.send("You can't take a bot to court!")
 
-        # Weekly cooldown — same command_usage table as !big_banana
+        # Weekly cooldown — same command_usage table as !big_banana.
+        # Only blocks if already used successfully; failed attempts never write here.
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
         try:
@@ -1438,6 +1439,10 @@ class ShopCog(commands.Cog):
         finally:
             conn.close()
 
+        # Star protects the defendant — failed attempts do not consume weekly usage
+        if await self.is_protected(target.id):
+            return await ctx.send(f"<@{target.id}> is protected by a Star!")
+
         author_score = await self.get_user_score(ctx.author.id)
         target_score = await self.get_user_score(target.id)
 
@@ -1465,7 +1470,7 @@ class ShopCog(commands.Cog):
                 f"<@{ctx.author.id}> pays {amount} points!"
             )
 
-        # Transfer points and record weekly usage before announcing
+        # Only a successful court case records weekly usage (same transaction as transfer)
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
         try:
@@ -1473,15 +1478,30 @@ class ShopCog(commands.Cog):
                 "UPDATE fart_scores SET score = score - ? WHERE user_id = ?",
                 (amount, payer_id),
             )
+            if cur.rowcount != 1:
+                return await ctx.send(
+                    f"{ctx.author.mention}, court fell through — couldn't update the payer's score. Weekly usage not spent."
+                )
             cur.execute(
                 "UPDATE fart_scores SET score = score + ? WHERE user_id = ?",
                 (amount, payee_id),
             )
+            if cur.rowcount != 1:
+                conn.rollback()
+                return await ctx.send(
+                    f"{ctx.author.mention}, court fell through — couldn't update the payee's score. Weekly usage not spent."
+                )
             cur.execute(
                 "INSERT OR REPLACE INTO command_usage (user_id, command_name, last_used) VALUES (?, 'fart_court', ?)",
                 (ctx.author.id, datetime.datetime.now().isoformat()),
             )
             conn.commit()
+        except Exception:
+            conn.rollback()
+            logger.exception("fart_court failed during score transfer")
+            return await ctx.send(
+                f"{ctx.author.mention}, court fell through due to an error. Weekly usage not spent."
+            )
         finally:
             conn.close()
 
@@ -1876,7 +1896,7 @@ class ShopCog(commands.Cog):
             ),
             (
                 "Fart Court (!fart_court @user <amount>)",
-                "Take another player to court! 50% they pay you, 50% you pay them. (Once per week)\n*Justice is blind... and gaseous.*",
+                "Take another player to court! 50% they pay you, 50% you pay them. Blocked by Star. (Once per week)\n*Justice is blind... and gaseous.*",
                 "Custom",
             ),
         ]

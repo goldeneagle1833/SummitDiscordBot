@@ -317,34 +317,33 @@ function BonesLeaderboard({ bones, isAdmin, onEdit }) {
 }
 
 function RedemptionHistory({ redemptions }) {
-  if (!redemptions?.length) return null
+  if (!redemptions?.length) {
+    return <p className="text-sm text-text-muted py-2">No redemptions yet.</p>
+  }
   return (
-    <div className="bg-bg-surface border border-border rounded-lg p-4">
-      <h2 className="text-base font-semibold text-text-primary mb-3">Redemption History</h2>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border text-left">
-              <th className="py-1.5 px-2 text-text-muted font-semibold">Player</th>
-              <th className="py-1.5 px-2 text-text-muted font-semibold">Prize</th>
-              <th className="py-1.5 px-2 text-text-muted font-semibold">Cost</th>
-              <th className="py-1.5 px-2 text-text-muted font-semibold">Date</th>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-left">
+            <th className="py-1.5 px-2 text-text-muted font-semibold">Player</th>
+            <th className="py-1.5 px-2 text-text-muted font-semibold">Prize</th>
+            <th className="py-1.5 px-2 text-text-muted font-semibold">Cost</th>
+            <th className="py-1.5 px-2 text-text-muted font-semibold">Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {redemptions.map((r) => (
+            <tr key={r.id} className="border-b border-border/50">
+              <td className="py-1.5 px-2 font-medium">{r.display_name || 'Unknown'}</td>
+              <td className="py-1.5 px-2">{r.prize_name || 'Deleted prize'}</td>
+              <td className="py-1.5 px-2 font-mono">{r.cost}</td>
+              <td className="py-1.5 px-2 text-text-muted">
+                {r.created_at ? new Date(r.created_at + 'Z').toLocaleDateString() : '-'}
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {redemptions.map((r) => (
-              <tr key={r.id} className="border-b border-border/50">
-                <td className="py-1.5 px-2 font-medium">{r.display_name || 'Unknown'}</td>
-                <td className="py-1.5 px-2">{r.prize_name || 'Deleted prize'}</td>
-                <td className="py-1.5 px-2 font-mono">{r.cost}</td>
-                <td className="py-1.5 px-2 text-text-muted">
-                  {r.created_at ? new Date(r.created_at + 'Z').toLocaleDateString() : '-'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -1409,11 +1408,22 @@ function AdminPanel({ data, onRefresh }) {
   const [adminDisplayName, setAdminDisplayName] = useState('')
   const [rumbleAdmins, setRumbleAdmins] = useState([])
 
+  // Redemption history (admin-only)
+  const [redemptions, setRedemptions] = useState([])
+  const [redemptionsLoading, setRedemptionsLoading] = useState(false)
+
   useEffect(() => {
     if (activeTab === 'admins') {
       get('/api/rumble/admin/admins')
         .then((d) => setRumbleAdmins(d.admins || []))
         .catch(() => {})
+    }
+    if (activeTab === 'redemptions') {
+      setRedemptionsLoading(true)
+      get('/api/rumble/admin/redemptions')
+        .then((d) => setRedemptions(d.redemptions || []))
+        .catch(() => setRedemptions([]))
+        .finally(() => setRedemptionsLoading(false))
     }
   }, [activeTab])
 
@@ -1573,6 +1583,7 @@ function AdminPanel({ data, onRefresh }) {
     { id: 'bones', label: 'Bones' },
     { id: 'earnings', label: 'Earnings' },
     { id: 'prizes', label: 'Prizes' },
+    { id: 'redemptions', label: 'Redemptions' },
     { id: 'admins', label: 'Admins' },
   ]
 
@@ -1814,6 +1825,13 @@ function AdminPanel({ data, onRefresh }) {
         </div>
       )}
 
+      {/* Redemptions Tab */}
+      {activeTab === 'redemptions' && (
+        redemptionsLoading
+          ? <p className="text-sm text-text-muted py-2">Loading…</p>
+          : <RedemptionHistory redemptions={redemptions} />
+      )}
+
       {/* Admins Tab */}
       {activeTab === 'admins' && (
         <div className="space-y-3">
@@ -2050,9 +2068,6 @@ export default function Rumble() {
           </div>
         </div>
       )}
-
-      {/* Redemption History */}
-      <RedemptionHistory redemptions={data.redemptions} />
 
       {!standings?.length && !matches?.length && !data.bones?.length && (
         <p className="text-center text-text-muted py-8">No rumble data yet.</p>

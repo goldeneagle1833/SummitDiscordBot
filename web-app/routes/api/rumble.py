@@ -31,7 +31,6 @@ def get_rumble():
         balances = rumble_repo.get_all_balances()
         prizes = rumble_repo.get_prizes(active_only=True)
         earnings = rumble_repo.get_earnings_config()
-        redemptions = rumble_repo.get_redemptions(limit=100)
         fart_leaderboard = fart_repo.get_leaderboard()
         fart_commands = fart_repo.get_commands()
         fart_shop_items = fart_repo.get_shop_items()
@@ -43,7 +42,6 @@ def get_rumble():
             "bones": balances,
             "prizes": prizes,
             "earnings": earnings,
-            "redemptions": redemptions,
             "fart_leaderboard": fart_leaderboard,
             "fart_commands": fart_commands,
             "fart_shop_items": fart_shop_items,
@@ -272,6 +270,20 @@ def reorder_prizes():
     if repo.swap_prize_order(int(prize_id_a), int(prize_id_b)):
         return jsonify({"success": True})
     return jsonify({"error": "One or both prizes not found"}), 404
+
+
+@rumble_bp.route("/rumble/admin/redemptions")
+@require_rumble_admin
+def get_redemptions():
+    """Return recent prize redemption history (rumble admins only)."""
+    try:
+        limit = request.args.get("limit", 100, type=int)
+        repo = RumbleRepository()
+        redemptions = repo.get_redemptions(limit=limit)
+        return jsonify({"redemptions": redemptions})
+    except Exception as e:
+        logger.error(f"Error fetching rumble redemptions: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 # --- Player redemption (requires login) ---

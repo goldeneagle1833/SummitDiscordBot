@@ -83,6 +83,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.avatars.get_avatars_elo_breakdown",
     "api.avatars.get_elo_breakdown_matches",
     "api.avatars.get_play_draw_stats",
+    "api.avatars.get_season_stats",
     "api.avatars.get_avatar_matchups",
     "api.avatars.list_all_avatars",
 

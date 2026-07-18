@@ -123,6 +123,35 @@ def get_avatar_filters():
     return jsonify({"events": events, "sources": sources})
 
 
+@avatars_bp.route("/avatars/season-stats")
+def get_season_stats():
+    """Return game counts per season."""
+    results = []
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+        for sf in SEASON_FILTERS:
+            total = 0
+            for table in ("match_records", "match_records_archive"):
+                try:
+                    cur.execute(
+                        f"SELECT COUNT(*) FROM {table} WHERE timestamp >= ? AND timestamp < ?",
+                        (sf["start_date"], sf["end_date"]),
+                    )
+                    total += cur.fetchone()[0]
+                except sqlite3.OperationalError:
+                    pass
+            results.append({
+                "id": sf["id"],
+                "name": sf["name"],
+                "total_games": total,
+            })
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not query season stats: {e}")
+    return jsonify(results)
+
+
 def _get_event_date_range(event_id):
     """Get start/end dates for an event. Returns (start_date, end_date) or (None, None)."""
     # Check season filters first (string IDs like "season_gothic_1")

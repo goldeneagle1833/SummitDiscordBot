@@ -10,6 +10,8 @@ from webapp_config import FART_SCORES_DB_PATH
 # Default effects for fart game commands (JSON-serialized)
 _CMD_EFFECTS = {
     "fart": {"action": "roll", "formula": "1d100", "points": "roll_value"},
+    "fart_gift": {"action": "gift_roll", "formula": "1d100", "points": "roll_value",
+                  "target": "specified", "uses_daily": True},
     "fartprediction": {"action": "prediction", "correct_multiplier": 2, "wrong_multiplier": 0.5},
     "bullfart": {"action": "bonus", "source": "last_fart_type",
                  "bonuses": {"curio_shart": 50, "unique": 35, "elite": 25, "exceptional": 15, "ordinary": 10}},
@@ -44,6 +46,8 @@ _SHOP_EFFECTS = {
                     "cost_type": "percent", "cost_percent": 5},
     "gas_gamble": {"action": "gamble", "win_chance": 40, "win_multiplier": 2, "lose_multiplier": 0},
     "fart_leech": {"action": "steal", "target": "random", "formula": "2d20/2"},
+    "fart_donation": {"action": "donate", "target": "specified", "cost_type": "custom",
+                      "max_amount": 100},
     "fart_court": {"action": "court", "target": "specified", "win_chance": 50, "cost_type": "custom"},
 }
 
@@ -73,15 +77,17 @@ class FartRepository:
         ("stink_cloud", "Stink Cloud", "Blocks a random player from shop for 24 hours (5% of points)", 0, 0, "daily"),
         ("gas_gamble", "Gas Gamble", "40% chance to double your bet, 60% to lose it all", 0, 0, "none"),
         ("fart_leech", "Fart Leech", "Steal 2d20/2 points from a random player", 5, 0, "daily"),
+        ("fart_donation", "Fart Donation", "Donate points to another player (maximum 100)", 0, 0, "none"),
         ("fart_court", "Fart Court", "50% chance they pay you the amount, 50% chance you pay them", 0, 0, "weekly"),
     ]
 
     _DEFAULT_COMMANDS = [
         ("fart", "Fart", "Roll for random fart points", 0, 0, "daily", 1),
-        ("fartprediction", "Fart Prediction", "Predict fart type for 2x or half points", 0, 0, "daily", 2),
-        ("bullfart", "Bull Fart", "Bonus points based on last fart type", 0, 0, "weekly", 3),
-        ("taxes", "Taxes", "Take 50% from non-top-5, give to top 5", 0, 50, "once_per_reign", 4),
-        ("wealth", "Wealth", "Take 100% from top 5, give to everyone else", 0, 100, "once_per_reign", 5),
+        ("fart_gift", "Fart Gift", "Roll your daily fart and give the points to another player", 0, 0, "daily", 2),
+        ("fartprediction", "Fart Prediction", "Predict fart type for 2x or half points", 0, 0, "daily", 3),
+        ("bullfart", "Bull Fart", "Bonus points based on last fart type", 0, 0, "weekly", 4),
+        ("taxes", "Taxes", "Take 50% from non-top-5, give to top 5", 0, 50, "once_per_reign", 5),
+        ("wealth", "Wealth", "Take 100% from top 5, give to everyone else", 0, 100, "once_per_reign", 6),
     ]
 
     def __init__(self, db_path: Path | str | None = None):
@@ -141,6 +147,24 @@ class FartRepository:
                 conn.execute(
                     "UPDATE fart_game_commands SET effect = ? WHERE id = ?",
                     (json.dumps(effect), row["id"]),
+                )
+            # Ensure newer built-ins exist on older installs
+            existing = {
+                r["name"]
+                for r in conn.execute("SELECT name FROM fart_game_commands").fetchall()
+            }
+            max_order = conn.execute(
+                "SELECT COALESCE(MAX(sort_order), 0) FROM fart_game_commands"
+            ).fetchone()[0]
+            for name, label, desc, cost, damage, cooldown, sort_order in self._DEFAULT_COMMANDS:
+                if name in existing:
+                    continue
+                max_order += 1
+                effect_json = json.dumps(_CMD_EFFECTS.get(name, {}))
+                conn.execute(
+                    "INSERT INTO fart_game_commands (name, label, description, cost, damage, cooldown, sort_order, effect) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (name, label, desc, cost, damage, cooldown, max_order, effect_json),
                 )
             conn.commit()
 
@@ -253,7 +277,7 @@ class FartRepository:
         self._add_column_if_missing(conn, "fart_shop_items", "effect", "TEXT")
         # Gothic S6: remove retired shop items from existing installs
         conn.execute(
-            "DELETE FROM fart_shop_items WHERE name IN ('bluestar', 'blue_star', 'fart_donation')"
+            "DELETE FROM fart_shop_items WHERE name IN ('bluestar', 'blue_star')"
         )
         count = conn.execute("SELECT COUNT(*) FROM fart_shop_items").fetchone()[0]
         if count == 0:
@@ -275,6 +299,24 @@ class FartRepository:
                 conn.execute(
                     "UPDATE fart_shop_items SET effect = ? WHERE id = ?",
                     (json.dumps(effect), row["id"]),
+                )
+            # Ensure newer built-ins exist (e.g. restored fart_donation)
+            existing = {
+                r["name"]
+                for r in conn.execute("SELECT name FROM fart_shop_items").fetchall()
+            }
+            max_order = conn.execute(
+                "SELECT COALESCE(MAX(sort_order), 0) FROM fart_shop_items"
+            ).fetchone()[0]
+            for name, label, desc, cost, damage, cooldown in self._DEFAULT_SHOP_ITEMS:
+                if name in existing:
+                    continue
+                max_order += 1
+                effect_json = json.dumps(_SHOP_EFFECTS.get(name, {}))
+                conn.execute(
+                    "INSERT INTO fart_shop_items (name, label, description, cost, damage, cooldown, sort_order, effect) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (name, label, desc, cost, damage, cooldown, max_order, effect_json),
                 )
             conn.commit()
 

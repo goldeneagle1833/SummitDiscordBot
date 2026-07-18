@@ -117,7 +117,7 @@ class UtilityCog(commands.Cog):
         embed.add_field(
             name="💨 Fart Game",
             value=(
-                "`!fart` `!fartrank` `!fartleaderboard`\n"
+                "`!fart` `!fart_gift` `!fartrank`\n"
                 "`!fartprediction` `!fart_shop`\n"
                 "➡️ Use `!helpfart` for details"
             ),
@@ -231,6 +231,7 @@ class UtilityCog(commands.Cog):
             value=(
                 "Daily Actions:\n"
                 "`!fart` - Roll for daily fart points\n"
+                "`!fart_gift @user` - Roll your daily fart for someone else\n"
                 "`!fartprediction` - Predict fart type for 2x points\n"
                 "`!bullfart` - Get bonus points (weekly)\n\n"
                 "Shop & Items:\n"

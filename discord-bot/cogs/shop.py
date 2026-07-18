@@ -177,6 +177,8 @@ class ShopCog(commands.Cog):
             "shop": "!fart_shop",
             "fartshop": "!fart_shop",
             "fart_shop": "!fart_shop",
+            "shopfart": "!fart_shop",
+            "shop_fart": "!fart_shop",
             "store": "!fart_shop",
             "buy": "!fart_shop",
             "items": "!fart_shop",
@@ -273,6 +275,12 @@ class ShopCog(commands.Cog):
             "fartcourt": "!fart_court",
             "fart_court": "!fart_court",
             "court": "!fart_court",
+            # Fart Donation variations
+            "fartdonation": "!fart_donation",
+            "fart_donation": "!fart_donation",
+            "donation": "!fart_donation",
+            "donate": "!fart_donation",
+            "give": "!fart_donation",
         }
 
         actual_commands = {
@@ -288,36 +296,65 @@ class ShopCog(commands.Cog):
             "bobomb": "!bobomb",
             "fart_shop": "!fart_shop",
             "fartshop": "!fart_shop",
+            "shop_fart": "!fart_shop",
+            "shopfart": "!fart_shop",
+            "shop": "!fart_shop",
             "giga_fart_cannon": "!giga_fart_cannon",
             "gigafartcannon": "!giga_fart_cannon",
             "fart_star": "!fart_star",
             "fartstar": "!fart_star",
+            "star_fart": "!fart_star",
+            "starfart": "!fart_star",
             "evil_star": "!evil_star",
             "evilstar": "!evil_star",
             "thunder_fart": "!thunder_fart",
             "thunderfart": "!thunder_fart",
+            "fart_thunder": "!thunder_fart",
+            "fartthunder": "!thunder_fart",
             "gas_shield": "!gas_shield",
             "gasshield": "!gas_shield",
+            "fart_shield": "!gas_shield",
+            "fartshield": "!gas_shield",
             "stink_bomb": "!stink_bomb",
             "stinkbomb": "!stink_bomb",
             "fart_rocket": "!fart_rocket",
             "fartrocket": "!fart_rocket",
+            "rocket_fart": "!fart_rocket",
+            "rocketfart": "!fart_rocket",
             "fart_trap": "!fart_trap",
             "farttrap": "!fart_trap",
+            "trap_fart": "!fart_trap",
+            "trapfart": "!fart_trap",
             "stink_cloud": "!stink_cloud",
             "stinkcloud": "!stink_cloud",
             "gas_gamble": "!gas_gamble",
             "gasgamble": "!gas_gamble",
+            "fart_gamble": "!gas_gamble",
+            "fartgamble": "!gas_gamble",
             "fart_leech": "!fart_leech",
             "fartleech": "!fart_leech",
+            "leech_fart": "!fart_leech",
+            "leechfart": "!fart_leech",
             "fart_twister": "!fart_twister",
             "farttwister": "!fart_twister",
+            "twister_fart": "!fart_twister",
+            "twisterfart": "!fart_twister",
             "fart_lance": "!fart_lance",
             "fartlance": "!fart_lance",
+            "lance_fart": "!fart_lance",
+            "lancefart": "!fart_lance",
             "big_banana": "!big_banana",
             "bigbanana": "!big_banana",
             "fart_court": "!fart_court",
             "fartcourt": "!fart_court",
+            "court_fart": "!fart_court",
+            "courtfart": "!fart_court",
+            "fart_donation": "!fart_donation",
+            "fartdonation": "!fart_donation",
+            "donation_fart": "!fart_donation",
+            "donationfart": "!fart_donation",
+            "fart_donate": "!fart_donation",
+            "fartdonate": "!fart_donation",
         }
 
         suggestion = find_best_command_match(failed_command, command_suggestions, actual_commands)
@@ -813,7 +850,7 @@ class ShopCog(commands.Cog):
 
         return players[target_index] if 0 <= target_index < len(players) else None
 
-    @commands.command(name="blue_shell", aliases=["blueshell"])
+    @commands.command(name="blue_shell", aliases=["blueshell", "shell_blue", "shellblue"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def blue_shell(self, ctx):
         """Hit the leader with 6d20/2 damage. Costs 20 points. Once per day."""
@@ -857,7 +894,7 @@ class ShopCog(commands.Cog):
             await ctx.send("An error occurred while processing the command.")
             raise
 
-    @commands.command(name="red_shell", aliases=["redshell"])
+    @commands.command(name="red_shell", aliases=["redshell", "shell_red", "shellred"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def red_shell(self, ctx):
         """Hit the player directly in front with 3d20/2 damage. Costs 10 points."""
@@ -881,7 +918,7 @@ class ShopCog(commands.Cog):
         )
         await self.check_gas_shield(ctx, target[0], ctx.author.id, actual_damage)
 
-    @commands.command(name="green_shell", aliases=["greenshell"])
+    @commands.command(name="green_shell", aliases=["greenshell", "shell_green", "shellgreen"])
     async def green_shell(self, ctx):
         """Hit a random player in front"""
         if not await self.check_points(ctx.author.id, "green"):
@@ -1159,7 +1196,7 @@ class ShopCog(commands.Cog):
         for player_id, actual_damage in hit_player_ids:
             await self.check_gas_shield(ctx, player_id, ctx.author.id, actual_damage)
 
-    @commands.command(name="thunder_fart", aliases=["thunderfart"])
+    @commands.command(name="thunder_fart", aliases=["thunderfart", "fart_thunder", "fartthunder"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def thunder_fart(self, ctx):
         """Hit ALL players for 50 damage each. Costs 10 points. Once per week."""
@@ -1209,7 +1246,7 @@ class ShopCog(commands.Cog):
         for player_id, actual_damage in hit_player_ids:
             await self.check_gas_shield(ctx, player_id, ctx.author.id, actual_damage)
 
-    @commands.command(name="gas_shield", aliases=["gasshield"])
+    @commands.command(name="gas_shield", aliases=["gasshield", "shield_gas", "shieldgas", "fart_shield", "fartshield"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def gas_shield(self, ctx):
         """Activate a shield that reflects 50% damage back at the next attacker"""
@@ -1246,7 +1283,7 @@ class ShopCog(commands.Cog):
             f"<@{ctx.author.id}> activated a Gas Shield! The next attack against them will reflect 50% damage back!"
         )
 
-    @commands.command(name="stink_bomb", aliases=["stinkbomb"])
+    @commands.command(name="stink_bomb", aliases=["stinkbomb", "bomb_stink", "bombstink"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def stink_bomb(self, ctx):
         """Hit a random player (anyone) for heavy damage"""
@@ -1274,7 +1311,7 @@ class ShopCog(commands.Cog):
         )
         await self.check_gas_shield(ctx, target_id, ctx.author.id, actual_damage)
 
-    @commands.command(name="fart_rocket", aliases=["fartrocket"])
+    @commands.command(name="fart_rocket", aliases=["fartrocket", "rocket_fart", "rocketfart"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_rocket(self, ctx):
         """Swap scores with a random player. Costs 100 points. Once per week."""
@@ -1328,7 +1365,7 @@ class ShopCog(commands.Cog):
             f"<@{target[0]}>: {target_score} -> {my_score}"
         )
 
-    @commands.command(name="fart_trap", aliases=["farttrap"])
+    @commands.command(name="fart_trap", aliases=["farttrap", "trap_fart", "trapfart"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_trap(self, ctx):
         """Set a trap on a random player - their next attack backfires on them!"""
@@ -1378,7 +1415,7 @@ class ShopCog(commands.Cog):
             f"Someone's next attack will backfire on them..."
         )
 
-    @commands.command(name="stink_cloud", aliases=["stinkcloud"])
+    @commands.command(name="stink_cloud", aliases=["stinkcloud", "cloud_stink", "cloudstink"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def stink_cloud(self, ctx):
         """Blind a random player, blocking shop items for 24 hours. Costs 5% of points. Once per day."""
@@ -1430,7 +1467,7 @@ class ShopCog(commands.Cog):
             f"<@{target_id}> is blinded and can't use shop items for 24 hours!"
         )
 
-    @commands.command(name="gas_gamble", aliases=["gasgamble"])
+    @commands.command(name="gas_gamble", aliases=["gasgamble", "gamble_gas", "gamblegas", "fart_gamble", "fartgamble"])
     async def gas_gamble(self, ctx, amount: int = None):
         """Gamble any amount of points! 40% chance to double, 60% chance to lose. Usage: !gas_gamble <amount>"""
         if ctx.channel.id != self.fart_channel_id:
@@ -1475,7 +1512,62 @@ class ShopCog(commands.Cog):
                 f"<@{ctx.author.id}> gambled {amount} points and **LOST**! -{amount} points down the drain!"
             )
 
-    @commands.command(name="fart_court", aliases=["fartcourt"])
+    @commands.command(name="fart_donation", aliases=["fartdonation", "donation_fart", "donationfart", "fart_donate", "fartdonate"])
+    @commands.cooldown(1, 45, commands.BucketType.user)
+    async def fart_donation(self, ctx, target: discord.Member = None, amount: int = None):
+        """Donate points to another player (maximum 100). Usage: !fart_donation @user <amount>"""
+        if ctx.channel.id != self.fart_channel_id:
+            await ctx.send(
+                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
+            )
+            return
+
+        if target is None or amount is None:
+            return await ctx.send(
+                f"{ctx.author.mention}, usage: `!fart_donation @user <amount>` "
+                f"(max 100 points)"
+            )
+
+        if amount <= 0:
+            return await ctx.send("You must donate at least 1 point!")
+
+        if amount > 100:
+            return await ctx.send(
+                f"{ctx.author.mention}, you can only be so generous — donations are capped at **100** points. "
+                f"Perhaps try `!fart_gift` next time?"
+            )
+
+        if target.id == ctx.author.id:
+            return await ctx.send("You can't donate to yourself!")
+
+        if target.bot:
+            return await ctx.send("You can't donate to a bot!")
+
+        user_score = await self.get_user_score(ctx.author.id)
+        if user_score < amount:
+            return await ctx.send(
+                f"You don't have enough points! You have {user_score} but tried to donate {amount}."
+            )
+
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE fart_scores SET score = score - ? WHERE user_id = ?",
+                (amount, ctx.author.id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        await self.add_points(target.id, amount)
+
+        await ctx.send(
+            f"<@{ctx.author.id}> donated {amount} points to <@{target.id}>! "
+            f"(Max donation: 100 — feeling bigger-hearted? Try `!fart_gift`!)"
+        )
+
+    @commands.command(name="fart_court", aliases=["fartcourt", "court_fart", "courtfart"])
     async def fart_court(self, ctx, target: discord.Member = None, amount: int = None):
         """Take another specific player to court! 50% chance they pay you the specified amount, 50% chance you pay them. Once per week. Usage: !fart_court @user <amount>"""
         if ctx.channel.id != self.fart_channel_id:
@@ -1599,7 +1691,7 @@ class ShopCog(commands.Cog):
 
         await ctx.send(result_msg)
 
-    @commands.command(name="fart_leech", aliases=["fartleech"])
+    @commands.command(name="fart_leech", aliases=["fartleech", "leech_fart", "leechfart"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_leech(self, ctx):
         """Steal 2d20/2 points from a random player. Costs 5 points. Once per day."""
@@ -1651,7 +1743,7 @@ class ShopCog(commands.Cog):
         )
         await self.check_gas_shield(ctx, target_id, ctx.author.id, actual_steal)
 
-    @commands.command(name="fart_twister", aliases=["farttwister"])
+    @commands.command(name="fart_twister", aliases=["farttwister", "twister_fart", "twisterfart"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_twister(self, ctx):
         """Launch a random player into another! Costs 50 points, uses daily fart, once per week."""
@@ -1742,7 +1834,7 @@ class ShopCog(commands.Cog):
         await self.check_gas_shield(ctx, player_a_id, ctx.author.id, actual_damage_a)
         await self.check_gas_shield(ctx, player_b_id, ctx.author.id, actual_damage_b)
 
-    @commands.command(name="fart_lance", aliases=["fartlance"])
+    @commands.command(name="fart_lance", aliases=["fartlance", "lance_fart", "lancefart"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_lance(self, ctx):
         """Ice Lance - hit up to 3 players ahead with diminishing damage!"""
@@ -1806,7 +1898,7 @@ class ShopCog(commands.Cog):
         for player_id, actual_damage in hit_player_ids:
             await self.check_gas_shield(ctx, player_id, ctx.author.id, actual_damage)
 
-    @commands.command(name="big_banana", aliases=["bigbanana"])
+    @commands.command(name="big_banana", aliases=["bigbanana", "banana_big", "bananabig"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def big_banana(self, ctx):
         """Hit a random player behind you with 4d10 damage! Costs 20 points. Once per day."""
@@ -1845,12 +1937,15 @@ class ShopCog(commands.Cog):
         )
         await self.check_gas_shield(ctx, target[0], ctx.author.id, actual_damage)
 
-    @commands.command(name="fart_shop", aliases=["fartshop"])
+    @commands.command(name="fart_shop", aliases=["fartshop", "shop_fart", "shopfart", "shop"])
     async def fart_shop(self, ctx):
         """Display all available shop items"""
         embed = discord.Embed(
             title="💨 Fart Shop",
-            description="Use the commands below to purchase items:",
+            description=(
+                "Use the commands below to purchase items:\n"
+                "Aliases: `!fart_shop` `!fartshop` `!shop_fart` `!shopfart` `!shop`"
+            ),
             color=discord.Color.gold(),
         )
 
@@ -1956,6 +2051,11 @@ class ShopCog(commands.Cog):
                 self.item_costs["fart_leech"],
             ),
             (
+                "Fart Donation (!fart_donation / !fartdonation @user <amount>)",
+                "Donate your points to another player. **Maximum 100 points.**\n*You can only be so generous — try !fart_gift for more.*",
+                "Max 100",
+            ),
+            (
                 "Fart Court (!fart_court / !fartcourt @user <amount>)",
                 "Take another player to court! 50% they pay you, 50% you pay them. Blocked by Star. (Once per week)\n*Justice is blind... and gaseous.*",
                 "Custom",
@@ -2005,7 +2105,7 @@ class ShopCog(commands.Cog):
             logger.error(f"Error deducting damage: {e}")
             raise
 
-    @commands.command(name="giga_fart_cannon", aliases=["gigafartcannon"])
+    @commands.command(name="giga_fart_cannon", aliases=["gigafartcannon", "giga_cannon", "gigacannon", "fart_cannon", "fartcannon"])
     @commands.cooldown(
         1, 86400, commands.BucketType.guild
     )  # Once per day for the entire server
@@ -2070,7 +2170,7 @@ class ShopCog(commands.Cog):
             await ctx.send("An error occurred while processing the command.")
             raise
 
-    @commands.command(name="fart_star", aliases=["fartstar"])
+    @commands.command(name="fart_star", aliases=["fartstar", "star_fart", "starfart", "star_killer", "starkiller"])
     @commands.cooldown(1, 60, commands.BucketType.user)
     async def fart_star(self, ctx):
         """
@@ -2186,7 +2286,7 @@ class ShopCog(commands.Cog):
             await ctx.send("An error occurred while processing the command.")
             raise
 
-    @commands.command(name="evil_star", aliases=["evilstar"])
+    @commands.command(name="evil_star", aliases=["evilstar", "star_evil", "starevil"])
     @commands.cooldown(1, 60, commands.BucketType.user)
     async def evil_star(self, ctx):
         """

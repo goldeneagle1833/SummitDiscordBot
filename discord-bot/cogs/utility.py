@@ -231,7 +231,7 @@ class UtilityCog(commands.Cog):
             value=(
                 "Daily Actions:\n"
                 "`!fart` - Roll for daily fart points\n"
-                "`!fart_gift @user` - Roll your daily fart for someone else\n"
+                "`!fart_gift @user` - Roll your daily fart for someone else (once/season per player)\n"
                 "`!fartprediction` - Predict fart type for 2x points\n"
                 "`!bullfart` - Get bonus points (weekly)\n\n"
                 "Shop & Items:\n"

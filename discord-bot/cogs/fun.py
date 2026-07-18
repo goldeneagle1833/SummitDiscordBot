@@ -339,6 +339,43 @@ class FunCog(commands.Cog):
         conn.commit()
         conn.close()
 
+    def _ensure_gift_usage_table(self, cur):
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS fart_gift_usage (
+                gifter_id INTEGER NOT NULL,
+                recipient_id INTEGER NOT NULL,
+                gifted_at TEXT NOT NULL,
+                PRIMARY KEY (gifter_id, recipient_id)
+            )
+        """)
+
+    def has_gifted_to_this_season(self, gifter_id: int, recipient_id: int) -> bool:
+        """True if this gifter already gifted this recipient once this season."""
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            self._ensure_gift_usage_table(cur)
+            cur.execute(
+                "SELECT 1 FROM fart_gift_usage WHERE gifter_id = ? AND recipient_id = ?",
+                (gifter_id, recipient_id),
+            )
+            return cur.fetchone() is not None
+        finally:
+            conn.close()
+
+    def mark_gifted_this_season(self, gifter_id: int, recipient_id: int):
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            self._ensure_gift_usage_table(cur)
+            cur.execute(
+                "INSERT OR REPLACE INTO fart_gift_usage (gifter_id, recipient_id, gifted_at) VALUES (?, ?, ?)",
+                (gifter_id, recipient_id, datetime.datetime.now().isoformat()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def mark_daily_action_used(self, user_id, user_display_name, last_updated):
         """Consume the user's daily fart action without changing their score."""
         conn = sqlite3.connect("fart_scores.db")
@@ -501,7 +538,7 @@ class FunCog(commands.Cog):
             name="📅 Daily Actions (Choose One)",
             value=(
                 "`!fart` - Roll for random fart points\n"
-                "`!fart_gift` / `!fartgift` `@user` - Roll your daily fart for someone else\n"
+                "`!fart_gift` / `!fartgift` `@user` - Roll your daily fart for someone else (once per player per season)\n"
                 "`!fartprediction` / `!fart_prediction` - Predict fart type for 2x (or half!)"
             ),
             inline=False,
@@ -749,7 +786,7 @@ class FunCog(commands.Cog):
 
     @commands.command(name="fart_gift", aliases=["fartgift", "gift_fart", "giftfart"])
     async def fart_gift(self, ctx, target: discord.Member = None):
-        """Roll your daily fart and gift the points to another user. Usage: !fart_gift @user"""
+        """Roll your daily fart and gift the points to another user (once per recipient per season). Usage: !fart_gift @user"""
         try:
             if ctx.channel.id != self.fart_channel_id:
                 await ctx.send(
@@ -759,7 +796,8 @@ class FunCog(commands.Cog):
 
             if target is None:
                 await ctx.send(
-                    f"{ctx.author.mention}, usage: `!fart_gift @user` — roll your daily fart for someone else!"
+                    f"{ctx.author.mention}, usage: `!fart_gift @user` — roll your daily fart for someone else "
+                    f"(once per player per season)!"
                 )
                 return
 
@@ -772,6 +810,13 @@ class FunCog(commands.Cog):
             if target.bot:
                 await ctx.send(
                     f"{ctx.author.mention}, bots don't appreciate the gift of flatulence."
+                )
+                return
+
+            if self.has_gifted_to_this_season(ctx.author.id, target.id):
+                await ctx.send(
+                    f"{ctx.author.mention}, you've already gifted a fart to <@{target.id}> this season! "
+                    f"One gifted roll per player — try `!fart_donation` if you still want to share points."
                 )
                 return
 
@@ -882,13 +927,14 @@ class FunCog(commands.Cog):
                 logger.error(f"OpenAI API error: {e}")
                 fart_message_add = "... *cough cough*"
 
-            # Consume gifter's daily; award points to recipient
+            # Consume gifter's daily; award points to recipient; lock recipient for season
             self.mark_daily_action_used(
                 ctx.author.id, ctx.author.global_name, now
             )
             self.add_score_points(
                 target.id, target.global_name or target.display_name, points_earned
             )
+            self.mark_gifted_this_season(ctx.author.id, target.id)
 
             mushroom_boost_msg = (
                 "**MUSHROOM BOOST ACTIVATED!** \n" if lucky_charm_active else ""
@@ -896,7 +942,8 @@ class FunCog(commands.Cog):
             await ctx.send(
                 f"{mushroom_boost_msg}🎁 **FART GIFT!** {ctx.author.mention} rolled a {fart_message} "
                 f"{fart_message_add}\n"
-                f"<@{target.id}> received **{points_earned}** points — how nice!"
+                f"<@{target.id}> received **{points_earned}** points — how nice!\n"
+                f"(Once per player per season)"
             )
 
             try:

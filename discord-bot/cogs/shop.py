@@ -561,6 +561,77 @@ class ShopCog(commands.Cog):
             """)
             await self.bot.db.commit()
 
+    def _ensure_evil_star_table(self, cur):
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS evil_star_usage (
+                user_id INTEGER PRIMARY KEY,
+                used_at TEXT NOT NULL
+            )
+        """)
+
+    def _ensure_donation_usage_table(self, cur):
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS fart_donation_usage (
+                donor_id INTEGER NOT NULL,
+                recipient_id INTEGER NOT NULL,
+                donated_at TEXT NOT NULL,
+                PRIMARY KEY (donor_id, recipient_id)
+            )
+        """)
+
+    async def has_used_evil_star(self, user_id: int) -> bool:
+        """True if the user sealed the Evil Star pact this season."""
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            self._ensure_evil_star_table(cur)
+            cur.execute(
+                "SELECT 1 FROM evil_star_usage WHERE user_id = ?",
+                (user_id,),
+            )
+            return cur.fetchone() is not None
+        finally:
+            conn.close()
+
+    async def deny_if_evil_star_corrupted(self, ctx) -> bool:
+        """
+        Block mortal star mechanics after Evil Star use.
+        Returns True if the user was blocked (message already sent).
+        """
+        if not await self.has_used_evil_star(ctx.author.id):
+            return False
+        await ctx.send(
+            f"😈 {ctx.author.mention}, those who have walked the cursed path cannot return to mortal stars...\n"
+            f"The Evil Star has corrupted your soul. All other star powers are forbidden until the season resets. 💀"
+        )
+        return True
+
+    async def has_donated_to_this_season(self, donor_id: int, recipient_id: int) -> bool:
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            self._ensure_donation_usage_table(cur)
+            cur.execute(
+                "SELECT 1 FROM fart_donation_usage WHERE donor_id = ? AND recipient_id = ?",
+                (donor_id, recipient_id),
+            )
+            return cur.fetchone() is not None
+        finally:
+            conn.close()
+
+    async def mark_donated_this_season(self, donor_id: int, recipient_id: int):
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            self._ensure_donation_usage_table(cur)
+            cur.execute(
+                "INSERT OR REPLACE INTO fart_donation_usage (donor_id, recipient_id, donated_at) VALUES (?, ?, ?)",
+                (donor_id, recipient_id, datetime.datetime.now().isoformat()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     async def check_usage_cooldown(self, user_id: int, command_name: str, period: str):
         """
         Check daily/weekly command_usage cooldown.
@@ -970,6 +1041,9 @@ class ShopCog(commands.Cog):
         """Protect yourself from all items for 72 hours. Costs 10% of points. Once per week."""
         logger.debug(f"Star command used by {ctx.author.id}")
         try:
+            if await self.deny_if_evil_star_corrupted(ctx):
+                return
+
             allowed, cooldown_msg = await self.check_usage_cooldown(
                 ctx.author.id, "star", "weekly"
             )
@@ -1515,7 +1589,7 @@ class ShopCog(commands.Cog):
     @commands.command(name="fart_donation", aliases=["fartdonation", "donation_fart", "donationfart", "fart_donate", "fartdonate"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_donation(self, ctx, target: discord.Member = None, amount: int = None):
-        """Donate points to another player (maximum 100). Usage: !fart_donation @user <amount>"""
+        """Donate points to another player (max 100; once per recipient per season). Usage: !fart_donation @user <amount>"""
         if ctx.channel.id != self.fart_channel_id:
             await ctx.send(
                 f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
@@ -1543,6 +1617,12 @@ class ShopCog(commands.Cog):
         if target.bot:
             return await ctx.send("You can't donate to a bot!")
 
+        if await self.has_donated_to_this_season(ctx.author.id, target.id):
+            return await ctx.send(
+                f"{ctx.author.mention}, you've already donated to <@{target.id}> this season! "
+                f"One gift of points per player — try `!fart_gift` if you still want to share the gas."
+            )
+
         user_score = await self.get_user_score(ctx.author.id)
         if user_score < amount:
             return await ctx.send(
@@ -1561,10 +1641,11 @@ class ShopCog(commands.Cog):
             conn.close()
 
         await self.add_points(target.id, amount)
+        await self.mark_donated_this_season(ctx.author.id, target.id)
 
         await ctx.send(
             f"<@{ctx.author.id}> donated {amount} points to <@{target.id}>! "
-            f"(Max donation: 100 — feeling bigger-hearted? Try `!fart_gift`!)"
+            f"(Max 100 • once per player per season — feeling bigger-hearted? Try `!fart_gift`!)"
         )
 
     @commands.command(name="fart_court", aliases=["fartcourt", "court_fart", "courtfart"])
@@ -1977,7 +2058,7 @@ class ShopCog(commands.Cog):
             ),
             (
                 "Star (!star)",
-                "Protects you from all items for 72 hours (10% of points, once/week)\n*Invincible... for now.*",
+                "Protects you from all items for 72 hours (10% of points, once/week)\n*Forbidden if you've used Evil Star this season.*",
                 "10%",
             ),
             (
@@ -1992,12 +2073,12 @@ class ShopCog(commands.Cog):
             ),
             (
                 "Fart Star (!fart_star / !fartstar)",
-                "Removes star protection from a random protected user (10% of points, once/week)\n*No star lasts forever.*",
+                "Removes star protection from a random protected user (10% of points, once/week)\n*Forbidden if you've used Evil Star this season.*",
                 "10% of pts",
             ),
             (
                 "Evil Star (!evil_star / !evilstar)",
-                "😈 Doubles your points... but ONLY if you have exactly 666 points! (FREE)\n*The beast rewards the faithful.*",
+                "😈 Doubles your points... but ONLY if you have exactly 666 points! (FREE, once/season)\n*Sealing the pact locks you out of all other stars until reset.*",
                 "FREE",
             ),
             (
@@ -2052,7 +2133,7 @@ class ShopCog(commands.Cog):
             ),
             (
                 "Fart Donation (!fart_donation / !fartdonation @user <amount>)",
-                "Donate your points to another player. **Maximum 100 points.**\n*You can only be so generous — try !fart_gift for more.*",
+                "Donate your points to another player. **Maximum 100 points. Once per player per season.**\n*You can only be so generous — try !fart_gift for more.*",
                 "Max 100",
             ),
             (
@@ -2186,35 +2267,18 @@ class ShopCog(commands.Cog):
                 )
                 return
 
+            if await self.deny_if_evil_star_corrupted(ctx):
+                return
+
             allowed, cooldown_msg = await self.check_usage_cooldown(
                 ctx.author.id, "fart_star", "weekly"
             )
             if not allowed:
                 return await ctx.send(cooldown_msg)
 
-            # Check if user has used evil_star
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
             try:
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS evil_star_usage (
-                        user_id INTEGER PRIMARY KEY,
-                        used_at TIMESTAMP
-                    )
-                """)
-                cur.execute(
-                    "SELECT used_at FROM evil_star_usage WHERE user_id = ?",
-                    (ctx.author.id,),
-                )
-                has_used_evil_star = cur.fetchone()
-
-                if has_used_evil_star:
-                    await ctx.send(
-                        f"😈 {ctx.author.mention}, those who have walked the cursed path cannot return to mortal stars...\n"
-                        f"The Evil Star has corrupted your soul. This power is now forbidden to you. 💀"
-                    )
-                    return
-
                 # Calculate cost: 10% of user's current points (minimum 1)
                 cur.execute(
                     "SELECT score FROM fart_scores WHERE user_id = ?",
@@ -2292,7 +2356,7 @@ class ShopCog(commands.Cog):
         """
         Double your points... but only if you have exactly 666 points.
         The dark star only reveals itself to those who walk the cursed path.
-        Can only be used ONCE per user, ever.
+        Once per season — also locks you out of all other star commands until reset.
         """
         logger.debug(f"Evil Star command used by {ctx.author.id}")
         try:
@@ -2307,15 +2371,9 @@ class ShopCog(commands.Cog):
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
             try:
-                # Create table to track evil_star usage if it doesn't exist
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS evil_star_usage (
-                        user_id INTEGER PRIMARY KEY,
-                        used_at TEXT NOT NULL
-                    )
-                """)
+                self._ensure_evil_star_table(cur)
 
-                # Check if user has already used evil_star
+                # Check if user has already used evil_star this season
                 cur.execute(
                     "SELECT used_at FROM evil_star_usage WHERE user_id = ?",
                     (ctx.author.id,),
@@ -2325,8 +2383,8 @@ class ShopCog(commands.Cog):
                 if already_used:
                     await ctx.send(
                         f"😈 The Evil Star has already granted you its power, {ctx.author.mention}...\n"
-                        f"The dark pact can only be sealed **once**.\n"
-                        f"The beast does not offer second chances... 💀"
+                        f"The dark pact can only be sealed **once per season**.\n"
+                        f"The beast does not offer second chances until the season resets... 💀"
                     )
                     return
 
@@ -2358,9 +2416,7 @@ class ShopCog(commands.Cog):
                     (new_points, ctx.author.id),
                 )
 
-                # Mark that user has used evil_star
-                import datetime
-
+                # Mark that user has used evil_star this season
                 cur.execute(
                     "INSERT INTO evil_star_usage (user_id, used_at) VALUES (?, ?)",
                     (ctx.author.id, datetime.datetime.now().isoformat()),
@@ -2374,7 +2430,7 @@ class ShopCog(commands.Cog):
                     f"The Evil Star grants its sinister blessing!\n"
                     f"**666 ➜ 1332 points!**\n"
                     f"May the darkness guide your farts... 🔥💀\n\n"
-                    f"*This power can never be invoked again...*"
+                    f"*All other stars (`!star`, `!fart_star`, …) are forbidden until the season resets.*"
                 )
 
                 logger.info(

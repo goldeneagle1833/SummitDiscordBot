@@ -25,14 +25,16 @@ _SHOP_EFFECTS = {
     "green_shell": {"action": "damage", "target": "random_ahead", "formula": "2d20/2"},
     "banana": {"action": "damage", "target": "random_behind", "formula": "2d20/2"},
     "big_banana": {"action": "damage", "target": "random_behind", "formula": "4d10"},
-    "star": {"action": "protect", "duration": "72h", "cost_type": "percent", "cost_percent": 10},
+    "star": {"action": "protect", "duration": "72h", "cost_type": "percent", "cost_percent": 10,
+             "blocked_after": "evil_star"},
     "mushroom": {"action": "buff", "effect": "double_roll", "description": "Next fart rolls twice, take higher"},
     "bobomb": {"action": "damage", "target": "top5", "formula": "3d20/2"},
     "fart_star": {"action": "remove_buff", "target": "random_protected", "removes": "star",
-                  "cost_type": "percent", "cost_percent": 10},
+                  "cost_type": "percent", "cost_percent": 10, "blocked_after": "evil_star"},
     "evil_star": {"action": "conditional", "condition": "score_equals", "value": 666,
                   "on_true": {"action": "multiply_score", "multiplier": 2},
-                  "cost_type": "free"},
+                  "cost_type": "free", "once_per_season": True,
+                  "locks_star_commands": True},
     "thunder_fart": {"action": "damage", "target": "all", "amount": 50},
     "gas_shield": {"action": "shield", "reflect_percent": 50},
     "stink_bomb": {"action": "damage", "target": "random_any", "formula": "3d20/2"},
@@ -47,7 +49,7 @@ _SHOP_EFFECTS = {
     "gas_gamble": {"action": "gamble", "win_chance": 40, "win_multiplier": 2, "lose_multiplier": 0},
     "fart_leech": {"action": "steal", "target": "random", "formula": "2d20/2"},
     "fart_donation": {"action": "donate", "target": "specified", "cost_type": "custom",
-                      "max_amount": 100},
+                      "max_amount": 100, "once_per_recipient_per_season": True},
     "fart_court": {"action": "court", "target": "specified", "win_chance": 50, "cost_type": "custom"},
 }
 
@@ -62,11 +64,11 @@ class FartRepository:
         ("green_shell", "Green Shell", "Hits a random player in front of you with 2d20/2 damage", 5, 0, "none"),
         ("banana", "Banana", "Hits a random player behind you with 2d20/2 damage", 5, 0, "none"),
         ("big_banana", "Big Banana", "Hits a random player behind you with 4d10 damage", 20, 0, "daily"),
-        ("star", "Star", "Protects you from all items for 72 hours (costs 10% of your points)", 0, 0, "weekly"),
+        ("star", "Star", "Protects you from all items for 72 hours (costs 10% of your points). Blocked after Evil Star.", 0, 0, "weekly"),
         ("mushroom", "Mushroom", "Next fart rolls twice, take higher!", 5, 0, "weekly"),
         ("bobomb", "Bob-omb", "Hits the top 5 players with 3d20/2 damage", 25, 0, "none"),
-        ("fart_star", "Fart Star", "Removes star protection from a random protected user", 0, 0, "weekly"),
-        ("evil_star", "Evil Star", "Doubles your points if you have exactly 666 points!", 0, 0, "none"),
+        ("fart_star", "Fart Star", "Removes star protection from a random protected user. Blocked after Evil Star.", 0, 0, "weekly"),
+        ("evil_star", "Evil Star", "Doubles your points if you have exactly 666. Once/season; locks out other stars.", 0, 0, "once_per_season"),
         ("thunder_fart", "Thunder Fart", "Hits ALL players for 50 damage each", 10, 0, "weekly"),
         ("gas_shield", "Gas Shield", "Reflects 50% damage back at the next attacker", 8, 0, "none"),
         ("stink_bomb", "Stink Bomb", "Hits a random player (anyone!) for 3d20/2 damage", 12, 0, "none"),
@@ -77,7 +79,7 @@ class FartRepository:
         ("stink_cloud", "Stink Cloud", "Blocks a random player from shop for 24 hours (5% of points)", 0, 0, "daily"),
         ("gas_gamble", "Gas Gamble", "40% chance to double your bet, 60% to lose it all", 0, 0, "none"),
         ("fart_leech", "Fart Leech", "Steal 2d20/2 points from a random player", 5, 0, "daily"),
-        ("fart_donation", "Fart Donation", "Donate points to another player (maximum 100)", 0, 0, "none"),
+        ("fart_donation", "Fart Donation", "Donate points to another player (max 100, once per player per season)", 0, 0, "once_per_season"),
         ("fart_court", "Fart Court", "50% chance they pay you the amount, 50% chance you pay them", 0, 0, "weekly"),
     ]
 
@@ -386,9 +388,23 @@ class FartRepository:
     # --- Game management ---
 
     def reset_game(self) -> dict:
-        """Reset the fart game - clear all scores, history, cooldowns, and leader-once tracking."""
+        """Reset the fart game / season — clear scores, history, cooldowns, and season locks."""
         conn = self._get_connection()
-        tables = ["fart_scores", "fart_history", "command_usage", "lucky_charms", "fart_leader_only_once"]
+        tables = [
+            "fart_scores",
+            "fart_history",
+            "command_usage",
+            "lucky_charms",
+            "lucky_charm_usage",
+            "fart_leader_only_once",
+            # Season-scoped locks / status
+            "evil_star_usage",
+            "fart_donation_usage",
+            "protection_status",
+            "shop_blocks",
+            "gas_shields",
+            "fart_traps",
+        ]
         cleared = {}
         for table in tables:
             try:

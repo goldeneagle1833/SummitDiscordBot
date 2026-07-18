@@ -285,7 +285,7 @@ export default function Avatars() {
             {seasonStats.map((s, i) => (
               <span key={s.id}>
                 {i > 0 && " | "}
-                {s.name}: {s.total_games.toLocaleString()} games
+                {s.name}{s.is_active ? " (current)" : ""}: {s.total_games.toLocaleString()} games
               </span>
             ))}
           </p>

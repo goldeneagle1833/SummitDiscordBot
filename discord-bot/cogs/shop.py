@@ -8,7 +8,13 @@ from openai import OpenAI
 
 import config
 from utils.text import find_best_command_match
-from cogs.fun import parse_to_est_date, get_est_date, safe_parse_datetime
+from cogs.fun import (
+    parse_to_est_date,
+    get_est_date,
+    get_est_now,
+    get_est_midnight,
+    safe_parse_datetime,
+)
 
 logger = logging.getLogger("discord_bot")
 
@@ -23,33 +29,32 @@ class ShopCog(commands.Cog):
         self.leader_role_id = config.LEADER_ROLE_ID
         self.giga_target_role_id = config.DM_DISABLED_ROLE_ID  # Role for double damage target
         self.item_costs = {
-            "blue": 7,  # Blue Shell (was 14)
-            "red": 5,  # Red Shell (was 10)
-            "green": 5,  # Green Shell (was 10)
-            "banana": 5,  # Banana (was 10)
-            "star": 50,  # Star
-            "mushroom": 5,  # Mushroom (was 10)
-            "bobomb": 25,  # Bob-omb (was 50)
-            "bluestar": 38,  # Blue Star (was 75)
-            "fart_star": 200,  # Star Killer - removes star from random protected user
-            "thunder_fart": 20,  # Thunder Fart - hit everyone for small damage
+            "blue": 20,  # Blue Shell - 6d20/2, once/day (Gothic S6)
+            "red": 10,  # Red Shell - 3d20/2
+            "green": 5,  # Green Shell
+            "banana": 5,  # Banana
+            "star": 50,  # Star (actual cost is 10% of points)
+            "mushroom": 5,  # Mushroom
+            "bobomb": 25,  # Bob-omb
+            "fart_star": 200,  # Star Killer (actual cost is 10% of points)
+            "thunder_fart": 10,  # Thunder Fart - 50 damage to all, once/week
             "gas_shield": 8,  # Gas Shield - reflect 50% damage back at next attacker
             "stink_bomb": 12,  # Stink Bomb - hit random player (anyone)
-            "fart_rocket": 100,  # Fart Rocket - swap scores with player ahead
+            "fart_rocket": 100,  # Fart Rocket - swap scores, once/week
             "fart_trap": 20,  # Fart Trap - target's next attack hits themselves
-            "stink_cloud": 5,  # Stink Cloud - block target from shop for 30 min
-            "gas_gamble": 3,  # Gas Gamble - 50/50 double or lose
-            "fart_leech": 10,  # Fart Leech - steal points from random player
-            "fart_twister": 50,  # Fart Twister - launch player into another, uses daily action
+            "stink_cloud": 5,  # Stink Cloud (actual cost is 5% of points)
+            "gas_gamble": 3,  # Gas Gamble - custom bet amount
+            "fart_leech": 5,  # Fart Leech - once/day
+            "fart_twister": 50,  # Fart Twister - uses daily fart, once/week
             "fart_lance": 15,  # Fart Lance - diminishing damage to 3 players ahead
-            "big_banana": 10,  # Big Banana - hit player behind for 4d10 damage (weekly)
+            "big_banana": 20,  # Big Banana - 4d10, once/day
         }
         logger.info("ShopCog initialized")
         self.setup_purchase_database()
 
     ATTACK_COMMANDS = {
         'blue_shell', 'red_shell', 'green_shell', 'banana', 'bobomb',
-        'blue_star', 'stink_bomb', 'thunder_fart', 'fart_rocket',
+        'stink_bomb', 'thunder_fart', 'fart_rocket',
         'fart_leech', 'stink_cloud', 'fart_star', 'fart_twister',
         'fart_lance', 'big_banana',
     }
@@ -184,11 +189,6 @@ class ShopCog(commands.Cog):
             "giga_fart_cannon": "!giga_fart_cannon",
             "cannon": "!giga_fart_cannon",
             "gigacannon": "!giga_fart_cannon",
-            # Blue Star variations
-            "bluestar": "!blue_star",
-            "blue_star": "!blue_star",
-            "bluestr": "!blue_star",
-            "blstar": "!blue_star",
             # Fart Star variations
             "fartstar": "!fart_star",
             "fart_star": "!fart_star",
@@ -269,12 +269,10 @@ class ShopCog(commands.Cog):
             "big_banana": "!big_banana",
             "bignana": "!big_banana",
             "bigban": "!big_banana",
-            # Fart Donation variations
-            "fartdonation": "!fart_donation",
-            "fart_donation": "!fart_donation",
-            "donation": "!fart_donation",
-            "donate": "!fart_donation",
-            "give": "!fart_donation",
+            # Fart Court variations
+            "fartcourt": "!fart_court",
+            "fart_court": "!fart_court",
+            "court": "!fart_court",
         }
 
         actual_commands = {
@@ -291,8 +289,7 @@ class ShopCog(commands.Cog):
             "fart_shop": "!fart_shop",
             "fartshop": "!fart_shop",
             "giga_fart_cannon": "!giga_fart_cannon",
-            "blue_star": "!blue_star",
-            "bluestar": "!blue_star",
+            "gigafartcannon": "!giga_fart_cannon",
             "fart_star": "!fart_star",
             "fartstar": "!fart_star",
             "evil_star": "!evil_star",
@@ -319,8 +316,8 @@ class ShopCog(commands.Cog):
             "fartlance": "!fart_lance",
             "big_banana": "!big_banana",
             "bigbanana": "!big_banana",
-            "fart_donation": "!fart_donation",
-            "fartdonation": "!fart_donation",
+            "fart_court": "!fart_court",
+            "fartcourt": "!fart_court",
         }
 
         suggestion = find_best_command_match(failed_command, command_suggestions, actual_commands)
@@ -527,6 +524,111 @@ class ShopCog(commands.Cog):
             """)
             await self.bot.db.commit()
 
+    async def check_usage_cooldown(self, user_id: int, command_name: str, period: str):
+        """
+        Check daily/weekly command_usage cooldown.
+        Returns (allowed: bool, message: str | None).
+        """
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS command_usage
+                (user_id INTEGER,
+                 command_name TEXT,
+                 last_used TEXT,
+                 PRIMARY KEY (user_id, command_name))
+            """)
+            cur.execute(
+                "SELECT last_used FROM command_usage WHERE user_id=? AND command_name=?",
+                (user_id, command_name),
+            )
+            row = cur.fetchone()
+            if not row:
+                return True, None
+
+            parsed = safe_parse_datetime(row[0])
+            if not parsed:
+                return True, None
+
+            if period == "daily":
+                last_date = parse_to_est_date(row[0])
+                if last_date == get_est_date():
+                    est_now = get_est_now()
+                    midnight = get_est_midnight()
+                    time_until_next = midnight - est_now
+                    hours = int(time_until_next.total_seconds() // 3600)
+                    minutes = int((time_until_next.total_seconds() % 3600) // 60)
+                    pretty = command_name.replace("_", " ").title()
+                    return False, (
+                        f"You can only use {pretty} once per day! "
+                        f"Try again in **{hours}h {minutes}m** (resets at midnight EST)."
+                    )
+                return True, None
+
+            # weekly
+            last_used_date = parsed.date()
+            next_available = last_used_date + datetime.timedelta(weeks=1)
+            today = datetime.datetime.now().date()
+            if next_available > today:
+                days_remaining = (next_available - today).days
+                if days_remaining < 1:
+                    days_remaining = 1
+                pretty = command_name.replace("_", " ").title()
+                return False, (
+                    f"You can only use {pretty} once per week! "
+                    f"Try again in {days_remaining} day{'s' if days_remaining != 1 else ''}."
+                )
+            return True, None
+        finally:
+            conn.close()
+
+    async def mark_usage_cooldown(self, user_id: int, command_name: str):
+        """Record successful use for daily/weekly cooldowns."""
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS command_usage
+                (user_id INTEGER,
+                 command_name TEXT,
+                 last_used TEXT,
+                 PRIMARY KEY (user_id, command_name))
+            """)
+            cur.execute(
+                "INSERT OR REPLACE INTO command_usage (user_id, command_name, last_used) VALUES (?, ?, ?)",
+                (user_id, command_name, datetime.datetime.now().isoformat()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    async def get_percent_cost(self, user_id: int, percent: float) -> tuple[int, int]:
+        """Return (cost, current_score) for a percent-of-score item. Cost is at least 1."""
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT score FROM fart_scores WHERE user_id = ?", (user_id,))
+            result = cur.fetchone()
+            current_points = result[0] if result else 0
+            cost = max(1, int(current_points * percent))
+            return cost, current_points
+        finally:
+            conn.close()
+
+    async def deduct_amount(self, user_id: int, amount: int):
+        """Deduct an explicit point amount from a user."""
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE fart_scores SET score = score - ? WHERE user_id = ?",
+                (amount, user_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     # Update the check_points method
     async def check_points(self, user_id: int, item_type: str = "red") -> bool:
         cost = self.item_costs.get(
@@ -711,11 +813,18 @@ class ShopCog(commands.Cog):
 
         return players[target_index] if 0 <= target_index < len(players) else None
 
-    @commands.command(name="blue_shell")
+    @commands.command(name="blue_shell", aliases=["blueshell"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def blue_shell(self, ctx):
+        """Hit the leader with 6d20/2 damage. Costs 20 points. Once per day."""
         logger.debug(f"Blue shell command used by {ctx.author.id}")
         try:
+            allowed, cooldown_msg = await self.check_usage_cooldown(
+                ctx.author.id, "blue_shell", "daily"
+            )
+            if not allowed:
+                return await ctx.send(cooldown_msg)
+
             if not await self.check_points(ctx.author.id, "blue"):
                 return await ctx.send(
                     f"You don't have enough points! Blue Shell costs {self.item_costs['blue']} points!"
@@ -733,10 +842,11 @@ class ShopCog(commands.Cog):
                 logger.debug(f"Leader {leader_id} is protected")
                 return await ctx.send(f"<@{leader_id}> is protected by a Star!")
 
-            damage = self.roll_damage(3)
+            damage = self.roll_damage(6)
             logger.debug(f"Blue shell damage rolled: {damage}")
 
             await self.deduct_points(ctx.author.id, "blue")
+            await self.mark_usage_cooldown(ctx.author.id, "blue_shell")
             actual_damage = await self.deduct_damage(leader_id, damage)
             await ctx.send(
                 f"<@{ctx.author.id}> launched a Blue Shell at leader <@{leader_id}> for {actual_damage} damage!"
@@ -747,10 +857,10 @@ class ShopCog(commands.Cog):
             await ctx.send("An error occurred while processing the command.")
             raise
 
-    @commands.command(name="red_shell")
+    @commands.command(name="red_shell", aliases=["redshell"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def red_shell(self, ctx):
-        """Hit the player directly in front"""
+        """Hit the player directly in front with 3d20/2 damage. Costs 10 points."""
         if not await self.check_points(ctx.author.id, "red"):
             return await ctx.send(
                 f"You don't have enough points! Red Shell costs {self.item_costs['red']} points!"
@@ -763,7 +873,7 @@ class ShopCog(commands.Cog):
         if await self.is_protected(target[0]):
             return await ctx.send(f"<@{target[0]}> is protected by a Star!")
 
-        damage = self.roll_damage(2)
+        damage = self.roll_damage(3)
         await self.deduct_points(ctx.author.id, "red")
         actual_damage = await self.deduct_damage(target[0], damage)
         await ctx.send(
@@ -771,9 +881,9 @@ class ShopCog(commands.Cog):
         )
         await self.check_gas_shield(ctx, target[0], ctx.author.id, actual_damage)
 
-    @commands.command(name="green_shell")
+    @commands.command(name="green_shell", aliases=["greenshell"])
     async def green_shell(self, ctx):
-        """Hit a random player in fronaaat"""
+        """Hit a random player in front"""
         if not await self.check_points(ctx.author.id, "green"):
             return await ctx.send(
                 f"You don't have enough points! Green Shell costs {self.item_costs['green']} points!"
@@ -820,8 +930,15 @@ class ShopCog(commands.Cog):
     @commands.command(name="star")
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def star(self, ctx):
+        """Protect yourself from all items for 72 hours. Costs 10% of points. Once per week."""
         logger.debug(f"Star command used by {ctx.author.id}")
         try:
+            allowed, cooldown_msg = await self.check_usage_cooldown(
+                ctx.author.id, "star", "weekly"
+            )
+            if not allowed:
+                return await ctx.send(cooldown_msg)
+
             # Get user's current points
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
@@ -844,7 +961,7 @@ class ShopCog(commands.Cog):
                         f"You don't have enough points! Star protection costs {star_cost} points (10% of your total)!"
                     )
 
-                protection_end = datetime.datetime.now() + datetime.timedelta(hours=24)
+                protection_end = datetime.datetime.now() + datetime.timedelta(hours=72)
                 logger.debug(f"Setting protection until: {protection_end}")
 
                 cur.execute("""
@@ -868,8 +985,9 @@ class ShopCog(commands.Cog):
                     f"Protection status updated for user {ctx.author.id}, deducted {star_cost} points"
                 )
 
+                await self.mark_usage_cooldown(ctx.author.id, "star")
                 await ctx.send(
-                    f"<@{ctx.author.id}> is now protected by a Star for 24 hours! (Cost: {star_cost} points)"
+                    f"<@{ctx.author.id}> is now protected by a Star for 72 hours! (Cost: {star_cost} points)"
                 )
             finally:
                 conn.close()
@@ -1041,10 +1159,16 @@ class ShopCog(commands.Cog):
         for player_id, actual_damage in hit_player_ids:
             await self.check_gas_shield(ctx, player_id, ctx.author.id, actual_damage)
 
-    @commands.command(name="thunder_fart")
+    @commands.command(name="thunder_fart", aliases=["thunderfart"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def thunder_fart(self, ctx):
-        """Hit ALL players for small damage"""
+        """Hit ALL players for 50 damage each. Costs 10 points. Once per week."""
+        allowed, cooldown_msg = await self.check_usage_cooldown(
+            ctx.author.id, "thunder_fart", "weekly"
+        )
+        if not allowed:
+            return await ctx.send(cooldown_msg)
+
         if not await self.check_points(ctx.author.id, "thunder_fart"):
             return await ctx.send(
                 f"You don't have enough points! Thunder Fart costs {self.item_costs['thunder_fart']} points!"
@@ -1055,8 +1179,9 @@ class ShopCog(commands.Cog):
             return await ctx.send("No players found!")
 
         await self.deduct_points(ctx.author.id, "thunder_fart")
+        await self.mark_usage_cooldown(ctx.author.id, "thunder_fart")
 
-        damage = random.randint(1, 5)
+        damage = 50
         hit_players = []
         hit_player_ids = []
         protected_players = []
@@ -1084,7 +1209,7 @@ class ShopCog(commands.Cog):
         for player_id, actual_damage in hit_player_ids:
             await self.check_gas_shield(ctx, player_id, ctx.author.id, actual_damage)
 
-    @commands.command(name="gas_shield")
+    @commands.command(name="gas_shield", aliases=["gasshield"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def gas_shield(self, ctx):
         """Activate a shield that reflects 50% damage back at the next attacker"""
@@ -1121,7 +1246,7 @@ class ShopCog(commands.Cog):
             f"<@{ctx.author.id}> activated a Gas Shield! The next attack against them will reflect 50% damage back!"
         )
 
-    @commands.command(name="stink_bomb")
+    @commands.command(name="stink_bomb", aliases=["stinkbomb"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def stink_bomb(self, ctx):
         """Hit a random player (anyone) for heavy damage"""
@@ -1149,10 +1274,16 @@ class ShopCog(commands.Cog):
         )
         await self.check_gas_shield(ctx, target_id, ctx.author.id, actual_damage)
 
-    @commands.command(name="fart_rocket")
+    @commands.command(name="fart_rocket", aliases=["fartrocket"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_rocket(self, ctx):
-        """Swap scores with a random player"""
+        """Swap scores with a random player. Costs 100 points. Once per week."""
+        allowed, cooldown_msg = await self.check_usage_cooldown(
+            ctx.author.id, "fart_rocket", "weekly"
+        )
+        if not allowed:
+            return await ctx.send(cooldown_msg)
+
         if not await self.check_points(ctx.author.id, "fart_rocket"):
             return await ctx.send(
                 f"You don't have enough points! Fart Rocket costs {self.item_costs['fart_rocket']} points!"
@@ -1190,13 +1321,14 @@ class ShopCog(commands.Cog):
         finally:
             conn.close()
 
+        await self.mark_usage_cooldown(ctx.author.id, "fart_rocket")
         await ctx.send(
             f"<@{ctx.author.id}> launched a Fart Rocket and swapped scores with <@{target[0]}>!\n"
             f"<@{ctx.author.id}>: {my_score} -> {target_score} -> {new_user_score} (-{cost} cost)\n"
             f"<@{target[0]}>: {target_score} -> {my_score}"
         )
 
-    @commands.command(name="fart_trap")
+    @commands.command(name="fart_trap", aliases=["farttrap"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_trap(self, ctx):
         """Set a trap on a random player - their next attack backfires on them!"""
@@ -1246,13 +1378,20 @@ class ShopCog(commands.Cog):
             f"Someone's next attack will backfire on them..."
         )
 
-    @commands.command(name="stink_cloud")
+    @commands.command(name="stink_cloud", aliases=["stinkcloud"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def stink_cloud(self, ctx):
-        """Blind a random player, preventing them from using shop items for 30 minutes"""
-        if not await self.check_points(ctx.author.id, "stink_cloud"):
+        """Blind a random player, blocking shop items for 24 hours. Costs 5% of points. Once per day."""
+        allowed, cooldown_msg = await self.check_usage_cooldown(
+            ctx.author.id, "stink_cloud", "daily"
+        )
+        if not allowed:
+            return await ctx.send(cooldown_msg)
+
+        cost, current_points = await self.get_percent_cost(ctx.author.id, 0.05)
+        if current_points < cost:
             return await ctx.send(
-                f"You don't have enough points! Stink Cloud costs {self.item_costs['stink_cloud']} points!"
+                f"You don't have enough points! Stink Cloud costs {cost} points (5% of your total)!"
             )
 
         players = await self.get_sorted_players()
@@ -1265,9 +1404,10 @@ class ShopCog(commands.Cog):
         if await self.is_protected(target_id):
             return await ctx.send(f"<@{target_id}> is protected by a Star!")
 
-        await self.deduct_points(ctx.author.id, "stink_cloud")
+        await self.deduct_amount(ctx.author.id, cost)
+        await self.mark_usage_cooldown(ctx.author.id, "stink_cloud")
 
-        block_until = datetime.datetime.now() + datetime.timedelta(minutes=30)
+        block_until = datetime.datetime.now() + datetime.timedelta(hours=24)
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
         try:
@@ -1286,11 +1426,11 @@ class ShopCog(commands.Cog):
             conn.close()
 
         await ctx.send(
-            f"<@{ctx.author.id}> released a Stink Cloud on <@{target_id}>!\n"
-            f"<@{target_id}> is blinded and can't use shop items for 30 minutes!"
+            f"<@{ctx.author.id}> released a Stink Cloud on <@{target_id}>! (-{cost} points)\n"
+            f"<@{target_id}> is blinded and can't use shop items for 24 hours!"
         )
 
-    @commands.command(name="gas_gamble")
+    @commands.command(name="gas_gamble", aliases=["gasgamble"])
     async def gas_gamble(self, ctx, amount: int = None):
         """Gamble any amount of points! 40% chance to double, 60% chance to lose. Usage: !gas_gamble <amount>"""
         if ctx.channel.id != self.fart_channel_id:
@@ -1335,55 +1475,7 @@ class ShopCog(commands.Cog):
                 f"<@{ctx.author.id}> gambled {amount} points and **LOST**! -{amount} points down the drain!"
             )
 
-    @commands.command(name="fart_donation")
-    @commands.cooldown(1, 45, commands.BucketType.user)
-    async def fart_donation(self, ctx, target: discord.Member = None, amount: int = None):
-        """Donate points to another player! Usage: !fart_donation @user <amount>"""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-            )
-            return
-
-        if target is None or amount is None:
-            return await ctx.send(
-                f"{ctx.author.mention}, usage: `!fart_donation @user <amount>`"
-            )
-
-        if amount <= 0:
-            return await ctx.send("You must donate at least 1 point!")
-
-        if target.id == ctx.author.id:
-            return await ctx.send("You can't donate to yourself!")
-
-        if target.bot:
-            return await ctx.send("You can't donate to a bot!")
-
-        user_score = await self.get_user_score(ctx.author.id)
-        if user_score < amount:
-            return await ctx.send(
-                f"You don't have enough points! You have {user_score} but tried to donate {amount}."
-            )
-
-        # Deduct from donor, add to recipient
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                "UPDATE fart_scores SET score = score - ? WHERE user_id = ?",
-                (amount, ctx.author.id),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-        await self.add_points(target.id, amount)
-
-        await ctx.send(
-            f"<@{ctx.author.id}> donated {amount} points to <@{target.id}>! How generous!"
-        )
-
-    @commands.command(name="fart_court")
+    @commands.command(name="fart_court", aliases=["fartcourt"])
     async def fart_court(self, ctx, target: discord.Member = None, amount: int = None):
         """Take another specific player to court! 50% chance they pay you the specified amount, 50% chance you pay them. Once per week. Usage: !fart_court @user <amount>"""
         if ctx.channel.id != self.fart_channel_id:
@@ -1507,15 +1599,21 @@ class ShopCog(commands.Cog):
 
         await ctx.send(result_msg)
 
-    @commands.command(name="fart_leech")
+    @commands.command(name="fart_leech", aliases=["fartleech"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_leech(self, ctx):
-        """Steal points from a random player and add them to your score"""
+        """Steal 2d20/2 points from a random player. Costs 5 points. Once per day."""
         if ctx.channel.id != self.fart_channel_id:
             await ctx.send(
                 f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
             )
             return
+
+        allowed, cooldown_msg = await self.check_usage_cooldown(
+            ctx.author.id, "fart_leech", "daily"
+        )
+        if not allowed:
+            return await ctx.send(cooldown_msg)
 
         if not await self.check_points(ctx.author.id, "fart_leech"):
             return await ctx.send(
@@ -1533,6 +1631,7 @@ class ShopCog(commands.Cog):
             return await ctx.send(f"<@{target_id}> is protected by a Star!")
 
         await self.deduct_points(ctx.author.id, "fart_leech")
+        await self.mark_usage_cooldown(ctx.author.id, "fart_leech")
 
         steal_amount = self.roll_damage(2)  # 2d20/2
         # Can't steal more than the target has
@@ -1552,15 +1651,21 @@ class ShopCog(commands.Cog):
         )
         await self.check_gas_shield(ctx, target_id, ctx.author.id, actual_steal)
 
-    @commands.command(name="fart_twister")
+    @commands.command(name="fart_twister", aliases=["farttwister"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_twister(self, ctx):
-        """Launch a random player into another! Costs 50 points AND uses your daily fart."""
+        """Launch a random player into another! Costs 50 points, uses daily fart, once per week."""
         if ctx.channel.id != self.fart_channel_id:
             await ctx.send(
                 f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
             )
             return
+
+        allowed, cooldown_msg = await self.check_usage_cooldown(
+            ctx.author.id, "fart_twister", "weekly"
+        )
+        if not allowed:
+            return await ctx.send(cooldown_msg)
 
         # Check daily action cooldown
         conn = sqlite3.connect("fart_scores.db")
@@ -1610,6 +1715,7 @@ class ShopCog(commands.Cog):
 
         # Deduct cost and update daily action
         await self.deduct_points(ctx.author.id, "fart_twister")
+        await self.mark_usage_cooldown(ctx.author.id, "fart_twister")
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
         try:
@@ -1636,7 +1742,7 @@ class ShopCog(commands.Cog):
         await self.check_gas_shield(ctx, player_a_id, ctx.author.id, actual_damage_a)
         await self.check_gas_shield(ctx, player_b_id, ctx.author.id, actual_damage_b)
 
-    @commands.command(name="fart_lance")
+    @commands.command(name="fart_lance", aliases=["fartlance"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def fart_lance(self, ctx):
         """Ice Lance - hit up to 3 players ahead with diminishing damage!"""
@@ -1700,50 +1806,26 @@ class ShopCog(commands.Cog):
         for player_id, actual_damage in hit_player_ids:
             await self.check_gas_shield(ctx, player_id, ctx.author.id, actual_damage)
 
-    @commands.command(name="big_banana")
+    @commands.command(name="big_banana", aliases=["bigbanana"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def big_banana(self, ctx):
-        """Hit a random player behind you with 4d10 damage! Once per week."""
+        """Hit a random player behind you with 4d10 damage! Costs 20 points. Once per day."""
         if ctx.channel.id != self.fart_channel_id:
             await ctx.send(
                 f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
             )
             return
 
+        allowed, cooldown_msg = await self.check_usage_cooldown(
+            ctx.author.id, "big_banana", "daily"
+        )
+        if not allowed:
+            return await ctx.send(cooldown_msg)
+
         if not await self.check_points(ctx.author.id, "big_banana"):
             return await ctx.send(
                 f"You don't have enough points! Big Banana costs {self.item_costs['big_banana']} points!"
             )
-
-        # Check weekly cooldown
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-        try:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS command_usage
-                (user_id INTEGER,
-                 command_name TEXT,
-                 last_used TEXT,
-                 PRIMARY KEY (user_id, command_name))
-            """)
-            cur.execute(
-                "SELECT last_used FROM command_usage WHERE user_id=? AND command_name='big_banana'",
-                (ctx.author.id,),
-            )
-            row = cur.fetchone()
-            if row:
-                parsed = safe_parse_datetime(row[0])
-                if parsed:
-                    last_used_date = parsed.date()
-                    next_available = last_used_date + datetime.timedelta(weeks=1)
-                    if next_available > datetime.datetime.now().date():
-                        days_remaining = (next_available - datetime.datetime.now().date()).days
-                        return await ctx.send(
-                            f"You can only use Big Banana once per week! "
-                            f"Try again in {days_remaining} day{'s' if days_remaining != 1 else ''}."
-                        )
-        finally:
-            conn.close()
 
         target = await self.find_target(ctx.author.id, "back")
         if not target:
@@ -1754,19 +1836,8 @@ class ShopCog(commands.Cog):
 
         damage = self.roll_d10_damage(4)  # 4d10
         await self.deduct_points(ctx.author.id, "big_banana")
+        await self.mark_usage_cooldown(ctx.author.id, "big_banana")
         actual_damage = await self.deduct_damage(target[0], damage)
-
-        # Update weekly cooldown
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                "INSERT OR REPLACE INTO command_usage (user_id, command_name, last_used) VALUES (?, 'big_banana', ?)",
-                (ctx.author.id, datetime.datetime.now().isoformat()),
-            )
-            conn.commit()
-        finally:
-            conn.close()
 
         await ctx.send(
             f"🍌 **BIG BANANA!** <@{ctx.author.id}> hurled a massive banana at <@{target[0]}> "
@@ -1774,7 +1845,7 @@ class ShopCog(commands.Cog):
         )
         await self.check_gas_shield(ctx, target[0], ctx.author.id, actual_damage)
 
-    @commands.command(name="fart_shop")
+    @commands.command(name="fart_shop", aliases=["fartshop"])
     async def fart_shop(self, ctx):
         """Display all available shop items"""
         embed = discord.Embed(
@@ -1785,17 +1856,17 @@ class ShopCog(commands.Cog):
 
         items = [
             (
-                "Blue Shell (!blue_shell)",
-                "Hits the leader with 3d20/2 damage\n*Seeks the strongest stench...*",
+                "Blue Shell (!blue_shell / !blueshell)",
+                "Hits the leader with 6d20/2 damage (once/day)\n*Seeks the strongest stench...*",
                 self.item_costs["blue"],
             ),
             (
-                "Red Shell (!red_shell)",
-                "Hits the player directly in front of you with 2d20/2 damage\n*Locked on and loaded.*",
+                "Red Shell (!red_shell / !redshell)",
+                "Hits the player directly in front of you with 3d20/2 damage\n*Locked on and loaded.*",
                 self.item_costs["red"],
             ),
             (
-                "Green Shell (!green_shell)",
+                "Green Shell (!green_shell / !greenshell)",
                 "Hits a random player in front of you with 2d20/2 damage\n*Bouncing off the walls.*",
                 self.item_costs["green"],
             ),
@@ -1805,13 +1876,13 @@ class ShopCog(commands.Cog):
                 self.item_costs["banana"],
             ),
             (
-                "Big Banana (!big_banana)",
-                "Hits a random player behind you with 4d10 damage (once/week)\n*Big slippery. More banana-y.*",
+                "Big Banana (!big_banana / !bigbanana)",
+                "Hits a random player behind you with 4d10 damage (once/day)\n*Big slippery. More banana-y.*",
                 self.item_costs["big_banana"],
             ),
             (
                 "Star (!star)",
-                "Protects you from all items for 24 hours (Costs 10% of your points)\n*Invincible... for now.*",
+                "Protects you from all items for 72 hours (10% of points, once/week)\n*Invincible... for now.*",
                 "10%",
             ),
             (
@@ -1825,77 +1896,67 @@ class ShopCog(commands.Cog):
                 self.item_costs["bobomb"],
             ),
             (
-                "Blue Star (!blue_star)",
-                "Hits the leader with 4d20/2 damage AND protects you for 12 hours\n*Attack and defend in one move.*",
-                self.item_costs["bluestar"],
-            ),
-            (
-                "Fart Star (!fart_star)",
-                "Removes star protection from a random protected user\n*No star lasts forever.*",
+                "Fart Star (!fart_star / !fartstar)",
+                "Removes star protection from a random protected user (10% of points, once/week)\n*No star lasts forever.*",
                 "10% of pts",
             ),
             (
-                "Evil Star (!evil_star)",
+                "Evil Star (!evil_star / !evilstar)",
                 "😈 Doubles your points... but ONLY if you have exactly 666 points! (FREE)\n*The beast rewards the faithful.*",
                 "FREE",
             ),
             (
-                "Thunder Fart (!thunder_fart)",
-                "Hits ALL players for 1-5 damage each\n*The whole room trembles.*",
+                "Thunder Fart (!thunder_fart / !thunderfart)",
+                "Hits ALL players for 50 damage each (once/week)\n*The whole room trembles.*",
                 self.item_costs["thunder_fart"],
             ),
             (
-                "Gas Shield (!gas_shield)",
+                "Gas Shield (!gas_shield / !gasshield)",
                 "Reflects 50% damage back at the next attacker\n*Touch me and find out.*",
                 self.item_costs["gas_shield"],
             ),
             (
-                "Stink Bomb (!stink_bomb)",
+                "Stink Bomb (!stink_bomb / !stinkbomb)",
                 "Hits a random player (anyone!) for 3d20/2 damage\n*Nowhere to hide.*",
                 self.item_costs["stink_bomb"],
             ),
             (
-                "Fart Rocket (!fart_rocket)",
-                "Swap scores with a random player\n*Identity theft is flattery.*",
+                "Fart Rocket (!fart_rocket / !fartrocket)",
+                "Swap scores with a random player (once/week)\n*Identity theft is flattery.*",
                 self.item_costs["fart_rocket"],
             ),
             (
-                "Fart Lance (!fart_lance)",
+                "Fart Lance (!fart_lance / !fartlance)",
                 "Hits up to 3 players ahead with diminishing damage (3/2/1 d20/2)\n*A triple-burst of gaseous fury.*",
                 self.item_costs["fart_lance"],
             ),
             (
-                "Fart Trap (!fart_trap)",
+                "Fart Trap (!fart_trap / !farttrap)",
                 "Set a hidden trap - a player's next attack backfires on them!\n*You'll never see it coming...*",
                 self.item_costs["fart_trap"],
             ),
             (
-                "Fart Twister (!fart_twister)",
-                "Launch a player into another! Damage = half the launched player's score. Uses daily fart.\n*What goes up must come crashing down.*",
+                "Fart Twister (!fart_twister / !farttwister)",
+                "Launch a player into another! Damage = half the launched player's score. Uses daily fart. (once/week)\n*What goes up must come crashing down.*",
                 self.item_costs["fart_twister"],
             ),
             (
-                "Stink Cloud (!stink_cloud)",
-                "Blinds a random player, blocking them from shop items for 30 minutes\n*Can't buy what you can't see.*",
-                self.item_costs["stink_cloud"],
+                "Stink Cloud (!stink_cloud / !stinkcloud)",
+                "Blinds a random player, blocking them from shop items for 24 hours (5% of points, once/day)\n*Can't buy what you can't see.*",
+                "5%",
             ),
             (
-                "Gas Gamble (!gas_gamble <amount>)",
+                "Gas Gamble (!gas_gamble / !gasgamble <amount>)",
                 "Gamble any amount! 40% chance to double, 60% to lose it all.\n*Feeling lucky, punk?*",
                 "Custom",
             ),
             (
-                "Fart Leech (!fart_leech)",
-                "Steal 2d20/2 points from a random player and add to your score\n*What's yours is mine.*",
+                "Fart Leech (!fart_leech / !fartleech)",
+                "Steal 2d20/2 points from a random player and add to your score (once/day)\n*What's yours is mine.*",
                 self.item_costs["fart_leech"],
             ),
             (
-                "Fart Donation (!fart_donation @user <amount>)",
-                "Donate your points to another player.\n*Sharing is caring.*",
-                "Custom",
-            ),
-            (
-                "Fart Court (!fart_court @user <amount>)",
+                "Fart Court (!fart_court / !fartcourt @user <amount>)",
                 "Take another player to court! 50% they pay you, 50% you pay them. Blocked by Star. (Once per week)\n*Justice is blind... and gaseous.*",
                 "Custom",
             ),
@@ -1944,7 +2005,7 @@ class ShopCog(commands.Cog):
             logger.error(f"Error deducting damage: {e}")
             raise
 
-    @commands.command(name="giga_fart_cannon")
+    @commands.command(name="giga_fart_cannon", aliases=["gigafartcannon"])
     @commands.cooldown(
         1, 86400, commands.BucketType.guild
     )  # Once per day for the entire server
@@ -2009,73 +2070,12 @@ class ShopCog(commands.Cog):
             await ctx.send("An error occurred while processing the command.")
             raise
 
-    @commands.command(name="blue_star")
-    @commands.cooldown(1, 45, commands.BucketType.user)
-    async def blue_star(self, ctx):
-        """Damages the leader and gives protection to the user"""
-        logger.debug(f"Blue Star command used by {ctx.author.id}")
-
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
-            )
-            return
-
-        if not await self.check_points(ctx.author.id, "bluestar"):
-            return await ctx.send(
-                f"You don't have enough points! Blue Star costs {self.item_costs['bluestar']} points!"
-            )
-
-        # Find and hit the leader
-        players = await self.get_sorted_players()
-        if not players:
-            return await ctx.send("No players found!")
-
-        leader_id = players[0][0]
-        if leader_id == ctx.author.id:
-            return await ctx.send("You can't Blue Star yourself!")
-
-        if await self.is_protected(leader_id):
-            return await ctx.send(f"<@{leader_id}> is protected by a Star!")
-
-        # Apply enhanced damage (4d20/2 instead of normal 3d20/2)
-        damage = self.roll_damage(4)
-
-        # Give protection for 12 hours
-        protection_end = datetime.datetime.now() + datetime.timedelta(hours=12)
-
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-        try:
-            # Set protection status
-            cur.execute(
-                """
-                INSERT OR REPLACE INTO protection_status (user_id, protected_until) 
-                VALUES (?, ?)
-                """,
-                (ctx.author.id, protection_end),
-            )
-            conn.commit()
-
-            # Apply effects
-            await self.deduct_points(ctx.author.id, "bluestar")
-            actual_damage = await self.deduct_damage(leader_id, damage)
-
-            await ctx.send(
-                f"<@{ctx.author.id}> used a Blue Star!\n"
-                f"Hit leader <@{leader_id}> for {actual_damage} damage!\n"
-                f"Gained Star protection for 12 hours!"
-            )
-            await self.check_gas_shield(ctx, leader_id, ctx.author.id, actual_damage)
-        finally:
-            conn.close()
-
-    @commands.command(name="fart_star")
+    @commands.command(name="fart_star", aliases=["fartstar"])
     @commands.cooldown(1, 60, commands.BucketType.user)
     async def fart_star(self, ctx):
         """
         Remove the star protection from a random protected user.
-        Cost: 10% of user's current points (minimum 1 point)
+        Cost: 10% of user's current points (minimum 1 point). Once per week.
         """
         logger.debug(f"Fart Star command used by {ctx.author.id}")
         try:
@@ -2085,6 +2085,12 @@ class ShopCog(commands.Cog):
                     f"{ctx.author.mention}, please use this command in <#{self.fart_channel_id}>."
                 )
                 return
+
+            allowed, cooldown_msg = await self.check_usage_cooldown(
+                ctx.author.id, "fart_star", "weekly"
+            )
+            if not allowed:
+                return await ctx.send(cooldown_msg)
 
             # Check if user has used evil_star
             conn = sqlite3.connect("fart_scores.db")
@@ -2160,6 +2166,8 @@ class ShopCog(commands.Cog):
                 )
                 conn.commit()
 
+                await self.mark_usage_cooldown(ctx.author.id, "fart_star")
+
                 # Send success message
                 await ctx.send(
                     f"💥 {ctx.author.mention} used Fart Star (-{cost} points)! "
@@ -2178,7 +2186,7 @@ class ShopCog(commands.Cog):
             await ctx.send("An error occurred while processing the command.")
             raise
 
-    @commands.command(name="evil_star")
+    @commands.command(name="evil_star", aliases=["evilstar"])
     @commands.cooldown(1, 60, commands.BucketType.user)
     async def evil_star(self, ctx):
         """

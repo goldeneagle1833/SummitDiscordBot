@@ -93,10 +93,7 @@ logger = logging.getLogger("discord_bot")
 
 openai = OpenAI(api_key=config.OPENAI_API_KEY)
 
-# Track active syphons: {leader_id: [syphoner_id1, syphoner_id2, ...]}
-active_syphons = {}
-
-daily_usage_message = "You have already used your daily action today. The actions are `!fart`, `!attackfart`, `!syphonfart`, `!fartprediction`. \n Use `!fartrank` to check your score."
+daily_usage_message = "You have already used your daily action today. The actions are `!fart`, `!fartprediction`. \n Use `!fartrank` to check your score."
 
 
 class FunCog(commands.Cog):
@@ -177,39 +174,10 @@ class FunCog(commands.Cog):
             "fartrankings": "!fartleaderboard",
             "scoreboard": "!fartleaderboard",
             "board": "!fartleaderboard",
-            # Attack variations
-            "attack": "!attackfart",
-            "attackfart": "!attackfart",
-            "fartattack": "!attackfart",
-            "attackwithfart": "!attackfart",
-            "fart_attack": "!attackfart",
-            "fight": "!attackfart",
-            "battle": "!attackfart",
-            "assaultfart": "!attackfart",
-            "strikefarrt": "!attackfart",
-            # Syphon variations
-            "syphon": "!syphonfart",
-            "syphonfart": "!syphonfart",
-            "siphon": "!syphonfart",
-            "siphonfart": "!syphonfart",
-            "syfon": "!syphonfart",
-            "syfonfart": "!syphonfart",
-            "steal": "!syphonfart",
-            "stealfarts": "!syphonfart",
-            "drain": "!syphonfart",
-            "drainfarts": "!syphonfart",
-            "absorb": "!syphonfart",
-            "absorbfarts": "!syphonfart",
-            # Syphon status variations
-            "syphonstatus": "!syphonstatus",
-            "siphonstatus": "!syphonstatus",
-            "syfonstatus": "!syphonstatus",
-            "checksyphon": "!syphonstatus",
-            "checksiphon": "!syphonstatus",
-            "syphoncheck": "!syphonstatus",
             # Prediction variations
             "prediction": "!fartprediction",
             "fartprediction": "!fartprediction",
+            "fart_prediction": "!fartprediction",
             "predict": "!fartprediction",
             "predictfart": "!fartprediction",
             "fortune": "!fartprediction",
@@ -219,6 +187,7 @@ class FunCog(commands.Cog):
             # Bull fart variations
             "bull": "!bullfart",
             "bullfart": "!bullfart",
+            "bull_fart": "!bullfart",
             "bullshit": "!bullfart",
             "challenge": "!bullfart",
             "challengefart": "!bullfart",
@@ -227,6 +196,7 @@ class FunCog(commands.Cog):
             # Fart lord variations
             "lord": "!fartlord",
             "fartlord": "!fartlord",
+            "fart_lord": "!fartlord",
             "king": "!fartlord",
             "fartking": "!fartlord",
             "leader": "!fartlord",
@@ -238,12 +208,15 @@ class FunCog(commands.Cog):
             "taxes": "!taxes",
             "farttax": "!taxes",
             "farttaxes": "!taxes",
+            "fart_taxes": "!taxes",
             "tribute": "!taxes",
             "farttribute": "!taxes",
             "pay": "!taxes",
             "paytax": "!taxes",
             # Wealth variations
             "wealth": "!wealth",
+            "fartwealth": "!wealth",
+            "fart_wealth": "!wealth",
             "balance": "!wealth",
             "money": "!wealth",
             "gold": "!wealth",
@@ -252,21 +225,35 @@ class FunCog(commands.Cog):
             "bankroll": "!wealth",
             "funds": "!wealth",
             "riches": "!wealth",
+            # Rank / help underscore variants
+            "fart_rank": "!fartrank",
+            "fart_leaderboard": "!fartleaderboard",
+            "help_fart": "!helpfart",
+            "fart_help": "!helpfart",
         }
 
         actual_commands = {
             "fart": "!fart",
             "helpfart": "!helpfart",
+            "help_fart": "!helpfart",
+            "farthelp": "!helpfart",
+            "fart_help": "!helpfart",
             "fartrank": "!fartrank",
+            "fart_rank": "!fartrank",
             "fartleaderboard": "!fartleaderboard",
-            "attackfart": "!attackfart",
-            "syphonfart": "!syphonfart",
-            "syphonstatus": "!syphonstatus",
+            "fart_leaderboard": "!fartleaderboard",
             "fartprediction": "!fartprediction",
+            "fart_prediction": "!fartprediction",
             "bullfart": "!bullfart",
+            "bull_fart": "!bullfart",
             "fartlord": "!fartlord",
+            "fart_lord": "!fartlord",
             "taxes": "!taxes",
+            "farttaxes": "!taxes",
+            "fart_taxes": "!taxes",
             "wealth": "!wealth",
+            "fartwealth": "!wealth",
+            "fart_wealth": "!wealth",
         }
 
         suggestion = find_best_command_match(failed_command, command_suggestions, actual_commands)
@@ -411,7 +398,7 @@ class FunCog(commands.Cog):
             if "conn" in locals():
                 conn.close()
 
-    @commands.command()
+    @commands.command(aliases=["farthelp", "help_fart", "fart_help"])
     async def helpfart(self, ctx):
         """Get detailed help on all fart commands."""
         if ctx.channel.id != self.fart_channel_id:
@@ -422,7 +409,7 @@ class FunCog(commands.Cog):
 
         embed = discord.Embed(
             title="💨 Fart Command Guide",
-            description="Master the art of magical flatulence!",
+            description="Master the art of magical flatulence!\nUnderscored and concatenated forms both work (e.g. `!fart_rank` / `!fartrank`).",
             color=discord.Color.green(),
         )
 
@@ -431,9 +418,7 @@ class FunCog(commands.Cog):
             name="📅 Daily Actions (Choose One)",
             value=(
                 "`!fart` - Roll for random fart points\n"
-                "`!fartprediction` - Predict fart type for 2x (or half!)\n"
-                "`!attackfart` - Attack leader to reduce their score\n"
-                "`!syphonfart` - Steal half of leader's next fart"
+                "`!fartprediction` / `!fart_prediction` - Predict fart type for 2x (or half!)"
             ),
             inline=False,
         )
@@ -441,7 +426,7 @@ class FunCog(commands.Cog):
         # Weekly Actions
         embed.add_field(
             name="📆 Weekly Actions",
-            value="`!bullfart` - Bonus points based on last fart (once/week)",
+            value="`!bullfart` / `!bull_fart` - Bonus points based on last fart (once/week)",
             inline=False,
         )
 
@@ -449,10 +434,9 @@ class FunCog(commands.Cog):
         embed.add_field(
             name="📊 Stats & Leaderboard",
             value=(
-                "`!fartrank` - Check your score and rank\n"
+                "`!fartrank` / `!fart_rank` - Check your score and rank\n"
                 "`!fartrank @user` - Check another user's rank\n"
-                "`!fartleaderboard` - View top 5 farters\n"
-                "`!syphonstatus` - Check active syphons on leader"
+                "`!fartleaderboard` / `!fart_leaderboard` - View top 5 farters"
             ),
             inline=False,
         )
@@ -461,9 +445,9 @@ class FunCog(commands.Cog):
         embed.add_field(
             name="👑 Leader-Only Commands",
             value=(
-                "`!fartlord` - Make a grand proclamation\n"
-                "`!taxes` - Take 5% from everyone (once/reign)\n"
-                "`!wealth` - Robin Hood: redistribute from top 5 (once/reign)"
+                "`!fartlord` / `!fart_lord` - Make a grand proclamation\n"
+                "`!taxes` - Take 50% from everyone (once/reign)\n"
+                "`!wealth` - Redistribute 100% from top 5 (includes you) (once/reign)"
             ),
             inline=False,
         )
@@ -627,102 +611,24 @@ class FunCog(commands.Cog):
                     "⚠️ There was an error saving your fart type, but continuing..."
                 )
 
-            # Handle syphon mechanics
             try:
-                if ctx.author.id in active_syphons:
-                    syphoners = active_syphons[ctx.author.id]
-                    num_syphoners = len(syphoners)
-                    stolen_points = points_earned // 2
-                    points_per_syphoner = stolen_points // num_syphoners
-                    remaining_points = points_earned - (
-                        points_per_syphoner * num_syphoners
+                try:
+                    fart_message_add = self.openai_response(
+                        fart_message, ctx.author.name
                     )
+                except Exception as e:
+                    logger.error(f"OpenAI API error: {e}")
+                    fart_message_add = "... *cough cough*"
 
-                    # Award points to each syphoner
-                    syphoner_names = []
-                    conn = sqlite3.connect("fart_scores.db")
-                    cur = conn.cursor()
-
-                    for syphoner_id in syphoners:
-                        try:
-                            syphoner = await self.bot.fetch_user(syphoner_id)
-                            if not syphoner:
-                                logger.error(f"Could not fetch user {syphoner_id}")
-                                continue
-
-                            cur.execute(
-                                """INSERT INTO fart_scores (user_id, user_display_name, score) 
-                                   VALUES (?, ?, ?)
-                                   ON CONFLICT(user_id) DO UPDATE SET
-                                   score = score + ?
-                                   WHERE user_id = ?""",
-                                (
-                                    syphoner_id,
-                                    syphoner.global_name,
-                                    points_per_syphoner,
-                                    points_per_syphoner,
-                                    syphoner_id,
-                                ),
-                            )
-                            syphoner_names.append(
-                                f"{syphoner.mention} (+{points_per_syphoner})"
-                            )
-                        except Exception as e:
-                            logger.error(
-                                f"Error processing syphoner {syphoner_id}: {e}"
-                            )
-                            continue
-
-                    conn.commit()
-                    conn.close()
-
-                    # Award remaining points to farter
-                    self.save_fart_score(
-                        now, ctx.author.id, ctx.author.global_name, remaining_points
-                    )
-
-                    # Remove the syphons
-                    del active_syphons[ctx.author.id]
-
-                    try:
-                        fart_message_add = self.openai_response(
-                            fart_message, ctx.author.name
-                        )
-                    except Exception as e:
-                        logger.error(f"OpenAI API error: {e}")
-                        fart_message_add = "... *cough cough*"
-
-                    syphoners_text = ", ".join(syphoner_names)
-                    mushroom_boost_msg = (
-                        " **MUSHROOM BOOST ACTIVATED!** \n"
-                        if lucky_charm_active
-                        else ""
-                    )
-                    await ctx.send(
-                        f"{mushroom_boost_msg}{fart_message} {fart_message_add}\n\n"
-                        f"💀 **SYPHONED BY {num_syphoners} SORCERER{'S' if num_syphoners > 1 else ''}!** "
-                        f"{syphoners_text} stole points! "
-                        f"You earned {remaining_points} points."
-                    )
-                else:
-                    # Normal fart - no syphon active
-                    try:
-                        fart_message_add = self.openai_response(
-                            fart_message, ctx.author.name
-                        )
-                    except Exception as e:
-                        logger.error(f"OpenAI API error: {e}")
-                        fart_message_add = "... *cough cough*"
-
-                    self.save_fart_score(
-                        now, ctx.author.id, ctx.author.global_name, points_earned
-                    )
-                    mushroom_boost_msg = (
-                        "**MUSHROOM BOOST ACTIVATED!** \n" if lucky_charm_active else ""
-                    )
-                    await ctx.send(
-                        f"{mushroom_boost_msg}{fart_message} {fart_message_add} You earned {points_earned} points."
-                    )
+                self.save_fart_score(
+                    now, ctx.author.id, ctx.author.global_name, points_earned
+                )
+                mushroom_boost_msg = (
+                    "**MUSHROOM BOOST ACTIVATED!** \n" if lucky_charm_active else ""
+                )
+                await ctx.send(
+                    f"{mushroom_boost_msg}{fart_message} {fart_message_add} You earned {points_earned} points."
+                )
 
             except Exception as e:
                 logger.error(f"Error processing fart mechanics: {e}")
@@ -757,7 +663,7 @@ class FunCog(commands.Cog):
                 "💨 Oops! Something went wrong with your fart. Please try again later."
             )
 
-    @commands.command()
+    @commands.command(aliases=["fart_rank"])
     async def fartrank(self, ctx, user: discord.Member = None):
         """Check your fart score and rank, or check another user's rank by tagging them."""
         if ctx.channel.id != self.fart_channel_id:
@@ -804,7 +710,7 @@ class FunCog(commands.Cog):
         conn.close()
         await self.update_fart_leader_role(ctx)
 
-    @commands.command()
+    @commands.command(aliases=["fart_leaderboard"])
     async def fartleaderboard(self, ctx):
         """Check the top 5 farting sorcerers."""
         if ctx.channel.id != self.fart_channel_id:
@@ -832,259 +738,7 @@ class FunCog(commands.Cog):
         conn.close()
         await self.update_fart_leader_role(ctx)
 
-    @commands.command()
-    async def attackfart(self, ctx):
-        """Attack the fart leader with a fart! Only one attack OR fart per day."""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use the fart commands in <#{self.fart_channel_id}>."
-            )
-            return
-
-        did_user_fart_today = False
-        print(f"User {ctx.author.id} is attempting to attack the fart leader.")
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                "SELECT date_last_updated FROM fart_scores WHERE user_id=?",
-                (ctx.author.id,),
-            )
-            row = cur.fetchone()
-            if row:
-                parsed_datetime = safe_parse_datetime(row[0])
-                if parsed_datetime:
-                    last_fart_date = parse_to_est_date(row[0])
-                    if last_fart_date == get_est_date():
-                        did_user_fart_today = True
-
-            if did_user_fart_today:
-                # Calculate time until next fart (midnight EST)
-                now = get_est_now()
-                midnight = get_est_midnight()
-                time_until_next = midnight - now
-
-                hours = int(time_until_next.total_seconds() // 3600)
-                minutes = int((time_until_next.total_seconds() % 3600) // 60)
-
-                time_msg = f"You can use your daily action again in **{hours}h {minutes}m** (resets at midnight EST)"
-                await ctx.send(
-                    f"{ctx.author.mention} {daily_usage_message}\n{time_msg}"
-                )
-                return
-
-            roll = randrange(1, 101)
-            if roll >= 96:
-                fart_message = "Curio Shart Attack! 💩💨💨💨💨"
-                fart_type = "curio_shart"
-            elif roll >= 86:
-                fart_message = "Unique Fart Bomb! 💨💨💨💨"
-                fart_type = "unique"
-            elif roll >= 66:
-                fart_message = "Elite Fart Barrage! 💨💨💨"
-                fart_type = "elite"
-            elif roll >= 36:
-                fart_message = "Exceptional Fart Strike! 💨💨"
-                fart_type = "exceptional"
-            else:
-                fart_message = "Ordinary Fart Puff! 💨"
-                fart_type = "ordinary"
-
-            damage = roll  # Damage equals roll value
-
-            # Get the leaderboard
-            cur.execute(
-                "SELECT user_id, user_display_name, score FROM fart_scores "
-                "ORDER BY score DESC LIMIT 1"
-            )
-            leader_row = cur.fetchone()
-
-            leader_id, leader_name, leader_score = leader_row
-
-            if ctx.author.id == leader_id:
-                await ctx.send("You are the leader! You cannot attack yourself.")
-                return
-
-            # Update the leader's score
-            new_leader_score = max(0, leader_score - damage)
-            cur.execute(
-                "UPDATE fart_scores SET score=? WHERE user_id=?",
-                (new_leader_score, leader_id),
-            )
-
-            # Update the user's last attack time
-            now = datetime.datetime.now()
-            cur.execute(
-                "UPDATE fart_scores SET date_last_updated=? WHERE user_id=?",
-                (now.isoformat(), ctx.author.id),
-            )
-
-            conn.commit()
-
-            chatgpt = self.openai_response_to_attack(
-                fart_message, ctx.author.name, damage
-            )
-
-            await ctx.send(
-                f"{ctx.author.mention} attacked {leader_name} {chatgpt} \n\n"
-                f"<@{leader_id}>'s new score is {new_leader_score}."
-            )
-        finally:
-            conn.close()
-
-        await self.update_fart_leader_role(ctx)
-
-    @commands.command()
-    async def syphonfart(self, ctx):
-        """Place a syphon on the fart leader! Steal half their next fart roll. Once per day."""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use the fart commands in <#{self.fart_channel_id}>."
-            )
-            return
-
-        # Check if user already used their daily action
-        did_user_fart_today = False
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                "SELECT date_last_updated FROM fart_scores WHERE user_id=?",
-                (ctx.author.id,),
-            )
-            row = cur.fetchone()
-            if row:
-                parsed_datetime = safe_parse_datetime(row[0])
-                if parsed_datetime:
-                    last_fart_date = parse_to_est_date(row[0])
-                    if last_fart_date == get_est_date():
-                        did_user_fart_today = True
-
-            if did_user_fart_today:
-                # Calculate time until next fart (midnight EST)
-                now = get_est_now()
-                midnight = get_est_midnight()
-                time_until_next = midnight - now
-
-                hours = int(time_until_next.total_seconds() // 3600)
-                minutes = int((time_until_next.total_seconds() % 3600) // 60)
-
-                time_msg = f"You can use your daily action again in **{hours}h {minutes}m** (resets at midnight EST)"
-                await ctx.send(
-                    f"{ctx.author.mention} {daily_usage_message}\n{time_msg}"
-                )
-                return
-
-            # Get the current leader
-            cur.execute(
-                "SELECT user_id, user_display_name FROM fart_scores ORDER BY score DESC LIMIT 1"
-            )
-            leader_row = cur.fetchone()
-
-            if not leader_row:
-                await ctx.send("No fart leader found yet! Someone needs to fart first.")
-                return
-
-            leader_id, leader_name = leader_row
-
-            # Can't syphon yourself
-            if ctx.author.id == leader_id:
-                await ctx.send(
-                    "You can't syphon yourself! You're already the leader! 👑"
-                )
-                return
-
-            # Check if user already has a syphon on this leader
-            if (
-                leader_id in active_syphons
-                and ctx.author.id in active_syphons[leader_id]
-            ):
-                await ctx.send(
-                    f"⚠️ You already have a syphon placed on {leader_name}! "
-                    f"Wait for them to fart!"
-                )
-                return
-
-            # Add user to the list of syphoners for this leader
-            if leader_id not in active_syphons:
-                active_syphons[leader_id] = []
-
-            active_syphons[leader_id].append(ctx.author.id)
-            num_syphoners = len(active_syphons[leader_id])
-
-            # Mark user's daily action as used
-            now = datetime.datetime.now()
-            cur.execute(
-                "UPDATE fart_scores SET date_last_updated=? WHERE user_id=?",
-                (now.isoformat(), ctx.author.id),
-            )
-            conn.commit()
-
-            if num_syphoners == 1:
-                await ctx.send(
-                    f"🌀 **SYPHON PLACED!** {ctx.author.mention} has placed a mystical syphon on \n"
-                    f"<@{leader_id}>! When they fart, you'll steal half their points!"
-                )
-            else:
-                await ctx.send(
-                    f"🌀 **SYPHON #{num_syphoners} PLACED!** {ctx.author.mention} joins the syphon group! \n"
-                    f"<@{leader_id}> now has **{num_syphoners} syphons** draining them! \n"
-                    f"Points will be split evenly among all syphoners!"
-                )
-
-        finally:
-            conn.close()
-
-    @commands.command()
-    async def syphonstatus(self, ctx):
-        """Check active syphons on the current leader."""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use the fart commands in <#{self.fart_channel_id}>."
-            )
-            return
-
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-        try:
-            # Get the current leader
-            cur.execute(
-                "SELECT user_id, user_display_name, score FROM fart_scores ORDER BY score DESC LIMIT 1"
-            )
-            leader_row = cur.fetchone()
-
-            if not leader_row:
-                await ctx.send("No fart leader found yet!")
-                return
-
-            leader_id, leader_name, leader_score = leader_row
-
-            if leader_id not in active_syphons or len(active_syphons[leader_id]) == 0:
-                await ctx.send(
-                    f"👑 **Current Leader:** {leader_name} ({leader_score} points)\n"
-                    f"✅ No active syphons! The leader is safe... for now. 😈"
-                )
-            else:
-                syphoners = active_syphons[leader_id]
-                num_syphoners = len(syphoners)
-                syphoner_names = []
-
-                for syphoner_id in syphoners:
-                    syphoner = await self.bot.fetch_user(syphoner_id)
-                    syphoner_names.append(syphoner.mention)
-
-                syphoners_text = ", ".join(syphoner_names)
-                await ctx.send(
-                    f"👑 **Current Leader:** {leader_name} ({leader_score} points)\n"
-                    f"💀 **Active Syphons:** {num_syphoners}\n"
-                    f"🌀 **Syphoning:** {syphoners_text}\n\n"
-                    f"When {leader_name} farts next, each syphoner will steal an equal share of 50% of the points!"
-                )
-
-        finally:
-            conn.close()
-
-    @commands.command()
+    @commands.command(aliases=["fart_prediction"])
     async def fartprediction(self, ctx):
         """Predict your fart for double points or lose half!"""
         if ctx.channel.id != self.fart_channel_id:
@@ -1114,7 +768,7 @@ class FunCog(commands.Cog):
         view = FartPredictionView(self, ctx.author.id)
         await ctx.send(embed=embed, view=view)
 
-    @commands.command()
+    @commands.command(aliases=["bull_fart"])
     async def bullfart(self, ctx):
         """Use this command only once a week!"""
         if ctx.channel.id != self.fart_channel_id:
@@ -1218,7 +872,7 @@ class FunCog(commands.Cog):
 
         await self.update_fart_leader_role(ctx)
 
-    @commands.command()
+    @commands.command(aliases=["fart_lord"])
     @commands.has_role(config.LEADER_ROLE_ID)
     async def fartlord(self, ctx):
         """Declare yourself the Fart Lord (Leader role only)."""
@@ -1231,9 +885,10 @@ class FunCog(commands.Cog):
             f"Hear ye, hear ye! {ctx.author.mention} proclaims: {response_text}"
         )
 
-    @commands.command()
+    @commands.command(aliases=["farttaxes", "fart_taxes"])
     @commands.has_role(config.LEADER_ROLE_ID)
     async def taxes(self, ctx):
+        """Take 50% from everyone outside the top 5 and give to the top 5 (once per reign)."""
         try:
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
@@ -1278,12 +933,12 @@ class FunCog(commands.Cog):
                 top_5 = all_users[:5]
                 others = all_users[5:]
 
-                # Calculate total points to take from non-top-5
+                # Calculate total points to take from non-top-5 (50%)
                 total_taken = 0
                 redistribution_details = []
 
                 for user_id, user_display_name, score in others:
-                    points_to_take = int(score * 0.05)
+                    points_to_take = int(score * 0.50)
                     new_score = score - points_to_take
                     total_taken += points_to_take
 
@@ -1320,22 +975,22 @@ class FunCog(commands.Cog):
                     f"💰 **WEALTH REDISTRIBUTION COMPLETE!** 💰\n\n"
                     f"**Total redistributed:** {total_taken} points\n\n"
                     f"**TOP 5 GAINERS:**\n" + "\n".join(top_5_details) + "\n\n"
-                    f"**Points taken from {len(others)} users** (5% each)"
+                    f"**Points taken from {len(others)} users** (50% each)"
                 )
 
                 await ctx.send(response)
                 await self.update_fart_leader_role(ctx)
         except Exception as e:
-            print(f"Error in wealth command: {e}")
+            print(f"Error in taxes command: {e}")
             import traceback
 
             traceback.print_exc()
             await ctx.send(f"An error occurred: {e}")
 
-    @commands.command()
+    @commands.command(aliases=["fartwealth", "fart_wealth"])
     @commands.has_role(config.LEADER_ROLE_ID)
     async def wealth(self, ctx):
-        """Robin Hood - Take 10% from top 5 and give to everyone else (Leader only, once per reign)"""
+        """Robin Hood - Take 100% from top 5 (includes you) and give to everyone else (once per reign)"""
         try:
             print(f"User {ctx.author.id} is attempting to use wealth redistribution.")
             if ctx.channel.id != self.fart_channel_id:
@@ -1387,12 +1042,12 @@ class FunCog(commands.Cog):
                 top_5 = all_users[:5]
                 others = all_users[5:]
 
-                # Calculate total points to take from top 5
+                # Calculate total points to take from top 5 (100% — includes you)
                 total_taken = 0
                 top_5_details = []
 
                 for user_id, user_display_name, score in top_5:
-                    points_to_take = int(score * 0.10)
+                    points_to_take = int(score * 1.00)
                     new_score = score - points_to_take
                     total_taken += points_to_take
 
@@ -1428,7 +1083,7 @@ class FunCog(commands.Cog):
                 response = (
                     f"🏹 **ROBIN HOOD REDISTRIBUTION!** 🏹\n\n"
                     f"**Total redistributed:** {total_taken} points\n\n"
-                    f"**TOP 5 TAXED (10% each):**\n" + "\n".join(top_5_details) + "\n\n"
+                    f"**TOP 5 TAXED (100% each):**\n" + "\n".join(top_5_details) + "\n\n"
                     f"**{len(others)} WORKERS REWARDED:**\n"
                     + "\n".join(others_details[:10])
                 )
@@ -1445,7 +1100,7 @@ class FunCog(commands.Cog):
             traceback.print_exc()
             await ctx.send(f"An error occurred: {e}")
 
-    @commands.command()
+    @commands.command(aliases=["resetfartcooldown"])
     @is_bot_admin()
     async def reset_fart_cooldown(self, ctx, user: discord.Member = None):
         """Admin command to reset a user's fart cooldown (set last fart to 48 hours ago).

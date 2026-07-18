@@ -52,7 +52,7 @@ summit-bot/
 - Daily fart/attack mechanics
 - Leader role management
 - OpenAI integration for responses
-- Commands: `!fart`, `!fartrank`, `!fartleaderboard`, `!attackfart`
+- Commands: `!fart`, `!fartrank`, `!fartleaderboard`, `!fart_shop`
 
 #### `cogs/utility.py`
 

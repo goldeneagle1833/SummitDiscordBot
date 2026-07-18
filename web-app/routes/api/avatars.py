@@ -123,28 +123,81 @@ def get_avatar_filters():
     return jsonify({"events": events, "sources": sources})
 
 
+def _get_all_seasons():
+    """Return all seasons: events from elo.db plus any SEASON_FILTERS not already in the DB."""
+    seasons = []
+    try:
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='events'
+        """)
+        if cur.fetchone():
+            cur.execute("""
+                SELECT event_id, event_name, start_date, end_date, is_active
+                FROM events
+                ORDER BY start_date ASC
+            """)
+            for row in cur.fetchall():
+                seasons.append({
+                    "id": row[0],
+                    "name": row[1],
+                    "start_date": row[2],
+                    "end_date": row[3],  # None while the season is active
+                    "is_active": bool(row[4]),
+                })
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not query events for seasons: {e}")
+
+    # Include hardcoded season filters that don't match a DB event by name
+    db_names = [s["name"].lower() for s in seasons]
+    for sf in SEASON_FILTERS:
+        if any(sf["name"].lower() in name for name in db_names):
+            continue
+        seasons.append({
+            "id": sf["id"],
+            "name": sf["name"],
+            "start_date": sf["start_date"],
+            "end_date": sf["end_date"],
+            "is_active": False,
+        })
+
+    seasons.sort(key=lambda s: s["start_date"] or "")
+    return seasons
+
+
 @avatars_bp.route("/avatars/season-stats")
 def get_season_stats():
-    """Return game counts per season."""
+    """Return game counts per season (events from elo.db + configured season filters)."""
     results = []
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
-        for sf in SEASON_FILTERS:
+        for season in _get_all_seasons():
             total = 0
             for table in ("match_records", "match_records_archive"):
                 try:
-                    cur.execute(
-                        f"SELECT COUNT(*) FROM {table} WHERE timestamp >= ? AND timestamp < ?",
-                        (sf["start_date"], sf["end_date"]),
-                    )
+                    if season["end_date"]:
+                        cur.execute(
+                            f"SELECT COUNT(*) FROM {table} WHERE timestamp >= ? AND timestamp < ?",
+                            (season["start_date"], season["end_date"]),
+                        )
+                    else:
+                        # Active season with no end date yet
+                        cur.execute(
+                            f"SELECT COUNT(*) FROM {table} WHERE timestamp >= ?",
+                            (season["start_date"],),
+                        )
                     total += cur.fetchone()[0]
                 except sqlite3.OperationalError:
                     pass
             results.append({
-                "id": sf["id"],
-                "name": sf["name"],
+                "id": season["id"],
+                "name": season["name"],
                 "total_games": total,
+                "is_active": season["is_active"],
             })
         conn.close()
     except sqlite3.OperationalError as e:

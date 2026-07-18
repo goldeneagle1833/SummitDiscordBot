@@ -225,3 +225,50 @@ class TestUserProfileRepository:
         results = repo.search_by_display_name("Alice")
         assert len(results) == 1
         assert results[0]["display_name"] == "AliceWonder"
+
+
+# ── FartRepository ───────────────────────────────────────────
+
+
+class TestFartRepositoryReset:
+    def test_reset_game_clears_gift_and_donation_usage(self, tmp_path):
+        from repositories.fart import FartRepository
+
+        db_path = tmp_path / "fart_scores.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE fart_gift_usage (
+                gifter_id INTEGER NOT NULL,
+                recipient_id INTEGER NOT NULL,
+                gifted_at TEXT NOT NULL,
+                PRIMARY KEY (gifter_id, recipient_id)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE fart_donation_usage (
+                donor_id INTEGER NOT NULL,
+                recipient_id INTEGER NOT NULL,
+                donated_at TEXT NOT NULL,
+                PRIMARY KEY (donor_id, recipient_id)
+            )
+        """)
+        conn.execute(
+            "INSERT INTO fart_gift_usage VALUES (1, 2, '2026-01-01T00:00:00')"
+        )
+        conn.execute(
+            "INSERT INTO fart_donation_usage VALUES (1, 2, '2026-01-01T00:00:00')"
+        )
+        conn.commit()
+        conn.close()
+
+        repo = FartRepository(db_path=db_path)
+        cleared = repo.reset_game()
+
+        assert cleared["fart_gift_usage"] == 1
+        assert cleared["fart_donation_usage"] == 1
+
+        conn = sqlite3.connect(str(db_path))
+        assert conn.execute("SELECT COUNT(*) FROM fart_gift_usage").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM fart_donation_usage").fetchone()[0] == 0
+        conn.close()
+

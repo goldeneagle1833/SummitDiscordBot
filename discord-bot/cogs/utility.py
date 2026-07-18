@@ -117,8 +117,8 @@ class UtilityCog(commands.Cog):
         embed.add_field(
             name="💨 Fart Game",
             value=(
-                "`!fart` `!fartrank` `!fartleaderboard`\n"
-                "`!attackfart` `!syphonfart` `!fartprediction`\n"
+                "`!fart` `!fart_gift` `!fartrank`\n"
+                "`!fartprediction` `!fart_shop`\n"
                 "➡️ Use `!helpfart` for details"
             ),
             inline=False,
@@ -231,21 +231,19 @@ class UtilityCog(commands.Cog):
             value=(
                 "Daily Actions:\n"
                 "`!fart` - Roll for daily fart points\n"
-                "`!attackfart` - Attack leader to reduce their score\n"
-                "`!syphonfart` - Place syphon to steal leader's next points\n"
+                "`!fart_gift @user` - Roll your daily fart for someone else (once/season per player)\n"
                 "`!fartprediction` - Predict fart type for 2x points\n"
                 "`!bullfart` - Get bonus points (weekly)\n\n"
                 "Shop & Items:\n"
                 "`!fart_shop` - View available items\n"
-                "`!blue_shell` - Hit leader with damage (14 pts)\n"
-                "`!red_shell` - Hit player in front (10 pts)\n"
-                "`!green_shell` - Hit random front player (10 pts)\n"
-                "`!banana` - Hit random player behind (10 pts)\n"
-                "`!star` - Get 24h protection (50 pts)\n\n"
+                "`!blue_shell` - Hit leader with 6d20/2 (20 pts, once/day)\n"
+                "`!red_shell` - Hit player in front with 3d20/2 (10 pts)\n"
+                "`!green_shell` - Hit random front player\n"
+                "`!banana` - Hit random player behind\n"
+                "`!star` - Get 72h protection (10% pts, once/week)\n\n"
                 "Scores & Stats:\n"
                 "`!fartrank` - Check your score and ranking\n"
                 "`!fartleaderboard` - View top 5 farters\n"
-                "`!syphonstatus` - Check active syphons\n"
                 "`!helpfart` - View detailed fart commands"
             ),
             inline=False,
@@ -256,8 +254,8 @@ class UtilityCog(commands.Cog):
             name="👑 Leader Commands",
             value=(
                 "`!fartlord` - Make grand proclamation\n"
-                "`!taxes` - Take 5% from others (once per reign)\n"
-                "`!wealth` - Redistribute from top 5 (once per reign)"
+                "`!taxes` - Take 20% from everyone (once per reign)\n"
+                "`!wealth` - Redistribute 50% from top 5 (once per reign)"
             ),
             inline=False,
         )

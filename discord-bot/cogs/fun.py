@@ -93,10 +93,7 @@ logger = logging.getLogger("discord_bot")
 
 openai = OpenAI(api_key=config.OPENAI_API_KEY)
 
-# Track active syphons: {leader_id: [syphoner_id1, syphoner_id2, ...]}
-active_syphons = {}
-
-daily_usage_message = "You have already used your daily action today. The actions are `!fart`, `!attackfart`, `!syphonfart`, `!fartprediction`. \n Use `!fartrank` to check your score."
+daily_usage_message = "You have already used your daily action today. The actions are `!fart`, `!fart_gift`, `!fartprediction`. \n Use `!fartrank` to check your score."
 
 
 class FunCog(commands.Cog):
@@ -177,39 +174,17 @@ class FunCog(commands.Cog):
             "fartrankings": "!fartleaderboard",
             "scoreboard": "!fartleaderboard",
             "board": "!fartleaderboard",
-            # Attack variations
-            "attack": "!attackfart",
-            "attackfart": "!attackfart",
-            "fartattack": "!attackfart",
-            "attackwithfart": "!attackfart",
-            "fart_attack": "!attackfart",
-            "fight": "!attackfart",
-            "battle": "!attackfart",
-            "assaultfart": "!attackfart",
-            "strikefarrt": "!attackfart",
-            # Syphon variations
-            "syphon": "!syphonfart",
-            "syphonfart": "!syphonfart",
-            "siphon": "!syphonfart",
-            "siphonfart": "!syphonfart",
-            "syfon": "!syphonfart",
-            "syfonfart": "!syphonfart",
-            "steal": "!syphonfart",
-            "stealfarts": "!syphonfart",
-            "drain": "!syphonfart",
-            "drainfarts": "!syphonfart",
-            "absorb": "!syphonfart",
-            "absorbfarts": "!syphonfart",
-            # Syphon status variations
-            "syphonstatus": "!syphonstatus",
-            "siphonstatus": "!syphonstatus",
-            "syfonstatus": "!syphonstatus",
-            "checksyphon": "!syphonstatus",
-            "checksiphon": "!syphonstatus",
-            "syphoncheck": "!syphonstatus",
+            # Gift variations
+            "gift": "!fart_gift",
+            "fartgift": "!fart_gift",
+            "fart_gift": "!fart_gift",
+            "givefart": "!fart_gift",
+            "giftfart": "!fart_gift",
+            "gift_fart": "!fart_gift",
             # Prediction variations
             "prediction": "!fartprediction",
             "fartprediction": "!fartprediction",
+            "fart_prediction": "!fartprediction",
             "predict": "!fartprediction",
             "predictfart": "!fartprediction",
             "fortune": "!fartprediction",
@@ -219,6 +194,7 @@ class FunCog(commands.Cog):
             # Bull fart variations
             "bull": "!bullfart",
             "bullfart": "!bullfart",
+            "bull_fart": "!bullfart",
             "bullshit": "!bullfart",
             "challenge": "!bullfart",
             "challengefart": "!bullfart",
@@ -227,6 +203,7 @@ class FunCog(commands.Cog):
             # Fart lord variations
             "lord": "!fartlord",
             "fartlord": "!fartlord",
+            "fart_lord": "!fartlord",
             "king": "!fartlord",
             "fartking": "!fartlord",
             "leader": "!fartlord",
@@ -238,12 +215,15 @@ class FunCog(commands.Cog):
             "taxes": "!taxes",
             "farttax": "!taxes",
             "farttaxes": "!taxes",
+            "fart_taxes": "!taxes",
             "tribute": "!taxes",
             "farttribute": "!taxes",
             "pay": "!taxes",
             "paytax": "!taxes",
             # Wealth variations
             "wealth": "!wealth",
+            "fartwealth": "!wealth",
+            "fart_wealth": "!wealth",
             "balance": "!wealth",
             "money": "!wealth",
             "gold": "!wealth",
@@ -252,21 +232,57 @@ class FunCog(commands.Cog):
             "bankroll": "!wealth",
             "funds": "!wealth",
             "riches": "!wealth",
+            # Rank / help underscore variants
+            "fart_rank": "!fartrank",
+            "fart_leaderboard": "!fartleaderboard",
+            "help_fart": "!helpfart",
+            "fart_help": "!helpfart",
         }
 
         actual_commands = {
             "fart": "!fart",
             "helpfart": "!helpfart",
+            "help_fart": "!helpfart",
+            "farthelp": "!helpfart",
+            "fart_help": "!helpfart",
             "fartrank": "!fartrank",
+            "fart_rank": "!fartrank",
             "fartleaderboard": "!fartleaderboard",
-            "attackfart": "!attackfart",
-            "syphonfart": "!syphonfart",
-            "syphonstatus": "!syphonstatus",
+            "fart_leaderboard": "!fartleaderboard",
+            "fart_gift": "!fart_gift",
+            "fartgift": "!fart_gift",
+            "gift_fart": "!fart_gift",
+            "giftfart": "!fart_gift",
             "fartprediction": "!fartprediction",
+            "fart_prediction": "!fartprediction",
+            "prediction_fart": "!fartprediction",
+            "predictionfart": "!fartprediction",
             "bullfart": "!bullfart",
+            "bull_fart": "!bullfart",
+            "fart_bull": "!bullfart",
+            "fartbull": "!bullfart",
             "fartlord": "!fartlord",
+            "fart_lord": "!fartlord",
+            "lord_fart": "!fartlord",
+            "lordfart": "!fartlord",
+            "fartrank": "!fartrank",
+            "fart_rank": "!fartrank",
+            "rank_fart": "!fartrank",
+            "rankfart": "!fartrank",
+            "fartleaderboard": "!fartleaderboard",
+            "fart_leaderboard": "!fartleaderboard",
+            "leaderboard_fart": "!fartleaderboard",
+            "leaderboardfart": "!fartleaderboard",
             "taxes": "!taxes",
+            "farttaxes": "!taxes",
+            "fart_taxes": "!taxes",
+            "taxes_fart": "!taxes",
+            "taxesfart": "!taxes",
             "wealth": "!wealth",
+            "fartwealth": "!wealth",
+            "fart_wealth": "!wealth",
+            "wealth_fart": "!wealth",
+            "wealthfart": "!wealth",
         }
 
         suggestion = find_best_command_match(failed_command, command_suggestions, actual_commands)
@@ -322,6 +338,97 @@ class FunCog(commands.Cog):
             )
         conn.commit()
         conn.close()
+
+    def _ensure_gift_usage_table(self, cur):
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS fart_gift_usage (
+                gifter_id INTEGER NOT NULL,
+                recipient_id INTEGER NOT NULL,
+                gifted_at TEXT NOT NULL,
+                PRIMARY KEY (gifter_id, recipient_id)
+            )
+        """)
+
+    def has_gifted_to_this_season(self, gifter_id: int, recipient_id: int) -> bool:
+        """True if this gifter already gifted this recipient once this season."""
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            self._ensure_gift_usage_table(cur)
+            cur.execute(
+                "SELECT 1 FROM fart_gift_usage WHERE gifter_id = ? AND recipient_id = ?",
+                (gifter_id, recipient_id),
+            )
+            return cur.fetchone() is not None
+        finally:
+            conn.close()
+
+    def mark_gifted_this_season(self, gifter_id: int, recipient_id: int):
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            self._ensure_gift_usage_table(cur)
+            cur.execute(
+                "INSERT OR REPLACE INTO fart_gift_usage (gifter_id, recipient_id, gifted_at) VALUES (?, ?, ?)",
+                (gifter_id, recipient_id, datetime.datetime.now().isoformat()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def mark_daily_action_used(self, user_id, user_display_name, last_updated):
+        """Consume the user's daily fart action without changing their score."""
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute("""CREATE TABLE IF NOT EXISTS fart_scores
+                           (user_id INTEGER PRIMARY KEY,
+                            user_display_name TEXT,
+                            date_last_updated TEXT,
+                            score INTEGER
+                           )""")
+            cur.execute("SELECT score FROM fart_scores WHERE user_id=?", (user_id,))
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    "UPDATE fart_scores SET date_last_updated=?, user_display_name=? WHERE user_id=?",
+                    (last_updated.isoformat(), user_display_name, user_id),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO fart_scores (user_id, user_display_name, date_last_updated, score) VALUES (?, ?, ?, ?)",
+                    (user_id, user_display_name, last_updated.isoformat(), 0),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def add_score_points(self, user_id, user_display_name, points):
+        """Add points without consuming the user's daily action."""
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute("""CREATE TABLE IF NOT EXISTS fart_scores
+                           (user_id INTEGER PRIMARY KEY,
+                            user_display_name TEXT,
+                            date_last_updated TEXT,
+                            score INTEGER
+                           )""")
+            cur.execute("SELECT score FROM fart_scores WHERE user_id=?", (user_id,))
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    "UPDATE fart_scores SET score = score + ?, user_display_name=? WHERE user_id=?",
+                    (points, user_display_name, user_id),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO fart_scores (user_id, user_display_name, date_last_updated, score) VALUES (?, ?, NULL, ?)",
+                    (user_id, user_display_name, points),
+                )
+            conn.commit()
+        finally:
+            conn.close()
 
     async def update_fart_leader_role(self, ctx):
         guild = self.bot.get_guild(self.guild_id)
@@ -411,7 +518,7 @@ class FunCog(commands.Cog):
             if "conn" in locals():
                 conn.close()
 
-    @commands.command()
+    @commands.command(aliases=["farthelp", "help_fart", "fart_help"])
     async def helpfart(self, ctx):
         """Get detailed help on all fart commands."""
         if ctx.channel.id != self.fart_channel_id:
@@ -422,7 +529,7 @@ class FunCog(commands.Cog):
 
         embed = discord.Embed(
             title="💨 Fart Command Guide",
-            description="Master the art of magical flatulence!",
+            description="Master the art of magical flatulence!\nUnderscored and concatenated forms both work (e.g. `!fart_rank` / `!fartrank`).",
             color=discord.Color.green(),
         )
 
@@ -431,9 +538,8 @@ class FunCog(commands.Cog):
             name="📅 Daily Actions (Choose One)",
             value=(
                 "`!fart` - Roll for random fart points\n"
-                "`!fartprediction` - Predict fart type for 2x (or half!)\n"
-                "`!attackfart` - Attack leader to reduce their score\n"
-                "`!syphonfart` - Steal half of leader's next fart"
+                "`!fart_gift` / `!fartgift` `@user` - Roll your daily fart for someone else (once per player per season)\n"
+                "`!fartprediction` / `!fart_prediction` - Predict fart type for 2x (or half!)"
             ),
             inline=False,
         )
@@ -441,7 +547,7 @@ class FunCog(commands.Cog):
         # Weekly Actions
         embed.add_field(
             name="📆 Weekly Actions",
-            value="`!bullfart` - Bonus points based on last fart (once/week)",
+            value="`!bullfart` / `!bull_fart` - Bonus points based on last fart (once/week)",
             inline=False,
         )
 
@@ -449,10 +555,9 @@ class FunCog(commands.Cog):
         embed.add_field(
             name="📊 Stats & Leaderboard",
             value=(
-                "`!fartrank` - Check your score and rank\n"
+                "`!fartrank` / `!fart_rank` - Check your score and rank\n"
                 "`!fartrank @user` - Check another user's rank\n"
-                "`!fartleaderboard` - View top 5 farters\n"
-                "`!syphonstatus` - Check active syphons on leader"
+                "`!fartleaderboard` / `!fart_leaderboard` - View top 5 farters"
             ),
             inline=False,
         )
@@ -461,9 +566,9 @@ class FunCog(commands.Cog):
         embed.add_field(
             name="👑 Leader-Only Commands",
             value=(
-                "`!fartlord` - Make a grand proclamation\n"
-                "`!taxes` - Take 5% from everyone (once/reign)\n"
-                "`!wealth` - Robin Hood: redistribute from top 5 (once/reign)"
+                "`!fartlord` / `!fart_lord` - Make a grand proclamation\n"
+                "`!taxes` - Take 20% from everyone (once/reign)\n"
+                "`!wealth` - Redistribute 50% from top 5 (includes you) (once/reign)"
             ),
             inline=False,
         )
@@ -627,102 +732,24 @@ class FunCog(commands.Cog):
                     "⚠️ There was an error saving your fart type, but continuing..."
                 )
 
-            # Handle syphon mechanics
             try:
-                if ctx.author.id in active_syphons:
-                    syphoners = active_syphons[ctx.author.id]
-                    num_syphoners = len(syphoners)
-                    stolen_points = points_earned // 2
-                    points_per_syphoner = stolen_points // num_syphoners
-                    remaining_points = points_earned - (
-                        points_per_syphoner * num_syphoners
+                try:
+                    fart_message_add = self.openai_response(
+                        fart_message, ctx.author.name
                     )
+                except Exception as e:
+                    logger.error(f"OpenAI API error: {e}")
+                    fart_message_add = "... *cough cough*"
 
-                    # Award points to each syphoner
-                    syphoner_names = []
-                    conn = sqlite3.connect("fart_scores.db")
-                    cur = conn.cursor()
-
-                    for syphoner_id in syphoners:
-                        try:
-                            syphoner = await self.bot.fetch_user(syphoner_id)
-                            if not syphoner:
-                                logger.error(f"Could not fetch user {syphoner_id}")
-                                continue
-
-                            cur.execute(
-                                """INSERT INTO fart_scores (user_id, user_display_name, score) 
-                                   VALUES (?, ?, ?)
-                                   ON CONFLICT(user_id) DO UPDATE SET
-                                   score = score + ?
-                                   WHERE user_id = ?""",
-                                (
-                                    syphoner_id,
-                                    syphoner.global_name,
-                                    points_per_syphoner,
-                                    points_per_syphoner,
-                                    syphoner_id,
-                                ),
-                            )
-                            syphoner_names.append(
-                                f"{syphoner.mention} (+{points_per_syphoner})"
-                            )
-                        except Exception as e:
-                            logger.error(
-                                f"Error processing syphoner {syphoner_id}: {e}"
-                            )
-                            continue
-
-                    conn.commit()
-                    conn.close()
-
-                    # Award remaining points to farter
-                    self.save_fart_score(
-                        now, ctx.author.id, ctx.author.global_name, remaining_points
-                    )
-
-                    # Remove the syphons
-                    del active_syphons[ctx.author.id]
-
-                    try:
-                        fart_message_add = self.openai_response(
-                            fart_message, ctx.author.name
-                        )
-                    except Exception as e:
-                        logger.error(f"OpenAI API error: {e}")
-                        fart_message_add = "... *cough cough*"
-
-                    syphoners_text = ", ".join(syphoner_names)
-                    mushroom_boost_msg = (
-                        " **MUSHROOM BOOST ACTIVATED!** \n"
-                        if lucky_charm_active
-                        else ""
-                    )
-                    await ctx.send(
-                        f"{mushroom_boost_msg}{fart_message} {fart_message_add}\n\n"
-                        f"💀 **SYPHONED BY {num_syphoners} SORCERER{'S' if num_syphoners > 1 else ''}!** "
-                        f"{syphoners_text} stole points! "
-                        f"You earned {remaining_points} points."
-                    )
-                else:
-                    # Normal fart - no syphon active
-                    try:
-                        fart_message_add = self.openai_response(
-                            fart_message, ctx.author.name
-                        )
-                    except Exception as e:
-                        logger.error(f"OpenAI API error: {e}")
-                        fart_message_add = "... *cough cough*"
-
-                    self.save_fart_score(
-                        now, ctx.author.id, ctx.author.global_name, points_earned
-                    )
-                    mushroom_boost_msg = (
-                        "**MUSHROOM BOOST ACTIVATED!** \n" if lucky_charm_active else ""
-                    )
-                    await ctx.send(
-                        f"{mushroom_boost_msg}{fart_message} {fart_message_add} You earned {points_earned} points."
-                    )
+                self.save_fart_score(
+                    now, ctx.author.id, ctx.author.global_name, points_earned
+                )
+                mushroom_boost_msg = (
+                    "**MUSHROOM BOOST ACTIVATED!** \n" if lucky_charm_active else ""
+                )
+                await ctx.send(
+                    f"{mushroom_boost_msg}{fart_message} {fart_message_add} You earned {points_earned} points."
+                )
 
             except Exception as e:
                 logger.error(f"Error processing fart mechanics: {e}")
@@ -757,7 +784,190 @@ class FunCog(commands.Cog):
                 "💨 Oops! Something went wrong with your fart. Please try again later."
             )
 
-    @commands.command()
+    @commands.command(name="fart_gift", aliases=["fartgift", "gift_fart", "giftfart"])
+    async def fart_gift(self, ctx, target: discord.Member = None):
+        """Roll your daily fart and gift the points to another user (once per recipient per season). Usage: !fart_gift @user"""
+        try:
+            if ctx.channel.id != self.fart_channel_id:
+                await ctx.send(
+                    f"{ctx.author.mention}, please use the fart commands in <#{self.fart_channel_id}>."
+                )
+                return
+
+            if target is None:
+                await ctx.send(
+                    f"{ctx.author.mention}, usage: `!fart_gift @user` — roll your daily fart for someone else "
+                    f"(once per player per season)!"
+                )
+                return
+
+            if target.id == ctx.author.id:
+                await ctx.send(
+                    f"{ctx.author.mention}, you can't gift a fart to yourself. Try `!fart` instead!"
+                )
+                return
+
+            if target.bot:
+                await ctx.send(
+                    f"{ctx.author.mention}, bots don't appreciate the gift of flatulence."
+                )
+                return
+
+            if self.has_gifted_to_this_season(ctx.author.id, target.id):
+                await ctx.send(
+                    f"{ctx.author.mention}, you've already gifted a fart to <@{target.id}> this season! "
+                    f"One gifted roll per player — try `!fart_donation` if you still want to share points."
+                )
+                return
+
+            # Check daily action on the gifter
+            did_user_fart_today = False
+            try:
+                conn = sqlite3.connect("fart_scores.db")
+                cur = conn.cursor()
+                cur.execute("""CREATE TABLE IF NOT EXISTS fart_scores
+                           (user_id INTEGER PRIMARY KEY,
+                            user_display_name TEXT,
+                            date_last_updated TEXT,
+                            score INTEGER
+                           )""")
+                cur.execute(
+                    "SELECT date_last_updated FROM fart_scores WHERE user_id=?",
+                    (ctx.author.id,),
+                )
+                row = cur.fetchone()
+                if row and row[0]:
+                    parsed_datetime = safe_parse_datetime(row[0])
+                    if parsed_datetime:
+                        last_fart_date = parse_to_est_date(row[0])
+                        if last_fart_date == get_est_date():
+                            did_user_fart_today = True
+            except sqlite3.Error as e:
+                logger.error(f"Database error while checking fart gift status: {e}")
+                await ctx.send(
+                    "⚠️ There was an error checking your fart status. Please try again later."
+                )
+                return
+            finally:
+                if "conn" in locals():
+                    conn.close()
+
+            if did_user_fart_today:
+                now = get_est_now()
+                midnight = get_est_midnight()
+                time_until_next = midnight - now
+                hours = int(time_until_next.total_seconds() // 3600)
+                minutes = int((time_until_next.total_seconds() % 3600) // 60)
+                time_msg = (
+                    f"You can use a daily action again in **{hours}h {minutes}m** "
+                    f"(resets at midnight EST)"
+                )
+                await ctx.send(
+                    f"{ctx.author.mention} {daily_usage_message}\n{time_msg}"
+                )
+                return
+
+            # Roll (gifter's mushroom boost applies)
+            roll = randrange(1, 101)
+            lucky_charm_active = False
+            try:
+                conn = sqlite3.connect("fart_scores.db")
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT activated_at FROM lucky_charms WHERE user_id = ?",
+                    (ctx.author.id,),
+                )
+                charm_result = cur.fetchone()
+                if charm_result:
+                    lucky_charm_active = True
+                    roll2 = randrange(1, 101)
+                    roll = max(roll, roll2)
+                    cur.execute(
+                        "DELETE FROM lucky_charms WHERE user_id = ?",
+                        (ctx.author.id,),
+                    )
+                    conn.commit()
+                conn.close()
+            except sqlite3.Error as e:
+                logger.error(f"Error checking lucky charm for fart_gift: {e}")
+                if "conn" in locals():
+                    conn.close()
+
+            if roll >= 96:
+                fart_message = "Curio Shart! 💩💨💨💨💨"
+                fart_type = "curio_shart"
+            elif roll >= 86:
+                fart_message = "Unique Fart! 💨💨💨💨"
+                fart_type = "unique"
+            elif roll >= 66:
+                fart_message = "Elite Fart! 💨💨💨"
+                fart_type = "elite"
+            elif roll >= 36:
+                fart_message = "Exceptional Fart! 💨💨"
+                fart_type = "exceptional"
+            else:
+                fart_message = "Ordinary Fart! 💨"
+                fart_type = "ordinary"
+
+            now = datetime.datetime.now()
+            points_earned = roll
+
+            try:
+                self.save_fart_type(
+                    ctx.author.id, ctx.author.global_name, fart_type, roll, now
+                )
+            except sqlite3.Error as e:
+                logger.error(f"Error saving gifted fart type: {e}")
+
+            try:
+                fart_message_add = self.openai_response(
+                    fart_message, ctx.author.name
+                )
+            except Exception as e:
+                logger.error(f"OpenAI API error: {e}")
+                fart_message_add = "... *cough cough*"
+
+            # Consume gifter's daily; award points to recipient; lock recipient for season
+            self.mark_daily_action_used(
+                ctx.author.id, ctx.author.global_name, now
+            )
+            self.add_score_points(
+                target.id, target.global_name or target.display_name, points_earned
+            )
+            self.mark_gifted_this_season(ctx.author.id, target.id)
+
+            mushroom_boost_msg = (
+                "**MUSHROOM BOOST ACTIVATED!** \n" if lucky_charm_active else ""
+            )
+            await ctx.send(
+                f"{mushroom_boost_msg}🎁 **FART GIFT!** {ctx.author.mention} rolled a {fart_message} "
+                f"{fart_message_add}\n"
+                f"<@{target.id}> received **{points_earned}** points — how nice!\n"
+                f"(Once per player per season)"
+            )
+
+            try:
+                await self.update_fart_leader_role(ctx)
+            except Exception as e:
+                logger.error(f"Error updating leader role after fart_gift: {e}")
+
+            try:
+                guild = self.bot.get_guild(self.guild_id)
+                if guild:
+                    farter_role = guild.get_role(1445222741686095994)
+                    member = guild.get_member(ctx.author.id)
+                    if farter_role and member and farter_role not in member.roles:
+                        await member.add_roles(farter_role)
+            except Exception as e:
+                logger.error(f"Error assigning farter role after fart_gift: {e}")
+
+        except Exception as e:
+            logger.error(f"Unexpected error in fart_gift command: {e}")
+            await ctx.send(
+                "💨 Oops! Something went wrong with your fart gift. Please try again later."
+            )
+
+    @commands.command(aliases=["fart_rank", "rank_fart", "rankfart"])
     async def fartrank(self, ctx, user: discord.Member = None):
         """Check your fart score and rank, or check another user's rank by tagging them."""
         if ctx.channel.id != self.fart_channel_id:
@@ -804,7 +1014,7 @@ class FunCog(commands.Cog):
         conn.close()
         await self.update_fart_leader_role(ctx)
 
-    @commands.command()
+    @commands.command(aliases=["fart_leaderboard", "leaderboard_fart", "leaderboardfart", "fart_lb", "fartlb"])
     async def fartleaderboard(self, ctx):
         """Check the top 5 farting sorcerers."""
         if ctx.channel.id != self.fart_channel_id:
@@ -832,259 +1042,7 @@ class FunCog(commands.Cog):
         conn.close()
         await self.update_fart_leader_role(ctx)
 
-    @commands.command()
-    async def attackfart(self, ctx):
-        """Attack the fart leader with a fart! Only one attack OR fart per day."""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use the fart commands in <#{self.fart_channel_id}>."
-            )
-            return
-
-        did_user_fart_today = False
-        print(f"User {ctx.author.id} is attempting to attack the fart leader.")
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                "SELECT date_last_updated FROM fart_scores WHERE user_id=?",
-                (ctx.author.id,),
-            )
-            row = cur.fetchone()
-            if row:
-                parsed_datetime = safe_parse_datetime(row[0])
-                if parsed_datetime:
-                    last_fart_date = parse_to_est_date(row[0])
-                    if last_fart_date == get_est_date():
-                        did_user_fart_today = True
-
-            if did_user_fart_today:
-                # Calculate time until next fart (midnight EST)
-                now = get_est_now()
-                midnight = get_est_midnight()
-                time_until_next = midnight - now
-
-                hours = int(time_until_next.total_seconds() // 3600)
-                minutes = int((time_until_next.total_seconds() % 3600) // 60)
-
-                time_msg = f"You can use your daily action again in **{hours}h {minutes}m** (resets at midnight EST)"
-                await ctx.send(
-                    f"{ctx.author.mention} {daily_usage_message}\n{time_msg}"
-                )
-                return
-
-            roll = randrange(1, 101)
-            if roll >= 96:
-                fart_message = "Curio Shart Attack! 💩💨💨💨💨"
-                fart_type = "curio_shart"
-            elif roll >= 86:
-                fart_message = "Unique Fart Bomb! 💨💨💨💨"
-                fart_type = "unique"
-            elif roll >= 66:
-                fart_message = "Elite Fart Barrage! 💨💨💨"
-                fart_type = "elite"
-            elif roll >= 36:
-                fart_message = "Exceptional Fart Strike! 💨💨"
-                fart_type = "exceptional"
-            else:
-                fart_message = "Ordinary Fart Puff! 💨"
-                fart_type = "ordinary"
-
-            damage = roll  # Damage equals roll value
-
-            # Get the leaderboard
-            cur.execute(
-                "SELECT user_id, user_display_name, score FROM fart_scores "
-                "ORDER BY score DESC LIMIT 1"
-            )
-            leader_row = cur.fetchone()
-
-            leader_id, leader_name, leader_score = leader_row
-
-            if ctx.author.id == leader_id:
-                await ctx.send("You are the leader! You cannot attack yourself.")
-                return
-
-            # Update the leader's score
-            new_leader_score = max(0, leader_score - damage)
-            cur.execute(
-                "UPDATE fart_scores SET score=? WHERE user_id=?",
-                (new_leader_score, leader_id),
-            )
-
-            # Update the user's last attack time
-            now = datetime.datetime.now()
-            cur.execute(
-                "UPDATE fart_scores SET date_last_updated=? WHERE user_id=?",
-                (now.isoformat(), ctx.author.id),
-            )
-
-            conn.commit()
-
-            chatgpt = self.openai_response_to_attack(
-                fart_message, ctx.author.name, damage
-            )
-
-            await ctx.send(
-                f"{ctx.author.mention} attacked {leader_name} {chatgpt} \n\n"
-                f"<@{leader_id}>'s new score is {new_leader_score}."
-            )
-        finally:
-            conn.close()
-
-        await self.update_fart_leader_role(ctx)
-
-    @commands.command()
-    async def syphonfart(self, ctx):
-        """Place a syphon on the fart leader! Steal half their next fart roll. Once per day."""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use the fart commands in <#{self.fart_channel_id}>."
-            )
-            return
-
-        # Check if user already used their daily action
-        did_user_fart_today = False
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                "SELECT date_last_updated FROM fart_scores WHERE user_id=?",
-                (ctx.author.id,),
-            )
-            row = cur.fetchone()
-            if row:
-                parsed_datetime = safe_parse_datetime(row[0])
-                if parsed_datetime:
-                    last_fart_date = parse_to_est_date(row[0])
-                    if last_fart_date == get_est_date():
-                        did_user_fart_today = True
-
-            if did_user_fart_today:
-                # Calculate time until next fart (midnight EST)
-                now = get_est_now()
-                midnight = get_est_midnight()
-                time_until_next = midnight - now
-
-                hours = int(time_until_next.total_seconds() // 3600)
-                minutes = int((time_until_next.total_seconds() % 3600) // 60)
-
-                time_msg = f"You can use your daily action again in **{hours}h {minutes}m** (resets at midnight EST)"
-                await ctx.send(
-                    f"{ctx.author.mention} {daily_usage_message}\n{time_msg}"
-                )
-                return
-
-            # Get the current leader
-            cur.execute(
-                "SELECT user_id, user_display_name FROM fart_scores ORDER BY score DESC LIMIT 1"
-            )
-            leader_row = cur.fetchone()
-
-            if not leader_row:
-                await ctx.send("No fart leader found yet! Someone needs to fart first.")
-                return
-
-            leader_id, leader_name = leader_row
-
-            # Can't syphon yourself
-            if ctx.author.id == leader_id:
-                await ctx.send(
-                    "You can't syphon yourself! You're already the leader! 👑"
-                )
-                return
-
-            # Check if user already has a syphon on this leader
-            if (
-                leader_id in active_syphons
-                and ctx.author.id in active_syphons[leader_id]
-            ):
-                await ctx.send(
-                    f"⚠️ You already have a syphon placed on {leader_name}! "
-                    f"Wait for them to fart!"
-                )
-                return
-
-            # Add user to the list of syphoners for this leader
-            if leader_id not in active_syphons:
-                active_syphons[leader_id] = []
-
-            active_syphons[leader_id].append(ctx.author.id)
-            num_syphoners = len(active_syphons[leader_id])
-
-            # Mark user's daily action as used
-            now = datetime.datetime.now()
-            cur.execute(
-                "UPDATE fart_scores SET date_last_updated=? WHERE user_id=?",
-                (now.isoformat(), ctx.author.id),
-            )
-            conn.commit()
-
-            if num_syphoners == 1:
-                await ctx.send(
-                    f"🌀 **SYPHON PLACED!** {ctx.author.mention} has placed a mystical syphon on \n"
-                    f"<@{leader_id}>! When they fart, you'll steal half their points!"
-                )
-            else:
-                await ctx.send(
-                    f"🌀 **SYPHON #{num_syphoners} PLACED!** {ctx.author.mention} joins the syphon group! \n"
-                    f"<@{leader_id}> now has **{num_syphoners} syphons** draining them! \n"
-                    f"Points will be split evenly among all syphoners!"
-                )
-
-        finally:
-            conn.close()
-
-    @commands.command()
-    async def syphonstatus(self, ctx):
-        """Check active syphons on the current leader."""
-        if ctx.channel.id != self.fart_channel_id:
-            await ctx.send(
-                f"{ctx.author.mention}, please use the fart commands in <#{self.fart_channel_id}>."
-            )
-            return
-
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-        try:
-            # Get the current leader
-            cur.execute(
-                "SELECT user_id, user_display_name, score FROM fart_scores ORDER BY score DESC LIMIT 1"
-            )
-            leader_row = cur.fetchone()
-
-            if not leader_row:
-                await ctx.send("No fart leader found yet!")
-                return
-
-            leader_id, leader_name, leader_score = leader_row
-
-            if leader_id not in active_syphons or len(active_syphons[leader_id]) == 0:
-                await ctx.send(
-                    f"👑 **Current Leader:** {leader_name} ({leader_score} points)\n"
-                    f"✅ No active syphons! The leader is safe... for now. 😈"
-                )
-            else:
-                syphoners = active_syphons[leader_id]
-                num_syphoners = len(syphoners)
-                syphoner_names = []
-
-                for syphoner_id in syphoners:
-                    syphoner = await self.bot.fetch_user(syphoner_id)
-                    syphoner_names.append(syphoner.mention)
-
-                syphoners_text = ", ".join(syphoner_names)
-                await ctx.send(
-                    f"👑 **Current Leader:** {leader_name} ({leader_score} points)\n"
-                    f"💀 **Active Syphons:** {num_syphoners}\n"
-                    f"🌀 **Syphoning:** {syphoners_text}\n\n"
-                    f"When {leader_name} farts next, each syphoner will steal an equal share of 50% of the points!"
-                )
-
-        finally:
-            conn.close()
-
-    @commands.command()
+    @commands.command(aliases=["fart_prediction", "prediction_fart", "predictionfart"])
     async def fartprediction(self, ctx):
         """Predict your fart for double points or lose half!"""
         if ctx.channel.id != self.fart_channel_id:
@@ -1114,7 +1072,7 @@ class FunCog(commands.Cog):
         view = FartPredictionView(self, ctx.author.id)
         await ctx.send(embed=embed, view=view)
 
-    @commands.command()
+    @commands.command(aliases=["bull_fart", "fart_bull", "fartbull"])
     async def bullfart(self, ctx):
         """Use this command only once a week!"""
         if ctx.channel.id != self.fart_channel_id:
@@ -1218,7 +1176,7 @@ class FunCog(commands.Cog):
 
         await self.update_fart_leader_role(ctx)
 
-    @commands.command()
+    @commands.command(aliases=["fart_lord", "lord_fart", "lordfart"])
     @commands.has_role(config.LEADER_ROLE_ID)
     async def fartlord(self, ctx):
         """Declare yourself the Fart Lord (Leader role only)."""
@@ -1231,9 +1189,10 @@ class FunCog(commands.Cog):
             f"Hear ye, hear ye! {ctx.author.mention} proclaims: {response_text}"
         )
 
-    @commands.command()
+    @commands.command(aliases=["farttaxes", "fart_taxes", "taxes_fart", "taxesfart"])
     @commands.has_role(config.LEADER_ROLE_ID)
     async def taxes(self, ctx):
+        """Take 20% from everyone outside the top 5 and give to the top 5 (once per reign)."""
         try:
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
@@ -1278,12 +1237,12 @@ class FunCog(commands.Cog):
                 top_5 = all_users[:5]
                 others = all_users[5:]
 
-                # Calculate total points to take from non-top-5
+                # Calculate total points to take from non-top-5 (20%)
                 total_taken = 0
                 redistribution_details = []
 
                 for user_id, user_display_name, score in others:
-                    points_to_take = int(score * 0.05)
+                    points_to_take = int(score * 0.20)
                     new_score = score - points_to_take
                     total_taken += points_to_take
 
@@ -1320,22 +1279,22 @@ class FunCog(commands.Cog):
                     f"💰 **WEALTH REDISTRIBUTION COMPLETE!** 💰\n\n"
                     f"**Total redistributed:** {total_taken} points\n\n"
                     f"**TOP 5 GAINERS:**\n" + "\n".join(top_5_details) + "\n\n"
-                    f"**Points taken from {len(others)} users** (5% each)"
+                    f"**Points taken from {len(others)} users** (20% each)"
                 )
 
                 await ctx.send(response)
                 await self.update_fart_leader_role(ctx)
         except Exception as e:
-            print(f"Error in wealth command: {e}")
+            print(f"Error in taxes command: {e}")
             import traceback
 
             traceback.print_exc()
             await ctx.send(f"An error occurred: {e}")
 
-    @commands.command()
+    @commands.command(aliases=["fartwealth", "fart_wealth", "wealth_fart", "wealthfart"])
     @commands.has_role(config.LEADER_ROLE_ID)
     async def wealth(self, ctx):
-        """Robin Hood - Take 10% from top 5 and give to everyone else (Leader only, once per reign)"""
+        """Robin Hood - Take 50% from top 5 (includes you) and give to everyone else (once per reign)"""
         try:
             print(f"User {ctx.author.id} is attempting to use wealth redistribution.")
             if ctx.channel.id != self.fart_channel_id:
@@ -1387,12 +1346,12 @@ class FunCog(commands.Cog):
                 top_5 = all_users[:5]
                 others = all_users[5:]
 
-                # Calculate total points to take from top 5
+                # Calculate total points to take from top 5 (50% — includes you)
                 total_taken = 0
                 top_5_details = []
 
                 for user_id, user_display_name, score in top_5:
-                    points_to_take = int(score * 0.10)
+                    points_to_take = int(score * 0.50)
                     new_score = score - points_to_take
                     total_taken += points_to_take
 
@@ -1428,7 +1387,7 @@ class FunCog(commands.Cog):
                 response = (
                     f"🏹 **ROBIN HOOD REDISTRIBUTION!** 🏹\n\n"
                     f"**Total redistributed:** {total_taken} points\n\n"
-                    f"**TOP 5 TAXED (10% each):**\n" + "\n".join(top_5_details) + "\n\n"
+                    f"**TOP 5 TAXED (50% each):**\n" + "\n".join(top_5_details) + "\n\n"
                     f"**{len(others)} WORKERS REWARDED:**\n"
                     + "\n".join(others_details[:10])
                 )
@@ -1445,7 +1404,7 @@ class FunCog(commands.Cog):
             traceback.print_exc()
             await ctx.send(f"An error occurred: {e}")
 
-    @commands.command()
+    @commands.command(aliases=["resetfartcooldown", "reset_cooldown_fart", "fart_reset_cooldown"])
     @is_bot_admin()
     async def reset_fart_cooldown(self, ctx, user: discord.Member = None):
         """Admin command to reset a user's fart cooldown (set last fart to 48 hours ago).

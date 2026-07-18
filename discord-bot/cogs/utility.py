@@ -254,8 +254,8 @@ class UtilityCog(commands.Cog):
             name="👑 Leader Commands",
             value=(
                 "`!fartlord` - Make grand proclamation\n"
-                "`!taxes` - Take 50% from everyone (once per reign)\n"
-                "`!wealth` - Redistribute 100% from top 5 (once per reign)"
+                "`!taxes` - Take 20% from everyone (once per reign)\n"
+                "`!wealth` - Redistribute 50% from top 5 (once per reign)"
             ),
             inline=False,
         )

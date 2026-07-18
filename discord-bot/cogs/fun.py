@@ -567,8 +567,8 @@ class FunCog(commands.Cog):
             name="👑 Leader-Only Commands",
             value=(
                 "`!fartlord` / `!fart_lord` - Make a grand proclamation\n"
-                "`!taxes` - Take 50% from everyone (once/reign)\n"
-                "`!wealth` - Redistribute 100% from top 5 (includes you) (once/reign)"
+                "`!taxes` - Take 20% from everyone (once/reign)\n"
+                "`!wealth` - Redistribute 50% from top 5 (includes you) (once/reign)"
             ),
             inline=False,
         )
@@ -1192,7 +1192,7 @@ class FunCog(commands.Cog):
     @commands.command(aliases=["farttaxes", "fart_taxes", "taxes_fart", "taxesfart"])
     @commands.has_role(config.LEADER_ROLE_ID)
     async def taxes(self, ctx):
-        """Take 50% from everyone outside the top 5 and give to the top 5 (once per reign)."""
+        """Take 20% from everyone outside the top 5 and give to the top 5 (once per reign)."""
         try:
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
@@ -1237,12 +1237,12 @@ class FunCog(commands.Cog):
                 top_5 = all_users[:5]
                 others = all_users[5:]
 
-                # Calculate total points to take from non-top-5 (50%)
+                # Calculate total points to take from non-top-5 (20%)
                 total_taken = 0
                 redistribution_details = []
 
                 for user_id, user_display_name, score in others:
-                    points_to_take = int(score * 0.50)
+                    points_to_take = int(score * 0.20)
                     new_score = score - points_to_take
                     total_taken += points_to_take
 
@@ -1279,7 +1279,7 @@ class FunCog(commands.Cog):
                     f"💰 **WEALTH REDISTRIBUTION COMPLETE!** 💰\n\n"
                     f"**Total redistributed:** {total_taken} points\n\n"
                     f"**TOP 5 GAINERS:**\n" + "\n".join(top_5_details) + "\n\n"
-                    f"**Points taken from {len(others)} users** (50% each)"
+                    f"**Points taken from {len(others)} users** (20% each)"
                 )
 
                 await ctx.send(response)
@@ -1294,7 +1294,7 @@ class FunCog(commands.Cog):
     @commands.command(aliases=["fartwealth", "fart_wealth", "wealth_fart", "wealthfart"])
     @commands.has_role(config.LEADER_ROLE_ID)
     async def wealth(self, ctx):
-        """Robin Hood - Take 100% from top 5 (includes you) and give to everyone else (once per reign)"""
+        """Robin Hood - Take 50% from top 5 (includes you) and give to everyone else (once per reign)"""
         try:
             print(f"User {ctx.author.id} is attempting to use wealth redistribution.")
             if ctx.channel.id != self.fart_channel_id:
@@ -1346,12 +1346,12 @@ class FunCog(commands.Cog):
                 top_5 = all_users[:5]
                 others = all_users[5:]
 
-                # Calculate total points to take from top 5 (100% — includes you)
+                # Calculate total points to take from top 5 (50% — includes you)
                 total_taken = 0
                 top_5_details = []
 
                 for user_id, user_display_name, score in top_5:
-                    points_to_take = int(score * 1.00)
+                    points_to_take = int(score * 0.50)
                     new_score = score - points_to_take
                     total_taken += points_to_take
 
@@ -1387,7 +1387,7 @@ class FunCog(commands.Cog):
                 response = (
                     f"🏹 **ROBIN HOOD REDISTRIBUTION!** 🏹\n\n"
                     f"**Total redistributed:** {total_taken} points\n\n"
-                    f"**TOP 5 TAXED (100% each):**\n" + "\n".join(top_5_details) + "\n\n"
+                    f"**TOP 5 TAXED (50% each):**\n" + "\n".join(top_5_details) + "\n\n"
                     f"**{len(others)} WORKERS REWARDED:**\n"
                     + "\n".join(others_details[:10])
                 )

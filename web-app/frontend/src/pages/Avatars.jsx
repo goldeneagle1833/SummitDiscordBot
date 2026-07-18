@@ -6,6 +6,7 @@ import {
   getAvatarImageFiles,
   getAvatarFilters,
   getPlayDrawStats,
+  getSeasonStats,
 } from "@/api/cards";
 import { getAvatarImageSettings } from "@/api/admin";
 import { useAuth } from "@/context/AuthContext";
@@ -214,6 +215,7 @@ export default function Avatars() {
   const [imageSettings, setImageSettings] = useState({});
   const [filters, setFilters] = useState({ events: [], sources: [] });
   const [playDraw, setPlayDraw] = useState(null);
+  const [seasonStats, setSeasonStats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [eventFilter, setEventFilter] = useState("all");
@@ -225,10 +227,12 @@ export default function Avatars() {
       getAvatarImageFiles(),
       getAvatarFilters(),
       getPlayDrawStats(),
-    ]).then(([imgs, flt, pd]) => {
+      getSeasonStats(),
+    ]).then(([imgs, flt, pd, ss]) => {
       if (imgs.status === "fulfilled") setImageFiles(imgs.value);
       if (flt.status === "fulfilled") setFilters(flt.value);
       if (pd.status === "fulfilled") setPlayDraw(pd.value);
+      if (ss.status === "fulfilled") setSeasonStats(ss.value);
     });
   }, []);
 
@@ -276,6 +280,16 @@ export default function Avatars() {
           Global statistics from all matches reported with decklists, sorted by{" "}
           {SORT_LABELS[sortBy]}
         </p>
+        {seasonStats.length > 0 && (
+          <p className="text-xs text-text-muted mt-1">
+            {seasonStats.map((s, i) => (
+              <span key={s.id}>
+                {i > 0 && " | "}
+                {s.name}: {s.total_games.toLocaleString()} games
+              </span>
+            ))}
+          </p>
+        )}
         <Link to="/avatars/top-players" className="inline-block text-sm text-primary hover:underline mt-2">
           View Top 16 Players by Avatar
         </Link>

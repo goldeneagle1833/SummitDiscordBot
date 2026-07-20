@@ -635,33 +635,35 @@ class LFGCog(commands.Cog):
                 color=discord.Color.green(),
             )
 
-            # Ranked queue section
-            if ranked_details:
-                embed.add_field(
-                    name="\u2694\ufe0f Ranked Queue",
-                    value="\n".join(ranked_details),
-                    inline=False,
-                )
-            else:
-                embed.add_field(
-                    name="\u2694\ufe0f Ranked Queue",
-                    value="`Empty`",
-                    inline=False,
-                )
+            # Ranked queue section (only show when pilot is active)
+            if is_pilot_active("RankedQueue"):
+                if ranked_details:
+                    embed.add_field(
+                        name="\u2694\ufe0f Ranked Queue",
+                        value="\n".join(ranked_details),
+                        inline=False,
+                    )
+                else:
+                    embed.add_field(
+                        name="\u2694\ufe0f Ranked Queue",
+                        value="`Empty`",
+                        inline=False,
+                    )
 
-            # Casual queue section
-            if testing_details:
-                embed.add_field(
-                    name="\U0001f9ea Casual Queue",
-                    value="\n".join(testing_details),
-                    inline=False,
-                )
-            else:
-                embed.add_field(
-                    name="\U0001f9ea Casual Queue",
-                    value="`Empty`",
-                    inline=False,
-                )
+            # Casual queue section (only show when pilot is active)
+            if is_pilot_active("CasualQueue"):
+                if testing_details:
+                    embed.add_field(
+                        name="\U0001f9ea Casual Queue",
+                        value="\n".join(testing_details),
+                        inline=False,
+                    )
+                else:
+                    embed.add_field(
+                        name="\U0001f9ea Casual Queue",
+                        value="`Empty`",
+                        inline=False,
+                    )
 
             # Limited queue section (only show when pilot is active)
             if is_pilot_active("GrewWolves"):

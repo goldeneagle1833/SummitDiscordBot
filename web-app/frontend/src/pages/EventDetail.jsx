@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { getEvent, updateEventMetadata, updateEventDecks, refreshEvent, deleteEvent } from '@/api/events'
+import { getEvent, updateEventMetadata, updateEventDecks, refreshEvent, deleteEvent, pollEventJob } from '@/api/events'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -448,16 +448,19 @@ export default function EventDetail() {
     setDeckError(null)
     setDeckResult(null)
     try {
-      const result = await updateEventDecks(folder, {
+      const submitResult = await updateEventDecks(folder, {
         table: deckModal.table,
         mode: deckModal.mode,
         urls,
       })
+      if (!submitResult.success || !submitResult.job_id) {
+        setDeckError(submitResult.error || 'Failed to start deck update')
+        return
+      }
+      const result = await pollEventJob(submitResult.job_id)
       if (result.success) {
-        // Reload event data
         const fresh = await getEvent(folder)
         setData(fresh)
-        // Show result summary (warnings or counts) before closing
         if (result.warnings?.length) {
           setDeckResult(result)
           setDeckUrls('')
@@ -478,7 +481,9 @@ export default function EventDetail() {
     setRefreshing(true)
     setRefreshResult(null)
     try {
-      const result = await refreshEvent(folder)
+      const submitResult = await refreshEvent(folder)
+      if (!submitResult.success || !submitResult.job_id) return
+      const result = await pollEventJob(submitResult.job_id)
       if (result.success) {
         const fresh = await getEvent(folder)
         setData(fresh)

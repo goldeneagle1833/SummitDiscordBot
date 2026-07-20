@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { getEventsWithAdmin, reorderEvents, updateEventMetadata, createEvent, setFeaturedEvent } from '@/api/events'
+import { getEventsWithAdmin, reorderEvents, updateEventMetadata, createEvent, pollEventJob, setFeaturedEvent } from '@/api/events'
 import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -42,6 +42,7 @@ export default function Events() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState(null)
   const [createResult, setCreateResult] = useState(null)
+  const [createProgress, setCreateProgress] = useState(null)
   const [featuredFolder, setFeaturedFolder] = useState(null)
   const [imageFiles, setImageFiles] = useState([])
 
@@ -137,21 +138,28 @@ export default function Events() {
     setCreating(true)
     setCreateError(null)
     setCreateResult(null)
+    setCreateProgress('Submitting...')
     try {
       const bulk_urls = createForm.bulk
         .split('\n')
         .map((u) => u.trim())
         .filter(Boolean)
-      const result = await createEvent({
+      const submitResult = await createEvent({
         title: createForm.title.trim(),
         ranked_urls: createForm.ranked,
         bulk_urls,
       })
+      if (!submitResult.success || !submitResult.job_id) {
+        setCreateError(submitResult.error || 'Failed to start event creation')
+        return
+      }
+      // Poll for completion
+      const result = await pollEventJob(submitResult.job_id, {
+        onProgress: (p) => setCreateProgress(p),
+      })
       if (result.success) {
-        // Reload events
         const data = await getEventsWithAdmin()
         setEvents(data.events || [])
-        // Show result summary or close
         if (result.warnings?.length) {
           setCreateResult(result)
         } else {
@@ -161,12 +169,10 @@ export default function Events() {
         setCreateError(result.error || 'Failed to create event')
       }
     } catch (err) {
-      const msg = err.status === 502 || err.status === 504 || err.message === 'Failed to fetch'
-        ? 'Request timed out — the server may still be processing. Try with fewer URLs or check the event list.'
-        : err.message || 'Failed to create event'
-      setCreateError(msg)
+      setCreateError(err.message || 'Failed to create event')
     } finally {
       setCreating(false)
+      setCreateProgress(null)
     }
   }, [createForm])
 
@@ -482,7 +488,7 @@ export default function Events() {
                   onClick={handleCreate}
                   disabled={creating || !createForm.title.trim()}
                 >
-                  {creating ? 'Creating...' : 'Create Event'}
+                  {creating ? (createProgress || 'Creating...') : 'Create Event'}
                 </button>
               )}
             </div>

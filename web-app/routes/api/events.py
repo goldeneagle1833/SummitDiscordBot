@@ -1,12 +1,18 @@
 """API routes for event deck management."""
 
 import logging
+import threading
+import uuid
 
 from flask import Blueprint, jsonify, request
 
 from repositories.events import EventRepository
 from utils.auth import is_admin, require_admin
 from utils.formatting import format_event_name
+
+# In-memory job store for background Curiosa fetching
+_event_jobs = {}
+_jobs_lock = threading.Lock()
 
 logger = logging.getLogger(__name__)
 
@@ -116,10 +122,84 @@ def reorder_event_decks(event_folder):
     return jsonify(result), status
 
 
+def _run_event_creation(job_id, title, valid_ranked, valid_bulk):
+    """Background worker for event creation — fetches from Curiosa and saves."""
+    try:
+        from services.curiosa import CuriosaService
+        curiosa = CuriosaService()
+
+        errors = []
+        top8_decks = []
+        bulk_decks = []
+
+        total_batches = 0
+        if valid_ranked:
+            total_batches += max(1, -(-len(valid_ranked) // 10))
+        if valid_bulk:
+            total_batches += max(1, -(-len(valid_bulk) // 10))
+
+        completed_batches = [0]
+
+        # Monkey-patch the rate_limit to update progress
+        original_rate_limit = curiosa._rate_limit
+        def _tracking_rate_limit():
+            original_rate_limit()
+            completed_batches[0] += 1
+            with _jobs_lock:
+                _event_jobs[job_id]["progress"] = f"Fetching batch {completed_batches[0]}/{total_batches}"
+        curiosa._rate_limit = _tracking_rate_limit
+
+        if valid_ranked:
+            top8_decks, ranked_errors = curiosa.fetch_decks_batch(valid_ranked)
+            errors.extend(ranked_errors)
+
+        if valid_bulk:
+            bulk_decks, bulk_errors = curiosa.fetch_decks_batch(valid_bulk)
+            errors.extend(bulk_errors)
+
+        if not top8_decks and not bulk_decks:
+            with _jobs_lock:
+                _event_jobs[job_id].update({
+                    "status": "failed",
+                    "result": {
+                        "success": False,
+                        "error": "No decks could be fetched. Check your URLs.",
+                        "fetch_errors": errors,
+                    },
+                })
+            return
+
+        repo = EventRepository()
+        result = repo.create_event(title, top8_decks, bulk_decks if bulk_decks else None)
+
+        if result.get("success"):
+            result["top8_added"] = len(top8_decks)
+            result["bulk_added"] = len(bulk_decks)
+            if errors:
+                result["warnings"] = errors
+
+        with _jobs_lock:
+            _event_jobs[job_id].update({
+                "status": "completed" if result.get("success") else "failed",
+                "result": result,
+            })
+
+    except Exception as e:
+        logger.exception("Background event creation failed: %s", e)
+        with _jobs_lock:
+            _event_jobs[job_id].update({
+                "status": "failed",
+                "result": {"success": False, "error": f"Internal error: {e}"},
+            })
+
+
 @events_bp.route("/events/create", methods=["POST"])
 @require_admin
 def create_event():
-    """Create a new event from Curiosa deck URLs (admin only)."""
+    """Create a new event from Curiosa deck URLs (admin only).
+
+    Returns a job_id immediately; the client polls /events/jobs/<job_id>.
+    """
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"success": False, "error": "Request body required"}), 400
@@ -128,57 +208,97 @@ def create_event():
     if not title:
         return jsonify({"success": False, "error": "Title is required"}), 400
 
-    # Ranked URLs: 1st through 8th place (all optional)
     ranked_urls = data.get("ranked_urls", [])
     if not isinstance(ranked_urls, list):
         return jsonify({"success": False, "error": "ranked_urls must be a list"}), 400
 
-    # Bulk URLs: additional decks beyond the top 8
     bulk_urls = data.get("bulk_urls", [])
     if not isinstance(bulk_urls, list):
         return jsonify({"success": False, "error": "bulk_urls must be a list"}), 400
 
-    # Filter to valid non-empty URLs
     valid_ranked = [u.strip() for u in ranked_urls if u and isinstance(u, str) and u.strip()]
     valid_bulk = [u.strip() for u in bulk_urls if u and isinstance(u, str) and u.strip()]
 
     if not valid_ranked and not valid_bulk:
         return jsonify({"success": False, "error": "At least one deck URL is required"}), 400
 
-    from services.curiosa import CuriosaService
-    curiosa = CuriosaService()
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _event_jobs[job_id] = {"status": "processing", "progress": "Starting..."}
 
-    # Batch fetch all URLs (ranked + bulk) in minimal API calls
-    errors = []
-    top8_decks = []
-    bulk_decks = []
+    thread = threading.Thread(
+        target=_run_event_creation,
+        args=(job_id, title, valid_ranked, valid_bulk),
+        daemon=True,
+    )
+    thread.start()
 
-    if valid_ranked:
-        top8_decks, ranked_errors = curiosa.fetch_decks_batch(valid_ranked)
-        errors.extend(ranked_errors)
+    return jsonify({"success": True, "job_id": job_id}), 202
 
-    if valid_bulk:
-        bulk_decks, bulk_errors = curiosa.fetch_decks_batch(valid_bulk)
-        errors.extend(bulk_errors)
 
-    if not top8_decks and not bulk_decks:
-        return jsonify({
-            "success": False,
-            "error": "No decks could be fetched. Check your URLs.",
-            "fetch_errors": errors,
-        }), 400
+@events_bp.route("/events/jobs/<job_id>")
+@require_admin
+def get_event_job_status(job_id):
+    """Poll for background event job status."""
+    with _jobs_lock:
+        job = _event_jobs.get(job_id)
 
-    repo = EventRepository()
-    result = repo.create_event(title, top8_decks, bulk_decks if bulk_decks else None)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
 
-    if result.get("success"):
-        result["top8_added"] = len(top8_decks)
-        result["bulk_added"] = len(bulk_decks)
-        if errors:
-            result["warnings"] = errors
+    response = {"status": job["status"]}
+    if "progress" in job:
+        response["progress"] = job["progress"]
+    if "result" in job:
+        response["result"] = job["result"]
+        # Clean up completed/failed jobs after they're read
+        with _jobs_lock:
+            _event_jobs.pop(job_id, None)
 
-    status = 200 if result.get("success") else 400
-    return jsonify(result), status
+    return jsonify(response)
+
+
+def _run_event_deck_update(job_id, event_folder, table_type, urls, mode):
+    """Background worker for updating event decks."""
+    try:
+        from services.curiosa import CuriosaService
+        curiosa = CuriosaService()
+
+        decks, errors = curiosa.fetch_decks_batch(urls)
+
+        if not decks:
+            with _jobs_lock:
+                _event_jobs[job_id].update({
+                    "status": "failed",
+                    "result": {
+                        "success": False,
+                        "error": "No decks could be fetched. Check your URLs.",
+                        "fetch_errors": errors,
+                    },
+                })
+            return
+
+        repo = EventRepository()
+        result = repo.update_event_decks(event_folder, table_type, decks, mode)
+
+        if result.get("success"):
+            result["decks_added"] = len(decks)
+            if errors:
+                result["warnings"] = errors
+
+        with _jobs_lock:
+            _event_jobs[job_id].update({
+                "status": "completed" if result.get("success") else "failed",
+                "result": result,
+            })
+
+    except Exception as e:
+        logger.exception("Background deck update failed: %s", e)
+        with _jobs_lock:
+            _event_jobs[job_id].update({
+                "status": "failed",
+                "result": {"success": False, "error": f"Internal error: {e}"},
+            })
 
 
 @events_bp.route("/events/<event_folder>/decks", methods=["POST"])
@@ -201,28 +321,18 @@ def update_event_decks(event_folder):
     if not isinstance(urls, list):
         return jsonify({"success": False, "error": "urls must be a list"}), 400
 
-    from services.curiosa import CuriosaService
-    curiosa = CuriosaService()
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _event_jobs[job_id] = {"status": "processing", "progress": "Starting..."}
 
-    decks, errors = curiosa.fetch_decks_batch(urls)
+    thread = threading.Thread(
+        target=_run_event_deck_update,
+        args=(job_id, event_folder, table_type, urls, mode),
+        daemon=True,
+    )
+    thread.start()
 
-    if not decks:
-        return jsonify({
-            "success": False,
-            "error": "No decks could be fetched. Check your URLs.",
-            "fetch_errors": errors,
-        }), 400
-
-    repo = EventRepository()
-    result = repo.update_event_decks(event_folder, table_type, decks, mode)
-
-    if result.get("success"):
-        result["decks_added"] = len(decks)
-        if errors:
-            result["warnings"] = errors
-
-    status = 200 if result.get("success") else 400
-    return jsonify(result), status
+    return jsonify({"success": True, "job_id": job_id}), 202
 
 
 @events_bp.route("/events/<event_folder>", methods=["DELETE"])
@@ -236,18 +346,46 @@ def delete_event(event_folder):
     return jsonify(result), status
 
 
+def _run_event_refresh(job_id, event_folder):
+    """Background worker for refreshing event decks."""
+    try:
+        from services.curiosa import CuriosaService
+        curiosa = CuriosaService()
+
+        repo = EventRepository()
+        result = repo.refresh_event_decks(event_folder, curiosa)
+
+        with _jobs_lock:
+            _event_jobs[job_id].update({
+                "status": "completed" if result.get("success") else "failed",
+                "result": result,
+            })
+
+    except Exception as e:
+        logger.exception("Background event refresh failed: %s", e)
+        with _jobs_lock:
+            _event_jobs[job_id].update({
+                "status": "failed",
+                "result": {"success": False, "error": f"Internal error: {e}"},
+            })
+
+
 @events_bp.route("/events/<event_folder>/refresh", methods=["POST"])
 @require_admin
 def refresh_event(event_folder):
     """Re-fetch all deck data from Curiosa for an event (admin only)."""
-    from services.curiosa import CuriosaService
-    curiosa = CuriosaService()
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _event_jobs[job_id] = {"status": "processing", "progress": "Refreshing decks..."}
 
-    repo = EventRepository()
-    result = repo.refresh_event_decks(event_folder, curiosa)
+    thread = threading.Thread(
+        target=_run_event_refresh,
+        args=(job_id, event_folder),
+        daemon=True,
+    )
+    thread.start()
 
-    status = 200 if result.get("success") else 400
-    return jsonify(result), status
+    return jsonify({"success": True, "job_id": job_id}), 202
 
 
 @events_bp.route("/events/featured", methods=["PUT"])

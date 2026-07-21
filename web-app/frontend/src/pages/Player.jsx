@@ -160,7 +160,7 @@ const [editDeck, setEditDeck] = useState(null)
       )}
 
       {/* Display Name Banner (owner only, no custom name yet) */}
-      {isOwner && (
+      {data.is_owner && (
         <DisplayNameBanner
           playerId={playerId}
           defaultName={data.name}
@@ -169,7 +169,7 @@ const [editDeck, setEditDeck] = useState(null)
         />
       )}
 
-      {isOwner && <PlayerSeasons playerId={playerId} isOwner={isOwner} />}
+      {data.is_owner && <PlayerSeasons playerId={playerId} isOwner={data.is_owner} />}
 
       <PlayerHeader
         data={data}
@@ -184,7 +184,7 @@ const [editDeck, setEditDeck] = useState(null)
       />
 
       {/* Report Game & Privacy Settings buttons (owner only) */}
-      {isOwner && (
+      {data.is_owner && (
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => setShowReportModal(true)}

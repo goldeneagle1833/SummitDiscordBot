@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getPlayer } from '@/api/players'
+import { getPlayer, resetOwnProfile, undoProfileReset } from '@/api/players'
 import { get } from '@/api/client'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -54,6 +54,8 @@ export default function Player() {
   const [showReportModal, setShowReportModal] = useState(false)
   const [showPrivacyModal, setShowPrivacyModal] = useState(false)
   const [showBlockListModal, setShowBlockListModal] = useState(false)
+  const [showResetModal, setShowResetModal] = useState(false)
+  const [resetLoading, setResetLoading] = useState(false)
 const [editDeck, setEditDeck] = useState(null)
 
   // Collapsible sections
@@ -202,6 +204,12 @@ const [editDeck, setEditDeck] = useState(null)
           >
             Block List
           </button>
+          <button
+            onClick={() => setShowResetModal(true)}
+            className="px-4 py-2 text-sm rounded border border-border text-text-muted hover:text-text-primary hover:border-secondary/50 transition-colors"
+          >
+            {data.profile_reset_at ? 'Undo Fresh Start' : 'Fresh Start'}
+          </button>
           {authUser?.is_store_admin && (
             <Link
               to="/store/orders"
@@ -346,6 +354,72 @@ const [editDeck, setEditDeck] = useState(null)
           playerId={playerId}
           onClose={() => setShowBlockListModal(false)}
         />
+      )}
+
+      {showResetModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setShowResetModal(false)}>
+          <div className="bg-bg-surface border border-border rounded-lg p-6 max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+            {data.profile_reset_at ? (
+              <>
+                <h3 className="text-lg font-semibold text-text-primary mb-3">Undo Fresh Start</h3>
+                <p className="text-sm text-text-muted mb-2">
+                  Your profile was reset on <strong className="text-text-primary">{new Date(data.profile_reset_at).toLocaleDateString()}</strong>.
+                </p>
+                <p className="text-sm text-text-muted mb-4">
+                  Undoing this will restore your full match history and stats from before the reset.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold text-text-primary mb-3">Fresh Start</h3>
+                <p className="text-sm text-text-muted mb-2">
+                  This will hide all your previous match history and stats from your profile.
+                </p>
+                <p className="text-sm text-text-muted mb-4">
+                  Your ELO rating will stay the same. No matches are deleted — they just won't be shown on your profile. You can undo this at any time.
+                </p>
+              </>
+            )}
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowResetModal(false)}
+                className="px-4 py-2 text-sm rounded border border-border text-text-muted hover:text-text-primary transition-colors"
+                disabled={resetLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setResetLoading(true)
+                  try {
+                    if (data.profile_reset_at) {
+                      await undoProfileReset(playerId)
+                    } else {
+                      await resetOwnProfile(playerId)
+                    }
+                    setShowResetModal(false)
+                    refreshCurrentPage()
+                  } catch (err) {
+                    alert(err.message || 'Failed to update profile')
+                  } finally {
+                    setResetLoading(false)
+                  }
+                }}
+                className={`px-4 py-2 text-sm rounded transition-colors disabled:opacity-50 ${
+                  data.profile_reset_at
+                    ? 'bg-secondary text-black hover:opacity-90'
+                    : 'bg-red-700 text-white hover:bg-red-600'
+                }`}
+                disabled={resetLoading}
+              >
+                {resetLoading
+                  ? (data.profile_reset_at ? 'Restoring...' : 'Resetting...')
+                  : (data.profile_reset_at ? 'Restore Full History' : 'Start Fresh')
+                }
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

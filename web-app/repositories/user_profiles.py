@@ -66,6 +66,7 @@ class UserProfileRepository:
             'custom_display_name': 'TEXT',
             'profile_public_sections': 'TEXT',
             'nav_preferences': 'TEXT',
+            'profile_reset_at': 'TEXT',
         }
 
         # Add missing columns
@@ -272,7 +273,7 @@ class UserProfileRepository:
         if provider:
             cur.execute(
                 """
-                SELECT user_id, display_name, custom_display_name, avatar, provider
+                SELECT user_id, display_name, custom_display_name, avatar, provider, profile_reset_at
                 FROM user_profiles
                 WHERE user_id = ? AND provider = ?
                 LIMIT 1
@@ -283,7 +284,7 @@ class UserProfileRepository:
             # Search across all providers
             cur.execute(
                 """
-                SELECT user_id, display_name, custom_display_name, avatar, provider
+                SELECT user_id, display_name, custom_display_name, avatar, provider, profile_reset_at
                 FROM user_profiles
                 WHERE user_id = ?
                 LIMIT 1
@@ -436,6 +437,45 @@ class UserProfileRepository:
         cur.execute(
             "UPDATE user_profiles SET nav_preferences = ? WHERE user_id = ?",
             (json.dumps(labels), str(user_id)),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return updated
+
+    def get_profile_reset_at(self, user_id: str) -> str | None:
+        """Get the profile reset timestamp for a user, or None if never reset."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT profile_reset_at FROM user_profiles WHERE user_id = ?",
+            (str(user_id),),
+        )
+        row = cur.fetchone()
+        conn.close()
+        return row[0] if row and row[0] else None
+
+    def set_profile_reset_at(self, user_id: str) -> bool:
+        """Set the profile reset timestamp to now. Returns True if updated."""
+        now = datetime.now(timezone.utc).isoformat()
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_profiles SET profile_reset_at = ? WHERE user_id = ?",
+            (now, str(user_id)),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return updated
+
+    def clear_profile_reset(self, user_id: str) -> bool:
+        """Clear the profile reset timestamp (undo a reset). Returns True if updated."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_profiles SET profile_reset_at = NULL WHERE user_id = ?",
+            (str(user_id),),
         )
         conn.commit()
         updated = cur.rowcount > 0

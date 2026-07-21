@@ -1594,6 +1594,13 @@ def player_api(player_id):
     if not player_name:
         player_name = "Unknown Player"
 
+    # Filter out matches before profile_reset_at (if set)
+    profile_reset_at = profile.get("profile_reset_at") if profile else None
+    if profile_reset_at:
+        rows = [r for r in rows if r[6] and str(r[6]) >= profile_reset_at]
+        solo_rows = [r for r in solo_rows if r[6] and str(r[6]) >= profile_reset_at]
+        all_rows = rows + solo_rows
+
     # Split all_rows into ranked and casual for stats computation
     def _is_casual_row(row):
         return len(row) > 19 and row[19] in ("casual", "testing")
@@ -2522,6 +2529,7 @@ def player_api(player_id):
             "paper_event_elo": paper_event_elo,
             "online_event_elo": online_event_elo,
             "limited": limited_stats,
+            "profile_reset_at": profile_reset_at if is_owner else None,
         }
     )
 
@@ -2757,6 +2765,83 @@ def set_nav_prefs():
     profile_repo = UserProfileRepository()
     profile_repo.set_nav_preferences(str(user_id), data["labels"])
     return jsonify({"success": True, "labels": data["labels"]})
+
+
+@players_bp.route("/player/<path:player_id>/reset-profile", methods=["POST"])
+def reset_own_profile(player_id):
+    """Reset the logged-in user's profile. Hides match history before the reset date."""
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+
+    logged_in_id_str = str(logged_in_user_id)
+    player_id_normalized = str(player_id)
+    if logged_in_id_str.startswith("google_"):
+        logged_in_id_str = logged_in_id_str[7:]
+    if player_id_normalized.startswith("google_"):
+        player_id_normalized = player_id_normalized[7:]
+
+    if logged_in_id_str != player_id_normalized:
+        return jsonify({"error": "You can only reset your own profile"}), 403
+
+    profile_repo = UserProfileRepository()
+    updated = profile_repo.set_profile_reset_at(str(player_id))
+
+    if not updated:
+        # Try with normalized ID
+        updated = profile_repo.set_profile_reset_at(player_id_normalized)
+
+    if updated:
+        display_name = session.get("username", str(player_id))
+        from repositories.audit import AuditRepository
+        audit = AuditRepository()
+        audit.log_action(
+            str(player_id), display_name, "self_reset_profile",
+            target_id=str(player_id),
+            target_name=display_name,
+            details=f"User {display_name} ({player_id}) reset their profile (match history hidden before reset date)",
+        )
+        return jsonify({"success": True, "message": "Profile reset. Your match history before this point is now hidden."})
+
+    return jsonify({"error": "Profile not found. You must log in at least once before resetting."}), 404
+
+
+@players_bp.route("/player/<path:player_id>/undo-reset", methods=["POST"])
+def undo_profile_reset(player_id):
+    """Undo a profile reset, restoring full match history visibility."""
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+
+    logged_in_id_str = str(logged_in_user_id)
+    player_id_normalized = str(player_id)
+    if logged_in_id_str.startswith("google_"):
+        logged_in_id_str = logged_in_id_str[7:]
+    if player_id_normalized.startswith("google_"):
+        player_id_normalized = player_id_normalized[7:]
+
+    if logged_in_id_str != player_id_normalized:
+        return jsonify({"error": "You can only undo your own profile reset"}), 403
+
+    profile_repo = UserProfileRepository()
+    updated = profile_repo.clear_profile_reset(str(player_id))
+
+    if not updated:
+        updated = profile_repo.clear_profile_reset(player_id_normalized)
+
+    if updated:
+        display_name = session.get("username", str(player_id))
+        from repositories.audit import AuditRepository
+        audit = AuditRepository()
+        audit.log_action(
+            str(player_id), display_name, "self_undo_reset_profile",
+            target_id=str(player_id),
+            target_name=display_name,
+            details=f"User {display_name} ({player_id}) undid their profile reset",
+        )
+        return jsonify({"success": True, "message": "Profile reset undone. Full match history is now visible."})
+
+    return jsonify({"error": "Profile not found"}), 404
 
 
 @players_bp.route("/player/<path:player_id>/account", methods=["DELETE"])

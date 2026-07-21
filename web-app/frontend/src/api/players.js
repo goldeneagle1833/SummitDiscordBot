@@ -22,6 +22,8 @@ export const setDisplayName = (id, name) => post(`/api/player/${id}/set-display-
 export const searchPlayers = (query) => get(`/api/players/search?q=${encodeURIComponent(query)}`)
 export const getProfileVisibility = (id) => get(`/api/player/${id}/visibility`)
 export const setProfileVisibility = (id, sections) => post(`/api/player/${id}/visibility`, { sections })
+export const resetOwnProfile = (id) => post(`/api/player/${id}/reset-profile`)
+export const undoProfileReset = (id) => post(`/api/player/${id}/undo-reset`)
 export const deleteOwnAccount = (id) => del(`/api/player/${id}/account`)
 export const getBlockedUsers = (id) => get(`/api/player/${id}/blocked-users`)
 export const blockUser = (id, blockedUserId, reason) => post(`/api/player/${id}/blocked-users`, { blocked_user_id: blockedUserId, reason })

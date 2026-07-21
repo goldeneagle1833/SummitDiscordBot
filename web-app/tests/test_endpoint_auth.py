@@ -54,6 +54,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.players.set_display_name",
     "api.players.get_profile_visibility",
     "api.players.set_profile_visibility",
+    "api.players.reset_own_profile",
+    "api.players.undo_profile_reset",
     "api.players.delete_own_account",
     "api.players.get_nav_prefs",
     "api.players.set_nav_prefs",

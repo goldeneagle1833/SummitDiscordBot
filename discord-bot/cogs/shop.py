@@ -37,7 +37,7 @@ class ShopCog(commands.Cog):
             "mushroom": 5,  # Mushroom
             "bobomb": 25,  # Bob-omb
             "fart_star": 200,  # Star Killer (actual cost is 10% of points)
-            "thunder_fart": 10,  # Thunder Fart - 50 damage to all, once/week
+            "thunder_fart": 10,  # Thunder Fart - 10 damage to all, once/week
             "gas_shield": 8,  # Gas Shield - reflect 50% damage back at next attacker
             "stink_bomb": 12,  # Stink Bomb - hit random player (anyone)
             "fart_rocket": 100,  # Fart Rocket - swap scores, once/week
@@ -1273,7 +1273,7 @@ class ShopCog(commands.Cog):
     @commands.command(name="thunder_fart", aliases=["thunderfart", "fart_thunder", "fartthunder"])
     @commands.cooldown(1, 45, commands.BucketType.user)
     async def thunder_fart(self, ctx):
-        """Hit ALL players for 50 damage each. Costs 10 points. Once per week."""
+        """Hit ALL players for 10 damage each. Costs 10 points. Once per week."""
         allowed, cooldown_msg = await self.check_usage_cooldown(
             ctx.author.id, "thunder_fart", "weekly"
         )
@@ -1292,7 +1292,7 @@ class ShopCog(commands.Cog):
         await self.deduct_points(ctx.author.id, "thunder_fart")
         await self.mark_usage_cooldown(ctx.author.id, "thunder_fart")
 
-        damage = 50
+        damage = 10
         hit_players = []
         hit_player_ids = []
         protected_players = []
@@ -2083,7 +2083,7 @@ class ShopCog(commands.Cog):
             ),
             (
                 "Thunder Fart (!thunder_fart / !thunderfart)",
-                "Hits ALL players for 50 damage each (once/week)\n*The whole room trembles.*",
+                "Hits ALL players for 10 damage each (once/week)\n*The whole room trembles.*",
                 self.item_costs["thunder_fart"],
             ),
             (

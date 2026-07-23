@@ -81,13 +81,13 @@ export default function BlockListModal({ playerId, onClose }) {
   }, [searchResults, blockedUsers, playerId])
 
   const handleConfirmBlock = async () => {
-    if (!pendingBlock) return
+    if (!pendingBlock || !reason.trim()) return
     setActionInProgress(pendingBlock.user_id)
     setError(null)
     try {
-      await blockUser(playerId, pendingBlock.user_id, reason || undefined)
+      await blockUser(playerId, pendingBlock.user_id, reason.trim())
       setBlockedUsers((prev) => [
-        { user_id: pendingBlock.user_id, display_name: pendingBlock.display_name, avatar: pendingBlock.avatar, reason: reason || null },
+        { user_id: pendingBlock.user_id, display_name: pendingBlock.display_name, avatar: pendingBlock.avatar, reason: reason.trim() },
         ...prev,
       ])
       setSearchResults([])
@@ -171,7 +171,9 @@ export default function BlockListModal({ playerId, onClose }) {
               type="text"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Reason (optional)"
+              placeholder="Reason (required)"
+              aria-label="Reason for blocking"
+              aria-required="true"
               maxLength={200}
               className="w-full px-3 py-2 text-sm rounded border border-border bg-bg-raised text-text-primary placeholder-text-muted focus:outline-none focus:border-secondary/50 mb-2"
             />
@@ -184,7 +186,7 @@ export default function BlockListModal({ playerId, onClose }) {
               </button>
               <button
                 onClick={handleConfirmBlock}
-                disabled={actionInProgress === pendingBlock.user_id}
+                disabled={actionInProgress === pendingBlock.user_id || !reason.trim()}
                 className="text-xs px-3 py-1 rounded bg-accent-red/20 text-accent-red hover:bg-accent-red/30 disabled:opacity-50"
               >
                 {actionInProgress === pendingBlock.user_id ? '...' : 'Confirm Block'}

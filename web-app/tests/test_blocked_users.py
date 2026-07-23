@@ -98,7 +98,7 @@ class TestBlockedUsersRoutes:
         # Block
         resp = user_session.post(
             "/api/player/regular_user_1/blocked-users",
-            json={"blocked_user_id": "target_user"},
+            json={"blocked_user_id": "target_user", "reason": "spam"},
         )
         assert resp.status_code == 200
         assert resp.get_json()["added"] is True
@@ -109,13 +109,13 @@ class TestBlockedUsersRoutes:
         assert len(data["blocked_users"]) == 1
         assert data["blocked_users"][0]["user_id"] == "target_user"
         assert data["blocked_users"][0]["display_name"] == "TargetPlayer"
-        assert data["blocked_users"][0]["reason"] is None
+        assert data["blocked_users"][0]["reason"] == "spam"
 
     def test_unblock_user(self, user_session, match_db):
         self._seed_user(match_db, "target_user", "TargetPlayer")
         user_session.post(
             "/api/player/regular_user_1/blocked-users",
-            json={"blocked_user_id": "target_user"},
+            json={"blocked_user_id": "target_user", "reason": "spam"},
         )
 
         resp = user_session.delete("/api/player/regular_user_1/blocked-users/target_user")
@@ -128,7 +128,7 @@ class TestBlockedUsersRoutes:
     def test_block_self_rejected(self, user_session):
         resp = user_session.post(
             "/api/player/regular_user_1/blocked-users",
-            json={"blocked_user_id": "regular_user_1"},
+            json={"blocked_user_id": "regular_user_1", "reason": "test"},
         )
         assert resp.status_code == 400
 
@@ -138,6 +138,18 @@ class TestBlockedUsersRoutes:
             json={},
         )
         assert resp.status_code == 400
+
+    def test_block_missing_reason(self, user_session, match_db):
+        self._seed_user(match_db, "target_user", "TargetPlayer")
+        for payload in (
+            {"blocked_user_id": "target_user"},
+            {"blocked_user_id": "target_user", "reason": ""},
+            {"blocked_user_id": "target_user", "reason": "   "},
+        ):
+            resp = user_session.post(
+                "/api/player/regular_user_1/blocked-users", json=payload)
+            assert resp.status_code == 400
+            assert "reason" in resp.get_json()["error"].lower()
 
     def test_block_unauthenticated(self, client):
         resp = client.post(

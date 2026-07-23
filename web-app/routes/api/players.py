@@ -2753,7 +2753,9 @@ def block_user(player_id):
     if _stripped_id(blocked_user_id) == _stripped_id(block_key):
         return jsonify({"error": "You cannot block yourself"}), 400
 
-    reason = str(data.get("reason") or "").strip()[:200] or None
+    reason = str(data.get("reason") or "").strip()[:200]
+    if not reason:
+        return jsonify({"error": "A reason is required when blocking a user"}), 400
 
     repo = BlockedUsersRepository()
     added = repo.block_user(block_key, blocked_user_id, reason=reason)

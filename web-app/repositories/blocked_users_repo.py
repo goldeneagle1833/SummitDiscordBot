@@ -52,6 +52,34 @@ class BlockedUsersRepository:
         conn.close()
         return result
 
+    def get_all_blocks(self, limit: int = 200, offset: int = 0) -> tuple[list[dict], int]:
+        """Get every block record (admin view). Returns (rows, total_count)."""
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM blocked_users")
+        total = cur.fetchone()[0]
+        cur.execute(
+            """
+            SELECT user_id, blocked_user_id, reason, created_at
+            FROM blocked_users
+            ORDER BY created_at DESC, user_id
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        )
+        rows = [
+            {
+                "user_id": row["user_id"],
+                "blocked_user_id": row["blocked_user_id"],
+                "reason": row["reason"],
+                "created_at": row["created_at"],
+            }
+            for row in cur.fetchall()
+        ]
+        conn.close()
+        return rows, total
+
     @staticmethod
     def _stripped(pid: str) -> str:
         s = str(pid)

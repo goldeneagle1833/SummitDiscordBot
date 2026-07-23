@@ -1148,3 +1148,49 @@ def list_external_matches():
             "has_next": page < total_pages,
         },
     }), 200
+
+
+@admin_bp.route("/admin/blocked-users", methods=["GET"])
+@require_admin
+def all_blocked_users():
+    """List every block record with resolved names (admin only)."""
+    from repositories.blocked_users_repo import BlockedUsersRepository
+    from repositories.elo import EloRepository
+
+    limit = request.args.get("limit", 100, type=int)
+    offset = request.args.get("offset", 0, type=int)
+    limit = min(max(1, limit), 200)
+    offset = max(0, offset)
+
+    repo = BlockedUsersRepository()
+    rows, total = repo.get_all_blocks(limit=limit, offset=offset)
+
+    profile_repo = UserProfileRepository()
+    elo_repo = EloRepository()
+    name_cache: dict[str, str] = {}
+
+    def resolve_name(uid: str) -> str:
+        if uid in name_cache:
+            return name_cache[uid]
+        profile = profile_repo.get_by_user_id(uid)
+        if profile:
+            name = profile["display_name"]
+        else:
+            # Bot-only players have no user_profiles row; use elo standings
+            name = elo_repo.get_display_name(uid) or uid
+        name_cache[uid] = name
+        return name
+
+    entries = [
+        {
+            "blocker_id": row["user_id"],
+            "blocker_name": resolve_name(row["user_id"]),
+            "blocked_id": row["blocked_user_id"],
+            "blocked_name": resolve_name(row["blocked_user_id"]),
+            "reason": row["reason"],
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
+
+    return jsonify({"success": True, "entries": entries, "total": total}), 200

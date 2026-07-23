@@ -208,48 +208,116 @@ class UserProfileRepository:
         conn.close()
         return profiles
 
+    @staticmethod
+    def _escape_like(query: str) -> str:
+        """Escape LIKE wildcards so user input matches literally."""
+        return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
     def search_users(self, query: str, limit: int = 10) -> list[dict]:
         """
-        Search user profiles across all providers and name fields.
+        Search players across all providers and name fields.
 
-        Searches display_name, given_name, and family_name fields for matches.
-        Works for both Discord and Google users.
+        Searches user_profiles (display_name, given_name, family_name) and,
+        for players who have never logged into the website, falls back to
+        display names recorded in match_records and match_records_archive.
 
         Args:
             query: Search string (min 2 characters recommended)
             limit: Maximum number of results to return
 
         Returns:
-            list[dict]: List of user profile dicts with user_id, display_name, avatar, provider
+            list[dict]: List of dicts with user_id, display_name, avatar, provider
         """
         conn = self._get_connection()
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
 
-        # Use LIKE for case-insensitive prefix match
-        search_pattern = f"%{query}%"
+        escaped = self._escape_like(query)
+        search_pattern = f"%{escaped}%"
+        prefix_pattern = f"{escaped}%"
 
         cur.execute(
             """
             SELECT user_id, display_name, avatar, provider
             FROM user_profiles
-            WHERE LOWER(display_name) LIKE LOWER(?)
-               OR LOWER(given_name) LIKE LOWER(?)
-               OR LOWER(family_name) LIKE LOWER(?)
+            WHERE LOWER(display_name) LIKE LOWER(?) ESCAPE '\\'
+               OR LOWER(given_name) LIKE LOWER(?) ESCAPE '\\'
+               OR LOWER(family_name) LIKE LOWER(?) ESCAPE '\\'
             ORDER BY
                 -- Prioritize exact display_name matches
                 CASE WHEN LOWER(display_name) = LOWER(?) THEN 0 ELSE 1 END,
                 -- Then prefix matches
-                CASE WHEN LOWER(display_name) LIKE LOWER(?) THEN 0 ELSE 1 END,
+                CASE WHEN LOWER(display_name) LIKE LOWER(?) ESCAPE '\\' THEN 0 ELSE 1 END,
                 -- Then alphabetically
                 display_name ASC
             LIMIT ?
             """,
-            (search_pattern, search_pattern, search_pattern, query, f"{query}%", limit),
+            (search_pattern, search_pattern, search_pattern, query, prefix_pattern, limit),
         )
 
-        rows = cur.fetchall()
-        profiles = [dict(row) for row in rows]
+        profiles = [dict(row) for row in cur.fetchall()]
+
+        def _stripped(uid: str) -> str:
+            # Google users' match/elo data is keyed on the bare ID
+            return uid[7:] if uid.startswith("google_") else uid
+
+        seen_ids = {_stripped(str(p["user_id"])) for p in profiles}
+
+        # Fall back to match history for players who never logged into the
+        # website. These tables are created by the bot, so tolerate absence.
+        remaining = limit - len(profiles)
+        if remaining > 0:
+            existing_tables = {
+                row[0]
+                for row in cur.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    " AND name IN ('match_records', 'match_records_archive')"
+                ).fetchall()
+            }
+            union_parts = []
+            for table in ("match_records", "match_records_archive"):
+                if table in existing_tables:
+                    union_parts.append(
+                        f"SELECT winner_id AS user_id, winner_display_name AS display_name,"
+                        f" timestamp FROM {table}"
+                    )
+                    union_parts.append(
+                        f"SELECT losser_id AS user_id, losser_display_name AS display_name,"
+                        f" timestamp FROM {table}"
+                    )
+
+            if union_parts:
+                union_sql = " UNION ALL ".join(union_parts)
+                cur.execute(
+                    f"""
+                    SELECT CAST(user_id AS TEXT) AS user_id,
+                           display_name,
+                           MAX(timestamp) AS last_seen
+                    FROM ({union_sql})
+                    WHERE user_id IS NOT NULL
+                      AND display_name IS NOT NULL
+                      AND LOWER(display_name) LIKE LOWER(?) ESCAPE '\\'
+                    GROUP BY CAST(user_id AS TEXT)
+                    ORDER BY
+                        CASE WHEN LOWER(display_name) = LOWER(?) THEN 0 ELSE 1 END,
+                        CASE WHEN LOWER(display_name) LIKE LOWER(?) ESCAPE '\\' THEN 0 ELSE 1 END,
+                        display_name ASC
+                    """,
+                    (search_pattern, query, prefix_pattern),
+                )
+                for row in cur.fetchall():
+                    uid = str(row["user_id"])
+                    if _stripped(uid) in seen_ids:
+                        continue
+                    seen_ids.add(_stripped(uid))
+                    profiles.append({
+                        "user_id": uid,
+                        "display_name": row["display_name"],
+                        "avatar": None,
+                        "provider": "discord",
+                    })
+                    if len(profiles) >= limit:
+                        break
 
         conn.close()
         return profiles

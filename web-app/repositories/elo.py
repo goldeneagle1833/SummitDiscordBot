@@ -403,3 +403,72 @@ class EloRepository:
         conn.commit()
         conn.close()
         return updated
+
+    def search_players_by_name(self, query: str, limit: int = 10) -> list[dict]:
+        """
+        Search bot players by display name across overall_standings and
+        paper_standings (case-insensitive substring match).
+
+        Used as a fallback for player search so bot-only players (those who
+        have never logged into the web app and therefore have no row in
+        user_profiles) still appear in autocomplete.
+
+        Returns:
+            list[dict]: [{"user_id": str, "display_name": str}, ...]
+        """
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        pattern = f"%{query}%"
+        prefix_pattern = f"{query}%"
+        results: dict[str, str] = {}
+
+        for table in ("overall_standings", "paper_standings"):
+            try:
+                cur.execute(
+                    f"""
+                    SELECT user_id, user_display_name
+                    FROM {table}
+                    WHERE LOWER(user_display_name) LIKE LOWER(?)
+                    ORDER BY
+                        CASE WHEN LOWER(user_display_name) = LOWER(?) THEN 0 ELSE 1 END,
+                        CASE WHEN LOWER(user_display_name) LIKE LOWER(?) THEN 0 ELSE 1 END,
+                        user_display_name ASC
+                    LIMIT ?
+                    """,
+                    (pattern, query, prefix_pattern, limit),
+                )
+                for uid, name in cur.fetchall():
+                    if uid is not None and name:
+                        results.setdefault(str(uid), name)
+            except sqlite3.OperationalError:
+                # Table may not exist yet
+                pass
+
+        conn.close()
+        return [
+            {"user_id": uid, "display_name": name} for uid, name in results.items()
+        ][:limit]
+
+    def get_display_name(self, user_id: str) -> str | None:
+        """Look up a player's display name from standings tables (fallback
+        for users with no user_profiles row)."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        name = None
+        for table in ("overall_standings", "paper_standings"):
+            try:
+                cur.execute(
+                    f"SELECT user_display_name FROM {table} WHERE user_id = ?",
+                    (str(user_id),),
+                )
+                row = cur.fetchone()
+                if row and row[0]:
+                    name = row[0]
+                    break
+            except sqlite3.OperationalError:
+                pass
+
+        conn.close()
+        return name

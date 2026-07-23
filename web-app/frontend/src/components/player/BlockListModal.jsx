@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { getBlockedUsers, blockUser, unblockUser, searchPlayers } from '@/api/players'
 
 export default function BlockListModal({ playerId, onClose }) {
@@ -12,48 +12,73 @@ export default function BlockListModal({ playerId, onClose }) {
   const [pendingBlock, setPendingBlock] = useState(null)
   const [reason, setReason] = useState('')
   const searchTimeout = useRef(null)
+  const requestSeqRef = useRef(0)
 
   useEffect(() => {
-    loadBlockedUsers()
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    const load = async () => {
+      try {
+        const data = await getBlockedUsers(playerId)
+        if (!cancelled) setBlockedUsers(data.blocked_users)
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Failed to load block list')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
   }, [playerId])
 
-  const loadBlockedUsers = async () => {
-    try {
-      const data = await getBlockedUsers(playerId)
-      setBlockedUsers(data.blocked_users)
-    } catch (err) {
-      setError(err.message || 'Failed to load block list')
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  // Clean up pending search work on unmount
+  useEffect(() => () => {
+    clearTimeout(searchTimeout.current)
+    requestSeqRef.current++
+  }, [])
 
   const handleSearch = (query) => {
     setSearchQuery(query)
     if (searchTimeout.current) clearTimeout(searchTimeout.current)
 
     if (query.length < 2) {
+      requestSeqRef.current++ // invalidate in-flight requests
       setSearchResults([])
+      setSearching(false)
       return
     }
 
     searchTimeout.current = setTimeout(async () => {
+      const seq = ++requestSeqRef.current
       setSearching(true)
       try {
         const data = await searchPlayers(query)
-        // Filter out self and already-blocked users
-        const blockedIds = new Set(blockedUsers.map((u) => u.user_id))
-        const filtered = data.players.filter(
-          (p) => p.user_id !== playerId && !blockedIds.has(p.user_id)
-        )
-        setSearchResults(filtered)
+        if (seq !== requestSeqRef.current) return // stale response
+        setSearchResults(data.players)
       } catch {
-        setSearchResults([])
+        if (seq === requestSeqRef.current) setSearchResults([])
       } finally {
-        setSearching(false)
+        if (seq === requestSeqRef.current) setSearching(false)
       }
     }, 300)
   }
+
+  // Filter out self and already-blocked users at render time so the list
+  // stays correct even when blockedUsers changes after the search resolved.
+  const visibleResults = useMemo(() => {
+    const blockedIds = new Set(blockedUsers.map((u) => u.user_id))
+    return searchResults.filter(
+      (p) => p.user_id !== playerId && !blockedIds.has(p.user_id)
+    )
+  }, [searchResults, blockedUsers, playerId])
 
   const handleConfirmBlock = async () => {
     if (!pendingBlock) return
@@ -65,7 +90,7 @@ export default function BlockListModal({ playerId, onClose }) {
         { user_id: pendingBlock.user_id, display_name: pendingBlock.display_name, avatar: pendingBlock.avatar, reason: reason || null },
         ...prev,
       ])
-      setSearchResults((prev) => prev.filter((p) => p.user_id !== pendingBlock.user_id))
+      setSearchResults([])
       setSearchQuery('')
       setPendingBlock(null)
       setReason('')
@@ -92,10 +117,13 @@ export default function BlockListModal({ playerId, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="block-list-title"
         className="bg-bg-surface border border-border rounded-lg p-6 w-full max-w-md mx-4"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-semibold text-text-primary mb-1">Block List</h3>
+        <h3 id="block-list-title" className="text-lg font-semibold text-text-primary mb-1">Block List</h3>
         <p className="text-xs text-text-muted mb-4">
           Blocked players will not be matched with you in the LFG queue.
         </p>
@@ -109,12 +137,13 @@ export default function BlockListModal({ playerId, onClose }) {
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             placeholder="Search players to block..."
+            aria-label="Search players to block"
             className="w-full px-3 py-2 text-sm rounded border border-border bg-bg-raised text-text-primary placeholder-text-muted focus:outline-none focus:border-secondary/50"
           />
           {searching && <p className="text-xs text-text-muted mt-1">Searching...</p>}
-          {searchResults.length > 0 && !pendingBlock && (
+          {visibleResults.length > 0 && !pendingBlock && (
             <div className="mt-1 max-h-36 overflow-y-auto border border-border rounded bg-bg-raised">
-              {searchResults.map((user) => (
+              {visibleResults.map((user) => (
                 <div
                   key={user.user_id}
                   className="flex items-center justify-between px-3 py-2 hover:bg-bg-surface/50 transition-colors"

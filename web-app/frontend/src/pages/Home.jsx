@@ -14,18 +14,24 @@ function PlayerSearch() {
   const [open, setOpen] = useState(false)
   const [activeIdx, setActiveIdx] = useState(-1)
   const timerRef = useRef(null)
+  const requestSeqRef = useRef(0)
   const containerRef = useRef(null)
   const navigate = useNavigate()
 
+  const MIN_CHARS = 2
+
   const search = useCallback(async (q) => {
-    if (q.length < 3) { setOpen(false); return }
+    if (q.length < MIN_CHARS) { setOpen(false); return }
+    const seq = ++requestSeqRef.current
     try {
       const data = await get(`/api/players/search?q=${encodeURIComponent(q)}&limit=8`)
+      // Ignore stale responses that resolve after a newer request
+      if (seq !== requestSeqRef.current) return
       setResults(data.players || [])
       setActiveIdx(-1)
       setOpen(true)
     } catch {
-      setOpen(false)
+      if (seq === requestSeqRef.current) setOpen(false)
     }
   }, [])
 
@@ -33,7 +39,13 @@ function PlayerSearch() {
     const val = e.target.value
     setQuery(val)
     clearTimeout(timerRef.current)
-    if (val.trim().length < 3) { setOpen(false); return }
+    if (val.trim().length < MIN_CHARS) {
+      requestSeqRef.current++ // invalidate in-flight requests
+      setOpen(false)
+      setResults([])
+      setActiveIdx(-1)
+      return
+    }
     timerRef.current = setTimeout(() => search(val.trim()), 200)
   }
 
@@ -60,7 +72,7 @@ function PlayerSearch() {
       setActiveIdx((i) => Math.max(i - 1, 0))
     } else if (e.key === 'Enter') {
       if (activeIdx >= 0 && results[activeIdx]) goToPlayer(results[activeIdx])
-      else if (results.length === 1) goToPlayer(results[0])
+      else if (results.length > 0) goToPlayer(results[0])
     } else if (e.key === 'Escape') {
       setOpen(false)
     }
@@ -71,13 +83,23 @@ function PlayerSearch() {
       if (containerRef.current && !containerRef.current.contains(e.target)) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      clearTimeout(timerRef.current)
+      requestSeqRef.current++ // drop any in-flight response after unmount
+    }
   }, [])
 
   return (
     <div ref={containerRef} className="relative w-full max-w-md mx-auto mt-6">
       <input
         type="text"
+        role="combobox"
+        aria-expanded={open}
+        aria-controls="player-search-listbox"
+        aria-activedescendant={activeIdx >= 0 && results[activeIdx] ? `player-option-${results[activeIdx].user_id}` : undefined}
+        aria-autocomplete="list"
+        aria-label="Search players"
         value={query}
         onChange={handleInput}
         onKeyDown={handleKeyDown}
@@ -87,7 +109,11 @@ function PlayerSearch() {
         className="w-full bg-bg-surface border border-border rounded-soft px-4 py-2 text-sm focus:outline-none focus:border-primary/60 placeholder:text-text-muted"
       />
       {open && (
-        <div className="absolute z-50 w-full mt-1 bg-bg-surface border border-border rounded-soft shadow-lg overflow-hidden">
+        <div
+          id="player-search-listbox"
+          role="listbox"
+          className="absolute z-50 w-full mt-1 bg-bg-surface border border-border rounded-soft shadow-lg overflow-hidden"
+        >
           {results.length === 0 ? (
             <div className="px-4 py-2 text-sm text-text-muted">No players found</div>
           ) : (
@@ -96,6 +122,9 @@ function PlayerSearch() {
               return (
                 <button
                   key={player.user_id}
+                  id={`player-option-${player.user_id}`}
+                  role="option"
+                  aria-selected={i === activeIdx}
                   onClick={() => goToPlayer(player)}
                   className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-bg-elevated transition-colors ${i === activeIdx ? 'bg-bg-elevated' : ''}`}
                 >

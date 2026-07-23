@@ -166,6 +166,8 @@ def admin_ship_order(order_id: int):
     data = request.get_json(silent=True) or {}
     tracking = (data.get("tracking_number") or "").strip() or None
     carrier = (data.get("tracking_carrier") or "").strip() or None
+    if not tracking:
+        return jsonify({"error": "tracking_number is required"}), 400
 
     repo = _repo()
     if not repo.mark_shipped(order_id, tracking, carrier):
@@ -318,10 +320,6 @@ def create_checkout():
     Shipping address is collected by Stripe Checkout (with autocomplete)
     and saved via webhook when payment completes.
     """
-    service = StoreCheckoutService()
-    if not service.is_configured():
-        return jsonify({"error": "Payments are not configured"}), 503
-
     data = request.get_json(silent=True) or {}
     items = data.get("items") or []
 
@@ -332,6 +330,10 @@ def create_checkout():
     if provider != "discord" and not (data.get("email") or "").strip():
         # Email is the only way to reach non-Discord buyers about their order
         return jsonify({"error": "Email address is required"}), 400
+
+    service = StoreCheckoutService()
+    if not service.is_configured():
+        return jsonify({"error": "Payments are not configured"}), 503
 
     user_id = str(session.get("user_id", 0))
     username = session.get("username", "unknown")

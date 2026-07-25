@@ -193,7 +193,8 @@ class RumbleRepository:
         query = "SELECT id, name, cost, stock, description, sort_order, active FROM rumble_prizes"
         if active_only:
             query += " WHERE active = 1"
-        query += " ORDER BY sort_order"
+        # id tie-break keeps order stable when sort_order values collide
+        query += " ORDER BY sort_order, id"
         rows = conn.execute(query).fetchall()
         conn.close()
         return [dict(r) for r in rows]
@@ -223,8 +224,13 @@ class RumbleRepository:
         return cursor.rowcount > 0
 
     def add_prize(self, name: str, cost: int = 0, stock: int | None = None,
-                  description: str | None = None, sort_order: int = 0) -> int:
+                  description: str | None = None, sort_order: int | None = None) -> int:
         conn = self._connect()
+        if sort_order is None:
+            max_order = conn.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM rumble_prizes"
+            ).fetchone()[0]
+            sort_order = max_order + 1
         cursor = conn.execute(
             "INSERT INTO rumble_prizes (name, cost, stock, description, sort_order) VALUES (?, ?, ?, ?, ?)",
             (name, cost, stock, description, sort_order),
@@ -235,15 +241,45 @@ class RumbleRepository:
         return prize_id
 
     def swap_prize_order(self, prize_id_a: int, prize_id_b: int) -> bool:
-        """Swap sort_order between two prizes."""
+        """Swap sort_order between two prizes.
+
+        Normal path just exchanges the two sort values. If they collide
+        (legacy rows that all got sort_order=0), uniquify the full list
+        once first so the swap has distinct values to exchange.
+        """
         conn = self._connect()
-        a = conn.execute("SELECT sort_order FROM rumble_prizes WHERE id = ?", (prize_id_a,)).fetchone()
-        b = conn.execute("SELECT sort_order FROM rumble_prizes WHERE id = ?", (prize_id_b,)).fetchone()
+        a = conn.execute(
+            "SELECT sort_order FROM rumble_prizes WHERE id = ?", (prize_id_a,)
+        ).fetchone()
+        b = conn.execute(
+            "SELECT sort_order FROM rumble_prizes WHERE id = ?", (prize_id_b,)
+        ).fetchone()
         if not a or not b:
             conn.close()
             return False
-        conn.execute("UPDATE rumble_prizes SET sort_order = ? WHERE id = ?", (b["sort_order"], prize_id_a))
-        conn.execute("UPDATE rumble_prizes SET sort_order = ? WHERE id = ?", (a["sort_order"], prize_id_b))
+
+        order_a = a["sort_order"]
+        order_b = b["sort_order"]
+        if order_a == order_b:
+            prizes = conn.execute(
+                "SELECT id FROM rumble_prizes ORDER BY sort_order, id"
+            ).fetchall()
+            for i, prize in enumerate(prizes):
+                conn.execute(
+                    "UPDATE rumble_prizes SET sort_order = ? WHERE id = ?",
+                    (i, prize["id"]),
+                )
+            order_a = next(i for i, p in enumerate(prizes) if p["id"] == prize_id_a)
+            order_b = next(i for i, p in enumerate(prizes) if p["id"] == prize_id_b)
+
+        conn.execute(
+            "UPDATE rumble_prizes SET sort_order = ? WHERE id = ?",
+            (order_b, prize_id_a),
+        )
+        conn.execute(
+            "UPDATE rumble_prizes SET sort_order = ? WHERE id = ?",
+            (order_a, prize_id_b),
+        )
         conn.commit()
         conn.close()
         return True

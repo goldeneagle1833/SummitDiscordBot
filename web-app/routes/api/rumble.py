@@ -224,7 +224,7 @@ def add_prize():
         cost=data.get("cost", 0),
         stock=data.get("stock"),
         description=data.get("description"),
-        sort_order=data.get("sort_order", 0),
+        sort_order=data.get("sort_order"),
     )
     return jsonify({"success": True, "id": prize_id})
 

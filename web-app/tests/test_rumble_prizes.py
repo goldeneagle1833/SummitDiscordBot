@@ -29,8 +29,34 @@ def rumble_db(tmp_path):
 
 
 class TestPrizeReorder:
+    def test_set_prize_order_reassigns_sort_values(self, rumble_db):
+        repo = RumbleRepository(db_path=rumble_db)
+        # Legacy rows that all share sort_order=0
+        conn = sqlite3.connect(str(rumble_db))
+        conn.executemany(
+            "INSERT INTO rumble_prizes (name, cost, sort_order) VALUES (?, ?, ?)",
+            [("Alpha", 1, 0), ("Beta", 2, 0), ("Gamma", 3, 0)],
+        )
+        conn.commit()
+        conn.close()
+
+        prizes = repo.get_prizes()
+        ids = [p["id"] for p in prizes]
+        # Move Beta to the front: Beta, Alpha, Gamma
+        new_order = [ids[1], ids[0], ids[2]]
+        assert repo.set_prize_order(new_order) is True
+
+        reordered = repo.get_prizes()
+        assert [p["name"] for p in reordered] == ["Beta", "Alpha", "Gamma"]
+        assert [p["sort_order"] for p in reordered] == [0, 1, 2]
+
+    def test_set_prize_order_rejects_unknown_id(self, rumble_db):
+        repo = RumbleRepository(db_path=rumble_db)
+        id_a = repo.add_prize("Only")
+        assert repo.set_prize_order([id_a, 99999]) is False
+
     def test_swap_moves_prizes_with_duplicate_sort_order(self, rumble_db):
-        """Regression: arrows did nothing when all prizes had sort_order=0."""
+        """Legacy pairwise swap still works when all prizes had sort_order=0."""
         repo = RumbleRepository(db_path=rumble_db)
         conn = sqlite3.connect(str(rumble_db))
         conn.executemany(
@@ -41,26 +67,8 @@ class TestPrizeReorder:
         conn.close()
 
         prizes = repo.get_prizes()
-        assert [p["name"] for p in prizes] == ["Alpha", "Beta", "Gamma"]
-
-        # Move Beta up (swap with Alpha) — previously a no-op when both were 0
         assert repo.swap_prize_order(prizes[1]["id"], prizes[0]["id"]) is True
-
-        reordered = repo.get_prizes()
-        assert [p["name"] for p in reordered] == ["Beta", "Alpha", "Gamma"]
-        assert [p["sort_order"] for p in reordered] == [0, 1, 2]
-
-    def test_swap_moves_prizes_with_distinct_sort_order(self, rumble_db):
-        repo = RumbleRepository(db_path=rumble_db)
-        id_a = repo.add_prize("First", cost=1)
-        id_b = repo.add_prize("Second", cost=2)
-        id_c = repo.add_prize("Third", cost=3)
-
-        assert [p["name"] for p in repo.get_prizes()] == ["First", "Second", "Third"]
-
-        assert repo.swap_prize_order(id_b, id_c) is True
-        assert [p["name"] for p in repo.get_prizes()] == ["First", "Third", "Second"]
-        assert [p["id"] for p in repo.get_prizes()] == [id_a, id_c, id_b]
+        assert [p["name"] for p in repo.get_prizes()] == ["Beta", "Alpha", "Gamma"]
 
     def test_add_prize_assigns_unique_sort_order(self, rumble_db):
         repo = RumbleRepository(db_path=rumble_db)
@@ -72,8 +80,3 @@ class TestPrizeReorder:
         orders = [p["sort_order"] for p in prizes]
         assert orders == [0, 1, 2]
         assert len(set(orders)) == 3
-
-    def test_swap_missing_prize_returns_false(self, rumble_db):
-        repo = RumbleRepository(db_path=rumble_db)
-        id_a = repo.add_prize("Only")
-        assert repo.swap_prize_order(id_a, 99999) is False

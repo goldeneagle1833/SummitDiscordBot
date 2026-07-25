@@ -256,17 +256,33 @@ def delete_prize(prize_id):
 @rumble_bp.route("/rumble/admin/prizes/reorder", methods=["POST"])
 @require_rumble_admin
 def reorder_prizes():
-    """Swap sort_order between two prizes."""
+    """Persist prize display order.
+
+    Preferred body: { "order": [<prize_id>, ...] } — assigns sort_order 0..n.
+    Legacy body: { "prize_id_a": id, "prize_id_b": id } — swaps two prizes.
+    """
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "Request body required"}), 400
 
+    repo = RumbleRepository()
+    order = data.get("order")
+    if order is not None:
+        if not isinstance(order, list) or not order:
+            return jsonify({"error": "order must be a non-empty list of prize ids"}), 400
+        try:
+            prize_ids = [int(pid) for pid in order]
+        except (TypeError, ValueError):
+            return jsonify({"error": "order must contain integer prize ids"}), 400
+        if repo.set_prize_order(prize_ids):
+            return jsonify({"success": True})
+        return jsonify({"error": "One or more prizes not found"}), 404
+
     prize_id_a = data.get("prize_id_a")
     prize_id_b = data.get("prize_id_b")
     if not prize_id_a or not prize_id_b:
-        return jsonify({"error": "prize_id_a and prize_id_b are required"}), 400
+        return jsonify({"error": "order or prize_id_a/prize_id_b are required"}), 400
 
-    repo = RumbleRepository()
     if repo.swap_prize_order(int(prize_id_a), int(prize_id_b)):
         return jsonify({"success": True})
     return jsonify({"error": "One or both prizes not found"}), 404

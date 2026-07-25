@@ -1382,7 +1382,7 @@ function FartAdmin({ data, onRefresh }) {
   )
 }
 
-function AdminPanel({ data, onRefresh }) {
+function AdminPanel({ data, onRefresh, onPrizesChange }) {
   const [activeTab, setActiveTab] = useState('bones')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState(null)
@@ -1399,9 +1399,10 @@ function AdminPanel({ data, onRefresh }) {
   const [prizeStock, setPrizeStock] = useState('')
   const [prizeDesc, setPrizeDesc] = useState('')
 
-  // Prize editing
+  // Prize editing / local order (so arrows update the list immediately)
   const [editingPrize, setEditingPrize] = useState(null)
   const [editForm, setEditForm] = useState({})
+  const [prizes, setPrizes] = useState(() => data.prizes || [])
 
   // Admin form
   const [adminUserId, setAdminUserId] = useState('')
@@ -1411,6 +1412,10 @@ function AdminPanel({ data, onRefresh }) {
   // Redemption history (admin-only)
   const [redemptions, setRedemptions] = useState([])
   const [redemptionsLoading, setRedemptionsLoading] = useState(false)
+
+  useEffect(() => {
+    setPrizes(data.prizes || [])
+  }, [data.prizes])
 
   useEffect(() => {
     if (activeTab === 'admins') {
@@ -1513,16 +1518,25 @@ function AdminPanel({ data, onRefresh }) {
   }
 
   const handleReorder = async (prizeIndex, direction) => {
-    const prizes = data.prizes
     const targetIndex = prizeIndex + direction
     if (targetIndex < 0 || targetIndex >= prizes.length) return
+
+    const previous = prizes
+    const next = [...prizes]
+    const [moved] = next.splice(prizeIndex, 1)
+    next.splice(targetIndex, 0, moved)
+
+    // Move in the UI immediately, then persist the full order
+    setPrizes(next)
+    onPrizesChange?.(next)
+
     try {
       await post('/api/rumble/admin/prizes/reorder', {
-        prize_id_a: prizes[prizeIndex].id,
-        prize_id_b: prizes[targetIndex].id,
+        order: next.map((p) => p.id),
       })
-      onRefresh()
     } catch (err) {
+      setPrizes(previous)
+      onPrizesChange?.(previous)
       flash(err.message, true)
     }
   }
@@ -1686,7 +1700,7 @@ function AdminPanel({ data, onRefresh }) {
       {activeTab === 'prizes' && (
         <div className="space-y-4">
           {/* Existing prizes */}
-          {data.prizes?.map((p, idx) => (
+          {prizes.map((p, idx) => (
             <div key={p.id} className="border-b border-border/50 pb-2">
               {editingPrize === p.id ? (
                 <div className="space-y-2">
@@ -1722,12 +1736,14 @@ function AdminPanel({ data, onRefresh }) {
                   </div>
                   <div className="flex gap-2">
                     <button
+                      type="button"
                       onClick={() => saveEditing(p.id)}
                       className="bg-secondary text-black px-3 py-1 rounded text-xs font-medium hover:opacity-90"
                     >
                       Save
                     </button>
                     <button
+                      type="button"
                       onClick={() => setEditingPrize(null)}
                       className="text-text-muted hover:text-text-primary text-xs px-3 py-1"
                     >
@@ -1740,17 +1756,19 @@ function AdminPanel({ data, onRefresh }) {
                   {/* Reorder buttons */}
                   <div className="flex flex-col">
                     <button
+                      type="button"
                       onClick={() => handleReorder(idx, -1)}
                       disabled={idx === 0}
-                      className="text-text-muted hover:text-text-primary disabled:opacity-30 text-xs leading-none"
+                      className="text-text-muted hover:text-text-primary disabled:opacity-30 text-xs leading-none px-1"
                       title="Move up"
                     >
                       &#9650;
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleReorder(idx, 1)}
-                      disabled={idx === data.prizes.length - 1}
-                      className="text-text-muted hover:text-text-primary disabled:opacity-30 text-xs leading-none"
+                      disabled={idx === prizes.length - 1}
+                      className="text-text-muted hover:text-text-primary disabled:opacity-30 text-xs leading-none px-1"
                       title="Move down"
                     >
                       &#9660;
@@ -1764,12 +1782,14 @@ function AdminPanel({ data, onRefresh }) {
                     {p.stock != null ? `${p.stock} left` : 'Unlim'}
                   </span>
                   <button
+                    type="button"
                     onClick={() => startEditing(p)}
                     className="text-secondary hover:text-secondary/80 text-xs px-2"
                   >
                     Edit
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleDeletePrize(p.id)}
                     className="text-accent-red hover:text-accent-red/80 text-xs px-2"
                   >
@@ -1961,6 +1981,10 @@ export default function Rumble() {
     }
   }
 
+  const handlePrizesChange = (prizes) => {
+    setData((prev) => (prev ? { ...prev, prizes } : prev))
+  }
+
   return (
     <div className="space-y-6">
       <div className="text-center py-6">
@@ -2077,7 +2101,9 @@ export default function Rumble() {
       {isRumbleAdmin && <FartAdmin data={data} onRefresh={fetchData} />}
 
       {/* Admin Panel */}
-      {isRumbleAdmin && <AdminPanel data={data} onRefresh={fetchData} />}
+      {isRumbleAdmin && (
+        <AdminPanel data={data} onRefresh={fetchData} onPrizesChange={handlePrizesChange} />
+      )}
 
       {/* Edit Player Modal */}
       {editingPlayer && (

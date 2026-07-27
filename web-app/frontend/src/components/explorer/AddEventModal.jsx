@@ -128,6 +128,42 @@ export default function AddEventModal({ seasons, onClose, onSaved }) {
                 )}
               </div>
 
+              {/* Persecutor points preview */}
+              {preview.top_cut_size > 0 && (() => {
+                const season = seasons.find((s) => String(s.id) === String(seasonId))
+                const persecutorConfig = season?.points_config?.persecutor || {}
+                const topCutResults = (preview.results || []).filter((r) => r.final_standing <= preview.top_cut_size)
+                if (topCutResults.length === 0) return null
+                return (
+                  <div>
+                    <p className="text-xs text-text-muted font-medium uppercase tracking-wide mb-2">Persecutor Points (Top Cut)</p>
+                    <div className="bg-bg-elevated rounded-lg p-3 overflow-x-auto max-h-48">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-bg-elevated">
+                          <tr className="border-b border-border text-left">
+                            <th className="py-1.5 px-2 text-text-muted w-10">#</th>
+                            <th className="py-1.5 px-2 text-text-muted">Player</th>
+                            <th className="py-1.5 px-2 text-red-300 text-right">Points</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {topCutResults.map((r) => {
+                            const pts = persecutorConfig[String(r.final_standing)] || 0
+                            return (
+                              <tr key={r.cardeio_user_id} className="border-b border-border/40">
+                                <td className="py-1 px-2 text-text-muted">{r.final_standing}</td>
+                                <td className="py-1 px-2 text-text-primary">{r.display_name}</td>
+                                <td className="py-1 px-2 text-red-300 text-right font-medium">{pts}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )
+              })()}
+
               {/* Standings table */}
               <div>
                 <p className="text-xs text-text-muted font-medium uppercase tracking-wide mb-2">Standings Preview</p>

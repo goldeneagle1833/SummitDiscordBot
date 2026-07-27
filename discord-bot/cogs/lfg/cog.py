@@ -3448,9 +3448,6 @@ class LFGCog(commands.Cog):
 
     @commands.command()
     @is_bot_admin()
-
-    @commands.command()
-    @is_bot_admin()
     async def correct_limited_match(self, ctx, match_id: int = None):
         """Correct a limited match by flipping outcome and recalculating ELO. Usage: !correct_limited_match <match_id>"""
         if match_id is None:

@@ -78,7 +78,7 @@ export default function LimitedLeaderboard() {
           onClick={() => switchView('season')}
           className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
             view === 'season'
-              ? 'bg-secondary text-white'
+              ? 'bg-secondary text-black'
               : 'bg-surface border border-border text-text-muted hover:border-secondary/50'
           }`}
         >
@@ -88,7 +88,7 @@ export default function LimitedLeaderboard() {
           onClick={() => switchView('lifetime')}
           className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
             view === 'lifetime'
-              ? 'bg-secondary text-white'
+              ? 'bg-secondary text-black'
               : 'bg-surface border border-border text-text-muted hover:border-secondary/50'
           }`}
         >

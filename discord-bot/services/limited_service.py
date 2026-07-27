@@ -116,8 +116,13 @@ def check_run_complete(run_id: int) -> bool:
     return False
 
 
-def get_run_summary(run_id: int) -> str:
+def get_run_summary(run_id: int, last_match_elo_change: int = None) -> str:
     """Get a formatted summary of an arena run for DM display.
+
+    Args:
+        run_id: The arena run ID.
+        last_match_elo_change: If provided, shows the per-match ELO change
+            in addition to the cumulative run change.
 
     Returns:
         Formatted string with record, deck URL, ELO, and status.
@@ -127,8 +132,8 @@ def get_run_summary(run_id: int) -> str:
         return "Arena run not found."
 
     current_elo = get_limited_elo(run["user_id"])
-    elo_change = current_elo - run["starting_elo"]
-    sign = "+" if elo_change >= 0 else ""
+    run_elo_change = current_elo - run["starting_elo"]
+    run_sign = "+" if run_elo_change >= 0 else ""
 
     status_label = {
         "active": "In Progress",
@@ -136,11 +141,22 @@ def get_run_summary(run_id: int) -> str:
         "forfeited": "Forfeited",
     }.get(run["status"], run["status"])
 
+    # Show per-match change if provided, plus cumulative run change
+    if last_match_elo_change is not None:
+        match_sign = "+" if last_match_elo_change >= 0 else ""
+        elo_line = (
+            f"This match: **{match_sign}{last_match_elo_change}** | "
+            f"Run total: **{run_sign}{run_elo_change}**\n"
+            f"Limited ELO: **{current_elo}**"
+        )
+    else:
+        elo_line = f"Limited ELO: **{current_elo}** ({run_sign}{run_elo_change})"
+
     return (
         f"**Limited Arena Run** - {status_label}\n"
         f"Record: **{run['wins']}-{run['losses']}**\n"
         f"Deck: {run['deck_url']}\n"
-        f"Limited ELO: **{current_elo}** ({sign}{elo_change})\n"
+        f"{elo_line}\n"
         f"Started: {run['created_at'][:10]}"
     )
 
@@ -169,7 +185,7 @@ def limited_winner_report(
     and increments arena run records.
 
     Returns:
-        Tuple of (match_id, winner_run_complete, loser_run_complete)
+        Tuple of (match_id, winner_run_complete, loser_run_complete, winner_elo_change, loser_elo_change)
     """
     # Update Limited ELO for both players
     _, winner_elo_change = update_limited_elo(winner_id, winner_display_name, True, loser_id)
@@ -220,7 +236,7 @@ def limited_winner_report(
         loser_id, loser_run_id, loser_run_complete,
     )
 
-    return (match_id, winner_run_complete, loser_run_complete)
+    return (match_id, winner_run_complete, loser_run_complete, winner_elo_change, loser_elo_change)
 
 
 def limited_elo_only_report(

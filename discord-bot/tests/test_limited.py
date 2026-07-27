@@ -438,7 +438,7 @@ class TestLimitedWinnerReport:
         w_run = create_arena_run(7001, "W", "url_w", "{}", 1500)
         l_run = create_arena_run(7002, "L", "url_l", "{}", 1500)
 
-        match_id, w_complete, l_complete = limited_winner_report(
+        match_id, w_complete, l_complete, w_elo_change, l_elo_change = limited_winner_report(
             reporter_id=7001,
             winner_id=7001,
             winner_display_name="W",
@@ -458,6 +458,8 @@ class TestLimitedWinnerReport:
         assert match_id is not None
         assert w_complete is False
         assert l_complete is False
+        assert w_elo_change > 0
+        assert l_elo_change < 0
 
         w_run_data = get_arena_run(w_run)
         l_run_data = get_arena_run(l_run)
@@ -476,7 +478,7 @@ class TestLimitedWinnerReport:
         # Set loser to 1 loss (will become 2 after report)
         update_arena_run_record(l_run, 1, 1)
 
-        _, w_complete, l_complete = limited_winner_report(
+        _, w_complete, l_complete, _, _ = limited_winner_report(
             reporter_id=7003,
             winner_id=7003,
             winner_display_name="W2",

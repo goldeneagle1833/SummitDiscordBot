@@ -283,7 +283,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
 
     if data["match_type"] == "limited":
         try:
-            match_id, winner_run_complete, loser_run_complete = limited_winner_report(
+            match_id, winner_run_complete, loser_run_complete, winner_elo_change, loser_elo_change = limited_winner_report(
                 reporter_id=data["reporter_id"],
                 winner_id=data["winner_id"],
                 winner_display_name=data["winner_global"],
@@ -434,15 +434,15 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
 
     # ── limited run status DMs ──
     if data["match_type"] == "limited":
-        for player_id, run_id, run_complete in [
-            (data["winner_id"], data.get("winner_run_id"), winner_run_complete),
-            (data["loser_id"], data.get("loser_run_id"), loser_run_complete),
+        for player_id, run_id, run_complete, match_elo_change in [
+            (data["winner_id"], data.get("winner_run_id"), winner_run_complete, winner_elo_change),
+            (data["loser_id"], data.get("loser_run_id"), loser_run_complete, loser_elo_change),
         ]:
             if not run_id:
                 continue
             try:
                 user = await bot.fetch_user(player_id)
-                summary = get_run_summary(run_id)
+                summary = get_run_summary(run_id, last_match_elo_change=match_elo_change)
                 if run_complete:
                     await user.send(f"🏁 **Arena Run Complete!**\n\n{summary}")
                 else:

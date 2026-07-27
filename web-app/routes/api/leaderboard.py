@@ -98,6 +98,41 @@ def get_limited_leaderboard():
         return jsonify({"error": str(e)}), 500
 
 
+@leaderboard_bp.route("/leaderboard/limited/archived")
+def get_archived_limited_events():
+    """Get list of archived limited events."""
+    try:
+        from repositories.limited_repo import get_archived_limited_events as _get_events
+        events = _get_events()
+        return jsonify({"events": events})
+    except Exception as e:
+        logger.error(f"Error fetching archived limited events: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@leaderboard_bp.route("/leaderboard/limited/archived/<int:event_id>")
+def get_archived_limited_leaderboard(event_id):
+    """Get archived limited leaderboard for a specific event."""
+    try:
+        from repositories.limited_repo import (
+            get_archived_limited_standings,
+            get_archived_limited_events as _get_events,
+        )
+        standings = get_archived_limited_standings(event_id)
+        event_info = None
+        for e in _get_events():
+            if e["event_id"] == event_id:
+                event_info = e
+                break
+        return jsonify({
+            "event_info": event_info,
+            "leaderboard": standings,
+        })
+    except Exception as e:
+        logger.error(f"Error fetching archived limited leaderboard: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @leaderboard_bp.route("/elo-distribution")
 def get_elo_distribution():
     """Get ELO distribution across bands (public, based on lifetime ELO)."""

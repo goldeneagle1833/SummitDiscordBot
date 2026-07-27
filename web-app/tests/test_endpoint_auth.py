@@ -41,6 +41,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.leaderboard.get_archived_event_leaderboard",
     "api.leaderboard.get_season_leaderboard",
     "api.leaderboard.get_limited_leaderboard",
+    "api.leaderboard.get_archived_limited_events",
+    "api.leaderboard.get_archived_limited_leaderboard",
 
     # -- Match history (public read-only) --
     "api.matches.available_dates",

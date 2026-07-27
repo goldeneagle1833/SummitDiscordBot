@@ -292,13 +292,18 @@ def insert_limited_match_record(
     return match_id
 
 
-def get_all_limited_standings():
-    """Get all limited ELO standings sorted by ELO descending."""
+def get_all_limited_standings(use_lifetime=False):
+    """Get all limited ELO standings sorted by ELO descending.
+
+    Args:
+        use_lifetime: If True, use lifetime_elo column instead of season elo.
+    """
     create_limited_tables()
     conn = _elo_conn()
     cur = conn.cursor()
+    elo_col = "lifetime_elo" if use_lifetime else "elo"
     cur.execute(
-        "SELECT user_id, user_display_name, elo FROM limited_elo ORDER BY elo DESC"
+        f"SELECT user_id, user_display_name, {elo_col} FROM limited_elo ORDER BY {elo_col} DESC"
     )
     rows = cur.fetchall()
     conn.close()
@@ -308,8 +313,12 @@ def get_all_limited_standings():
     ]
 
 
-def get_limited_wins_count(user_id):
-    """Get total limited match wins for a user."""
+def get_limited_wins_count(user_id, include_archived=False):
+    """Get total limited match wins for a user.
+
+    Args:
+        include_archived: If True, also count wins from archived matches.
+    """
     create_limited_tables()
     conn = _match_conn()
     cur = conn.cursor()
@@ -318,12 +327,25 @@ def get_limited_wins_count(user_id):
         (user_id,),
     )
     count = cur.fetchone()[0]
+    if include_archived:
+        try:
+            cur.execute(
+                "SELECT COUNT(*) FROM limited_match_records_archive WHERE winner_id = ?",
+                (user_id,),
+            )
+            count += cur.fetchone()[0]
+        except Exception:
+            pass
     conn.close()
     return count
 
 
-def get_limited_losses_count(user_id):
-    """Get total limited match losses for a user."""
+def get_limited_losses_count(user_id, include_archived=False):
+    """Get total limited match losses for a user.
+
+    Args:
+        include_archived: If True, also count losses from archived matches.
+    """
     create_limited_tables()
     conn = _match_conn()
     cur = conn.cursor()
@@ -332,6 +354,15 @@ def get_limited_losses_count(user_id):
         (user_id,),
     )
     count = cur.fetchone()[0]
+    if include_archived:
+        try:
+            cur.execute(
+                "SELECT COUNT(*) FROM limited_match_records_archive WHERE loser_id = ?",
+                (user_id,),
+            )
+            count += cur.fetchone()[0]
+        except Exception:
+            pass
     conn.close()
     return count
 
@@ -710,7 +741,10 @@ def get_matches_for_archived_run_with_decks(run_id):
 
 
 def get_limited_leaderboard_stats():
-    """Get aggregate limited stats: total runs, total matches, trophy count."""
+    """Get aggregate limited stats: total runs, total matches, trophy count.
+
+    Includes both live and archived data for accurate lifetime totals.
+    """
     create_limited_tables()
     conn = _match_conn()
     cur = conn.cursor()
@@ -724,13 +758,106 @@ def get_limited_leaderboard_stats():
     cur.execute("SELECT COUNT(*) FROM limited_arena_runs WHERE status = 'completed' AND wins = 4")
     trophy_count = cur.fetchone()[0]
 
-    cur.execute("SELECT COUNT(DISTINCT user_id) FROM limited_arena_runs")
-    unique_players = cur.fetchone()[0]
+    cur.execute("SELECT DISTINCT user_id FROM limited_arena_runs")
+    unique_players = set()
+    for row in cur.fetchall():
+        unique_players.add(row[0])
+
+    # Include archived data
+    try:
+        cur.execute("SELECT COUNT(*) FROM limited_arena_runs_archive WHERE status IN ('completed', 'forfeited')")
+        total_runs += cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM limited_match_records_archive")
+        total_matches += cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM limited_arena_runs_archive WHERE status = 'completed' AND wins = 4")
+        trophy_count += cur.fetchone()[0]
+
+        cur.execute("SELECT DISTINCT user_id FROM limited_arena_runs_archive")
+        for row in cur.fetchall():
+            unique_players.add(row[0])
+    except Exception:
+        pass
 
     conn.close()
     return {
         "total_runs": total_runs,
         "total_matches": total_matches,
         "trophy_runs": trophy_count,
-        "unique_players": unique_players,
+        "unique_players": len(unique_players),
     }
+
+
+def get_archived_limited_events():
+    """Get list of archived limited events from elo.db."""
+    conn = _elo_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """SELECT DISTINCT event_id, event_name, archived_at
+               FROM limited_event_standings_archive
+               ORDER BY event_id DESC"""
+        )
+        rows = cur.fetchall()
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+    return [
+        {"event_id": r[0], "event_name": r[1], "archived_at": r[2]}
+        for r in rows
+    ]
+
+
+def get_archived_limited_standings(event_id):
+    """Get archived limited standings for a specific event."""
+    conn = _elo_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """SELECT user_id, user_display_name, final_elo, final_rank
+               FROM limited_event_standings_archive
+               WHERE event_id = ?
+               ORDER BY final_rank ASC""",
+            (event_id,),
+        )
+        rows = cur.fetchall()
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+
+    # Get win/loss counts from archived matches for this event
+    match_conn = _match_conn()
+    match_cur = match_conn.cursor()
+    standings = []
+    for r in rows:
+        user_id = r[0]
+        wins = 0
+        losses = 0
+        try:
+            match_cur.execute(
+                "SELECT COUNT(*) FROM limited_match_records_archive WHERE event_id = ? AND winner_id = ?",
+                (event_id, user_id),
+            )
+            wins = match_cur.fetchone()[0]
+            match_cur.execute(
+                "SELECT COUNT(*) FROM limited_match_records_archive WHERE event_id = ? AND loser_id = ?",
+                (event_id, user_id),
+            )
+            losses = match_cur.fetchone()[0]
+        except Exception:
+            pass
+        if wins + losses == 0 and r[2] == 1500:
+            continue
+        standings.append({
+            "id": str(user_id),
+            "name": r[1],
+            "elo": r[2],
+            "rank": r[3],
+            "wins": wins,
+            "losses": losses,
+        })
+    match_conn.close()
+    return standings

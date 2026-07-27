@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import Spinner from '@/components/ui/Spinner'
-import { getLimitedLeaderboard } from '@/api/leaderboard'
+import { getLimitedLeaderboard, getArchivedLimitedEvents, getArchivedLimitedLeaderboard } from '@/api/leaderboard'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -8,13 +8,35 @@ export default function LimitedLeaderboard() {
   usePageTitle('Limited Leaderboard')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [archivedEvents, setArchivedEvents] = useState([])
+  const [selectedEvent, setSelectedEvent] = useState(null)
+  const [archivedData, setArchivedData] = useState(null)
+  const [archivedLoading, setArchivedLoading] = useState(false)
 
   useEffect(() => {
-    getLimitedLeaderboard()
-      .then(setData)
-      .catch(() => setData(null))
-      .finally(() => setLoading(false))
+    Promise.all([
+      getLimitedLeaderboard().catch(() => null),
+      getArchivedLimitedEvents().catch(() => ({ events: [] })),
+    ]).then(([lb, events]) => {
+      setData(lb)
+      setArchivedEvents(events?.events || [])
+      setLoading(false)
+    })
   }, [])
+
+  const loadArchivedEvent = (eventId) => {
+    if (selectedEvent === eventId) {
+      setSelectedEvent(null)
+      setArchivedData(null)
+      return
+    }
+    setSelectedEvent(eventId)
+    setArchivedLoading(true)
+    getArchivedLimitedLeaderboard(eventId)
+      .then(setArchivedData)
+      .catch(() => setArchivedData(null))
+      .finally(() => setArchivedLoading(false))
+  }
 
   if (loading) return <Spinner className="py-20" />
 
@@ -57,6 +79,45 @@ export default function LimitedLeaderboard() {
 
       {/* Trophy Runs */}
       <TrophyRuns runs={trophyRuns} />
+
+      {/* Past Limited Events */}
+      {archivedEvents.length > 0 && (
+        <section className="mt-8">
+          <h2 className="text-xl font-display text-secondary mb-4">Past Limited Events</h2>
+          <div className="space-y-2">
+            {archivedEvents.map((event) => (
+              <div key={event.event_id}>
+                <button
+                  onClick={() => loadArchivedEvent(event.event_id)}
+                  className={`w-full text-left px-4 py-3 rounded border transition-colors ${
+                    selectedEvent === event.event_id
+                      ? 'border-secondary bg-secondary/10'
+                      : 'border-border hover:border-secondary/50'
+                  }`}
+                >
+                  <span className="font-medium text-text">{event.event_name || `Event #${event.event_id}`}</span>
+                  {event.archived_at && (
+                    <span className="text-sm text-text-muted ml-2">
+                      ({new Date(event.archived_at).toLocaleDateString()})
+                    </span>
+                  )}
+                </button>
+                {selectedEvent === event.event_id && (
+                  <div className="mt-2 ml-2">
+                    {archivedLoading ? (
+                      <Spinner className="py-4" />
+                    ) : archivedData?.leaderboard?.length > 0 ? (
+                      <LimitedLeaderboardTable data={archivedData.leaderboard} />
+                    ) : (
+                      <p className="text-sm text-text-muted py-2">No standings data for this event.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

@@ -2296,7 +2296,7 @@ class LFGCog(commands.Cog):
                 return
 
             # Report the limited match
-            match_id, winner_run_complete, loser_run_complete = limited_winner_report(
+            match_id, winner_run_complete, loser_run_complete, winner_elo_change, loser_elo_change = limited_winner_report(
                 reporter_id=ctx.author.id,
                 winner_id=winner.id,
                 winner_display_name=winner_name,

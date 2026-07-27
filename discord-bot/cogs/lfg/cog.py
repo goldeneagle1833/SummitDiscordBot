@@ -47,6 +47,7 @@ from utils.database import (
     save_pairing,
     recalculate_event_elo,
     correct_match_record,
+    correct_limited_match_record,
     remove_match_record,
     remove_player_service,
     set_player_event_elo,
@@ -1820,6 +1821,9 @@ class LFGCog(commands.Cog):
                 "**When to use:** When a player's run was lost due to a reset or bug.\n\n"
                 "`!admin_limited_report @winner @loser`\n"
                 "Manually report a limited match result.\n\n"
+                "`!correct_limited_match <match_id>`\n"
+                "Flip the winner/loser and recalculate ELO for a limited match.\n"
+                "**Recommended** for incorrect limited reports.\n\n"
                 "`!remove_limited_match <match_id>`\n"
                 "Remove a limited match and revert ELO changes.\n\n"
                 "`!spot_limited_elo @user <elo>`\n"
@@ -3444,6 +3448,70 @@ class LFGCog(commands.Cog):
 
     @commands.command()
     @is_bot_admin()
+
+    @commands.command()
+    @is_bot_admin()
+    async def correct_limited_match(self, ctx, match_id: int = None):
+        """Correct a limited match by flipping outcome and recalculating ELO. Usage: !correct_limited_match <match_id>"""
+        if match_id is None:
+            await ctx.send("Please provide a match ID. Usage: `!correct_limited_match <match_id>`")
+            return
+
+        status_msg = await ctx.send("Analyzing limited match history...")
+        try:
+            result = correct_limited_match_record(match_id)
+
+            success_embed = discord.Embed(
+                title="Limited Match Corrected",
+                description=(
+                    f"**Match ID:** #{match_id}\n\n"
+                    f"**Original Result:**\n"
+                    f"~~Winner: {result['original_winner_name']}~~\n"
+                    f"~~Loser: {result['original_loser_name']}~~\n\n"
+                    f"**Corrected Result:**\n"
+                    f"Winner: **{result['new_winner_name']}** ({result['new_winner_elo_change']:+d} Limited ELO)\n"
+                    f"Loser: **{result['new_loser_name']}** ({result['new_loser_elo_change']:+d} Limited ELO)"
+                ),
+                color=discord.Color.green(),
+            )
+            success_embed.set_footer(text=f"Corrected by {ctx.author.display_name}")
+            await status_msg.edit(content=None, embed=success_embed)
+            await self.update_limited_leaderboard()
+
+            log_admin_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "correct_limited_match",
+                target_id=match_id,
+                previous_state={
+                    "winner_name": result["original_winner_name"],
+                    "loser_name": result["original_loser_name"],
+                },
+                new_state={
+                    "winner_name": result["new_winner_name"],
+                    "loser_name": result["new_loser_name"],
+                },
+                details=f"Corrected limited match #{match_id}: winner flipped from {result['original_winner_name']} to {result['new_winner_name']}",
+            )
+        except ValueError as e:
+            await status_msg.edit(content=str(e))
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Limited Match Correction Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await status_msg.edit(content=None, embed=error_embed)
+            logger.error(f"Limited match correction failed: {e}")
+
+    @correct_limited_match.error
+    async def correct_limited_match_error(self, ctx, error):
+        if isinstance(error, commands.BadArgument):
+            await ctx.send("Invalid match ID. Please provide a valid number.")
+        else:
+            logger.error(f"correct_limited_match error: {error}")
+            await ctx.send(f"An error occurred: {error}")
+
     async def remove_match(self, ctx, match_id: int = None):
         """Remove a match report and revert ELO changes. Usage: !remove_match <match_id>"""
         if match_id is None:

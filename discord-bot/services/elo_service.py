@@ -1917,3 +1917,136 @@ async def solo_match_report(
     conn.close()
 
     return report_id
+
+
+def correct_limited_match_record(match_id: int) -> dict:
+    """Flip winner/loser of a limited match and recalculate ELO.
+
+    Returns:
+        dict with keys: match_id, original_winner_name, original_loser_name,
+        new_winner_name, new_loser_name, new_winner_elo_change, new_loser_elo_change.
+
+    Raises:
+        ValueError: If match_id not found.
+    """
+    elo_conn = sqlite3.connect("elo.db")
+    elo_cur = elo_conn.cursor()
+    match_conn = sqlite3.connect("match_records.db")
+    match_cur = match_conn.cursor()
+
+    match_cur.execute(
+        """SELECT match_id, winner_id, loser_id, winner_display_name, loser_display_name,
+                  timestamp, winner_elo_change, loser_elo_change,
+                  winner_run_id, loser_run_id
+           FROM limited_match_records WHERE match_id = ?""",
+        (match_id,),
+    )
+    target = match_cur.fetchone()
+    if not target:
+        elo_conn.close()
+        match_conn.close()
+        raise ValueError(f"Limited match ID #{match_id} not found.")
+
+    (_, orig_winner_id, orig_loser_id, orig_winner_name, orig_loser_name,
+     target_ts, target_w_change, target_l_change,
+     winner_run_id, loser_run_id) = target
+
+    # Revert ELO for target match
+    if target_w_change:
+        elo_cur.execute(
+            "UPDATE limited_elo SET elo = elo - ? WHERE user_id = ?",
+            (target_w_change, orig_winner_id),
+        )
+    if target_l_change:
+        elo_cur.execute(
+            "UPDATE limited_elo SET elo = elo - ? WHERE user_id = ?",
+            (target_l_change, orig_loser_id),
+        )
+    elo_conn.commit()
+
+    # Flip the target match
+    new_winner_id, new_winner_name = orig_loser_id, orig_loser_name
+    new_loser_id, new_loser_name = orig_winner_id, orig_winner_name
+
+    # Recalculate ELO for the corrected match
+    elo_cur.execute("SELECT elo FROM limited_elo WHERE user_id = ?", (new_winner_id,))
+    row = elo_cur.fetchone()
+    nw_elo = (row[0] or 1500) if row else 1500
+
+    elo_cur.execute("SELECT elo FROM limited_elo WHERE user_id = ?", (new_loser_id,))
+    row = elo_cur.fetchone()
+    nl_elo = (row[0] or 1500) if row else 1500
+
+    nw_elo_after = update_elo(nw_elo, nl_elo, True)
+    nl_elo_after = update_elo(nl_elo, nw_elo, False)
+    new_w_change = nw_elo_after - nw_elo
+    new_l_change = nl_elo_after - nl_elo
+
+    elo_cur.execute(
+        "UPDATE limited_elo SET elo = ? WHERE user_id = ?",
+        (nw_elo_after, new_winner_id),
+    )
+    elo_cur.execute(
+        "UPDATE limited_elo SET elo = ? WHERE user_id = ?",
+        (nl_elo_after, new_loser_id),
+    )
+
+    # Update arena run records
+    if winner_run_id:
+        match_cur.execute(
+            "SELECT wins, losses FROM limited_arena_runs WHERE run_id = ?",
+            (winner_run_id,),
+        )
+        run_row = match_cur.fetchone()
+        if run_row:
+            wins, losses = run_row
+            match_cur.execute(
+                "UPDATE limited_arena_runs SET wins = ? WHERE run_id = ?",
+                (max(0, wins - 1), winner_run_id),
+            )
+
+    if loser_run_id:
+        match_cur.execute(
+            "SELECT wins, losses FROM limited_arena_runs WHERE run_id = ?",
+            (loser_run_id,),
+        )
+        run_row = match_cur.fetchone()
+        if run_row:
+            wins, losses = run_row
+            match_cur.execute(
+                "UPDATE limited_arena_runs SET losses = ? WHERE run_id = ?",
+                (max(0, losses - 1), loser_run_id),
+            )
+
+    # Update the match record with flipped winner/loser
+    match_cur.execute(
+        """UPDATE limited_match_records
+           SET winner_id = ?, winner_display_name = ?,
+               loser_id = ?, loser_display_name = ?,
+               winner_elo_change = ?, loser_elo_change = ?,
+               winner_run_id = ?, loser_run_id = ?
+           WHERE match_id = ?""",
+        (new_winner_id, new_winner_name, new_loser_id, new_loser_name,
+         new_w_change, new_l_change,
+         loser_run_id, winner_run_id,
+         match_id),
+    )
+
+    elo_conn.commit()
+    match_conn.commit()
+    elo_conn.close()
+    match_conn.close()
+
+    logger.info(
+        "correct_limited_match_record: match #%d flipped (%s -> %s)",
+        match_id, orig_winner_name, new_winner_name,
+    )
+    return {
+        "match_id": match_id,
+        "original_winner_name": orig_winner_name,
+        "original_loser_name": orig_loser_name,
+        "new_winner_name": new_winner_name,
+        "new_loser_name": new_loser_name,
+        "new_winner_elo_change": new_w_change,
+        "new_loser_elo_change": new_l_change,
+    }

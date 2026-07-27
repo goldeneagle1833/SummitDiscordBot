@@ -144,6 +144,7 @@ export default function LimitedArena({ limited, playerId, open, onToggle }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left">
+                  <th className="py-2 px-3 text-text-muted font-semibold">Match ID</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Result</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">Opponent</th>
                   <th className="py-2 px-3 text-text-muted font-semibold">ELO</th>
@@ -156,6 +157,7 @@ export default function LimitedArena({ limited, playerId, open, onToggle }) {
                   const isWin = m.winner_id === playerId
                   return (
                     <tr key={m.match_id} className="border-b border-border/50">
+                      <td className="py-2 px-3 text-text-muted text-xs">#{m.match_id}</td>
                       <td className="py-2 px-3">
                         <span className={isWin ? 'text-accent-green' : 'text-accent-red'}>{isWin ? 'Win' : 'Loss'}</span>
                       </td>

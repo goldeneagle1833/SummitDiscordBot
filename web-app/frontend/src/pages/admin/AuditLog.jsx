@@ -5,6 +5,7 @@ import BannersSection from '@/components/admin/BannersSection'
 import AdminActionsSection from '@/components/admin/AdminActionsSection'
 import TransferHistorySection from '@/components/admin/TransferHistorySection'
 import MatchNotesSection from '@/components/admin/MatchNotesSection'
+import BlockedUsersSection from '@/components/admin/BlockedUsersSection'
 import AuditLogTable from '@/components/admin/AuditLogTable'
 
 export default function AuditLog() {
@@ -22,6 +23,7 @@ export default function AuditLog() {
       <BannersSection />
       <TransferHistorySection />
       <AdminActionsSection />
+      <BlockedUsersSection />
       <AuditLogTable />
     </div>
   )

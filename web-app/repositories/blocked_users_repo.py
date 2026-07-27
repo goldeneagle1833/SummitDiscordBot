@@ -1,8 +1,6 @@
 """Repository for blocked users in match_records.db (web app side)."""
 
-import json
 import sqlite3
-from datetime import datetime, timezone
 from pathlib import Path
 
 from webapp_config import MATCH_RECORDS_DB_PATH
@@ -54,9 +52,42 @@ class BlockedUsersRepository:
         conn.close()
         return result
 
+    def get_all_blocks(self, limit: int = 200, offset: int = 0) -> tuple[list[dict], int]:
+        """Get every block record (admin view). Returns (rows, total_count)."""
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM blocked_users")
+        total = cur.fetchone()[0]
+        cur.execute(
+            """
+            SELECT user_id, blocked_user_id, reason, created_at
+            FROM blocked_users
+            ORDER BY created_at DESC, user_id
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        )
+        rows = [
+            {
+                "user_id": row["user_id"],
+                "blocked_user_id": row["blocked_user_id"],
+                "reason": row["reason"],
+                "created_at": row["created_at"],
+            }
+            for row in cur.fetchall()
+        ]
+        conn.close()
+        return rows, total
+
+    @staticmethod
+    def _stripped(pid: str) -> str:
+        s = str(pid)
+        return s[7:] if s.startswith("google_") else s
+
     def block_user(self, user_id: str, blocked_user_id: str, reason: str | None = None) -> bool:
         """Block a user. Returns True if newly blocked, False if already blocked."""
-        if str(user_id) == str(blocked_user_id):
+        if self._stripped(user_id) == self._stripped(blocked_user_id):
             return False
         conn = self._get_connection()
         cur = conn.cursor()

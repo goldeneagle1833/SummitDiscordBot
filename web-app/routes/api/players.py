@@ -900,11 +900,34 @@ def search_players():
     try:
         repo = UserProfileRepository()
         results = repo.search_users(query, limit=limit)
-        players = [
-            {"user_id": r["user_id"], "display_name": r["display_name"], "avatar": r.get("avatar"), "provider": r.get("provider", "discord")}
-            for r in results
-        ]
-        return jsonify({"players": players})
+        players = []
+        seen_ids = set()
+        for r in results:
+            uid = str(r["user_id"])
+            # Normalize for dedupe: google users' match/elo data is keyed
+            # on the bare ID (google_ prefix stripped)
+            normalized = uid[7:] if uid.startswith("google_") else uid
+            seen_ids.add(normalized)
+            players.append(
+                {"user_id": uid, "display_name": r["display_name"], "avatar": r.get("avatar"), "provider": r.get("provider", "discord")}
+            )
+
+        # Fallback: bot players who have ELO standings but have never logged
+        # into the web app (no user_profiles row) should still be searchable
+        if len(players) < limit:
+            from repositories.elo import EloRepository
+
+            elo_repo = EloRepository()
+            for r in elo_repo.search_players_by_name(query, limit=limit):
+                uid = str(r["user_id"])
+                if uid in seen_ids:
+                    continue
+                seen_ids.add(uid)
+                players.append(
+                    {"user_id": uid, "display_name": r["display_name"], "avatar": None, "provider": "discord"}
+                )
+
+        return jsonify({"players": players[:limit]})
     except Exception as e:
         logger.error(f"Player search error: {e}")
         return jsonify({"players": []})
@@ -2649,35 +2672,60 @@ def set_profile_visibility(player_id):
     return jsonify({"success": True, "sections": updated})
 
 
+def _stripped_id(pid) -> str:
+    """Strip the google_ prefix for identity comparison across ID forms."""
+    s = str(pid)
+    return s[7:] if s.startswith("google_") else s
+
+
+def _block_list_key(player_id) -> str | None:
+    """Resolve the canonical storage key for a player's block list.
+
+    Returns None if the requester is not authorized. When the requester is
+    the owner, their session user_id is used as the key regardless of which
+    ID form appears in the URL (e.g. 'google_123' vs '123'), so a player's
+    block list never splits across two keys. Admins fall back to the URL ID.
+    """
+    logged_in_user_id = session.get("user_id")
+    if logged_in_user_id is None:
+        return None
+    if _stripped_id(logged_in_user_id) == _stripped_id(player_id):
+        return str(logged_in_user_id)
+    if is_admin():
+        return str(player_id)
+    return None
+
+
 @players_bp.route("/player/<player_id>/blocked-users", methods=["GET"])
 def get_blocked_users(player_id):
     """Get a player's block list (owner only)."""
-    logged_in_user_id = session.get("user_id")
-    if logged_in_user_id is None:
+    if session.get("user_id") is None:
         return jsonify({"error": "Authentication required"}), 401
 
-    logged_in_id_str = str(logged_in_user_id)
-    player_id_normalized = str(player_id)
-    if logged_in_id_str.startswith("google_"):
-        logged_in_id_str = logged_in_id_str[7:]
-    if player_id_normalized.startswith("google_"):
-        player_id_normalized = player_id_normalized[7:]
-
-    if logged_in_id_str != player_id_normalized and not is_admin():
+    block_key = _block_list_key(player_id)
+    if block_key is None:
         return jsonify({"error": "You can only view your own block list"}), 403
 
     repo = BlockedUsersRepository()
-    blocked_entries = repo.get_blocked_users(str(player_id))
+    blocked_entries = repo.get_blocked_users(block_key)
 
     # Resolve display names for the blocked users
+    from repositories.elo import EloRepository
+
     profile_repo = UserProfileRepository()
+    elo_repo = EloRepository()
     blocked_users = []
     for entry in blocked_entries:
         uid = entry["blocked_user_id"]
         profile = profile_repo.get_by_user_id(uid)
+        if profile:
+            display_name = profile["display_name"]
+        else:
+            # Bot-only players have no user_profiles row; use elo standings
+            display_name = elo_repo.get_display_name(uid) or uid
         blocked_users.append({
             "user_id": uid,
-            "display_name": profile["display_name"] if profile else uid,
+            "display_name": display_name,
             "avatar": profile.get("avatar") if profile else None,
             "reason": entry["reason"],
         })
@@ -2688,54 +2736,44 @@ def get_blocked_users(player_id):
 @players_bp.route("/player/<player_id>/blocked-users", methods=["POST"])
 def block_user(player_id):
     """Add a user to the block list (owner only)."""
-    logged_in_user_id = session.get("user_id")
-    if logged_in_user_id is None:
+    if session.get("user_id") is None:
         return jsonify({"error": "Authentication required"}), 401
 
-    logged_in_id_str = str(logged_in_user_id)
-    player_id_normalized = str(player_id)
-    if logged_in_id_str.startswith("google_"):
-        logged_in_id_str = logged_in_id_str[7:]
-    if player_id_normalized.startswith("google_"):
-        player_id_normalized = player_id_normalized[7:]
-
-    if logged_in_id_str != player_id_normalized and not is_admin():
+    block_key = _block_list_key(player_id)
+    if block_key is None:
         return jsonify({"error": "You can only manage your own block list"}), 403
 
     data = request.get_json()
     if not data or "blocked_user_id" not in data:
         return jsonify({"error": "blocked_user_id field is required"}), 400
 
-    blocked_user_id = str(data["blocked_user_id"])
-    if blocked_user_id == str(player_id):
+    blocked_user_id = str(data["blocked_user_id"]).strip()
+    if not blocked_user_id:
+        return jsonify({"error": "blocked_user_id field is required"}), 400
+    if _stripped_id(blocked_user_id) == _stripped_id(block_key):
         return jsonify({"error": "You cannot block yourself"}), 400
 
-    reason = data.get("reason", "").strip() or None
+    reason = str(data.get("reason") or "").strip()[:200]
+    if not reason:
+        return jsonify({"error": "A reason is required when blocking a user"}), 400
 
     repo = BlockedUsersRepository()
-    added = repo.block_user(str(player_id), blocked_user_id, reason=reason)
+    added = repo.block_user(block_key, blocked_user_id, reason=reason)
     return jsonify({"success": True, "added": added})
 
 
 @players_bp.route("/player/<player_id>/blocked-users/<blocked_user_id>", methods=["DELETE"])
 def unblock_user(player_id, blocked_user_id):
     """Remove a user from the block list (owner only)."""
-    logged_in_user_id = session.get("user_id")
-    if logged_in_user_id is None:
+    if session.get("user_id") is None:
         return jsonify({"error": "Authentication required"}), 401
 
-    logged_in_id_str = str(logged_in_user_id)
-    player_id_normalized = str(player_id)
-    if logged_in_id_str.startswith("google_"):
-        logged_in_id_str = logged_in_id_str[7:]
-    if player_id_normalized.startswith("google_"):
-        player_id_normalized = player_id_normalized[7:]
-
-    if logged_in_id_str != player_id_normalized and not is_admin():
+    block_key = _block_list_key(player_id)
+    if block_key is None:
         return jsonify({"error": "You can only manage your own block list"}), 403
 
     repo = BlockedUsersRepository()
-    removed = repo.unblock_user(str(player_id), str(blocked_user_id))
+    removed = repo.unblock_user(block_key, str(blocked_user_id))
     return jsonify({"success": True, "removed": removed})
 
 

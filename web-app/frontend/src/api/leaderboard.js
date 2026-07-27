@@ -3,7 +3,7 @@ import { get } from './client'
 export const getLeaderboard = () => get('/api/leaderboard')
 export const getEventLeaderboard = () => get('/api/leaderboard/event')
 export const getPaperEventLeaderboard = () => get('/api/leaderboard/paper-event')
-export const getLimitedLeaderboard = () => get('/api/leaderboard/limited')
+export const getLimitedLeaderboard = (view = 'lifetime') => get(`/api/leaderboard/limited?view=${view}`)
 export const getArchivedLimitedEvents = () => get('/api/leaderboard/limited/archived')
 export const getArchivedLimitedLeaderboard = (eventId) => get(`/api/leaderboard/limited/archived/${eventId}`)
 export const getRunMatchups = (runId) => get(`/api/limited/run/${runId}/matchups`)

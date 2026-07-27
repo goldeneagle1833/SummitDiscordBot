@@ -188,11 +188,12 @@ class LeaderboardService:
 
         return {"event": active_event, "leaderboard": leaderboard_data}
 
-    def get_limited_leaderboard(self) -> list[dict]:
+    def get_limited_leaderboard(self, view: str = "lifetime") -> list[dict]:
         """Get limited format ELO leaderboard with win/loss records.
 
-        Uses lifetime_elo and includes archived matches so data persists
-        across season resets.
+        Args:
+            view: "lifetime" uses lifetime_elo and includes archived matches.
+                  "season" uses current season elo and live matches only.
         """
         from repositories.limited_repo import (
             get_all_limited_standings,
@@ -200,12 +201,13 @@ class LeaderboardService:
             get_limited_losses_count,
         )
 
-        standings = get_all_limited_standings(use_lifetime=True)
+        use_lifetime = view == "lifetime"
+        standings = get_all_limited_standings(use_lifetime=use_lifetime)
         leaderboard_data = []
         for standing in standings:
             user_id = standing["user_id"]
-            wins = get_limited_wins_count(user_id, include_archived=True)
-            losses = get_limited_losses_count(user_id, include_archived=True)
+            wins = get_limited_wins_count(user_id, include_archived=use_lifetime)
+            losses = get_limited_losses_count(user_id, include_archived=use_lifetime)
             if wins + losses == 0:
                 continue
             leaderboard_data.append(

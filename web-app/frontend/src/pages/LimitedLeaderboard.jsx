@@ -8,6 +8,8 @@ export default function LimitedLeaderboard() {
   usePageTitle('Limited Leaderboard')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [view, setView] = useState('lifetime')
+  const [switching, setSwitching] = useState(false)
   const [archivedEvents, setArchivedEvents] = useState([])
   const [selectedEvent, setSelectedEvent] = useState(null)
   const [archivedData, setArchivedData] = useState(null)
@@ -15,7 +17,7 @@ export default function LimitedLeaderboard() {
 
   useEffect(() => {
     Promise.all([
-      getLimitedLeaderboard().catch(() => null),
+      getLimitedLeaderboard(view).catch(() => null),
       getArchivedLimitedEvents().catch(() => ({ events: [] })),
     ]).then(([lb, events]) => {
       setData(lb)
@@ -23,6 +25,16 @@ export default function LimitedLeaderboard() {
       setLoading(false)
     })
   }, [])
+
+  const switchView = (newView) => {
+    if (newView === view) return
+    setView(newView)
+    setSwitching(true)
+    getLimitedLeaderboard(newView)
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setSwitching(false))
+  }
 
   const loadArchivedEvent = (eventId) => {
     if (selectedEvent === eventId) {
@@ -57,8 +69,32 @@ export default function LimitedLeaderboard() {
     <div>
       <section className="text-center mb-8">
         <h1 className="text-2xl font-display text-secondary">Limited Leaderboard</h1>
-        <p className="text-sm text-text-muted">Arena draft rankings - lifetime ELO</p>
+        <p className="text-sm text-text-muted">Arena draft rankings</p>
       </section>
+
+      {/* View Toggle */}
+      <div className="flex justify-center gap-2 mb-6">
+        <button
+          onClick={() => switchView('season')}
+          className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+            view === 'season'
+              ? 'bg-secondary text-white'
+              : 'bg-surface border border-border text-text-muted hover:border-secondary/50'
+          }`}
+        >
+          Current Season
+        </button>
+        <button
+          onClick={() => switchView('lifetime')}
+          className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+            view === 'lifetime'
+              ? 'bg-secondary text-white'
+              : 'bg-surface border border-border text-text-muted hover:border-secondary/50'
+          }`}
+        >
+          Lifetime
+        </button>
+      </div>
 
       {/* Stats Overview */}
       {stats.unique_players > 0 && (
@@ -72,9 +108,19 @@ export default function LimitedLeaderboard() {
 
       {/* Leaderboard */}
       <section className="mb-8">
-        <h2 className="text-xl font-display text-secondary mb-1">Lifetime Limited ELO</h2>
-        <p className="text-sm text-text-muted mb-4">Cumulative limited format rankings</p>
-        <LimitedLeaderboardTable data={Array.isArray(leaderboard) ? leaderboard : []} />
+        <h2 className="text-xl font-display text-secondary mb-1">
+          {view === 'season' ? 'Current Season' : 'Lifetime'} Limited ELO
+        </h2>
+        <p className="text-sm text-text-muted mb-4">
+          {view === 'season'
+            ? 'Rankings for the current limited season'
+            : 'Cumulative limited format rankings across all seasons'}
+        </p>
+        {switching ? (
+          <Spinner className="py-8" />
+        ) : (
+          <LimitedLeaderboardTable data={Array.isArray(leaderboard) ? leaderboard : []} />
+        )}
       </section>
 
       {/* Trophy Runs */}

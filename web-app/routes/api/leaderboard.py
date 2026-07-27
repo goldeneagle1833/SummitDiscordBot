@@ -3,7 +3,7 @@
 import logging
 import sqlite3
 from collections import Counter
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 from services.leaderboard import LeaderboardService
 from webapp_config import SEASON_FILTERS, MATCH_RECORDS_DB_PATH
@@ -75,7 +75,11 @@ def get_paper_event_leaderboard():
 
 @leaderboard_bp.route("/leaderboard/limited")
 def get_limited_leaderboard():
-    """Get limited format ELO leaderboard with stats and trophy runs."""
+    """Get limited format ELO leaderboard with stats and trophy runs.
+
+    Query params:
+        view: "lifetime" (default) or "season"
+    """
     from utils.auth import is_admin
     from services.pilots import is_pilot_active
 
@@ -84,14 +88,19 @@ def get_limited_leaderboard():
     try:
         from repositories.limited_repo import get_trophy_runs, get_limited_leaderboard_stats
 
+        view = request.args.get("view", "lifetime")
+        if view not in ("lifetime", "season"):
+            view = "lifetime"
+
         service = LeaderboardService()
-        leaderboard_data = service.get_limited_leaderboard()
+        leaderboard_data = service.get_limited_leaderboard(view=view)
         trophy_runs = get_trophy_runs(limit=20)
         stats = get_limited_leaderboard_stats()
         return jsonify({
             "leaderboard": leaderboard_data,
             "trophy_runs": trophy_runs,
             "stats": stats,
+            "view": view,
         })
     except Exception as e:
         logger.error(f"Error fetching limited leaderboard: {e}", exc_info=True)

@@ -3509,6 +3509,8 @@ class LFGCog(commands.Cog):
             logger.error(f"correct_limited_match error: {error}")
             await ctx.send(f"An error occurred: {error}")
 
+    @commands.command()
+    @is_bot_admin()
     async def remove_match(self, ctx, match_id: int = None):
         """Remove a match report and revert ELO changes. Usage: !remove_match <match_id>"""
         if match_id is None:

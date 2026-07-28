@@ -12,6 +12,7 @@ from utils.constants import SORCERY_NICKNAMES
 from utils.database import save_pairing
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
 from services.pilots_service import is_pilot_active
+from services.card_points_service import validate_deck_points
 
 logger = logging.getLogger("discord_bot")
 
@@ -198,6 +199,59 @@ class LimitedQueueModal(discord.ui.Modal, title="Join Limited Queue"):
         )
 
 
+class PointsQueueModal(discord.ui.Modal, title="Join Points Queue"):
+    """Modal for joining the Points queue — requires a Curiosa deck URL."""
+
+    deck_url = discord.ui.TextInput(
+        label="Curiosa Deck URL (required)",
+        placeholder="https://curiosa.io/decks/...",
+        required=True,
+        max_length=200,
+    )
+
+    timeframe = discord.ui.TextInput(
+        label="Queue Duration (minutes)",
+        placeholder="30",
+        required=False,
+        default="30",
+        max_length=3,
+    )
+
+    def __init__(self, bot):
+        super().__init__()
+        self.bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        deck_url = self.deck_url.value.strip()
+        if not deck_url or "curiosa.io" not in deck_url.lower():
+            await interaction.followup.send(
+                "Please provide a valid Curiosa deck URL (e.g. https://curiosa.io/decks/...).",
+                ephemeral=True,
+            )
+            return
+
+        timeframe_value = parse_queue_timeframe(self.timeframe.value)
+
+        # Validate deck against point budget
+        is_valid, message, total_points, max_budget = await validate_deck_points(deck_url)
+        if not is_valid:
+            await interaction.followup.send(
+                f"**Deck not allowed in Points queue.**\n{message}",
+                ephemeral=True,
+            )
+            return
+
+        await _process_queue_join(
+            self.bot,
+            interaction,
+            "points",
+            timeframe_value,
+            deck_url,
+        )
+
+
 async def _process_queue_join(bot, interaction, queue_type, timeframe_value, deck_url, run_id=None):
     """Handle queue join flow after modal validation."""
 
@@ -324,6 +378,9 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
         elif match_type == "rumble":
             match_type_emoji = "💥"
             match_type_label = "Rumble"
+        elif match_type == "points":
+            match_type_emoji = "📊"
+            match_type_label = "Points"
         else:
             match_type_emoji = "⭐"
             match_type_label = "Casual"
@@ -587,6 +644,8 @@ class JoinQueueButtons(discord.ui.View):
             self.remove_item(self.join_limited_button)
         if not is_pilot_active("RumbleQueue"):
             self.remove_item(self.join_rumble_button)
+        if not is_pilot_active("PointsQueue"):
+            self.remove_item(self.join_points_button)
 
     async def _handle_join(self, interaction: discord.Interaction, queue_type: str):
         """Shared handler for all join buttons"""
@@ -599,6 +658,8 @@ class JoinQueueButtons(discord.ui.View):
             return
         if queue_type == "limited":
             modal = LimitedQueueModal(self.bot)
+        elif queue_type == "points":
+            modal = PointsQueueModal(self.bot)
         else:
             modal = DeckURLModal(self.bot, is_button_join=True, queue_type=queue_type)
         await interaction.response.send_modal(modal)
@@ -662,6 +723,21 @@ class JoinQueueButtons(discord.ui.View):
             )
             return
         await self._handle_join(interaction, "rumble")
+
+    @discord.ui.button(
+        label="📊 Join Points",
+        style=discord.ButtonStyle.primary,
+        custom_id="join_lfg_points",
+    )
+    async def join_points_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        if not is_pilot_active("PointsQueue"):
+            await interaction.response.send_message(
+                "Points queue is not currently available.", ephemeral=True
+            )
+            return
+        await self._handle_join(interaction, "points")
 
     @discord.ui.button(
         label="📋 Report Last Match",
@@ -750,6 +826,9 @@ class JoinQueueButtons(discord.ui.View):
             elif match_type == "rumble":
                 match_type_emoji = "💥"
                 match_type_label = "Rumble"
+            elif match_type == "points":
+                match_type_emoji = "📊"
+                match_type_label = "Points"
             else:
                 match_type_emoji = "⭐"
                 match_type_label = "Casual"

@@ -961,6 +961,8 @@ class LFGCog(commands.Cog):
         """
         if type_a == "limited" or type_b == "limited":
             return "limited"
+        if type_a == "points" or type_b == "points":
+            return "points"
         if type_a == "rumble" or type_b == "rumble":
             return "rumble"
         if type_a == "testing" or type_b == "testing":

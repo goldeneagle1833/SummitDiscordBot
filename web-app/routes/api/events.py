@@ -1,6 +1,9 @@
 """API routes for event deck management."""
 
+import json
 import logging
+import os
+import tempfile
 import threading
 import uuid
 
@@ -10,9 +13,45 @@ from repositories.events import EventRepository
 from utils.auth import is_admin, require_admin
 from utils.formatting import format_event_name
 
-# In-memory job store for background Curiosa fetching
-_event_jobs = {}
-_jobs_lock = threading.Lock()
+# File-based job store for background Curiosa fetching.
+# Using files instead of an in-memory dict so that jobs are visible
+# across multiple Gunicorn worker processes.
+_JOBS_DIR = os.path.join(tempfile.gettempdir(), "summit_event_jobs")
+os.makedirs(_JOBS_DIR, exist_ok=True)
+
+
+def _job_path(job_id):
+    """Return the filesystem path for a job's status file."""
+    # Sanitise to prevent path traversal
+    safe_id = job_id.replace(os.sep, "").replace("/", "").replace("..", "")
+    return os.path.join(_JOBS_DIR, f"{safe_id}.json")
+
+
+def _write_job(job_id, data):
+    """Atomically write job status to disk."""
+    path = _job_path(job_id)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f)
+    os.replace(tmp, path)
+
+
+def _read_job(job_id):
+    """Read job status from disk, or return None."""
+    path = _job_path(job_id)
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def _delete_job(job_id):
+    """Remove a job status file."""
+    try:
+        os.remove(_job_path(job_id))
+    except FileNotFoundError:
+        pass
 
 logger = logging.getLogger(__name__)
 
@@ -145,8 +184,7 @@ def _run_event_creation(job_id, title, valid_ranked, valid_bulk):
         def _tracking_rate_limit():
             original_rate_limit()
             completed_batches[0] += 1
-            with _jobs_lock:
-                _event_jobs[job_id]["progress"] = f"Fetching batch {completed_batches[0]}/{total_batches}"
+            _write_job(job_id, {"status": "processing", "progress": f"Fetching batch {completed_batches[0]}/{total_batches}"})
         curiosa._rate_limit = _tracking_rate_limit
 
         if valid_ranked:
@@ -158,15 +196,14 @@ def _run_event_creation(job_id, title, valid_ranked, valid_bulk):
             errors.extend(bulk_errors)
 
         if not top8_decks and not bulk_decks:
-            with _jobs_lock:
-                _event_jobs[job_id].update({
-                    "status": "failed",
-                    "result": {
-                        "success": False,
-                        "error": "No decks could be fetched. Check your URLs.",
-                        "fetch_errors": errors,
-                    },
-                })
+            _write_job(job_id, {
+                "status": "failed",
+                "result": {
+                    "success": False,
+                    "error": "No decks could be fetched. Check your URLs.",
+                    "fetch_errors": errors,
+                },
+            })
             return
 
         repo = EventRepository()
@@ -178,19 +215,17 @@ def _run_event_creation(job_id, title, valid_ranked, valid_bulk):
             if errors:
                 result["warnings"] = errors
 
-        with _jobs_lock:
-            _event_jobs[job_id].update({
-                "status": "completed" if result.get("success") else "failed",
-                "result": result,
-            })
+        _write_job(job_id, {
+            "status": "completed" if result.get("success") else "failed",
+            "result": result,
+        })
 
     except Exception as e:
         logger.exception("Background event creation failed: %s", e)
-        with _jobs_lock:
-            _event_jobs[job_id].update({
-                "status": "failed",
-                "result": {"success": False, "error": f"Internal error: {e}"},
-            })
+        _write_job(job_id, {
+            "status": "failed",
+            "result": {"success": False, "error": f"Internal error: {e}"},
+        })
 
 
 @events_bp.route("/events/create", methods=["POST"])
@@ -223,8 +258,7 @@ def create_event():
         return jsonify({"success": False, "error": "At least one deck URL is required"}), 400
 
     job_id = str(uuid.uuid4())
-    with _jobs_lock:
-        _event_jobs[job_id] = {"status": "processing", "progress": "Starting..."}
+    _write_job(job_id, {"status": "processing", "progress": "Starting..."})
 
     thread = threading.Thread(
         target=_run_event_creation,
@@ -240,8 +274,7 @@ def create_event():
 @require_admin
 def get_event_job_status(job_id):
     """Poll for background event job status."""
-    with _jobs_lock:
-        job = _event_jobs.get(job_id)
+    job = _read_job(job_id)
 
     if not job:
         return jsonify({"error": "Job not found"}), 404
@@ -252,8 +285,7 @@ def get_event_job_status(job_id):
     if "result" in job:
         response["result"] = job["result"]
         # Clean up completed/failed jobs after they're read
-        with _jobs_lock:
-            _event_jobs.pop(job_id, None)
+        _delete_job(job_id)
 
     return jsonify(response)
 
@@ -267,15 +299,14 @@ def _run_event_deck_update(job_id, event_folder, table_type, urls, mode):
         decks, errors = curiosa.fetch_decks_batch(urls)
 
         if not decks:
-            with _jobs_lock:
-                _event_jobs[job_id].update({
-                    "status": "failed",
-                    "result": {
-                        "success": False,
-                        "error": "No decks could be fetched. Check your URLs.",
-                        "fetch_errors": errors,
-                    },
-                })
+            _write_job(job_id, {
+                "status": "failed",
+                "result": {
+                    "success": False,
+                    "error": "No decks could be fetched. Check your URLs.",
+                    "fetch_errors": errors,
+                },
+            })
             return
 
         repo = EventRepository()
@@ -286,19 +317,17 @@ def _run_event_deck_update(job_id, event_folder, table_type, urls, mode):
             if errors:
                 result["warnings"] = errors
 
-        with _jobs_lock:
-            _event_jobs[job_id].update({
-                "status": "completed" if result.get("success") else "failed",
-                "result": result,
-            })
+        _write_job(job_id, {
+            "status": "completed" if result.get("success") else "failed",
+            "result": result,
+        })
 
     except Exception as e:
         logger.exception("Background deck update failed: %s", e)
-        with _jobs_lock:
-            _event_jobs[job_id].update({
-                "status": "failed",
-                "result": {"success": False, "error": f"Internal error: {e}"},
-            })
+        _write_job(job_id, {
+            "status": "failed",
+            "result": {"success": False, "error": f"Internal error: {e}"},
+        })
 
 
 @events_bp.route("/events/<event_folder>/decks", methods=["POST"])
@@ -322,8 +351,7 @@ def update_event_decks(event_folder):
         return jsonify({"success": False, "error": "urls must be a list"}), 400
 
     job_id = str(uuid.uuid4())
-    with _jobs_lock:
-        _event_jobs[job_id] = {"status": "processing", "progress": "Starting..."}
+    _write_job(job_id, {"status": "processing", "progress": "Starting..."})
 
     thread = threading.Thread(
         target=_run_event_deck_update,
@@ -355,19 +383,17 @@ def _run_event_refresh(job_id, event_folder):
         repo = EventRepository()
         result = repo.refresh_event_decks(event_folder, curiosa)
 
-        with _jobs_lock:
-            _event_jobs[job_id].update({
-                "status": "completed" if result.get("success") else "failed",
-                "result": result,
-            })
+        _write_job(job_id, {
+            "status": "completed" if result.get("success") else "failed",
+            "result": result,
+        })
 
     except Exception as e:
         logger.exception("Background event refresh failed: %s", e)
-        with _jobs_lock:
-            _event_jobs[job_id].update({
-                "status": "failed",
-                "result": {"success": False, "error": f"Internal error: {e}"},
-            })
+        _write_job(job_id, {
+            "status": "failed",
+            "result": {"success": False, "error": f"Internal error: {e}"},
+        })
 
 
 @events_bp.route("/events/<event_folder>/refresh", methods=["POST"])
@@ -375,8 +401,7 @@ def _run_event_refresh(job_id, event_folder):
 def refresh_event(event_folder):
     """Re-fetch all deck data from Curiosa for an event (admin only)."""
     job_id = str(uuid.uuid4())
-    with _jobs_lock:
-        _event_jobs[job_id] = {"status": "processing", "progress": "Refreshing decks..."}
+    _write_job(job_id, {"status": "processing", "progress": "Refreshing decks..."})
 
     thread = threading.Thread(
         target=_run_event_refresh,

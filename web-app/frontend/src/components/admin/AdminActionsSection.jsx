@@ -98,11 +98,6 @@ export default function AdminActionsSection({ onRefresh }) {
 
   return (
     <section className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-text-primary">Admin Actions</h2>
-        <p className="text-xs text-text-muted">Perform administrative operations</p>
-      </div>
-
       {/* Active event status */}
       {activeEvent !== undefined && (
         <div className={`px-4 py-2 rounded text-sm border ${

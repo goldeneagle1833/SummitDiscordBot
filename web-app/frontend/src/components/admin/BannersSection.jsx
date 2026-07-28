@@ -121,11 +121,6 @@ export default function BannersSection() {
 
   return (
     <section className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-text-primary">Promo Banners</h2>
-        <p className="text-xs text-text-muted">Manage home page promotional banners</p>
-      </div>
-
       {/* Create form */}
       <div className="bg-bg-raised border border-border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold">Create New Banner</h3>

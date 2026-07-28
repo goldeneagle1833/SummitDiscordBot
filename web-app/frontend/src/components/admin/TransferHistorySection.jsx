@@ -163,11 +163,6 @@ export default function TransferHistorySection({ onRefresh }) {
 
   return (
     <section className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-text-primary">Transfer Account History</h2>
-        <p className="text-xs text-text-muted">Move all match history, ELO, and data from one account to another</p>
-      </div>
-
       <div className="bg-bg-raised border border-border rounded-lg p-4 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <PlayerSearchInput

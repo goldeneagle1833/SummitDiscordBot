@@ -255,11 +255,6 @@ export default function DashboardSection() {
 
   return (
     <section className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold text-text-primary">Dashboard</h2>
-        <p className="text-xs text-text-muted">Community health at a glance</p>
-      </div>
-
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-3">
         <ActiveUsersCard />
         <UniqueUsersCard />

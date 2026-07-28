@@ -68,10 +68,7 @@ export default function AuditLogTable() {
 
   return (
     <section id="audit-log-section" className="space-y-4">
-      <div className="flex items-baseline justify-between">
-        <h2 className="text-lg font-semibold text-text-primary">Audit Log</h2>
-        {total > 0 && <span className="text-xs text-text-muted">{total} total entries</span>}
-      </div>
+      {total > 0 && <div className="text-xs text-text-muted">{total} total entries</div>}
 
       {loading ? (
         <Spinner className="py-8" />

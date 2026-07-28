@@ -32,6 +32,7 @@ from migrations.create_explorer_tables import create_explorer_tables
 from migrations.create_rumble_tables import create_rumble_tables
 from migrations.create_external_matches_table import create_external_matches_table
 from migrations.create_deck_builder_tables import create_deck_builder_tables
+from migrations.create_card_points_tables import create_card_points_tables
 
 # Configure logging
 logging.basicConfig(
@@ -89,6 +90,11 @@ def create_app() -> Flask:
         create_deck_builder_tables()
     except Exception as e:
         logger.error(f"Failed to ensure deck_builder tables: {e}")
+
+    try:
+        create_card_points_tables()
+    except Exception as e:
+        logger.error(f"Failed to ensure card_points tables: {e}")
 
     # Register all blueprints
     register_blueprints(app)

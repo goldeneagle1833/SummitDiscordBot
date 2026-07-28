@@ -40,11 +40,6 @@ export default function AnalyticsSection() {
 
   return (
     <section className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-text-primary">Site Analytics</h2>
-        <p className="text-xs text-text-muted">Page views and banner clicks</p>
-      </div>
-
       <div className="flex gap-2 flex-wrap">
         {FILTERS.map(f => (
           <button

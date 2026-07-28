@@ -37,13 +37,6 @@ export default function BlockedUsersSection() {
 
   return (
     <section className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-text-primary">Blocked Users</h2>
-        <p className="text-xs text-text-muted">
-          All block records across players — who blocked whom{total > 0 ? ` (${total} total)` : ''}
-        </p>
-      </div>
-
       <div className="bg-bg-raised border border-border rounded-lg overflow-hidden">
         {loading ? (
           <div className="flex justify-center py-8"><Spinner /></div>

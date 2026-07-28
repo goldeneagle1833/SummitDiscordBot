@@ -41,11 +41,6 @@ export default function MatchNotesSection() {
 
   return (
     <section className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-text-primary">Matches with Notes</h2>
-        <p className="text-xs text-text-muted">All matches where players left a comment</p>
-      </div>
-
       {error && (
         <p className="text-sm text-accent-red">{error}</p>
       )}

@@ -44,6 +44,9 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.leaderboard.get_archived_limited_events",
     "api.leaderboard.get_archived_limited_leaderboard",
 
+    # -- Card points (public, pilot-gated) --
+    "api.card_points.get_card_points_public",
+
     # -- Match history (public read-only) --
     "api.matches.available_dates",
     "api.matches.match_history",

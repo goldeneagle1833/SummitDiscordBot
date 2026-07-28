@@ -2,12 +2,15 @@
 
 import json
 import logging
+import os
+import re
 
 from flask import Blueprint, jsonify, request
 
 from repositories.card_points import CardPointsRepository
-from utils.auth import require_admin
-from webapp_config import ALL_CARDS_PATH
+from services.pilots import is_pilot_active
+from utils.auth import require_admin, is_admin
+from webapp_config import ALL_CARDS_PATH, CARD_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -125,3 +128,55 @@ def set_config():
             return jsonify({"success": False, "error": "Invalid budget value"}), 400
 
     return jsonify({"success": True, "max_budget": repo.get_max_budget()})
+
+
+def _build_card_image_lookup():
+    """Build card name -> image filename lookup (same logic as cards.py)."""
+    lookup = {}
+    if CARD_IMAGES_DIR.exists():
+        all_files = sorted(os.listdir(CARD_IMAGES_DIR))
+        png_files = [f for f in all_files if f.lower().endswith(".png")]
+        webp_files = [f for f in all_files if f.lower().endswith(".webp")]
+        for filename in png_files + webp_files:
+            base = re.sub(r"\.(png|jpg|jpeg|webp)$", "", filename, flags=re.IGNORECASE).lower()
+            for suffix in ["-b-s", "-b-f", "-bt-s", "-bt-f", "-scg-f", "-bt-s-r"]:
+                if base.endswith(suffix):
+                    base = base[:-len(suffix)]
+                    break
+            if "-" in base:
+                card_name_normalized = base.split("-", 1)[1]
+                is_standard = "-b-s" in filename.lower() or "-bt-s" in filename.lower()
+                if card_name_normalized not in lookup or is_standard:
+                    lookup[card_name_normalized] = filename
+    return lookup
+
+
+def _find_card_image(card_name, lookup):
+    """Find matching image filename for a card name."""
+    normalized = card_name.lower().replace(" ", "_").replace("'", "").replace(",", "")
+    normalized = re.sub(r"[^a-z0-9_]", "", normalized)
+    return lookup.get(normalized)
+
+
+@card_points_bp.route("/public", methods=["GET"])
+def get_card_points_public():
+    """Public endpoint: get all card points + max budget + card images.
+
+    Only available when PointsQueue pilot is active.
+    """
+    if not is_pilot_active("PointsQueue") and not is_admin():
+        return jsonify({"success": False, "error": "Points system is not currently active."}), 404
+
+    repo = CardPointsRepository()
+    cards = repo.get_all_card_points()
+    max_budget = repo.get_max_budget()
+
+    image_lookup = _build_card_image_lookup()
+    for card in cards:
+        card["image"] = _find_card_image(card["card_name"], image_lookup)
+
+    return jsonify({
+        "success": True,
+        "cards": cards,
+        "max_budget": max_budget,
+    })

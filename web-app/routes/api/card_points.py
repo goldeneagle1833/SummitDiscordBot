@@ -8,6 +8,7 @@ import re
 from flask import Blueprint, jsonify, request
 
 from repositories.card_points import CardPointsRepository
+from services.curiosa import CuriosaService
 from services.pilots import is_pilot_active
 from utils.auth import require_admin, is_admin
 from webapp_config import ALL_CARDS_PATH, CARD_IMAGES_DIR
@@ -16,26 +17,50 @@ logger = logging.getLogger(__name__)
 
 card_points_bp = Blueprint("card_points", __name__)
 
-# Lazy-loaded card name list from All_Cards_Array.json
+# Lazy-loaded card data from All_Cards_Array.json
 _all_card_names: list[str] | None = None
+_card_metadata: dict[str, dict] | None = None
 
 
-def _get_all_card_names() -> list[str]:
-    """Load and cache all card names from the local card database."""
-    global _all_card_names
+def _load_card_data():
+    """Load and cache card names and metadata from the local card database."""
+    global _all_card_names, _card_metadata
     if _all_card_names is not None:
-        return _all_card_names
+        return
     try:
         with open(ALL_CARDS_PATH, "r", encoding="utf-8") as f:
             cards = json.load(f)
-        _all_card_names = sorted(
-            {card["name"] for card in cards if card.get("name")},
-            key=str.lower,
-        )
+        names = set()
+        metadata = {}
+        for card in cards:
+            name = card.get("name")
+            if not name:
+                continue
+            names.add(name)
+            guardian = card.get("guardian", {})
+            metadata[name.lower()] = {
+                "type": guardian.get("type", ""),
+                "element": card.get("elements", ""),
+                "rarity": guardian.get("rarity", ""),
+            }
+        _all_card_names = sorted(names, key=str.lower)
+        _card_metadata = metadata
     except Exception as e:
         logger.error(f"Failed to load All_Cards_Array.json: {e}")
         _all_card_names = []
+        _card_metadata = {}
+
+
+def _get_all_card_names() -> list[str]:
+    """Get cached card names list."""
+    _load_card_data()
     return _all_card_names
+
+
+def _get_card_metadata(card_name: str) -> dict:
+    """Get type/element/rarity for a card name."""
+    _load_card_data()
+    return _card_metadata.get(card_name.lower(), {})
 
 
 @card_points_bp.route("/search-cards", methods=["GET"])
@@ -174,9 +199,75 @@ def get_card_points_public():
     image_lookup = _build_card_image_lookup()
     for card in cards:
         card["image"] = _find_card_image(card["card_name"], image_lookup)
+        meta = _get_card_metadata(card["card_name"])
+        card["type"] = meta.get("type", "")
+        card["element"] = meta.get("element", "")
+        card["rarity"] = meta.get("rarity", "")
 
     return jsonify({
         "success": True,
         "cards": cards,
         "max_budget": max_budget,
+    })
+
+
+@card_points_bp.route("/check-deck", methods=["POST"])
+def check_deck():
+    """Check if a deck URL meets the points budget.
+
+    Public when PointsQueue pilot is active; always available to admins.
+    """
+    if not is_pilot_active("PointsQueue") and not is_admin():
+        return jsonify({"success": False, "error": "Points system is not currently active."}), 404
+
+    data = request.get_json()
+    if not data or not data.get("deck_url", "").strip():
+        return jsonify({"success": False, "error": "Deck URL is required."}), 400
+
+    deck_url = data["deck_url"].strip()
+
+    # Fetch deck from Curiosa
+    service = CuriosaService()
+    deck_json_str = service.fetch_deck_data(deck_url)
+    if not deck_json_str or deck_json_str == "{}":
+        return jsonify({"success": False, "error": "Could not fetch deck data. Check the URL and try again."}), 400
+
+    try:
+        deck_data = json.loads(deck_json_str)
+    except json.JSONDecodeError:
+        return jsonify({"success": False, "error": "Invalid deck data received."}), 400
+
+    # Calculate points
+    repo = CardPointsRepository()
+    card_points_map = {c["card_name"].lower(): c["point_value"] for c in repo.get_all_card_points()}
+    max_budget = repo.get_max_budget()
+
+    total = 0
+    costed_cards = []
+    for section in ("avatar", "spellbook", "atlas", "sideboard"):
+        cards_in_section = deck_data.get(section)
+        if not cards_in_section:
+            continue
+        for card in cards_in_section:
+            name = card.get("name", "")
+            quantity = card.get("quantity", 1)
+            pts = card_points_map.get(name.lower(), 0)
+            if pts > 0:
+                card_total = pts * quantity
+                total += card_total
+                costed_cards.append({
+                    "name": name,
+                    "quantity": quantity,
+                    "points_each": pts,
+                    "points_total": card_total,
+                })
+
+    costed_cards.sort(key=lambda c: -c["points_total"])
+
+    return jsonify({
+        "success": True,
+        "is_valid": total <= max_budget,
+        "total_points": total,
+        "max_budget": max_budget,
+        "costed_cards": costed_cards,
     })

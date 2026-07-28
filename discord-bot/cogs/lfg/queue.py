@@ -199,8 +199,8 @@ class LimitedQueueModal(discord.ui.Modal, title="Join Limited Queue"):
         )
 
 
-class PointsQueueModal(discord.ui.Modal, title="Join Points Queue"):
-    """Modal for joining the Points queue — requires a Curiosa deck URL."""
+class PointsQueueModal(discord.ui.Modal, title="Join Ranked w/ Points"):
+    """Modal for joining the Ranked w/ Points queue — requires a Curiosa deck URL."""
 
     deck_url = discord.ui.TextInput(
         label="Curiosa Deck URL (required)",
@@ -238,7 +238,7 @@ class PointsQueueModal(discord.ui.Modal, title="Join Points Queue"):
         is_valid, message, total_points, max_budget = await validate_deck_points(deck_url)
         if not is_valid:
             await interaction.followup.send(
-                f"**Deck not allowed in Points queue.**\n{message}",
+                f"**Deck not allowed in Ranked w/ Points queue.**\n{message}",
                 ephemeral=True,
             )
             return
@@ -380,7 +380,7 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             match_type_label = "Rumble"
         elif match_type == "points":
             match_type_emoji = "📊"
-            match_type_label = "Points"
+            match_type_label = "Ranked w/ Points"
         else:
             match_type_emoji = "⭐"
             match_type_label = "Casual"
@@ -610,7 +610,7 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                 ephemeral=True,
             )
     else:
-        queue_label = queue_type.capitalize()
+        queue_label = "Ranked w/ Points" if queue_type == "points" else queue_type.capitalize()
         deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
         try:
             await interaction.user.send(
@@ -636,6 +636,8 @@ class JoinQueueButtons(discord.ui.View):
     def __init__(self, bot):
         super().__init__(timeout=None)
         self.bot = bot
+        if not is_pilot_active("PointsQueue"):
+            self.remove_item(self.join_points_button)
         if not is_pilot_active("RankedQueue"):
             self.remove_item(self.join_ranked_button)
         if not is_pilot_active("CasualQueue"):
@@ -644,8 +646,6 @@ class JoinQueueButtons(discord.ui.View):
             self.remove_item(self.join_limited_button)
         if not is_pilot_active("RumbleQueue"):
             self.remove_item(self.join_rumble_button)
-        if not is_pilot_active("PointsQueue"):
-            self.remove_item(self.join_points_button)
 
     async def _handle_join(self, interaction: discord.Interaction, queue_type: str):
         """Shared handler for all join buttons"""
@@ -663,6 +663,21 @@ class JoinQueueButtons(discord.ui.View):
         else:
             modal = DeckURLModal(self.bot, is_button_join=True, queue_type=queue_type)
         await interaction.response.send_modal(modal)
+
+    @discord.ui.button(
+        label="📊 Ranked w/ Points",
+        style=discord.ButtonStyle.primary,
+        custom_id="join_lfg_points",
+    )
+    async def join_points_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        if not is_pilot_active("PointsQueue"):
+            await interaction.response.send_message(
+                "Ranked w/ Points queue is not currently available.", ephemeral=True
+            )
+            return
+        await self._handle_join(interaction, "points")
 
     @discord.ui.button(
         label="⚔️ Join Ranked",
@@ -723,21 +738,6 @@ class JoinQueueButtons(discord.ui.View):
             )
             return
         await self._handle_join(interaction, "rumble")
-
-    @discord.ui.button(
-        label="📊 Join Points",
-        style=discord.ButtonStyle.primary,
-        custom_id="join_lfg_points",
-    )
-    async def join_points_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if not is_pilot_active("PointsQueue"):
-            await interaction.response.send_message(
-                "Points queue is not currently available.", ephemeral=True
-            )
-            return
-        await self._handle_join(interaction, "points")
 
     @discord.ui.button(
         label="📋 Report Last Match",
@@ -828,7 +828,7 @@ class JoinQueueButtons(discord.ui.View):
                 match_type_label = "Rumble"
             elif match_type == "points":
                 match_type_emoji = "📊"
-                match_type_label = "Points"
+                match_type_label = "Ranked w/ Points"
             else:
                 match_type_emoji = "⭐"
                 match_type_label = "Casual"

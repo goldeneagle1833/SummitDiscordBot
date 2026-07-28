@@ -249,13 +249,14 @@ export default function DashboardSection() {
     { label: 'Avg Games/Week (12wk)', value: summary.avg_weekly_games },
     { label: 'Online Matches', value: summary.total_bot_matches?.toLocaleString() },
     { label: 'Paper Matches', value: summary.total_web_matches?.toLocaleString() },
+    { label: 'Points Matches', value: (summary.total_points_matches || 0).toLocaleString() },
     { label: 'External Matches', value: (summary.total_external_matches || 0).toLocaleString(), link: '/admin/external-matches' },
     { label: 'Users Logged In', value: (summary.total_logins || 0).toLocaleString() },
   ]
 
   return (
     <section className="space-y-6">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10 gap-3">
         <ActiveUsersCard />
         <UniqueUsersCard />
         {summaryCards.map(c => {

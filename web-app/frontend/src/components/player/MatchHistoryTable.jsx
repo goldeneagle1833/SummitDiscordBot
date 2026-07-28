@@ -39,11 +39,12 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
       <h3 className="text-lg font-semibold text-text-primary mb-1">{title}</h3>
       {subtitle && <p className="text-xs text-text-muted mb-3">{subtitle}</p>}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm" style={{ minWidth: isOwner ? 900 : 600 }}>
+        <table className="w-full text-sm" style={{ minWidth: isOwner ? 950 : 650 }}>
           <thead>
             <tr className="border-b border-border text-left">
               <th className="py-2 px-3 text-text-muted font-semibold">ID</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Result</th>
+              <th className="py-2 px-3 text-text-muted font-semibold">Type</th>
               {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Avatar</th>}
               {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Elements</th>}
               <th className="py-2 px-3 text-text-muted font-semibold">Opponent</th>
@@ -70,6 +71,13 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                     <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${isWin ? 'bg-accent-green/20 text-accent-green' : 'bg-accent-red/20 text-accent-red'}`}>
                       {m.result}
                     </span>
+                  </td>
+                  <td className="py-2 px-3">
+                    {m.match_type === 'points' ? (
+                      <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">Points</span>
+                    ) : (
+                      <span className="text-xs text-text-muted">Ranked</span>
+                    )}
                   </td>
                   {isOwner && (
                     <td className="py-2 px-3 text-sm">

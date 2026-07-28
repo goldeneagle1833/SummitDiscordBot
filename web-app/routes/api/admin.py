@@ -403,6 +403,18 @@ def dashboard_stats():
         except sqlite3.OperationalError:
             pass
 
+        # --- Summary: total points matches ---
+        total_points_matches = 0
+        try:
+            cur.execute(f"""
+                SELECT SUM(c) FROM (
+                    {_online_union("SELECT COUNT(*) as c FROM {t} WHERE match_type = 'points'")}
+                )
+            """)
+            total_points_matches = cur.fetchone()[0] or 0
+        except sqlite3.OperationalError:
+            pass
+
         # --- Summary: total unique players ---
         cur.execute(f"""
             SELECT COUNT(DISTINCT player_id) FROM (
@@ -708,6 +720,7 @@ def dashboard_stats():
                 "total_bot_matches": total_bot_matches,
                 "total_web_matches": total_web_matches,
                 "total_external_matches": total_external_matches,
+                "total_points_matches": total_points_matches,
                 "total_players": total_players,
                 "avg_weekly_games": avg_weekly_games,
                 "total_logins": total_logins,

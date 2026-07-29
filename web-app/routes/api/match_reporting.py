@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify, request, session
 from services.match_confirmation import MatchConfirmationService
 from repositories.user_profiles import UserProfileRepository
 from repositories.match_confirmation import MatchConfirmationRepository
-from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH
+from webapp_config import MATCH_RECORDS_DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -591,14 +591,14 @@ def edit_match_comment():
     auth_provider = session.get("auth_provider", "discord")
 
     try:
+        # Both bot and web matches live in match_records.db
+        db_path = str(MATCH_RECORDS_DB_PATH)
         if match_source == "web":
-            db_path = str(MATCH_RECORDS_DB_PATH)
             table = "match_reports_web"
             id_col = "match_id"
             # Web matches store user IDs with provider prefix
             user_id_for_query = f"google_{current_user_id}" if auth_provider == "google" else current_user_id
         else:
-            db_path = str(ELO_DB_PATH)
             table = "match_records"
             id_col = "rowid"
             # Bot matches use numeric IDs
@@ -609,6 +609,15 @@ def edit_match_comment():
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
 
+        # Verify the table exists
+        cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        )
+        if not cur.fetchone():
+            conn.close()
+            return jsonify({"success": False, "error": f"Match table not found in database"}), 404
+
         # Fetch the existing match - use column-safe query for bot matches
         # which may have varying schemas
         try:
@@ -618,10 +627,14 @@ def edit_match_comment():
             )
         except sqlite3.OperationalError:
             # Fallback: match_comment or reporter_id column may not exist
-            cur.execute(
-                f"SELECT winner_id, losser_id, NULL, NULL FROM {table} WHERE {id_col} = ?",
-                (match_id,),
-            )
+            try:
+                cur.execute(
+                    f"SELECT winner_id, losser_id, NULL, NULL FROM {table} WHERE {id_col} = ?",
+                    (match_id,),
+                )
+            except sqlite3.OperationalError as e2:
+                conn.close()
+                return jsonify({"success": False, "error": f"Database schema error: {e2}"}), 500
 
         row = cur.fetchone()
         if not row:
@@ -691,5 +704,9 @@ def edit_match_comment():
         return jsonify({"success": True, "comment": new_comment})
 
     except Exception as e:
-        logger.error(f"Error editing match comment for match_id={match_id}, source={match_source}, user={current_user_id}: {e}", exc_info=True)
+        logger.error(
+            f"Error editing match comment for match_id={match_id}, source={match_source}, "
+            f"user={current_user_id}, db={db_path}, table={table}: {e}",
+            exc_info=True,
+        )
         return jsonify({"success": False, "error": f"Failed to update comment: {e}"}), 500

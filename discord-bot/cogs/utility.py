@@ -90,11 +90,7 @@ class UtilityCog(commands.Cog):
         embed.add_field(
             name="🎮 Looking For Game",
             value=(
-                "`!lfg` - Join matchmaking queue\n"
-                "`!cancel` - Leave the queue\n"
                 "`!challenge @user` - Challenge a player\n"
-                "`!record_game` - Report external match\n"
-                "`!game_activity` - View recent activity\n"
                 "➡️ Use `!lfg_help` for details"
             ),
             inline=False,
@@ -105,10 +101,7 @@ class UtilityCog(commands.Cog):
             name="📊 Rankings & Stats",
             value=(
                 "`!rank` - Check your Elo ranking\n"
-                "`!leaderboard` - View top 10 rankings\n"
-                "`!mystats` - Your match history summary\n"
-                "`!mygames` - List recent games\n"
-                "`!replay` - View last match details"
+                "`!leaderboard` - View top 10 rankings"
             ),
             inline=False,
         )
@@ -149,8 +142,7 @@ class UtilityCog(commands.Cog):
             name="🛠️ Utility",
             value=(
                 "`!help` - This message\n"
-                "`!list_commands` - Full command list\n"
-                "`!deckcheck` - Check Curiosa deck legality"
+                "`!list_commands` - Full command list"
             ),
             inline=False,
         )
@@ -180,12 +172,8 @@ class UtilityCog(commands.Cog):
             name="🎮 Looking For Game (LFG)",
             value=(
                 "`!lfg_help` - Learn how to use the LFG system\n"
-                "`!lfg [minutes]` - Join queue for X minutes (default 30)\n"
                 "`!check_lfg` - Check who's in queue\n"
-                "`!challenge @user` - Challenge specific player\n"
-                "`!cancel` - Leave the queue\n"
-                "`!record_game` - Record a match result manually\n"
-                "`!game_activity [hours]` - View games reported recently"
+                "`!challenge @user` - Challenge specific player"
             ),
             inline=False,
         )
@@ -195,10 +183,7 @@ class UtilityCog(commands.Cog):
             name="📊 Rankings & Statistics",
             value=(
                 "`!rank` - Check your Elo ranking\n"
-                "`!leaderboard` - View top 10 Elo rankings\n"
-                "`!mystats` - Get a summary of your match history\n"
-                "`!mygames` - List your recent games\n"
-                "`!replay` - Replay your last match"
+                "`!leaderboard` - View top 10 Elo rankings"
             ),
             inline=False,
         )
@@ -219,8 +204,7 @@ class UtilityCog(commands.Cog):
             name="🛠️ Utility",
             value=(
                 "`!help` - Show help message\n"
-                "`!list_commands` - Show this command list\n"
-                "`!deckcheck` - Check Curiosa deck legality"
+                "`!list_commands` - Show this command list"
             ),
             inline=False,
         )

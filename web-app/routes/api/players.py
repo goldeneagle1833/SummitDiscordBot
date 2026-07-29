@@ -2117,6 +2117,10 @@ def player_api(player_id):
         # Only the reporter commented (or bot match with single comment)
         return comment if player_is_reporter else None
 
+    # Profile visibility: needed by _build_match_entry for deck URL/snapshot gating
+    profile_repo_vis = UserProfileRepository()
+    visibility = profile_repo_vis.get_profile_visibility(player_id_normalized)
+
     def _build_match_entry(row):
         """Convert a raw DB row into a match history dict."""
         did_win = row[0]
@@ -2462,10 +2466,6 @@ def player_api(player_id):
 
     admin = is_admin()
     show_lifetime = admin or is_owner
-
-    # Profile visibility: check which sections the profile owner made public
-    profile_repo_vis = UserProfileRepository()
-    visibility = profile_repo_vis.get_profile_visibility(player_id_normalized)
 
     def _section_visible(section_key):
         """Return True if the section should be shown to the current viewer."""

@@ -609,11 +609,20 @@ def edit_match_comment():
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
 
-        # Fetch the existing match
-        cur.execute(
-            f"SELECT winner_id, losser_id, match_comment, reporter_id FROM {table} WHERE {id_col} = ?",
-            (match_id,),
-        )
+        # Fetch the existing match - use column-safe query for bot matches
+        # which may have varying schemas
+        try:
+            cur.execute(
+                f"SELECT winner_id, losser_id, match_comment, reporter_id FROM {table} WHERE {id_col} = ?",
+                (match_id,),
+            )
+        except sqlite3.OperationalError:
+            # Fallback: match_comment or reporter_id column may not exist
+            cur.execute(
+                f"SELECT winner_id, losser_id, NULL, NULL FROM {table} WHERE {id_col} = ?",
+                (match_id,),
+            )
+
         row = cur.fetchone()
         if not row:
             conn.close()
@@ -627,7 +636,7 @@ def edit_match_comment():
             return jsonify({"success": False, "error": "Not authorized to edit this match"}), 403
 
         # Determine if user is reporter or confirmer
-        is_reporter = str(reporter_id) == str(user_id_for_query)
+        is_reporter = reporter_id is not None and str(reporter_id) == str(user_id_for_query)
         old_comment = old_comment or ""
 
         # Parse existing merged comment to extract the other user's portion
@@ -640,7 +649,7 @@ def edit_match_comment():
                 other_part = ""  # confirmer's comment only, no reporter part
             else:
                 other_part = old_comment[len("Opponent: "):]
-        elif old_comment == "Web-confirmed match":
+        elif old_comment in ("Web-confirmed match", ""):
             other_part = ""
         else:
             # Only reporter's comment exists
@@ -664,15 +673,23 @@ def edit_match_comment():
         else:
             merged = ""
 
-        cur.execute(
-            f"UPDATE {table} SET match_comment = ? WHERE {id_col} = ?",
-            (merged, match_id),
-        )
+        # Try updating match_comment; add the column if it doesn't exist
+        try:
+            cur.execute(
+                f"UPDATE {table} SET match_comment = ? WHERE {id_col} = ?",
+                (merged, match_id),
+            )
+        except sqlite3.OperationalError:
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN match_comment TEXT")
+            cur.execute(
+                f"UPDATE {table} SET match_comment = ? WHERE {id_col} = ?",
+                (merged, match_id),
+            )
         conn.commit()
         conn.close()
 
         return jsonify({"success": True, "comment": new_comment})
 
     except Exception as e:
-        logger.error(f"Error editing match comment: {e}", exc_info=True)
-        return jsonify({"success": False, "error": "Failed to update comment"}), 500
+        logger.error(f"Error editing match comment for match_id={match_id}, source={match_source}, user={current_user_id}: {e}", exc_info=True)
+        return jsonify({"success": False, "error": f"Failed to update comment: {e}"}), 500

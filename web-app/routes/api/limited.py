@@ -3,7 +3,7 @@
 import logging
 import sqlite3
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 
 from utils.api_auth import require_api_key
 from repositories.limited_repo import (
@@ -252,6 +252,15 @@ def get_run_matchups_endpoint(run_id):
         run = get_arena_run(run_id)
         if not run:
             return jsonify({"error": "Run not found"}), 404
+
+        # Check if the requesting user owns this run
+        logged_in_user_id = session.get("user_id")
+        run_owner_id = str(run["user_id"])
+        is_run_owner = logged_in_user_id is not None and str(logged_in_user_id) == run_owner_id
+
+        # Block access to active runs unless the viewer is the owner
+        if run["status"] == "active" and not is_run_owner:
+            return jsonify({"error": "Run is still in progress"}), 403
 
         matchups = get_run_matchups(run_id)
         return jsonify({

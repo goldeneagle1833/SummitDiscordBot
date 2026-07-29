@@ -732,7 +732,7 @@ def player_avatar_stats(player_id, avatar_name):
     })
 
 
-def _get_limited_stats(player_id: str, event_filter: str = "current") -> dict:
+def _get_limited_stats(player_id: str, event_filter: str = "current", is_owner: bool = False) -> dict:
     """Fetch limited arena stats for a player from match_records.db and elo.db.
 
     When event_filter is "lifetime", uses lifetime_elo and includes archived data.
@@ -799,6 +799,7 @@ def _get_limited_stats(player_id: str, event_filter: str = "current") -> dict:
                     "completed_at": r[7][:10] if r[7] else None,
                 }
                 for r in all_runs
+                if is_owner or r[4] != "active"
             ]
 
         # Recent limited matches (live)
@@ -2153,9 +2154,13 @@ def player_api(player_id):
         opponent_deck_json = loser_json if did_win else winner_json
         opponent_avatar_name, opponent_elements = _extract_deck_info(opponent_deck_json)
 
-        if is_owner:
+        show_deck_urls = is_owner or visibility.get("deck_urls", False)
+        show_deck_snapshots = is_owner or visibility.get("deck_snapshots", False)
+        if show_deck_urls:
             player_deck_url = winner_deck_url if did_win else loser_deck_url
             opponent_deck_url = loser_deck_url if did_win else winner_deck_url
+        if not show_deck_snapshots:
+            has_deck_json = False
 
         winner_went_first = row[17] if len(row) > 17 else None
         loser_went_first = row[18] if len(row) > 18 else None
@@ -2208,6 +2213,7 @@ def player_api(player_id):
                 row[23] if len(row) > 23 else None,
                 query_player_id,
             ) if is_owner else None,
+            "match_source": source if is_owner else None,
         }
 
     for row in paginated_rows:
@@ -2452,7 +2458,7 @@ def player_api(player_id):
     has_custom_display_name = bool(profile and profile.get("custom_display_name")) if profile else False
 
     # Fetch limited arena stats
-    limited_stats = _get_limited_stats(player_id_normalized, event_filter)
+    limited_stats = _get_limited_stats(player_id_normalized, event_filter, is_owner=is_owner)
 
     admin = is_admin()
     show_lifetime = admin or is_owner

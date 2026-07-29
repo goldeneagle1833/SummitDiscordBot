@@ -8,6 +8,8 @@ const SECTION_LABELS = {
   avatar_matchups: 'Avatar Matchups',
   recent_decks: 'Recent Decks',
   recorded_games: 'Self-Reported Games',
+  deck_urls: 'Deck URLs',
+  deck_snapshots: 'Deck Snapshots',
 }
 
 const SECTION_ORDER = [
@@ -17,6 +19,8 @@ const SECTION_ORDER = [
   'avatar_matchups',
   'recent_decks',
   'recorded_games',
+  'deck_urls',
+  'deck_snapshots',
 ]
 
 export default function PrivacySettingsModal({ playerId, onClose, onSaved }) {

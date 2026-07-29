@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { editMatchComment } from '@/api/games'
 
 const ELEMENT_IMG = '/static/images/elements/'
 const ELEMENT_FILE = {
@@ -22,8 +23,14 @@ function ElementIcons({ elements }) {
   )
 }
 
-export default function MatchHistoryTable({ title, subtitle, matches, pagination, playerId, isOwner, perPage, perPageOptions, onPageChange, onPerPageChange, onEditDeck }) {
+export default function MatchHistoryTable({ title, subtitle, matches, pagination, playerId, isOwner, profileVisibility, perPage, perPageOptions, onPageChange, onPerPageChange, onEditDeck, onMatchUpdate }) {
+  const showDeckUrls = isOwner || profileVisibility?.deck_urls
+  const showSnapshots = isOwner || profileVisibility?.deck_snapshots
   const [noteModal, setNoteModal] = useState(null)
+  const [editingNote, setEditingNote] = useState(false)
+  const [editText, setEditText] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState(null)
 
   if (!matches?.length) {
     return (
@@ -55,8 +62,8 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
               <th className="py-2 px-3 text-text-muted font-semibold">Time</th>
               <th className="py-2 px-3 text-text-muted font-semibold">Date</th>
               {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Notes</th>}
-              {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Deck Link</th>}
-              {isOwner && <th className="py-2 px-3 text-text-muted font-semibold">Snapshot</th>}
+              {showDeckUrls && <th className="py-2 px-3 text-text-muted font-semibold">Deck Link</th>}
+              {showSnapshots && <th className="py-2 px-3 text-text-muted font-semibold">Snapshot</th>}
             </tr>
           </thead>
           <tbody>
@@ -122,16 +129,24 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                     <td className="py-2 px-3 text-text-muted max-w-[100px]">
                       {m.match_comment ? (
                         <button
-                          onClick={() => setNoteModal({ matchId: m.match_id, comment: m.match_comment })}
+                          onClick={() => { setNoteModal({ matchId: m.match_id, comment: m.match_comment, matchSource: m.match_source }); setEditingNote(false); setEditError(null) }}
                           className="text-left truncate block max-w-[100px] text-secondary hover:underline cursor-pointer bg-transparent border-none p-0 text-sm"
-                          title="Click to view full note"
+                          title="Click to view/edit note"
                         >
                           {m.match_comment.split(/\s+/).slice(0, 3).join(' ')}{m.match_comment.split(/\s+/).length > 3 ? '...' : ''}
                         </button>
-                      ) : '-'}
+                      ) : (
+                        <button
+                          onClick={() => { setNoteModal({ matchId: m.match_id, comment: '', matchSource: m.match_source }); setEditingNote(true); setEditText(''); setEditError(null) }}
+                          className="text-text-muted hover:text-secondary text-xs bg-transparent border-none p-0 cursor-pointer"
+                          title="Add a note"
+                        >
+                          + Add
+                        </button>
+                      )}
                     </td>
                   )}
-                  {isOwner && (
+                  {showDeckUrls && (
                     <td className="py-2 px-3">
                       <span className="flex items-center gap-1">
                         {deckUrl ? (
@@ -151,7 +166,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                       </span>
                     </td>
                   )}
-                  {isOwner && (
+                  {showSnapshots && (
                     <td className="py-2 px-3">
                       {m.has_deck_json ? (
                         <Link
@@ -230,7 +245,62 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
               <h4 className="text-sm font-semibold text-text-primary">Match #{noteModal.matchId} Notes</h4>
               <button onClick={() => setNoteModal(null)} className="text-text-muted hover:text-text-primary text-lg leading-none">&times;</button>
             </div>
-            <p className="text-sm text-text-secondary whitespace-pre-wrap break-words">{noteModal.comment}</p>
+            {editingNote ? (
+              <>
+                <textarea
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  maxLength={500}
+                  rows={4}
+                  className="w-full text-sm bg-bg-raised border border-border rounded p-2 text-text-primary resize-y"
+                  placeholder="Enter your match notes..."
+                />
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-xs text-text-muted">{editText.length}/500</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setEditingNote(false); setEditError(null) }}
+                      className="px-3 py-1 text-xs rounded border border-border text-text-muted hover:text-text-primary"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={async () => {
+                        setEditSaving(true)
+                        setEditError(null)
+                        try {
+                          await editMatchComment(noteModal.matchId, noteModal.matchSource, editText)
+                          setNoteModal({ ...noteModal, comment: editText })
+                          setEditingNote(false)
+                          onMatchUpdate?.()
+                        } catch (err) {
+                          setEditError(err.message || 'Failed to save')
+                        } finally {
+                          setEditSaving(false)
+                        }
+                      }}
+                      disabled={editSaving}
+                      className="px-3 py-1 text-xs rounded bg-secondary text-black hover:opacity-90 disabled:opacity-50"
+                    >
+                      {editSaving ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+                {editError && <p className="text-xs text-accent-red mt-1">{editError}</p>}
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-text-secondary whitespace-pre-wrap break-words">{noteModal.comment || <span className="text-text-muted italic">No notes</span>}</p>
+                <div className="flex justify-end mt-3">
+                  <button
+                    onClick={() => { setEditingNote(true); setEditText(noteModal.comment || ''); setEditError(null) }}
+                    className="px-3 py-1 text-xs rounded border border-border text-text-muted hover:text-text-primary hover:border-secondary/50"
+                  >
+                    Edit
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

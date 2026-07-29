@@ -395,6 +395,8 @@ class UserProfileRepository:
         "avatar_matchups",
         "recent_decks",
         "recorded_games",
+        "deck_urls",
+        "deck_snapshots",
     ]
 
     def get_profile_visibility(self, user_id: str) -> dict:

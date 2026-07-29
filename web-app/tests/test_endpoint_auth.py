@@ -143,6 +143,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.match_reporting.deny_match_report",
     "api.match_reporting.get_pending_confirmations",
     "api.match_reporting.search_opponents",
+    "api.match_reporting.edit_match_comment",
 
     # -- Limited (API key checked internally / public read-only) --
     "api.limited.post_report_match",

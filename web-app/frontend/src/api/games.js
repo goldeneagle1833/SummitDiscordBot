@@ -12,6 +12,9 @@ export const listAllAvatars = () => get('/api/list-all-avatars')
 export const updateMatchDeck = (matchId, deckUrl, source) =>
   put('/api/update-match-deck', { match_id: matchId, deck_url: deckUrl, source })
 
+export const editMatchComment = (matchId, matchSource, newComment) =>
+  post('/api/match-report/edit-comment', { match_id: matchId, match_source: matchSource, new_comment: newComment })
+
 export const getPlayerSeasons = (playerId) => get(`/api/player/${playerId}/seasons`)
 
 // Season management

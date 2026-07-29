@@ -290,11 +290,13 @@ const [editDeck, setEditDeck] = useState(null)
         pagination={data.pagination}
         playerId={playerId}
         isOwner={data.is_owner}
+        profileVisibility={vis}
         perPage={perPage}
         perPageOptions={PER_PAGE_OPTIONS}
         onPageChange={(p) => refetch(undefined, p)}
         onPerPageChange={(pp) => refetch(undefined, 1, undefined, undefined, pp)}
         onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
+        onMatchUpdate={refreshCurrentPage}
       />
 
       {data.casual_matches?.length > 0 && (
@@ -305,8 +307,10 @@ const [editDeck, setEditDeck] = useState(null)
           pagination={data.casual_pagination}
           playerId={playerId}
           isOwner={data.is_owner}
+          profileVisibility={vis}
           onPageChange={(p) => refetch(undefined, undefined, undefined, p)}
           onEditDeck={data.is_owner ? (matchId, url) => setEditDeck({ matchId, url }) : undefined}
+          onMatchUpdate={refreshCurrentPage}
         />
       )}
 

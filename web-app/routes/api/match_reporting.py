@@ -1,11 +1,13 @@
 """API routes for web-based match reporting."""
 
 import logging
+import sqlite3
 from flask import Blueprint, jsonify, request, session
 
 from services.match_confirmation import MatchConfirmationService
 from repositories.user_profiles import UserProfileRepository
 from repositories.match_confirmation import MatchConfirmationRepository
+from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -560,3 +562,117 @@ def deny_match_report(confirmation_id):
                 "message": error_msg
             }
         }), 500
+
+
+@match_reporting_bp.route("/edit-comment", methods=["POST"])
+def edit_match_comment():
+    """Edit the logged-in user's match comment/note.
+
+    Request Body (JSON):
+        match_id (int): ID of the match
+        match_source (str): 'web' or 'bot'
+        new_comment (str): New comment text (max 500 chars, empty to clear)
+    """
+    if "user_id" not in session:
+        return jsonify({"success": False, "error": "Authentication required"}), 401
+
+    data = request.get_json() or {}
+    match_id = data.get("match_id")
+    match_source = data.get("match_source")
+    new_comment = (data.get("new_comment") or "").strip()
+
+    if not match_id or match_source not in ("web", "bot"):
+        return jsonify({"success": False, "error": "match_id and match_source (web/bot) required"}), 400
+
+    if len(new_comment) > 500:
+        return jsonify({"success": False, "error": "Comment must be 500 characters or fewer"}), 400
+
+    current_user_id = str(session["user_id"])
+    auth_provider = session.get("auth_provider", "discord")
+
+    try:
+        if match_source == "web":
+            db_path = str(MATCH_RECORDS_DB_PATH)
+            table = "match_reports_web"
+            id_col = "match_id"
+            # Web matches store user IDs with provider prefix
+            user_id_for_query = f"google_{current_user_id}" if auth_provider == "google" else current_user_id
+        else:
+            db_path = str(ELO_DB_PATH)
+            table = "match_records"
+            id_col = "rowid"
+            # Bot matches use numeric IDs
+            user_id_for_query = current_user_id
+            if user_id_for_query.startswith("google_"):
+                user_id_for_query = user_id_for_query[7:]
+
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+
+        # Fetch the existing match
+        cur.execute(
+            f"SELECT winner_id, losser_id, match_comment, reporter_id FROM {table} WHERE {id_col} = ?",
+            (match_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"success": False, "error": "Match not found"}), 404
+
+        winner_id, loser_id, old_comment, reporter_id = row
+
+        # Verify user is a participant
+        if str(winner_id) != str(user_id_for_query) and str(loser_id) != str(user_id_for_query):
+            conn.close()
+            return jsonify({"success": False, "error": "Not authorized to edit this match"}), 403
+
+        # Determine if user is reporter or confirmer
+        is_reporter = str(reporter_id) == str(user_id_for_query)
+        old_comment = old_comment or ""
+
+        # Parse existing merged comment to extract the other user's portion
+        other_part = ""
+        if " | Opponent: " in old_comment:
+            reporter_part, confirmer_part = old_comment.split(" | Opponent: ", 1)
+            other_part = confirmer_part if is_reporter else reporter_part
+        elif old_comment.startswith("Opponent: "):
+            if not is_reporter:
+                other_part = ""  # confirmer's comment only, no reporter part
+            else:
+                other_part = old_comment[len("Opponent: "):]
+        elif old_comment == "Web-confirmed match":
+            other_part = ""
+        else:
+            # Only reporter's comment exists
+            if not is_reporter:
+                other_part = old_comment
+
+        # Rebuild the merged comment
+        if is_reporter:
+            reporter_text = new_comment
+            confirmer_text = other_part
+        else:
+            reporter_text = other_part
+            confirmer_text = new_comment
+
+        if reporter_text and confirmer_text:
+            merged = f"{reporter_text} | Opponent: {confirmer_text}"
+        elif reporter_text:
+            merged = reporter_text
+        elif confirmer_text:
+            merged = f"Opponent: {confirmer_text}"
+        else:
+            merged = ""
+
+        cur.execute(
+            f"UPDATE {table} SET match_comment = ? WHERE {id_col} = ?",
+            (merged, match_id),
+        )
+        conn.commit()
+        conn.close()
+
+        return jsonify({"success": True, "comment": new_comment})
+
+    except Exception as e:
+        logger.error(f"Error editing match comment: {e}", exc_info=True)
+        return jsonify({"success": False, "error": "Failed to update comment"}), 500

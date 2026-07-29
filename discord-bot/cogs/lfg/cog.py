@@ -803,49 +803,6 @@ class LFGCog(commands.Cog):
 
         # Common LFG-related commands and suggestions
         command_suggestions = {
-            # LFG variations
-            "looking": "!lfg",
-            "lookingforgame": "!lfg",
-            "findgame": "!lfg",
-            "game": "!lfg",
-            "play": "!lfg",
-            "match": "!lfg",
-            "lf": "!lfg",
-            "lfgame": "!lfg",
-            "queue": "!lfg",
-            "search": "!lfg",
-            "searching": "!lfg",
-            "find": "!lfg",
-            "looking4game": "!lfg",
-            "lookingfor": "!lfg",
-            "findmatch": "!lfg",
-            "getgame": "!lfg",
-            "wantgame": "!lfg",
-            "needgame": "!lfg",
-            "joingame": "!lfg",
-            "joinqueue": "!lfg",
-            "queueup": "!lfg",
-            "playermatch": "!lfg",
-            "seek": "!lfg",
-            "seeking": "!lfg",
-            "want": "!lfg",
-            "need": "!lfg",
-            # Cancel variations
-            "leave": "!cancel",
-            "exit": "!cancel",
-            "quit": "!cancel",
-            "cancel": "!cancel",
-            "stop": "!cancel",
-            "leavequeue": "!cancel",
-            "remove": "!cancel",
-            "removeme": "!cancel",
-            "leavelfg": "!cancel",
-            "quitqueue": "!cancel",
-            "exitqueue": "!cancel",
-            "out": "!cancel",
-            "stoplfg": "!cancel",
-            "unqueue": "!cancel",
-            "dequeue": "!cancel",
             # Check LFG variations
             "check": "!check_lfg",
             "status": "!check_lfg",
@@ -872,18 +829,6 @@ class LFGCog(commands.Cog):
             "issue_challenge": "!issue_challenge",
             "top16challenge": "!issue_challenge",
             "challenge_top16": "!issue_challenge",
-            # Record game variations
-            "record": "!record_game",
-            "report": "!record_game",
-            "reportgame": "!record_game",
-            "recordmatch": "!record_game",
-            "recordgame": "!record_game",
-            "reportmatch": "!record_game",
-            "submitmatch": "!record_game",
-            "submitgame": "!record_game",
-            "log": "!record_game",
-            "loggame": "!record_game",
-            "logmatch": "!record_game",
             # Help variations
             "help": "!lfg_help",
             "commands": "!lfg_help",
@@ -896,13 +841,9 @@ class LFGCog(commands.Cog):
         }
 
         actual_commands = {
-            "lfg": "!lfg",
-            "cancel": "!cancel",
             "check_lfg": "!check_lfg",
             "checklfg": "!check_lfg",
             "challenge": "!challenge",
-            "record_game": "!record_game",
-            "recordgame": "!record_game",
             "lfg_help": "!lfg_help",
             "lfghelp": "!lfg_help",
         }
@@ -1111,75 +1052,6 @@ class LFGCog(commands.Cog):
         if expired:
             logger.info(f"Cleaned up {len(expired)} old processed match entries")
 
-    @commands.command(aliases=["LFG"])
-    async def lfg(self, ctx, timeframe: int = 30, *, deck_url: str = None):
-        """Usage: !lfg - Directs you to join the queue via the Join Queue button
-
-        Examples:
-            !lfg - Get instructions to join the queue
-        """
-        logger.info(
-            f"LFG command started - User: {ctx.author} (ID: {ctx.author.id}), Channel: {ctx.channel}"
-        )
-
-        # Delete the user's command message
-        try:
-            await ctx.message.delete()
-        except Exception as e:
-            logger.warning(f"Could not delete command message: {e}")
-
-        # Check if user is already in all available queues
-        if ctx.author.id in lfg_queue:
-            try:
-                await ctx.author.send(
-                    "You're already in a queue! Use `!cancel` to leave the queue if needed."
-                )
-            except discord.Forbidden:
-                pass
-            return
-
-        # Get LFG channel reference
-        lfg_channel = self.bot.get_channel(self.lfg_channel_id)
-        channel_mention = lfg_channel.mention if lfg_channel else "#lfg-matchmaking"
-
-        # Send message directing user to the LFG channel
-        try:
-            await ctx.author.send(
-                f"**Ready to find a match?**\n\n"
-                f"Head over to {channel_mention} and click the **Join Queue** button to enter your deck URL and join the matchmaking queue!"
-            )
-        except discord.Forbidden:
-            # If DM fails, assign role and send to the channel
-            logger.warning(
-                f"Cannot DM {ctx.author} (ID: {ctx.author.id}) - DMs disabled or bot blocked"
-            )
-
-            # Try to assign the DM-disabled role
-            try:
-                if ctx.guild:
-                    role = ctx.guild.get_role(config.DM_DISABLED_ROLE_ID)
-                    member = ctx.guild.get_member(ctx.author.id)
-                    if role and member and role not in member.roles:
-                        await member.add_roles(role)
-                        logger.info(f"Added DM-disabled role to {ctx.author}")
-            except Exception as e:
-                logger.error(f"Failed to add DM-disabled role to {ctx.author}: {e}")
-
-            # Send to the DM-disabled channel
-            dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
-            if dm_channel:
-                await dm_channel.send(
-                    scrub_urls(
-                        f"{ctx.author.mention} **Ready to find a match?**\n\n"
-                        f"Head over to {channel_mention} and click the **Join Queue** button to enter your deck URL and join the matchmaking queue!"
-                    )
-                )
-            return
-
-        # Remove old code that directly added to queue
-        # Now all queue joins happen through the modal via the button
-        logger.info(f"LFG command completed for {ctx.author} (ID: {ctx.author.id})")
-
     @commands.command()
     async def check_lfg(self, ctx):
         """Check if anyone is currently in the LFG queue."""
@@ -1191,55 +1063,6 @@ class LFGCog(commands.Cog):
             await ctx.send(f"{ctx.author.mention}, yes, someone is in the queue!")
         else:
             await ctx.send(f"{ctx.author.mention}, no one is currently in the queue.")
-
-    @commands.command()
-    async def cancel(self, ctx):
-        """Cancel your LFG queue status."""
-        # Delete the user's command message (only in guild channels, not DMs)
-        if ctx.guild:
-            try:
-                await ctx.message.delete()
-            except Exception as e:
-                logger.warning(f"Could not delete cancel command message: {e}")
-
-        async with lfg_queue_lock:
-            was_in_queue = ctx.author.id in lfg_queue
-            if was_in_queue:
-                lfg_queue.pop(ctx.author.id)
-
-        if was_in_queue:
-            # Send DM to user
-            try:
-                await ctx.author.send("You have been removed from the LFG queue.")
-            except discord.Forbidden:
-                logger.warning(
-                    f"Could not send DM to {ctx.author} (ID: {ctx.author.id}) - DMs might be disabled"
-                )
-                # If DM fails, send ephemeral message in channel
-                await ctx.send(
-                    f"{ctx.author.mention}, you have been removed from the LFG queue.",
-                    delete_after=5,
-                )
-            except Exception as e:
-                logger.error(f"Error sending DM to {ctx.author}: {e}")
-
-            # Update status message after leaving queue
-            await self.update_lfg_status()
-        else:
-            # Send DM to user
-            try:
-                await ctx.author.send("You are not currently in the LFG queue.")
-            except discord.Forbidden:
-                logger.warning(
-                    f"Could not send DM to {ctx.author} (ID: {ctx.author.id}) - DMs might be disabled"
-                )
-                # If DM fails, send ephemeral message in channel
-                await ctx.send(
-                    f"{ctx.author.mention}, you are not currently in the LFG queue.",
-                    delete_after=5,
-                )
-            except Exception as e:
-                logger.error(f"Error sending DM to {ctx.author}: {e}")
 
     @commands.command()
     async def challenge(self, ctx, opponent: discord.Member = None):
@@ -1700,14 +1523,9 @@ class LFGCog(commands.Cog):
         embed.add_field(
             name="Queue Commands",
             value=(
-                "`!lfg [minutes] [deck_url]` - Join the matchmaking queue (default 30 min)\n"
-                "**When to use:** When you want to find an opponent for a game. "
-                "You'll be matched automatically with another player in queue.\n"
-                "**Tip:** Use the **Join Queue** button to enter your deck URL!\n\n"
                 "`!check_lfg` - See if anyone is currently in queue\n"
                 "**When to use:** Before joining, to see if someone is already waiting.\n\n"
-                "`!cancel` - Leave the queue (clears your deck)\n"
-                "**When to use:** If you need to step away or no longer want to play."
+                "**Tip:** Use the **Join Queue** button in the LFG channel to enter your deck URL and join the matchmaking queue!"
             ),
             inline=False,
         )
@@ -1723,30 +1541,6 @@ class LFGCog(commands.Cog):
                 "**When to use:** Top 16 players or admins can issue once per day (disabled first week of event). "
                 "Adds you to the ranked queue - the next player to match with you plays for special stakes. "
                 "Non-Top 16 wins = 2x ELO gain, Top 16 loses = 0.5x ELO loss (normal stakes if ELO diff < 100)."
-            ),
-            inline=False,
-        )
-
-        # Match Reporting
-        embed.add_field(
-            name="Match Reporting",
-            value=(
-                "`!record_game` - Report a match played outside the bot\n"
-                "**When to use:** When you played a game in person, on TTS, or "
-                "anywhere else without using the LFG system. This still tracks your ELO!\n\n"
-                "\u2022 Matched games: Use buttons sent to your DMs after being paired\n"
-                "\u2022 You can add deck URL and match details (optional)"
-            ),
-            inline=False,
-        )
-
-        # Statistics
-        embed.add_field(
-            name="Statistics",
-            value=(
-                "`!game_activity [hours]` - View games reported in last X hours (default 24)\n"
-                "**When to use:** To see how active the community has been, "
-                "check if games are being played, or review server activity."
             ),
             inline=False,
         )
@@ -4090,103 +3884,6 @@ class LFGCog(commands.Cog):
         else:
             logger.error(f"remove_player error: {error}")
             await ctx.send(f"An error occurred: {error}")
-
-    @commands.command()
-    async def game_activity(self, ctx, hours: int = 24):
-        """Check how many games were reported in the last X hours. Usage: !game_activity [hours]"""
-        import sqlite3
-        from datetime import datetime, timedelta
-
-        # Validate hours parameter
-        if hours < 1:
-            await ctx.send("Hours must be at least 1.")
-            return
-
-        if hours > 8760:  # 1 year
-            await ctx.send("Hours cannot exceed 8760 (1 year).")
-            return
-
-        try:
-            # Calculate cutoff time
-            cutoff_time = datetime.now() - timedelta(hours=hours)
-
-            # Connect to match records database
-            conn = sqlite3.connect("match_records.db")
-            cursor = conn.cursor()
-
-            # Count matches from match_records table
-            cursor.execute(
-                """
-                SELECT COUNT(*) FROM match_records
-                WHERE timestamp >= ?
-            """,
-                (cutoff_time.isoformat(),),
-            )
-            total_games = cursor.fetchone()[0]
-
-            # Get unique players who participated
-            cursor.execute(
-                """
-                SELECT COUNT(DISTINCT user_id) FROM (
-                    SELECT winner_id as user_id FROM match_records WHERE timestamp >= ?
-                    UNION ALL
-                    SELECT losser_id as user_id FROM match_records WHERE timestamp >= ?
-                )
-            """,
-                (
-                    cutoff_time.isoformat(),
-                    cutoff_time.isoformat(),
-                ),
-            )
-            unique_players = cursor.fetchone()[0]
-
-            conn.close()
-
-            # Create response embed
-            embed = discord.Embed(
-                title=f"Game Activity Report",
-                description=f"Statistics for the last **{hours}** hours",
-                color=discord.Color.blue(),
-            )
-
-            embed.add_field(
-                name="Total Games Reported",
-                value=f"**{total_games}** games",
-                inline=True,
-            )
-
-            embed.add_field(
-                name="Unique Players",
-                value=f"**{unique_players}** players",
-                inline=True,
-            )
-
-            if total_games > 0:
-                avg_per_hour = total_games / hours
-                embed.add_field(
-                    name="Average",
-                    value=f"{avg_per_hour:.1f} games/hour",
-                    inline=True,
-                )
-
-            embed.set_footer(
-                text=f"Since {cutoff_time.strftime('%Y-%m-%d %H:%M')} | Requested by {ctx.author.display_name}"
-            )
-
-            await ctx.send(embed=embed)
-
-            logger.info(
-                f"Game activity command used by {ctx.author} for last {hours} hours: {total_games} games"
-            )
-
-        except Exception as e:
-            error_embed = discord.Embed(
-                title="Activity Check Failed",
-                description=f"An error occurred: {str(e)}",
-                color=discord.Color.red(),
-            )
-            await ctx.send(embed=error_embed)
-            logger.error(f"Game activity command failed: {e}")
 
     @commands.command()
     async def forfeit(self, ctx):

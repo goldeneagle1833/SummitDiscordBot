@@ -1,81 +1,17 @@
 import datetime
 import discord
 from discord.ext import commands
-import requests
-import json
 import logging
 import random
 
-from utils.deck_checker import get_deck_id, find_card
 from utils.checks import is_bot_admin
 
 logger = logging.getLogger("discord_bot")
 
 
-class DeckCheckModal(discord.ui.Modal, title="Deck Check"):
-    deck_url = discord.ui.TextInput(
-        label="Curiosa Deck URL",
-        placeholder="Enter Your Curiosa Deck URL",
-        required=True,
-    )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        deck_url = self.deck_url.value
-
-        try:
-            deck_id = get_deck_id(deck_url)
-            response = requests.get("https://curiosa.io/api/decks?ids=" + deck_id)
-
-            if response.status_code != 200:
-                await interaction.followup.send(
-                    f"Failed to retrieve deck data. Status code: {response.status_code}",
-                    ephemeral=True,
-                )
-                return
-
-            json_data = json.loads(response.text)
-
-            invalid_cards = find_card(json_data, "Ring of Morrigan")
-
-            if invalid_cards:
-                await interaction.followup.send(
-                    "Your deck is NOT legal! ❌ It contains the xxx cards.",
-                    ephemeral=True,
-                )
-            else:
-                await interaction.followup.send(
-                    "Your deck is legal! ✅",
-                    ephemeral=True,
-                )
-
-        except Exception as e:
-            await interaction.followup.send(f"An error occurred: {e}", ephemeral=True)
-
-
-class DeckCheckButton(discord.ui.View):
-    def __init__(self):
-        super().__init__()
-
-    @discord.ui.button(
-        label="Check Deck", style=discord.ButtonStyle.primary, custom_id="deck_check"
-    )
-    async def deck_check_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        modal = DeckCheckModal()
-        await interaction.response.send_modal(modal)
-
-
 class UtilityCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
-    @commands.command()
-    async def deckcheck(self, ctx):
-        """Opens a modal to check if a Curiosa deck is legal."""
-        view = DeckCheckButton()
-        await ctx.send("Click the button to check your deck:", view=view)
 
     @commands.command(name="help")
     async def show_help(self, ctx):

@@ -38,30 +38,19 @@ class SlashCommandsCog(commands.Cog):
     )
     @app_commands.describe(
         action="What do you want to do?",
-        timeframe="Minutes you're available (for 'join' action, default: 30)",
     )
     @app_commands.choices(
         action=[
             app_commands.Choice(
-                name="🎮 Join queue to find a game (/lfg join)", value="join"
-            ),
-            app_commands.Choice(
                 name="👀 Check who's in queue (/lfg check)", value="check"
             ),
-            app_commands.Choice(
-                name="❌ Cancel your request (/lfg cancel)", value="cancel"
-            ),
-            app_commands.Choice(
-                name="📝 Record a game manually (/lfg record)", value="record"
-            ),
-            app_commands.Choice(name="🎬 Submit replay (/lfg replay)", value="replay"),
             app_commands.Choice(
                 name="❓ Help & instructions (/lfg help)", value="help"
             ),
         ]
     )
     async def lfg_slash(
-        self, interaction: discord.Interaction, action: str, timeframe: int = 30
+        self, interaction: discord.Interaction, action: str
     ):
         """Unified LFG system command"""
         await interaction.response.defer(ephemeral=True)
@@ -74,22 +63,8 @@ class SlashCommandsCog(commands.Cog):
             )
             return
 
-        if action == "join":
-            await lfg_cog.lfg(ctx, timeframe)
-        elif action == "check":
+        if action == "check":
             await lfg_cog.check_lfg(ctx)
-        elif action == "cancel":
-            await lfg_cog.cancel(ctx)
-        elif action == "record":
-            await lfg_cog.record_game(ctx)
-        elif action == "replay":
-            elo_cog = self.bot.get_cog("EloCog")
-            if elo_cog:
-                await elo_cog.replay(ctx)
-            else:
-                await interaction.followup.send(
-                    "Replay system is not available.", ephemeral=True
-                )
         elif action == "help":
             await lfg_cog.lfg_help(ctx)
 
@@ -106,12 +81,6 @@ class SlashCommandsCog(commands.Cog):
             ),
             app_commands.Choice(
                 name="🏆 Leaderboard (top 16) (/stats leaderboard)", value="leaderboard"
-            ),
-            app_commands.Choice(
-                name="📈 My detailed statistics (/stats mystats)", value="mystats"
-            ),
-            app_commands.Choice(
-                name="🎮 My recent games (/stats mygames)", value="mygames"
             ),
             app_commands.Choice(
                 name="🔎 Match Elo details (/stats match_elo)", value="match_elo"
@@ -134,13 +103,9 @@ class SlashCommandsCog(commands.Cog):
             await elo_cog.rank(ctx)
         elif action == "leaderboard":
             await elo_cog.leaderboard(ctx)
-        elif action == "mystats":
-            await elo_cog.mystats(ctx)
-        elif action == "mygames":
-            await elo_cog.mygames(ctx)
         elif action == "match_elo":
             await interaction.followup.send(
-                "Use `!match_elo <match_id>` for now. You can find match IDs in `/stats mygames`.",
+                "Use `!match_elo <match_id>` for now.",
                 ephemeral=True,
             )
 
@@ -183,23 +148,6 @@ class SlashCommandsCog(commands.Cog):
         await lfg_cog.issue_challenge(ctx)
 
     # ==================== UTILITY COMMANDS ====================
-
-    @app_commands.command(
-        name="util_deckcheck",
-        description="⚙️ Check if your deck is legal",
-    )
-    async def deckcheck_slash(self, interaction: discord.Interaction):
-        """Deck check - slash command version"""
-        await interaction.response.defer(ephemeral=True)
-        ctx = FakeContext(self.bot, interaction)
-
-        utility_cog = self.bot.get_cog("UtilityCog")
-        if utility_cog:
-            await utility_cog.deckcheck(ctx)
-        else:
-            await interaction.followup.send(
-                "Utility commands are not available.", ephemeral=True
-            )
 
     @app_commands.command(
         name="util_help", description="⚙️ Get help with bot commands and features"

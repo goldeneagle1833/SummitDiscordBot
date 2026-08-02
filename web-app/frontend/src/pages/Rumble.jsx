@@ -638,6 +638,7 @@ function EffectEditor({ value, onChange }) {
             >
               <option value="">-- select --</option>
               <option value="self">Self</option>
+              <option value="leader">Leader (fartlord)</option>
               <option value="top5">Top 5</option>
               <option value="bottom5">Bottom 5</option>
               <option value="all">All</option>

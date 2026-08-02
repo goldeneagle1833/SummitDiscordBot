@@ -567,7 +567,7 @@ class FunCog(commands.Cog):
             name="👑 Leader-Only Commands",
             value=(
                 "`!fartlord` / `!fart_lord` - Make a grand proclamation\n"
-                "`!taxes` - Take 20% from everyone (once/reign)\n"
+                "`!taxes` - Take 20% from everyone, give to fartlord (once/reign)\n"
                 "`!wealth` - Redistribute 50% from top 5 (includes you) (once/reign)"
             ),
             inline=False,
@@ -1189,10 +1189,59 @@ class FunCog(commands.Cog):
             f"Hear ye, hear ye! {ctx.author.mention} proclaims: {response_text}"
         )
 
+    def collect_taxes_for_fartlord(self):
+        """Take 20% from everyone except #1 and give the full pool to the fartlord.
+
+        Returns:
+            dict with keys total_taken, fartlord_id, fartlord_name,
+            fartlord_bonus, taxed_count — or None if fewer than 2 players exist.
+        """
+        conn = sqlite3.connect("fart_scores.db")
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """SELECT user_id, user_display_name, score
+                   FROM fart_scores
+                   ORDER BY score DESC"""
+            )
+            all_users = cur.fetchall()
+
+            if len(all_users) < 2:
+                return None
+
+            fartlord_id, fartlord_name, fartlord_score = all_users[0]
+            others = all_users[1:]
+
+            total_taken = 0
+            for user_id, _user_display_name, score in others:
+                points_to_take = int(score * 0.20)
+                if points_to_take <= 0:
+                    continue
+                cur.execute(
+                    "UPDATE fart_scores SET score=? WHERE user_id=?",
+                    (score - points_to_take, user_id),
+                )
+                total_taken += points_to_take
+
+            cur.execute(
+                "UPDATE fart_scores SET score=? WHERE user_id=?",
+                (fartlord_score + total_taken, fartlord_id),
+            )
+            conn.commit()
+            return {
+                "total_taken": total_taken,
+                "fartlord_id": fartlord_id,
+                "fartlord_name": fartlord_name,
+                "fartlord_bonus": total_taken,
+                "taxed_count": len(others),
+            }
+        finally:
+            conn.close()
+
     @commands.command(aliases=["farttaxes", "fart_taxes", "taxes_fart", "taxesfart"])
     @commands.has_role(config.LEADER_ROLE_ID)
     async def taxes(self, ctx):
-        """Take 20% from everyone outside the top 5 and give to the top 5 (once per reign)."""
+        """Take 20% from everyone else and give it all to the fartlord (once per reign)."""
         try:
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
@@ -1213,77 +1262,37 @@ class FunCog(commands.Cog):
                 )
                 conn.close()
                 return
-            else:
-                cur.execute(
-                    "INSERT OR REPLACE INTO fart_leader_only_once (user_id, user_display_name) VALUES (?, ?)",
-                    (ctx.author.id, ctx.author.global_name),
-                )
-                # Fixed: Changed 'username' to 'user_display_name'
-                cur.execute(
-                    """SELECT user_id, user_display_name, score 
-                   FROM fart_scores 
-                   ORDER BY score DESC"""
-                )
-                all_users = cur.fetchall()
 
-                if len(all_users) < 6:
-                    await ctx.send(
-                        "Not enough users to redistribute! Need at least 6 players."
-                    )
-                    conn.close()
-                    return
-
-                # Split into top 5 and everyone else
-                top_5 = all_users[:5]
-                others = all_users[5:]
-
-                # Calculate total points to take from non-top-5 (20%)
-                total_taken = 0
-                redistribution_details = []
-
-                for user_id, user_display_name, score in others:
-                    points_to_take = int(score * 0.20)
-                    new_score = score - points_to_take
-                    total_taken += points_to_take
-
-                    # Update the user's score
-                    cur.execute(
-                        "UPDATE fart_scores SET score=? WHERE user_id=?",
-                        (new_score, user_id),
-                    )
-                    redistribution_details.append(
-                        f"{user_display_name}: -{points_to_take} points"
-                    )
-
-                # Distribute evenly to top 5
-                points_per_top_user = total_taken // 5
-                remainder = total_taken % 5
-
-                top_5_details = []
-                for i, (user_id, user_display_name, score) in enumerate(top_5):
-                    # Give remainder to first user
-                    bonus = points_per_top_user + (remainder if i == 0 else 0)
-                    new_score = score + bonus
-
-                    cur.execute(
-                        "UPDATE fart_scores SET score=? WHERE user_id=?",
-                        (new_score, user_id),
-                    )
-                    top_5_details.append(f"{user_display_name}: +{bonus} points")
-
-                conn.commit()
+            cur.execute("SELECT COUNT(*) FROM fart_scores")
+            player_count = cur.fetchone()[0]
+            if player_count < 2:
+                await ctx.send("Not enough users to tax! Need at least 2 players.")
                 conn.close()
+                return
 
-                # Create response message
-                response = (
-                    f"💰 **WEALTH REDISTRIBUTION COMPLETE!** 💰\n\n"
-                    f"**Total redistributed:** {total_taken} points\n\n"
-                    f"**TOP 5 GAINERS:**\n" + "\n".join(top_5_details) + "\n\n"
-                    f"**Points taken from {len(others)} users** (20% each)"
-                )
+            cur.execute(
+                "INSERT OR REPLACE INTO fart_leader_only_once (user_id, user_display_name) VALUES (?, ?)",
+                (ctx.author.id, ctx.author.global_name),
+            )
+            conn.commit()
+            conn.close()
 
-                await ctx.send(response)
-                await self.update_fart_leader_role(ctx)
+            result = self.collect_taxes_for_fartlord()
+            if result is None:
+                await ctx.send("Not enough users to tax! Need at least 2 players.")
+                return
+
+            response = (
+                f"💰 **TAXES COLLECTED!** 💰\n\n"
+                f"**Total collected:** {result['total_taken']} points\n\n"
+                f"**Fartlord** <@{result['fartlord_id']}> "
+                f"({result['fartlord_name']}): "
+                f"+{result['fartlord_bonus']} points\n\n"
+                f"**Points taken from {result['taxed_count']} users** (20% each)"
+            )
+
+            await ctx.send(response)
+            await self.update_fart_leader_role(ctx)
         except Exception as e:
             print(f"Error in taxes command: {e}")
             import traceback

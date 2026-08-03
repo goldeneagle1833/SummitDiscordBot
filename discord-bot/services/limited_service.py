@@ -7,6 +7,7 @@ forfeit penalty calculation, and run lifecycle.
 import logging
 
 from services.elo_service import update_elo
+from repositories.elo_repo import get_active_event
 from utils.deck_checker import scrape_Curosa
 from repositories.limited_repo import (
     create_limited_tables,
@@ -17,6 +18,7 @@ from repositories.limited_repo import (
     get_arena_run,
     update_arena_run_record,
     complete_arena_run,
+    close_all_active_runs,
     insert_limited_match_record,
     archive_limited_standings,
     archive_limited_matches,
@@ -66,11 +68,15 @@ def start_arena_run(user_id: int, display_name: str, deck_url: str) -> dict:
     """Start a new arena run for a player.
 
     Checks for existing active run (error if one exists).
+    Raises ValueError if no active event (between seasons).
     Records starting ELO and scrapes deck data.
 
     Returns:
         dict with run info (run_id, wins, losses, deck_url, starting_elo, etc.)
     """
+    if not get_active_event():
+        raise ValueError("No active event — arena runs cannot be started between seasons.")
+
     active = get_active_arena_run(user_id)
     if active:
         raise ValueError(f"User {user_id} already has an active arena run (run_id={active['run_id']})")
@@ -139,6 +145,7 @@ def get_run_summary(run_id: int, last_match_elo_change: int = None) -> str:
         "active": "In Progress",
         "completed": "Completed",
         "forfeited": "Forfeited",
+        "closed": "Closed",
     }.get(run["status"], run["status"])
 
     # Show per-match change if provided, plus cumulative run change
@@ -184,12 +191,21 @@ def limited_winner_report(
     Updates limited ELO for both players, inserts a limited match record,
     and increments arena run records.
 
+    ELO is only updated when an active event exists (skipped between seasons).
+
     Returns:
         Tuple of (match_id, winner_run_complete, loser_run_complete, winner_elo_change, loser_elo_change)
     """
-    # Update Limited ELO for both players
-    _, winner_elo_change = update_limited_elo(winner_id, winner_display_name, True, loser_id)
-    _, loser_elo_change = update_limited_elo(loser_id, loser_display_name, False, winner_id)
+    event_active = bool(get_active_event())
+
+    # Update Limited ELO for both players (skip between seasons)
+    winner_elo_change = 0
+    loser_elo_change = 0
+    if event_active:
+        _, winner_elo_change = update_limited_elo(winner_id, winner_display_name, True, loser_id)
+        _, loser_elo_change = update_limited_elo(loser_id, loser_display_name, False, winner_id)
+    else:
+        logger.info("No active event — limited match recorded without ELO changes")
 
     # Insert limited match record
     match_id = insert_limited_match_record(
@@ -263,9 +279,18 @@ def limited_elo_only_report(
     Returns:
         Tuple of (match_id, winner_new_elo, loser_new_elo)
     """
-    # Update Limited ELO for both players
-    winner_new_elo, winner_elo_change = update_limited_elo(winner_id, winner_display_name, True, loser_id)
-    loser_new_elo, loser_elo_change = update_limited_elo(loser_id, loser_display_name, False, winner_id)
+    event_active = bool(get_active_event())
+
+    # Update Limited ELO for both players (skip between seasons)
+    if event_active:
+        winner_new_elo, winner_elo_change = update_limited_elo(winner_id, winner_display_name, True, loser_id)
+        loser_new_elo, loser_elo_change = update_limited_elo(loser_id, loser_display_name, False, winner_id)
+    else:
+        logger.info("No active event — limited ELO-only match recorded without ELO changes")
+        winner_new_elo = get_limited_elo(winner_id)
+        loser_new_elo = get_limited_elo(loser_id)
+        winner_elo_change = 0
+        loser_elo_change = 0
 
     # Insert limited match record (no run IDs)
     match_id = insert_limited_match_record(
@@ -296,6 +321,24 @@ def limited_elo_only_report(
     )
 
     return (match_id, winner_new_elo, loser_new_elo)
+
+
+def close_arena_run(user_id: int) -> str:
+    """Close the active arena run without applying any ELO penalties.
+
+    Used by admins to cleanly end a player's run.
+
+    Returns:
+        Run summary string after closing.
+    """
+    run = get_active_arena_run(user_id)
+    if not run:
+        raise ValueError(f"User {user_id} has no active arena run to close")
+
+    run_id = run["run_id"]
+    complete_arena_run(run_id, "closed")
+
+    return get_run_summary(run_id)
 
 
 def forfeit_arena_run(user_id: int) -> str:
@@ -350,6 +393,11 @@ def archive_limited_for_event(event_id: int, event_name: str) -> dict:
     """
     import datetime as dt
     archived_at = dt.datetime.now().isoformat()
+
+    # Close any active arena runs before archiving
+    closed_runs = close_all_active_runs()
+    if closed_runs:
+        logger.info("Closed %d active arena runs before archiving event %d", closed_runs, event_id)
 
     standings = archive_limited_standings(event_id, event_name, archived_at)
     total_matches = archive_limited_matches(event_id, archived_at)

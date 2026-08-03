@@ -58,7 +58,7 @@ from utils.constants import SORCERY_NICKNAMES
 from utils.text import find_best_command_match
 from utils.checks import is_bot_admin
 from services.pilots_service import is_pilot_active
-from services.limited_service import limited_winner_report, limited_elo_only_report, get_run_summary, forfeit_arena_run, start_arena_run
+from services.limited_service import limited_winner_report, limited_elo_only_report, get_run_summary, forfeit_arena_run, close_arena_run, start_arena_run
 from repositories.limited_repo import get_active_arena_run, get_limited_elo, upsert_limited_elo, get_all_limited_standings, get_limited_wins_count, get_limited_losses_count
 
 logger = logging.getLogger("discord_bot")
@@ -1643,6 +1643,8 @@ class LFGCog(commands.Cog):
                 "`!admin_start_run @player <deck_url>`\n"
                 "Manually start a limited arena run for a player.\n"
                 "**When to use:** When a player's run was lost due to a reset or bug.\n\n"
+                "`!admin_end_run @player`\n"
+                "End a player's active limited arena run (no ELO penalty).\n\n"
                 "`!admin_limited_report @winner @loser`\n"
                 "Manually report a limited match result.\n\n"
                 "`!correct_limited_match <match_id>`\n"
@@ -3685,6 +3687,83 @@ class LFGCog(commands.Cog):
     @admin_start_run.error
     async def admin_start_run_error(self, ctx, error):
         logger.error(f"admin_start_run error: {error}")
+        await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    async def admin_end_run(self, ctx, player: discord.Member = None):
+        """Admin command to end a player's active limited arena run (no ELO penalty). Usage: !admin_end_run @player"""
+        DRAFT_SORCERY_USER_ID = 247563860746305536
+        DRAFT_SORCERY_ROLE_ID = 1327381365548134470
+
+        is_admin = False
+        if ctx.author.id == DRAFT_SORCERY_USER_ID:
+            is_admin = True
+        elif ctx.author.guild_permissions.administrator:
+            is_admin = True
+        elif any(role.id == config.BOT_ADMIN_ROLE_ID for role in ctx.author.roles):
+            is_admin = True
+        elif any(role.id == config.JUDGE_ROLE_ID for role in ctx.author.roles):
+            is_admin = True
+        elif any(role.id == DRAFT_SORCERY_ROLE_ID for role in ctx.author.roles):
+            is_admin = True
+
+        if not is_admin:
+            await ctx.send("You don't have permission to use this command.")
+            return
+
+        if player is None:
+            await ctx.send("Usage: `!admin_end_run @player`")
+            return
+
+        if player.bot:
+            await ctx.send("Cannot end runs for bots!")
+            return
+
+        active_run = get_active_arena_run(player.id)
+        if not active_run:
+            await ctx.send(f"{player.mention} does not have an active limited arena run.")
+            return
+
+        try:
+            display_name = player.global_name or player.display_name
+            run_summary = close_arena_run(player.id)
+
+            log_admin_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "admin_end_run",
+                target_id=player.id,
+                target_name=display_name,
+                previous_state={"run_id": active_run["run_id"], "wins": active_run["wins"], "losses": active_run["losses"]},
+                new_state={"status": "closed"},
+                details=f"Admin ended arena run #{active_run['run_id']} for {display_name} (ID: {player.id})",
+            )
+
+            embed = discord.Embed(
+                title="Arena Run Ended",
+                description=(
+                    f"Ended the active limited arena run for {player.mention}\n"
+                    f"• **Run ID:** {active_run['run_id']}\n"
+                    f"• {run_summary}\n"
+                    f"*No ELO penalties applied.*"
+                ),
+                color=discord.Color.orange(),
+            )
+            embed.set_footer(text=f"Ended by {ctx.author.display_name}")
+            await ctx.send(embed=embed)
+            logger.info(f"Admin {ctx.author} ended arena run #{active_run['run_id']} for {display_name} (ID: {player.id})")
+
+            await self.update_limited_leaderboard()
+
+        except ValueError as e:
+            await ctx.send(f"Cannot end run: {e}")
+        except Exception as e:
+            await ctx.send(f"Error ending run: {e}")
+            logger.error(f"admin_end_run failed: {e}")
+
+    @admin_end_run.error
+    async def admin_end_run_error(self, ctx, error):
+        logger.error(f"admin_end_run error: {error}")
         await ctx.send(f"An error occurred: {error}")
 
     @commands.command()

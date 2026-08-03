@@ -140,7 +140,8 @@ class TestArenaRunLifecycle:
         assert run is not None
         assert run["status"] == "active"
 
-    def test_start_new_run_after_completed(self):
+    @patch("services.limited_service.get_active_event", return_value={"event_id": 1, "event_name": "Test", "start_date": "2025-01-01"})
+    def test_start_new_run_after_completed(self, mock_event):
         """US-6: Can start a new run after previous one completes."""
         run_id_1 = create_arena_run(700, "Player7", "https://curiosa.io/deck/d1", "{}", 1500)
         update_arena_run_record(run_id_1, 4, 0)
@@ -153,7 +154,8 @@ class TestArenaRunLifecycle:
         assert run["wins"] == 0
         assert run["losses"] == 0
 
-    def test_cannot_start_run_with_active_run(self):
+    @patch("services.limited_service.get_active_event", return_value={"event_id": 1, "event_name": "Test", "start_date": "2025-01-01"})
+    def test_cannot_start_run_with_active_run(self, mock_event):
         """Cannot start a new run while one is active."""
         create_arena_run(800, "Player8", "https://curiosa.io/deck/e", "{}", 1500)
         with pytest.raises(ValueError, match="already has an active arena run"):
@@ -312,7 +314,8 @@ class TestForfeit:
         with pytest.raises(ValueError, match="no active arena run"):
             forfeit_arena_run(4003)
 
-    def test_start_new_run_after_forfeit(self):
+    @patch("services.limited_service.get_active_event", return_value={"event_id": 1, "event_name": "Test", "start_date": "2025-01-01"})
+    def test_start_new_run_after_forfeit(self, mock_event):
         """Can start a new run after forfeiting."""
         run_id = create_arena_run(4004, "ForfeitP3", "https://curiosa.io/deck/f3", "{}", 1500)
         forfeit_arena_run(4004)
@@ -433,7 +436,8 @@ class TestLimitedMatchRecord:
 class TestLimitedWinnerReport:
     """Test the integrated limited_winner_report function."""
 
-    def test_limited_winner_report_updates_runs(self):
+    @patch("services.limited_service.get_active_event", return_value={"event_id": 1, "event_name": "Test", "start_date": "2025-01-01"})
+    def test_limited_winner_report_updates_runs(self, mock_event):
         """Report should increment winner wins and loser losses."""
         w_run = create_arena_run(7001, "W", "url_w", "{}", 1500)
         l_run = create_arena_run(7002, "L", "url_l", "{}", 1500)
@@ -468,7 +472,8 @@ class TestLimitedWinnerReport:
         assert w_run_data["wins"] == 1
         assert l_run_data["losses"] == 1
 
-    def test_limited_winner_report_completes_at_threshold(self):
+    @patch("services.limited_service.get_active_event", return_value={"event_id": 1, "event_name": "Test", "start_date": "2025-01-01"})
+    def test_limited_winner_report_completes_at_threshold(self, mock_event):
         """Run should auto-complete when hitting 4W or 2L threshold."""
         w_run = create_arena_run(7003, "W2", "url_w2", "{}", 1500)
         l_run = create_arena_run(7004, "L2", "url_l2", "{}", 1500)

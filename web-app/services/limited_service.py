@@ -6,6 +6,7 @@ Handles arena run management, limited ELO updates, and forfeit penalty calculati
 import logging
 
 from services.curiosa import CuriosaService
+from repositories.elo import EloRepository
 from repositories.limited_repo import (
     create_limited_tables,
     get_limited_elo,
@@ -37,9 +38,12 @@ def _calculate_elo(player_elo, opponent_elo, did_win, k=32):
 def start_arena_run(user_id, display_name, deck_url):
     """Start a new arena run for a player.
 
-    Raises ValueError if the user already has an active run.
+    Raises ValueError if the user already has an active run or no active event.
     Returns dict with run info.
     """
+    if not EloRepository().get_active_event():
+        raise ValueError("No active event — arena runs cannot be started between seasons.")
+
     active = get_active_arena_run(user_id)
     if active:
         raise ValueError(f"User {user_id} already has an active arena run (run_id={active['run_id']})")
@@ -83,7 +87,10 @@ def report_match(winner_id, winner_display_name, loser_id, loser_display_name,
 
     Returns dict with match_id, ELO changes, and run statuses.
     Raises ValueError if either player lacks an active run.
+    ELO is only updated when an active event exists (skipped between seasons).
     """
+    event_active = bool(EloRepository().get_active_event())
+
     winner_run = get_active_arena_run(winner_id)
     loser_run = get_active_arena_run(loser_id)
 
@@ -95,18 +102,25 @@ def report_match(winner_id, winner_display_name, loser_id, loser_display_name,
     winner_run_id = winner_run["run_id"]
     loser_run_id = loser_run["run_id"]
 
-    # Update limited ELO for both players
+    # Update limited ELO for both players (skip between seasons)
     winner_elo_before = get_limited_elo(winner_id)
     loser_elo_before = get_limited_elo(loser_id)
 
-    new_winner_elo = _calculate_elo(winner_elo_before, loser_elo_before, did_win=True)
-    new_loser_elo = _calculate_elo(loser_elo_before, winner_elo_before, did_win=False)
+    if event_active:
+        new_winner_elo = _calculate_elo(winner_elo_before, loser_elo_before, did_win=True)
+        new_loser_elo = _calculate_elo(loser_elo_before, winner_elo_before, did_win=False)
 
-    winner_elo_change = new_winner_elo - winner_elo_before
-    loser_elo_change = new_loser_elo - loser_elo_before
+        winner_elo_change = new_winner_elo - winner_elo_before
+        loser_elo_change = new_loser_elo - loser_elo_before
 
-    upsert_limited_elo(winner_id, winner_display_name, new_winner_elo, elo_change=winner_elo_change)
-    upsert_limited_elo(loser_id, loser_display_name, new_loser_elo, elo_change=loser_elo_change)
+        upsert_limited_elo(winner_id, winner_display_name, new_winner_elo, elo_change=winner_elo_change)
+        upsert_limited_elo(loser_id, loser_display_name, new_loser_elo, elo_change=loser_elo_change)
+    else:
+        logger.info("No active event — limited match recorded without ELO changes")
+        new_winner_elo = winner_elo_before
+        new_loser_elo = loser_elo_before
+        winner_elo_change = 0
+        loser_elo_change = 0
 
     # Determine who went first
     winner_went_first = "y" if first_player == str(winner_id) else "n"
@@ -171,6 +185,33 @@ def report_match(winner_id, winner_display_name, loser_id, loser_display_name,
             "run_complete": loser_run_complete,
         },
     }
+
+
+def close_arena_run(user_id):
+    """Close the active arena run without applying any ELO penalties.
+
+    Used by admins to cleanly end a player's run.
+    Raises ValueError if no active run exists.
+    Returns a summary string.
+    """
+    run = get_active_arena_run(user_id)
+    if not run:
+        raise ValueError(f"User {user_id} has no active arena run to close")
+
+    run_id = run["run_id"]
+    complete_arena_run(run_id, "closed")
+
+    completed_run = get_arena_run(run_id)
+    if completed_run is None:
+        raise RuntimeError(f"Failed to load arena run {run_id} after close")
+    current_elo = get_limited_elo(user_id)
+    elo_change = current_elo - run["starting_elo"]
+    sign = "+" if elo_change >= 0 else ""
+
+    return (
+        f"Record: {completed_run['wins']}-{completed_run['losses']} | "
+        f"Limited ELO: {current_elo} ({sign}{elo_change})"
+    )
 
 
 def forfeit_arena_run(user_id):

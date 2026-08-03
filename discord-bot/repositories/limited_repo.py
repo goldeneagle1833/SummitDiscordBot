@@ -269,6 +269,27 @@ def complete_arena_run(run_id: int, status: str = "completed"):
     logger.info("Arena run %d marked as %s", run_id, status)
 
 
+def close_all_active_runs() -> int:
+    """Close all active arena runs (mark as 'closed'). No ELO penalties applied.
+
+    Returns:
+        Number of runs closed.
+    """
+    conn = sqlite3.connect("match_records.db")
+    cur = conn.cursor()
+    now = datetime.datetime.now().isoformat()
+    cur.execute(
+        "UPDATE limited_arena_runs SET status = 'closed', completed_at = ? WHERE status = 'active'",
+        (now,),
+    )
+    count = cur.rowcount
+    conn.commit()
+    conn.close()
+    if count:
+        logger.info("Closed %d active arena runs", count)
+    return count
+
+
 # --- Limited Match Record Operations ---
 
 

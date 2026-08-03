@@ -27,6 +27,7 @@ from repositories.limited_repo import (
 from services.limited_service import (
     MAX_ARENA_LOSSES,
     MAX_ARENA_WINS,
+    close_arena_run,
     forfeit_arena_run,
     report_match,
     start_arena_run,
@@ -365,7 +366,7 @@ def get_match_history():
 @limited_bp.route("/user/<user_id>/end-run", methods=["POST"])
 @require_api_key
 def post_end_run(user_id):
-    """End the current active run, applying remaining losses as ELO penalties."""
+    """End the current active run (clean close, no ELO penalties)."""
     try:
         uid = int(user_id)
     except ValueError:
@@ -376,24 +377,21 @@ def post_end_run(user_id):
         if not active_run:
             return jsonify({"success": False, "error": "No active run to end"}), 400
 
-        losses_applied = MAX_ARENA_LOSSES - active_run["losses"]
-
         try:
-            summary = forfeit_arena_run(uid)
+            summary = close_arena_run(uid)
         except ValueError as e:
             return jsonify({"success": False, "error": str(e)}), 400
 
         latest = get_latest_arena_run(uid)
         elo = get_limited_elo(uid)
 
-        logger.info("POST end-run for user %s: %d losses applied", uid, losses_applied)
+        logger.info("POST end-run for user %s: run closed (no ELO penalty)", uid)
 
         return jsonify({
             "success": True,
             "run": _run_to_dict(latest) if latest else None,
             "limited_elo": elo,
-            "losses_applied": losses_applied,
-            "penalty_summary": summary,
+            "summary": summary,
         })
 
     except sqlite3.Error as e:

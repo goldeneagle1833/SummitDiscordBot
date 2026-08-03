@@ -164,7 +164,7 @@ def _build_card_image_lookup():
         webp_files = [f for f in all_files if f.lower().endswith(".webp")]
         for filename in png_files + webp_files:
             base = re.sub(r"\.(png|jpg|jpeg|webp)$", "", filename, flags=re.IGNORECASE).lower()
-            for suffix in ["-b-s", "-b-f", "-bt-s", "-bt-f", "-scg-f", "-bt-s-r"]:
+            for suffix in ["-b-s", "-b-f", "-bt-s", "-bt-f", "-scg-f", "-bt-s-r", "-d-s", "-d-f", "-op-s", "-tc-f"]:
                 if base.endswith(suffix):
                     base = base[:-len(suffix)]
                     break

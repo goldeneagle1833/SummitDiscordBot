@@ -38,18 +38,20 @@ def _get_card_image_map() -> dict[str, str]:
 
     mapping: dict[str, str] = {}
     if CARD_IMAGES_DIR.exists():
-        # Process png/jpg first, then webp so webp takes precedence
         all_files = sorted(os.listdir(CARD_IMAGES_DIR))
         png_files = [f for f in all_files if f.lower().endswith((".png", ".jpg", ".jpeg"))]
         webp_files = [f for f in all_files if f.lower().endswith(".webp")]
         for fname in png_files + webp_files:
-            # Filename format: {set}-{card_name_slug}-{edition}-{rarity}.ext
-            # e.g. pro-witch-ai-f.webp → card name slug is parts[1] = "witch"
-            base = re.sub(r"\.(png|jpg|jpeg|webp)$", "", fname, flags=re.IGNORECASE)
-            parts = base.split("-")
-            if len(parts) >= 2:
-                name_key = parts[1]  # card name slug is always the second segment
-                mapping[name_key] = fname
+            base = re.sub(r"\.(png|jpg|jpeg|webp)$", "", fname, flags=re.IGNORECASE).lower()
+            for suffix in ["-b-s", "-b-f", "-bt-s", "-bt-f", "-scg-f", "-bt-s-r", "-d-s", "-d-f", "-op-s", "-tc-f"]:
+                if base.endswith(suffix):
+                    base = base[:-len(suffix)]
+                    break
+            if "-" in base:
+                card_name_normalized = base.split("-", 1)[1]
+                is_standard = "-b-s" in fname.lower() or "-bt-s" in fname.lower()
+                if card_name_normalized not in mapping or is_standard:
+                    mapping[card_name_normalized] = fname
     _card_image_map = mapping
     return mapping
 

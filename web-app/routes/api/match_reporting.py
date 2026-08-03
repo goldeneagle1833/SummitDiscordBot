@@ -599,12 +599,23 @@ def edit_match_comment():
             # Web matches store user IDs with provider prefix
             user_id_for_query = f"google_{current_user_id}" if auth_provider == "google" else current_user_id
         else:
-            table = "match_records"
-            id_col = "rowid"
             # Bot matches use numeric IDs
             user_id_for_query = current_user_id
             if user_id_for_query.startswith("google_"):
                 user_id_for_query = user_id_for_query[7:]
+            # Archived bot matches have match_id >= 1_000_000_000
+            # (player page returns rowid + 1000000000 for match_records_archive)
+            try:
+                numeric_match_id = int(match_id)
+            except (ValueError, TypeError):
+                numeric_match_id = 0
+            if numeric_match_id >= 1_000_000_000:
+                table = "match_records_archive"
+                id_col = "rowid"
+                match_id = numeric_match_id - 1_000_000_000
+            else:
+                table = "match_records"
+                id_col = "rowid"
 
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()

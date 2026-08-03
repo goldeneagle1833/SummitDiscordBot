@@ -78,6 +78,84 @@ function sortAvatars(data, key) {
   }
 }
 
+function EloBracketMatrix({ sourceFilter }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    get(`/api/avatars/elo-bracket-matrix?source=${sourceFilter}`)
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false))
+  }, [sourceFilter])
+
+  if (loading) return <p className="text-text-muted text-sm py-4">Loading ELO bracket matrix...</p>
+  if (!data || !data.rows?.length) return <p className="text-text-muted text-sm py-4">Not enough data for ELO bracket matrix.</p>
+
+  const { brackets, rows } = data
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="border-b border-border">
+            <th className="px-2 py-2 text-left text-xs font-semibold text-text-muted uppercase whitespace-nowrap">
+              Player ELO
+            </th>
+            {brackets.map((b) => (
+              <th key={b} className="px-2 py-2 text-center text-xs font-semibold text-text-muted uppercase whitespace-nowrap">
+                {b}-{b + 99}
+              </th>
+            ))}
+            <th className="px-2 py-2 text-center text-xs font-bold text-secondary uppercase whitespace-nowrap">
+              Overall
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.bracket} className="border-b border-border/50 hover:bg-bg-elevated/50 transition-colors">
+              <td className="px-2 py-2 text-xs font-bold whitespace-nowrap">
+                {row.label}
+              </td>
+              {row.cells.map((cell, i) => (
+                <td
+                  key={brackets[i]}
+                  className={`px-2 py-2 text-center whitespace-nowrap ${row.bracket === brackets[i] ? 'bg-bg-elevated/40' : ''}`}
+                >
+                  {cell.win_rate != null ? (
+                    <>
+                      <span className="font-bold" style={{ color: getWinRateColor(cell.win_rate) }}>
+                        {cell.win_rate}%
+                      </span>
+                      <div className="text-xs text-text-muted">({cell.total})</div>
+                    </>
+                  ) : (
+                    <span className="text-text-muted text-xs">{cell.total > 0 ? `${cell.total}g` : '—'}</span>
+                  )}
+                </td>
+              ))}
+              <td className="px-2 py-2 text-center whitespace-nowrap bg-bg-elevated/30">
+                {row.overall.win_rate != null ? (
+                  <>
+                    <span className="font-bold" style={{ color: getWinRateColor(row.overall.win_rate) }}>
+                      {row.overall.win_rate}%
+                    </span>
+                    <div className="text-xs text-text-muted">({row.overall.total})</div>
+                  </>
+                ) : (
+                  <span className="text-text-muted">—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function EloBreakdown({ sourceFilter }) {
   const navigate = useNavigate()
   const [data, setData] = useState(null)
@@ -495,17 +573,25 @@ export default function Avatars() {
             </div>
           </section>
 
-          {isAdmin && (
-            <section className="mb-8">
-              <h2 className="text-lg font-semibold text-center mb-1">
-                Win Rate by ELO Bracket (All Avatars)
-              </h2>
-              <p className="text-xs text-text-muted text-center mb-4">
-                Compares avatar win rates at each skill level. Yellow cells deviate 10%+ from average. Uses current player ratings.
-              </p>
-              <EloBreakdown sourceFilter={sourceFilter} />
-            </section>
-          )}
+          <section className="mb-8">
+            <h2 className="text-lg font-semibold text-center mb-1">
+              Win Rate by ELO Bracket (All Avatars)
+            </h2>
+            <p className="text-xs text-text-muted text-center mb-4">
+              Compares avatar win rates at each skill level. Yellow cells deviate 10%+ from average. Uses current player ratings.
+            </p>
+            <EloBreakdown sourceFilter={sourceFilter} />
+          </section>
+
+          <section className="mb-8">
+            <h2 className="text-lg font-semibold text-center mb-1">
+              Win Rate by Player ELO vs Opponent ELO
+            </h2>
+            <p className="text-xs text-text-muted text-center mb-4">
+              Shows win rates for each player ELO bracket against each opponent ELO bracket. Uses current player ratings.
+            </p>
+            <EloBracketMatrix sourceFilter={sourceFilter} />
+          </section>
         </>
       )}
     </div>

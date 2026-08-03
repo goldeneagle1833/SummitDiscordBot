@@ -94,6 +94,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.avatars.get_season_stats",
     "api.avatars.get_avatar_matchups",
     "api.avatars.list_all_avatars",
+    "api.avatars.get_elo_bracket_matrix",
 
     # -- Events / tournaments (public read-only) --
     "api.events.list_top8_events",

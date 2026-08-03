@@ -1724,13 +1724,11 @@ def get_avatar_elo_matrix(avatar_name):
 
 @avatars_bp.route("/avatars/elo-breakdown")
 def get_avatars_elo_breakdown():
-    """Cross-avatar win rate breakdown by ELO bracket. Admin only.
+    """Cross-avatar win rate breakdown by ELO bracket.
 
-    Returns each avatar's overall win rate per player-ELO bracket so admins
+    Returns each avatar's overall win rate per player-ELO bracket so users
     can compare performance across avatars at each skill level.
     """
-    if not is_admin():
-        return jsonify({"error": "Unauthorized"}), 403
 
     source = request.args.get("source", "discord")
 
@@ -1857,10 +1855,7 @@ def get_elo_breakdown_matches():
     """Return detailed match list for a specific avatar + player ELO bracket cell.
 
     Query params: avatar, bracket (lower bound e.g. 1500), source (discord/web).
-    Admin only.
     """
-    if not is_admin():
-        return jsonify({"error": "Unauthorized"}), 403
 
     avatar_name = request.args.get("avatar", "")
     bracket_param = request.args.get("bracket", "0")
@@ -2489,3 +2484,123 @@ def list_all_avatars():
                 avatar_names.add(name)
 
     return jsonify(sorted(list(avatar_names)))
+
+
+@avatars_bp.route("/avatars/elo-bracket-matrix")
+def get_elo_bracket_matrix():
+    """Win rate matrix: player ELO bracket vs opponent ELO bracket.
+
+    Each cell shows how often players in one ELO bracket beat opponents
+    in another ELO bracket. Rows = player bracket, columns = opponent bracket.
+    """
+    source = request.args.get("source", "discord")
+
+    if not MATCH_RECORDS_DB_PATH.exists() or not ELO_DB_PATH.exists():
+        return jsonify({"brackets": [], "rows": []})
+
+    # 1) Load player ELOs
+    elo_lookup = {}
+    try:
+        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
+        elo_cur = elo_conn.cursor()
+        if source == "web":
+            elo_cur.execute("SELECT user_id, paper_elo FROM paper_standings")
+        else:
+            elo_cur.execute("SELECT user_id, elo FROM overall_standings")
+        for row in elo_cur.fetchall():
+            elo_lookup[str(row[0])] = row[1] or 1500
+        elo_conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning(f"Could not load ELO standings for bracket matrix: {e}")
+        return jsonify({"brackets": [], "rows": []})
+
+    # 2) Collect match rows with player IDs
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+        if source in ("all", "discord"):
+            rows, use_new = _collect_discord_rows_with_players(cur, "all")
+        else:
+            rows = _collect_external_rows_with_players(cur, source)
+            use_new = True
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.error(f"Database error in elo-bracket-matrix: {e}")
+        return jsonify({"brackets": [], "rows": []})
+
+    if not use_new:
+        return jsonify({"brackets": [], "rows": []})
+
+    def elo_bracket(elo):
+        return (elo // 100) * 100
+
+    # 3) Tally: {player_bracket: {opponent_bracket: {"wins": n, "losses": n}}}
+    bracket_data = {}
+
+    for row in rows:
+        winner_id = str(row[2]) if row[2] else None
+        loser_id = str(row[4]) if row[4] else None
+
+        if not winner_id or not loser_id:
+            continue
+
+        winner_elo = elo_lookup.get(winner_id)
+        loser_elo = elo_lookup.get(loser_id)
+        if winner_elo is None or loser_elo is None:
+            continue
+
+        w_bracket = elo_bracket(winner_elo)
+        l_bracket = elo_bracket(loser_elo)
+
+        # Winner's perspective: win against loser's bracket
+        wd = bracket_data.setdefault(w_bracket, {})
+        cell = wd.setdefault(l_bracket, {"wins": 0, "losses": 0})
+        cell["wins"] += 1
+
+        # Loser's perspective: loss against winner's bracket
+        ld = bracket_data.setdefault(l_bracket, {})
+        cell = ld.setdefault(w_bracket, {"wins": 0, "losses": 0})
+        cell["losses"] += 1
+
+    if not bracket_data:
+        return jsonify({"brackets": [], "rows": []})
+
+    # 4) Determine all brackets
+    all_brackets = set()
+    for player_b, opponents in bracket_data.items():
+        all_brackets.add(player_b)
+        all_brackets.update(opponents.keys())
+    brackets = sorted(all_brackets)
+
+    # 5) Build response rows
+    min_games = 5
+    result_rows = []
+    for brk in brackets:
+        opp_data = bracket_data.get(brk, {})
+        total_wins = sum(d["wins"] for d in opp_data.values())
+        total_losses = sum(d["losses"] for d in opp_data.values())
+        total_games = total_wins + total_losses
+        if total_games < 10:
+            continue
+
+        cells = []
+        for opp_brk in brackets:
+            d = opp_data.get(opp_brk, {"wins": 0, "losses": 0})
+            t = d["wins"] + d["losses"]
+            if t >= min_games:
+                cells.append({"wins": d["wins"], "losses": d["losses"], "total": t, "win_rate": round(d["wins"] / t * 100, 1)})
+            else:
+                cells.append({"wins": d["wins"], "losses": d["losses"], "total": t, "win_rate": None})
+
+        overall_wr = round(total_wins / total_games * 100, 1) if total_games > 0 else None
+        result_rows.append({
+            "bracket": brk,
+            "label": f"{brk}-{brk + 99}",
+            "cells": cells,
+            "overall": {"wins": total_wins, "losses": total_losses, "total": total_games, "win_rate": overall_wr},
+        })
+
+    return jsonify({
+        "brackets": brackets,
+        "rows": result_rows,
+    })

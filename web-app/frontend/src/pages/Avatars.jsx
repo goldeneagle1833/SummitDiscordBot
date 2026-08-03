@@ -119,12 +119,16 @@ function EloBracketMatrix({ sourceFilter }) {
               <td className="px-2 py-2 text-xs font-bold whitespace-nowrap">
                 {row.label}
               </td>
-              {row.cells.map((cell, i) => (
+              {row.cells.map((cell, i) => {
+                const isMirror = row.bracket === brackets[i]
+                return (
                 <td
                   key={brackets[i]}
-                  className={`px-2 py-2 text-center whitespace-nowrap ${row.bracket === brackets[i] ? 'bg-bg-elevated/40' : ''}`}
+                  className={`px-2 py-2 text-center whitespace-nowrap ${isMirror ? 'bg-bg-elevated/40' : ''}`}
                 >
-                  {cell.win_rate != null ? (
+                  {isMirror ? (
+                    <span className="text-text-muted text-xs">—{cell.total > 0 ? ` (${cell.total})` : ''}</span>
+                  ) : cell.win_rate != null ? (
                     <>
                       <span className="font-bold" style={{ color: getWinRateColor(cell.win_rate) }}>
                         {cell.win_rate}%
@@ -135,7 +139,8 @@ function EloBracketMatrix({ sourceFilter }) {
                     <span className="text-text-muted text-xs">{cell.total > 0 ? `${cell.total}g` : '—'}</span>
                   )}
                 </td>
-              ))}
+                )
+              })}
               <td className="px-2 py-2 text-center whitespace-nowrap bg-bg-elevated/30">
                 {row.overall.win_rate != null ? (
                   <>

@@ -63,7 +63,7 @@ export default function CardPoints() {
 
   if (loading) return <Spinner className="py-20" />
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
-  if (!data?.success) return <p className="text-center text-text-muted py-8">Points system is not currently active.</p>
+  if (!data?.success) return <p className="text-center text-text-muted py-8">Failed to load card points.</p>
 
   const { cards, max_budget } = data
 

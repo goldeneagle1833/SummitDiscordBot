@@ -9,8 +9,7 @@ from flask import Blueprint, jsonify, request
 
 from repositories.card_points import CardPointsRepository
 from services.curiosa import CuriosaService
-from services.pilots import is_pilot_active
-from utils.auth import require_admin, require_card_points_admin, is_admin, is_card_points_admin
+from utils.auth import require_admin, require_card_points_admin
 from webapp_config import ALL_CARDS_PATH, CARD_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
@@ -189,9 +188,6 @@ def get_card_points_public():
 
     Only available when PointsQueue pilot is active.
     """
-    if not is_pilot_active("PointsQueue") and not is_admin():
-        return jsonify({"success": False, "error": "Points system is not currently active."}), 404
-
     repo = CardPointsRepository()
     cards = repo.get_all_card_points()
     max_budget = repo.get_max_budget()
@@ -213,13 +209,7 @@ def get_card_points_public():
 
 @card_points_bp.route("/check-deck", methods=["POST"])
 def check_deck():
-    """Check if a deck URL meets the points budget.
-
-    Public when PointsQueue pilot is active; always available to admins.
-    """
-    if not is_pilot_active("PointsQueue") and not is_admin():
-        return jsonify({"success": False, "error": "Points system is not currently active."}), 404
-
+    """Check if a deck URL meets the points budget."""
     data = request.get_json()
     if not data or not data.get("deck_url", "").strip():
         return jsonify({"success": False, "error": "Deck URL is required."}), 400

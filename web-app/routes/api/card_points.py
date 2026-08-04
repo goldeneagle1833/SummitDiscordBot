@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, request
 from repositories.card_points import CardPointsRepository
 from services.curiosa import CuriosaService
 from services.pilots import is_pilot_active
-from utils.auth import require_admin, is_admin
+from utils.auth import require_admin, require_card_points_admin, is_admin, is_card_points_admin
 from webapp_config import ALL_CARDS_PATH, CARD_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ def _get_card_metadata(card_name: str) -> dict:
 
 
 @card_points_bp.route("/search-cards", methods=["GET"])
-@require_admin
+@require_card_points_admin
 def search_cards():
     """Search for cards by name (from local All_Cards_Array.json)."""
     q = request.args.get("q", "").strip().lower()
@@ -77,7 +77,7 @@ def search_cards():
 
 
 @card_points_bp.route("", methods=["GET"])
-@require_admin
+@require_card_points_admin
 def get_card_points():
     """Get all cards with assigned point values and the config."""
     repo = CardPointsRepository()
@@ -91,7 +91,7 @@ def get_card_points():
 
 
 @card_points_bp.route("", methods=["POST"])
-@require_admin
+@require_card_points_admin
 def set_card_points():
     """Set or update point value for a card."""
     data = request.get_json()
@@ -112,7 +112,7 @@ def set_card_points():
 
 
 @card_points_bp.route("/<path:card_name>", methods=["DELETE"])
-@require_admin
+@require_card_points_admin
 def delete_card_points(card_name):
     """Remove a card's point assignment."""
     repo = CardPointsRepository()
@@ -123,7 +123,7 @@ def delete_card_points(card_name):
 
 
 @card_points_bp.route("/config", methods=["GET"])
-@require_admin
+@require_card_points_admin
 def get_config():
     """Get points system configuration."""
     repo = CardPointsRepository()
@@ -134,7 +134,7 @@ def get_config():
 
 
 @card_points_bp.route("/config", methods=["POST"])
-@require_admin
+@require_card_points_admin
 def set_config():
     """Update points system configuration."""
     data = request.get_json()
@@ -271,3 +271,51 @@ def check_deck():
         "max_budget": max_budget,
         "costed_cards": costed_cards,
     })
+
+
+# ── Card Points Admins (global admin only) ───────────────────────────────────
+
+
+@card_points_bp.route("/admins", methods=["GET"])
+@require_admin
+def get_card_points_admins():
+    """List card points admins. Global admin only."""
+    try:
+        repo = CardPointsRepository()
+        return jsonify(repo.get_card_points_admins())
+    except Exception as e:
+        logger.error(f"Error fetching card points admins: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@card_points_bp.route("/admins", methods=["POST"])
+@require_admin
+def add_card_points_admin():
+    """Add a card points admin. Global admin only."""
+    data = request.get_json() or {}
+    discord_user_id = (data.get("discord_user_id") or "").strip()
+    display_name = (data.get("display_name") or "").strip() or None
+    if not discord_user_id:
+        return jsonify({"error": "discord_user_id is required"}), 400
+    try:
+        repo = CardPointsRepository()
+        repo.add_card_points_admin(discord_user_id, display_name)
+        return jsonify({"success": True}), 201
+    except Exception as e:
+        logger.error(f"Error adding card points admin: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@card_points_bp.route("/admins/<discord_user_id>", methods=["DELETE"])
+@require_admin
+def remove_card_points_admin(discord_user_id):
+    """Remove a card points admin. Global admin only."""
+    try:
+        repo = CardPointsRepository()
+        removed = repo.remove_card_points_admin(discord_user_id)
+        if not removed:
+            return jsonify({"error": "Admin not found"}), 404
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error(f"Error removing card points admin: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500

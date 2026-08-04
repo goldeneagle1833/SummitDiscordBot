@@ -117,3 +117,41 @@ class CardPointsRepository:
     def set_max_budget(self, budget: int) -> None:
         """Set the max point budget for decks."""
         self.set_config("max_budget", str(budget))
+
+    # --- Card points admins ---
+
+    def get_card_points_admins(self) -> list[dict]:
+        conn = self._get_connection()
+        rows = conn.execute(
+            "SELECT * FROM card_points_admins ORDER BY added_at DESC"
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def add_card_points_admin(self, discord_user_id: str, display_name: str | None) -> None:
+        conn = self._get_connection()
+        conn.execute(
+            "INSERT OR REPLACE INTO card_points_admins (discord_user_id, display_name) VALUES (?, ?)",
+            (discord_user_id, display_name),
+        )
+        conn.commit()
+        conn.close()
+
+    def remove_card_points_admin(self, discord_user_id: str) -> bool:
+        conn = self._get_connection()
+        cur = conn.execute(
+            "DELETE FROM card_points_admins WHERE discord_user_id = ?",
+            (discord_user_id,),
+        )
+        conn.commit()
+        conn.close()
+        return cur.rowcount > 0
+
+    def is_card_points_admin(self, discord_user_id: str) -> bool:
+        conn = self._get_connection()
+        row = conn.execute(
+            "SELECT 1 FROM card_points_admins WHERE discord_user_id = ?",
+            (discord_user_id,),
+        ).fetchone()
+        conn.close()
+        return row is not None

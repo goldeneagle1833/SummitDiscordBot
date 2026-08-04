@@ -41,6 +41,14 @@ def create_card_points_tables():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS card_points_admins (
+            discord_user_id TEXT PRIMARY KEY,
+            display_name TEXT,
+            added_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
     # Set default max budget if not exists
     cursor.execute("""
         INSERT OR IGNORE INTO points_config (key, value) VALUES ('max_budget', '50')

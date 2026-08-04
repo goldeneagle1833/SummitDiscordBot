@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react'
 import { get, post } from '@/api/client'
+import { useAuth } from '@/context/AuthContext'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
+import CardPointsSection from '@/components/admin/CardPointsSection'
+import CardPointsAdminPanel from '@/components/card-points/CardPointsAdminPanel'
 
 const CARD_TYPES = ['Avatar', 'Minion', 'Magic', 'Artifact', 'Aura', 'Site']
 const ELEMENTS = ['Air', 'Earth', 'Fire', 'Water']
@@ -24,12 +27,17 @@ function getCardElements(card) {
 
 export default function CardPoints() {
   usePageTitle('Card Points')
+  const { user } = useAuth()
+  const isCardPointsAdmin = user?.is_card_points_admin || user?.is_admin
+  const isGlobalAdmin = user?.is_admin
+
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [elementFilter, setElementFilter] = useState('')
+  const [showAdmin, setShowAdmin] = useState(false)
 
   // Deck checker state
   const [deckUrl, setDeckUrl] = useState('')
@@ -75,6 +83,27 @@ export default function CardPoints() {
         Decks in the Ranked w/ Points queue must stay within the point budget.
         Each copy of a pointed card counts toward your total.
       </p>
+
+      {/* Admin toggle */}
+      {isCardPointsAdmin && (
+        <button
+          onClick={() => setShowAdmin(!showAdmin)}
+          className="mb-4 px-3 py-1.5 text-sm bg-secondary/20 text-secondary rounded hover:bg-secondary/30 transition-colors"
+        >
+          {showAdmin ? 'Hide Admin Panel' : 'Show Admin Panel'}
+        </button>
+      )}
+
+      {/* Admin sections */}
+      {showAdmin && isCardPointsAdmin && (
+        <div className="space-y-4 mb-6">
+          {isGlobalAdmin && <CardPointsAdminPanel />}
+          <div className="bg-bg-surface border border-border rounded-lg p-4">
+            <h3 className="text-base font-semibold text-text-primary mb-3">Edit Card Points</h3>
+            <CardPointsSection />
+          </div>
+        </div>
+      )}
 
       <div className="bg-bg-surface border border-border rounded-lg p-4 mb-6 inline-block">
         <span className="text-text-muted text-sm">Max Deck Budget:</span>

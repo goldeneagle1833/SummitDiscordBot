@@ -258,6 +258,43 @@ def require_rumble_admin(f):
     return decorated_function
 
 
+def is_card_points_admin() -> bool:
+    """Check if the current user can manage card points.
+
+    Access granted if:
+    - User is a global admin (superset)
+    - User's Discord ID is in the card_points_admins table
+    """
+    if is_admin():
+        return True
+
+    user_id = session.get("user_id")
+    if user_id:
+        try:
+            from repositories.card_points import CardPointsRepository
+            repo = CardPointsRepository()
+            if repo.is_card_points_admin(str(user_id)):
+                return True
+        except Exception:
+            pass
+
+    return False
+
+
+def require_card_points_admin(f):
+    """Decorator requiring card points admin access."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_card_points_admin():
+            logger.warning(
+                f"Non-card-points-admin access attempt to {request.path} from {request.remote_addr}"
+            )
+            return jsonify({"error": "Card points admin access required"}), 403
+        return f(*args, **kwargs)
+    decorated_function._auth_required = True
+    return decorated_function
+
+
 def get_current_user() -> dict | None:
     """Get the currently logged in user from session, or None."""
     if "user_id" in session:

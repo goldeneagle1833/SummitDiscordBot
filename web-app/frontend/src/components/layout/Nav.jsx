@@ -22,7 +22,6 @@ const ALL_NAV_OPTIONS = [
   { to: '/top-8', label: 'Top 8 Decks' },
   { to: '/fun-stats', label: 'Fun Stats' },
   { to: '/rumble', label: 'Rumble' },
-  { to: '/card-points', label: 'Card Points' },
   { to: '/elo', label: 'ELO Leaderboards' },
   { to: '/elo/limited', label: 'Limited Leaderboard' },
   { to: '/match-history', label: 'Match History' },
@@ -761,7 +760,6 @@ export default function Nav() {
             <SidebarLink to="/cards" label="Card Winrates" location={location} onClick={close} />
           )}
           <SidebarLink to="/rumble" label="Rumble" location={location} onClick={close} />
-          <SidebarLink to="/card-points" label="Card Points" location={location} onClick={close} />
           <SidebarLink to="/elo" label="ELO Leaderboards" location={location} onClick={close} />
           <SidebarLink to="/elo/limited" label="Limited Leaderboard" location={location} onClick={close} />
           <SidebarLink to="/match-history" label="Match History" location={location} onClick={close} />

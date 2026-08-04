@@ -69,8 +69,9 @@ class AnalyticsRepository:
         top_pages = [{"path": r[0], "count": r[1]} for r in cur.fetchall()]
 
         # Daily breakdown
+        limit = " LIMIT 30" if hours else ""
         cur.execute(
-            f"SELECT date(timestamp) as day, COUNT(*) as cnt FROM page_views {where} GROUP BY day ORDER BY day DESC LIMIT 30",
+            f"SELECT date(timestamp) as day, COUNT(*) as cnt FROM page_views {where} GROUP BY day ORDER BY day DESC{limit}",
             params,
         )
         daily = [{"date": r[0], "count": r[1]} for r in cur.fetchall()]

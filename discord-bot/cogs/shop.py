@@ -1,9 +1,11 @@
 import discord
 from discord.ext import commands
 import datetime
+import math
 import sqlite3
 import logging
 import random
+import time
 from openai import OpenAI
 
 import config
@@ -22,6 +24,12 @@ openai = OpenAI(api_key=config.OPENAI_API_KEY)
 
 
 class ShopCog(commands.Cog):
+    # Sliding-window rate limit for shop item spam (banana peel-out)
+    SHOP_RATE_LIMIT_MAX = 5
+    SHOP_RATE_LIMIT_WINDOW_SECONDS = 30 * 60  # 30 minutes
+    # Browse catalog freely; gas_gamble is intentionally unrestricted
+    RATE_LIMIT_EXEMPT = frozenset({"fart_shop", "gas_gamble"})
+
     def __init__(self, bot):
         self.bot = bot
         self.fart_channel_id = config.FART_CHANNEL_ID
@@ -49,6 +57,8 @@ class ShopCog(commands.Cog):
             "fart_lance": 15,  # Fart Lance - diminishing damage to 3 players ahead
             "big_banana": 20,  # Big Banana - 4d10, once/day
         }
+        # user_id -> list of unix timestamps for recent shop item uses
+        self._shop_usage: dict[int, list[float]] = {}
         logger.info("ShopCog initialized")
         self.setup_purchase_database()
 
@@ -59,8 +69,59 @@ class ShopCog(commands.Cog):
         'fart_lance', 'big_banana',
     }
 
+    @staticmethod
+    def format_rate_limit_remaining(seconds: float) -> str:
+        """Pretty-print remaining peel-out wait time."""
+        total = max(0, math.ceil(seconds))
+        minutes, secs = divmod(total, 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours:
+            return f"{hours}h {minutes}m"
+        if minutes:
+            return f"{minutes}m {secs}s"
+        return f"{secs}s"
+
+    def prune_shop_usage(self, user_id: int, now: float | None = None) -> list[float]:
+        """Drop uses outside the rate-limit window; return remaining timestamps."""
+        now = time.time() if now is None else now
+        window = self.SHOP_RATE_LIMIT_WINDOW_SECONDS
+        usages = [t for t in self._shop_usage.get(user_id, []) if now - t < window]
+        if usages:
+            self._shop_usage[user_id] = usages
+        else:
+            self._shop_usage.pop(user_id, None)
+        return usages
+
+    def check_shop_rate_limit(
+        self, user_id: int, now: float | None = None
+    ) -> tuple[bool, float | None]:
+        """
+        Sliding window: max SHOP_RATE_LIMIT_MAX uses per SHOP_RATE_LIMIT_WINDOW_SECONDS.
+        Returns (allowed, seconds_remaining_until_next_slot).
+        """
+        now = time.time() if now is None else now
+        usages = self.prune_shop_usage(user_id, now)
+        if len(usages) >= self.SHOP_RATE_LIMIT_MAX:
+            oldest = min(usages)
+            remaining = self.SHOP_RATE_LIMIT_WINDOW_SECONDS - (now - oldest)
+            return False, max(remaining, 0.0)
+        return True, None
+
+    def record_shop_usage(self, user_id: int, now: float | None = None):
+        """Record a shop item use for the peel-out rate limit."""
+        now = time.time() if now is None else now
+        self.prune_shop_usage(user_id, now)
+        self._shop_usage.setdefault(user_id, []).append(now)
+
+    def peel_out_message(self, mention: str, remaining_seconds: float) -> str:
+        wait = self.format_rate_limit_remaining(remaining_seconds)
+        return (
+            f"🍌 **PEEL OUT!!!!** {mention}, looks like you've used too many shop items "
+            f"too quickly — wait **{wait}** before using more!"
+        )
+
     async def cog_check(self, ctx):
-        """Block shop commands if user is stink clouded, and check fart traps on attacks"""
+        """Block shop commands if user is stink clouded, rate-limited, or fart-trapped."""
         if ctx.command.name in ('fart_shop',):
             return True
 
@@ -86,6 +147,14 @@ class ShopCog(commands.Cog):
                 return False
         finally:
             conn.close()
+
+        # Peel-out rate limit: 5 shop items / 30 minutes (!gas_gamble exempt)
+        if ctx.command.name not in self.RATE_LIMIT_EXEMPT:
+            allowed, remaining = self.check_shop_rate_limit(ctx.author.id)
+            if not allowed:
+                await ctx.send(self.peel_out_message(ctx.author.mention, remaining))
+                return False
+            self.record_shop_usage(ctx.author.id)
 
         # Check fart trap on attack commands
         if ctx.command.name in self.ATTACK_COMMANDS:

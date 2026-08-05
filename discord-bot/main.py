@@ -24,6 +24,7 @@ from cogs.reddit_bridge import RedditBridgeCog
 from cogs.magoo_monitor import MagooMonitorCog
 from cogs.store_notifications import StoreNotificationsCog
 from cogs.card_catalog_sync import CardCatalogSyncCog, ensure_card_catalog_table
+from cogs.dynamic_voice import DynamicVoiceCog
 from cogs.lfg.persistent_confirm import (
     PersistentConfirmButton,
     PersistentDisputeButton,
@@ -173,6 +174,7 @@ async def setup_cogs():
     await bot.add_cog(RedditBridgeCog(bot))  # Reddit subreddit -> Discord bridge
     await bot.add_cog(MagooMonitorCog(bot))  # Archimago complaint vibe monitor
     await bot.add_cog(CardCatalogSyncCog(bot))  # Daily card catalog sync from Sorcery TCG API
+    await bot.add_cog(DynamicVoiceCog(bot))  # Auto-create temporary voice rooms
 
 
 async def main():

@@ -29,6 +29,7 @@ from routes.api.rumble import rumble_bp
 from routes.api.deck_builder import deck_builder_bp
 from routes.api.store import store_bp
 from routes.api.card_points import card_points_bp
+from routes.api.reaction_roles import reaction_roles_bp
 
 api_bp.register_blueprint(leaderboard_bp)
 api_bp.register_blueprint(matches_bp)
@@ -54,3 +55,4 @@ api_bp.register_blueprint(rumble_bp)
 api_bp.register_blueprint(deck_builder_bp, url_prefix="/deck-builder")
 api_bp.register_blueprint(store_bp)
 api_bp.register_blueprint(card_points_bp, url_prefix="/card-points")
+api_bp.register_blueprint(reaction_roles_bp, url_prefix="/reaction-roles")

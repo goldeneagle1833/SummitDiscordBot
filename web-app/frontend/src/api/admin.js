@@ -35,3 +35,14 @@ export const deleteAccount = (userId) => del(`/api/admin/delete-account/${userId
 
 export const getMatchesWithNotes = (page = 1, perPage = 50) =>
   get(`/api/admin/matches-with-notes?page=${page}&per_page=${perPage}`)
+
+// Reaction roles
+export const getReactionRoleMessages = () => get('/api/reaction-roles/messages')
+export const addReactionRoleMessage = (channelId, messageId, label) =>
+  post('/api/reaction-roles/messages', { channel_id: channelId, message_id: messageId, label })
+export const deleteReactionRoleMessage = (messageId) =>
+  del(`/api/reaction-roles/messages/${messageId}`)
+export const addReactionRoleMapping = (messageId, emoji, roleId, roleName, emojiId) =>
+  post('/api/reaction-roles/mappings', { message_id: messageId, emoji, role_id: roleId, role_name: roleName, emoji_id: emojiId })
+export const deleteReactionRoleMapping = (mappingId) =>
+  del(`/api/reaction-roles/mappings/${mappingId}`)

@@ -8,6 +8,7 @@ import TransferHistorySection from '@/components/admin/TransferHistorySection'
 import MatchNotesSection from '@/components/admin/MatchNotesSection'
 import BlockedUsersSection from '@/components/admin/BlockedUsersSection'
 import CardPointsSection from '@/components/admin/CardPointsSection'
+import ReactionRolesSection from '@/components/admin/ReactionRolesSection'
 import AuditLogTable from '@/components/admin/AuditLogTable'
 
 export default function AuditLog() {
@@ -36,6 +37,9 @@ export default function AuditLog() {
       </AdminCollapsible>
       <AdminCollapsible title="Card Points" subtitle="Assign point values to cards for deck budget restrictions">
         <CardPointsSection />
+      </AdminCollapsible>
+      <AdminCollapsible title="Reaction Roles" subtitle="Manage emoji reaction role assignments on Discord messages">
+        <ReactionRolesSection />
       </AdminCollapsible>
       <AdminCollapsible title="Admin Actions" subtitle="Perform administrative operations">
         <AdminActionsSection />

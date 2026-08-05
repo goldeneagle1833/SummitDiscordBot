@@ -10,7 +10,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, current_app, request
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH, CARD_IMAGES_DIR, ELO_DB_PATH, SEASON_FILTERS
+from repositories.card_catalog import CardCatalogRepository
+from webapp_config import MATCH_RECORDS_DB_PATH, CARD_IMAGES_DIR, ELO_DB_PATH, SEASON_FILTERS
 from utils.auth import is_admin
 
 logger = logging.getLogger(__name__)
@@ -19,21 +20,13 @@ cards_bp = Blueprint("cards", __name__)
 
 
 def _load_card_elements():
-    """Load card name -> element mapping from All_Cards_Array.json."""
-    card_elements = {}
+    """Load card name -> element mapping from card_catalog DB."""
     try:
-        with open(ALL_CARDS_PATH, "r", encoding="utf-8") as f:
-            all_cards = json.load(f)
-            for card in all_cards:
-                name = card.get("name", "")
-                elements_str = card.get("elements", "None")
-                if name and elements_str and elements_str != "None":
-                    card_elements[name.lower()] = set(
-                        e.strip() for e in elements_str.split(",") if e.strip()
-                    )
+        catalog = CardCatalogRepository()
+        return catalog.get_card_elements_map()
     except Exception as e:
-        logger.error(f"Failed to load All_Cards_Array.json: {e}")
-    return card_elements
+        logger.error(f"Failed to load card elements from DB: {e}")
+        return {}
 
 
 def _build_card_image_lookup():
@@ -194,18 +187,18 @@ def get_live_popular_cards():
 
     source_filter = request.args.get("source", "discord")
 
-    # Load card metadata
+    # Load card metadata from DB
     card_metadata = {}
     try:
-        with open(ALL_CARDS_PATH, "r", encoding="utf-8") as f:
-            cards_array = json.load(f)
-            for card in cards_array:
-                card_metadata[card["name"]] = {
-                    "type": card.get("guardian", {}).get("type", "Unknown"),
-                    "element": card.get("elements", "None"),
-                    "rarity": card.get("guardian", {}).get("rarity", "Unknown"),
-                    "set": card.get("sets", [{}])[0].get("name", "Unknown") if card.get("sets") else "Unknown",
-                }
+        catalog = CardCatalogRepository()
+        for card in catalog.get_all_cards():
+            sets_json = json.loads(card.get("sets_json") or "[]")
+            card_metadata[card["name"]] = {
+                "type": card.get("card_type", "Unknown"),
+                "element": card.get("elements", "None"),
+                "rarity": card.get("rarity", "Unknown"),
+                "set": sets_json[0].get("name", "Unknown") if sets_json else "Unknown",
+            }
     except Exception as e:
         logger.error(f"Error loading card pool: {e}")
         return jsonify({"error": "Failed to load card data"}), 500
@@ -775,28 +768,25 @@ def get_card_stats(card_name):
 
     card_image_lookup = _build_card_image_lookup()
 
-    # Load card metadata from All_Cards_Array.json
+    # Load card metadata from card_catalog DB
     card_meta = {}
     try:
-        with open(ALL_CARDS_PATH, "r", encoding="utf-8") as f:
-            all_cards = json.load(f)
-            for c in all_cards:
-                if c.get("name", "").lower() == card_name.lower():
-                    guardian = c.get("guardian", {}) or {}
-                    sets = c.get("sets", []) or []
-                    card_meta = {
-                        "name": c.get("name", card_name),
-                        "element": c.get("elements", None),
-                        "type": guardian.get("type", None),
-                        "rarity": guardian.get("rarity", None),
-                        "set": sets[0].get("name") if sets else None,
-                        "threshold": guardian.get("threshold", None),
-                        "cost": guardian.get("cost", None),
-                        "power": guardian.get("power", None),
-                        "defense": guardian.get("defense", None),
-                        "text": guardian.get("text", None) or guardian.get("rule_text", None),
-                    }
-                    break
+        catalog = CardCatalogRepository()
+        c = catalog.get_card(card_name)
+        if c:
+            sets_json = json.loads(c.get("sets_json") or "[]")
+            card_meta = {
+                "name": c["name"],
+                "element": c.get("elements", None),
+                "type": c.get("card_type", None),
+                "rarity": c.get("rarity", None),
+                "set": sets_json[0].get("name") if sets_json else None,
+                "threshold": None,
+                "cost": c.get("cost", None),
+                "power": c.get("attack", None),
+                "defense": c.get("defence", None),
+                "text": c.get("rules_text", None),
+            }
     except Exception as e:
         logger.warning(f"Could not load card metadata for {card_name}: {e}")
 

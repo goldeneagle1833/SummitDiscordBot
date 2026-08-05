@@ -7,71 +7,27 @@ import re
 
 from flask import Blueprint, jsonify, request
 
+from repositories.card_catalog import CardCatalogRepository
 from repositories.card_points import CardPointsRepository
 from services.curiosa import CuriosaService
 from utils.auth import require_admin, require_card_points_admin
-from webapp_config import ALL_CARDS_PATH, CARD_IMAGES_DIR
+from webapp_config import CARD_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
 
 card_points_bp = Blueprint("card_points", __name__)
 
-# Lazy-loaded card data from All_Cards_Array.json
-_all_card_names: list[str] | None = None
-_card_metadata: dict[str, dict] | None = None
-
-
-def _load_card_data():
-    """Load and cache card names and metadata from the local card database."""
-    global _all_card_names, _card_metadata
-    if _all_card_names is not None:
-        return
-    try:
-        with open(ALL_CARDS_PATH, "r", encoding="utf-8") as f:
-            cards = json.load(f)
-        names = set()
-        metadata = {}
-        for card in cards:
-            name = card.get("name")
-            if not name:
-                continue
-            names.add(name)
-            guardian = card.get("guardian", {})
-            metadata[name.lower()] = {
-                "type": guardian.get("type", ""),
-                "element": card.get("elements", ""),
-                "rarity": guardian.get("rarity", ""),
-            }
-        _all_card_names = sorted(names, key=str.lower)
-        _card_metadata = metadata
-    except Exception as e:
-        logger.error(f"Failed to load All_Cards_Array.json: {e}")
-        _all_card_names = []
-        _card_metadata = {}
-
-
-def _get_all_card_names() -> list[str]:
-    """Get cached card names list."""
-    _load_card_data()
-    return _all_card_names
-
-
-def _get_card_metadata(card_name: str) -> dict:
-    """Get type/element/rarity for a card name."""
-    _load_card_data()
-    return _card_metadata.get(card_name.lower(), {})
-
 
 @card_points_bp.route("/search-cards", methods=["GET"])
 @require_card_points_admin
 def search_cards():
-    """Search for cards by name (from local All_Cards_Array.json)."""
+    """Search for cards by name (from card_catalog DB table)."""
     q = request.args.get("q", "").strip().lower()
     if len(q) < 2:
         return jsonify({"success": True, "cards": []})
 
-    all_names = _get_all_card_names()
-    matches = [name for name in all_names if q in name.lower()][:20]
+    catalog = CardCatalogRepository()
+    matches = catalog.search_cards(q, limit=20)
     return jsonify({"success": True, "cards": matches})
 
 
@@ -193,9 +149,10 @@ def get_card_points_public():
     max_budget = repo.get_max_budget()
 
     image_lookup = _build_card_image_lookup()
+    catalog = CardCatalogRepository()
     for card in cards:
         card["image"] = _find_card_image(card["card_name"], image_lookup)
-        meta = _get_card_metadata(card["card_name"])
+        meta = catalog.get_card_metadata(card["card_name"])
         card["type"] = meta.get("type", "")
         card["element"] = meta.get("element", "")
         card["rarity"] = meta.get("rarity", "")

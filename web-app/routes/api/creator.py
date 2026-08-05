@@ -7,7 +7,8 @@ from collections import defaultdict
 
 from flask import Blueprint, jsonify, request
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH, ELO_DB_PATH, SEASON_FILTERS
+from repositories.card_catalog import CardCatalogRepository
+from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS
 from utils.auth import require_creator
 from routes.api.cards import _build_card_image_lookup, _find_card_image, _get_event_date_range
 
@@ -75,18 +76,18 @@ def get_creator_popular_cards():
     event_filter = request.args.get("event", "all")
     source_filter = request.args.get("source", "all")
 
-    # Load card metadata
+    # Load card metadata from DB
     card_metadata = {}
     try:
-        with open(ALL_CARDS_PATH, "r", encoding="utf-8") as f:
-            cards_array = json.load(f)
-            for card in cards_array:
-                card_metadata[card["name"]] = {
-                    "type": card.get("guardian", {}).get("type", "Unknown"),
-                    "element": card.get("elements", "None"),
-                    "rarity": card.get("guardian", {}).get("rarity", "Unknown"),
-                    "set": card.get("sets", [{}])[0].get("name", "Unknown") if card.get("sets") else "Unknown",
-                }
+        catalog = CardCatalogRepository()
+        for card in catalog.get_all_cards():
+            sets_json = json.loads(card.get("sets_json") or "[]")
+            card_metadata[card["name"]] = {
+                "type": card.get("card_type", "Unknown"),
+                "element": card.get("elements", "None"),
+                "rarity": card.get("rarity", "Unknown"),
+                "set": sets_json[0].get("name", "Unknown") if sets_json else "Unknown",
+            }
     except Exception as e:
         logger.error(f"Error loading card pool: {e}")
         return jsonify({"error": "Failed to load card data"}), 500

@@ -23,6 +23,7 @@ from cogs.dust import DustCog
 from cogs.reddit_bridge import RedditBridgeCog
 from cogs.magoo_monitor import MagooMonitorCog
 from cogs.store_notifications import StoreNotificationsCog
+from cogs.card_catalog_sync import CardCatalogSyncCog, ensure_card_catalog_table
 from cogs.lfg.persistent_confirm import (
     PersistentConfirmButton,
     PersistentDisputeButton,
@@ -171,6 +172,7 @@ async def setup_cogs():
     await bot.add_cog(DustCog(bot))  # Dust code reward system
     await bot.add_cog(RedditBridgeCog(bot))  # Reddit subreddit -> Discord bridge
     await bot.add_cog(MagooMonitorCog(bot))  # Archimago complaint vibe monitor
+    await bot.add_cog(CardCatalogSyncCog(bot))  # Daily card catalog sync from Sorcery TCG API
 
 
 async def main():
@@ -179,6 +181,7 @@ async def main():
         migrate_to_dual_elo_system()
         ensure_pending_confirmations_table()
         ensure_pending_corrections_table()
+        ensure_card_catalog_table()
         # Register DynamicItem buttons so Confirm/Dispute survive bot restarts
         bot.add_dynamic_items(
             PersistentConfirmButton, PersistentDisputeButton,

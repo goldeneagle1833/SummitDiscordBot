@@ -17,7 +17,8 @@ from repositories.deck_rec_repo import DeckRecRepository, _get_card_details
 from services.curiosa import CuriosaService
 from services.deck_similarity import SIMILARITY_THRESHOLD, aggregate_archetype, average_similarity, build_clusters, jaccard
 from utils.auth import is_admin, require_admin
-from webapp_config import ALL_CARDS_PATH, CARD_IMAGES_DIR
+from repositories.card_catalog import CardCatalogRepository
+from webapp_config import CARD_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -78,25 +79,23 @@ _card_metadata: dict[str, dict] | None = None
 
 
 def _get_card_metadata() -> dict[str, dict]:
-    """Return {normalized_name: {elements, rarity, attack, defence}} from All_Cards_Array.json."""
+    """Return {normalized_name: {elements, rarity, attack, defence}} from card_catalog DB."""
     global _card_metadata
     if _card_metadata is not None:
         return _card_metadata
 
     meta: dict[str, dict] = {}
     try:
-        with open(ALL_CARDS_PATH, encoding="utf-8") as f:
-            all_cards = json.load(f)
-        for card in all_cards:
+        catalog = CardCatalogRepository()
+        for card in catalog.get_all_cards():
             name = (card.get("name") or "").strip().lower()
             if not name:
                 continue
-            g = card.get("guardian") or {}
             meta[name] = {
                 "elements": card.get("elements", "None"),
-                "rarity": g.get("rarity", "Unknown"),
-                "attack": g.get("attack"),
-                "defence": g.get("defence"),
+                "rarity": card.get("rarity", "Unknown"),
+                "attack": card.get("attack"),
+                "defence": card.get("defence"),
             }
     except Exception as e:
         logger.warning("Failed to load card metadata: %s", e)

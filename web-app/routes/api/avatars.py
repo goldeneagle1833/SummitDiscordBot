@@ -10,7 +10,8 @@ from urllib.parse import unquote
 
 from flask import Blueprint, jsonify, request
 
-from webapp_config import MATCH_RECORDS_DB_PATH, ALL_CARDS_PATH, ELO_DB_PATH, SEASON_FILTERS, AVATAR_IMAGES_DIR
+from repositories.card_catalog import CardCatalogRepository
+from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS, AVATAR_IMAGES_DIR
 from utils.formatting import generate_pseudonym
 from utils.auth import is_admin
 
@@ -2037,20 +2038,13 @@ def get_avatar_deck_composition(avatar_name):
 
     avatar_name = unquote(avatar_name)
 
-    # Load card elements lookup
-    card_elements = {}
+    # Load card elements lookup from DB
     try:
-        with open(ALL_CARDS_PATH, "r", encoding="utf-8") as f:
-            all_cards = json.load(f)
-            for card in all_cards:
-                name = card.get("name", "")
-                elements_str = card.get("elements", "None")
-                if name and elements_str and elements_str != "None":
-                    card_elements[name.lower()] = set(
-                        e.strip() for e in elements_str.split(",") if e.strip()
-                    )
+        catalog = CardCatalogRepository()
+        card_elements = catalog.get_card_elements_map()
     except Exception as e:
-        logger.error(f"Failed to load All_Cards_Array.json: {e}")
+        logger.error(f"Failed to load card elements from DB: {e}")
+        card_elements = {}
 
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))

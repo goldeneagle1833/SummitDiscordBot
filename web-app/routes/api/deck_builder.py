@@ -19,7 +19,8 @@ from flask import Blueprint, jsonify, request, session
 from repositories.deck_builder_repo import DeckBuilderRepository
 from services.curiosa import CuriosaService
 from utils.auth import require_auth
-from webapp_config import ALL_CARDS_PATH, CARD_IMAGES_DIR
+from repositories.card_catalog import CardCatalogRepository
+from webapp_config import CARD_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -34,15 +35,15 @@ _card_image_map: dict[str, str] | None = None
 
 
 def _get_card_metadata() -> dict[str, dict]:
-    """Return {normalized_name: full metadata} from All_Cards_Array.json."""
+    """Return {normalized_name: full metadata} from card_catalog DB."""
     global _card_metadata
     if _card_metadata is not None:
         return _card_metadata
 
     mapping: dict[str, dict] = {}
     try:
-        with open(ALL_CARDS_PATH, "r", encoding="utf-8") as f:
-            all_cards = json.load(f)
+        catalog = CardCatalogRepository()
+        all_cards = catalog.get_all_cards_full_json()
         for card in all_cards:
             name = card.get("name", "")
             if not name:
@@ -168,17 +169,13 @@ _all_card_names: list[str] | None = None
 
 
 def _get_all_card_names() -> list[str]:
-    """Return sorted list of all card names from the metadata."""
+    """Return sorted list of all card names from card_catalog DB."""
     global _all_card_names
     if _all_card_names is not None:
         return _all_card_names
     try:
-        with open(ALL_CARDS_PATH, "r", encoding="utf-8") as f:
-            all_cards = json.load(f)
-        _all_card_names = sorted(
-            [c["name"] for c in all_cards if c.get("name")],
-            key=str.lower,
-        )
+        catalog = CardCatalogRepository()
+        _all_card_names = catalog.get_all_card_names()
     except Exception as e:
         logger.error(f"Failed to load card names: {e}")
         _all_card_names = []

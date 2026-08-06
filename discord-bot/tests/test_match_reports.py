@@ -221,6 +221,64 @@ class TestRecordMatch:
         conn.close()
 
     @pytest.mark.asyncio
+    async def test_record_match_points_type_skips_elo(self):
+        """Test that match_type='points' (Omens) inserts a record but skips ELO updates."""
+        fake_event = {
+            "event_name": "Test Event",
+            "start_date": datetime.datetime.now() - datetime.timedelta(days=1),
+        }
+        with patch("services.elo_service.scrape_Curosa", return_value="{}"), \
+             patch("services.elo_service.get_active_event", return_value=fake_event):
+            result = await record_match(
+                reporter_id=123456789,
+                winner_id=111111111,
+                winner_global="Winner",
+                loser_id=222222222,
+                loser_global="Loser",
+                first_player="n",
+                match_time=20,
+                match_comment="",
+                winner_deck_url=None,
+                loser_deck_url=None,
+                winner_went_first="n",
+                loser_went_first="y",
+                match_type="points",
+            )
+
+        match_id, winner_elo_change, loser_elo_change, winner_lt, loser_lt, event_active = result
+        assert match_id is not None
+        assert event_active is False
+        assert winner_elo_change == 0
+        assert loser_elo_change == 0
+        assert winner_lt == 0
+        assert loser_lt == 0
+
+        # No ELO row should exist since nothing was written
+        conn = sqlite3.connect("elo.db")
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM overall_standings WHERE user_id = ?", (111111111,))
+        assert cur.fetchone() is None
+        conn.close()
+
+        # Match record should still be inserted
+        conn = sqlite3.connect("match_records.db")
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT match_type, winner_elo_change, loser_elo_change, "
+            "winner_lifetime_elo_change, loser_lifetime_elo_change "
+            "FROM match_records WHERE rowid = ?",
+            (match_id,),
+        )
+        row = cur.fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == "points"
+        assert row[1] == 0
+        assert row[2] == 0
+        assert row[3] == 0
+        assert row[4] == 0
+
+    @pytest.mark.asyncio
     async def test_record_match_stored_elo_changes_are_accurate(self):
         """Test that stored winner/loser ELO changes match what record_match returns.
 

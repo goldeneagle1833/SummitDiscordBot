@@ -15,6 +15,8 @@ from repositories.elo_repo import (
     get_active_event,
     get_total_match_count,
     update_both_player_elos,
+    NON_ELO_MATCH_TYPES,
+    NON_ELO_MATCH_TYPES_SQL,
 )
 
 logger = logging.getLogger("discord_bot")
@@ -438,7 +440,7 @@ def _resolve_lifetime_match_result(row, winner_after, loser_after, ladder_specia
             "Lifetime Elo cannot be reconstructed exactly for top cut matches because historical lifetime deltas were not stored."
         )
 
-    if row.get("match_type") in ("testing", "rumble"):
+    if row.get("match_type") in NON_ELO_MATCH_TYPES:
         return {
             "winner_before": winner_after,
             "winner_after": winner_after,
@@ -655,7 +657,7 @@ def get_current_event_match_elo_snapshot(match_id: int):
         loser_before_event = event_state.get(loser_id, 1500)
 
         is_top_cut = match_id_value in top_cut_match_ids
-        is_testing = row.get("match_type") in ("testing", "rumble")
+        is_testing = row.get("match_type") in NON_ELO_MATCH_TYPES
         is_casual = is_testing and not is_top_cut
         ladder_special = False
 
@@ -1007,7 +1009,7 @@ async def record_match(
          winner_lifetime_change, loser_lifetime_change, event_active)
 
         winner_elo_change / loser_elo_change: event ELO delta (0 if no active event
-        or match_type == "testing").
+        or match_type in NON_ELO_MATCH_TYPES).
     """
     logger.info(
         "record_match: winner=%s (id=%s) loser=%s (id=%s) type=%s",
@@ -1015,7 +1017,7 @@ async def record_match(
     )
 
     # ── Step 1: calculate ELO changes ──
-    if match_type in ("testing", "rumble"):
+    if match_type in NON_ELO_MATCH_TYPES:
         winner_elo_change = 0
         loser_elo_change = 0
         winner_lifetime_change = 0
@@ -1072,7 +1074,7 @@ async def record_match(
             loser_new_event_elo = loser_event_elo + loser_elo_change
 
     # ── Step 2: write both ELOs atomically ──
-    if match_type not in ("testing", "rumble") and event_active:
+    if match_type not in NON_ELO_MATCH_TYPES and event_active:
         update_both_player_elos(
             winner_id, winner_global,
             winner_new_elo, winner_new_event_elo,
@@ -1421,14 +1423,14 @@ def recalculate_event_elo() -> dict:
     players_reset = elo_cur.rowcount
     elo_conn.commit()
 
-    # Step 2: Get all ranked/ladder matches since event start (skip testing)
+    # Step 2: Get all ranked/ladder matches since event start (skip non-ELO types)
     match_cur.execute(
-        """
+        f"""
         SELECT rowid, winner_id, winner_display_name, losser_id, losser_display_name,
                timestamp, match_type
         FROM match_records
         WHERE timestamp >= ?
-          AND (match_type IS NULL OR match_type NOT IN ('testing', 'rumble'))
+          AND (match_type IS NULL OR match_type NOT IN ({NON_ELO_MATCH_TYPES_SQL}))
         ORDER BY timestamp ASC
         """,
         (event_start_str,),

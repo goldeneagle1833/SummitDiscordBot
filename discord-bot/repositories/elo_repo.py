@@ -7,8 +7,14 @@ from contextlib import contextmanager
 
 logger = logging.getLogger("discord_bot")
 
-ELO_COUNTING_MATCH_FILTER = """
-    (match_type IS NULL OR match_type NOT IN ('testing', 'rumble'))
+# Match types that skip ELO updates. Do NOT reuse this for Curiosa deck-URL
+# gates in match_reporting.py / persistent_confirm.py — those stay as
+# ("testing", "rumble") because Omens ("points") still requires a deck.
+NON_ELO_MATCH_TYPES = ("testing", "rumble", "points")
+NON_ELO_MATCH_TYPES_SQL = ", ".join(f"'{t}'" for t in NON_ELO_MATCH_TYPES)
+
+ELO_COUNTING_MATCH_FILTER = f"""
+    (match_type IS NULL OR match_type NOT IN ({NON_ELO_MATCH_TYPES_SQL}))
     AND (
         winner_elo_change IS NULL
         OR loser_elo_change IS NULL

@@ -665,7 +665,7 @@ class JoinQueueButtons(discord.ui.View):
         await interaction.response.send_modal(modal)
 
     @discord.ui.button(
-        label="📊 Omens",
+        label="📊 Join Omens",
         style=discord.ButtonStyle.primary,
         custom_id="join_lfg_points",
     )

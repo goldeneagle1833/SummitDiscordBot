@@ -81,7 +81,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                   </td>
                   <td className="py-2 px-3">
                     {m.match_type === 'points' ? (
-                      <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">Points</span>
+                      <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">Omens</span>
                     ) : (
                       <span className="text-xs text-text-muted">Ranked</span>
                     )}

@@ -54,7 +54,6 @@ KNOWN_PUBLIC_ENDPOINTS = {
 
     # -- Player profiles (public read-only) --
     "api.players.player_api",
-    "api.players.match_detail",
     "api.players.search_players",
     "api.players.deck_snapshot",
     "api.players.get_deck_stats",

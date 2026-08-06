@@ -66,6 +66,7 @@ import StoreAdmin from '@/pages/admin/StoreAdmin'
 import ActiveConnections from '@/pages/admin/ActiveConnections'
 import UniqueUsers from '@/pages/admin/UniqueUsers'
 import ExternalMatchesAdmin from '@/pages/admin/ExternalMatches'
+import OmensMatchesAdmin from '@/pages/admin/OmensMatches'
 
 // Error pages
 import ErrorPage from '@/pages/ErrorPage'
@@ -187,6 +188,7 @@ const router = createBrowserRouter([
       { path: '/admin/active-connections', element: <AdminGuard><ActiveConnections /></AdminGuard> },
       { path: '/admin/unique-users', element: <AdminGuard><UniqueUsers /></AdminGuard> },
       { path: '/admin/external-matches', element: <AdminGuard><ExternalMatchesAdmin /></AdminGuard> },
+      { path: '/admin/omens-matches', element: <AdminGuard><OmensMatchesAdmin /></AdminGuard> },
       // Error & 404
       { path: '/error', element: <ErrorPage /> },
       { path: '*', element: <NotFound /> },

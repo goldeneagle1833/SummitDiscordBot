@@ -732,6 +732,133 @@ def dashboard_stats():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@admin_bp.route("/admin/omens-matches", methods=["GET"])
+@require_admin
+def omens_matches():
+    """Get all Omens (points) matches with card point breakdowns."""
+    import json as _json
+    from repositories.card_points import CardPointsRepository
+
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+    page = max(1, page)
+    per_page = min(max(10, per_page), 100)
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        # Count total
+        try:
+            cur.execute("SELECT COUNT(*) FROM match_records WHERE match_type = 'points'")
+            total = cur.fetchone()[0]
+        except sqlite3.OperationalError:
+            total = 0
+
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, total_pages)
+
+        # Fetch page
+        offset = (page - 1) * per_page
+        try:
+            cur.execute("""
+                SELECT match_id, winner_id, winner_display_name, losser_id, losser_display_name,
+                       timestamp, winner_elo_change, loser_elo_change,
+                       json_deck_data_winner, json_deck_data_loser,
+                       curiosa_url_winner, curiosa_url_loser,
+                       match_time
+                FROM match_records
+                WHERE match_type = 'points'
+                ORDER BY timestamp DESC
+                LIMIT ? OFFSET ?
+            """, (per_page, offset))
+            rows = cur.fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+
+        conn.close()
+
+        # Build card points map
+        cp_repo = CardPointsRepository()
+        card_points_map = {c["card_name"].lower(): c["point_value"] for c in cp_repo.get_all_card_points()}
+        max_budget = cp_repo.get_max_budget()
+
+        def _deck_breakdown(deck_json_str):
+            """Calculate Omens point breakdown for a deck."""
+            info = {"avatar": None, "elements": [], "total_points": 0, "max_budget": max_budget, "cards": []}
+            if not deck_json_str or deck_json_str == "{}":
+                return info
+            try:
+                deck = _json.loads(deck_json_str)
+                avatar_list = deck.get("avatar", [])
+                if avatar_list:
+                    info["avatar"] = avatar_list[0].get("name")
+                for section in ("spellbook", "atlas", "sideboard"):
+                    for card in deck.get(section, []) or []:
+                        el = card.get("elements", "")
+                        if el:
+                            for e in el.split(","):
+                                e = e.strip()
+                                if e and e not in info["elements"]:
+                                    info["elements"].append(e)
+                for section in ("avatar", "spellbook", "atlas", "sideboard"):
+                    for card in deck.get(section, []) or []:
+                        name = card.get("name", "")
+                        qty = card.get("quantity", 1)
+                        pts = card_points_map.get(name.lower(), 0)
+                        if pts > 0:
+                            card_total = pts * qty
+                            info["total_points"] += card_total
+                            info["cards"].append({
+                                "name": name,
+                                "quantity": qty,
+                                "points_each": pts,
+                                "points_total": card_total,
+                            })
+            except (_json.JSONDecodeError, KeyError):
+                pass
+            info["cards"].sort(key=lambda c: -c["points_total"])
+            info["is_valid"] = info["total_points"] <= max_budget
+            return info
+
+        matches = []
+        for row in rows:
+            winner_deck = _deck_breakdown(row["json_deck_data_winner"])
+            loser_deck = _deck_breakdown(row["json_deck_data_loser"])
+            matches.append({
+                "match_id": row["match_id"],
+                "winner_id": str(row["winner_id"]),
+                "winner_name": row["winner_display_name"],
+                "loser_id": str(row["losser_id"]),
+                "loser_name": row["losser_display_name"],
+                "date": row["timestamp"],
+                "winner_elo_change": row["winner_elo_change"],
+                "loser_elo_change": row["loser_elo_change"],
+                "match_time": row["match_time"],
+                "winner_deck": winner_deck,
+                "loser_deck": loser_deck,
+            })
+
+        return jsonify({
+            "success": True,
+            "matches": matches,
+            "max_budget": max_budget,
+            "pagination": {
+                "current_page": page,
+                "per_page": per_page,
+                "total_matches": total,
+                "total_pages": total_pages,
+                "has_previous": page > 1,
+                "has_next": page < total_pages,
+            },
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get omens matches: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @admin_bp.route("/admin/start-event", methods=["POST"])
 @require_admin
 def start_event_route():

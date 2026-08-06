@@ -297,6 +297,12 @@ def create_match_records_archive():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Add match_type column to archive table
+    try:
+        cur.execute("ALTER TABLE match_records_archive ADD COLUMN match_type TEXT DEFAULT 'ranked'")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     conn.commit()
     conn.close()
 

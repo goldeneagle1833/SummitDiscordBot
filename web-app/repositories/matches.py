@@ -42,6 +42,17 @@ class MatchRepository:
             cur.execute(
                 f"UPDATE match_records SET {col} = '{default}' WHERE {col} IS NULL"
             )
+        # Ensure match_records_archive also has match_type column
+        cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='match_records_archive'"
+        )
+        if cur.fetchone():
+            try:
+                cur.execute(
+                    "ALTER TABLE match_records_archive ADD COLUMN match_type TEXT DEFAULT 'ranked'"
+                )
+            except sqlite3.OperationalError:
+                pass  # Column already exists
         conn.commit()
         conn.close()
 

@@ -182,7 +182,11 @@ def deck_snapshot(match_id, player_id):
         is_owner = True
 
     if not is_owner:
-        return jsonify({"error": "Unauthorized"}), 403
+        # Check if the player has made deck snapshots public
+        profile_repo = UserProfileRepository()
+        visibility = profile_repo.get_profile_visibility(str(player_id))
+        if not visibility.get("deck_snapshots", False):
+            return jsonify({"error": "Unauthorized"}), 403
 
     try:
         service = MatchService()

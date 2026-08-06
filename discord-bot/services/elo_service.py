@@ -1326,8 +1326,8 @@ def end_current_event():
                 winner_lifetime_elo_change, loser_lifetime_elo_change,
                 winner_went_first, loser_went_first,
                 winner_lifetime_elo_after, loser_lifetime_elo_after,
-                archived_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                match_type, archived_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 event_id,
                 match_dict.get("match_id"),
@@ -1355,6 +1355,7 @@ def end_current_event():
                 match_dict.get("loser_went_first"),
                 match_dict.get("winner_lifetime_elo_after"),
                 match_dict.get("loser_lifetime_elo_after"),
+                match_dict.get("match_type", "ranked"),
                 archived_at,
             ),
         )

@@ -759,22 +759,33 @@ def omens_matches():
         total_pages = max(1, (total + per_page - 1) // per_page)
         page = min(page, total_pages)
 
+        # Detect available columns
+        cur.execute("PRAGMA table_info(match_records)")
+        available_cols = {row[1] for row in cur.fetchall()}
+
+        # Build SELECT dynamically based on available columns
+        base_cols = ["match_id", "winner_id", "winner_display_name", "losser_id",
+                     "losser_display_name", "timestamp", "winner_elo_change",
+                     "loser_elo_change", "match_time"]
+        optional_cols = ["json_deck_data_winner", "json_deck_data_loser",
+                         "curiosa_url_winner", "curiosa_url_loser"]
+        select_parts = list(base_cols)
+        for col in optional_cols:
+            select_parts.append(col if col in available_cols else f"NULL as {col}")
+
         # Fetch page
         offset = (page - 1) * per_page
         try:
-            cur.execute("""
-                SELECT match_id, winner_id, winner_display_name, losser_id, losser_display_name,
-                       timestamp, winner_elo_change, loser_elo_change,
-                       json_deck_data_winner, json_deck_data_loser,
-                       curiosa_url_winner, curiosa_url_loser,
-                       match_time
+            cur.execute(f"""
+                SELECT {', '.join(select_parts)}
                 FROM match_records
                 WHERE match_type = 'points'
                 ORDER BY timestamp DESC
                 LIMIT ? OFFSET ?
             """, (per_page, offset))
             rows = cur.fetchall()
-        except sqlite3.OperationalError:
+        except sqlite3.OperationalError as e:
+            logger.error(f"Failed to fetch omens matches: {e}")
             rows = []
 
         conn.close()

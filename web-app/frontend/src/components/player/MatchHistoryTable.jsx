@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { Link } from 'react-router-dom'
-import { editMatchComment } from '@/api/games'
+import { editMatchComment, getMatchDetail } from '@/api/games'
 
 const ELEMENT_IMG = '/static/images/elements/'
 const ELEMENT_FILE = {
@@ -23,6 +23,121 @@ function ElementIcons({ elements }) {
   )
 }
 
+function OmensBreakdown({ label, omens }) {
+  if (!omens) return null
+  const budgetPct = omens.max_budget > 0 ? Math.round((omens.total_points / omens.max_budget) * 100) : 0
+  return (
+    <div className="flex-1 min-w-[200px]">
+      <h5 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-1.5">{label}</h5>
+      <div className="flex items-center gap-2 mb-2">
+        <span className={`text-sm font-bold ${omens.is_valid ? 'text-accent-green' : 'text-accent-red'}`}>
+          {omens.total_points}/{omens.max_budget}
+        </span>
+        <span className="text-xs text-text-muted">points ({budgetPct}%)</span>
+        <div className="flex-1 h-1.5 bg-bg-raised rounded-full overflow-hidden max-w-[120px]">
+          <div
+            className={`h-full rounded-full ${omens.is_valid ? 'bg-accent-green' : 'bg-accent-red'}`}
+            style={{ width: `${Math.min(budgetPct, 100)}%` }}
+          />
+        </div>
+      </div>
+      {omens.cards?.length > 0 && (
+        <div className="space-y-0.5">
+          {omens.cards.map((c) => (
+            <div key={c.name} className="flex items-center justify-between text-xs py-0.5">
+              <span className="text-text-secondary">{c.name} <span className="text-text-muted">x{c.quantity}</span></span>
+              <span className="text-purple-400 font-medium">{c.points_total} pts</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {(!omens.cards || omens.cards.length === 0) && (
+        <p className="text-xs text-text-muted italic">No pointed cards</p>
+      )}
+    </div>
+  )
+}
+
+function MatchDetailRow({ matchId, playerId, colSpan }) {
+  const [detail, setDetail] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    setLoading(true)
+    getMatchDetail(matchId, playerId)
+      .then(setDetail)
+      .catch((e) => setError(e.message || 'Failed to load'))
+      .finally(() => setLoading(false))
+  }, [matchId, playerId])
+
+  if (loading) {
+    return (
+      <tr className="bg-bg-surface/30">
+        <td colSpan={colSpan} className="py-4 px-6 text-center text-text-muted text-sm">Loading match details...</td>
+      </tr>
+    )
+  }
+
+  if (error || !detail) {
+    return (
+      <tr className="bg-bg-surface/30">
+        <td colSpan={colSpan} className="py-3 px-6 text-center text-accent-red text-sm">{error || 'No details available'}</td>
+      </tr>
+    )
+  }
+
+  const isOmens = detail.match_type === 'points'
+
+  return (
+    <tr className="bg-bg-surface/30 border-b border-border/50">
+      <td colSpan={colSpan} className="py-3 px-6">
+        <div className="flex flex-wrap gap-6">
+          {/* Match info */}
+          <div className="min-w-[180px]">
+            <h5 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-1.5">Match Info</h5>
+            <div className="space-y-1 text-xs">
+              <div><span className="text-text-muted">Type:</span>{' '}
+                {isOmens ? <span className="text-purple-400 font-medium">Omens</span> : <span className="text-text-secondary">Ranked</span>}
+              </div>
+              <div><span className="text-text-muted">Result:</span>{' '}
+                <span className={detail.result === 'Win' ? 'text-accent-green font-medium' : 'text-accent-red font-medium'}>{detail.result}</span>
+              </div>
+              <div><span className="text-text-muted">Opponent:</span> <span className="text-text-secondary">{detail.opponent_name}</span></div>
+              {detail.date && <div><span className="text-text-muted">Date:</span> <span className="text-text-secondary">{new Date(detail.date).toLocaleString()}</span></div>}
+            </div>
+          </div>
+
+          {/* Deck matchup */}
+          <div className="min-w-[180px]">
+            <h5 className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-1.5">Decks</h5>
+            <div className="space-y-1.5 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-text-muted">You:</span>
+                {detail.player_deck_avatar && <span className="text-secondary font-medium">{detail.player_deck_avatar}</span>}
+                <ElementIcons elements={detail.player_deck_elements} />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-text-muted">Opp:</span>
+                {detail.opponent_deck_avatar && <span className="text-text-secondary">{detail.opponent_deck_avatar}</span>}
+                <ElementIcons elements={detail.opponent_deck_elements} />
+              </div>
+            </div>
+          </div>
+
+          {/* Omens points breakdown */}
+          {isOmens && (
+            <>
+              <OmensBreakdown label="Your Points" omens={detail.player_omens} />
+              <OmensBreakdown label="Opponent Points" omens={detail.opponent_omens} />
+            </>
+          )}
+        </div>
+      </td>
+    </tr>
+  )
+}
+
 export default function MatchHistoryTable({ title, subtitle, matches, pagination, playerId, isOwner, profileVisibility, perPage, perPageOptions, onPageChange, onPerPageChange, onEditDeck, onMatchUpdate }) {
   const showDeckUrls = isOwner || profileVisibility?.deck_urls
   const showSnapshots = isOwner || profileVisibility?.deck_snapshots
@@ -31,6 +146,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
   const [editText, setEditText] = useState('')
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState(null)
+  const [expandedMatch, setExpandedMatch] = useState(null)
 
   if (!matches?.length) {
     return (
@@ -40,6 +156,13 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
       </section>
     )
   }
+
+  // Count visible columns for colspan
+  let colCount = 7 // ID, Result, Type, Opponent, ELO, Play/Draw, Time, Date
+  colCount += 1 // Date
+  if (isOwner) colCount += 5 // Avatar, Elements, Opp Avatar, Opp Elements, Notes
+  if (showDeckUrls) colCount += 1
+  if (showSnapshots) colCount += 1
 
   return (
     <section>
@@ -71,114 +194,132 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
               const isWin = m.result === 'Win'
               const deckUrl = m.player_deck_url && m.player_deck_url !== 'No URL provided' && m.player_deck_url !== 'Admin reported match'
                 ? m.player_deck_url : null
+              const isExpanded = expandedMatch === m.match_id
               return (
-                <tr key={m.match_id} className="border-b border-border/50 hover:bg-bg-surface/50">
-                  <td className="py-2 px-3 text-text-muted">#{m.match_id}</td>
-                  <td className="py-2 px-3">
-                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${isWin ? 'bg-accent-green/20 text-accent-green' : 'bg-accent-red/20 text-accent-red'}`}>
-                      {m.result}
-                    </span>
-                  </td>
-                  <td className="py-2 px-3">
-                    {m.match_type === 'points' ? (
-                      <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">Omens</span>
-                    ) : (
-                      <span className="text-xs text-text-muted">Ranked</span>
-                    )}
-                  </td>
-                  {isOwner && (
-                    <td className="py-2 px-3 text-sm">
-                      {m.player_avatar ? (
-                        <Link to={`/avatar/${encodeURIComponent(m.player_avatar)}`} className="text-secondary hover:underline">
-                          {m.player_avatar}
-                        </Link>
-                      ) : '-'}
-                    </td>
-                  )}
-                  {isOwner && (
-                    <td className="py-2 px-3">
-                      <ElementIcons elements={m.deck_elements} />
-                    </td>
-                  )}
-                  <td className="py-2 px-3">
-                    <Link to={`/player/${m.opponent_id}`} className="text-secondary hover:underline">
-                      {m.opponent}
-                    </Link>
-                  </td>
-                  {isOwner && (
-                    <td className="py-2 px-3 text-sm">
-                      {m.opponent_avatar ? (
-                        <Link to={`/avatar/${encodeURIComponent(m.opponent_avatar)}`} className="text-secondary hover:underline">
-                          {m.opponent_avatar}
-                        </Link>
-                      ) : '-'}
-                    </td>
-                  )}
-                  {isOwner && (
-                    <td className="py-2 px-3">
-                      <ElementIcons elements={m.opponent_elements} />
-                    </td>
-                  )}
-                  <td className={`py-2 px-3 font-medium ${isWin ? 'text-accent-green' : 'text-accent-red'}`}>
-                    {isWin ? '+' : ''}{m.elo_change}
-                  </td>
-                  <td className="py-2 px-3 text-text-muted">{m.first_player || '-'}</td>
-                  <td className="py-2 px-3 text-text-muted">{m.match_time ? `${m.match_time} min` : '-'}</td>
-                  <td className="py-2 px-3 text-text-muted whitespace-nowrap">{m.date ? new Date(m.date).toLocaleDateString() : '-'}</td>
-                  {isOwner && (
-                    <td className="py-2 px-3 text-text-muted max-w-[100px]">
-                      {m.match_comment ? (
-                        <button
-                          onClick={() => { setNoteModal({ matchId: m.match_id, comment: m.match_comment, matchSource: m.match_source }); setEditingNote(false); setEditError(null) }}
-                          className="text-left truncate block max-w-[100px] text-secondary hover:underline cursor-pointer bg-transparent border-none p-0 text-sm"
-                          title="Click to view/edit note"
-                        >
-                          {m.match_comment.split(/\s+/).slice(0, 3).join(' ')}{m.match_comment.split(/\s+/).length > 3 ? '...' : ''}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => { setNoteModal({ matchId: m.match_id, comment: '', matchSource: m.match_source }); setEditingNote(true); setEditText(''); setEditError(null) }}
-                          className="text-text-muted hover:text-secondary text-xs bg-transparent border-none p-0 cursor-pointer"
-                          title="Add a note"
-                        >
-                          + Add
-                        </button>
-                      )}
-                    </td>
-                  )}
-                  {showDeckUrls && (
-                    <td className="py-2 px-3">
+                <Fragment key={m.match_id}>
+                  <tr
+                    className={`border-b border-border/50 hover:bg-bg-surface/50 cursor-pointer ${isExpanded ? 'bg-bg-surface/50' : ''}`}
+                    onClick={(e) => {
+                      // Don't toggle if clicking a link, button, or input
+                      if (e.target.closest('a, button, input, textarea')) return
+                      setExpandedMatch(isExpanded ? null : m.match_id)
+                    }}
+                  >
+                    <td className="py-2 px-3 text-text-muted">
                       <span className="flex items-center gap-1">
-                        {deckUrl ? (
-                          <a href={deckUrl} target="_blank" rel="noopener noreferrer" className="text-secondary hover:underline text-xs">
-                            View
-                          </a>
-                        ) : '-'}
-                        {onEditDeck && (
-                          <button
-                            onClick={() => onEditDeck(m.match_id, deckUrl || '')}
-                            className="text-text-muted hover:text-secondary text-xs ml-1"
-                            title="Edit deck link"
-                          >
-                            &#9998;
-                          </button>
-                        )}
+                        <span className={`text-[10px] transition-transform ${isExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
+                        #{m.match_id}
                       </span>
                     </td>
-                  )}
-                  {showSnapshots && (
                     <td className="py-2 px-3">
-                      {m.has_deck_json ? (
-                        <Link
-                          to={`/deck-snapshot/${m.match_id}/${playerId}`}
-                          className="text-secondary hover:underline text-xs"
-                        >
-                          View
-                        </Link>
-                      ) : '-'}
+                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${isWin ? 'bg-accent-green/20 text-accent-green' : 'bg-accent-red/20 text-accent-red'}`}>
+                        {m.result}
+                      </span>
                     </td>
+                    <td className="py-2 px-3">
+                      {m.match_type === 'points' ? (
+                        <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">Omens</span>
+                      ) : (
+                        <span className="text-xs text-text-muted">Ranked</span>
+                      )}
+                    </td>
+                    {isOwner && (
+                      <td className="py-2 px-3 text-sm">
+                        {m.player_avatar ? (
+                          <Link to={`/avatar/${encodeURIComponent(m.player_avatar)}`} className="text-secondary hover:underline">
+                            {m.player_avatar}
+                          </Link>
+                        ) : '-'}
+                      </td>
+                    )}
+                    {isOwner && (
+                      <td className="py-2 px-3">
+                        <ElementIcons elements={m.deck_elements} />
+                      </td>
+                    )}
+                    <td className="py-2 px-3">
+                      <Link to={`/player/${m.opponent_id}`} className="text-secondary hover:underline">
+                        {m.opponent}
+                      </Link>
+                    </td>
+                    {isOwner && (
+                      <td className="py-2 px-3 text-sm">
+                        {m.opponent_avatar ? (
+                          <Link to={`/avatar/${encodeURIComponent(m.opponent_avatar)}`} className="text-secondary hover:underline">
+                            {m.opponent_avatar}
+                          </Link>
+                        ) : '-'}
+                      </td>
+                    )}
+                    {isOwner && (
+                      <td className="py-2 px-3">
+                        <ElementIcons elements={m.opponent_elements} />
+                      </td>
+                    )}
+                    <td className={`py-2 px-3 font-medium ${isWin ? 'text-accent-green' : 'text-accent-red'}`}>
+                      {isWin ? '+' : ''}{m.elo_change}
+                    </td>
+                    <td className="py-2 px-3 text-text-muted">{m.first_player || '-'}</td>
+                    <td className="py-2 px-3 text-text-muted">{m.match_time ? `${m.match_time} min` : '-'}</td>
+                    <td className="py-2 px-3 text-text-muted whitespace-nowrap">{m.date ? new Date(m.date).toLocaleDateString() : '-'}</td>
+                    {isOwner && (
+                      <td className="py-2 px-3 text-text-muted max-w-[100px]">
+                        {m.match_comment ? (
+                          <button
+                            onClick={() => { setNoteModal({ matchId: m.match_id, comment: m.match_comment, matchSource: m.match_source }); setEditingNote(false); setEditError(null) }}
+                            className="text-left truncate block max-w-[100px] text-secondary hover:underline cursor-pointer bg-transparent border-none p-0 text-sm"
+                            title="Click to view/edit note"
+                          >
+                            {m.match_comment.split(/\s+/).slice(0, 3).join(' ')}{m.match_comment.split(/\s+/).length > 3 ? '...' : ''}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => { setNoteModal({ matchId: m.match_id, comment: '', matchSource: m.match_source }); setEditingNote(true); setEditText(''); setEditError(null) }}
+                            className="text-text-muted hover:text-secondary text-xs bg-transparent border-none p-0 cursor-pointer"
+                            title="Add a note"
+                          >
+                            + Add
+                          </button>
+                        )}
+                      </td>
+                    )}
+                    {showDeckUrls && (
+                      <td className="py-2 px-3">
+                        <span className="flex items-center gap-1">
+                          {deckUrl ? (
+                            <a href={deckUrl} target="_blank" rel="noopener noreferrer" className="text-secondary hover:underline text-xs">
+                              View
+                            </a>
+                          ) : '-'}
+                          {onEditDeck && (
+                            <button
+                              onClick={() => onEditDeck(m.match_id, deckUrl || '')}
+                              className="text-text-muted hover:text-secondary text-xs ml-1"
+                              title="Edit deck link"
+                            >
+                              &#9998;
+                            </button>
+                          )}
+                        </span>
+                      </td>
+                    )}
+                    {showSnapshots && (
+                      <td className="py-2 px-3">
+                        {m.has_deck_json ? (
+                          <Link
+                            to={`/deck-snapshot/${m.match_id}/${playerId}`}
+                            className="text-secondary hover:underline text-xs"
+                          >
+                            View
+                          </Link>
+                        ) : '-'}
+                      </td>
+                    )}
+                  </tr>
+                  {isExpanded && (
+                    <MatchDetailRow matchId={m.match_id} playerId={playerId} colSpan={colCount} />
                   )}
-                </tr>
+                </Fragment>
               )
             })}
           </tbody>

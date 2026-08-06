@@ -15,6 +15,8 @@ export const updateMatchDeck = (matchId, deckUrl, source) =>
 export const editMatchComment = (matchId, matchSource, newComment) =>
   post('/api/match-report/edit-comment', { match_id: matchId, match_source: matchSource, new_comment: newComment })
 
+export const getMatchDetail = (matchId, playerId) => get(`/api/match-detail/${matchId}/${playerId}`)
+
 export const getPlayerSeasons = (playerId) => get(`/api/player/${playerId}/seasons`)
 
 // Season management

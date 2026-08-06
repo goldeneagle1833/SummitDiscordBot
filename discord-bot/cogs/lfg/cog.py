@@ -653,13 +653,13 @@ class LFGCog(commands.Cog):
 
                 if points_details:
                     embed.add_field(
-                        name="\U0001f4ca Ranked w/ Points Queue",
+                        name="\U0001f4ca Omens Queue",
                         value="\n".join(points_details),
                         inline=False,
                     )
                 else:
                     embed.add_field(
-                        name="\U0001f4ca Ranked w/ Points Queue",
+                        name="\U0001f4ca Omens Queue",
                         value="`Empty`",
                         inline=False,
                     )

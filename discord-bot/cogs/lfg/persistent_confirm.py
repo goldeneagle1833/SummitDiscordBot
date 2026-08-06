@@ -24,6 +24,7 @@ from utils.database import (
     mark_pairing_reported,
     get_active_event,
 )
+from repositories.elo_repo import NON_ELO_MATCH_TYPES
 from services.dust_service import try_dust_drop, try_alter_card_drop
 from repositories.dust_repo import get_available_code_count
 from repositories.limited_repo import mark_limited_pairing_reported
@@ -313,7 +314,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
         elo_multiplier_winner = 1.0
         elo_multiplier_loser = 1.0
         ladder_info = data.get("ladder_info")
-        if ladder_info and data.get("match_type") not in ("testing", "rumble", "limited"):
+        if ladder_info and data.get("match_type") not in (*NON_ELO_MATCH_TYPES, "limited"):
             challenger_id = ladder_info["challenger_id"]
             if data["winner_id"] != challenger_id:
                 # Non-Top16 player won — apply stakes multipliers
@@ -338,7 +339,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
             elo_multiplier_loser=elo_multiplier_loser,
         )
 
-        if ladder_info and data["match_type"] not in ("testing", "rumble"):
+        if ladder_info and data["match_type"] not in NON_ELO_MATCH_TYPES:
             stakes_msg = await _apply_ladder_elo(
                 bot,
                 ladder_info,
@@ -360,6 +361,8 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 elo_msg = f" *(Rumble - {data['winner_global']} +{win_bones} bones, {data['loser_global']} +{loss_bones} bones)*"
             else:
                 elo_msg = " *(Rumble match - ELO not affected)*"
+        elif data["match_type"] == "points":
+            elo_msg = " *(Omens match - ELO not affected)*"
         elif data["match_type"] in ("testing",):
             elo_msg = " *(Casual match - ELO not affected)*"
         elif not event_active:

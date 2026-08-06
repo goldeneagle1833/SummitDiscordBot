@@ -28,6 +28,7 @@ const ALL_NAV_OPTIONS = [
   { to: '/life-counter', label: 'Life Counter' },
   { to: '/help', label: 'Help' },
   { to: '/curio-tracking', label: 'Curio Tracking' },
+  { to: '/card-points', label: 'Omens' },
 ]
 
 const DEFAULT_NAV_LABELS = ['Home', 'Community', 'Discord', 'Facebook', 'Reddit', 'Patreon', 'About']
@@ -768,6 +769,7 @@ export default function Nav() {
           <SidebarLink to="/community" label="Community" location={location} onClick={close} />
           {user?.is_store_admin && <SidebarLink to="/store" label="Store" location={location} onClick={close} />}
           <SidebarLink to="/curio-tracking" label="Curio Tracking" location={location} onClick={close} />
+          <SidebarLink to="/card-points" label="Omens" location={location} onClick={close} />
         </div>
       </aside>
 

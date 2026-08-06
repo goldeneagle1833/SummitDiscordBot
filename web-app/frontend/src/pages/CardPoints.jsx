@@ -26,7 +26,6 @@ function getCardElements(card) {
 }
 
 export default function CardPoints() {
-  usePageTitle('Card Points')
   const { user } = useAuth()
   const isCardPointsAdmin = user?.is_card_points_admin || user?.is_admin
   const isGlobalAdmin = user?.is_admin
@@ -40,6 +39,8 @@ export default function CardPoints() {
   const [showAdmin, setShowAdmin] = useState(false)
 
   // Deck checker state
+  usePageTitle(data ? `${data.max_budget} Omens` : 'Omens')
+
   const [deckUrl, setDeckUrl] = useState('')
   const [deckResult, setDeckResult] = useState(null)
   const [deckChecking, setDeckChecking] = useState(false)
@@ -78,9 +79,9 @@ export default function CardPoints() {
 
   return (
     <div>
-      <h1 className="text-2xl font-display text-secondary mb-2">Ranked w/ Points</h1>
+      <h1 className="text-2xl font-display text-secondary mb-2">{max_budget} Omens</h1>
       <p className="text-sm text-text-muted mb-6">
-        Decks in the Ranked w/ Points queue must stay within the point budget.
+        Decks in the {max_budget} Omens queue must stay within the point budget.
         Each copy of a pointed card counts toward your total.
       </p>
 

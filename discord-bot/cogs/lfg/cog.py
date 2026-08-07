@@ -221,24 +221,31 @@ class LFGCog(commands.Cog):
             conn_elo = sqlite3.connect("elo.db")
             cursor_elo = conn_elo.cursor()
             if active_event:
-                # Get event participants from match_records
-                from repositories.elo_repo import get_event_participant_ids
-                event_participants = get_event_participant_ids(event_start_str)
-
-                cursor_elo.execute("""
-                    SELECT user_id, user_display_name, online_event_elo
-                    FROM overall_standings
-                    ORDER BY online_event_elo DESC
-                """)
-                # Filter to only players who have played event matches
-                all_players = [row for row in cursor_elo.fetchall() if row[0] in event_participants]
+                if active_event.get("avatar_specific"):
+                    cursor_elo.execute(
+                        """SELECT user_id, user_display_name, event_elo, avatar_name
+                           FROM event_avatar_standings
+                           WHERE event_id = ? AND source = 'online'
+                           ORDER BY event_elo DESC""",
+                        (active_event["event_id"],),
+                    )
+                    all_players = cursor_elo.fetchall()
+                else:
+                    from repositories.elo_repo import get_event_participant_ids
+                    event_participants = get_event_participant_ids(event_start_str)
+                    cursor_elo.execute("""
+                        SELECT user_id, user_display_name, online_event_elo
+                        FROM overall_standings
+                        ORDER BY online_event_elo DESC
+                    """)
+                    all_players = [(*row, None) for row in cursor_elo.fetchall() if row[0] in event_participants]
             else:
                 cursor_elo.execute("""
                     SELECT user_id, user_display_name, online_elo
                     FROM overall_standings
                     ORDER BY online_elo DESC
                 """)
-                all_players = cursor_elo.fetchall()
+                all_players = [(*row, None) for row in cursor_elo.fetchall()]
             conn_elo.close()
 
             # Connect to match records to get game counts
@@ -271,11 +278,12 @@ class LFGCog(commands.Cog):
 
                 # Build player data with resolved names and game counts
                 player_data = []
-                for user_id, display_name, elo in all_players:
+                for user_id, display_name, elo, avatar_name in all_players:
+                    discord_user_id = int(user_id)
                     # Fetch current username from Discord if stored name is None or empty
                     if not display_name or display_name == "None":
                         try:
-                            user = await self.bot.fetch_user(user_id)
+                            user = await self.bot.fetch_user(discord_user_id)
                             display_name = user.global_name or user.display_name
 
                             # Update database with correct name
@@ -283,8 +291,15 @@ class LFGCog(commands.Cog):
                             cursor = conn.cursor()
                             cursor.execute(
                                 "UPDATE overall_standings SET user_display_name = ? WHERE user_id = ?",
-                                (display_name, user_id),
+                                (display_name, discord_user_id),
                             )
+                            if avatar_name:
+                                cursor.execute(
+                                    """UPDATE event_avatar_standings
+                                       SET user_display_name = ?
+                                       WHERE event_id = ? AND source = 'online' AND user_id = ?""",
+                                    (display_name, active_event["event_id"], str(discord_user_id)),
+                                )
                             conn.commit()
                             conn.close()
                         except Exception as e:
@@ -293,15 +308,24 @@ class LFGCog(commands.Cog):
 
                     # Count games played by this user in current event only
                     if event_start_str:
-                        cursor_matches.execute(
-                            f"""
-                            SELECT COUNT(*) FROM match_records
-                            WHERE (winner_id = ? OR losser_id = ?)
-                              AND timestamp >= ?
-                              AND {ELO_COUNTING_MATCH_FILTER}
-                            """,
-                            (user_id, user_id, event_start_str),
-                        )
+                        if avatar_name:
+                            cursor_matches.execute(
+                                f"""SELECT COUNT(*) FROM match_records
+                                    WHERE ((winner_id = ? AND winner_avatar = ? COLLATE NOCASE)
+                                        OR (losser_id = ? AND loser_avatar = ? COLLATE NOCASE))
+                                      AND timestamp >= ? AND {ELO_COUNTING_MATCH_FILTER}""",
+                                (user_id, avatar_name, user_id, avatar_name, event_start_str),
+                            )
+                        else:
+                            cursor_matches.execute(
+                                f"""
+                                SELECT COUNT(*) FROM match_records
+                                WHERE (winner_id = ? OR losser_id = ?)
+                                  AND timestamp >= ?
+                                  AND {ELO_COUNTING_MATCH_FILTER}
+                                """,
+                                (user_id, user_id, event_start_str),
+                            )
                     else:
                         cursor_matches.execute(
                             """
@@ -315,7 +339,7 @@ class LFGCog(commands.Cog):
                     # Check if user has ticket holder role
                     has_ticket = False
                     if guild:
-                        member = guild.get_member(user_id)
+                        member = guild.get_member(discord_user_id)
                         if member:
                             has_ticket = any(
                                 role.id in TICKET_HOLDER_ROLE_IDS
@@ -324,8 +348,9 @@ class LFGCog(commands.Cog):
 
                     player_data.append(
                         {
-                            "user_id": user_id,
+                            "user_id": discord_user_id,
                             "display_name": display_name,
+                            "avatar_name": avatar_name,
                             "elo": elo,
                             "games": total_games,
                             "has_ticket": has_ticket,
@@ -337,8 +362,11 @@ class LFGCog(commands.Cog):
                 # Overall Rankings (top 8 of all players)
                 overall_text = []
                 for idx, p in enumerate(player_data[:8], 1):
+                    label = p["display_name"]
+                    if p["avatar_name"]:
+                        label += f" — {p['avatar_name']}"
                     overall_text.append(
-                        f"{idx}. {p['display_name']} - {p['elo']} ({p['games']}g)"
+                        f"{idx}. {label} - {p['elo']} ({p['games']}g)"
                     )
                 embed.add_field(
                     name="Overall Rankings",
@@ -352,8 +380,11 @@ class LFGCog(commands.Cog):
                 ticket_players = [p for p in player_data if p["has_ticket"]]
                 ticket_text = []
                 for idx, p in enumerate(ticket_players[:24], 1):
+                    label = p["display_name"]
+                    if p["avatar_name"]:
+                        label += f" — {p['avatar_name']}"
                     ticket_text.append(
-                        f"{idx}. {p['display_name']} - {p['elo']} ({p['games']}g)"
+                        f"{idx}. {label} - {p['elo']} ({p['games']}g)"
                     )
                 embed.add_field(
                     name="Ticket Holders",
@@ -367,8 +398,11 @@ class LFGCog(commands.Cog):
                 free_players = [p for p in player_data if not p["has_ticket"]]
                 free_text = []
                 for idx, p in enumerate(free_players[:8], 1):
+                    label = p["display_name"]
+                    if p["avatar_name"]:
+                        label += f" — {p['avatar_name']}"
                     free_text.append(
-                        f"{idx}. {p['display_name']} - {p['elo']} ({p['games']}g)"
+                        f"{idx}. {label} - {p['elo']} ({p['games']}g)"
                     )
                 embed.add_field(
                     name="Free Play",
@@ -1854,14 +1888,16 @@ class LFGCog(commands.Cog):
     @commands.command()
     @is_bot_admin()
     async def admin_report(
-        self, ctx, winner: discord.Member = None, loser: discord.Member = None
+        self, ctx, winner: discord.Member = None, loser: discord.Member = None,
+        winner_avatar: str = None, loser_avatar: str = None
     ):
-        """Admin command to manually report a match result. Usage: !admin_report @winner @loser"""
+        """Admin match report, with optional quoted avatar overrides."""
 
         # Validate arguments
         if winner is None or loser is None:
             await ctx.send(
-                "Please mention both players. Usage: `!admin_report @winner @loser`"
+                "Please mention both players. Usage: `!admin_report @winner @loser \"Winner Avatar\" \"Loser Avatar\"` "
+                "(avatar overrides are optional unless an avatar-specific event cannot detect them)"
             )
             return
 
@@ -1891,6 +1927,8 @@ class LFGCog(commands.Cog):
                 loser_deck_url=None,
                 winner_went_first=None,
                 loser_went_first=None,
+                winner_avatar=winner_avatar,
+                loser_avatar=loser_avatar,
             )
 
             # Update leaderboard
@@ -1901,9 +1939,9 @@ class LFGCog(commands.Cog):
 
             # Get new ELOs for both players
             winner_elo = get_user_elo(winner.id)
-            winner_event_elo = get_user_event_elo(winner.id)
+            winner_event_elo = get_user_event_elo(winner.id, winner_avatar)
             loser_elo = get_user_elo(loser.id)
-            loser_event_elo = get_user_event_elo(loser.id)
+            loser_event_elo = get_user_event_elo(loser.id, loser_avatar)
 
             # Send confirmation
             elo_status = (
@@ -2352,14 +2390,17 @@ class LFGCog(commands.Cog):
     @commands.command()
     @is_bot_admin()
     async def admin_challenge_report(
-        self, ctx, winner: discord.Member = None, loser: discord.Member = None, top16_player: discord.Member = None
+        self, ctx, winner: discord.Member = None, loser: discord.Member = None,
+        top16_player: discord.Member = None, winner_avatar: str = None,
+        loser_avatar: str = None
     ):
         """Admin command to manually report a ladder challenge result. Usage: !admin_challenge_report @winner @loser @top16_player"""
 
         # Validate arguments
         if winner is None or loser is None or top16_player is None:
             await ctx.send(
-                "Please mention all three players. Usage: `!admin_challenge_report @winner @loser @top16_player`\n"
+                "Please mention all three players. Usage: `!admin_challenge_report @winner @loser @top16_player "
+                "\"Winner Avatar\" \"Loser Avatar\"`\n"
                 "`@top16_player` is the **Top 16 player** who issued the `!issue_challenge` (NOT the non-Top16 challenger)."
             )
             return
@@ -2381,9 +2422,15 @@ class LFGCog(commands.Cog):
             loser_name = loser.global_name or loser.display_name
 
             # Check ELO difference to determine multipliers
-            challenger_elo = get_user_event_elo(top16_player.id)
+            challenger_avatar = (
+                winner_avatar if top16_player.id == winner.id else loser_avatar
+            )
+            challenger_elo = get_user_event_elo(top16_player.id, challenger_avatar)
             opponent_id = loser.id if top16_player.id == winner.id else winner.id
-            opponent_elo = get_user_event_elo(opponent_id)
+            opponent_avatar = (
+                loser_avatar if top16_player.id == winner.id else winner_avatar
+            )
+            opponent_elo = get_user_event_elo(opponent_id, opponent_avatar)
             elo_diff = abs(challenger_elo - opponent_elo)
 
             if elo_diff < 100:
@@ -2427,6 +2474,8 @@ class LFGCog(commands.Cog):
                 loser_went_first=None,
                 elo_multiplier_winner=challenge_elo_mult_winner,
                 elo_multiplier_loser=challenge_elo_mult_loser,
+                winner_avatar=winner_avatar,
+                loser_avatar=loser_avatar,
             )
 
             # Assign role if non-Top16 won; complete challenge record
@@ -2445,9 +2494,9 @@ class LFGCog(commands.Cog):
 
             # Get new ELOs
             winner_elo = get_user_elo(winner.id)
-            winner_event_elo = get_user_event_elo(winner.id)
+            winner_event_elo = get_user_event_elo(winner.id, winner_avatar)
             loser_elo = get_user_elo(loser.id)
-            loser_event_elo = get_user_event_elo(loser.id)
+            loser_event_elo = get_user_event_elo(loser.id, loser_avatar)
 
             # Send confirmation
             elo_status = (
@@ -2563,9 +2612,17 @@ class LFGCog(commands.Cog):
             )
             return
 
+        parts = event_name.split()
+        avatar_specific = "--avatar-specific" in parts
+        if avatar_specific:
+            event_name = " ".join(part for part in parts if part != "--avatar-specific").strip()
+        if not event_name:
+            await ctx.send("Please provide an event name after `--avatar-specific`.")
+            return
+
         try:
             # Start the new event
-            result = start_new_event(event_name)
+            result = start_new_event(event_name, avatar_specific=avatar_specific)
 
             # Build response embed
             embed = discord.Embed(
@@ -2580,7 +2637,8 @@ class LFGCog(commands.Cog):
                     f"**Event ID:** {result['event_id']}\n"
                     f"**Started:** {result['start_date'].strftime('%Y-%m-%d %H:%M')}\n"
                     f"**Starting K-Value:** 16\n"
-                    f"**All event ELO reset to:** 1500"
+                    f"**All event ELO reset to:** 1500\n"
+                    f"**Avatar-specific ELO:** {'Enabled' if avatar_specific else 'Disabled'}"
                 ),
                 inline=False,
             )
@@ -2641,7 +2699,11 @@ class LFGCog(commands.Cog):
                 previous_state={
                     "previous_event": _prev_event["event_name"] if _prev_event else None
                 },
-                new_state={"event_name": event_name, "event_id": result["event_id"]},
+                new_state={
+                    "event_name": event_name,
+                    "event_id": result["event_id"],
+                    "avatar_specific": avatar_specific,
+                },
                 details=f"Started event '{event_name}'"
                 + (f" (archived '{_prev_event['event_name']}')" if _prev_event else ""),
             )

@@ -7,6 +7,7 @@ import json
 import logging
 
 from utils.deck_checker import scrape_Curosa, scrape_curosa_async
+from utils.avatar_elo import resolve_avatar_name
 from repositories.elo_repo import (
     create_db,
     create_events_table,
@@ -15,6 +16,8 @@ from repositories.elo_repo import (
     get_active_event,
     get_total_match_count,
     update_both_player_elos,
+    update_avatar_match_elos,
+    get_user_event_elo,
     NON_ELO_MATCH_TYPES,
     NON_ELO_MATCH_TYPES_SQL,
 )
@@ -989,6 +992,8 @@ async def record_match(
     match_type="ranked",
     elo_multiplier_winner=1.0,
     elo_multiplier_loser=1.0,
+    winner_avatar=None,
+    loser_avatar=None,
 ):
     """Record a completed match: calculate ELOs atomically, update DB, insert match record.
 
@@ -1016,6 +1021,9 @@ async def record_match(
         winner_global, winner_id, loser_global, loser_id, match_type,
     )
 
+    winner_json = "{}"
+    loser_json = "{}"
+
     # ── Step 1: calculate ELO changes ──
     if match_type in NON_ELO_MATCH_TYPES:
         winner_elo_change = 0
@@ -1030,6 +1038,24 @@ async def record_match(
         migrate_to_dual_elo_system()
         active_event = get_active_event()
         event_active = active_event is not None
+
+        if event_active and active_event.get("avatar_specific"):
+            if _is_valid_deck_url(winner_deck_url):
+                winner_json = await scrape_curosa_async(winner_deck_url)
+            if _is_valid_deck_url(loser_deck_url):
+                loser_json = await scrape_curosa_async(loser_deck_url)
+            winner_avatar = resolve_avatar_name(winner_json, winner_avatar)
+            loser_avatar = resolve_avatar_name(loser_json, loser_avatar)
+            if not winner_avatar or not loser_avatar:
+                missing = []
+                if not winner_avatar:
+                    missing.append("winner")
+                if not loser_avatar:
+                    missing.append("loser")
+                raise ValueError(
+                    "Avatar-specific event requires catalog-valid avatars for: "
+                    + ", ".join(missing)
+                )
 
         conn_elo = sqlite3.connect("elo.db")
         cur_elo = conn_elo.cursor()
@@ -1049,6 +1075,10 @@ async def record_match(
         loser_elo = (row[0] or 1500) if row else 1500
         loser_event_elo = (row[1] or 1500) if row else 1500
         conn_elo.close()
+
+        if event_active and active_event.get("avatar_specific"):
+            winner_event_elo = get_user_event_elo(winner_id, winner_avatar)
+            loser_event_elo = get_user_event_elo(loser_id, loser_avatar)
 
         if not event_active:
             winner_elo_change = 0
@@ -1075,12 +1105,21 @@ async def record_match(
 
     # ── Step 2: write both ELOs atomically ──
     if match_type not in NON_ELO_MATCH_TYPES and event_active:
-        update_both_player_elos(
-            winner_id, winner_global,
-            winner_new_elo, winner_new_event_elo,
-            loser_id, loser_global,
-            loser_new_elo, loser_new_event_elo,
-        )
+        if active_event.get("avatar_specific"):
+            update_avatar_match_elos(
+                active_event["event_id"], "online",
+                winner_id, winner_global, winner_new_elo,
+                winner_avatar, winner_new_event_elo,
+                loser_id, loser_global, loser_new_elo,
+                loser_avatar, loser_new_event_elo,
+            )
+        else:
+            update_both_player_elos(
+                winner_id, winner_global,
+                winner_new_elo, winner_new_event_elo,
+                loser_id, loser_global,
+                loser_new_elo, loser_new_event_elo,
+            )
         logger.info(
             "record_match ELO update: %s lifetime %d→%d (%+d) event %d→%d (%+d) | "
             "%s lifetime %d→%d (%+d) event %d→%d (%+d)",
@@ -1132,8 +1171,8 @@ async def record_match(
             "winner_elo_change, loser_elo_change, "
             "winner_lifetime_elo_change, loser_lifetime_elo_change, "
             "winner_went_first, loser_went_first, match_type, "
-            "winner_lifetime_elo_after, loser_lifetime_elo_after) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "winner_lifetime_elo_after, loser_lifetime_elo_after, winner_avatar, loser_avatar) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 reporter_id,
                 winner_id, winner_global,
@@ -1158,6 +1197,8 @@ async def record_match(
                 match_type,
                 winner_new_elo,
                 loser_new_elo,
+                winner_avatar,
+                loser_avatar,
             ),
         )
         table_name = "match_records"
@@ -1175,7 +1216,7 @@ async def record_match(
 # --- Event Management ---
 
 
-def start_new_event(event_name):
+def start_new_event(event_name, avatar_specific=False):
     """
     Start a new event, archiving any active event first.
 
@@ -1202,8 +1243,10 @@ def start_new_event(event_name):
 
     start_date = datetime.datetime.now().isoformat()
     cur.execute(
-        "INSERT INTO events (event_name, start_date, is_active) VALUES (?, ?, 1)",
-        (event_name, start_date),
+        """INSERT INTO events
+           (event_name, start_date, is_active, avatar_specific)
+           VALUES (?, ?, 1, ?)""",
+        (event_name, start_date, int(bool(avatar_specific))),
     )
     event_id = cur.lastrowid
 
@@ -1224,6 +1267,7 @@ def start_new_event(event_name):
         "event_id": event_id,
         "event_name": event_name,
         "start_date": datetime.datetime.fromisoformat(start_date),
+        "avatar_specific": bool(avatar_specific),
         "previous_event": previous_event_summary,
     }
 
@@ -1328,8 +1372,8 @@ def end_current_event():
                 winner_lifetime_elo_change, loser_lifetime_elo_change,
                 winner_went_first, loser_went_first,
                 winner_lifetime_elo_after, loser_lifetime_elo_after,
-                match_type, archived_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                match_type, winner_avatar, loser_avatar, archived_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 event_id,
                 match_dict.get("match_id"),
@@ -1358,6 +1402,8 @@ def end_current_event():
                 match_dict.get("winner_lifetime_elo_after"),
                 match_dict.get("loser_lifetime_elo_after"),
                 match_dict.get("match_type", "ranked"),
+                match_dict.get("winner_avatar"),
+                match_dict.get("loser_avatar"),
                 archived_at,
             ),
         )
@@ -1376,13 +1422,29 @@ def end_current_event():
         logger.error("Failed to archive limited data for event %d: %s", event_id, e)
         limited_summary = None
 
+    # Avatar-specific events retain their source-specific entry standings by event ID.
+    if active_event.get("avatar_specific"):
+        from repositories.elo_repo import get_event_avatar_standings
+        avatar_standings = get_event_avatar_standings(event_id, "online")
+        standings = [
+            (
+                row["user_id"],
+                f"{row['user_display_name']} — {row['avatar_name']}",
+                row["event_elo"],
+            )
+            for row in avatar_standings
+        ]
+        total_players = len({row["user_id"] for row in avatar_standings})
+    else:
+        total_players = len(standings)
+
     # Return summary
     top_3 = standings[:3] if len(standings) >= 3 else standings
     return {
         "event_id": event_id,
         "event_name": event_name,
         "total_matches": match_count,
-        "total_players": len(standings),
+        "total_players": total_players,
         "top_players": [(name, elo) for _, name, elo in top_3],
         "limited_summary": limited_summary,
     }
@@ -1411,6 +1473,65 @@ def recalculate_event_elo() -> dict:
     event_start = active_event["start_date"]
     event_start_str = event_start.isoformat()
     event_name = active_event["event_name"]
+
+    if active_event.get("avatar_specific"):
+        match_conn = sqlite3.connect("match_records.db")
+        matches = match_conn.execute(
+            f"""SELECT winner_id, winner_display_name, winner_avatar,
+                       losser_id, losser_display_name, loser_avatar, timestamp
+                FROM match_records
+                WHERE timestamp >= ?
+                  AND winner_avatar IS NOT NULL AND loser_avatar IS NOT NULL
+                  AND (match_type IS NULL OR match_type NOT IN ({NON_ELO_MATCH_TYPES_SQL}))
+                ORDER BY timestamp ASC""",
+            (event_start_str,),
+        ).fetchall()
+        match_conn.close()
+
+        elo_conn = sqlite3.connect("elo.db")
+        removed = elo_conn.execute(
+            "DELETE FROM event_avatar_standings WHERE event_id = ? AND source = 'online'",
+            (active_event["event_id"],),
+        ).rowcount
+        ratings = {}
+        names = {}
+        for winner_id, winner_name, winner_avatar, loser_id, loser_name, loser_avatar, timestamp in matches:
+            winner_key = (str(winner_id), winner_avatar)
+            loser_key = (str(loser_id), loser_avatar)
+            winner_before = ratings.get(winner_key, 1500)
+            loser_before = ratings.get(loser_key, 1500)
+            match_time = datetime.datetime.fromisoformat(timestamp)
+            event_k = _calculate_event_k_value_for_time(event_start, match_time)
+            ratings[winner_key] = update_elo(winner_before, loser_before, True, k=event_k)
+            ratings[loser_key] = update_elo(
+                loser_before, ratings[winner_key], False, k=event_k
+            )
+            names[winner_key] = winner_name
+            names[loser_key] = loser_name
+
+        for (user_id, avatar_name), event_elo in ratings.items():
+            elo_conn.execute(
+                """INSERT INTO event_avatar_standings
+                   (event_id, source, user_id, user_display_name, avatar_name, event_elo)
+                   VALUES (?, 'online', ?, ?, ?, ?)""",
+                (active_event["event_id"], user_id, names[(user_id, avatar_name)], avatar_name, event_elo),
+            )
+        elo_conn.commit()
+        top_rows = elo_conn.execute(
+            """SELECT user_display_name, avatar_name, event_elo
+               FROM event_avatar_standings
+               WHERE event_id = ? AND source = 'online'
+               ORDER BY event_elo DESC LIMIT 5""",
+            (active_event["event_id"],),
+        ).fetchall()
+        elo_conn.close()
+        return {
+            "event_name": event_name,
+            "players_reset": removed,
+            "matches_replayed": len(matches),
+            "players_updated": len(ratings),
+            "top_players": [(f"{name} — {avatar}", elo) for name, avatar, elo in top_rows],
+        }
 
     elo_conn = sqlite3.connect("elo.db")
     elo_cur = elo_conn.cursor()
@@ -1522,12 +1643,16 @@ def correct_match_record(match_id: int) -> dict:
     elo_cur = elo_conn.cursor()
     match_conn = sqlite3.connect("match_records.db")
     match_cur = match_conn.cursor()
+    active_event = get_active_event()
+    avatar_specific = bool(active_event and active_event.get("avatar_specific"))
 
     match_cur.execute(
         """SELECT rowid, winner_id, losser_id, winner_display_name, losser_display_name,
                   timestamp, winner_elo_change, loser_elo_change,
                   curiosa_url_winner, curiosa_url_loser,
-                  json_deck_data_winner, json_deck_data_loser
+                  json_deck_data_winner, json_deck_data_loser,
+                  winner_avatar, loser_avatar,
+                  winner_lifetime_elo_change, loser_lifetime_elo_change
            FROM match_records WHERE rowid = ?""",
         (match_id,),
     )
@@ -1540,12 +1665,15 @@ def correct_match_record(match_id: int) -> dict:
     (_, orig_winner_id, orig_loser_id, orig_winner_name, orig_loser_name,
      target_ts, target_w_change, target_l_change,
      orig_deck_url_winner, orig_deck_url_loser,
-     orig_deck_data_winner, orig_deck_data_loser) = target
+     orig_deck_data_winner, orig_deck_data_loser,
+     orig_winner_avatar, orig_loser_avatar,
+     target_w_lifetime_change, target_l_lifetime_change) = target
 
     # Find all subsequent matches involving either player
     match_cur.execute(
         """SELECT rowid, winner_id, losser_id, winner_display_name, losser_display_name,
                   timestamp, winner_elo_change, loser_elo_change
+                  , winner_lifetime_elo_change, loser_lifetime_elo_change
            FROM match_records
            WHERE timestamp > ?
              AND (winner_id IN (?, ?) OR losser_id IN (?, ?))
@@ -1561,28 +1689,32 @@ def correct_match_record(match_id: int) -> dict:
 
     # Revert ELO for subsequent matches (reverse order)
     for m in reversed(subsequent):
-        _, w_id, l_id, _, _, _, w_change, l_change = m
+        _, w_id, l_id, _, _, _, w_change, l_change, w_lifetime_change, l_lifetime_change = m
         if w_change:
             elo_cur.execute(
                 "UPDATE overall_standings SET online_elo = online_elo - ?, online_event_elo = online_event_elo - ? WHERE user_id = ?",
-                (w_change, w_change, w_id),
+                (w_lifetime_change if w_lifetime_change is not None else w_change,
+                 0 if avatar_specific else w_change, w_id),
             )
         if l_change:
             elo_cur.execute(
                 "UPDATE overall_standings SET online_elo = online_elo - ?, online_event_elo = online_event_elo - ? WHERE user_id = ?",
-                (l_change, l_change, l_id),
+                (l_lifetime_change if l_lifetime_change is not None else l_change,
+                 0 if avatar_specific else l_change, l_id),
             )
 
     # Revert ELO for target match
     if target_w_change:
         elo_cur.execute(
             "UPDATE overall_standings SET online_elo = online_elo - ?, online_event_elo = online_event_elo - ? WHERE user_id = ?",
-            (target_w_change, target_w_change, orig_winner_id),
+            (target_w_lifetime_change if target_w_lifetime_change is not None else target_w_change,
+             0 if avatar_specific else target_w_change, orig_winner_id),
         )
     if target_l_change:
         elo_cur.execute(
             "UPDATE overall_standings SET online_elo = online_elo - ?, online_event_elo = online_event_elo - ? WHERE user_id = ?",
-            (target_l_change, target_l_change, orig_loser_id),
+            (target_l_lifetime_change if target_l_lifetime_change is not None else target_l_change,
+             0 if avatar_specific else target_l_change, orig_loser_id),
         )
     elo_conn.commit()
 
@@ -1622,17 +1754,21 @@ def correct_match_record(match_id: int) -> dict:
            SET winner_id = ?, winner_display_name = ?,
                losser_id = ?, losser_display_name = ?,
                winner_elo_change = ?, loser_elo_change = ?,
+               winner_lifetime_elo_change = ?, loser_lifetime_elo_change = ?,
                winner_lifetime_elo_after = ?, loser_lifetime_elo_after = ?,
                curiosa_url = ?,
                curiosa_url_winner = ?, curiosa_url_loser = ?,
-               json_deck_data_winner = ?, json_deck_data_loser = ?
+               json_deck_data_winner = ?, json_deck_data_loser = ?,
+               winner_avatar = ?, loser_avatar = ?
            WHERE rowid = ?""",
         (new_winner_id, new_winner_name, new_loser_id, new_loser_name,
+         new_w_change, new_l_change,
          new_w_change, new_l_change,
          nw_elo_after, nl_elo_after,
          orig_deck_url_loser,
          orig_deck_url_loser, orig_deck_url_winner,
          orig_deck_data_loser, orig_deck_data_winner,
+         orig_loser_avatar, orig_winner_avatar,
          match_id),
     )
     elo_conn.commit()
@@ -1641,7 +1777,7 @@ def correct_match_record(match_id: int) -> dict:
     # Cascade-recalculate subsequent matches
     recalculated = 0
     for m in subsequent:
-        m_id, w_id, l_id, _, _, _, _, _ = m
+        m_id, w_id, l_id, _, _, _, _, _, _, _ = m
         elo_cur.execute("SELECT online_elo, online_event_elo FROM overall_standings WHERE user_id = ?", (w_id,))
         row = elo_cur.fetchone()
         w_elo_before = (row[0] or 1500) if row else 1500
@@ -1669,8 +1805,9 @@ def correct_match_record(match_id: int) -> dict:
         )
         match_cur.execute(
             "UPDATE match_records SET winner_elo_change = ?, loser_elo_change = ?, "
+            "winner_lifetime_elo_change = ?, loser_lifetime_elo_change = ?, "
             "winner_lifetime_elo_after = ?, loser_lifetime_elo_after = ? WHERE rowid = ?",
-            (w_change, l_change, w_elo_after, l_elo_after, m_id),
+            (w_change, l_change, w_change, l_change, w_elo_after, l_elo_after, m_id),
         )
         recalculated += 1
 
@@ -1678,6 +1815,9 @@ def correct_match_record(match_id: int) -> dict:
     match_conn.commit()
     elo_conn.close()
     match_conn.close()
+
+    if avatar_specific:
+        recalculate_event_elo()
 
     logger.info(
         "correct_match_record: match #%d flipped (%s -> %s), %d subsequent matches recalculated",
@@ -1713,7 +1853,8 @@ def remove_match_record(match_id: int) -> dict:
     match_cur.execute(
         """SELECT rowid, winner_id, losser_id, winner_display_name, losser_display_name,
                   winner_elo_change, loser_elo_change,
-                  winner_lifetime_elo_change, loser_lifetime_elo_change, timestamp
+                  winner_lifetime_elo_change, loser_lifetime_elo_change, timestamp,
+                  winner_avatar, loser_avatar
            FROM match_records WHERE rowid = ?""",
         (match_id,),
     )
@@ -1725,7 +1866,11 @@ def remove_match_record(match_id: int) -> dict:
 
     (_, winner_id, loser_id, winner_name, loser_name,
      w_event_change, l_event_change,
-     w_lifetime_change, l_lifetime_change, timestamp) = match
+     w_lifetime_change, l_lifetime_change, timestamp,
+     winner_avatar, loser_avatar) = match
+
+    active_event = get_active_event()
+    avatar_specific = bool(active_event and active_event.get("avatar_specific"))
 
     # Use event change as lifetime fallback for old records
     w_lifetime = w_lifetime_change if w_lifetime_change is not None else (w_event_change or 0)
@@ -1736,15 +1881,17 @@ def remove_match_record(match_id: int) -> dict:
     reverted_info = []
     if w_lifetime or w_event:
         elo_cur.execute(
-            "UPDATE overall_standings SET online_elo = online_elo - ?, online_event_elo = online_event_elo - ? WHERE user_id = ?",
-            (w_lifetime, w_event, winner_id),
+            "UPDATE overall_standings SET online_elo = online_elo - ?, "
+            "online_event_elo = online_event_elo - ? WHERE user_id = ?",
+            (w_lifetime, 0 if avatar_specific else w_event, winner_id),
         )
         reverted_info.append(f"**{winner_name}**: Lifetime -{w_lifetime}, Event -{w_event} ELO")
 
     if l_lifetime or l_event:
         elo_cur.execute(
-            "UPDATE overall_standings SET online_elo = online_elo - ?, online_event_elo = online_event_elo - ? WHERE user_id = ?",
-            (l_lifetime, l_event, loser_id),
+            "UPDATE overall_standings SET online_elo = online_elo - ?, "
+            "online_event_elo = online_event_elo - ? WHERE user_id = ?",
+            (l_lifetime, 0 if avatar_specific else l_event, loser_id),
         )
         reverted_info.append(
             f"**{loser_name}**: Lifetime +{-l_lifetime}, Event +{-l_event} ELO"
@@ -1756,6 +1903,9 @@ def remove_match_record(match_id: int) -> dict:
     match_conn.commit()
     elo_conn.close()
     match_conn.close()
+
+    if avatar_specific and (winner_avatar or loser_avatar):
+        recalculate_event_elo()
 
     logger.info("remove_match_record: removed match #%d (%s vs %s)", match_id, winner_name, loser_name)
     return {

@@ -51,6 +51,8 @@ class MatchConfirmationRepository:
                     -- Match details
                     winner_deck_url TEXT,
                     loser_deck_url TEXT,
+                    winner_avatar TEXT,
+                    loser_avatar TEXT,
                     went_first TEXT CHECK(went_first IN ('submitter', 'opponent')),
                     final_life_winner INTEGER NOT NULL,
                     final_life_loser INTEGER NOT NULL,
@@ -137,6 +139,13 @@ class MatchConfirmationRepository:
             logger = logging.getLogger(__name__)
             logger.info("Added season_id column to match_confirmations table")
 
+        cursor.execute("PRAGMA table_info(match_confirmations)")
+        columns = [row[1] for row in cursor.fetchall()]
+        for column in ("winner_avatar", "loser_avatar"):
+            if column not in columns:
+                cursor.execute(f"ALTER TABLE match_confirmations ADD COLUMN {column} TEXT")
+                conn.commit()
+
         conn.close()
 
     def create_confirmation(
@@ -150,6 +159,8 @@ class MatchConfirmationRepository:
         went_first: str,
         winner_deck_url: Optional[str] = None,
         loser_deck_url: Optional[str] = None,
+        winner_avatar: Optional[str] = None,
+        loser_avatar: Optional[str] = None,
         match_type: str = "ranked",
         season_id: Optional[int] = None,
         match_comment: str = "",
@@ -187,9 +198,10 @@ class MatchConfirmationRepository:
                 submitter_discord_id, opponent_discord_id,
                 winner_discord_id, loser_discord_id,
                 winner_deck_url, loser_deck_url,
+                winner_avatar, loser_avatar,
                 final_life_winner, final_life_loser,
                 went_first, match_type, season_id, match_comment, status, created_at, expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
             """,
             (
                 str(submitter_id),
@@ -198,6 +210,8 @@ class MatchConfirmationRepository:
                 str(loser_id),
                 winner_deck_url,
                 loser_deck_url,
+                winner_avatar,
+                loser_avatar,
                 final_life_winner,
                 final_life_loser,
                 went_first,

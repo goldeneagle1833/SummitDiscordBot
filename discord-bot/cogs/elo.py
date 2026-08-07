@@ -175,11 +175,27 @@ class EloCog(commands.Cog):
             event_rank = 1
             if active_event:
                 event_start_str = active_event["start_date"].isoformat()
-                has_event_games = has_player_played_event(target_user.id, event_start_str)
-                # Get event rank (only count players who have played event matches)
-                event_participants = get_event_participant_ids(event_start_str)
-                cur.execute("SELECT user_id, online_event_elo FROM overall_standings WHERE online_event_elo > ?", (event_elo,))
-                event_rank = sum(1 for r in cur.fetchall() if r[0] in event_participants) + 1
+                if active_event.get("avatar_specific"):
+                    cur.execute(
+                        """SELECT user_id, avatar_name, event_elo
+                           FROM event_avatar_standings
+                           WHERE event_id = ? AND source = 'online'
+                           ORDER BY event_elo DESC, user_display_name COLLATE NOCASE,
+                                    avatar_name COLLATE NOCASE""",
+                        (active_event["event_id"],),
+                    )
+                    avatar_rows = cur.fetchall()
+                    player_avatar_rows = [
+                        (rank, avatar, elo_value)
+                        for rank, (user_id, avatar, elo_value) in enumerate(avatar_rows, 1)
+                        if str(user_id) == str(target_user.id)
+                    ]
+                    has_event_games = bool(player_avatar_rows)
+                else:
+                    has_event_games = has_player_played_event(target_user.id, event_start_str)
+                    event_participants = get_event_participant_ids(event_start_str)
+                    cur.execute("SELECT user_id, online_event_elo FROM overall_standings WHERE online_event_elo > ?", (event_elo,))
+                    event_rank = sum(1 for r in cur.fetchall() if r[0] in event_participants) + 1
 
             if is_self:
                 msg = f"{ctx.author.mention}\n"
@@ -190,7 +206,15 @@ class EloCog(commands.Cog):
                 msg += f"**Lifetime ELO:** {lifetime_elo} (Rank #{lifetime_rank})\n"
 
             if active_event:
-                if has_event_games:
+                if active_event.get("avatar_specific") and has_event_games:
+                    msg += f"**Event ELO ({active_event['event_name']}):**\n"
+                    msg += "\n".join(
+                        f"#{rank}: {avatar} — {elo_value}"
+                        for rank, avatar, elo_value in player_avatar_rows
+                    )
+                elif active_event.get("avatar_specific"):
+                    msg += f"**Event ELO ({active_event['event_name']}):** 1500 (No matches yet)"
+                elif has_event_games:
                     msg += f"**Event ELO ({active_event['event_name']}):** {event_elo} (Rank #{event_rank})"
                 else:
                     msg += f"**Event ELO ({active_event['event_name']}):** 1500 (No matches yet)"
@@ -246,19 +270,28 @@ class EloCog(commands.Cog):
             return
 
         event_start_str = active_event["start_date"].isoformat()
-        event_participants = get_event_participant_ids(event_start_str)
 
         conn = sqlite3.connect("elo.db")
         cur = conn.cursor()
-        cur.execute(
-            """SELECT user_id, user_display_name, online_event_elo FROM overall_standings
-               ORDER BY online_event_elo DESC"""
-        )
-        all_rows = cur.fetchall()
+        if active_event.get("avatar_specific"):
+            cur.execute(
+                """SELECT user_display_name, avatar_name, event_elo
+                   FROM event_avatar_standings
+                   WHERE event_id = ? AND source = 'online'
+                   ORDER BY event_elo DESC, user_display_name COLLATE NOCASE,
+                            avatar_name COLLATE NOCASE LIMIT 16""",
+                (active_event["event_id"],),
+            )
+            rows = [(f"{name} — {avatar}", elo) for name, avatar, elo in cur.fetchall()]
+        else:
+            event_participants = get_event_participant_ids(event_start_str)
+            cur.execute(
+                """SELECT user_id, user_display_name, online_event_elo FROM overall_standings
+                   ORDER BY online_event_elo DESC"""
+            )
+            all_rows = cur.fetchall()
+            rows = [(name, elo) for uid, name, elo in all_rows if uid in event_participants][:16]
         conn.close()
-
-        # Filter to only players who have actually played event matches
-        rows = [(name, elo) for uid, name, elo in all_rows if uid in event_participants][:16]
 
         if rows:
             leaderboard = f"🏆 **{active_event['event_name']} Leaderboard** 🏆\n"

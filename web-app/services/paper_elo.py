@@ -11,6 +11,7 @@ from pathlib import Path
 
 from webapp_config import ELO_DB_PATH
 import sqlite3
+from utils.avatar_elo import canonicalize_avatar_name
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +84,10 @@ def get_active_event():
         conn.close()
         return None
 
-    cur.execute("""
-        SELECT event_id, event_name, start_date
+    columns = {row[1] for row in cur.execute("PRAGMA table_info(events)")}
+    avatar_column = "avatar_specific" if "avatar_specific" in columns else "0"
+    cur.execute(f"""
+        SELECT event_id, event_name, start_date, {avatar_column}
         FROM events
         WHERE is_active = 1
         LIMIT 1
@@ -97,11 +100,19 @@ def get_active_event():
             "event_id": row[0],
             "event_name": row[1],
             "start_date": datetime.fromisoformat(row[2]),
+            "avatar_specific": bool(row[3]),
         }
     return None
 
 
-def update_paper_elo(user_id, user_display_name: str, did_win: bool, opponent_id) -> tuple:
+def update_paper_elo(
+    user_id,
+    user_display_name: str,
+    did_win: bool,
+    opponent_id,
+    avatar_name: str | None = None,
+    opponent_avatar_name: str | None = None,
+) -> tuple:
     """
     Update paper ELO ratings for web-confirmed matches.
 
@@ -174,6 +185,31 @@ def update_paper_elo(user_id, user_display_name: str, did_win: bool, opponent_id
         conn.close()
         return (player_paper_elo, 0, player_paper_event_elo, 0, False)
 
+    if active_event.get("avatar_specific"):
+        avatar_name = canonicalize_avatar_name(avatar_name)
+        opponent_avatar_name = canonicalize_avatar_name(opponent_avatar_name)
+        if not avatar_name or not opponent_avatar_name:
+            conn.close()
+            raise ValueError(
+                "Avatar-specific event requires catalog-valid winner and loser avatars"
+            )
+        cur.execute(
+            """SELECT event_elo FROM event_avatar_standings
+               WHERE event_id = ? AND source = 'paper' AND user_id = ?
+                 AND avatar_name = ? COLLATE NOCASE""",
+            (active_event["event_id"], user_id_str, avatar_name),
+        )
+        row = cur.fetchone()
+        player_paper_event_elo = row[0] if row else 1500
+        cur.execute(
+            """SELECT event_elo FROM event_avatar_standings
+               WHERE event_id = ? AND source = 'paper' AND user_id = ?
+                 AND avatar_name = ? COLLATE NOCASE""",
+            (active_event["event_id"], opponent_id_str, opponent_avatar_name),
+        )
+        row = cur.fetchone()
+        opponent_paper_event_elo = row[0] if row else 1500
+
     # Calculate new paper lifetime ELO (always K=32)
     new_paper_elo = calculate_elo(
         player_paper_elo, opponent_paper_elo, did_win, k=32
@@ -194,10 +230,25 @@ def update_paper_elo(user_id, user_display_name: str, did_win: bool, opponent_id
     )
 
     # Update paper ELO in paper_standings
-    cur.execute(
-        "UPDATE paper_standings SET paper_elo = ?, paper_event_elo = ?, user_display_name = ? WHERE user_id = ?",
-        (new_paper_elo, new_paper_event_elo, user_display_name, user_id_str),
-    )
+    if active_event.get("avatar_specific"):
+        cur.execute(
+            "UPDATE paper_standings SET paper_elo = ?, user_display_name = ? WHERE user_id = ?",
+            (new_paper_elo, user_display_name, user_id_str),
+        )
+        cur.execute(
+            """INSERT INTO event_avatar_standings
+               (event_id, source, user_id, user_display_name, avatar_name, event_elo)
+               VALUES (?, 'paper', ?, ?, ?, ?)
+               ON CONFLICT(event_id, source, user_id, avatar_name)
+               DO UPDATE SET user_display_name = excluded.user_display_name,
+                             event_elo = excluded.event_elo""",
+            (active_event["event_id"], user_id_str, user_display_name, avatar_name, new_paper_event_elo),
+        )
+    else:
+        cur.execute(
+            "UPDATE paper_standings SET paper_elo = ?, paper_event_elo = ?, user_display_name = ? WHERE user_id = ?",
+            (new_paper_elo, new_paper_event_elo, user_display_name, user_id_str),
+        )
 
     conn.commit()
     conn.close()

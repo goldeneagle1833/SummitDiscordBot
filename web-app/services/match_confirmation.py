@@ -429,6 +429,8 @@ class MatchConfirmationService:
         went_first: str,
         submitter_deck_url: Optional[str] = None,
         opponent_deck_url: Optional[str] = None,
+        submitter_avatar: Optional[str] = None,
+        opponent_avatar: Optional[str] = None,
         final_life_submitter: int = 0,
         final_life_opponent: int = 0,
         match_type: str = "ranked",
@@ -527,15 +529,34 @@ class MatchConfirmationService:
         winner_id = winner_loser["winner_id"]
         loser_id = winner_loser["loser_id"]
 
+        from services.paper_elo import get_active_event
+        from utils.avatar_elo import resolve_avatar_name
+
+        active_event = get_active_event()
+        if active_event and active_event.get("avatar_specific") and match_type != "casual":
+            deck_json = "{}"
+            if submitter_deck_url:
+                from services.curiosa import CuriosaService
+                deck_json = CuriosaService().fetch_deck_data(submitter_deck_url)
+            submitter_avatar = resolve_avatar_name(deck_json, submitter_avatar)
+            if not submitter_avatar:
+                raise ValueError(
+                    "This avatar-specific event requires a Curiosa deck URL or a manual avatar selection."
+                )
+
         # Step 4: Map deck URLs to winner/loser
         if result == "won":
             winner_deck_url = submitter_deck_url
             loser_deck_url = opponent_deck_url
+            winner_avatar = submitter_avatar
+            loser_avatar = opponent_avatar
             final_life_winner = final_life_submitter
             final_life_loser = final_life_opponent
         else:
             winner_deck_url = opponent_deck_url
             loser_deck_url = submitter_deck_url
+            winner_avatar = opponent_avatar
+            loser_avatar = submitter_avatar
             final_life_winner = final_life_opponent
             final_life_loser = final_life_submitter
 
@@ -551,6 +572,8 @@ class MatchConfirmationService:
             went_first=went_first,
             winner_deck_url=winner_deck_url,
             loser_deck_url=loser_deck_url,
+            winner_avatar=winner_avatar,
+            loser_avatar=loser_avatar,
             match_type=match_type,
             season_id=season_id,
             match_comment=match_comment,
@@ -579,7 +602,7 @@ class MatchConfirmationService:
 
     def confirm_match_report(
         self, confirmation_id: int, opponent_user_id: str, opponent_deck_url: Optional[str] = None,
-        *, confirmer_comment: str = ""
+        *, opponent_avatar: Optional[str] = None, confirmer_comment: str = ""
     ) -> dict:
         """
         Confirm a pending match report.
@@ -639,34 +662,40 @@ class MatchConfirmationService:
                 "You are not authorized to confirm this match report"
             )
 
-        # Update opponent's deck URL if provided
-        if opponent_deck_url:
+        # Update the confirming player's deck identity if provided.
+        if opponent_deck_url or opponent_avatar:
             # Validate deck URL format
             import re
             deck_url_pattern = r"^https://curiosa\.io/decks/[a-zA-Z0-9_-]+(\?.*)?$"
-            if not re.match(deck_url_pattern, opponent_deck_url):
+            if opponent_deck_url and not re.match(deck_url_pattern, opponent_deck_url):
                 raise ValueError("Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id]")
 
             # Determine if opponent is winner or loser (direct string comparison - no normalization)
             is_winner = str(confirmation["winner_discord_id"]) == str(opponent_user_id)
             deck_field = "winner_deck_url" if is_winner else "loser_deck_url"
+            avatar_field = "winner_avatar" if is_winner else "loser_avatar"
 
             # Update the deck URL in the database
             conn = self.repo._get_connection()
             cursor = conn.cursor()
-            cursor.execute(
-                f"UPDATE match_confirmations SET {deck_field} = ? WHERE id = ?",
-                (opponent_deck_url, confirmation_id)
-            )
+            if opponent_deck_url:
+                cursor.execute(
+                    f"UPDATE match_confirmations SET {deck_field} = ? WHERE id = ?",
+                    (opponent_deck_url, confirmation_id)
+                )
+                confirmation[deck_field] = opponent_deck_url
+            if opponent_avatar:
+                cursor.execute(
+                    f"UPDATE match_confirmations SET {avatar_field} = ? WHERE id = ?",
+                    (opponent_avatar, confirmation_id)
+                )
+                confirmation[avatar_field] = opponent_avatar
             conn.commit()
             conn.close()
 
-            # Also update the local confirmation dict so later code picks up the new URL
-            confirmation[deck_field] = opponent_deck_url
-
             logger.info(
-                f"Updated opponent deck URL: confirmation_id={confirmation_id}, "
-                f"field={deck_field}, url={opponent_deck_url}"
+                f"Updated opponent deck identity: confirmation_id={confirmation_id}, "
+                f"deck_field={deck_field}, avatar_field={avatar_field}"
             )
 
         # Get player IDs and display names FIRST (before any DB operations)
@@ -732,6 +761,26 @@ class MatchConfirmationService:
             except Exception as e:
                 logger.error(f"Failed to fetch loser deck data: {e}", exc_info=True)
 
+        from services.paper_elo import get_active_event
+        from utils.avatar_elo import resolve_avatar_name
+
+        active_event = get_active_event()
+        winner_avatar = confirmation.get("winner_avatar")
+        loser_avatar = confirmation.get("loser_avatar")
+        if (
+            active_event
+            and active_event.get("avatar_specific")
+            and not is_repeat_matchup
+            and confirmation.get("match_type") != "casual"
+        ):
+            winner_avatar = resolve_avatar_name(json_deck_data_winner, winner_avatar)
+            loser_avatar = resolve_avatar_name(json_deck_data_loser, loser_avatar)
+            if not winner_avatar or not loser_avatar:
+                raise ValueError(
+                    "This avatar-specific event requires both players to provide a Curiosa deck URL "
+                    "or select their avatar manually."
+                )
+
         # Generate sequential match_id for web reports (web_1, web_2, ...)
         try:
             id_conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
@@ -786,7 +835,10 @@ class MatchConfirmationService:
                 winner_new_event_elo,
                 winner_event_elo_change,
                 event_active,
-            ) = update_paper_elo(winner_id, winner_name, did_win=True, opponent_id=loser_id)
+            ) = update_paper_elo(
+                winner_id, winner_name, did_win=True, opponent_id=loser_id,
+                avatar_name=winner_avatar, opponent_avatar_name=loser_avatar,
+            )
 
             # Update loser's ELO (keep IDs as strings with google_ prefix)
             (
@@ -795,7 +847,10 @@ class MatchConfirmationService:
                 loser_new_event_elo,
                 loser_event_elo_change,
                 _,
-            ) = update_paper_elo(loser_id, loser_name, did_win=False, opponent_id=winner_id)
+            ) = update_paper_elo(
+                loser_id, loser_name, did_win=False, opponent_id=winner_id,
+                avatar_name=loser_avatar, opponent_avatar_name=winner_avatar,
+            )
 
         # Create match record in match_reports_web table (uses TEXT for all IDs - no overflow)
         logger.info(f"Connecting to match_records database at: {MATCH_RECORDS_DB_PATH}")
@@ -835,8 +890,8 @@ class MatchConfirmationService:
                     curiosa_url_loser, match_comment, json_deck_data, json_deck_data_winner,
                     json_deck_data_loser, winner_elo_change, loser_elo_change, winner_went_first,
                     loser_went_first, source, match_type, season_id,
-                    winner_lifetime_elo_after, loser_lifetime_elo_after)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    winner_lifetime_elo_after, loser_lifetime_elo_after, winner_avatar, loser_avatar)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     match_id,         # match_id (UUID-based web_xxx)
                     reporter_id,      # reporter_id (TEXT - keeps google_ prefix)
@@ -864,6 +919,8 @@ class MatchConfirmationService:
                     confirmation.get("season_id"),  # season_id (NULL for non-season matches)
                     winner_new_elo if not is_repeat_matchup and not is_casual else None,
                     loser_new_elo if not is_repeat_matchup and not is_casual else None,
+                    winner_avatar,
+                    loser_avatar,
                 ),
             )
 

@@ -250,6 +250,19 @@ def get_archived_event_leaderboard(event_id):
                 event_info = event
                 break
 
+        if event_info and event_info.get("avatar_specific"):
+            leaderboard = repo.get_avatar_event_standings(event_id, "online")
+            leaderboard = [
+                {
+                    "user_id": row["user_id"],
+                    "display_name": row["user_display_name"],
+                    "avatar": row["avatar_name"],
+                    "event_elo": row["event_elo"],
+                    "rank": rank,
+                }
+                for rank, row in enumerate(leaderboard, 1)
+            ]
+
         return jsonify({
             "event_info": event_info,
             "leaderboard": leaderboard

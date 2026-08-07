@@ -9,6 +9,7 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
 
   // Shared fields
   const [deckUrl, setDeckUrl] = useState('')
+  const [playerAvatar, setPlayerAvatar] = useState('')
   const [result, setResult] = useState(null)
   const [wentFirst, setWentFirst] = useState(null)
 
@@ -56,7 +57,7 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
   }
 
   const resetForm = () => {
-    setDeckUrl(''); setResult(null); setWentFirst(null)
+    setDeckUrl(''); setPlayerAvatar(''); setResult(null); setWentFirst(null)
     setOpponentQuery(''); setSelectedOpponent(null); setOpponentResults([])
     setLifeSubmitter(''); setLifeOpponent('')
     setSelectedSeason(null); setOpponentAvatar('')
@@ -98,6 +99,7 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
           result: result === 'won' ? 'won' : 'lost',
           went_first: wentFirst === 'first' ? 'submitter' : 'opponent',
           submitter_deck_url: deckUrl.trim() || undefined,
+          submitter_avatar: playerAvatar || undefined,
           final_life_submitter: lifeSubmitter ? parseInt(lifeSubmitter) : 0,
           final_life_opponent: lifeOpponent ? parseInt(lifeOpponent) : 0,
           match_type: mode,
@@ -180,6 +182,18 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
                   placeholder="https://curiosa.io/decks/..."
                   className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm"
                 />
+              </div>
+
+              <div className="mb-4">
+                <label className="text-xs text-text-muted block mb-1">Your Avatar (optional override)</label>
+                <select
+                  value={playerAvatar}
+                  onChange={(e) => setPlayerAvatar(e.target.value)}
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm"
+                >
+                  <option value="">Detect from Curiosa deck</option>
+                  {avatars.map((avatar) => <option key={avatar} value={avatar}>{avatar}</option>)}
+                </select>
               </div>
 
               {/* Result */}

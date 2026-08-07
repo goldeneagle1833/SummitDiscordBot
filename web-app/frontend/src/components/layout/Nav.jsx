@@ -48,6 +48,8 @@ function saveNavPrefs(labels) {
 
 function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
   const [deckUrl, setDeckUrl] = useState('')
+  const [avatar, setAvatar] = useState('')
+  const [avatars, setAvatars] = useState([])
   const [matchComment, setMatchComment] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -60,6 +62,13 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
 
+  useEffect(() => {
+    fetch('/api/list-all-avatars')
+      .then((response) => response.ok ? response.json() : [])
+      .then(setAvatars)
+      .catch(() => {})
+  }, [])
+
   const handleSubmit = async () => {
     setSaving(true)
     setError(null)
@@ -68,7 +77,11 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deck_url: deckUrl.trim() || undefined, match_comment: matchComment.trim() || undefined }),
+        body: JSON.stringify({
+          deck_url: deckUrl.trim() || undefined,
+          avatar: avatar || undefined,
+          match_comment: matchComment.trim() || undefined,
+        }),
       })
       const data = await res.json()
       if (data.success) {
@@ -111,6 +124,12 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
                 <span className="text-white capitalize">{confirmation.match_type}</span>
               </div>
             )}
+            {confirmation.reported_match_avatar && (
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">Opponent avatar</span>
+                <span className="text-white">{confirmation.reported_match_avatar}</span>
+              </div>
+            )}
             {confirmation.went_first && (
               <div className="flex justify-between text-sm">
                 <span className="text-text-muted">First player</span>
@@ -129,6 +148,18 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
               placeholder="https://curiosa.io/decks/..."
               className="w-full bg-bg-elevated border border-border rounded px-3 py-2 text-sm"
             />
+          </div>
+
+          <div className="mb-4">
+            <label className="text-xs text-text-muted block mb-1">Your Avatar (optional override)</label>
+            <select
+              value={avatar}
+              onChange={(e) => setAvatar(e.target.value)}
+              className="w-full bg-bg-elevated border border-border rounded px-3 py-2 text-sm"
+            >
+              <option value="">Detect from Curiosa deck</option>
+              {avatars.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
           </div>
 
           {/* Match Comments */}

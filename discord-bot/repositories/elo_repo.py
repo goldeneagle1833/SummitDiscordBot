@@ -145,6 +145,13 @@ def create_db():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Persist the canonical avatars used for avatar-specific event ELO.
+    for column in ("winner_avatar", "loser_avatar"):
+        try:
+            cur.execute(f"ALTER TABLE match_records ADD COLUMN {column} TEXT")
+        except sqlite3.OperationalError:
+            pass
+
     # Create solo_match_reports table with auto-increment report_id
     cur.execute("""CREATE TABLE IF NOT EXISTS solo_match_reports
                    (report_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -203,8 +210,28 @@ def create_events_table():
                     event_name TEXT NOT NULL,
                     start_date TEXT NOT NULL,
                     end_date TEXT,
-                    is_active BOOLEAN DEFAULT 1
+                    is_active BOOLEAN DEFAULT 1,
+                    avatar_specific BOOLEAN NOT NULL DEFAULT 0
                    )""")
+
+    try:
+        cur.execute(
+            "ALTER TABLE events ADD COLUMN avatar_specific BOOLEAN NOT NULL DEFAULT 0"
+        )
+    except sqlite3.OperationalError:
+        pass
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS event_avatar_standings (
+                    event_id INTEGER NOT NULL,
+                    source TEXT NOT NULL CHECK(source IN ('online', 'paper')),
+                    user_id TEXT NOT NULL,
+                    user_display_name TEXT NOT NULL,
+                    avatar_name TEXT NOT NULL COLLATE NOCASE,
+                    event_elo INTEGER NOT NULL DEFAULT 1500,
+                    PRIMARY KEY (event_id, source, user_id, avatar_name)
+                   )""")
+    cur.execute("""CREATE INDEX IF NOT EXISTS idx_event_avatar_standings_rank
+                   ON event_avatar_standings(event_id, source, event_elo DESC)""")
 
     # Create event standings archive table
     cur.execute("""CREATE TABLE IF NOT EXISTS event_standings_archive (
@@ -308,6 +335,12 @@ def create_match_records_archive():
         cur.execute("ALTER TABLE match_records_archive ADD COLUMN match_type TEXT DEFAULT 'ranked'")
     except sqlite3.OperationalError:
         pass  # Column already exists
+
+    for column in ("winner_avatar", "loser_avatar"):
+        try:
+            cur.execute(f"ALTER TABLE match_records_archive ADD COLUMN {column} TEXT")
+        except sqlite3.OperationalError:
+            pass
 
     conn.commit()
     conn.close()
@@ -444,7 +477,7 @@ def get_active_event():
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
 
-    cur.execute("""SELECT event_id, event_name, start_date
+    cur.execute("""SELECT event_id, event_name, start_date, avatar_specific
                    FROM events
                    WHERE is_active = 1
                    LIMIT 1""")
@@ -456,6 +489,7 @@ def get_active_event():
             "event_id": row[0],
             "event_name": row[1],
             "start_date": datetime.datetime.fromisoformat(row[2]),
+            "avatar_specific": bool(row[3]),
         }
     return None
 
@@ -479,7 +513,7 @@ def get_user_elo(user_id: int) -> int:
     return row[0] if row and row[0] else 1500
 
 
-def get_user_event_elo(user_id: int) -> int:
+def get_user_event_elo(user_id: int, avatar_name: str | None = None) -> int:
     """
     Get a user's current online event ELO from the database (Discord bot games).
 
@@ -490,6 +524,27 @@ def get_user_event_elo(user_id: int) -> int:
         The user's current online event ELO, or 1500 if not found
     """
     migrate_to_dual_elo_system()
+    active_event = get_active_event()
+    if active_event and active_event.get("avatar_specific"):
+        conn = sqlite3.connect("elo.db")
+        cur = conn.cursor()
+        if avatar_name:
+            cur.execute(
+                """SELECT event_elo FROM event_avatar_standings
+                   WHERE event_id = ? AND source = 'online' AND user_id = ?
+                     AND avatar_name = ? COLLATE NOCASE""",
+                (active_event["event_id"], str(user_id), avatar_name),
+            )
+        else:
+            cur.execute(
+                """SELECT MAX(event_elo) FROM event_avatar_standings
+                   WHERE event_id = ? AND source = 'online' AND user_id = ?""",
+                (active_event["event_id"], str(user_id)),
+            )
+        row = cur.fetchone()
+        conn.close()
+        return row[0] if row and row[0] is not None else 1500
+
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
     cur.execute("SELECT online_event_elo FROM overall_standings WHERE user_id=?", (user_id,))
@@ -547,7 +602,7 @@ def get_past_events():
     conn = sqlite3.connect("elo.db")
     cur = conn.cursor()
 
-    cur.execute("""SELECT event_id, event_name, start_date, end_date
+    cur.execute("""SELECT event_id, event_name, start_date, end_date, avatar_specific
                    FROM events
                    WHERE is_active = 0
                    ORDER BY end_date DESC""")
@@ -560,6 +615,7 @@ def get_past_events():
             "event_name": row[1],
             "start_date": row[2],
             "end_date": row[3],
+            "avatar_specific": bool(row[4]),
         }
         for row in rows
     ]
@@ -608,6 +664,10 @@ def get_top_16_user_ids():
     cur = conn.cursor()
 
     if active_event:
+        if active_event.get("avatar_specific"):
+            rows = get_unique_event_leaders(active_event["event_id"], "online", 16)
+            conn.close()
+            return [int(row["user_id"]) for row in rows]
         event_start_str = active_event["start_date"].isoformat()
         participants = get_event_participant_ids(event_start_str)
 
@@ -639,6 +699,10 @@ def get_top_8_user_ids():
     cur = conn.cursor()
 
     if active_event:
+        if active_event.get("avatar_specific"):
+            rows = get_unique_event_leaders(active_event["event_id"], "online", 8)
+            conn.close()
+            return [int(row["user_id"]) for row in rows]
         event_start_str = active_event["start_date"].isoformat()
         participants = get_event_participant_ids(event_start_str)
 
@@ -652,6 +716,107 @@ def get_top_8_user_ids():
 
     conn.close()
     return [row[0] for row in rows]
+
+
+def get_event_avatar_standings(event_id: int, source: str = "online") -> list[dict]:
+    """Return every player/avatar entry on one event ladder."""
+    create_events_table()
+    conn = sqlite3.connect("elo.db")
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        """SELECT user_id, user_display_name, avatar_name, event_elo
+           FROM event_avatar_standings
+           WHERE event_id = ? AND source = ?
+           ORDER BY event_elo DESC, user_display_name COLLATE NOCASE,
+                    avatar_name COLLATE NOCASE""",
+        (event_id, source),
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_unique_event_leaders(event_id: int, source: str, limit: int) -> list[dict]:
+    """Scan the entry ladder until ``limit`` distinct players are found."""
+    leaders = []
+    seen = set()
+    for row in get_qualifying_event_entries(event_id, source, limit):
+        user_id = str(row["user_id"])
+        if user_id in seen:
+            continue
+        seen.add(user_id)
+        leaders.append(row)
+    return leaders
+
+
+def get_qualifying_event_entries(event_id: int, source: str, limit: int) -> list[dict]:
+    """Return every ladder entry encountered before ``limit`` unique players qualify.
+
+    A player can therefore qualify on multiple avatars, while still consuming only
+    one top-cut slot.
+    """
+    qualifying = []
+    seen = set()
+    for row in get_event_avatar_standings(event_id, source):
+        qualifying.append(row)
+        seen.add(str(row["user_id"]))
+        if len(seen) >= limit:
+            break
+    return qualifying
+
+
+def update_avatar_match_elos(
+    event_id: int,
+    source: str,
+    winner_id,
+    winner_name: str,
+    winner_lifetime_elo: int,
+    winner_avatar: str,
+    winner_event_elo: int,
+    loser_id,
+    loser_name: str,
+    loser_lifetime_elo: int,
+    loser_avatar: str,
+    loser_event_elo: int,
+):
+    """Atomically update both lifetime and avatar-specific event ratings."""
+    migrate_to_dual_elo_system()
+    create_events_table()
+    conn = sqlite3.connect("elo.db")
+    try:
+        for user_id, display_name, lifetime_elo, avatar_name, event_elo in (
+            (
+                winner_id, winner_name, winner_lifetime_elo,
+                winner_avatar, winner_event_elo,
+            ),
+            (
+                loser_id, loser_name, loser_lifetime_elo,
+                loser_avatar, loser_event_elo,
+            ),
+        ):
+            conn.execute(
+                """INSERT INTO overall_standings
+                   (user_id, user_display_name, online_elo, online_event_elo)
+                   VALUES (?, ?, ?, 1500)
+                   ON CONFLICT(user_id) DO UPDATE SET
+                       user_display_name = excluded.user_display_name,
+                       online_elo = excluded.online_elo""",
+                (user_id, display_name, lifetime_elo),
+            )
+            conn.execute(
+                """INSERT INTO event_avatar_standings
+                   (event_id, source, user_id, user_display_name, avatar_name, event_elo)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(event_id, source, user_id, avatar_name)
+                   DO UPDATE SET user_display_name = excluded.user_display_name,
+                                 event_elo = excluded.event_elo""",
+                (event_id, source, str(user_id), display_name, avatar_name, event_elo),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def get_event_participant_ids(event_start_str: str) -> set:

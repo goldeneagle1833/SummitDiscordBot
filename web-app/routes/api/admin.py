@@ -879,6 +879,7 @@ def start_event_route():
         return jsonify({"success": False, "error": "event_name is required"}), 400
 
     event_name = str(data["event_name"]).strip()
+    avatar_specific = bool(data.get("avatar_specific", False))
     if not event_name or len(event_name) > 100:
         return jsonify({"success": False, "error": "Invalid event name (1-100 characters)"}), 400
 
@@ -890,7 +891,7 @@ def start_event_route():
         previous_event = bot_db.get_active_event()
 
         # Start new event
-        result = bot_db.start_new_event(event_name)
+        result = bot_db.start_new_event(event_name, avatar_specific=avatar_specific)
 
         # Log action
         admin_id, admin_name = _get_admin_info()
@@ -899,7 +900,11 @@ def start_event_route():
             admin_id, admin_name, "web_start_event",
             target_name=event_name,
             previous_state={"event": previous_event["event_name"] if previous_event else None},
-            new_state={"event": event_name, "event_id": result["event_id"]},
+            new_state={
+                "event": event_name,
+                "event_id": result["event_id"],
+                "avatar_specific": avatar_specific,
+            },
             details=f"Started new event '{event_name}' (ID: {result['event_id']})",
         )
 
@@ -907,6 +912,7 @@ def start_event_route():
             "success": True,
             "message": f"Event '{event_name}' started successfully",
             "event_id": result["event_id"],
+            "avatar_specific": avatar_specific,
             "previous_event": result.get("previous_event")
         }), 200
 

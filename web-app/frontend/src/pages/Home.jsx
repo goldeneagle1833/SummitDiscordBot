@@ -469,6 +469,9 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo' }) {
           <tr className="border-b border-border text-left">
             <th className="py-2 px-3 w-14 text-text-muted font-semibold">Rank</th>
             <th className="py-2 px-3 text-text-muted font-semibold">Player</th>
+            {leaderboard.some((player) => player.avatar) && (
+              <th className="py-2 px-3 text-text-muted font-semibold">Avatar</th>
+            )}
             <th className="py-2 px-3 text-right text-text-muted font-semibold">ELO</th>
           </tr>
         </thead>
@@ -476,7 +479,7 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo' }) {
           {leaderboard.map((player, index) => {
             const rank = index + 1
             return (
-              <tr key={player.id} className={`border-b border-border/50 hover:bg-bg-surface/50 transition-colors ${rank <= 3 ? `font-semibold` : ''}`}>
+              <tr key={`${player.id}:${player.avatar || 'player'}`} className={`border-b border-border/50 hover:bg-bg-surface/50 transition-colors ${rank <= 3 ? `font-semibold` : ''}`}>
                 <td className="py-2 px-3">
                   {rank <= 3 ? (
                     <span className={`inline-flex items-center justify-center w-7 h-7 rounded text-xs font-bold ${
@@ -495,6 +498,9 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo' }) {
                     {player.name}
                   </Link>
                 </td>
+                {leaderboard.some((entry) => entry.avatar) && (
+                  <td className="py-2 px-3 text-text-muted">{player.avatar || '—'}</td>
+                )}
                 <td className="py-2 px-3 text-right">{player[eloKey]}</td>
               </tr>
             )

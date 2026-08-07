@@ -2407,12 +2407,13 @@ def list_all_avatars():
 
     Includes both current event matches and archived matches for lifetime stats.
     """
+    rows = []
+    use_new_columns = True
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
 
         all_rows = []
-        use_new_columns = True
 
         # Query current match_records
         try:
@@ -2448,7 +2449,7 @@ def list_all_avatars():
         rows = all_rows
         conn.close()
     except sqlite3.OperationalError:
-        return jsonify([])
+        rows = []
 
     avatar_names = set()
 
@@ -2476,6 +2477,22 @@ def list_all_avatars():
             name = extract_avatar(row[0])
             if name:
                 avatar_names.add(name)
+
+    # The override picker must include every catalog-valid avatar, even one
+    # that has not appeared in a recorded match yet.
+    elo_conn = None
+    try:
+        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
+        catalog_rows = elo_conn.execute(
+            """SELECT name FROM card_catalog
+               WHERE card_type = 'Avatar' COLLATE NOCASE"""
+        ).fetchall()
+        avatar_names.update(row[0] for row in catalog_rows if row[0])
+    except sqlite3.OperationalError:
+        pass
+    finally:
+        if elo_conn:
+            elo_conn.close()
 
     return jsonify(sorted(list(avatar_names)))
 

@@ -41,6 +41,22 @@ class LeaderboardService:
     def get_event_leaderboard(self) -> dict:
         """Get event leaderboard with active event info."""
         active_event = self._elo_repo.get_active_event()
+        if active_event and active_event.get("avatar_specific"):
+            standings = self._elo_repo.get_avatar_event_standings(
+                active_event["event_id"], "online"
+            )
+            return {
+                "event": active_event,
+                "leaderboard": [
+                    {
+                        "id": str(row["user_id"]),
+                        "name": row["user_display_name"],
+                        "avatar": row["avatar_name"],
+                        "event_elo": row["event_elo"],
+                    }
+                    for row in standings
+                ],
+            }
         standings = self._elo_repo.get_event_standings()
 
         # Get event participants from match_records
@@ -72,6 +88,26 @@ class LeaderboardService:
 
         # Lifetime section: unified (all sources)
         lifetime_data = self.get_leaderboard()
+
+        if active_event and active_event.get("avatar_specific"):
+            standings = self._elo_repo.get_avatar_event_standings(
+                active_event["event_id"], "online"
+            )
+            return {
+                "lifetime": lifetime_data,
+                "event": {
+                    "info": active_event,
+                    "leaderboard": [
+                        {
+                            "id": str(row["user_id"]),
+                            "name": row["user_display_name"],
+                            "avatar": row["avatar_name"],
+                            "event_elo": row["event_elo"],
+                        }
+                        for row in standings
+                    ],
+                },
+            }
 
         event_data = []
         event_player_ids = set()
@@ -161,6 +197,22 @@ class LeaderboardService:
     def get_paper_event_leaderboard(self) -> dict:
         """Get paper event leaderboard with active event info."""
         active_event = self._elo_repo.get_active_event()
+        if active_event and active_event.get("avatar_specific"):
+            standings = self._elo_repo.get_avatar_event_standings(
+                active_event["event_id"], "paper"
+            )
+            return {
+                "event": active_event,
+                "leaderboard": [
+                    {
+                        "id": str(row["user_id"]),
+                        "name": row["user_display_name"],
+                        "avatar": row["avatar_name"],
+                        "event_elo": row["event_elo"],
+                    }
+                    for row in standings
+                ],
+            }
         standings = self._elo_repo.get_paper_standings()
 
         # Get paper event participants from web match records

@@ -24,7 +24,7 @@ from utils.database import (
     mark_pairing_reported,
     get_active_event,
 )
-from repositories.elo_repo import NON_ELO_MATCH_TYPES
+from repositories.elo_repo import NON_ELO_MATCH_TYPES, get_user_event_elo
 from services.dust_service import try_dust_drop, try_alter_card_drop
 from repositories.dust_repo import get_available_code_count
 from repositories.limited_repo import mark_limited_pairing_reported
@@ -49,6 +49,42 @@ def _is_valid_discord_id(value) -> bool:
         return True
     except (ValueError, TypeError):
         return False
+
+
+def _resolve_avatar_ladder_stakes(data: dict, ladder_info: dict | None) -> None:
+    """Resolve challenge stakes from the avatars that will be recorded."""
+    if not ladder_info or not ladder_info.get("avatar_stakes_pending"):
+        return
+    winner_avatar = data.get("winner_avatar")
+    loser_avatar = data.get("loser_avatar")
+    if not winner_avatar or not loser_avatar:
+        raise ValueError("Ladder challenge requires both played avatars")
+
+    challenger_id = int(ladder_info["challenger_id"])
+    winner_id = int(data["winner_id"])
+    loser_id = int(data["loser_id"])
+    if challenger_id == winner_id:
+        challenger_avatar = winner_avatar
+        opponent_id = loser_id
+        opponent_avatar = loser_avatar
+    else:
+        challenger_avatar = loser_avatar
+        opponent_id = winner_id
+        opponent_avatar = winner_avatar
+
+    challenger_elo = get_user_event_elo(challenger_id, challenger_avatar)
+    opponent_elo = get_user_event_elo(opponent_id, opponent_avatar)
+    elo_diff = abs(challenger_elo - opponent_elo)
+    if elo_diff < 100:
+        ladder_info["elo_multiplier_winner"] = 1.0
+        ladder_info["elo_multiplier_loser"] = 1.0
+    else:
+        ladder_info["elo_multiplier_winner"] = 2.0
+        ladder_info["elo_multiplier_loser"] = 0.5
+    ladder_info["challenger_avatar"] = challenger_avatar
+    ladder_info["opponent_avatar"] = opponent_avatar
+    ladder_info["elo_difference"] = elo_diff
+    ladder_info["avatar_stakes_pending"] = False
 
 
 # ──────────────────────────────────────────────
@@ -322,6 +358,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
         elo_multiplier_winner = 1.0
         elo_multiplier_loser = 1.0
         ladder_info = data.get("ladder_info")
+        _resolve_avatar_ladder_stakes(data, ladder_info)
         if ladder_info and data.get("match_type") not in (*NON_ELO_MATCH_TYPES, "limited"):
             challenger_id = ladder_info["challenger_id"]
             if data["winner_id"] != challenger_id:
@@ -386,10 +423,17 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
     # ── update confirmation message ──
     if interaction_valid:
         try:
+            avatar_summary = ""
+            if data.get("winner_avatar") and data.get("loser_avatar"):
+                avatar_summary = (
+                    f" Winner avatar: {data['winner_avatar']};"
+                    f" loser avatar: {data['loser_avatar']}."
+                )
             await interaction.message.edit(
                 content=(
                     f"Match confirmed! **Match ID: #{match_id}** - "
-                    f"{data['winner_global']} won against {data['loser_global']}.{elo_msg}{stakes_msg}"
+                    f"{data['winner_global']} won against {data['loser_global']}."
+                    f"{avatar_summary}{elo_msg}{stakes_msg}"
                 ),
                 view=None,
             )

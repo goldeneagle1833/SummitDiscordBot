@@ -4,8 +4,12 @@ export const removePlayer = (userId) => del(`/api/admin/remove-player/${userId}`
 
 export const removeMatch = (matchId) => del(`/api/admin/remove-match/${matchId}`)
 
-export const resetElo = (userId, newElo, source) =>
-  post(`/api/admin/reset-elo/${userId}`, { new_elo: newElo, source })
+export const resetElo = (userId, newElo, source, avatarName) =>
+  post(`/api/admin/reset-elo/${userId}`, {
+    new_elo: newElo,
+    source,
+    avatar_name: avatarName || undefined,
+  })
 
 export const renamePlayer = (userId, newName) =>
   post(`/api/admin/rename-player/${userId}`, { new_name: newName })

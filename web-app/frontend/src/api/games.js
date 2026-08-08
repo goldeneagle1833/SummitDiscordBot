@@ -28,6 +28,11 @@ export const endSeason = (seasonId) => post(`/api/seasons/${seasonId}/end`)
 export const deleteSeason = (seasonId) => del(`/api/seasons/${seasonId}`)
 export const kickSeasonMember = (seasonId, userId) =>
   post(`/api/seasons/${seasonId}/kick`, { user_id: userId })
-export const reportSeasonMatch = (seasonId, winnerId, loserId) =>
-  post(`/api/seasons/${seasonId}/report-match`, { winner_id: winnerId, loser_id: loserId })
+export const reportSeasonMatch = (seasonId, winnerId, loserId, winnerAvatar, loserAvatar) =>
+  post(`/api/seasons/${seasonId}/report-match`, {
+    winner_id: winnerId,
+    loser_id: loserId,
+    winner_avatar: winnerAvatar || undefined,
+    loser_avatar: loserAvatar || undefined,
+  })
 export const getSeasonMembers = (seasonId) => get(`/api/seasons/${seasonId}/members`)

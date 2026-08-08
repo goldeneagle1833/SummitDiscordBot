@@ -70,7 +70,10 @@ from services.elo_service import (  # noqa: F401
 )
 
 # Admin repo functions
-from repositories.elo_repo import set_player_event_elo  # noqa: F401
+from repositories.elo_repo import (  # noqa: F401
+    set_player_event_elo,
+    set_player_avatar_event_elo,
+)
 
 # Limited queue (arena draft mode) data access
 from repositories.limited_repo import (  # noqa: F401

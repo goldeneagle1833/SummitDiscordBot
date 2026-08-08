@@ -9,6 +9,7 @@ import repositories.elo_repo as elo_repo
 from repositories.elo_repo import (
     create_db,
     create_events_table,
+    create_ladder_challenge_table,
     create_match_records_archive,
     get_event_avatar_standings,
     get_qualifying_event_entries,
@@ -18,9 +19,11 @@ from repositories.elo_repo import (
 from services.elo_service import (
     correct_match_record,
     end_current_event,
+    recalculate_event_elo,
     record_match,
     remove_match_record,
 )
+from utils.avatar_elo import canonicalize_avatar_name, suggest_avatar_names
 
 
 @pytest.fixture
@@ -231,3 +234,157 @@ async def test_ending_event_retains_avatar_rows_for_archived_leaderboard(avatar_
     ).fetchone()
     conn.close()
     assert archived == ("Impostor", "Battlemage")
+
+
+@pytest.mark.asyncio
+async def test_avatar_ladder_replay_matches_live_multi_match_ratings(avatar_event):
+    matches = [
+        (1, "Alice", "Impostor", 2, "Bob", "Battlemage"),
+        (2, "Bob", "Battlemage", 1, "Alice", "Persecutor"),
+        (1, "Alice", "Impostor", 2, "Bob", "Battlemage"),
+    ]
+    for index, (
+        winner_id,
+        winner_name,
+        winner_avatar,
+        loser_id,
+        loser_name,
+        loser_avatar,
+    ) in enumerate(matches):
+        await record_match(
+            reporter_id=winner_id,
+            winner_id=winner_id,
+            winner_global=winner_name,
+            loser_id=loser_id,
+            loser_global=loser_name,
+            first_player="y",
+            match_time=30,
+            match_comment="",
+            winner_deck_url=None,
+            loser_deck_url=None,
+            winner_went_first="y",
+            loser_went_first="n",
+            winner_avatar=winner_avatar,
+            loser_avatar=loser_avatar,
+            elo_multiplier_winner=2.0 if index == 0 else 1.0,
+            elo_multiplier_loser=0.5 if index == 0 else 1.0,
+        )
+
+    conn = sqlite3.connect("match_records.db")
+    conn.execute("""CREATE TABLE IF NOT EXISTS admin_audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT NOT NULL,
+        admin_id INTEGER NOT NULL,
+        admin_name TEXT NOT NULL,
+        action TEXT NOT NULL,
+        target_id TEXT,
+        target_name TEXT,
+        previous_state TEXT,
+        new_state TEXT,
+        details TEXT
+    )""")
+    conn.execute(
+        """INSERT INTO admin_audit_log
+           (timestamp, admin_id, admin_name, action, target_id, target_name, new_state)
+           VALUES (?, 99, 'Admin', 'spot_elo_reset', '2', 'Bob', ?)""",
+        (
+            datetime.datetime.now().isoformat(),
+            '{"event_elo": 1700, "avatar": "Battlemage"}',
+        ),
+    )
+    conn.commit()
+    conn.close()
+    conn = sqlite3.connect("elo.db")
+    conn.execute(
+        """UPDATE event_avatar_standings SET event_elo = 1700
+           WHERE event_id = 1 AND user_id = '2' AND avatar_name = 'Battlemage'"""
+    )
+    conn.commit()
+    conn.close()
+
+    live = {
+        (row["user_id"], row["avatar_name"]): row["event_elo"]
+        for row in get_event_avatar_standings(1)
+    }
+    conn = sqlite3.connect("elo.db")
+    conn.execute("UPDATE event_avatar_standings SET event_elo = 999")
+    conn.commit()
+    conn.close()
+
+    result = recalculate_event_elo()
+    replayed = {
+        (row["user_id"], row["avatar_name"]): row["event_elo"]
+        for row in get_event_avatar_standings(1)
+    }
+
+    assert result["matches_replayed"] == 3
+    assert replayed == live
+
+
+@pytest.mark.asyncio
+async def test_corrected_avatar_challenge_reapplies_stakes_for_the_new_result(
+    avatar_event,
+):
+    create_ladder_challenge_table()
+    conn = sqlite3.connect("match_records.db")
+    challenge_id = conn.execute(
+        """INSERT INTO ladder_challenges
+           (challenger_id, status, created_at,
+            winner_elo_multiplier, loser_elo_multiplier)
+           VALUES (1, 'open', ?, 2.0, 0.5)""",
+        (datetime.datetime.now().isoformat(),),
+    ).lastrowid
+    conn.commit()
+    conn.close()
+
+    match_id, *_ = await record_match(
+        reporter_id=2,
+        winner_id=2,
+        winner_global="Bob",
+        loser_id=1,
+        loser_global="Alice",
+        first_player="y",
+        match_time=30,
+        match_comment="",
+        winner_deck_url=None,
+        loser_deck_url=None,
+        winner_went_first="y",
+        loser_went_first="n",
+        winner_avatar="Battlemage",
+        loser_avatar="Impostor",
+        elo_multiplier_winner=2.0,
+        elo_multiplier_loser=0.5,
+    )
+    conn = sqlite3.connect("match_records.db")
+    conn.execute(
+        """UPDATE ladder_challenges
+           SET status = 'completed', winner_id = 2, match_id = ?
+           WHERE challenge_id = ?""",
+        (match_id, challenge_id),
+    )
+    conn.commit()
+    conn.close()
+
+    correct_match_record(match_id)
+
+    standings = {
+        (row["user_id"], row["avatar_name"]): row["event_elo"]
+        for row in get_event_avatar_standings(1)
+    }
+    assert standings == {
+        ("1", "Impostor"): 1508,
+        ("2", "Battlemage"): 1492,
+    }
+    conn = sqlite3.connect("match_records.db")
+    stored = conn.execute(
+        """SELECT winner_id, winner_elo_multiplier, loser_elo_multiplier
+           FROM match_records WHERE rowid = ?""",
+        (match_id,),
+    ).fetchone()
+    conn.close()
+    assert stored == (1, 1.0, 1.0)
+
+
+def test_avatar_free_text_accepts_common_alias_and_suggests_typos(avatar_event):
+    assert canonicalize_avatar_name("imposter") == "Impostor"
+    assert suggest_avatar_names("Battlemag") == ["Battlemage"]

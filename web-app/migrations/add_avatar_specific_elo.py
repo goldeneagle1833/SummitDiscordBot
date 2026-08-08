@@ -45,6 +45,11 @@ def migrate():
         if exists:
             _add_column(match_conn, table, "winner_avatar TEXT")
             _add_column(match_conn, table, "loser_avatar TEXT")
+            _add_column(match_conn, table, "winner_elo_multiplier REAL DEFAULT 1.0")
+            _add_column(match_conn, table, "loser_elo_multiplier REAL DEFAULT 1.0")
+            if table == "match_reports_web":
+                _add_column(match_conn, table, "winner_lifetime_elo_change INTEGER")
+                _add_column(match_conn, table, "loser_lifetime_elo_change INTEGER")
     exists = match_conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name = 'match_confirmations'"
     ).fetchone()

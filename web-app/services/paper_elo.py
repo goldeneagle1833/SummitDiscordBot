@@ -254,3 +254,184 @@ def update_paper_elo(
     conn.close()
 
     return (new_paper_elo, paper_change, new_paper_event_elo, paper_event_change, True)
+
+
+def update_paper_match_elos(
+    winner_id,
+    winner_display_name: str,
+    loser_id,
+    loser_display_name: str,
+    winner_avatar_name: str | None = None,
+    loser_avatar_name: str | None = None,
+) -> tuple[tuple, tuple]:
+    """Atomically update both players for one confirmed paper match.
+
+    Legacy events retain their established sequential calculation behavior.
+    Avatar-specific events calculate both players from the same pre-match
+    snapshot so live updates and full ladder replays are identical.
+    """
+    winner_id_str = str(winner_id)
+    loser_id_str = str(loser_id)
+    conn = sqlite3.connect(str(ELO_DB_PATH))
+    cur = conn.cursor()
+    _ensure_paper_standings_table(cur)
+
+    def get_or_create(user_id: str, display_name: str) -> tuple[int, int]:
+        row = cur.execute(
+            "SELECT paper_elo, paper_event_elo FROM paper_standings WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        if row:
+            return (row[0] or 1500, row[1] or 1500)
+        cur.execute(
+            """INSERT INTO paper_standings
+               (user_id, user_display_name, paper_elo, paper_event_elo)
+               VALUES (?, ?, 1500, 1500)""",
+            (user_id, display_name),
+        )
+        return (1500, 1500)
+
+    try:
+        winner_paper_elo, winner_event_elo = get_or_create(
+            winner_id_str, winner_display_name
+        )
+        loser_paper_elo, loser_event_elo = get_or_create(
+            loser_id_str, loser_display_name
+        )
+        active_event = get_active_event()
+        if not active_event:
+            conn.commit()
+            return (
+                (winner_paper_elo, 0, winner_event_elo, 0, False),
+                (loser_paper_elo, 0, loser_event_elo, 0, False),
+            )
+
+        avatar_specific = bool(active_event.get("avatar_specific"))
+        if avatar_specific:
+            winner_avatar_name = canonicalize_avatar_name(winner_avatar_name)
+            loser_avatar_name = canonicalize_avatar_name(loser_avatar_name)
+            if not winner_avatar_name or not loser_avatar_name:
+                raise ValueError(
+                    "Avatar-specific event requires catalog-valid winner and loser avatars"
+                )
+            winner_row = cur.execute(
+                """SELECT event_elo FROM event_avatar_standings
+                   WHERE event_id = ? AND source = 'paper' AND user_id = ?
+                     AND avatar_name = ? COLLATE NOCASE""",
+                (active_event["event_id"], winner_id_str, winner_avatar_name),
+            ).fetchone()
+            loser_row = cur.execute(
+                """SELECT event_elo FROM event_avatar_standings
+                   WHERE event_id = ? AND source = 'paper' AND user_id = ?
+                     AND avatar_name = ? COLLATE NOCASE""",
+                (active_event["event_id"], loser_id_str, loser_avatar_name),
+            ).fetchone()
+            winner_event_elo = winner_row[0] if winner_row else 1500
+            loser_event_elo = loser_row[0] if loser_row else 1500
+
+        event_k = calculate_event_k_value(active_event["start_date"])
+        winner_new_elo = calculate_elo(winner_paper_elo, loser_paper_elo, True, k=32)
+        winner_new_event_elo = calculate_elo(
+            winner_event_elo, loser_event_elo, True, k=event_k
+        )
+
+        # Preserve normal-event behavior while making avatar ladders symmetric.
+        loser_lifetime_opponent = (
+            winner_paper_elo if avatar_specific else winner_new_elo
+        )
+        loser_event_opponent = (
+            winner_event_elo if avatar_specific else winner_new_event_elo
+        )
+        loser_new_elo = calculate_elo(
+            loser_paper_elo, loser_lifetime_opponent, False, k=32
+        )
+        loser_new_event_elo = calculate_elo(
+            loser_event_elo, loser_event_opponent, False, k=event_k
+        )
+
+        winner_change = winner_new_elo - winner_paper_elo
+        loser_change = loser_new_elo - loser_paper_elo
+        winner_event_change = winner_new_event_elo - winner_event_elo
+        loser_event_change = loser_new_event_elo - loser_event_elo
+
+        for user_id, display_name, lifetime_elo in (
+            (winner_id_str, winner_display_name, winner_new_elo),
+            (loser_id_str, loser_display_name, loser_new_elo),
+        ):
+            cur.execute(
+                """UPDATE paper_standings
+                   SET paper_elo = ?, user_display_name = ? WHERE user_id = ?""",
+                (lifetime_elo, display_name, user_id),
+            )
+
+        if avatar_specific:
+            for user_id, display_name, avatar_name, event_elo in (
+                (
+                    winner_id_str,
+                    winner_display_name,
+                    winner_avatar_name,
+                    winner_new_event_elo,
+                ),
+                (
+                    loser_id_str,
+                    loser_display_name,
+                    loser_avatar_name,
+                    loser_new_event_elo,
+                ),
+            ):
+                cur.execute(
+                    """INSERT INTO event_avatar_standings
+                       (event_id, source, user_id, user_display_name, avatar_name, event_elo)
+                       VALUES (?, 'paper', ?, ?, ?, ?)
+                       ON CONFLICT(event_id, source, user_id, avatar_name)
+                       DO UPDATE SET user_display_name = excluded.user_display_name,
+                                     event_elo = excluded.event_elo""",
+                    (
+                        active_event["event_id"],
+                        user_id,
+                        display_name,
+                        avatar_name,
+                        event_elo,
+                    ),
+                )
+        else:
+            cur.execute(
+                "UPDATE paper_standings SET paper_event_elo = ? WHERE user_id = ?",
+                (winner_new_event_elo, winner_id_str),
+            )
+            cur.execute(
+                "UPDATE paper_standings SET paper_event_elo = ? WHERE user_id = ?",
+                (loser_new_event_elo, loser_id_str),
+            )
+
+        conn.commit()
+        logger.info(
+            "Paper match ELO updated atomically: winner=%s (%+d/%+d), loser=%s (%+d/%+d)",
+            winner_id_str,
+            winner_change,
+            winner_event_change,
+            loser_id_str,
+            loser_change,
+            loser_event_change,
+        )
+        return (
+            (
+                winner_new_elo,
+                winner_change,
+                winner_new_event_elo,
+                winner_event_change,
+                True,
+            ),
+            (
+                loser_new_elo,
+                loser_change,
+                loser_new_event_elo,
+                loser_event_change,
+                True,
+            ),
+        )
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()

@@ -251,6 +251,8 @@ def report_season_match(season_id):
     creator_id = str(session.get("user_id", ""))
     winner_id = data.get("winner_id")
     loser_id = data.get("loser_id")
+    winner_avatar = data.get("winner_avatar")
+    loser_avatar = data.get("loser_avatar")
 
     if not winner_id or not loser_id:
         return jsonify({"success": False, "error": "Winner and loser are required"}), 400
@@ -260,7 +262,12 @@ def report_season_match(season_id):
 
     try:
         result = service.report_match_as_creator(
-            creator_id, season_id, winner_id, loser_id
+            creator_id,
+            season_id,
+            winner_id,
+            loser_id,
+            winner_avatar=winner_avatar,
+            loser_avatar=loser_avatar,
         )
     except ValueError as e:
         msg = str(e)
@@ -285,6 +292,8 @@ def get_season_members(season_id):
         return jsonify({"success": False, "error": "Season not found"}), 404
 
     members = service.get_season_members(season_id)
+    from services.paper_elo import get_active_event
+    active_event = get_active_event()
     return jsonify({
         "success": True,
         "season_id": season_id,
@@ -295,5 +304,8 @@ def get_season_members(season_id):
         "region": season["region"],
         "creator_display_name": season["creator_display_name"],
         "status": season["status"],
+        "avatar_specific_event": bool(
+            active_event and active_event.get("avatar_specific")
+        ),
         "members": members,
     }), 200

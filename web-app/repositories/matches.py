@@ -661,7 +661,9 @@ class MatchRepository:
         cur = conn.cursor()
         cur.execute(
             """SELECT rowid, winner_id, losser_id, winner_display_name,
-                      losser_display_name, winner_elo_change, loser_elo_change, timestamp
+                      losser_display_name, winner_elo_change, loser_elo_change, timestamp,
+                      winner_lifetime_elo_change, loser_lifetime_elo_change,
+                      winner_avatar, loser_avatar, match_type
                FROM match_records WHERE rowid = ?""",
             (match_id,),
         )
@@ -678,6 +680,11 @@ class MatchRepository:
             "winner_elo_change": row[5] or 0,
             "loser_elo_change": row[6] or 0,
             "timestamp": row[7],
+            "winner_lifetime_elo_change": row[8],
+            "loser_lifetime_elo_change": row[9],
+            "winner_avatar": row[10],
+            "loser_avatar": row[11],
+            "match_type": row[12],
         }
 
     def delete_match(self, match_id: int) -> bool:
@@ -795,13 +802,25 @@ class MatchRepository:
         try:
             cur.execute(
                 """SELECT match_id, winner_id, losser_id, winner_display_name,
-                          losser_display_name, winner_elo_change, loser_elo_change, timestamp
+                          losser_display_name, winner_elo_change, loser_elo_change, timestamp,
+                          winner_lifetime_elo_change, loser_lifetime_elo_change,
+                          winner_avatar, loser_avatar, match_type
                    FROM match_reports_web WHERE match_id = ?""",
                 (match_id,),
             )
             row = cur.fetchone()
         except sqlite3.OperationalError:
-            row = None
+            try:
+                cur.execute(
+                    """SELECT match_id, winner_id, losser_id, winner_display_name,
+                              losser_display_name, winner_elo_change, loser_elo_change, timestamp
+                       FROM match_reports_web WHERE match_id = ?""",
+                    (match_id,),
+                )
+                legacy = cur.fetchone()
+                row = (*legacy, None, None, None, None, None) if legacy else None
+            except sqlite3.OperationalError:
+                row = None
         conn.close()
         if not row:
             return None
@@ -814,6 +833,11 @@ class MatchRepository:
             "winner_elo_change": row[5] or 0,
             "loser_elo_change": row[6] or 0,
             "timestamp": row[7],
+            "winner_lifetime_elo_change": row[8],
+            "loser_lifetime_elo_change": row[9],
+            "winner_avatar": row[10],
+            "loser_avatar": row[11],
+            "match_type": row[12],
         }
 
     def delete_web_match(self, match_id: str) -> bool:

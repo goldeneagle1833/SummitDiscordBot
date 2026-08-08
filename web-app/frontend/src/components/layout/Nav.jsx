@@ -55,6 +55,14 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
   const [error, setError] = useState(null)
 
   const youWon = confirmation.winner_discord_id === confirmation.opponent_discord_id
+  const confirmingPlayerAvatar = youWon
+    ? confirmation.winner_avatar
+    : confirmation.loser_avatar
+  const avatarRequired = Boolean(
+    (confirmation.winner_avatar || confirmation.loser_avatar)
+    && !confirmingPlayerAvatar
+    && confirmation.match_type !== 'casual'
+  )
 
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
@@ -70,6 +78,10 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
   }, [])
 
   const handleSubmit = async () => {
+    if (avatarRequired && !deckUrl.trim() && !avatar) {
+      setError('Provide your Curiosa deck URL or select the avatar you played.')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -160,7 +172,9 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
           </div>
 
           <div className="mb-4">
-            <label className="text-xs text-text-muted block mb-1">Your Avatar (optional override)</label>
+            <label className="text-xs text-text-muted block mb-1">
+              Your Avatar {avatarRequired ? '(required if no deck URL)' : '(optional override)'}
+            </label>
             <select
               value={avatar}
               onChange={(e) => setAvatar(e.target.value)}

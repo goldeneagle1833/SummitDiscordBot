@@ -312,6 +312,68 @@ class EloRepository:
         conn.close()
         return [dict(row) for row in rows]
 
+    def get_avatar_event_elo(
+        self, event_id: int, source: str, user_id: int | str, avatar_name: str
+    ) -> int | None:
+        conn = self._get_connection()
+        row = conn.execute(
+            """SELECT event_elo FROM event_avatar_standings
+               WHERE event_id = ? AND source = ? AND user_id = ?
+                 AND avatar_name = ? COLLATE NOCASE""",
+            (event_id, source, str(user_id), avatar_name),
+        ).fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    def set_avatar_event_elo(
+        self,
+        event_id: int,
+        source: str,
+        user_id: int | str,
+        display_name: str,
+        avatar_name: str,
+        new_elo: int,
+    ) -> int | None:
+        previous = self.get_avatar_event_elo(
+            event_id, source, user_id, avatar_name
+        )
+        conn = self._get_connection()
+        conn.execute(
+            """INSERT INTO event_avatar_standings
+               (event_id, source, user_id, user_display_name, avatar_name, event_elo)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(event_id, source, user_id, avatar_name)
+               DO UPDATE SET user_display_name = excluded.user_display_name,
+                             event_elo = excluded.event_elo""",
+            (event_id, source, str(user_id), display_name, avatar_name, new_elo),
+        )
+        conn.commit()
+        conn.close()
+        return previous
+
+    def delete_avatar_player(self, user_id: int | str) -> int:
+        conn = self._get_connection()
+        cur = conn.execute(
+            "DELETE FROM event_avatar_standings WHERE user_id = ?",
+            (str(user_id),),
+        )
+        deleted = cur.rowcount
+        conn.commit()
+        conn.close()
+        return deleted
+
+    def rename_avatar_player(self, user_id: int | str, new_name: str) -> int:
+        conn = self._get_connection()
+        cur = conn.execute(
+            """UPDATE event_avatar_standings SET user_display_name = ?
+               WHERE user_id = ?""",
+            (new_name, str(user_id)),
+        )
+        updated = cur.rowcount
+        conn.commit()
+        conn.close()
+        return updated
+
     def delete_player(self, user_id: int) -> bool:
         """Delete a player from overall_standings. Returns True if deleted."""
         conn = self._get_connection()

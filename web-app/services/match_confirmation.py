@@ -699,7 +699,7 @@ class MatchConfirmationService:
             )
 
         # Get player IDs and display names FIRST (before any DB operations)
-        from services.paper_elo import update_paper_elo
+        from services.paper_elo import update_paper_match_elos
         from webapp_config import MATCH_RECORDS_DB_PATH
         from repositories.matches import MatchRepository
         import sqlite3
@@ -828,29 +828,28 @@ class MatchConfirmationService:
             else:
                 logger.info("ELO updates skipped due to repeat matchup")
         else:
-            # Update winner's ELO (keep IDs as strings with google_ prefix)
+            winner_result, loser_result = update_paper_match_elos(
+                winner_id,
+                winner_name,
+                loser_id,
+                loser_name,
+                winner_avatar_name=winner_avatar,
+                loser_avatar_name=loser_avatar,
+            )
             (
                 winner_new_elo,
                 winner_elo_change,
                 winner_new_event_elo,
                 winner_event_elo_change,
                 event_active,
-            ) = update_paper_elo(
-                winner_id, winner_name, did_win=True, opponent_id=loser_id,
-                avatar_name=winner_avatar, opponent_avatar_name=loser_avatar,
-            )
-
-            # Update loser's ELO (keep IDs as strings with google_ prefix)
+            ) = winner_result
             (
                 loser_new_elo,
                 loser_elo_change,
                 loser_new_event_elo,
                 loser_event_elo_change,
                 _,
-            ) = update_paper_elo(
-                loser_id, loser_name, did_win=False, opponent_id=winner_id,
-                avatar_name=loser_avatar, opponent_avatar_name=winner_avatar,
-            )
+            ) = loser_result
 
         # Create match record in match_reports_web table (uses TEXT for all IDs - no overflow)
         logger.info(f"Connecting to match_records database at: {MATCH_RECORDS_DB_PATH}")
@@ -890,8 +889,10 @@ class MatchConfirmationService:
                     curiosa_url_loser, match_comment, json_deck_data, json_deck_data_winner,
                     json_deck_data_loser, winner_elo_change, loser_elo_change, winner_went_first,
                     loser_went_first, source, match_type, season_id,
-                    winner_lifetime_elo_after, loser_lifetime_elo_after, winner_avatar, loser_avatar)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    winner_lifetime_elo_after, loser_lifetime_elo_after,
+                    winner_lifetime_elo_change, loser_lifetime_elo_change,
+                    winner_avatar, loser_avatar)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     match_id,         # match_id (UUID-based web_xxx)
                     reporter_id,      # reporter_id (TEXT - keeps google_ prefix)
@@ -919,6 +920,8 @@ class MatchConfirmationService:
                     confirmation.get("season_id"),  # season_id (NULL for non-season matches)
                     winner_new_elo if not is_repeat_matchup and not is_casual else None,
                     loser_new_elo if not is_repeat_matchup and not is_casual else None,
+                    winner_elo_change,
+                    loser_elo_change,
                     winner_avatar,
                     loser_avatar,
                 ),

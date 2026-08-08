@@ -1,14 +1,28 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { removePlayer, removeMatch, resetElo, renamePlayer, deleteAccount } from '@/api/admin'
+import { get } from '@/api/client'
+import { listAllAvatars } from '@/api/games'
 
 export default function AdminControls({ playerId, playerName, onAction }) {
   const [modal, setModal] = useState(null)
   const [matchId, setMatchId] = useState('')
   const [eloValue, setEloValue] = useState('1500')
   const [eloSource, setEloSource] = useState('both')
+  const [eloAvatar, setEloAvatar] = useState('')
+  const [avatarSpecificEvent, setAvatarSpecificEvent] = useState(false)
+  const [avatars, setAvatars] = useState([])
   const [newName, setNewName] = useState(playerName || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+
+  useEffect(() => {
+    Promise.all([get('/api/events'), listAllAvatars()])
+      .then(([eventData, avatarList]) => {
+        setAvatarSpecificEvent(Boolean(eventData.active_event?.avatar_specific))
+        setAvatars(avatarList || [])
+      })
+      .catch(() => {})
+  }, [])
 
   const close = () => { setModal(null); setError(null) }
 
@@ -44,7 +58,8 @@ export default function AdminControls({ playerId, playerName, onAction }) {
   const handleResetElo = () => {
     const elo = parseInt(eloValue)
     if (isNaN(elo) || elo < 0 || elo > 5000) { setError('ELO must be 0-5000.'); return }
-    doAction(() => resetElo(playerId, elo, eloSource))
+    if (avatarSpecificEvent && !eloAvatar) { setError('Select an avatar for the active event.'); return }
+    doAction(() => resetElo(playerId, elo, eloSource, eloAvatar))
   }
 
   const handleRename = () => {
@@ -64,7 +79,7 @@ export default function AdminControls({ playerId, playerName, onAction }) {
           <button onClick={() => { setMatchId(''); setModal('removeMatch') }} className="px-3 py-1.5 text-xs bg-accent-red/20 text-accent-red border border-accent-red/30 rounded hover:bg-accent-red/30">
             Remove Match
           </button>
-          <button onClick={() => { setEloValue('1500'); setEloSource('both'); setModal('resetElo') }} className="px-3 py-1.5 text-xs bg-bg-raised border border-border rounded text-text-muted hover:text-text-primary">
+          <button onClick={() => { setEloValue('1500'); setEloSource('both'); setEloAvatar(''); setModal('resetElo') }} className="px-3 py-1.5 text-xs bg-bg-raised border border-border rounded text-text-muted hover:text-text-primary">
             Set ELO
           </button>
           <button onClick={() => { setNewName(playerName || ''); setModal('rename') }} className="px-3 py-1.5 text-xs bg-bg-raised border border-border rounded text-text-muted hover:text-text-primary">
@@ -114,6 +129,22 @@ export default function AdminControls({ playerId, playerName, onAction }) {
                   <option value="bot">Online (Bot)</option>
                   <option value="paper">Paper (Web)</option>
                 </select>
+                {avatarSpecificEvent && (
+                  <>
+                    <label className="text-xs text-text-muted block mb-1">Avatar *</label>
+                    <select
+                      value={eloAvatar}
+                      onChange={(e) => setEloAvatar(e.target.value)}
+                      className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-2"
+                    >
+                      <option value="">Select avatar...</option>
+                      {avatars.map((avatar) => <option key={avatar} value={avatar}>{avatar}</option>)}
+                    </select>
+                    <p className="text-xs text-text-muted mb-4">
+                      The lifetime rating and this avatar's active-event rating will be set.
+                    </p>
+                  </>
+                )}
               </>
             )}
             {modal === 'rename' && (

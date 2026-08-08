@@ -296,7 +296,12 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             match_type = lfg_cog.resolve_match_type(queue_type, matched_queue_type)
 
             if matched_ladder_info:
-                from utils.database import get_user_event_elo, save_ladder_challenge, delete_ladder_challenge
+                from utils.database import (
+                    delete_ladder_challenge,
+                    get_active_event,
+                    get_user_event_elo,
+                    save_ladder_challenge,
+                )
 
                 if not matched_ladder_info.get("challenge_id"):
                     challenge_id = save_ladder_challenge(matched_ladder_info["challenger_id"])
@@ -306,22 +311,29 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                     )
 
                 try:
-                    challenger_elo = get_user_event_elo(
-                        matched_ladder_info["challenger_id"]
-                    )
-                    opponent_elo = get_user_event_elo(interaction.user.id)
-                    elo_diff = abs(challenger_elo - opponent_elo)
-
-                    if elo_diff < 100:
-                        matched_ladder_info["elo_multiplier_winner"] = 1.0
-                        matched_ladder_info["elo_multiplier_loser"] = 1.0
+                    active_event = get_active_event()
+                    if active_event and active_event.get("avatar_specific"):
+                        matched_ladder_info["avatar_stakes_pending"] = True
                         logger.info(
-                            f"Ladder challenge match: ELO diff {elo_diff} < 100 - using normal stakes"
+                            "Queued ladder challenge: avatar stakes deferred until report confirmation"
                         )
                     else:
-                        logger.info(
-                            f"Ladder challenge match: ELO diff {elo_diff} >= 100 - using special stakes (2x/0.5x)"
+                        challenger_elo = get_user_event_elo(
+                            matched_ladder_info["challenger_id"]
                         )
+                        opponent_elo = get_user_event_elo(interaction.user.id)
+                        elo_diff = abs(challenger_elo - opponent_elo)
+
+                        if elo_diff < 100:
+                            matched_ladder_info["elo_multiplier_winner"] = 1.0
+                            matched_ladder_info["elo_multiplier_loser"] = 1.0
+                            logger.info(
+                                f"Ladder challenge match: ELO diff {elo_diff} < 100 - using normal stakes"
+                            )
+                        else:
+                            logger.info(
+                                f"Ladder challenge match: ELO diff {elo_diff} >= 100 - using special stakes (2x/0.5x)"
+                            )
                 except Exception as e:
                     # Rollback: delete the challenge so daily usage is not consumed
                     logger.error(
@@ -581,7 +593,12 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
 
         if lfg_channel:
             ladder_note = ""
-            if matched_ladder_info:
+            if matched_ladder_info and matched_ladder_info.get("avatar_stakes_pending"):
+                ladder_note = (
+                    " 🏆 **Ladder Challenge!** Stakes will be based on the "
+                    "avatars reported and confirmed for this match."
+                )
+            elif matched_ladder_info:
                 from utils.database import get_user_event_elo
 
                 elo_diff = abs(

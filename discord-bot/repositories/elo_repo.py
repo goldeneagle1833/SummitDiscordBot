@@ -152,6 +152,14 @@ def create_db():
         except sqlite3.OperationalError:
             pass
 
+    for column in ("winner_elo_multiplier", "loser_elo_multiplier"):
+        try:
+            cur.execute(
+                f"ALTER TABLE match_records ADD COLUMN {column} REAL DEFAULT 1.0"
+            )
+        except sqlite3.OperationalError:
+            pass
+
     # Create solo_match_reports table with auto-increment report_id
     cur.execute("""CREATE TABLE IF NOT EXISTS solo_match_reports
                    (report_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -342,6 +350,14 @@ def create_match_records_archive():
         except sqlite3.OperationalError:
             pass
 
+    for column in ("winner_elo_multiplier", "loser_elo_multiplier"):
+        try:
+            cur.execute(
+                f"ALTER TABLE match_records_archive ADD COLUMN {column} REAL DEFAULT 1.0"
+            )
+        except sqlite3.OperationalError:
+            pass
+
     conn.commit()
     conn.close()
 
@@ -361,6 +377,14 @@ def create_ladder_challenge_table():
                     winner_id INTEGER,
                     match_id INTEGER
                    )""")
+
+    for column in ("winner_elo_multiplier", "loser_elo_multiplier"):
+        try:
+            cur.execute(
+                f"ALTER TABLE ladder_challenges ADD COLUMN {column} REAL DEFAULT 1.0"
+            )
+        except sqlite3.OperationalError:
+            pass
 
     conn.commit()
     conn.close()
@@ -1039,16 +1063,31 @@ def reset_ladder_challenge_today(user_id: int) -> int:
     return deleted
 
 
-def complete_ladder_challenge(challenge_id: int, winner_id: int, match_id: int = None):
+def complete_ladder_challenge(
+    challenge_id: int,
+    winner_id: int,
+    match_id: int = None,
+    winner_elo_multiplier: float = 1.0,
+    loser_elo_multiplier: float = 1.0,
+):
     """Mark a ladder challenge as completed."""
     create_ladder_challenge_table()
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
 
     cur.execute(
-        """UPDATE ladder_challenges SET status = 'completed', completed_at = ?, winner_id = ?, match_id = ?
+        """UPDATE ladder_challenges
+           SET status = 'completed', completed_at = ?, winner_id = ?, match_id = ?,
+               winner_elo_multiplier = ?, loser_elo_multiplier = ?
            WHERE challenge_id = ?""",
-        (datetime.datetime.now().isoformat(), winner_id, match_id, challenge_id),
+        (
+            datetime.datetime.now().isoformat(),
+            winner_id,
+            match_id,
+            winner_elo_multiplier,
+            loser_elo_multiplier,
+            challenge_id,
+        ),
     )
 
     conn.commit()
@@ -1131,6 +1170,38 @@ def set_player_event_elo(user_id: int, user_display_name: str, elo: int) -> int 
             (user_id, user_display_name, elo),
         )
 
+    conn.commit()
+    conn.close()
+    return old_elo
+
+
+def set_player_avatar_event_elo(
+    event_id: int,
+    user_id: int,
+    user_display_name: str,
+    avatar_name: str,
+    elo: int,
+    source: str = "online",
+) -> int | None:
+    """Set one player/avatar entry on an avatar-specific event ladder."""
+    create_events_table()
+    conn = sqlite3.connect("elo.db")
+    row = conn.execute(
+        """SELECT event_elo FROM event_avatar_standings
+           WHERE event_id = ? AND source = ? AND user_id = ?
+             AND avatar_name = ? COLLATE NOCASE""",
+        (event_id, source, str(user_id), avatar_name),
+    ).fetchone()
+    old_elo = row[0] if row else None
+    conn.execute(
+        """INSERT INTO event_avatar_standings
+           (event_id, source, user_id, user_display_name, avatar_name, event_elo)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(event_id, source, user_id, avatar_name)
+           DO UPDATE SET user_display_name = excluded.user_display_name,
+                         event_elo = excluded.event_elo""",
+        (event_id, source, str(user_id), user_display_name, avatar_name, elo),
+    )
     conn.commit()
     conn.close()
     return old_elo

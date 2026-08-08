@@ -113,6 +113,13 @@ export default function AdminActionsSection({ onRefresh }) {
           {activeEvent
             ? `📅 Current Event: ${activeEvent.event_name}${activeEvent.event_id ? ` (ID: ${activeEvent.event_id})` : ''}${activeEvent.avatar_specific ? ' — Avatar-specific ELO' : ''}`
             : 'ℹ️ No active event'}
+          {activeEvent && (
+            <div className="mt-1 text-xs">
+              ELO format: {activeEvent.avatar_specific
+                ? 'Avatar-specific (one rating per player/avatar)'
+                : 'Standard (one rating per player)'}
+            </div>
+          )}
         </div>
       )}
 

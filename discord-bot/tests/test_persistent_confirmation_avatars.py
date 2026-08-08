@@ -47,3 +47,36 @@ def test_pending_confirmation_migration_adds_avatar_columns(tmp_path, monkeypatc
     }
     connection.close()
     assert {"winner_avatar", "loser_avatar"}.issubset(columns)
+
+
+def test_avatar_ladder_stakes_use_the_confirmed_played_avatars(monkeypatch):
+    ratings = {
+        (1, "Impostor"): 1650,
+        (2, "Battlemage"): 1490,
+    }
+    monkeypatch.setattr(
+        persistent_confirm,
+        "get_user_event_elo",
+        lambda user_id, avatar: ratings[(int(user_id), avatar)],
+    )
+    data = {
+        "winner_id": 2,
+        "loser_id": 1,
+        "winner_avatar": "Battlemage",
+        "loser_avatar": "Impostor",
+    }
+    ladder_info = {
+        "challenger_id": 1,
+        "avatar_stakes_pending": True,
+        "elo_multiplier_winner": 2.0,
+        "elo_multiplier_loser": 0.5,
+    }
+
+    persistent_confirm._resolve_avatar_ladder_stakes(data, ladder_info)
+
+    assert ladder_info["elo_difference"] == 160
+    assert ladder_info["challenger_avatar"] == "Impostor"
+    assert ladder_info["opponent_avatar"] == "Battlemage"
+    assert ladder_info["elo_multiplier_winner"] == 2.0
+    assert ladder_info["elo_multiplier_loser"] == 0.5
+    assert ladder_info["avatar_stakes_pending"] is False

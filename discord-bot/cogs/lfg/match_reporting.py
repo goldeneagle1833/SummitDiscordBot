@@ -14,7 +14,7 @@ from utils.database import (
     get_pairing_between_players,
     get_active_event,
 )
-from utils.avatar_elo import canonicalize_avatar_name
+from utils.avatar_elo import avatar_input_error, canonicalize_avatar_name
 from repositories.limited_repo import (
     get_limited_pairing_between_players,
     mark_limited_pairing_reported,
@@ -39,14 +39,14 @@ def _canonicalize_reported_avatars(reporter_avatar: str, opponent_avatar: str):
     reporter = canonicalize_avatar_name(reporter_avatar.strip()) if reporter_avatar else None
     opponent = canonicalize_avatar_name(opponent_avatar.strip()) if opponent_avatar else None
     if not reporter or not opponent:
-        missing = []
+        errors = []
         if not reporter:
-            missing.append("your avatar")
+            errors.append(avatar_input_error("your avatar", reporter_avatar))
         if not opponent:
-            missing.append("your opponent's avatar")
-        raise ValueError(
-            "Enter a valid Avatar card name for " + " and ".join(missing) + "."
-        )
+            errors.append(
+                avatar_input_error("your opponent's avatar", opponent_avatar)
+            )
+        raise ValueError(" ".join(errors))
     return reporter, opponent
 
 
@@ -181,7 +181,13 @@ async def _apply_ladder_elo(bot, ladder_info, winner_id, winner_global, loser_id
 
     # Complete the ladder challenge record
     if ladder_info.get("challenge_id"):
-        complete_ladder_challenge(ladder_info["challenge_id"], winner_id, match_id)
+        complete_ladder_challenge(
+            ladder_info["challenge_id"],
+            winner_id,
+            match_id,
+            ladder_info.get("elo_multiplier_winner", 1.0),
+            ladder_info.get("elo_multiplier_loser", 1.0),
+        )
 
     # If non-Top16 player won, assign role and compose stakes message
     stakes_msg = ""

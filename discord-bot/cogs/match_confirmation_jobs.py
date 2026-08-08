@@ -217,9 +217,23 @@ class MatchConfirmationJobs(commands.Cog):
                 inline=False
             )
 
+            winner_avatar = confirmation.get("winner_avatar")
+            loser_avatar = confirmation.get("loser_avatar")
+            if winner_avatar and loser_avatar:
+                embed.add_field(
+                    name="Reported Avatars",
+                    value=f"Winner: **{winner_avatar}** | Loser: **{loser_avatar}**",
+                    inline=False
+                )
+
             embed.add_field(
                 name="Action Required",
-                value="Please confirm or deny this match report on the web app within 24 hours.",
+                value=(
+                    "Please confirm the result and reported avatars, or deny this match report "
+                    "on the web app within 24 hours."
+                    if winner_avatar and loser_avatar
+                    else "Please confirm or deny this match report on the web app within 24 hours."
+                ),
                 inline=False
             )
 

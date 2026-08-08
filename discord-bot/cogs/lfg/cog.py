@@ -53,7 +53,9 @@ from utils.database import (
     set_player_event_elo,
     is_blocked_pair,
     create_blocked_users_table,
+    get_active_event,
 )
+from utils.avatar_elo import canonicalize_avatar_name
 from utils.constants import SORCERY_NICKNAMES
 from utils.text import find_best_command_match
 from utils.checks import is_bot_admin
@@ -1909,6 +1911,17 @@ class LFGCog(commands.Cog):
             await ctx.send("Cannot report matches for bots!")
             return
 
+        active_event = get_active_event()
+        if active_event and active_event.get("avatar_specific"):
+            winner_avatar = canonicalize_avatar_name(winner_avatar) if winner_avatar else None
+            loser_avatar = canonicalize_avatar_name(loser_avatar) if loser_avatar else None
+            if not winner_avatar or not loser_avatar:
+                await ctx.send(
+                    "This event uses avatar-specific ELO, so both catalog-valid Avatar names are required. "
+                    "Usage: `!admin_report @winner @loser \"Winner Avatar\" \"Loser Avatar\"`"
+                )
+                return
+
         try:
             # Get display names with fallback
             winner_name = winner.global_name or winner.display_name
@@ -2416,6 +2429,18 @@ class LFGCog(commands.Cog):
         if top16_player.id != winner.id and top16_player.id != loser.id:
             await ctx.send("The Top 16 player must be either the winner or the loser!")
             return
+
+        active_event = get_active_event()
+        if active_event and active_event.get("avatar_specific"):
+            winner_avatar = canonicalize_avatar_name(winner_avatar) if winner_avatar else None
+            loser_avatar = canonicalize_avatar_name(loser_avatar) if loser_avatar else None
+            if not winner_avatar or not loser_avatar:
+                await ctx.send(
+                    "This event uses avatar-specific ELO, so both catalog-valid Avatar names are required. "
+                    "Usage: `!admin_challenge_report @winner @loser @top16_player "
+                    "\"Winner Avatar\" \"Loser Avatar\"`"
+                )
+                return
 
         try:
             winner_name = winner.global_name or winner.display_name

@@ -421,6 +421,73 @@ class TestReportResultSelectView:
         mock_interaction.response.defer.assert_awaited_once_with()
         view._submit.assert_awaited_once_with(mock_interaction)
 
+    @pytest.mark.asyncio
+    async def test_avatar_specific_event_opens_avatar_modal_even_with_deck_url(
+        self, mock_bot, mock_interaction, mock_user, mock_user_2
+    ):
+        view = _build_report_result_view(
+            mock_bot, mock_user, mock_user_2, "https://curiosa.io/decks/reporter-deck"
+        )
+        view.selected_first_id = mock_user.id
+        view.selected_winner_id = mock_user.id
+
+        with patch(
+            "cogs.lfg.match_reporting.get_active_event",
+            return_value={"avatar_specific": True},
+        ):
+            await view._on_submit(mock_interaction)
+
+        modal = mock_interaction.response.send_modal.await_args.args[0]
+        assert isinstance(modal, MatchReportDeckModal)
+        assert modal.reporter_avatar in modal.children
+        assert modal.opponent_avatar in modal.children
+        assert modal.deck_url not in modal.children
+
+    @pytest.mark.asyncio
+    async def test_avatar_specific_report_maps_and_displays_both_avatars(
+        self, mock_bot, mock_interaction, mock_user, mock_user_2
+    ):
+        pending_match_reports.clear()
+        mock_bot.fetch_user.return_value = mock_user_2
+        view = _build_report_result_view(
+            mock_bot, mock_user, mock_user_2, "https://curiosa.io/decks/reporter-deck"
+        )
+        view.selected_first_id = mock_user.id
+        view.selected_winner_id = mock_user_2.id
+
+        with (
+            patch(
+                "cogs.lfg.match_reporting.get_active_event",
+                return_value={"avatar_specific": True},
+            ),
+            patch(
+                "cogs.lfg.match_reporting._canonicalize_reported_avatars",
+                return_value=("Avatar of Fire", "Avatar of Earth"),
+            ),
+            patch("cogs.lfg.match_reporting.create_confirmation_view") as create_view,
+            patch(
+                "cogs.lfg.match_reporting._send_confirmation_to_opponent",
+                new_callable=AsyncMock,
+            ) as send_confirmation,
+        ):
+            await view._submit(
+                mock_interaction,
+                reporter_avatar="fire",
+                opponent_avatar="earth",
+            )
+
+        create_kwargs = create_view.call_args.kwargs
+        assert create_kwargs["winner_avatar"] == "Avatar of Earth"
+        assert create_kwargs["loser_avatar"] == "Avatar of Fire"
+        pending = pending_match_reports[(mock_user.id, mock_user_2.id)]
+        assert pending["winner_avatar"] == "Avatar of Earth"
+        assert pending["loser_avatar"] == "Avatar of Fire"
+
+        confirmation_message = send_confirmation.await_args.args[4]
+        assert "Winner — OtherUser: **Avatar of Earth**" in confirmation_message
+        assert "Loser — TestUser: **Avatar of Fire**" in confirmation_message
+        assert "dispute" in confirmation_message.lower()
+
 
 class TestStateReset:
     """Test state cleanup between matches."""

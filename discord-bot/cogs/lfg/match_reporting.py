@@ -12,7 +12,9 @@ from utils.database import (
     delete_ladder_challenge,
     mark_pairing_reported,
     get_pairing_between_players,
+    get_active_event,
 )
+from utils.avatar_elo import canonicalize_avatar_name
 from repositories.limited_repo import (
     get_limited_pairing_between_players,
     mark_limited_pairing_reported,
@@ -23,6 +25,54 @@ from cogs.lfg.persistent_confirm import create_confirmation_view
 logger = logging.getLogger("discord_bot")
 
 LADDER_WINNER_ROLE_ID = 1472382884550803658
+
+
+def _avatar_specific_event_active(match_type: str = "ranked") -> bool:
+    """Return whether this report contributes to an avatar-specific event ladder."""
+    if match_type in ("testing", "rumble", "points", "limited"):
+        return False
+    active_event = get_active_event()
+    return bool(active_event and active_event.get("avatar_specific"))
+
+
+def _canonicalize_reported_avatars(reporter_avatar: str, opponent_avatar: str):
+    reporter = canonicalize_avatar_name(reporter_avatar.strip()) if reporter_avatar else None
+    opponent = canonicalize_avatar_name(opponent_avatar.strip()) if opponent_avatar else None
+    if not reporter or not opponent:
+        missing = []
+        if not reporter:
+            missing.append("your avatar")
+        if not opponent:
+            missing.append("your opponent's avatar")
+        raise ValueError(
+            "Enter a valid Avatar card name for " + " and ".join(missing) + "."
+        )
+    return reporter, opponent
+
+
+def _confirmation_message(
+    reporter_global: str,
+    opponent_won: bool,
+    winner_global: str,
+    loser_global: str,
+    winner_avatar: str = None,
+    loser_avatar: str = None,
+) -> str:
+    message = (
+        f"**Match Report Confirmation**\n\n"
+        f"You **{'WON' if opponent_won else 'LOST'}** against {reporter_global}\n\n"
+    )
+    if winner_avatar and loser_avatar:
+        message += (
+            "**Reported avatars**\n"
+            f"Winner — {winner_global}: **{winner_avatar}**\n"
+            f"Loser — {loser_global}: **{loser_avatar}**\n\n"
+            "Confirm only if both the result and avatars are correct. "
+            "Otherwise, dispute this report:"
+        )
+    else:
+        message += "Please confirm or dispute this result:"
+    return message
 
 
 async def _fallback_to_backup_channel(bot, user, message, view=None):
@@ -269,6 +319,20 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         required=False,
     )
 
+    reporter_avatar = discord.ui.TextInput(
+        label="Your Avatar",
+        placeholder="Enter the Avatar card name you played",
+        required=True,
+        max_length=100,
+    )
+
+    opponent_avatar = discord.ui.TextInput(
+        label="Opponent's Avatar",
+        placeholder="Enter the Avatar card name they played",
+        required=True,
+        max_length=100,
+    )
+
     def __init__(
         self, view: "LFGReportButtons", interaction: discord.Interaction, is_win: bool
     ):
@@ -276,12 +340,30 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
         self.view = view
         self.original_interaction = interaction
         self.is_win = is_win
+        self.avatar_specific = _avatar_specific_event_active(view.match_type)
+        if view.reporter_deck_url:
+            self.remove_item(self.deck_url)
+        if not self.avatar_specific:
+            self.remove_item(self.reporter_avatar)
+            self.remove_item(self.opponent_avatar)
 
     async def on_submit(self, interaction: discord.Interaction):
         # Update the reporter's deck URL
-        self.view.reporter_deck_url = (
-            self.deck_url.value.strip() if self.deck_url.value else None
-        )
+        if self.deck_url in self.children:
+            self.view.reporter_deck_url = (
+                self.deck_url.value.strip() if self.deck_url.value else None
+            )
+        if self.avatar_specific:
+            try:
+                reporter_avatar, opponent_avatar = _canonicalize_reported_avatars(
+                    self.reporter_avatar.value,
+                    self.opponent_avatar.value,
+                )
+            except ValueError as error:
+                await interaction.response.send_message(str(error), ephemeral=True)
+                return
+            self.view.reporter_avatar = reporter_avatar
+            self.view.opponent_avatar = opponent_avatar
         # Store the match comment on the view
         self.view.match_comment = (
             self.match_comment.value.strip() if self.match_comment.value else ""
@@ -388,6 +470,8 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 "ladder_info": view.ladder_info,
                 "match_type": view.match_type,
                 "match_comment": view.match_comment,
+                "winner_avatar": view.reporter_avatar,
+                "loser_avatar": view.opponent_avatar,
             }
             logger.info(f"Stored pending report for match between {original_interaction.user.id} and {opponent_id}")
 
@@ -416,9 +500,18 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                     guild_id=view.guild_id,
                     winner_run_id=view.reporter_run_id,  # Reporter won
                     loser_run_id=view.opponent_run_id,
+                    winner_avatar=view.reporter_avatar,
+                    loser_avatar=view.opponent_avatar,
                 )
 
-                confirm_msg = f"**Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                confirm_msg = _confirmation_message(
+                    reporter_global=reporter_global_name,
+                    opponent_won=False,
+                    winner_global=reporter_global_name,
+                    loser_global=opponent_global,
+                    winner_avatar=view.reporter_avatar,
+                    loser_avatar=view.opponent_avatar,
+                )
                 await _send_confirmation_to_opponent(
                     view.bot, opponent, opponent_id, opponent_global,
                     confirm_msg, confirmation_view,
@@ -550,6 +643,8 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                 "ladder_info": view.ladder_info,
                 "match_type": view.match_type,
                 "match_comment": view.match_comment,
+                "winner_avatar": view.opponent_avatar,
+                "loser_avatar": view.reporter_avatar,
             }
             logger.info(f"Stored pending report for match between {original_interaction.user.id} and {opponent_id}")
 
@@ -578,9 +673,18 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                     guild_id=view.guild_id,
                     winner_run_id=view.opponent_run_id,  # Opponent won
                     loser_run_id=view.reporter_run_id,
+                    winner_avatar=view.opponent_avatar,
+                    loser_avatar=view.reporter_avatar,
                 )
 
-                confirm_msg = f"**Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                confirm_msg = _confirmation_message(
+                    reporter_global=reporter_global_name,
+                    opponent_won=True,
+                    winner_global=opponent_global,
+                    loser_global=reporter_global_name,
+                    winner_avatar=view.opponent_avatar,
+                    loser_avatar=view.reporter_avatar,
+                )
                 await _send_confirmation_to_opponent(
                     view.bot, opponent, opponent_id, opponent_global,
                     confirm_msg, confirmation_view,
@@ -934,6 +1038,8 @@ class LFGReportButtons(discord.ui.View):
         # Track when the match started for automatic match time calculation
         self.match_start_time = match_start_time or datetime.datetime.now()
         self.match_comment = ""
+        self.reporter_avatar = None
+        self.opponent_avatar = None
 
     @discord.ui.button(
         label="I Won!", style=discord.ButtonStyle.success, custom_id="win_button"
@@ -942,7 +1048,10 @@ class LFGReportButtons(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         # Check if reporter needs to provide a deck URL (skip for testing matches)
-        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble"):
+        if (
+            not self.reporter_deck_url
+            and self.match_type not in ("testing", "rumble")
+        ) or _avatar_specific_event_active(self.match_type):
             # Show modal to collect deck URL before proceeding
             modal = ReporterDeckURLModal(self, interaction, is_win=True)
             await interaction.response.send_modal(modal)
@@ -1038,6 +1147,8 @@ class LFGReportButtons(discord.ui.View):
                 "ladder_info": self.ladder_info,
                 "match_type": self.match_type,
                 "match_comment": self.match_comment,
+                "winner_avatar": self.reporter_avatar,
+                "loser_avatar": self.opponent_avatar,
             }
             logger.info(f"Stored pending report for match between {interaction.user.id} and {opponent_id}")
 
@@ -1067,9 +1178,18 @@ class LFGReportButtons(discord.ui.View):
                     guild_id=self.guild_id,
                     winner_run_id=self.reporter_run_id,  # Reporter won
                     loser_run_id=self.opponent_run_id,
+                    winner_avatar=self.reporter_avatar,
+                    loser_avatar=self.opponent_avatar,
                 )
 
-                confirm_msg = f"**Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                confirm_msg = _confirmation_message(
+                    reporter_global=reporter_global_name,
+                    opponent_won=False,
+                    winner_global=reporter_global_name,
+                    loser_global=opponent_global,
+                    winner_avatar=self.reporter_avatar,
+                    loser_avatar=self.opponent_avatar,
+                )
                 await _send_confirmation_to_opponent(
                     self.bot, opponent, opponent_id, opponent_global,
                     confirm_msg, confirmation_view,
@@ -1113,7 +1233,10 @@ class LFGReportButtons(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         # Check if reporter needs to provide a deck URL (skip for testing matches)
-        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble"):
+        if (
+            not self.reporter_deck_url
+            and self.match_type not in ("testing", "rumble")
+        ) or _avatar_specific_event_active(self.match_type):
             # Show modal to collect deck URL before proceeding
             modal = ReporterDeckURLModal(self, interaction, is_win=False)
             await interaction.response.send_modal(modal)
@@ -1209,6 +1332,8 @@ class LFGReportButtons(discord.ui.View):
                 "ladder_info": self.ladder_info,
                 "match_type": self.match_type,
                 "match_comment": self.match_comment,
+                "winner_avatar": self.opponent_avatar,
+                "loser_avatar": self.reporter_avatar,
             }
             logger.info(f"Stored pending report for match between {interaction.user.id} and {opponent_id}")
 
@@ -1238,9 +1363,18 @@ class LFGReportButtons(discord.ui.View):
                     guild_id=self.guild_id,
                     winner_run_id=self.opponent_run_id,  # Opponent won
                     loser_run_id=self.reporter_run_id,
+                    winner_avatar=self.opponent_avatar,
+                    loser_avatar=self.reporter_avatar,
                 )
 
-                confirm_msg = f"**Match Report Confirmation**\n\nYou **WON** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
+                confirm_msg = _confirmation_message(
+                    reporter_global=reporter_global_name,
+                    opponent_won=True,
+                    winner_global=opponent_global,
+                    loser_global=reporter_global_name,
+                    winner_avatar=self.opponent_avatar,
+                    loser_avatar=self.reporter_avatar,
+                )
                 await _send_confirmation_to_opponent(
                     self.bot, opponent, opponent_id, opponent_global,
                     confirm_msg, confirmation_view,
@@ -1533,6 +1667,8 @@ class ReportResultSelectView(discord.ui.View):
         self.selected_first_id = None
         self._submit_interaction = None
         self.match_comment = ""
+        self.reporter_avatar = None
+        self.opponent_avatar = None
 
         self.first_select = discord.ui.Select(
             placeholder="Who went first?",
@@ -1602,18 +1738,37 @@ class ReportResultSelectView(discord.ui.View):
             return
 
         self._submit_interaction = interaction
-        if not self.reporter_deck_url and self.match_type not in ("testing", "rumble"):
+        if (
+            not self.reporter_deck_url
+            and self.match_type not in ("testing", "rumble")
+        ) or _avatar_specific_event_active(self.match_type):
             modal = MatchReportDeckModal(self)
             await interaction.response.send_modal(modal)
         else:
             await interaction.response.defer()
             await self._submit(interaction)
 
-    async def _submit(self, interaction: discord.Interaction, deck_url: str = None, match_comment: str = ""):
+    async def _submit(
+        self,
+        interaction: discord.Interaction,
+        deck_url: str = None,
+        match_comment: str = "",
+        reporter_avatar: str = None,
+        opponent_avatar: str = None,
+    ):
         if deck_url:
             self.reporter_deck_url = deck_url
         if match_comment:
             self.match_comment = match_comment
+        if _avatar_specific_event_active(self.match_type):
+            try:
+                self.reporter_avatar, self.opponent_avatar = _canonicalize_reported_avatars(
+                    reporter_avatar or self.reporter_avatar,
+                    opponent_avatar or self.opponent_avatar,
+                )
+            except ValueError as error:
+                await interaction.followup.send(str(error), ephemeral=True)
+                return
 
         winner_id = self.selected_winner_id
         loser_id = self.player2_id if winner_id == self.player1_id else self.player1_id
@@ -1630,6 +1785,16 @@ class ReportResultSelectView(discord.ui.View):
 
         winner_deck_url = p1_deck if winner_id == self.player1_id else p2_deck
         loser_deck_url = p2_deck if winner_id == self.player1_id else p1_deck
+
+        if self.reporter_id == self.player1_id:
+            p1_avatar = self.reporter_avatar
+            p2_avatar = self.opponent_avatar
+        else:
+            p1_avatar = self.opponent_avatar
+            p2_avatar = self.reporter_avatar
+
+        winner_avatar = p1_avatar if winner_id == self.player1_id else p2_avatar
+        loser_avatar = p2_avatar if winner_id == self.player1_id else p1_avatar
 
         # "y" means the reporter went first (consistent with existing convention)
         first_player = "y" if self.selected_first_id == self.reporter_id else "n"
@@ -1660,6 +1825,8 @@ class ReportResultSelectView(discord.ui.View):
             "ladder_info": self.ladder_info,
             "match_type": self.match_type,
             "match_comment": self.match_comment,
+            "winner_avatar": winner_avatar,
+            "loser_avatar": loser_avatar,
         }
 
         winner_run_id = self.reporter_run_id if is_reporter_winner else self.opponent_run_id
@@ -1693,13 +1860,18 @@ class ReportResultSelectView(discord.ui.View):
             guild_id=self.guild_id,
             winner_run_id=winner_run_id,
             loser_run_id=loser_run_id,
+            winner_avatar=winner_avatar,
+            loser_avatar=loser_avatar,
         )
 
         opponent_won = (winner_id == self.opponent_id)
-        confirm_msg = (
-            f"**Match Report Confirmation**\n\n"
-            f"You **{'WON' if opponent_won else 'LOST'}** against {self.reporter_global}\n\n"
-            f"Please confirm or dispute this result:"
+        confirm_msg = _confirmation_message(
+            reporter_global=self.reporter_global,
+            opponent_won=opponent_won,
+            winner_global=winner_global,
+            loser_global=loser_global,
+            winner_avatar=winner_avatar,
+            loser_avatar=loser_avatar,
         )
 
         await _send_confirmation_to_opponent(
@@ -1736,15 +1908,48 @@ class MatchReportDeckModal(discord.ui.Modal, title="Enter Your Deck"):
         required=False,
     )
 
+    reporter_avatar = discord.ui.TextInput(
+        label="Your Avatar",
+        placeholder="Enter the Avatar card name you played",
+        required=True,
+        max_length=100,
+    )
+
+    opponent_avatar = discord.ui.TextInput(
+        label="Opponent's Avatar",
+        placeholder="Enter the Avatar card name they played",
+        required=True,
+        max_length=100,
+    )
+
     def __init__(self, report_view: "ReportResultSelectView"):
         super().__init__()
         self.report_view = report_view
+        self.avatar_specific = _avatar_specific_event_active(report_view.match_type)
+        if report_view.reporter_deck_url:
+            self.remove_item(self.deck_url)
+        if not self.avatar_specific:
+            self.remove_item(self.reporter_avatar)
+            self.remove_item(self.opponent_avatar)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        url = self.deck_url.value.strip() if self.deck_url.value else None
+        url = None
+        if self.deck_url in self.children:
+            url = self.deck_url.value.strip() if self.deck_url.value else None
         comment = self.match_comment.value.strip() if self.match_comment.value else ""
-        await self.report_view._submit(interaction, deck_url=url or None, match_comment=comment)
+        reporter_avatar = None
+        opponent_avatar = None
+        if self.avatar_specific:
+            reporter_avatar = self.reporter_avatar.value
+            opponent_avatar = self.opponent_avatar.value
+        await self.report_view._submit(
+            interaction,
+            deck_url=url or None,
+            match_comment=comment,
+            reporter_avatar=reporter_avatar,
+            opponent_avatar=opponent_avatar,
+        )
 
 
 # ──────────────────────────────────────────────

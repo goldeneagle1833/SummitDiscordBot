@@ -124,11 +124,20 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
                 <span className="text-white capitalize">{confirmation.match_type}</span>
               </div>
             )}
-            {confirmation.reported_match_avatar && (
+            {(confirmation.winner_avatar || confirmation.loser_avatar) && (
+              <>
               <div className="flex justify-between text-sm">
-                <span className="text-text-muted">Opponent avatar</span>
-                <span className="text-white">{confirmation.reported_match_avatar}</span>
+                <span className="text-text-muted">Winner avatar</span>
+                <span className="text-white">{confirmation.winner_avatar || 'Not provided'}</span>
               </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">Loser avatar</span>
+                <span className="text-white">{confirmation.loser_avatar || 'Not provided'}</span>
+              </div>
+              <p className="text-xs text-amber-300 pt-1">
+                Confirm only if both the result and avatars are correct. Otherwise, deny this report.
+              </p>
+              </>
             )}
             {confirmation.went_first && (
               <div className="flex justify-between text-sm">

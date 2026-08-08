@@ -77,6 +77,8 @@ def ensure_pending_confirmations_table():
             match_comment     TEXT    DEFAULT '',
             winner_deck_url   TEXT,
             loser_deck_url    TEXT,
+            winner_avatar     TEXT,
+            loser_avatar      TEXT,
             ladder_info_json  TEXT,
             match_type        TEXT    DEFAULT 'ranked',
             guild_id          INTEGER,
@@ -92,6 +94,10 @@ def ensure_pending_confirmations_table():
     columns = {row[1] for row in cursor.fetchall()}
     if "confirmer_comment" not in columns:
         conn.execute("ALTER TABLE pending_confirmations ADD COLUMN confirmer_comment TEXT DEFAULT ''")
+    if "winner_avatar" not in columns:
+        conn.execute("ALTER TABLE pending_confirmations ADD COLUMN winner_avatar TEXT")
+    if "loser_avatar" not in columns:
+        conn.execute("ALTER TABLE pending_confirmations ADD COLUMN loser_avatar TEXT")
 
     conn.commit()
     conn.close()
@@ -114,9 +120,9 @@ def save_pending_confirmation(data: dict) -> int:
             loser_id, loser_global, is_winner, reporter_global,
             opponent_global, match_start_time, first_player,
             match_time, match_comment, winner_deck_url, loser_deck_url,
-            ladder_info_json, match_type, guild_id,
+            winner_avatar, loser_avatar, ladder_info_json, match_type, guild_id,
             winner_run_id, loser_run_id
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             data["reporter_id"],
@@ -134,6 +140,8 @@ def save_pending_confirmation(data: dict) -> int:
             data.get("match_comment", ""),
             data.get("winner_deck_url"),
             data.get("loser_deck_url"),
+            data.get("winner_avatar"),
+            data.get("loser_avatar"),
             json.dumps(data.get("ladder_info")) if data.get("ladder_info") else None,
             data.get("match_type", "ranked"),
             data.get("guild_id"),
@@ -337,6 +345,8 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
             match_type=data.get("match_type", "ranked"),
             elo_multiplier_winner=elo_multiplier_winner,
             elo_multiplier_loser=elo_multiplier_loser,
+            winner_avatar=data.get("winner_avatar"),
+            loser_avatar=data.get("loser_avatar"),
         )
 
         if ladder_info and data["match_type"] not in NON_ELO_MATCH_TYPES:
@@ -948,6 +958,8 @@ def create_confirmation_view(
     match_comment="",
     winner_deck_url=None,
     loser_deck_url=None,
+    winner_avatar=None,
+    loser_avatar=None,
     ladder_info=None,
     match_type="ranked",
     guild_id=None,
@@ -989,6 +1001,8 @@ def create_confirmation_view(
         "match_comment": match_comment,
         "winner_deck_url": winner_deck_url,
         "loser_deck_url": loser_deck_url,
+        "winner_avatar": winner_avatar,
+        "loser_avatar": loser_avatar,
         "ladder_info": ladder_info,
         "match_type": match_type,
         "guild_id": guild_id,

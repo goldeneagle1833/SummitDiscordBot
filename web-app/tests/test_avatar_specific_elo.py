@@ -5,6 +5,7 @@ import sqlite3
 
 from services import paper_elo
 from utils import avatar_elo
+from repositories.elo import EloRepository
 
 
 def test_paper_avatar_event_keeps_one_lifetime_rating_and_multiple_avatar_ratings(
@@ -72,3 +73,46 @@ def test_paper_avatar_event_keeps_one_lifetime_rating_and_multiple_avatar_rating
     assert ("1", "Persecutor", 1508) in rows
     assert alice_lifetime > 1516
     assert alice_legacy_event == 1500
+
+
+def test_player_event_elo_returns_every_avatar_with_overall_ladder_rank(tmp_path):
+    elo_path = tmp_path / "elo.db"
+    conn = sqlite3.connect(elo_path)
+    conn.executescript("""
+        CREATE TABLE events (
+            event_id INTEGER PRIMARY KEY,
+            event_name TEXT,
+            avatar_specific BOOLEAN
+        );
+        CREATE TABLE event_avatar_standings (
+            event_id INTEGER,
+            source TEXT,
+            user_id TEXT,
+            user_display_name TEXT,
+            avatar_name TEXT COLLATE NOCASE,
+            event_elo INTEGER
+        );
+    """)
+    conn.execute("INSERT INTO events VALUES (4, 'Avatar League', 1)")
+    conn.executemany(
+        "INSERT INTO event_avatar_standings VALUES (4, 'online', ?, ?, ?, ?)",
+        [
+            ("2", "Bob", "Battlemage", 1660),
+            ("1", "Alice", "Impostor", 1640),
+            ("3", "Cara", "Persecutor", 1600),
+            ("1", "Alice", "Persecutor", 1530),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    result = EloRepository(elo_path).get_player_event_elo("1", 4)
+
+    assert result == {
+        "avatar_specific": True,
+        "event_name": "Avatar League",
+        "avatar_elos": [
+            {"avatar": "Impostor", "elo": 1640, "rank": 2},
+            {"avatar": "Persecutor", "elo": 1530, "rank": 4},
+        ],
+    }

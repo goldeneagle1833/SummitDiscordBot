@@ -196,6 +196,43 @@ class EloRepository:
         conn = self._get_connection()
         cur = conn.cursor()
 
+        try:
+            event_columns = {row[1] for row in cur.execute("PRAGMA table_info(events)")}
+            if "avatar_specific" in event_columns:
+                cur.execute(
+                    "SELECT event_name, avatar_specific FROM events WHERE event_id = ?",
+                    (event_id,),
+                )
+                event_row = cur.fetchone()
+                if event_row and event_row[1]:
+                    standings = cur.execute(
+                        """SELECT user_id, user_display_name, avatar_name, event_elo
+                           FROM event_avatar_standings
+                           WHERE event_id = ? AND source = 'online'
+                           ORDER BY event_elo DESC, user_display_name COLLATE NOCASE,
+                                    avatar_name COLLATE NOCASE""",
+                        (event_id,),
+                    ).fetchall()
+                    avatar_elos = [
+                        {
+                            "avatar": row[2],
+                            "elo": row[3],
+                            "rank": rank,
+                        }
+                        for rank, row in enumerate(standings, 1)
+                        if str(row[0]) == str(user_id)
+                    ]
+                    conn.close()
+                    if avatar_elos:
+                        return {
+                            "avatar_specific": True,
+                            "event_name": event_row[0],
+                            "avatar_elos": avatar_elos,
+                        }
+                    return None
+        except sqlite3.OperationalError:
+            pass
+
         # Check if event_standings_archive table exists
         cur.execute("""
             SELECT name FROM sqlite_master

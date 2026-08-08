@@ -1128,6 +1128,15 @@ def player_api(player_id):
             date_filter += " AND timestamp <= ?"
             date_params += (event_end_date,)
         try:
+            web_columns = {
+                row[1] for row in cur.execute("PRAGMA table_info(match_reports_web)")
+            }
+            winner_avatar_column = (
+                "winner_avatar" if "winner_avatar" in web_columns else "NULL"
+            )
+            loser_avatar_column = (
+                "loser_avatar" if "loser_avatar" in web_columns else "NULL"
+            )
             cur.execute(
                 f"""
                 SELECT
@@ -1154,7 +1163,9 @@ def player_api(player_id):
                     winner_lifetime_elo_after,
                     loser_lifetime_elo_after,
                     match_comment,
-                    reporter_id
+                    reporter_id,
+                    {winner_avatar_column} as winner_avatar,
+                    {loser_avatar_column} as loser_avatar
                 FROM match_reports_web
                 WHERE (winner_id = ? OR losser_id = ?){date_filter}
                 ORDER BY timestamp DESC
@@ -1201,7 +1212,9 @@ def player_api(player_id):
                     winner_lifetime_elo_after,
                     loser_lifetime_elo_after,
                     match_comment,
-                    reporter_id
+                    reporter_id,
+                    winner_avatar,
+                    loser_avatar
                 FROM match_records
                 WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                 ORDER BY timestamp DESC
@@ -1238,7 +1251,9 @@ def player_api(player_id):
                         NULL as winner_lifetime_elo_after,
                         NULL as loser_lifetime_elo_after,
                         NULL as match_comment,
-                        reporter_id
+                        reporter_id,
+                        NULL as winner_avatar,
+                        NULL as loser_avatar
                     FROM match_records
                     WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                     ORDER BY timestamp DESC
@@ -1275,7 +1290,9 @@ def player_api(player_id):
                             NULL as winner_lifetime_elo_after,
                             NULL as loser_lifetime_elo_after,
                             NULL as match_comment,
-                            reporter_id
+                            reporter_id,
+                            NULL as winner_avatar,
+                            NULL as loser_avatar
                         FROM match_records
                         WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                         ORDER BY timestamp DESC
@@ -1329,7 +1346,9 @@ def player_api(player_id):
                     winner_lifetime_elo_after,
                     loser_lifetime_elo_after,
                     match_comment,
-                    reporter_id
+                    reporter_id,
+                    winner_avatar,
+                    loser_avatar
                 FROM match_records_archive
                 WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
                 ORDER BY timestamp DESC
@@ -1366,7 +1385,9 @@ def player_api(player_id):
                         NULL as winner_lifetime_elo_after,
                         NULL as loser_lifetime_elo_after,
                         NULL as match_comment,
-                        reporter_id
+                        reporter_id,
+                        NULL as winner_avatar,
+                        NULL as loser_avatar
                     FROM match_records_archive
                     WHERE (winner_id = ? OR losser_id = ?){event_filter_clause}
                     ORDER BY timestamp DESC
@@ -1434,10 +1455,59 @@ def player_api(player_id):
     online_elo = 1500
     paper_event_elo = 1500
     online_event_elo = 1500
+    avatar_specific_event = False
+    avatar_event_info = None
+    avatar_event_elos = []
 
     try:
         elo_conn = sqlite3.connect(str(ELO_DB_PATH))
         elo_cur = elo_conn.cursor()
+
+        # A lifetime profile still surfaces the active league's event ratings,
+        # while current/past filters select that exact event.
+        try:
+            event_columns = {row[1] for row in elo_cur.execute("PRAGMA table_info(events)")}
+            if "avatar_specific" in event_columns and not is_season_filter:
+                if archive_event_id is not None:
+                    elo_cur.execute(
+                        """SELECT event_id, event_name, start_date, end_date,
+                                  is_active, avatar_specific
+                           FROM events WHERE event_id = ?""",
+                        (archive_event_id,),
+                    )
+                else:
+                    elo_cur.execute(
+                        """SELECT event_id, event_name, start_date, end_date,
+                                  is_active, avatar_specific
+                           FROM events WHERE is_active = 1 LIMIT 1"""
+                    )
+                selected_event = elo_cur.fetchone()
+                if selected_event and selected_event[5]:
+                    avatar_specific_event = True
+                    avatar_event_info = {
+                        "event_id": selected_event[0],
+                        "event_name": selected_event[1],
+                        "start_date": selected_event[2],
+                        "end_date": selected_event[3],
+                        "is_active": bool(selected_event[4]),
+                    }
+                    ladder_source = "paper" if source == "web" else "online"
+                    elo_cur.execute(
+                        """SELECT user_id, avatar_name, event_elo
+                           FROM event_avatar_standings
+                           WHERE event_id = ? AND source = ?
+                           ORDER BY event_elo DESC, user_display_name COLLATE NOCASE,
+                                    avatar_name COLLATE NOCASE""",
+                        (selected_event[0], ladder_source),
+                    )
+                    target_ids = {str(original_player_id), str(player_id_normalized)}
+                    avatar_event_elos = [
+                        {"avatar": row[1], "elo": row[2], "rank": ladder_rank}
+                        for ladder_rank, row in enumerate(elo_cur.fetchall(), start=1)
+                        if str(row[0]) in target_ids
+                    ]
+        except sqlite3.OperationalError:
+            pass
 
         # Choose ELO columns based on source
         if source == "web":
@@ -1516,47 +1586,48 @@ def player_api(player_id):
             displayed_elo = player_elo
             displayed_rank = rank
         elif event_filter == "current":
-            displayed_elo = event_elo
+            displayed_elo = avatar_event_elos[0]["elo"] if avatar_event_elos else event_elo
+            displayed_rank = avatar_event_elos[0]["rank"] if avatar_event_elos else 0
             # For current event, calculate rank among event participants
-            try:
-                # Get participants from match records
-                match_conn_tmp = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
-                match_cur_tmp = match_conn_tmp.cursor()
-                if source == "web":
-                    match_cur_tmp.execute("""
-                        SELECT DISTINCT user_id FROM (
-                            SELECT winner_id as user_id FROM match_reports_web WHERE timestamp >= ?
-                            UNION
-                            SELECT losser_id as user_id FROM match_reports_web WHERE timestamp >= ?
-                        )
-                    """, (event_start_date or "", event_start_date or ""))
-                    web_participants = {str(row[0]) for row in match_cur_tmp.fetchall()}
+            if not avatar_specific_event:
+                try:
+                    # Get participants from match records
+                    match_conn_tmp = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+                    match_cur_tmp = match_conn_tmp.cursor()
+                    if source == "web":
+                        match_cur_tmp.execute("""
+                            SELECT DISTINCT user_id FROM (
+                                SELECT winner_id as user_id FROM match_reports_web WHERE timestamp >= ?
+                                UNION
+                                SELECT losser_id as user_id FROM match_reports_web WHERE timestamp >= ?
+                            )
+                        """, (event_start_date or "", event_start_date or ""))
+                        participants = {str(row[0]) for row in match_cur_tmp.fetchall()}
+                        elo_column = "paper_event_elo"
+                        standings_table = "paper_standings"
+                    else:
+                        match_cur_tmp.execute("""
+                            SELECT DISTINCT user_id FROM (
+                                SELECT winner_id as user_id FROM match_records WHERE timestamp >= ?
+                                UNION
+                                SELECT losser_id as user_id FROM match_records WHERE timestamp >= ?
+                            )
+                        """, (event_start_date or "", event_start_date or ""))
+                        participants = {str(row[0]) for row in match_cur_tmp.fetchall()}
+                        elo_column = "online_event_elo"
+                        standings_table = "overall_standings"
                     match_conn_tmp.close()
 
                     elo_cur.execute(
-                        "SELECT user_id, paper_event_elo FROM paper_standings WHERE paper_event_elo > ?",
+                        f"SELECT user_id, {elo_column} FROM {standings_table} WHERE {elo_column} > ?",
                         (event_elo,),
                     )
-                    displayed_rank = sum(1 for r in elo_cur.fetchall() if str(r[0]) in web_participants) + 1
-                else:
-                    match_cur_tmp.execute("""
-                        SELECT DISTINCT user_id FROM (
-                            SELECT winner_id as user_id FROM match_records WHERE timestamp >= ?
-                            UNION
-                            SELECT losser_id as user_id FROM match_records WHERE timestamp >= ?
-                        )
-                    """, (event_start_date or "", event_start_date or ""))
-                    bot_participants = {row[0] for row in match_cur_tmp.fetchall()}
-                    match_conn_tmp.close()
-
-                    elo_cur.execute(
-                        "SELECT user_id, event_elo FROM overall_standings WHERE event_elo > ?",
-                        (event_elo,),
-                    )
-                    displayed_rank = sum(1 for r in elo_cur.fetchall() if r[0] in bot_participants) + 1
-            except sqlite3.OperationalError:
-                displayed_rank = 0
-        elif archive_event_id is not None:
+                    displayed_rank = sum(
+                        1 for row in elo_cur.fetchall() if str(row[0]) in participants
+                    ) + 1
+                except sqlite3.OperationalError:
+                    displayed_rank = 0
+        elif archive_event_id is not None and not avatar_specific_event:
             # Get ELO from archived event standings (bot-only for now)
             try:
                 elo_cur.execute(
@@ -1632,6 +1703,19 @@ def player_api(player_id):
     # Split all_rows into ranked and casual for stats computation
     def _is_casual_row(row):
         return len(row) > 19 and row[19] in ("casual", "testing")
+
+    def _row_avatar(row, winner):
+        """Prefer the validated avatar saved with the report, then deck JSON."""
+        stored_index = 24 if winner else 25
+        if len(row) > stored_index and row[stored_index]:
+            return row[stored_index]
+
+        deck_index = 13 if winner else 14
+        deck_json = row[deck_index] if len(row) > deck_index else None
+        if not deck_json or deck_json == "{}":
+            deck_json = row[2] if len(row) > 2 else None
+        avatar_name, _elements = _extract_deck_info(deck_json)
+        return avatar_name
 
     ranked_stat_rows = [r for r in all_rows if not _is_casual_row(r)]
     casual_stat_rows = [r for r in all_rows if _is_casual_row(r)]
@@ -1756,51 +1840,15 @@ def player_api(player_id):
     avatar_stats = {}
     for row in all_rows:
         did_win = row[0]
-        winner_json = row[13] if len(row) > 13 else None
-        loser_json = row[14] if len(row) > 14 else None
-
-        deck_json = winner_json if did_win else loser_json
-        if not deck_json or deck_json == "{}":
-            deck_json = row[2]
-
-        if deck_json and deck_json != "{}":
-            try:
-                deck_data = json.loads(deck_json)
-                if not deck_data or not deck_data.get("avatar"):
-                    continue
-
-                avatar_list = deck_data.get("avatar", [])
-                if not avatar_list:
-                    continue
-
-                # Find the main avatar - must have type "Avatar" (not sideboard avatars)
-                # For Imposter decks, this ensures we only count Imposter, not the extra avatars
-                main_avatar_name = None
-                for av in avatar_list:
-                    if av and av.get("type") == "Avatar" and av.get("name"):
-                        main_avatar_name = av.get("name")
-                        break
-
-                # Fallback: if no type field, use first avatar with a name
-                if (
-                    not main_avatar_name
-                    and avatar_list[0]
-                    and avatar_list[0].get("name")
-                ):
-                    main_avatar_name = avatar_list[0].get("name")
-
-                if not main_avatar_name:
-                    continue
-
-                if main_avatar_name not in avatar_stats:
-                    avatar_stats[main_avatar_name] = {"wins": 0, "losses": 0}
-
-                if did_win:
-                    avatar_stats[main_avatar_name]["wins"] += 1
-                else:
-                    avatar_stats[main_avatar_name]["losses"] += 1
-            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-                continue
+        main_avatar_name = _row_avatar(row, bool(did_win))
+        if not main_avatar_name:
+            continue
+        if main_avatar_name not in avatar_stats:
+            avatar_stats[main_avatar_name] = {"wins": 0, "losses": 0}
+        if did_win:
+            avatar_stats[main_avatar_name]["wins"] += 1
+        else:
+            avatar_stats[main_avatar_name]["losses"] += 1
 
     # Include external matches in avatar stats
     for em in external_matches_raw:
@@ -1856,10 +1904,10 @@ def player_api(player_id):
         opponent_name = row[5] if did_win else row[4]
         opponent_id = row[11] if did_win else row[10] if len(row) > 10 else None
 
-        opponent_avatar_name = None
+        opponent_avatar_name = _row_avatar(row, not bool(did_win))
         opponent_deck_json = loser_json if did_win else winner_json
 
-        if opponent_deck_json and opponent_deck_json != "{}":
+        if not opponent_avatar_name and opponent_deck_json and opponent_deck_json != "{}":
             try:
                 deck_data = json.loads(opponent_deck_json)
                 if deck_data and deck_data.get("avatar"):
@@ -2158,9 +2206,15 @@ def player_api(player_id):
             has_deck_json = True
 
         player_avatar_name, deck_elements = _extract_deck_info(player_deck_json)
+        stored_player_avatar = _row_avatar(row, bool(did_win))
+        if stored_player_avatar:
+            player_avatar_name = stored_player_avatar
 
         opponent_deck_json = loser_json if did_win else winner_json
         opponent_avatar_name, opponent_elements = _extract_deck_info(opponent_deck_json)
+        stored_opponent_avatar = _row_avatar(row, not bool(did_win))
+        if stored_opponent_avatar:
+            opponent_avatar_name = stored_opponent_avatar
 
         show_deck_urls = is_owner or visibility.get("deck_urls", False)
         show_deck_snapshots = is_owner or visibility.get("deck_snapshots", False)
@@ -2320,6 +2374,55 @@ def player_api(player_id):
             "result": "Win" if did_win else "Loss",
             "opponent": opponent_name,
         })
+
+    # Avatar-specific events have one independent ELO series per avatar.
+    avatar_elo_histories = []
+    if avatar_specific_event and avatar_event_info:
+        avatar_ratings = {}
+        avatar_history_by_name = {}
+        event_history_rows = []
+        for row in elo_history_source:
+            match_date = str(row[6])
+            if avatar_event_info.get("start_date") and match_date < str(avatar_event_info["start_date"]):
+                continue
+            if avatar_event_info.get("end_date") and match_date > str(avatar_event_info["end_date"]):
+                continue
+            event_history_rows.append(row)
+
+        for row in event_history_rows:
+            did_win = bool(row[0])
+            avatar_name = _row_avatar(row, did_win)
+            if not avatar_name:
+                continue
+            elo_change = row[7] if did_win else row[8]
+            if elo_change is None:
+                continue
+            avatar_ratings[avatar_name] = avatar_ratings.get(avatar_name, 1500) + elo_change
+            avatar_history_by_name.setdefault(avatar_name, []).append({
+                "date": row[6],
+                "elo_change": elo_change,
+                "elo_after": round(avatar_ratings[avatar_name]),
+                "result": "Win" if did_win else "Loss",
+                "opponent": row[5] if did_win else row[4],
+            })
+
+        standing_by_avatar = {
+            entry["avatar"]: entry for entry in avatar_event_elos
+        }
+        avatar_names = list(standing_by_avatar)
+        avatar_names.extend(
+            name for name in avatar_history_by_name if name not in standing_by_avatar
+        )
+        for avatar_name in avatar_names:
+            standing = standing_by_avatar.get(avatar_name, {})
+            avatar_elo_histories.append({
+                "avatar": avatar_name,
+                "current_elo": standing.get(
+                    "elo", avatar_ratings.get(avatar_name, 1500)
+                ),
+                "rank": standing.get("rank", 0),
+                "history": avatar_history_by_name.get(avatar_name, []),
+            })
 
     # Recent decks - group matches by deck URL to calculate win rates
     recent_decks = []
@@ -2514,6 +2617,10 @@ def player_api(player_id):
             "avatar_matchups": avatar_matchups if _section_visible("avatar_matchups") else [],
             "recent_decks": recent_decks if _section_visible("recent_decks") else [],
             "elo_history": elo_history if _section_visible("elo_history") else [],
+            "avatar_specific_event": avatar_specific_event if _section_visible("elo_history") else False,
+            "avatar_event": avatar_event_info if _section_visible("elo_history") else None,
+            "avatar_event_elos": avatar_event_elos if _section_visible("elo_history") else [],
+            "avatar_elo_histories": avatar_elo_histories if _section_visible("elo_history") else [],
             "matches": match_history,
             "casual_matches": casual_match_history,
             "external_stats": {

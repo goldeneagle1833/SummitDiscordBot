@@ -126,12 +126,19 @@ const [editDeck, setEditDeck] = useState(null)
   if (eventFilter === 'lifetime' || !eventFilter) {
     if (canSeeLifetime && data.elo != null) {
       eloText = `Lifetime ELO: ${data.elo}`
-      if (data.event_elo && data.event_elo !== 1500) eloText += ` | Event ELO: ${data.event_elo}`
+      if (!data.avatar_specific_event && data.event_elo && data.event_elo !== 1500) {
+        eloText += ` | Event ELO: ${data.event_elo}`
+      }
       rankText = data.rank ? `Rank #${data.rank}` : ''
     } else {
-      eloText = data.event_elo && data.event_elo !== 1500 ? `Event ELO: ${data.event_elo}` : ''
+      eloText = !data.avatar_specific_event && data.event_elo && data.event_elo !== 1500
+        ? `Event ELO: ${data.event_elo}`
+        : ''
       rankText = ''
     }
+  } else if (data.avatar_specific_event) {
+    eloText = data.avatar_event_elos?.length ? '' : 'No data for this event'
+    rankText = ''
   } else if (eventFilter === 'current') {
     eloText = data.displayed_elo !== 1500 ? `Current Event ELO: ${data.displayed_elo}` : 'No current event data'
     rankText = data.displayed_rank > 0 ? `Event Rank #${data.displayed_rank}` : ''
@@ -237,7 +244,9 @@ const [editDeck, setEditDeck] = useState(null)
       {sectionVisible('elo_history') && (
         <EloHistory
           eloHistory={data.elo_history}
-          currentElo={data.elo}
+          avatarEloHistories={data.avatar_elo_histories}
+          avatarEvent={data.avatar_event}
+          showLifetime={eventFilter === 'lifetime'}
           open={openSections.eloHistory}
           onToggle={() => toggle('eloHistory')}
         />

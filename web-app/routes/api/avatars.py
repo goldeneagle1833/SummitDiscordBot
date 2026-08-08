@@ -67,6 +67,7 @@ def get_avatar_filters():
     """Return available events and sources for avatar page filtering."""
     events = []
     sources = []
+    active_event = None
 
     # Get events from elo.db
     try:
@@ -77,24 +78,33 @@ def get_avatar_filters():
             WHERE type='table' AND name='events'
         """)
         if cur.fetchone():
-            cur.execute("""
-                SELECT event_id, event_name, start_date, end_date, is_active
+            columns = {row[1] for row in cur.execute("PRAGMA table_info(events)")}
+            avatar_column = "avatar_specific" if "avatar_specific" in columns else "0"
+            cur.execute(f"""
+                SELECT event_id, event_name, start_date, end_date, is_active,
+                       {avatar_column}
                 FROM events
                 ORDER BY start_date DESC
             """)
             user_admin = is_admin()
             for row in cur.fetchall():
                 active = bool(row[4])
-                # Only admins can see active events
-                if active and not user_admin:
-                    continue
-                events.append({
+                avatar_specific = bool(row[5])
+                event = {
                     "event_id": row[0],
                     "event_name": row[1],
                     "start_date": row[2],
                     "end_date": row[3],
                     "is_active": active,
-                })
+                    "avatar_specific": avatar_specific,
+                }
+                if active and (user_admin or avatar_specific):
+                    active_event = event
+                # Active event match analytics remain private unless this is a
+                # public avatar-ELO ladder (or the viewer is an admin).
+                if active and not user_admin and not avatar_specific:
+                    continue
+                events.append(event)
         conn.close()
     except sqlite3.OperationalError as e:
         logger.warning(f"Could not query events: {e}")
@@ -121,7 +131,7 @@ def get_avatar_filters():
             "is_active": False,
         })
 
-    return jsonify({"events": events, "sources": sources})
+    return jsonify({"events": events, "sources": sources, "active_event": active_event})
 
 
 def _get_all_seasons():
@@ -709,13 +719,101 @@ def get_all_avatars():
     return jsonify(avatar_list)
 
 
+def _get_avatar_event_top_players(event_filter, source_filter, limit):
+    """Build per-avatar leaderboards from an avatar-specific event ladder."""
+    if event_filter in ("all", None):
+        return None
+    if source_filter not in ("discord", "web"):
+        return None
+
+    try:
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        cur = conn.cursor()
+        columns = {row[1] for row in cur.execute("PRAGMA table_info(events)")}
+        if "avatar_specific" not in columns:
+            conn.close()
+            return None
+
+        if event_filter == "current":
+            cur.execute(
+                """SELECT event_id, event_name, start_date, end_date, is_active,
+                          avatar_specific
+                   FROM events WHERE is_active = 1 LIMIT 1"""
+            )
+        else:
+            try:
+                event_id = int(event_filter)
+            except (TypeError, ValueError):
+                conn.close()
+                return None
+            cur.execute(
+                """SELECT event_id, event_name, start_date, end_date, is_active,
+                          avatar_specific
+                   FROM events WHERE event_id = ?""",
+                (event_id,),
+            )
+
+        event_row = cur.fetchone()
+        if not event_row or not event_row[5]:
+            conn.close()
+            return None
+
+        ladder_source = "online" if source_filter == "discord" else "paper"
+        cur.execute(
+            """SELECT user_id, user_display_name, avatar_name, event_elo
+               FROM event_avatar_standings
+               WHERE event_id = ? AND source = ?
+               ORDER BY event_elo DESC, user_display_name COLLATE NOCASE,
+                        avatar_name COLLATE NOCASE""",
+            (event_row[0], ladder_source),
+        )
+        standings = cur.fetchall()
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning("Could not query avatar event standings: %s", e)
+        return None
+
+    avatars = {}
+    for ladder_rank, row in enumerate(standings, start=1):
+        avatar_name = row[2]
+        avatar = avatars.setdefault(avatar_name, {"name": avatar_name, "players": []})
+        avatar["players"].append({
+            "player_id": str(row[0]),
+            "name": row[1] or f"Player {row[0]}",
+            "event_elo": row[3],
+            "ladder_rank": ladder_rank,
+        })
+
+    avatar_list = []
+    for avatar in avatars.values():
+        avatar["players"] = avatar["players"][:limit]
+        for avatar_rank, player in enumerate(avatar["players"], start=1):
+            player["rank"] = avatar_rank
+        avatar_list.append(avatar)
+    avatar_list.sort(key=lambda avatar: avatar["name"].lower())
+
+    return {
+        "avatars": avatar_list,
+        "limit": limit,
+        "source": source_filter,
+        "event": event_filter,
+        "ranking": "event_elo",
+        "avatar_specific": True,
+        "event_info": {
+            "event_id": event_row[0],
+            "event_name": event_row[1],
+            "start_date": event_row[2],
+            "end_date": event_row[3],
+            "is_active": bool(event_row[4]),
+        },
+    }
+
+
 @avatars_bp.route("/avatars/top-players")
 def get_avatar_top_players():
-    """Return the top players for each avatar, ranked by Avatar Score."""
+    """Return the top players for each avatar."""
     source_filter = request.args.get("source", "discord")
     event_filter = request.args.get("event", "all")
-    if event_filter == "current" and not is_admin():
-        event_filter = "all"
     try:
         limit = max(1, min(100, int(request.args.get("limit", 16))))
     except (TypeError, ValueError):
@@ -724,6 +822,15 @@ def get_avatar_top_players():
         min_games = max(1, int(request.args.get("min_games", 10)))
     except (TypeError, ValueError):
         min_games = 10
+
+    avatar_event_result = _get_avatar_event_top_players(
+        event_filter, source_filter, limit
+    )
+    if avatar_event_result is not None:
+        return jsonify(avatar_event_result)
+
+    if event_filter == "current" and not is_admin():
+        event_filter = "all"
 
     if not MATCH_RECORDS_DB_PATH.exists():
         logger.warning(f"Database not found at {MATCH_RECORDS_DB_PATH}")

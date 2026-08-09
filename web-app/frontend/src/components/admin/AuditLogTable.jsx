@@ -7,9 +7,10 @@ const PER_PAGE = 50
 const DESTRUCTIVE = new Set([
   'reset_elo', 'remove_match', 'remove_player', 'remove_community',
   'web_reset_all_elo', 'web_remove_player', 'web_remove_bot_match', 'web_remove_web_match',
+  'web_correct_match_avatars',
 ])
 const MODIFY = new Set([
-  'correct_match', 'spot_elo_reset', 'recalculate_event_elo', 'start_event', 'end_event',
+  'correct_match', 'correct_match_avatars', 'lock_avatar_top_cut', 'spot_elo_reset', 'recalculate_event_elo', 'start_event', 'end_event',
   'refresh_streamers', 'web_start_event', 'web_end_event', 'web_reset_elo', 'web_rename_player',
 ])
 

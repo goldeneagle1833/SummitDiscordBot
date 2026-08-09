@@ -697,6 +697,25 @@ class MatchRepository:
         conn.close()
         return deleted
 
+    def update_match_avatars(
+        self, match_id: int, winner_avatar: str, loser_avatar: str
+    ) -> bool:
+        """Correct the recorded avatars for one Discord match."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE match_records SET winner_avatar = ?, loser_avatar = ? WHERE rowid = ?",
+                (winner_avatar, loser_avatar, match_id),
+            )
+            updated = cur.rowcount > 0
+            conn.commit()
+        except sqlite3.OperationalError:
+            updated = False
+        finally:
+            conn.close()
+        return updated
+
     def rename_player_in_matches(self, user_id: int, new_name: str) -> int:
         """Update a player's display name in all match records. Returns rows updated."""
         conn = self._get_connection()
@@ -852,6 +871,27 @@ class MatchRepository:
             deleted = False
         conn.close()
         return deleted
+
+    def update_web_match_avatars(
+        self, match_id: str, winner_avatar: str, loser_avatar: str
+    ) -> bool:
+        """Correct the recorded avatars for one web/paper match."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """UPDATE match_reports_web
+                   SET winner_avatar = ?, loser_avatar = ?
+                   WHERE match_id = ?""",
+                (winner_avatar, loser_avatar, match_id),
+            )
+            updated = cur.rowcount > 0
+            conn.commit()
+        except sqlite3.OperationalError:
+            updated = False
+        finally:
+            conn.close()
+        return updated
 
     def rename_player_in_web_matches(self, user_id: str, new_name: str) -> int:
         """Update a player's display name in web match records. Returns rows updated."""

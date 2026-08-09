@@ -34,6 +34,40 @@ def migrate():
     )""")
     elo_conn.execute("""CREATE INDEX IF NOT EXISTS idx_event_avatar_standings_rank
         ON event_avatar_standings(event_id, source, event_elo DESC)""")
+    elo_conn.execute("""CREATE TABLE IF NOT EXISTS event_avatar_standings_archive (
+        event_id INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        user_display_name TEXT NOT NULL,
+        avatar_name TEXT NOT NULL COLLATE NOCASE,
+        final_event_elo INTEGER NOT NULL,
+        final_rank INTEGER NOT NULL,
+        games INTEGER NOT NULL DEFAULT 0,
+        wins INTEGER NOT NULL DEFAULT 0,
+        losses INTEGER NOT NULL DEFAULT 0,
+        archived_at TEXT NOT NULL,
+        PRIMARY KEY (event_id, source, user_id, avatar_name)
+    )""")
+    elo_conn.execute("""CREATE TABLE IF NOT EXISTS event_qualification_snapshots (
+        event_id INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        seat INTEGER NOT NULL,
+        player_id TEXT NOT NULL,
+        player_name TEXT NOT NULL,
+        qualifying_avatar TEXT NOT NULL,
+        qualifying_elo INTEGER NOT NULL,
+        qualification_path TEXT NOT NULL,
+        games INTEGER NOT NULL,
+        wins INTEGER NOT NULL,
+        losses INTEGER NOT NULL,
+        win_rate REAL NOT NULL,
+        requires_tiebreak BOOLEAN NOT NULL DEFAULT 0,
+        policy_json TEXT NOT NULL,
+        locked_at TEXT NOT NULL,
+        locked_by_id TEXT,
+        locked_by_name TEXT,
+        PRIMARY KEY (event_id, source, seat)
+    )""")
     elo_conn.commit()
     elo_conn.close()
 
@@ -47,6 +81,12 @@ def migrate():
             _add_column(match_conn, table, "loser_avatar TEXT")
             _add_column(match_conn, table, "winner_elo_multiplier REAL DEFAULT 1.0")
             _add_column(match_conn, table, "loser_elo_multiplier REAL DEFAULT 1.0")
+            _add_column(match_conn, table, "event_id INTEGER")
+            _add_column(
+                match_conn,
+                table,
+                "event_avatar_specific BOOLEAN NOT NULL DEFAULT 0",
+            )
             if table == "match_reports_web":
                 _add_column(match_conn, table, "winner_lifetime_elo_change INTEGER")
                 _add_column(match_conn, table, "loser_lifetime_elo_change INTEGER")
@@ -56,5 +96,25 @@ def migrate():
     if exists:
         _add_column(match_conn, "match_confirmations", "winner_avatar TEXT")
         _add_column(match_conn, "match_confirmations", "loser_avatar TEXT")
+        _add_column(match_conn, "match_confirmations", "event_id INTEGER")
+        _add_column(match_conn, "match_confirmations", "event_started_at TEXT")
+        _add_column(
+            match_conn,
+            "match_confirmations",
+            "event_avatar_specific BOOLEAN NOT NULL DEFAULT 0",
+        )
+    active_pairings_exists = match_conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name = 'active_pairings'"
+    ).fetchone()
+    if active_pairings_exists:
+        _add_column(match_conn, "active_pairings", "player1_avatar TEXT")
+        _add_column(match_conn, "active_pairings", "player2_avatar TEXT")
+        _add_column(match_conn, "active_pairings", "event_id INTEGER")
+        _add_column(match_conn, "active_pairings", "event_started_at TEXT")
+        _add_column(
+            match_conn,
+            "active_pairings",
+            "event_avatar_specific BOOLEAN NOT NULL DEFAULT 0",
+        )
     match_conn.commit()
     match_conn.close()

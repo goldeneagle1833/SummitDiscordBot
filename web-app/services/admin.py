@@ -63,6 +63,94 @@ class AdminService:
         else:
             return self._remove_bot_match(match_id)
 
+    def correct_match_avatars(
+        self,
+        match_id: str,
+        winner_avatar: str,
+        loser_avatar: str,
+    ) -> dict:
+        """Correct only the avatars on a ranked avatar-event match and replay its ladder."""
+        canonical_winner = canonicalize_avatar_name(winner_avatar)
+        canonical_loser = canonicalize_avatar_name(loser_avatar)
+        if not canonical_winner or not canonical_loser:
+            return {
+                "success": False,
+                "error": "Both avatars must match names in the avatar catalog",
+            }
+
+        is_web = str(match_id).startswith("web_")
+        if is_web:
+            match = self._match_repo.get_web_match_full_details(match_id)
+            source = "paper"
+        else:
+            try:
+                numeric_id = int(match_id)
+            except (ValueError, TypeError):
+                return {"success": False, "error": f"Invalid match ID: {match_id}"}
+            match = self._match_repo.get_match_full_details(numeric_id)
+            source = "online"
+
+        if not match:
+            return {"success": False, "error": f"Match {match_id} was not found"}
+        if match.get("match_type") not in (None, "ranked"):
+            return {
+                "success": False,
+                "error": "Avatar corrections only apply to ranked matches",
+            }
+
+        event_id = self._avatar_event_id_for_timestamp(match.get("timestamp"))
+        if event_id is None:
+            return {
+                "success": False,
+                "error": "This match is not part of an avatar-specific event",
+            }
+
+        old_winner = match.get("winner_avatar")
+        old_loser = match.get("loser_avatar")
+        if is_web:
+            updated = self._match_repo.update_web_match_avatars(
+                match_id, canonical_winner, canonical_loser
+            )
+        else:
+            updated = self._match_repo.update_match_avatars(
+                numeric_id, canonical_winner, canonical_loser
+            )
+        if not updated:
+            return {"success": False, "error": "Failed to update match avatars"}
+
+        replayed = recalculate_avatar_event_for_timestamp(
+            source, match.get("timestamp")
+        )
+        return {
+            "success": True,
+            "match_id": str(match_id),
+            "source": source,
+            "event_id": event_id,
+            "winner_avatar_before": old_winner,
+            "loser_avatar_before": old_loser,
+            "winner_avatar": canonical_winner,
+            "loser_avatar": canonical_loser,
+            "matches_replayed": replayed,
+            "message": f"Corrected avatars for match {match_id} and replayed the event ladder",
+        }
+
+    @staticmethod
+    def _avatar_event_id_for_timestamp(timestamp: str | None) -> int | None:
+        if not timestamp:
+            return None
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        try:
+            row = conn.execute(
+                """SELECT event_id FROM events
+                   WHERE avatar_specific = 1 AND start_date <= ?
+                     AND (end_date IS NULL OR end_date >= ?)
+                   ORDER BY start_date DESC LIMIT 1""",
+                (timestamp, timestamp),
+            ).fetchone()
+            return int(row[0]) if row else None
+        finally:
+            conn.close()
+
     def _remove_bot_match(self, match_id: str) -> dict:
         """Remove a bot match (from match_records) and reverse ELO in overall_standings."""
         try:

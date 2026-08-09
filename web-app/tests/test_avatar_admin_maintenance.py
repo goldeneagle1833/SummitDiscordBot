@@ -25,6 +25,9 @@ class FakeEloRepository:
 
 
 class FakeMatchRepository:
+    def __init__(self):
+        self.avatar_updates = []
+
     def get_match_full_details(self, match_id):
         return {
             "match_id": match_id,
@@ -45,6 +48,10 @@ class FakeMatchRepository:
     def delete_match(self, match_id):
         return match_id == 42
 
+    def update_match_avatars(self, match_id, winner_avatar, loser_avatar):
+        self.avatar_updates.append((match_id, winner_avatar, loser_avatar))
+        return True
+
 
 def test_web_admin_bot_removal_uses_lifetime_delta_and_replays_avatar_ladder(
     monkeypatch,
@@ -62,6 +69,34 @@ def test_web_admin_bot_removal_uses_lifetime_delta_and_replays_avatar_ladder(
 
     assert result["success"] is True
     assert elo_repo.ratings == {1: 1584, 2: 1415}
+    assert replayed == [("online", "2026-01-01T12:00:00")]
+
+
+def test_admin_avatar_correction_changes_only_match_avatars_and_replays(monkeypatch):
+    replayed = []
+    monkeypatch.setattr(
+        admin_module,
+        "canonicalize_avatar_name",
+        lambda avatar: {"fire": "Flamecaller", "earth": "Geomancer"}.get(avatar),
+    )
+    monkeypatch.setattr(
+        AdminService,
+        "_avatar_event_id_for_timestamp",
+        staticmethod(lambda timestamp: 7),
+    )
+    monkeypatch.setattr(
+        admin_module,
+        "recalculate_avatar_event_for_timestamp",
+        lambda source, timestamp: replayed.append((source, timestamp)) or 4,
+    )
+    match_repo = FakeMatchRepository()
+    service = AdminService(elo_repo=FakeEloRepository(), match_repo=match_repo)
+
+    result = service.correct_match_avatars("42", "fire", "earth")
+
+    assert result["success"] is True
+    assert result["matches_replayed"] == 4
+    assert match_repo.avatar_updates == [(42, "Flamecaller", "Geomancer")]
     assert replayed == [("online", "2026-01-01T12:00:00")]
 
 

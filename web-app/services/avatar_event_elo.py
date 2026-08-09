@@ -46,7 +46,22 @@ def _online_matches(
         )
         end_filter = " AND timestamp <= ?" if end_date else ""
         params = [start_date]
-        if end_date:
+        event_filter = ""
+        if "event_id" in current_columns:
+            legacy_format_filter = (
+                " AND event_avatar_specific = 1"
+                if "event_avatar_specific" in current_columns
+                else ""
+            )
+            event_filter = (
+                " AND (event_id = ? OR (event_id IS NULL"
+                f"{legacy_format_filter} AND timestamp >= ?{end_filter}))"
+            )
+            params = [start_date, event_id, start_date]
+            if end_date:
+                params.append(end_date)
+            end_filter = ""
+        elif end_date:
             params.append(end_date)
         rows.extend(
             conn.execute(
@@ -54,7 +69,7 @@ def _online_matches(
                             losser_id, losser_display_name, loser_avatar, timestamp,
                             {winner_multiplier}, {loser_multiplier}
                      FROM match_records
-                     WHERE timestamp >= ?{end_filter}
+                     WHERE timestamp >= ?{end_filter}{event_filter}
                        AND winner_avatar IS NOT NULL AND loser_avatar IS NOT NULL
                        AND (match_type IS NULL OR match_type = 'ranked')""",
                 params,
@@ -90,6 +105,7 @@ def _online_matches(
 
 def _paper_matches(
     conn: sqlite3.Connection,
+    event_id: int,
     start_date: str,
     end_date: str | None,
 ) -> list[tuple]:
@@ -112,14 +128,29 @@ def _paper_matches(
         # Repeat matchups are recorded with zero changes and must not enter the ladder.
         elo_filter = " AND (winner_elo_change != 0 OR loser_elo_change != 0)"
     params = [start_date]
-    if end_date:
+    event_filter = ""
+    if "event_id" in columns:
+        legacy_format_filter = (
+            " AND event_avatar_specific = 1"
+            if "event_avatar_specific" in columns
+            else ""
+        )
+        event_filter = (
+            " AND (event_id = ? OR (event_id IS NULL"
+            f"{legacy_format_filter} AND timestamp >= ?{end_filter}))"
+        )
+        params = [start_date, event_id, start_date]
+        if end_date:
+            params.append(end_date)
+        end_filter = ""
+    elif end_date:
         params.append(end_date)
     return conn.execute(
         f"""SELECT winner_id, winner_display_name, winner_avatar,
                    losser_id, losser_display_name, loser_avatar, timestamp,
                    {winner_multiplier}, {loser_multiplier}
             FROM match_reports_web
-            WHERE timestamp >= ?{end_filter}
+            WHERE timestamp >= ?{end_filter}{event_filter}
               AND winner_avatar IS NOT NULL AND loser_avatar IS NOT NULL
               AND (match_type IS NULL OR match_type = 'ranked')
               {elo_filter}""",
@@ -205,7 +236,7 @@ def recalculate_avatar_event_standings(event_id: int, source: str) -> int:
         matches = (
             _online_matches(match_conn, event_id, start_date_str, end_date)
             if source == "online"
-            else _paper_matches(match_conn, start_date_str, end_date)
+            else _paper_matches(match_conn, event_id, start_date_str, end_date)
         )
         spot_resets = _spot_resets(
             match_conn, source, start_date_str, end_date

@@ -10,7 +10,6 @@ from services.elo_service import update_elo
 from repositories.elo_repo import get_active_event
 from utils.deck_checker import scrape_Curosa
 from repositories.limited_repo import (
-    create_limited_tables,
     get_limited_elo,
     upsert_limited_elo,
     create_arena_run as _create_arena_run,
@@ -30,10 +29,6 @@ logger = logging.getLogger("discord_bot")
 
 MAX_ARENA_WINS = 4
 MAX_ARENA_LOSSES = 2
-
-# Ensure tables exist on import
-create_limited_tables()
-
 
 # --- Limited ELO ---
 

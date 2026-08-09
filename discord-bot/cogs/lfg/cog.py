@@ -24,7 +24,6 @@ from cogs.lfg.match_reporting import MatchCardView, LFGReportButtons, _apply_lad
 from cogs.lfg.challenge import ChallengeInitView, ChallengerDeckModal
 from cogs.lfg.ladder import (
     LadderChallengeJoinButton,
-    LadderChallengeReportButtons,
     _build_ladder_challenge_embed,
     _resolve_ladder_challenge,
     _ladder_challenge_timeout,
@@ -47,6 +46,7 @@ from utils.database import (
     save_pairing,
     recalculate_event_elo,
     correct_match_record,
+    correct_match_avatars,
     correct_limited_match_record,
     remove_match_record,
     remove_player_service,
@@ -198,7 +198,10 @@ class LFGCog(commands.Cog):
     async def update_leaderboard(self):
         """Update the leaderboard in the designated channel"""
         import sqlite3
-        from repositories.elo_repo import ELO_COUNTING_MATCH_FILTER
+        from repositories.elo_repo import (
+            ELO_COUNTING_MATCH_FILTER,
+            get_avatar_top_cut_projection,
+        )
         from utils.database import get_active_event
 
         leaderboard_channel_id = config.LEADERBOARD_CHANNEL_ID
@@ -380,14 +383,51 @@ class LFGCog(commands.Cog):
                 )
 
                 # Ticket Holders section (top 24 players with the ticket holder role)
-                ticket_players = [p for p in player_data if p["has_ticket"]]
+                if active_event and active_event.get("avatar_specific"):
+                    qualification = get_avatar_top_cut_projection(
+                        active_event["event_id"],
+                        "online",
+                        eligible_user_ids={
+                            player["user_id"]
+                            for player in player_data
+                            if player["has_ticket"]
+                        },
+                    )
+                    ticket_players = [
+                        {
+                            "user_id": int(seat["player_id"]),
+                            "display_name": seat["player_name"],
+                            "avatar_name": seat["qualifying_avatar"],
+                            "elo": seat["qualifying_elo"],
+                            "games": seat["games"],
+                            "qualification_path": seat["qualification_path"],
+                        }
+                        for seat in qualification["seats"]
+                    ]
+                else:
+                    ticket_players = []
+                    seen_ticket_players = set()
+                    for player in player_data:
+                        if (
+                            not player["has_ticket"]
+                            or player["user_id"] in seen_ticket_players
+                        ):
+                            continue
+                        seen_ticket_players.add(player["user_id"])
+                        ticket_players.append(player)
                 ticket_text = []
                 for idx, p in enumerate(ticket_players[:24], 1):
                     label = p["display_name"]
                     if p["avatar_name"]:
                         label += f" — {p['avatar_name']}"
+                    path = p.get("qualification_path")
+                    path_label = ""
+                    if path == "avatar_leader":
+                        path_label = " - Avatar Leader"
+                    elif path == "fallback":
+                        path_label = " - Elo Fallback"
                     ticket_text.append(
-                        f"{idx}. {label} - {p['elo']} ({p['games']}g)"
+                        f"{idx}. {label} - {p['elo']} ({p['games']}g){path_label}"
                     )
                 embed.add_field(
                     name="Ticket Holders",
@@ -398,7 +438,13 @@ class LFGCog(commands.Cog):
                 )
 
                 # Free Play section (top 8 from non-ticket holders)
-                free_players = [p for p in player_data if not p["has_ticket"]]
+                free_players = []
+                seen_free_players = set()
+                for player in player_data:
+                    if player["has_ticket"] or player["user_id"] in seen_free_players:
+                        continue
+                    seen_free_players.add(player["user_id"])
+                    free_players.append(player)
                 free_text = []
                 for idx, p in enumerate(free_players[:8], 1):
                     label = p["display_name"]
@@ -1026,12 +1072,20 @@ class LFGCog(commands.Cog):
         return best_match
 
     def add_to_lfg_queue(
-        self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None, run_id=None
+        self,
+        ctx,
+        timeframe,
+        deck_url=None,
+        queue_type="ranked",
+        ladder_info=None,
+        run_id=None,
+        avatar=None,
     ):
         queue_entry = {
             "timestamp": datetime.datetime.now(),
             "timeframe": int(timeframe),
             "deck_url": deck_url,
+            "avatar": avatar,
         }
         if ladder_info:
             queue_entry["ladder_info"] = ladder_info
@@ -1144,7 +1198,7 @@ class LFGCog(commands.Cog):
         )
 
     @commands.command()
-    async def issue_challenge(self, ctx):
+    async def issue_challenge(self, ctx, *, avatar_name: str = None):
         """Issue a ladder challenge (Top 16 players or admins, once per day).
 
         Adds you to the ranked queue. The next person who matches with you will play
@@ -1242,6 +1296,7 @@ class LFGCog(commands.Cog):
         # Check if already in queue + attempt to match
         matched_user_id = None
         matched_user_deck_url = None
+        matched_user_avatar = None
         match_type = None
         challenge_id = None
         ladder_info = None
@@ -1283,15 +1338,23 @@ class LFGCog(commands.Cog):
                     # Get matched user info before removing from queue
                     matched_entry = lfg_queue.get(matched_user_id, {}).get("queues", {}).get("ranked", {})
                     matched_user_deck_url = matched_entry.get("deck_url")
+                    matched_user_avatar = matched_entry.get("avatar")
                     matched_queue_type = "ranked"
 
-                    # Avatar-event stakes depend on the avatars actually played,
-                    # which are not known until the report is confirmed.
                     if active_event and active_event.get("avatar_specific"):
-                        ladder_info["avatar_stakes_pending"] = True
-                        logger.info(
-                            "Ladder challenge match: avatar stakes deferred until report confirmation"
+                        if not matched_user_avatar:
+                            raise ValueError("Matched player has no locked avatar")
+                        challenger_elo = get_user_event_elo(user_id, challenger_avatar)
+                        opponent_elo = get_user_event_elo(
+                            matched_user_id, matched_user_avatar
                         )
+                        elo_diff = abs(challenger_elo - opponent_elo)
+                        ladder_info["challenger_avatar"] = challenger_avatar
+                        ladder_info["opponent_avatar"] = matched_user_avatar
+                        ladder_info["elo_difference"] = elo_diff
+                        if elo_diff < 100:
+                            ladder_info["elo_multiplier_winner"] = 1.0
+                            ladder_info["elo_multiplier_loser"] = 1.0
                     else:
                         challenger_elo = get_user_event_elo(user_id)
                         opponent_elo = get_user_event_elo(matched_user_id)
@@ -1334,6 +1397,7 @@ class LFGCog(commands.Cog):
                     deck_url=None,
                     queue_type="ranked",
                     ladder_info=ladder_info,
+                    avatar=challenger_avatar,
                 )
 
         # Handle result outside the lock
@@ -1377,6 +1441,9 @@ class LFGCog(commands.Cog):
                     player1_deck_url=None,
                     player2_deck_url=matched_user_deck_url,
                     match_type=match_type or "ranked",
+                    player1_avatar=challenger_avatar,
+                    player2_avatar=matched_user_avatar,
+                    event_snapshot=active_event,
                 )
                 logger.info(
                     f"Saved pairing {pairing_id} in guild {guild_id}: "
@@ -1400,12 +1467,13 @@ class LFGCog(commands.Cog):
 
             # Randomly select which player gets the report buttons
             players = [
-                (user_id, user_global, ctx.author, None, True),
+                (user_id, user_global, ctx.author, None, challenger_avatar, True),
                 (
                     matched_user_id,
                     matched_global,
                     matched_user,
                     matched_user_deck_url,
+                    matched_user_avatar,
                     False,
                 ),
             ]
@@ -1415,9 +1483,10 @@ class LFGCog(commands.Cog):
                 reporter_global,
                 reporter_user,
                 reporter_deck_url,
+                reporter_avatar,
                 reporter_is_joiner,
             ) = reporter_player
-            other_id, other_global, other_user, other_deck_url, other_is_joiner = (
+            other_id, other_global, other_user, other_deck_url, other_avatar, other_is_joiner = (
                 other_player
             )
 
@@ -1441,6 +1510,9 @@ class LFGCog(commands.Cog):
                 guild_id=guild_id,
                 ladder_info=ladder_info,
                 match_type=match_type,
+                player1_avatar=reporter_avatar,
+                player2_avatar=other_avatar,
+                event_snapshot=active_event,
             )
 
             try:
@@ -1591,7 +1663,8 @@ class LFGCog(commands.Cog):
                 "`!challenge @user` - Challenge a specific player to a match\n"
                 "**When to use:** When you want to play against a specific person "
                 "instead of being matched randomly. They have 5 minutes to accept.\n\n"
-                "`!issue_challenge` or `/issue-challenge` - Issue a ladder challenge (Top 16 or admins)\n"
+                "`!issue_challenge <avatar>` or `/issue-challenge [avatar]` - Issue a ladder challenge (Top 16 or admins)\n"
+                "The avatar is required during avatar-specific events and is locked before matching.\n"
                 "**When to use:** Top 16 players or admins can issue once per day (disabled first week of event). "
                 "Adds you to the ranked queue - the next player to match with you plays for special stakes. "
                 "Non-Top 16 wins = 2x ELO gain, Top 16 loses = 0.5x ELO loss (normal stakes if ELO diff < 100)."
@@ -1645,7 +1718,7 @@ class LFGCog(commands.Cog):
                 "Avatar names are required while an avatar-specific event is active.\n"
                 "**When to use:** When a challenge match wasn't reported correctly or the challenge feature broke. "
                 "Applies the same ELO rules as normal challenges (2x/0.5x if 100+ ELO apart).\n\n"
-                "`!top_cut_report @winner @loser`\n"
+                "`!top_cut_report @winner @loser \"Winner Avatar\" \"Loser Avatar\"`\n"
                 "Report a top cut match that only affects lifetime ELO (event ELO unchanged).\n"
                 "**When to use:** For top cut matches where only lifetime ELO should be updated.\n\n"
                 "`!reset_challenge @user`\n"
@@ -1662,8 +1735,7 @@ class LFGCog(commands.Cog):
                 "`!spot_elo_reset @user <elo> [\"Avatar Name\"]`\n"
                 "Set a specific user's ELO to a custom value (0-5000).\n"
                 "The avatar is required during avatar-specific events.\n"
-                "**When to use:** To correct ELO errors, set starting ELO for "
-                "experienced players, or adjust ratings after disputes."
+                "**When to use:** To correct an event ELO error after admin review."
             ),
             inline=False,
         )
@@ -1675,6 +1747,8 @@ class LFGCog(commands.Cog):
                 "`!correct_match <match_id>`\n"
                 "Flip the winner/loser and recalculate ALL affected ELO.\n"
                 "**Recommended** for incorrect reports.\n\n"
+                "`!correct_match_avatars <match_id> \"Winner Avatar\" \"Loser Avatar\"`\n"
+                "Fix only the recorded avatars, replaying avatar event ELO while leaving lifetime ELO unchanged.\n\n"
                 "`!remove_match <match_id>`\n"
                 "Remove a match and revert its ELO changes.\n"
                 "**When to use:** Test games or matches that never happened."
@@ -2058,9 +2132,14 @@ class LFGCog(commands.Cog):
     @commands.command()
     @is_bot_admin()
     async def top_cut_report(
-        self, ctx, winner: discord.Member = None, loser: discord.Member = None
+        self,
+        ctx,
+        winner: discord.Member = None,
+        loser: discord.Member = None,
+        winner_avatar: str = None,
+        loser_avatar: str = None,
     ):
-        """Admin command to report a top cut match. Only affects lifetime ELO. Usage: !top_cut_report @winner @loser"""
+        """Report a top-cut match, including both played avatars when required."""
 
         # Validate arguments
         if winner is None or loser is None:
@@ -2076,6 +2155,24 @@ class LFGCog(commands.Cog):
         if winner.bot or loser.bot:
             await ctx.send("Cannot report matches for bots!")
             return
+
+        active_event = get_active_event()
+        if active_event and active_event.get("avatar_specific"):
+            raw_winner_avatar = winner_avatar
+            raw_loser_avatar = loser_avatar
+            winner_avatar = canonicalize_avatar_name(raw_winner_avatar)
+            loser_avatar = canonicalize_avatar_name(raw_loser_avatar)
+            errors = []
+            if not winner_avatar:
+                errors.append(avatar_input_error("the winner", raw_winner_avatar))
+            if not loser_avatar:
+                errors.append(avatar_input_error("the loser", raw_loser_avatar))
+            if errors:
+                await ctx.send(
+                    "\n".join(errors)
+                    + '\nUsage: `!top_cut_report @winner @loser "Winner Avatar" "Loser Avatar"`'
+                )
+                return
 
         try:
             # Get display names with fallback
@@ -2097,6 +2194,8 @@ class LFGCog(commands.Cog):
                 winner_went_first=None,
                 loser_went_first=None,
                 match_type="testing",
+                winner_avatar=winner_avatar,
+                loser_avatar=loser_avatar,
             )
 
             # Update only lifetime ELO for both players
@@ -2111,17 +2210,27 @@ class LFGCog(commands.Cog):
             await self.update_leaderboard()
 
             # Get event ELOs (unchanged) for display
-            winner_event_elo = get_user_event_elo(winner.id)
-            loser_event_elo = get_user_event_elo(loser.id)
+            if active_event and active_event.get("avatar_specific"):
+                event_rank_text = "Avatar event ELO remains unchanged."
+            else:
+                winner_event_elo = get_user_event_elo(winner.id)
+                loser_event_elo = get_user_event_elo(loser.id)
+                event_rank_text = (
+                    f"{winner_name}: **{winner_event_elo}** event (unchanged)\n"
+                    f"{loser_name}: **{loser_event_elo}** event (unchanged)"
+                )
 
             description = (
                 f"**Match ID:** #{match_id}\n"
                 f"**Winner:** {winner.mention} ({winner_name})\n"
                 f"**Loser:** {loser.mention} ({loser_name})\n"
-                f"**Type:** Top Cut (lifetime ELO only)\n\n"
-                f"**Updated Ranks:**\n"
-                f"{winner_name}: **{new_winner_elo}** lifetime ({winner_change:+d}) / **{winner_event_elo}** event (unchanged)\n"
-                f"{loser_name}: **{new_loser_elo}** lifetime ({loser_change:+d}) / **{loser_event_elo}** event (unchanged)"
+                + (f"**Winner Avatar:** {winner_avatar}\n" if winner_avatar else "")
+                + (f"**Loser Avatar:** {loser_avatar}\n" if loser_avatar else "")
+                + f"**Type:** Top Cut (lifetime ELO only)\n\n"
+                + f"**Updated Lifetime Ranks:**\n"
+                + f"{winner_name}: **{new_winner_elo}** ({winner_change:+d})\n"
+                + f"{loser_name}: **{new_loser_elo}** ({loser_change:+d})\n"
+                + event_rank_text
             )
             success_embed = discord.Embed(
                 title="Top Cut Match Reported",
@@ -3307,6 +3416,130 @@ class LFGCog(commands.Cog):
         else:
             logger.error(f"spot_limited_elo error: {error}")
             await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def preview_top_cut(self, ctx):
+        """Preview the avatar-specific 16+8 top cut without saving it."""
+        from repositories.elo_repo import get_avatar_top_cut_projection
+
+        active_event = get_active_event()
+        if not active_event or not active_event.get("avatar_specific"):
+            await ctx.send("There is no active avatar-specific event.")
+            return
+        guild = self.bot.get_guild(config.GUILD_ID)
+        eligible = {
+            member.id
+            for member in (guild.members if guild else [])
+            if any(role.id in config.TICKET_HOLDER_ROLE_IDS for role in member.roles)
+        }
+        projection = get_avatar_top_cut_projection(
+            active_event["event_id"], "online", eligible_user_ids=eligible
+        )
+        lines = [
+            f"{seat['seat']}. {seat['player_name']} — {seat['qualifying_avatar']} "
+            f"({seat['qualifying_elo']}) [{seat['qualification_path']}]"
+            + (" ⚠️ tiebreak needed" if seat["requires_tiebreak"] else "")
+            for seat in projection["seats"]
+        ]
+        await ctx.send(
+            f"**Projected Top Cut — {active_event['event_name']}**\n"
+            + ("\n".join(lines) if lines else "No eligible players yet.")
+        )
+
+    @commands.command()
+    @is_bot_admin()
+    async def lock_top_cut(self, ctx):
+        """Persist the current avatar-specific top-cut qualification result."""
+        from repositories.elo_repo import lock_avatar_top_cut
+
+        active_event = get_active_event()
+        if not active_event or not active_event.get("avatar_specific"):
+            await ctx.send("There is no active avatar-specific event.")
+            return
+        guild = self.bot.get_guild(config.GUILD_ID)
+        eligible = {
+            member.id
+            for member in (guild.members if guild else [])
+            if any(role.id in config.TICKET_HOLDER_ROLE_IDS for role in member.roles)
+        }
+        try:
+            result = lock_avatar_top_cut(
+                active_event["event_id"],
+                "online",
+                eligible,
+                ctx.author.id,
+                ctx.author.display_name,
+            )
+        except ValueError as error:
+            await ctx.send(f"Top cut was not locked: {error}. Use `!preview_top_cut`.")
+            return
+        log_admin_action(
+            ctx.author.id,
+            ctx.author.display_name,
+            "lock_avatar_top_cut",
+            target_id=str(active_event["event_id"]),
+            target_name=active_event["event_name"],
+            new_state={
+                "seat_count": len(result["seats"]),
+                "locked_at": result["locked_at"],
+                "policy": result["policy"],
+            },
+            details=f"Locked {len(result['seats'])} avatar top-cut seats",
+        )
+        await ctx.send(
+            f"Locked **{len(result['seats'])}** top-cut seats for "
+            f"**{active_event['event_name']}**. Qualifiers may play any avatar in top cut."
+        )
+
+    @commands.command()
+    @is_bot_admin()
+    async def correct_match_avatars(
+        self,
+        ctx,
+        match_id: int = None,
+        winner_avatar: str = None,
+        loser_avatar: str = None,
+    ):
+        """Correct avatars without changing result or lifetime Elo."""
+        if match_id is None:
+            await ctx.send(
+                'Usage: `!correct_match_avatars <match_id> "Winner Avatar" "Loser Avatar"`'
+            )
+            return
+        try:
+            result = correct_match_avatars(
+                match_id,
+                winner_avatar,
+                loser_avatar,
+            )
+            log_admin_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "correct_match_avatars",
+                target_id=str(match_id),
+                target_name=f"Match #{match_id}",
+                previous_state={
+                    "winner_avatar": result["previous_winner_avatar"],
+                    "loser_avatar": result["previous_loser_avatar"],
+                },
+                new_state={
+                    "winner_avatar": result["winner_avatar"],
+                    "loser_avatar": result["loser_avatar"],
+                },
+                details=(
+                    f"Corrected avatars for match #{match_id}; "
+                    f"replayed {result['matches_replayed']} event matches"
+                ),
+            )
+            await self.update_leaderboard()
+            await ctx.send(
+                f"Corrected Match #{match_id}: **{result['winner_name']}** "
+                f"({result['winner_avatar']}) defeated **{result['loser_name']}** "
+                f"({result['loser_avatar']}). Lifetime Elo was unchanged."
+            )
+        except ValueError as error:
+            await ctx.send(str(error))
 
     @commands.command()
     async def correct_match(self, ctx, match_id: int = None):

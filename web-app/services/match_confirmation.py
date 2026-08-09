@@ -530,7 +530,7 @@ class MatchConfirmationService:
         loser_id = winner_loser["loser_id"]
 
         from services.paper_elo import get_active_event
-        from utils.avatar_elo import resolve_avatar_name
+        from utils.avatar_elo import canonicalize_avatar_name, resolve_avatar_name
 
         active_event = get_active_event()
         if active_event and active_event.get("avatar_specific") and match_type != "casual":
@@ -542,6 +542,11 @@ class MatchConfirmationService:
             if not submitter_avatar:
                 raise ValueError(
                     "This avatar-specific event requires a Curiosa deck URL or a manual avatar selection."
+                )
+            opponent_avatar = canonicalize_avatar_name(opponent_avatar)
+            if not opponent_avatar:
+                raise ValueError(
+                    "This avatar-specific event requires the opponent's avatar so they can verify it."
                 )
 
         # Step 4: Map deck URLs to winner/loser
@@ -577,6 +582,14 @@ class MatchConfirmationService:
             match_type=match_type,
             season_id=season_id,
             match_comment=match_comment,
+            event_snapshot=(
+                {
+                    **active_event,
+                    "start_date": active_event["start_date"].isoformat(),
+                }
+                if active_event
+                else None
+            ),
         )
 
         expires_at = int(time.time()) + (48 * 60 * 60)
@@ -765,12 +778,28 @@ class MatchConfirmationService:
         from utils.avatar_elo import resolve_avatar_name
 
         active_event = get_active_event()
+        event_snapshot = None
+        if confirmation.get("event_id"):
+            event_snapshot = {
+                "event_id": confirmation["event_id"],
+                "start_date": confirmation.get("event_started_at"),
+                "avatar_specific": bool(
+                    confirmation.get("event_avatar_specific")
+                ),
+            }
+            if (
+                not active_event
+                or active_event.get("event_id") != event_snapshot["event_id"]
+            ):
+                raise ValueError(
+                    "This report belongs to an event that is no longer active. "
+                    "Please ask an admin to review it."
+                )
         winner_avatar = confirmation.get("winner_avatar")
         loser_avatar = confirmation.get("loser_avatar")
         if (
             active_event
             and active_event.get("avatar_specific")
-            and not is_repeat_matchup
             and confirmation.get("match_type") != "casual"
         ):
             winner_avatar = resolve_avatar_name(json_deck_data_winner, winner_avatar)
@@ -835,6 +864,7 @@ class MatchConfirmationService:
                 loser_name,
                 winner_avatar_name=winner_avatar,
                 loser_avatar_name=loser_avatar,
+                event_snapshot=event_snapshot,
             )
             (
                 winner_new_elo,
@@ -891,8 +921,8 @@ class MatchConfirmationService:
                     loser_went_first, source, match_type, season_id,
                     winner_lifetime_elo_after, loser_lifetime_elo_after,
                     winner_lifetime_elo_change, loser_lifetime_elo_change,
-                    winner_avatar, loser_avatar)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    winner_avatar, loser_avatar, event_id, event_avatar_specific)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     match_id,         # match_id (UUID-based web_xxx)
                     reporter_id,      # reporter_id (TEXT - keeps google_ prefix)
@@ -924,6 +954,8 @@ class MatchConfirmationService:
                     loser_elo_change,
                     winner_avatar,
                     loser_avatar,
+                    confirmation.get("event_id"),
+                    int(bool(confirmation.get("event_avatar_specific"))),
                 ),
             )
 

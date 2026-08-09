@@ -17,6 +17,8 @@ from repositories.elo_repo import (
     migrate_to_dual_elo_system,
 )
 from services.elo_service import (
+    _calculate_both_elo_changes,
+    _calculate_simultaneous_elo_changes,
     correct_match_record,
     end_current_event,
     recalculate_event_elo,
@@ -24,6 +26,20 @@ from services.elo_service import (
     remove_match_record,
 )
 from utils.avatar_elo import canonicalize_avatar_name, suggest_avatar_names
+
+
+def test_avatar_format_preserves_standard_lifetime_elo_math():
+    standard = _calculate_both_elo_changes(
+        1600, 1500, 1400, 1500, 16, 1.0, 1.0
+    )
+    avatar = _calculate_simultaneous_elo_changes(
+        1600, 1500, 1400, 1500, 16, 1.0, 1.0
+    )
+
+    assert avatar[0] == standard[0]
+    assert avatar[2] == standard[2]
+    assert avatar[1] == 8
+    assert avatar[3] == -8
 
 
 @pytest.fixture

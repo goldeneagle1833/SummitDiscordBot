@@ -5,7 +5,9 @@ import logging
 import math
 import os
 import sqlite3
+import sys
 from collections import Counter
+from pathlib import Path
 from urllib.parse import unquote
 
 from flask import Blueprint, jsonify, request
@@ -14,6 +16,12 @@ from repositories.card_catalog import CardCatalogRepository
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS, AVATAR_IMAGES_DIR
 from utils.formatting import generate_pseudonym
 from utils.auth import is_admin
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+
+from shared.avatar_qualification import build_avatar_top_cut
 
 logger = logging.getLogger(__name__)
 
@@ -767,21 +775,84 @@ def _get_avatar_event_top_players(event_filter, source_filter, limit):
                         avatar_name COLLATE NOCASE""",
             (event_row[0], ladder_source),
         )
-        standings = cur.fetchall()
+        standings = [
+            {
+                "user_id": str(row[0]),
+                "user_display_name": row[1] or f"Player {row[0]}",
+                "avatar_name": row[2],
+                "event_elo": row[3],
+            }
+            for row in cur.fetchall()
+        ]
         conn.close()
     except sqlite3.OperationalError as e:
         logger.warning("Could not query avatar event standings: %s", e)
         return None
 
+    matches = []
+    try:
+        match_conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        table = "match_records" if ladder_source == "online" else "match_reports_web"
+        columns = {
+            row[1] for row in match_conn.execute(f"PRAGMA table_info({table})")
+        }
+        if {"winner_avatar", "loser_avatar"}.issubset(columns):
+            event_clause = "timestamp >= ? AND (? IS NULL OR timestamp <= ?)"
+            params = [event_row[2], event_row[3], event_row[3]]
+            if "event_id" in columns:
+                legacy_format_filter = (
+                    " AND event_avatar_specific = 1"
+                    if "event_avatar_specific" in columns
+                    else ""
+                )
+                event_clause = (
+                    "(event_id = ? OR (event_id IS NULL"
+                    f"{legacy_format_filter} AND timestamp >= ? "
+                    "AND (? IS NULL OR timestamp <= ?)))"
+                )
+                params = [event_row[0], event_row[2], event_row[3], event_row[3]]
+            match_conn.row_factory = sqlite3.Row
+            matches = [
+                dict(row)
+                for row in match_conn.execute(
+                    f"""SELECT winner_id, winner_avatar,
+                               losser_id AS loser_id, loser_avatar
+                        FROM {table}
+                        WHERE {event_clause}
+                          AND (match_type IS NULL OR match_type = 'ranked')
+                          AND winner_avatar IS NOT NULL
+                          AND loser_avatar IS NOT NULL""",
+                    params,
+                )
+            ]
+        match_conn.close()
+    except sqlite3.OperationalError as error:
+        logger.warning("Could not query avatar event match records: %s", error)
+
+    qualification = build_avatar_top_cut(standings, matches)
+    status_by_entry = {
+        (entry["user_id"], entry["avatar_name"].casefold()): entry
+        for entry in qualification["entries"]
+    }
+
     avatars = {}
     for ladder_rank, row in enumerate(standings, start=1):
-        avatar_name = row[2]
+        avatar_name = row["avatar_name"]
+        status = status_by_entry[(row["user_id"], avatar_name.casefold())]
         avatar = avatars.setdefault(avatar_name, {"name": avatar_name, "players": []})
         avatar["players"].append({
-            "player_id": str(row[0]),
-            "name": row[1] or f"Player {row[0]}",
-            "event_elo": row[3],
+            "player_id": row["user_id"],
+            "name": row["user_display_name"],
+            "event_elo": row["event_elo"],
             "ladder_rank": ladder_rank,
+            "games": status["games"],
+            "wins": status["wins"],
+            "losses": status["losses"],
+            "win_rate": round(status["win_rate"] * 100, 1),
+            "absolute_avatar_leader": status["absolute_avatar_leader"],
+            "qualified": status["qualified"],
+            "qualification_path": status["qualification_path"],
+            "qualification_reasons": status["qualification_reasons"],
         })
 
     avatar_list = []
@@ -799,6 +870,9 @@ def _get_avatar_event_top_players(event_filter, source_filter, limit):
         "event": event_filter,
         "ranking": "event_elo",
         "avatar_specific": True,
+        "projected_top_cut": qualification["seats"],
+        "qualification_policy": qualification["policy"],
+        "top_cut_eligibility_applied": False,
         "event_info": {
             "event_id": event_row[0],
             "event_name": event_row[1],

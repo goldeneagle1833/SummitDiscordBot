@@ -301,12 +301,46 @@ class EloRepository:
         """Return player/avatar entries for an avatar-specific event."""
         conn = self._get_connection()
         conn.row_factory = sqlite3.Row
+        archive_exists = conn.execute(
+            """SELECT 1 FROM sqlite_master
+               WHERE type = 'table' AND name = 'event_avatar_standings_archive'"""
+        ).fetchone()
+        if archive_exists:
+            archived = conn.execute(
+                """SELECT user_id, user_display_name, avatar_name,
+                          final_event_elo AS event_elo, games, wins, losses,
+                          final_rank
+                   FROM event_avatar_standings_archive
+                   WHERE event_id = ? AND source = ? ORDER BY final_rank""",
+                (event_id, source),
+            ).fetchall()
+            if archived:
+                conn.close()
+                return [dict(row) for row in archived]
         rows = conn.execute(
             """SELECT user_id, user_display_name, avatar_name, event_elo
                FROM event_avatar_standings
                WHERE event_id = ? AND source = ?
                ORDER BY event_elo DESC, user_display_name COLLATE NOCASE,
                         avatar_name COLLATE NOCASE""",
+            (event_id, source),
+        ).fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    def get_locked_avatar_top_cut(self, event_id: int, source: str) -> list[dict]:
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        exists = conn.execute(
+            """SELECT 1 FROM sqlite_master
+               WHERE type = 'table' AND name = 'event_qualification_snapshots'"""
+        ).fetchone()
+        if not exists:
+            conn.close()
+            return []
+        rows = conn.execute(
+            """SELECT * FROM event_qualification_snapshots
+               WHERE event_id = ? AND source = ? ORDER BY seat""",
             (event_id, source),
         ).fetchall()
         conn.close()

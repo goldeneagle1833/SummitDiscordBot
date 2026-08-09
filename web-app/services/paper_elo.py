@@ -263,6 +263,7 @@ def update_paper_match_elos(
     loser_display_name: str,
     winner_avatar_name: str | None = None,
     loser_avatar_name: str | None = None,
+    event_snapshot: dict | None = None,
 ) -> tuple[tuple, tuple]:
     """Atomically update both players for one confirmed paper match.
 
@@ -298,7 +299,23 @@ def update_paper_match_elos(
         loser_paper_elo, loser_event_elo = get_or_create(
             loser_id_str, loser_display_name
         )
-        active_event = get_active_event()
+        current_event = get_active_event()
+        if event_snapshot:
+            if (
+                not current_event
+                or current_event.get("event_id") != event_snapshot.get("event_id")
+            ):
+                raise ValueError(
+                    "This match belongs to an event that is no longer active. "
+                    "Please ask an admin to review it."
+                )
+            active_event = dict(event_snapshot)
+            if isinstance(active_event.get("start_date"), str):
+                active_event["start_date"] = datetime.fromisoformat(
+                    active_event["start_date"]
+                )
+        else:
+            active_event = current_event
         if not active_event:
             conn.commit()
             return (
@@ -335,10 +352,9 @@ def update_paper_match_elos(
             winner_event_elo, loser_event_elo, True, k=event_k
         )
 
-        # Preserve normal-event behavior while making avatar ladders symmetric.
-        loser_lifetime_opponent = (
-            winner_paper_elo if avatar_specific else winner_new_elo
-        )
+        # Lifetime Elo never changes behavior based on event format. Only the
+        # per-avatar event ladder is calculated from a shared pre-match snapshot.
+        loser_lifetime_opponent = winner_new_elo
         loser_event_opponent = (
             winner_event_elo if avatar_specific else winner_new_event_elo
         )

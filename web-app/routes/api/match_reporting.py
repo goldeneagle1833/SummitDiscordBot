@@ -183,6 +183,7 @@ def submit_match_report():
     went_first = data.get("went_first")
     submitter_deck_url = data.get("submitter_deck_url")
     submitter_avatar = data.get("submitter_avatar")
+    opponent_avatar = data.get("opponent_avatar")
     final_life_submitter = data.get("final_life_submitter")
     final_life_opponent = data.get("final_life_opponent")
     match_type = data.get("match_type", "ranked")  # Default to ranked if not provided
@@ -202,7 +203,7 @@ def submit_match_report():
             submitter_deck_url=submitter_deck_url,
             opponent_deck_url=None,  # Opponent provides their deck URL on confirmation
             submitter_avatar=submitter_avatar,
-            opponent_avatar=None,
+            opponent_avatar=opponent_avatar,
             final_life_submitter=final_life_submitter,
             final_life_opponent=final_life_opponent,
             match_type=match_type,

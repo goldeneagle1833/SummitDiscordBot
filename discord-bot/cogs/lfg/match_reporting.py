@@ -1481,6 +1481,9 @@ class MatchCardView(discord.ui.View):
         match_type: str = "ranked",
         player1_run_id: int = 0,
         player2_run_id: int = 0,
+        player1_avatar: str = None,
+        player2_avatar: str = None,
+        event_snapshot: dict = None,
     ):
         super().__init__(timeout=None)
         self.bot = bot
@@ -1497,6 +1500,12 @@ class MatchCardView(discord.ui.View):
         self.match_type = match_type
         self.player1_run_id = player1_run_id
         self.player2_run_id = player2_run_id
+        self.player1_avatar = player1_avatar
+        self.player2_avatar = player2_avatar
+        self.event_snapshot = event_snapshot
+        self.avatar_specific = bool(
+            event_snapshot and event_snapshot.get("avatar_specific")
+        ) or _avatar_specific_event_active(match_type)
 
         report_btn = discord.ui.Button(
             label="Report Result",
@@ -1535,6 +1544,8 @@ class MatchCardView(discord.ui.View):
         opponent_deck_url = self.player2_deck_url if reporter_id == self.player1_id else self.player1_deck_url
         reporter_run_id = self.player1_run_id if reporter_id == self.player1_id else self.player2_run_id
         opponent_run_id = self.player2_run_id if reporter_id == self.player1_id else self.player1_run_id
+        reporter_avatar = self.player1_avatar if reporter_id == self.player1_id else self.player2_avatar
+        opponent_avatar = self.player2_avatar if reporter_id == self.player1_id else self.player1_avatar
 
         # Disable buttons while reporter fills in the dropdowns
         for item in self.children:
@@ -1575,6 +1586,9 @@ class MatchCardView(discord.ui.View):
             match_type=self.match_type,
             reporter_run_id=reporter_run_id,
             opponent_run_id=opponent_run_id,
+            reporter_avatar=reporter_avatar,
+            opponent_avatar=opponent_avatar,
+            event_snapshot=self.event_snapshot,
         )
 
         msg = "**Report Match Result:**\nSelect who went first, then who won, then click **Submit Report**."
@@ -1650,6 +1664,9 @@ class ReportResultSelectView(discord.ui.View):
         match_type: str = "ranked",
         reporter_run_id: int = 0,
         opponent_run_id: int = 0,
+        reporter_avatar: str = None,
+        opponent_avatar: str = None,
+        event_snapshot: dict = None,
     ):
         super().__init__(timeout=300)
         self.bot = bot
@@ -1673,8 +1690,12 @@ class ReportResultSelectView(discord.ui.View):
         self.selected_first_id = None
         self._submit_interaction = None
         self.match_comment = ""
-        self.reporter_avatar = None
-        self.opponent_avatar = None
+        self.reporter_avatar = reporter_avatar
+        self.opponent_avatar = opponent_avatar
+        self.event_snapshot = event_snapshot
+        self.avatar_specific = bool(
+            event_snapshot and event_snapshot.get("avatar_specific")
+        ) or _avatar_specific_event_active(match_type)
 
         self.first_select = discord.ui.Select(
             placeholder="Who went first?",
@@ -1747,7 +1768,10 @@ class ReportResultSelectView(discord.ui.View):
         if (
             not self.reporter_deck_url
             and self.match_type not in ("testing", "rumble")
-        ) or _avatar_specific_event_active(self.match_type):
+        ) or (
+            self.avatar_specific
+            and (not self.reporter_avatar or not self.opponent_avatar)
+        ):
             modal = MatchReportDeckModal(self)
             await interaction.response.send_modal(modal)
         else:
@@ -1766,7 +1790,7 @@ class ReportResultSelectView(discord.ui.View):
             self.reporter_deck_url = deck_url
         if match_comment:
             self.match_comment = match_comment
-        if _avatar_specific_event_active(self.match_type):
+        if self.avatar_specific:
             try:
                 self.reporter_avatar, self.opponent_avatar = _canonicalize_reported_avatars(
                     reporter_avatar or self.reporter_avatar,
@@ -1833,6 +1857,7 @@ class ReportResultSelectView(discord.ui.View):
             "match_comment": self.match_comment,
             "winner_avatar": winner_avatar,
             "loser_avatar": loser_avatar,
+            "event_snapshot": self.event_snapshot,
         }
 
         winner_run_id = self.reporter_run_id if is_reporter_winner else self.opponent_run_id
@@ -1868,6 +1893,7 @@ class ReportResultSelectView(discord.ui.View):
             loser_run_id=loser_run_id,
             winner_avatar=winner_avatar,
             loser_avatar=loser_avatar,
+            event_snapshot=self.event_snapshot,
         )
 
         opponent_won = (winner_id == self.opponent_id)
@@ -1931,10 +1957,12 @@ class MatchReportDeckModal(discord.ui.Modal, title="Enter Your Deck"):
     def __init__(self, report_view: "ReportResultSelectView"):
         super().__init__()
         self.report_view = report_view
-        self.avatar_specific = _avatar_specific_event_active(report_view.match_type)
+        self.avatar_specific = report_view.avatar_specific
         if report_view.reporter_deck_url:
             self.remove_item(self.deck_url)
-        if not self.avatar_specific:
+        if not self.avatar_specific or (
+            report_view.reporter_avatar and report_view.opponent_avatar
+        ):
             self.remove_item(self.reporter_avatar)
             self.remove_item(self.opponent_avatar)
 
@@ -1946,7 +1974,7 @@ class MatchReportDeckModal(discord.ui.Modal, title="Enter Your Deck"):
         comment = self.match_comment.value.strip() if self.match_comment.value else ""
         reporter_avatar = None
         opponent_avatar = None
-        if self.avatar_specific:
+        if self.reporter_avatar in self.children:
             reporter_avatar = self.reporter_avatar.value
             opponent_avatar = self.opponent_avatar.value
         await self.report_view._submit(

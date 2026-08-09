@@ -4,6 +4,12 @@ export const removePlayer = (userId) => del(`/api/admin/remove-player/${userId}`
 
 export const removeMatch = (matchId) => del(`/api/admin/remove-match/${matchId}`)
 
+export const correctMatchAvatars = (matchId, winnerAvatar, loserAvatar) =>
+  put(`/api/admin/correct-match-avatars/${matchId}`, {
+    winner_avatar: winnerAvatar,
+    loser_avatar: loserAvatar,
+  })
+
 export const resetElo = (userId, newElo, source, avatarName) =>
   post(`/api/admin/reset-elo/${userId}`, {
     new_elo: newElo,

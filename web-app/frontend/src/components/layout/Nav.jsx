@@ -171,19 +171,27 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
             />
           </div>
 
-          <div className="mb-4">
-            <label className="text-xs text-text-muted block mb-1">
-              Your Avatar {avatarRequired ? '(required if no deck URL)' : '(optional override)'}
-            </label>
-            <select
-              value={avatar}
-              onChange={(e) => setAvatar(e.target.value)}
-              className="w-full bg-bg-elevated border border-border rounded px-3 py-2 text-sm"
-            >
-              <option value="">Detect from Curiosa deck</option>
-              {avatars.map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
-          </div>
+          {confirmingPlayerAvatar ? (
+            <div className="mb-4 rounded border border-border bg-bg-elevated px-3 py-2">
+              <p className="text-xs text-text-muted">Your reported avatar</p>
+              <p className="text-sm text-white font-medium">{confirmingPlayerAvatar}</p>
+              <p className="text-xs text-amber-300 mt-1">Deny the report if this is incorrect.</p>
+            </div>
+          ) : (
+            <div className="mb-4">
+              <label className="text-xs text-text-muted block mb-1">
+                Your Avatar {avatarRequired ? '(required if no deck URL)' : '(optional)'}
+              </label>
+              <select
+                value={avatar}
+                onChange={(e) => setAvatar(e.target.value)}
+                className="w-full bg-bg-elevated border border-border rounded px-3 py-2 text-sm"
+              >
+                <option value="">Detect from Curiosa deck</option>
+                {avatars.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </div>
+          )}
 
           {/* Match Comments */}
           <div className="mb-4">

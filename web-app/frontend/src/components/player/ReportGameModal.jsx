@@ -101,6 +101,10 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
         setError('Provide a Curiosa deck URL or select the avatar you played for this event.')
         return
       }
+      if (mode === 'ranked' && avatarSpecificEvent && !opponentAvatar) {
+        setError("Select the avatar your opponent played so they can verify it.")
+        return
+      }
       setSaving(true)
       try {
         await submitMatchReport({
@@ -109,6 +113,7 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
           went_first: wentFirst === 'first' ? 'submitter' : 'opponent',
           submitter_deck_url: deckUrl.trim() || undefined,
           submitter_avatar: playerAvatar || undefined,
+          opponent_avatar: opponentAvatar || undefined,
           final_life_submitter: lifeSubmitter ? parseInt(lifeSubmitter) : 0,
           final_life_opponent: lifeOpponent ? parseInt(lifeOpponent) : 0,
           match_type: mode,
@@ -211,6 +216,20 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
                   {avatars.map((avatar) => <option key={avatar} value={avatar}>{avatar}</option>)}
                 </select>
               </div>
+
+              {mode === 'ranked' && avatarSpecificEvent && (
+                <div className="mb-4">
+                  <label className="text-xs text-text-muted block mb-1">Opponent Avatar (required)</label>
+                  <select
+                    value={opponentAvatar}
+                    onChange={(e) => setOpponentAvatar(e.target.value)}
+                    className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm"
+                  >
+                    <option value="">Select avatar...</option>
+                    {avatars.map((avatar) => <option key={avatar} value={avatar}>{avatar}</option>)}
+                  </select>
+                </div>
+              )}
 
               {/* Result */}
               <div className="mb-4">

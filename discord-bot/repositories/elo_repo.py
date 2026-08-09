@@ -2,8 +2,17 @@
 
 import sqlite3
 import datetime
+import json
 import logging
+import sys
 from contextlib import contextmanager
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+
+from shared.avatar_qualification import build_avatar_top_cut
 
 logger = logging.getLogger("discord_bot")
 
@@ -22,6 +31,10 @@ ELO_COUNTING_MATCH_FILTER = f"""
         OR loser_elo_change != 0
     )
 """
+
+# Competitive participation is a format/source property, not a non-zero Elo
+# delta. Zero-delta ranked games still count toward records and qualification.
+RANKED_MATCH_FILTER = "(match_type IS NULL OR match_type = 'ranked')"
 
 
 @contextmanager
@@ -152,6 +165,15 @@ def create_db():
         except sqlite3.OperationalError:
             pass
 
+    for column, definition in (
+        ("event_id", "INTEGER"),
+        ("event_avatar_specific", "BOOLEAN NOT NULL DEFAULT 0"),
+    ):
+        try:
+            cur.execute(f"ALTER TABLE match_records ADD COLUMN {column} {definition}")
+        except sqlite3.OperationalError:
+            pass
+
     for column in ("winner_elo_multiplier", "loser_elo_multiplier"):
         try:
             cur.execute(
@@ -240,6 +262,41 @@ def create_events_table():
                    )""")
     cur.execute("""CREATE INDEX IF NOT EXISTS idx_event_avatar_standings_rank
                    ON event_avatar_standings(event_id, source, event_elo DESC)""")
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS event_avatar_standings_archive (
+                    event_id INTEGER NOT NULL,
+                    source TEXT NOT NULL CHECK(source IN ('online', 'paper')),
+                    user_id TEXT NOT NULL,
+                    user_display_name TEXT NOT NULL,
+                    avatar_name TEXT NOT NULL COLLATE NOCASE,
+                    final_event_elo INTEGER NOT NULL,
+                    final_rank INTEGER NOT NULL,
+                    games INTEGER NOT NULL DEFAULT 0,
+                    wins INTEGER NOT NULL DEFAULT 0,
+                    losses INTEGER NOT NULL DEFAULT 0,
+                    archived_at TEXT NOT NULL,
+                    PRIMARY KEY (event_id, source, user_id, avatar_name)
+                   )""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS event_qualification_snapshots (
+                    event_id INTEGER NOT NULL,
+                    source TEXT NOT NULL CHECK(source IN ('online', 'paper')),
+                    seat INTEGER NOT NULL,
+                    player_id TEXT NOT NULL,
+                    player_name TEXT NOT NULL,
+                    qualifying_avatar TEXT NOT NULL,
+                    qualifying_elo INTEGER NOT NULL,
+                    qualification_path TEXT NOT NULL,
+                    games INTEGER NOT NULL,
+                    wins INTEGER NOT NULL,
+                    losses INTEGER NOT NULL,
+                    win_rate REAL NOT NULL,
+                    requires_tiebreak BOOLEAN NOT NULL DEFAULT 0,
+                    policy_json TEXT NOT NULL,
+                    locked_at TEXT NOT NULL,
+                    locked_by_id TEXT,
+                    locked_by_name TEXT,
+                    PRIMARY KEY (event_id, source, seat)
+                   )""")
 
     # Create event standings archive table
     cur.execute("""CREATE TABLE IF NOT EXISTS event_standings_archive (
@@ -350,6 +407,17 @@ def create_match_records_archive():
         except sqlite3.OperationalError:
             pass
 
+    for column, definition in (
+        ("event_id", "INTEGER"),
+        ("event_avatar_specific", "BOOLEAN NOT NULL DEFAULT 0"),
+    ):
+        try:
+            cur.execute(
+                f"ALTER TABLE match_records_archive ADD COLUMN {column} {definition}"
+            )
+        except sqlite3.OperationalError:
+            pass
+
     for column in ("winner_elo_multiplier", "loser_elo_multiplier"):
         try:
             cur.execute(
@@ -417,6 +485,18 @@ def create_active_pairings_table():
         cur.execute("ALTER TABLE active_pairings ADD COLUMN match_type TEXT DEFAULT 'ranked'")
     except sqlite3.OperationalError:
         pass  # Column already exists
+
+    for column, definition in (
+        ("player1_avatar", "TEXT"),
+        ("player2_avatar", "TEXT"),
+        ("event_id", "INTEGER"),
+        ("event_started_at", "TEXT"),
+        ("event_avatar_specific", "BOOLEAN NOT NULL DEFAULT 0"),
+    ):
+        try:
+            cur.execute(f"ALTER TABLE active_pairings ADD COLUMN {column} {definition}")
+        except sqlite3.OperationalError:
+            pass
 
     conn.commit()
     conn.close()
@@ -575,6 +655,24 @@ def get_user_event_elo(user_id: int, avatar_name: str | None = None) -> int:
     row = cur.fetchone()
     conn.close()
     return row[0] if row and row[0] else 1500
+
+
+def get_user_avatar_event_elo(user_id: int, avatar_name: str) -> int:
+    """Return one explicit avatar rating, failing closed when avatar is omitted."""
+    if not avatar_name:
+        raise ValueError("An avatar name is required for avatar-specific event Elo.")
+    active_event = get_active_event()
+    if not active_event or not active_event.get("avatar_specific"):
+        raise ValueError("There is no active avatar-specific event.")
+    return get_user_event_elo(user_id, avatar_name)
+
+
+def get_best_avatar_event_elo(user_id: int) -> int:
+    """Return a player's highest avatar rating for display only."""
+    active_event = get_active_event()
+    if not active_event or not active_event.get("avatar_specific"):
+        return get_user_event_elo(user_id)
+    return get_user_event_elo(user_id)
 
 
 def get_user_paper_elo(user_id: int) -> int:
@@ -786,6 +884,174 @@ def get_qualifying_event_entries(event_id: int, source: str, limit: int) -> list
         if len(seen) >= limit:
             break
     return qualifying
+
+
+def get_event_ranked_avatar_matches(event_id: int, source: str) -> list[dict]:
+    """Return normalized ranked avatar matches belonging to one event."""
+    create_events_table()
+    event_conn = sqlite3.connect("elo.db")
+    event = event_conn.execute(
+        "SELECT start_date, end_date FROM events WHERE event_id = ?",
+        (event_id,),
+    ).fetchone()
+    event_conn.close()
+    if not event:
+        return []
+
+    table = "match_records" if source == "online" else "match_reports_web"
+    conn = sqlite3.connect("match_records.db")
+    conn.row_factory = sqlite3.Row
+    try:
+        columns = {
+            row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if not columns or not {"winner_avatar", "loser_avatar"}.issubset(columns):
+            return []
+        event_clause = "timestamp >= ? AND (? IS NULL OR timestamp <= ?)"
+        params: list = [event[0], event[1], event[1]]
+        if "event_id" in columns:
+            legacy_format_filter = (
+                " AND event_avatar_specific = 1"
+                if "event_avatar_specific" in columns
+                else ""
+            )
+            event_clause = (
+                "(event_id = ? OR (event_id IS NULL"
+                f"{legacy_format_filter} AND timestamp >= ? "
+                "AND (? IS NULL OR timestamp <= ?)))"
+            )
+            params = [event_id, event[0], event[1], event[1]]
+        rows = conn.execute(
+            f"""SELECT winner_id, winner_avatar, losser_id AS loser_id, loser_avatar
+                FROM {table}
+                WHERE {event_clause}
+                  AND {RANKED_MATCH_FILTER}
+                  AND winner_avatar IS NOT NULL AND loser_avatar IS NOT NULL""",
+            params,
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def get_avatar_top_cut_projection(
+    event_id: int,
+    source: str = "online",
+    eligible_user_ids=None,
+) -> dict:
+    """Apply the shared 16+8 qualification policy to persisted event data."""
+    return build_avatar_top_cut(
+        get_event_avatar_standings(event_id, source),
+        get_event_ranked_avatar_matches(event_id, source),
+        eligible_user_ids=eligible_user_ids,
+    )
+
+
+def lock_avatar_top_cut(
+    event_id: int,
+    source: str,
+    eligible_user_ids,
+    locked_by_id,
+    locked_by_name: str,
+) -> dict:
+    """Persist an immutable-at-display-time qualification snapshot."""
+    projection = get_avatar_top_cut_projection(
+        event_id,
+        source,
+        eligible_user_ids=eligible_user_ids,
+    )
+    if any(seat["requires_tiebreak"] for seat in projection["seats"]):
+        raise ValueError(
+            "Resolve the flagged qualification tiebreak before locking top cut"
+        )
+    locked_at = datetime.datetime.now().isoformat()
+    conn = sqlite3.connect("elo.db")
+    conn.execute(
+        "DELETE FROM event_qualification_snapshots WHERE event_id = ? AND source = ?",
+        (event_id, source),
+    )
+    for seat in projection["seats"]:
+        conn.execute(
+            """INSERT INTO event_qualification_snapshots
+               (event_id, source, seat, player_id, player_name,
+                qualifying_avatar, qualifying_elo, qualification_path,
+                games, wins, losses, win_rate, requires_tiebreak,
+                policy_json, locked_at, locked_by_id, locked_by_name)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                event_id,
+                source,
+                seat["seat"],
+                seat["player_id"],
+                seat["player_name"],
+                seat["qualifying_avatar"],
+                seat["qualifying_elo"],
+                seat["qualification_path"],
+                seat["games"],
+                seat["wins"],
+                seat["losses"],
+                seat["win_rate"],
+                int(seat["requires_tiebreak"]),
+                json.dumps(projection["policy"], sort_keys=True),
+                locked_at,
+                str(locked_by_id),
+                locked_by_name,
+            ),
+        )
+    conn.commit()
+    conn.close()
+    return {**projection, "locked_at": locked_at}
+
+
+def get_locked_avatar_top_cut(event_id: int, source: str = "online") -> list[dict]:
+    create_events_table()
+    conn = sqlite3.connect("elo.db")
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        """SELECT * FROM event_qualification_snapshots
+           WHERE event_id = ? AND source = ? ORDER BY seat""",
+        (event_id, source),
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def archive_avatar_event_standings(event_id: int) -> int:
+    """Snapshot both source ladders with final ranks and ranked-game records."""
+    create_events_table()
+    archived_at = datetime.datetime.now().isoformat()
+    conn = sqlite3.connect("elo.db")
+    archived = 0
+    for source in ("online", "paper"):
+        projection = get_avatar_top_cut_projection(event_id, source)
+        conn.execute(
+            "DELETE FROM event_avatar_standings_archive WHERE event_id = ? AND source = ?",
+            (event_id, source),
+        )
+        for entry in projection["entries"]:
+            conn.execute(
+                """INSERT INTO event_avatar_standings_archive
+                   (event_id, source, user_id, user_display_name, avatar_name,
+                    final_event_elo, final_rank, games, wins, losses, archived_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    event_id,
+                    source,
+                    entry["user_id"],
+                    entry["user_display_name"],
+                    entry["avatar_name"],
+                    entry["event_elo"],
+                    entry["overall_entry_rank"],
+                    entry["games"],
+                    entry["wins"],
+                    entry["losses"],
+                    archived_at,
+                ),
+            )
+            archived += 1
+    conn.commit()
+    conn.close()
+    return archived
 
 
 def update_avatar_match_elos(
@@ -1217,6 +1483,9 @@ def save_pairing(
     player1_deck_url: str = None,
     player2_deck_url: str = None,
     match_type: str = "ranked",
+    player1_avatar: str = None,
+    player2_avatar: str = None,
+    event_snapshot: dict = None,
 ) -> int:
     """
     Save a new active pairing to the database.
@@ -1248,8 +1517,11 @@ def save_pairing(
 
             cur.execute(
                 """INSERT INTO active_pairings
-                   (guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, status, match_type)
-                   VALUES (?, ?, ?, ?, ?, ?, 'active', ?)""",
+                   (guild_id, player1_id, player2_id, player1_deck_url,
+                    player2_deck_url, created_at, status, match_type,
+                    player1_avatar, player2_avatar, event_id,
+                    event_started_at, event_avatar_specific)
+                   VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)""",
                 (
                     guild_id,
                     player1_id,
@@ -1258,6 +1530,16 @@ def save_pairing(
                     player2_deck_url,
                     datetime.datetime.now().isoformat(),
                     match_type,
+                    player1_avatar,
+                    player2_avatar,
+                    event_snapshot.get("event_id") if event_snapshot else None,
+                    (
+                        event_snapshot["start_date"].isoformat()
+                        if event_snapshot
+                        and isinstance(event_snapshot.get("start_date"), datetime.datetime)
+                        else event_snapshot.get("start_date") if event_snapshot else None
+                    ),
+                    int(bool(event_snapshot and event_snapshot.get("avatar_specific"))),
                 ),
             )
 
@@ -1290,7 +1572,9 @@ def get_active_pairing_for_user(guild_id: int, user_id: int) -> dict | None:
     cur = conn.cursor()
 
     cur.execute(
-        """SELECT pairing_id, guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, match_type
+        """SELECT pairing_id, guild_id, player1_id, player2_id, player1_deck_url,
+                  player2_deck_url, created_at, match_type, player1_avatar,
+                  player2_avatar, event_id, event_started_at, event_avatar_specific
            FROM active_pairings
            WHERE guild_id = ? AND (player1_id = ? OR player2_id = ?) AND status = 'active'
            ORDER BY created_at DESC
@@ -1310,6 +1594,11 @@ def get_active_pairing_for_user(guild_id: int, user_id: int) -> dict | None:
             "player2_deck_url": row[5],
             "created_at": row[6],
             "match_type": row[7] or "ranked",
+            "player1_avatar": row[8],
+            "player2_avatar": row[9],
+            "event_id": row[10],
+            "event_started_at": row[11],
+            "event_avatar_specific": bool(row[12]),
         }
     return None
 
@@ -1353,7 +1642,9 @@ def get_pairing_between_players(guild_id: int, user_id: int, opponent_id: int) -
     cur = conn.cursor()
 
     cur.execute(
-        """SELECT pairing_id, guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, match_type
+        """SELECT pairing_id, guild_id, player1_id, player2_id, player1_deck_url,
+                  player2_deck_url, created_at, match_type, player1_avatar,
+                  player2_avatar, event_id, event_started_at, event_avatar_specific
            FROM active_pairings
            WHERE guild_id = ? AND status = 'active'
            AND ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))
@@ -1374,6 +1665,11 @@ def get_pairing_between_players(guild_id: int, user_id: int, opponent_id: int) -
             "player2_deck_url": row[5],
             "created_at": row[6],
             "match_type": row[7] or "ranked",
+            "player1_avatar": row[8],
+            "player2_avatar": row[9],
+            "event_id": row[10],
+            "event_started_at": row[11],
+            "event_avatar_specific": bool(row[12]),
         }
     return None
 

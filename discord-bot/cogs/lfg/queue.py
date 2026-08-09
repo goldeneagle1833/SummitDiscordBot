@@ -9,7 +9,8 @@ from cogs.lfg.state import lfg_queue, lfg_queue_lock
 from cogs.lfg.helpers import scrub_urls
 from cogs.lfg.match_reporting import MatchCardView
 from utils.constants import SORCERY_NICKNAMES
-from utils.database import save_pairing
+from utils.database import get_active_event, save_pairing
+from utils.avatar_elo import avatar_input_error, canonicalize_avatar_name
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
 from services.pilots_service import is_pilot_active
 from services.card_points_service import validate_deck_points
@@ -113,6 +114,13 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
         max_length=3,
     )
 
+    avatar = discord.ui.TextInput(
+        label="Avatar for this match",
+        placeholder="Enter the exact Avatar card name",
+        required=True,
+        max_length=100,
+    )
+
     def __init__(self, bot, is_button_join=True, queue_type="ranked"):
         super().__init__()
         self.bot = bot
@@ -120,6 +128,14 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             is_button_join  # True if from button, False if from !lfg command
         )
         self.queue_type = queue_type
+        active_event = get_active_event()
+        self.avatar_specific = bool(
+            queue_type == "ranked"
+            and active_event
+            and active_event.get("avatar_specific")
+        )
+        if not self.avatar_specific:
+            self.remove_item(self.avatar)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -127,6 +143,15 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
         timeframe_value = parse_queue_timeframe(self.timeframe.value)
 
         deck_url = self.deck_url.value.strip() if self.deck_url.value else None
+        selected_avatar = None
+        if self.avatar_specific:
+            selected_avatar = canonicalize_avatar_name(self.avatar.value)
+            if not selected_avatar:
+                await interaction.followup.send(
+                    avatar_input_error("your avatar", self.avatar.value),
+                    ephemeral=True,
+                )
+                return
 
         # For limited queue, player must have an active arena run (created via Draft Sorcery)
         run_id = None
@@ -149,6 +174,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             timeframe_value,
             deck_url,
             run_id,
+            selected_avatar,
         )
 
 
@@ -252,7 +278,15 @@ class PointsQueueModal(discord.ui.Modal, title="Join Omens Queue"):
         )
 
 
-async def _process_queue_join(bot, interaction, queue_type, timeframe_value, deck_url, run_id=None):
+async def _process_queue_join(
+    bot,
+    interaction,
+    queue_type,
+    timeframe_value,
+    deck_url,
+    run_id=None,
+    selected_avatar=None,
+):
     """Handle queue join flow after modal validation."""
 
     class FakeContext:
@@ -290,6 +324,7 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
         if matched_user_id and matched_user_id != interaction.user.id:
             matched_entry = lfg_queue.get(matched_user_id, {}).get("queues", {}).get(queue_type, {})
             matched_user_deck_url = matched_entry.get("deck_url")
+            matched_user_avatar = matched_entry.get("avatar")
             matched_queue_type = queue_type
             matched_ladder_info = matched_entry.get("ladder_info")
             matched_run_id = int(matched_entry.get("run_id") or 0)
@@ -353,6 +388,7 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
         else:
             matched_user_id = None
             matched_user_deck_url = None
+            matched_user_avatar = None
             matched_ladder_info = None
             matched_run_id = None
             match_type = None
@@ -362,6 +398,7 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                 deck_url,
                 queue_type,
                 run_id=run_id,
+                avatar=selected_avatar,
             )
 
     # Notify limited ping channel when someone is waiting (no match found)
@@ -429,6 +466,16 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             return
 
         try:
+            event_snapshot = get_active_event()
+            avatar_locked = bool(
+                match_type == "ranked"
+                and event_snapshot
+                and event_snapshot.get("avatar_specific")
+            )
+            if avatar_locked and (not selected_avatar or not matched_user_avatar):
+                raise ValueError(
+                    "Both players must lock an avatar before an avatar-specific ranked match."
+                )
             if match_type == "limited":
                 pairing_id = save_limited_pairing(
                     guild_id=interaction.guild.id,
@@ -447,6 +494,9 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                     player1_deck_url=deck_url or "",
                     player2_deck_url=matched_user_deck_url or "",
                     match_type=match_type or "ranked",
+                    player1_avatar=selected_avatar,
+                    player2_avatar=matched_user_avatar,
+                    event_snapshot=event_snapshot,
                 )
             logger.info(
                 f"Saved {'limited ' if match_type == 'limited' else ''}pairing {pairing_id} in guild {interaction.guild.id}: "
@@ -480,14 +530,48 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             logger.error(f"Failed to assign active player role: {e}")
 
         players = [
-            (interaction.user.id, joiner_global, interaction.user, deck_url, True),
-            (matched_user_id, matched_global, matched_user, matched_user_deck_url, False),
+            (
+                interaction.user.id,
+                joiner_global,
+                interaction.user,
+                deck_url,
+                selected_avatar,
+                True,
+            ),
+            (
+                matched_user_id,
+                matched_global,
+                matched_user,
+                matched_user_deck_url,
+                matched_user_avatar,
+                False,
+            ),
         ]
         reporter_player, other_player = random.sample(players, 2)
-        reporter_id, reporter_global, reporter_user, reporter_deck_url, reporter_is_joiner = reporter_player
-        other_id, other_global, other_user, other_deck_url, _ = other_player
+        (
+            reporter_id,
+            reporter_global,
+            reporter_user,
+            reporter_deck_url,
+            reporter_avatar,
+            reporter_is_joiner,
+        ) = reporter_player
+        (
+            other_id,
+            other_global,
+            other_user,
+            other_deck_url,
+            other_avatar,
+            _,
+        ) = other_player
 
         reporter_deck_text = f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
+        avatar_text = ""
+        if reporter_avatar and other_avatar:
+            avatar_text = (
+                f"\n**Your Avatar:** {reporter_avatar}"
+                f"\n**Opponent Avatar:** {other_avatar}"
+            )
 
         if match_type == "limited":
             if reporter_is_joiner:
@@ -515,12 +599,15 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             match_type=match_type or "ranked",
             player1_run_id=reporter_run_id,
             player2_run_id=other_run_id,
+            player1_avatar=reporter_avatar,
+            player2_avatar=other_avatar,
+            event_snapshot=event_snapshot,
         )
 
         reporter_dm_failed = False
         try:
             await reporter_user.send(
-                f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n"
+                f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}{avatar_text}\n\n"
                 f"Use the button below to report the result when your match is done.\n\n"
                 f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** in the LFG channel for fresh ones!",
                 view=match_card_view,
@@ -556,10 +643,16 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                 logger.error(f"Failed to handle DM failure for reporter: {e}")
 
         other_own_deck_text = f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
+        other_avatar_text = ""
+        if other_avatar and reporter_avatar:
+            other_avatar_text = (
+                f"\n**Your Avatar:** {other_avatar}"
+                f"\n**Opponent Avatar:** {reporter_avatar}"
+            )
 
         try:
             await other_user.send(
-                f"🎮 **Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
+                f"🎮 **Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}{other_avatar_text}\n\n"
                 f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome.\n\n"
                 f"💡 **Tip:** If you need fresh reporting buttons, click **'📋 Report Last Match'** in the LFG channel!"
             )
@@ -595,8 +688,8 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             ladder_note = ""
             if matched_ladder_info and matched_ladder_info.get("avatar_stakes_pending"):
                 ladder_note = (
-                    " 🏆 **Ladder Challenge!** Stakes will be based on the "
-                    "avatars reported and confirmed for this match."
+                    " 🏆 **Ladder Challenge!** Stakes are based on the "
+                    "avatars locked for this match."
                 )
             elif matched_ladder_info:
                 from utils.database import get_user_event_elo
@@ -865,6 +958,25 @@ class JoinQueueButtons(discord.ui.View):
                 match_type=match_type,
                 player1_run_id=reporter_run_id,
                 player2_run_id=opponent_run_id,
+                player1_avatar=(
+                    pairing.get("player1_avatar")
+                    if pairing["player1_id"] == interaction.user.id
+                    else pairing.get("player2_avatar")
+                ),
+                player2_avatar=(
+                    pairing.get("player2_avatar")
+                    if pairing["player1_id"] == interaction.user.id
+                    else pairing.get("player1_avatar")
+                ),
+                event_snapshot=(
+                    {
+                        "event_id": pairing.get("event_id"),
+                        "start_date": pairing.get("event_started_at"),
+                        "avatar_specific": pairing.get("event_avatar_specific"),
+                    }
+                    if pairing.get("event_id")
+                    else None
+                ),
             )
 
             # Try to send to DM first

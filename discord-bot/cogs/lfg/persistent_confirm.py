@@ -120,6 +120,7 @@ def ensure_pending_confirmations_table():
             guild_id          INTEGER,
             winner_run_id     INTEGER,
             loser_run_id      INTEGER,
+            event_snapshot_json TEXT,
             confirmer_comment TEXT    DEFAULT '',
             created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -134,6 +135,10 @@ def ensure_pending_confirmations_table():
         conn.execute("ALTER TABLE pending_confirmations ADD COLUMN winner_avatar TEXT")
     if "loser_avatar" not in columns:
         conn.execute("ALTER TABLE pending_confirmations ADD COLUMN loser_avatar TEXT")
+    if "event_snapshot_json" not in columns:
+        conn.execute(
+            "ALTER TABLE pending_confirmations ADD COLUMN event_snapshot_json TEXT"
+        )
 
     conn.commit()
     conn.close()
@@ -141,6 +146,7 @@ def ensure_pending_confirmations_table():
 
 def save_pending_confirmation(data: dict) -> int:
     """Persist confirmation data and return the new row id."""
+    ensure_pending_confirmations_table()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -157,8 +163,8 @@ def save_pending_confirmation(data: dict) -> int:
             opponent_global, match_start_time, first_player,
             match_time, match_comment, winner_deck_url, loser_deck_url,
             winner_avatar, loser_avatar, ladder_info_json, match_type, guild_id,
-            winner_run_id, loser_run_id
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            winner_run_id, loser_run_id, event_snapshot_json
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             data["reporter_id"],
@@ -183,6 +189,9 @@ def save_pending_confirmation(data: dict) -> int:
             data.get("guild_id"),
             data.get("winner_run_id"),
             data.get("loser_run_id"),
+            json.dumps(data.get("event_snapshot"), default=str)
+            if data.get("event_snapshot")
+            else None,
         ),
     )
     confirmation_id = cursor.lastrowid
@@ -209,6 +218,11 @@ def load_pending_confirmation(confirmation_id: int):
         data["ladder_info"] = json.loads(data["ladder_info_json"])
     else:
         data["ladder_info"] = None
+
+    if data.get("event_snapshot_json"):
+        data["event_snapshot"] = json.loads(data["event_snapshot_json"])
+    else:
+        data["event_snapshot"] = None
 
     if data.get("match_start_time"):
         try:
@@ -384,6 +398,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
             elo_multiplier_loser=elo_multiplier_loser,
             winner_avatar=data.get("winner_avatar"),
             loser_avatar=data.get("loser_avatar"),
+            event_snapshot=data.get("event_snapshot"),
         )
 
         if ladder_info and data["match_type"] not in NON_ELO_MATCH_TYPES:
@@ -1009,6 +1024,7 @@ def create_confirmation_view(
     guild_id=None,
     winner_run_id=None,
     loser_run_id=None,
+    event_snapshot=None,
 ) -> PersistentMatchConfirmView:
     """Persist confirmation data and return a view that works across restarts."""
     # Validate that reporter_id and opponent_id are valid Discord snowflakes
@@ -1052,6 +1068,7 @@ def create_confirmation_view(
         "guild_id": guild_id,
         "winner_run_id": winner_run_id,
         "loser_run_id": loser_run_id,
+        "event_snapshot": event_snapshot,
     }
     confirmation_id = save_pending_confirmation(data)
     return PersistentMatchConfirmView(confirmation_id)

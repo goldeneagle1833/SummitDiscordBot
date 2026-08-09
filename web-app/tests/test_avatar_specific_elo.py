@@ -3,10 +3,69 @@
 import datetime
 import sqlite3
 
+import pytest
+
 from services import paper_elo
 from services import avatar_event_elo
+from services.match_confirmation import MatchConfirmationService
 from utils import avatar_elo
 from repositories.elo import EloRepository
+
+
+class _ConfirmationRepo:
+    def __init__(self):
+        self.created = None
+
+    def check_duplicate_pending(self, **_kwargs):
+        return False
+
+    def create_confirmation(self, **kwargs):
+        self.created = kwargs
+        return 9
+
+
+def test_avatar_event_web_report_requires_and_snapshots_both_avatars(monkeypatch):
+    from utils import avatar_elo as avatar_elo_module
+
+    active_event = {
+        "event_id": 5,
+        "event_name": "Avatar League",
+        "start_date": datetime.datetime(2026, 8, 1),
+        "avatar_specific": True,
+    }
+    monkeypatch.setattr(paper_elo, "get_active_event", lambda: active_event)
+    monkeypatch.setattr(
+        avatar_elo_module,
+        "resolve_avatar_name",
+        lambda _deck, override=None: override,
+    )
+    monkeypatch.setattr(
+        avatar_elo_module,
+        "canonicalize_avatar_name",
+        lambda name: name if name in {"Impostor", "Battlemage"} else None,
+    )
+    repo = _ConfirmationRepo()
+    service = MatchConfirmationService(repository=repo, user_repo=object())
+    service._get_display_name_for_user = lambda user_id: f"Player {user_id}"
+
+    with pytest.raises(ValueError, match="opponent's avatar"):
+        service.create_match_report(
+            "1", "2", "won", "submitter", submitter_avatar="Impostor"
+        )
+
+    result = service.create_match_report(
+        "1",
+        "2",
+        "won",
+        "submitter",
+        submitter_avatar="Impostor",
+        opponent_avatar="Battlemage",
+    )
+
+    assert result["confirmation_id"] == 9
+    assert repo.created["winner_avatar"] == "Impostor"
+    assert repo.created["loser_avatar"] == "Battlemage"
+    assert repo.created["event_snapshot"]["event_id"] == 5
 
 
 def test_paper_avatar_event_keeps_one_lifetime_rating_and_multiple_avatar_ratings(
@@ -169,13 +228,15 @@ def test_atomic_paper_avatar_match_uses_one_pre_match_snapshot(tmp_path, monkeyp
     )
 
     assert winner[:4] == (1608, 8, 1508, 8)
-    assert loser[:4] == (1392, -8, 1492, -8)
+    # Lifetime Elo preserves the established sequential calculation while the
+    # avatar event deltas use a shared pre-match snapshot.
+    assert loser[:4] == (1393, -7, 1492, -8)
     conn = sqlite3.connect(elo_path)
     stored = conn.execute(
         "SELECT user_id, paper_elo FROM paper_standings ORDER BY user_id"
     ).fetchall()
     conn.close()
-    assert stored == [("1", 1608), ("2", 1392)]
+    assert stored == [("1", 1608), ("2", 1393)]
 
 
 def test_avatar_paper_replay_rebuilds_the_shared_ladder(tmp_path, monkeypatch):

@@ -343,7 +343,15 @@ class TestReportingFlow:
         assert report_key not in pending_match_reports
 
 
-def _build_report_result_view(mock_bot, mock_user, mock_user_2, reporter_deck_url):
+def _build_report_result_view(
+    mock_bot,
+    mock_user,
+    mock_user_2,
+    reporter_deck_url,
+    reporter_avatar=None,
+    opponent_avatar=None,
+    event_snapshot=None,
+):
     return ReportResultSelectView(
         bot=mock_bot,
         reporter_id=mock_user.id,
@@ -362,6 +370,9 @@ def _build_report_result_view(mock_bot, mock_user, mock_user_2, reporter_deck_ur
         match_type="ranked",
         reporter_run_id=0,
         opponent_run_id=0,
+        reporter_avatar=reporter_avatar,
+        opponent_avatar=opponent_avatar,
+        event_snapshot=event_snapshot,
     )
 
 
@@ -422,26 +433,27 @@ class TestReportResultSelectView:
         view._submit.assert_awaited_once_with(mock_interaction)
 
     @pytest.mark.asyncio
-    async def test_avatar_specific_event_opens_avatar_modal_even_with_deck_url(
+    async def test_avatar_specific_event_uses_locked_avatars_without_modal(
         self, mock_bot, mock_interaction, mock_user, mock_user_2
     ):
         view = _build_report_result_view(
-            mock_bot, mock_user, mock_user_2, "https://curiosa.io/decks/reporter-deck"
+            mock_bot,
+            mock_user,
+            mock_user_2,
+            "https://curiosa.io/decks/reporter-deck",
+            reporter_avatar="Avatar of Fire",
+            opponent_avatar="Avatar of Earth",
+            event_snapshot={"event_id": 42, "avatar_specific": True},
         )
         view.selected_first_id = mock_user.id
         view.selected_winner_id = mock_user.id
+        view._submit = AsyncMock()
 
-        with patch(
-            "cogs.lfg.match_reporting.get_active_event",
-            return_value={"avatar_specific": True},
-        ):
-            await view._on_submit(mock_interaction)
+        await view._on_submit(mock_interaction)
 
-        modal = mock_interaction.response.send_modal.await_args.args[0]
-        assert isinstance(modal, MatchReportDeckModal)
-        assert modal.reporter_avatar in modal.children
-        assert modal.opponent_avatar in modal.children
-        assert modal.deck_url not in modal.children
+        mock_interaction.response.send_modal.assert_not_awaited()
+        mock_interaction.response.defer.assert_awaited_once_with()
+        view._submit.assert_awaited_once_with(mock_interaction)
 
     @pytest.mark.asyncio
     async def test_avatar_specific_report_maps_and_displays_both_avatars(
@@ -450,16 +462,18 @@ class TestReportResultSelectView:
         pending_match_reports.clear()
         mock_bot.fetch_user.return_value = mock_user_2
         view = _build_report_result_view(
-            mock_bot, mock_user, mock_user_2, "https://curiosa.io/decks/reporter-deck"
+            mock_bot,
+            mock_user,
+            mock_user_2,
+            "https://curiosa.io/decks/reporter-deck",
+            reporter_avatar="Avatar of Fire",
+            opponent_avatar="Avatar of Earth",
+            event_snapshot={"event_id": 42, "avatar_specific": True},
         )
         view.selected_first_id = mock_user.id
         view.selected_winner_id = mock_user_2.id
 
         with (
-            patch(
-                "cogs.lfg.match_reporting.get_active_event",
-                return_value={"avatar_specific": True},
-            ),
             patch(
                 "cogs.lfg.match_reporting._canonicalize_reported_avatars",
                 return_value=("Avatar of Fire", "Avatar of Earth"),
@@ -472,8 +486,6 @@ class TestReportResultSelectView:
         ):
             await view._submit(
                 mock_interaction,
-                reporter_avatar="fire",
-                opponent_avatar="earth",
             )
 
         create_kwargs = create_view.call_args.kwargs

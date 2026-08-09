@@ -378,11 +378,18 @@ function CommunitySpotlight() {
 function StatBar({ leaderboard, eloKey = 'event_elo' }) {
   if (!leaderboard.length) return null
   const total = leaderboard.length
+  const uniquePlayers = new Set(leaderboard.map((entry) => String(entry.id))).size
+  const hasAvatarEntries = leaderboard.some((entry) => entry.avatar)
   const top = leaderboard[0][eloKey]
   const avg = Math.round(leaderboard.reduce((s, p) => s + (p[eloKey] || 0), 0) / total)
   return (
     <div className="flex gap-6 mb-4 text-center">
-      {[['Players', total], ['Top ELO', top], ['Avg ELO', avg]].map(([label, val]) => (
+      {[
+        [hasAvatarEntries ? 'Entries' : 'Players', total],
+        ...(hasAvatarEntries ? [['Unique Players', uniquePlayers]] : []),
+        ['Top ELO', top],
+        ['Avg ELO', avg],
+      ].map(([label, val]) => (
         <div key={label}>
           <div className="text-lg font-bold text-secondary">{val}</div>
           <div className="text-xs text-text-muted">{label}</div>

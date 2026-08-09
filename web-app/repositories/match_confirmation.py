@@ -146,6 +146,17 @@ class MatchConfirmationRepository:
                 cursor.execute(f"ALTER TABLE match_confirmations ADD COLUMN {column} TEXT")
                 conn.commit()
 
+        for column, definition in (
+            ("event_id", "INTEGER"),
+            ("event_started_at", "TEXT"),
+            ("event_avatar_specific", "BOOLEAN NOT NULL DEFAULT 0"),
+        ):
+            if column not in columns:
+                cursor.execute(
+                    f"ALTER TABLE match_confirmations ADD COLUMN {column} {definition}"
+                )
+                conn.commit()
+
         conn.close()
 
     def create_confirmation(
@@ -164,6 +175,7 @@ class MatchConfirmationRepository:
         match_type: str = "ranked",
         season_id: Optional[int] = None,
         match_comment: str = "",
+        event_snapshot: Optional[dict] = None,
     ) -> int:
         """
         Create a new match confirmation request.
@@ -200,8 +212,10 @@ class MatchConfirmationRepository:
                 winner_deck_url, loser_deck_url,
                 winner_avatar, loser_avatar,
                 final_life_winner, final_life_loser,
-                went_first, match_type, season_id, match_comment, status, created_at, expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                went_first, match_type, season_id, match_comment,
+                event_id, event_started_at, event_avatar_specific,
+                status, created_at, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
             """,
             (
                 str(submitter_id),
@@ -218,6 +232,9 @@ class MatchConfirmationRepository:
                 match_type,
                 season_id,
                 match_comment,
+                event_snapshot.get("event_id") if event_snapshot else None,
+                event_snapshot.get("start_date") if event_snapshot else None,
+                int(bool(event_snapshot and event_snapshot.get("avatar_specific"))),
                 created_at,
                 expires_at,
             ),

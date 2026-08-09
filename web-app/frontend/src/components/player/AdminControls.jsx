@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { removePlayer, removeMatch, resetElo, renamePlayer, deleteAccount } from '@/api/admin'
+import { correctMatchAvatars, removePlayer, removeMatch, resetElo, renamePlayer, deleteAccount } from '@/api/admin'
 import { get } from '@/api/client'
 import { listAllAvatars } from '@/api/games'
 
 export default function AdminControls({ playerId, playerName, onAction }) {
   const [modal, setModal] = useState(null)
   const [matchId, setMatchId] = useState('')
+  const [winnerAvatar, setWinnerAvatar] = useState('')
+  const [loserAvatar, setLoserAvatar] = useState('')
   const [eloValue, setEloValue] = useState('1500')
   const [eloSource, setEloSource] = useState('both')
   const [eloAvatar, setEloAvatar] = useState('')
@@ -62,6 +64,12 @@ export default function AdminControls({ playerId, playerName, onAction }) {
     doAction(() => resetElo(playerId, elo, eloSource, eloAvatar))
   }
 
+  const handleCorrectMatchAvatars = () => {
+    if (!matchId.trim()) { setError('Enter a match ID.'); return }
+    if (!winnerAvatar || !loserAvatar) { setError('Select both avatars.'); return }
+    doAction(() => correctMatchAvatars(matchId.trim(), winnerAvatar, loserAvatar))
+  }
+
   const handleRename = () => {
     const trimmed = newName.trim()
     if (!trimmed || trimmed.length > 100) { setError('Name must be 1-100 characters.'); return }
@@ -79,6 +87,11 @@ export default function AdminControls({ playerId, playerName, onAction }) {
           <button onClick={() => { setMatchId(''); setModal('removeMatch') }} className="px-3 py-1.5 text-xs bg-accent-red/20 text-accent-red border border-accent-red/30 rounded hover:bg-accent-red/30">
             Remove Match
           </button>
+          {avatarSpecificEvent && (
+            <button onClick={() => { setMatchId(''); setWinnerAvatar(''); setLoserAvatar(''); setModal('correctAvatars') }} className="px-3 py-1.5 text-xs bg-bg-raised border border-border rounded text-text-muted hover:text-text-primary">
+              Correct Match Avatars
+            </button>
+          )}
           <button onClick={() => { setEloValue('1500'); setEloSource('both'); setEloAvatar(''); setModal('resetElo') }} className="px-3 py-1.5 text-xs bg-bg-raised border border-border rounded text-text-muted hover:text-text-primary">
             Set ELO
           </button>
@@ -147,6 +160,30 @@ export default function AdminControls({ playerId, playerName, onAction }) {
                 )}
               </>
             )}
+            {modal === 'correctAvatars' && (
+              <>
+                <h3 className="text-lg font-semibold text-text-primary mb-4">Correct Match Avatars</h3>
+                <input
+                  type="text"
+                  value={matchId}
+                  onChange={(e) => setMatchId(e.target.value)}
+                  placeholder="Match ID (for example 42 or web_42)"
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-3"
+                  autoFocus
+                />
+                <label className="text-xs text-text-muted block mb-1">Winner avatar</label>
+                <select value={winnerAvatar} onChange={(e) => setWinnerAvatar(e.target.value)} className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-3">
+                  <option value="">Select avatar...</option>
+                  {avatars.map((avatar) => <option key={avatar} value={avatar}>{avatar}</option>)}
+                </select>
+                <label className="text-xs text-text-muted block mb-1">Loser avatar</label>
+                <select value={loserAvatar} onChange={(e) => setLoserAvatar(e.target.value)} className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-2">
+                  <option value="">Select avatar...</option>
+                  {avatars.map((avatar) => <option key={avatar} value={avatar}>{avatar}</option>)}
+                </select>
+                <p className="text-xs text-text-muted mb-4">Lifetime ELO stays unchanged; the avatar ladder is replayed.</p>
+              </>
+            )}
             {modal === 'rename' && (
               <>
                 <h3 className="text-lg font-semibold text-text-primary mb-4">Rename Player</h3>
@@ -164,7 +201,7 @@ export default function AdminControls({ playerId, playerName, onAction }) {
             <div className="flex justify-end gap-2">
               <button onClick={close} className="px-3 py-1.5 text-sm bg-bg-raised border border-border rounded hover:border-secondary">Cancel</button>
               <button
-                onClick={modal === 'removeMatch' ? handleRemoveMatch : modal === 'resetElo' ? handleResetElo : handleRename}
+                onClick={modal === 'removeMatch' ? handleRemoveMatch : modal === 'correctAvatars' ? handleCorrectMatchAvatars : modal === 'resetElo' ? handleResetElo : handleRename}
                 disabled={saving}
                 className={`px-3 py-1.5 text-sm rounded hover:opacity-90 disabled:opacity-40 ${
                   modal === 'removeMatch' ? 'bg-accent-red text-white' : 'bg-secondary text-black'

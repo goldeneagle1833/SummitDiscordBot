@@ -126,6 +126,49 @@ def remove_match(match_id):
     return jsonify(result), status
 
 
+@admin_bp.route("/admin/correct-match-avatars/<path:match_id>", methods=["PUT"])
+@require_admin
+def correct_match_avatars(match_id):
+    """Correct a match's avatars without changing lifetime ELO."""
+    data = request.get_json(silent=True) or {}
+    winner_avatar = str(data.get("winner_avatar") or "").strip()
+    loser_avatar = str(data.get("loser_avatar") or "").strip()
+    if not winner_avatar or not loser_avatar:
+        return jsonify({
+            "success": False,
+            "error": "winner_avatar and loser_avatar are required",
+        }), 400
+
+    service = AdminService()
+    result = service.correct_match_avatars(
+        match_id, winner_avatar, loser_avatar
+    )
+    if result.get("success"):
+        admin_id, admin_name = _get_admin_info()
+        AuditRepository().log_action(
+            admin_id,
+            admin_name,
+            "web_correct_match_avatars",
+            target_id=str(match_id),
+            previous_state={
+                "winner_avatar": result.get("winner_avatar_before"),
+                "loser_avatar": result.get("loser_avatar_before"),
+            },
+            new_state={
+                "winner_avatar": result.get("winner_avatar"),
+                "loser_avatar": result.get("loser_avatar"),
+                "source": result.get("source"),
+            },
+            details=(
+                f"Corrected {result.get('source')} match {match_id} avatars: "
+                f"{result.get('winner_avatar_before')} / {result.get('loser_avatar_before')} -> "
+                f"{result.get('winner_avatar')} / {result.get('loser_avatar')}"
+            ),
+        )
+    status = 200 if result.get("success") else 400
+    return jsonify(result), status
+
+
 @admin_bp.route("/admin/reset-elo/<path:user_id>", methods=["POST"])
 @require_admin
 def reset_elo(user_id):

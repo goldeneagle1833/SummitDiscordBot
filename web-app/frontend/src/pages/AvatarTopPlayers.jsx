@@ -239,6 +239,8 @@ export default function AvatarTopPlayers() {
                     <>
                       <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">Event ELO</th>
                       <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">Overall Rank</th>
+                      <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">Record</th>
+                      <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">Qualification</th>
                     </>
                   ) : (
                     <>
@@ -263,6 +265,30 @@ export default function AvatarTopPlayers() {
                       <>
                         <td className="px-3 py-3 text-right font-bold text-secondary">{player.event_elo}</td>
                         <td className="px-3 py-3 text-right text-text-muted">#{player.ladder_rank}</td>
+                        <td className="px-3 py-3 text-right">
+                          {player.wins}W-{player.losses}L ({player.games}g)
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          {player.qualification_path === 'avatar_leader' ? (
+                            <span className="text-emerald-400 font-semibold">Avatar Leader</span>
+                          ) : player.qualification_path === 'overall' ? (
+                            <span className="text-primary font-semibold">Overall</span>
+                          ) : player.qualification_path === 'fallback' ? (
+                            <span className="text-amber-300 font-semibold">ELO Fallback</span>
+                          ) : player.absolute_avatar_leader ? (
+                            <span className="text-text-muted">
+                              {player.qualification_reasons.includes('needs_three_ranked_games')
+                                ? `${Math.max(0, 3 - player.games)} more game${Math.max(0, 3 - player.games) === 1 ? '' : 's'}`
+                                : player.qualification_reasons.includes('needs_positive_win_rate')
+                                  ? 'Needs positive record'
+                                  : player.qualification_reasons.includes('already_qualified_overall')
+                                    ? 'Already qualified'
+                                    : 'Not eligible'}
+                            </span>
+                          ) : (
+                            <span className="text-text-muted">—</span>
+                          )}
+                        </td>
                       </>
                     ) : (
                       <>
@@ -272,6 +298,57 @@ export default function AvatarTopPlayers() {
                         <td className="px-3 py-3 text-right text-text-muted">{player.total}</td>
                       </>
                     )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {isEventElo && !loading && (data.projected_top_cut || []).length > 0 && (
+        <section className="mt-6 bg-bg-surface border border-border rounded-soft overflow-hidden">
+          <div className="p-4 border-b border-border">
+            <h2 className="text-xl font-display text-text-primary">Projected Top Cut</h2>
+            <p className="text-sm text-text-muted mt-1">
+              First 16 unique players by the overall ladder, then up to eight eligible absolute avatar leaders, with remaining seats falling back to ELO.
+            </p>
+            {!data.top_cut_eligibility_applied && (
+              <p className="text-xs text-amber-300 mt-2">
+                Provisional ladder view: ticket eligibility is applied by admins when the top cut is locked.
+              </p>
+            )}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-bg-elevated border-b border-border">
+                <tr>
+                  <th className="px-3 py-3 text-left text-xs uppercase tracking-wide text-text-muted">Seat</th>
+                  <th className="px-3 py-3 text-left text-xs uppercase tracking-wide text-text-muted">Player</th>
+                  <th className="px-3 py-3 text-left text-xs uppercase tracking-wide text-text-muted">Qualifying Avatar</th>
+                  <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">ELO</th>
+                  <th className="px-3 py-3 text-right text-xs uppercase tracking-wide text-text-muted">Path</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {data.projected_top_cut.map((seat) => (
+                  <tr key={seat.player_id} className="hover:bg-bg-elevated transition-colors">
+                    <td className="px-3 py-3 font-semibold text-text-muted">#{seat.seat}</td>
+                    <td className="px-3 py-3">
+                      <Link to={`/player/${seat.player_id}`} className="text-primary hover:underline font-semibold">
+                        {seat.player_name}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-3">{seat.qualifying_avatar}</td>
+                    <td className="px-3 py-3 text-right font-bold text-secondary">{seat.qualifying_elo}</td>
+                    <td className="px-3 py-3 text-right text-text-muted">
+                      {seat.qualification_path === 'avatar_leader'
+                        ? 'Avatar Leader'
+                        : seat.qualification_path === 'fallback'
+                          ? 'ELO Fallback'
+                          : 'Overall'}
+                      {seat.requires_tiebreak ? ' — Tiebreak required' : ''}
+                    </td>
                   </tr>
                 ))}
               </tbody>

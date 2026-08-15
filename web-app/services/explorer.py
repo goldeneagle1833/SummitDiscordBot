@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+import statistics
 
 import requests
 
@@ -379,6 +380,9 @@ class ExplorerService:
         unique_1_event = sum(1 for p in ranked if p["events_played"] >= 1)
         unique_3_events = sum(1 for p in ranked if p["events_played"] >= 3)
 
+        events_counts = [p["events_played"] for p in ranked]
+        median_events = statistics.median(events_counts) if events_counts else 0
+
         return {
             "season_id": season_id,
             "season_name": season.get("name", ""),
@@ -386,4 +390,5 @@ class ExplorerService:
             "players": ranked,
             "unique_players_1_event": unique_1_event,
             "unique_players_3_events": unique_3_events,
+            "median_events_attended": median_events,
         }

@@ -154,6 +154,7 @@ export default function ExplorerStandings() {
   const [showAdminPanel, setShowAdminPanel] = useState(false)
   const [sortKey, setSortKey] = useState('rank')
   const [sortDir, setSortDir] = useState('asc')
+  const [showDistribution, setShowDistribution] = useState(false)
 
   const loadSeasons = () => {
     fetchSeasons()
@@ -345,7 +346,12 @@ export default function ExplorerStandings() {
             <div className="mb-4 flex flex-wrap gap-4 text-xs text-text-muted">
               <span><span className="text-text-primary font-medium">{leaderboard.unique_players_1_event}</span> unique players attended at least 1 event</span>
               <span><span className="text-text-primary font-medium">{leaderboard.unique_players_3_events}</span> unique players attended at least 3 events</span>
-              <span>Median events attended: <span className="text-text-primary font-medium">{leaderboard.median_events_attended}</span></span>
+              <button
+                onClick={() => setShowDistribution(true)}
+                className="hover:text-text-primary transition-colors underline decoration-dotted cursor-pointer"
+              >
+                Median events attended: <span className="text-text-primary font-medium">{leaderboard.median_events_attended}</span>
+              </button>
             </div>
           )}
 
@@ -421,6 +427,35 @@ export default function ExplorerStandings() {
               .finally(() => setLbLoading(false))
           }}
         />
+      )}
+      {showDistribution && leaderboard?.events_distribution && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowDistribution(false)}>
+          <div className="bg-bg-surface border border-border rounded-lg p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-display text-text-primary">Event Attendance Distribution</h3>
+              <button onClick={() => setShowDistribution(false)} className="text-text-muted hover:text-text-primary text-xl">&times;</button>
+            </div>
+            <p className="text-sm text-text-muted mb-3">
+              Median: <span className="text-text-primary font-medium">{leaderboard.median_events_attended}</span> event{leaderboard.median_events_attended !== 1 ? 's' : ''}
+            </p>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-text-muted">
+                  <th className="py-2 text-left">Events Attended</th>
+                  <th className="py-2 text-right"># of Players</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leaderboard.events_distribution.map((row) => (
+                  <tr key={row.events_attended} className="border-b border-border/30">
+                    <td className="py-2 text-text-primary">{row.events_attended}</td>
+                    <td className="py-2 text-right text-text-primary">{row.num_players}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </div>
   )

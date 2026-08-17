@@ -44,6 +44,7 @@ from utils.database import (
     update_elo_db_lifetime_only,
     log_admin_action,
     cleanup_old_pairings,
+    cancel_pairing,
     save_pairing,
     recalculate_event_elo,
     correct_match_record,
@@ -1594,7 +1595,10 @@ class LFGCog(commands.Cog):
                 "**When to use:** For top cut matches where only lifetime ELO should be updated.\n\n"
                 "`!reset_challenge @user`\n"
                 "Reset a player's daily ladder challenge so they can use `!issue_challenge` again.\n"
-                "**When to use:** When a player's challenge was wasted due to a bug or other issue."
+                "**When to use:** When a player's challenge was wasted due to a bug or other issue.\n\n"
+                "`!admin_reset_pairings @user`\n"
+                "Reset all active pairings and pending reports for a player.\n"
+                "**When to use:** When a player gets a 'table locked' error or can't report matches."
             ),
             inline=False,
         )
@@ -2543,6 +2547,73 @@ class LFGCog(commands.Cog):
             await ctx.send(
                 f"**{member.global_name or member.display_name}** has no ladder challenges today to reset."
             )
+
+    @commands.command()
+    @is_bot_admin()
+    async def admin_reset_pairings(self, ctx, member: discord.Member = None):
+        """Reset all active pairings for a user, clearing any locked state.
+        Usage: !admin_reset_pairings @user
+        """
+        if member is None:
+            await ctx.send("Usage: `!admin_reset_pairings @user`")
+            return
+
+        guild_id = ctx.guild.id
+        user_global = member.global_name or member.display_name
+
+        # Cancel active DB pairings
+        cancelled = cancel_pairing(guild_id, member.id)
+
+        # Clear any in-memory pending match reports involving this user
+        cleared_reports = 0
+        keys_to_remove = [
+            key for key in pending_match_reports
+            if member.id in key
+        ]
+        for key in keys_to_remove:
+            del pending_match_reports[key]
+            cleared_reports += 1
+
+        # Clear any processed match tracking involving this user
+        processed_keys_to_remove = [
+            key for key in processed_matches
+            if member.id in key
+        ]
+        for key in processed_keys_to_remove:
+            del processed_matches[key]
+
+        if cancelled or cleared_reports:
+            parts = []
+            if cancelled:
+                parts.append("active DB pairings")
+            if cleared_reports:
+                parts.append(f"{cleared_reports} pending report(s)")
+            await ctx.send(
+                f"Reset {', '.join(parts)} for **{user_global}**. They should be able to report matches again."
+            )
+        else:
+            await ctx.send(
+                f"**{user_global}** has no active pairings or pending reports to reset."
+            )
+
+        log_admin_action(
+            admin_id=ctx.author.id,
+            admin_name=ctx.author.global_name or ctx.author.display_name,
+            action="admin_reset_pairings",
+            details=f"Reset pairings for {user_global} (ID: {member.id}). DB cancelled: {cancelled}, reports cleared: {cleared_reports}",
+        )
+        logger.info(
+            f"Admin {ctx.author.id} reset pairings for {member.id} ({user_global}). "
+            f"DB cancelled: {cancelled}, reports cleared: {cleared_reports}"
+        )
+
+    @admin_reset_pairings.error
+    async def admin_reset_pairings_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"admin_reset_pairings error: {error}")
+            await ctx.send(f"An error occurred: {error}")
 
     @commands.command()
     @is_bot_admin()

@@ -1133,12 +1133,11 @@ class LFGCog(commands.Cog):
 
         # Check if challenges are disabled during the first week of an event
         from utils.database import get_active_event
-        from datetime import datetime, timedelta
         active_event = get_active_event()
         if active_event:
             event_start = active_event["start_date"]
-            if datetime.now() - event_start < timedelta(days=7):
-                days_left = 7 - (datetime.now() - event_start).days
+            if datetime.datetime.now() - event_start < datetime.timedelta(days=7):
+                days_left = 7 - (datetime.datetime.now() - event_start).days
                 try:
                     await ctx.author.send(
                         f"Ladder challenges are disabled during the first week of a new event. "

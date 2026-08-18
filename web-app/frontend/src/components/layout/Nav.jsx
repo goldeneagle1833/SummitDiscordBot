@@ -23,11 +23,9 @@ const ALL_NAV_OPTIONS = [
   { to: '/fun-stats', label: 'Fun Stats' },
   { to: '/rumble', label: 'Rumble' },
   { to: '/elo', label: 'ELO Leaderboards' },
-  { to: '/elo/limited', label: 'Limited Leaderboard' },
   { to: '/match-history', label: 'Match History' },
   { to: '/life-counter', label: 'Life Counter' },
   { to: '/help', label: 'Help' },
-  { to: '/curio-tracking', label: 'Curio Tracking' },
   { to: '/card-points', label: 'Omens' },
 ]
 
@@ -748,28 +746,33 @@ export default function Nav() {
             </div>
           )}
 
-          {/* Main navigation */}
+          {/* Stats */}
+          <SidebarHeading label="Stats" />
           <SidebarLink to="/avatars" label="Avatar Winrates" location={location} onClick={close} />
           <SidebarLink to="/avatars/top-players" label="Avatar Top 16" location={location} onClick={close} />
-          <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
-          <SidebarLink to="/deck-builder" label="Deck Visualizer" location={location} onClick={close} />
           <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
-          <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} />
+
+          {/* Event Info */}
+          <SidebarHeading label="Event Info" />
           <SidebarLink to="/top-8" label="Top 8 Decks" location={location} onClick={close} />
-          <SidebarLink to="/fun-stats" label="Fun Stats" location={location} onClick={close} />
-          {user?.is_admin && (
-            <SidebarLink to="/cards" label="Card Winrates" location={location} onClick={close} />
-          )}
-          <SidebarLink to="/rumble" label="Rumble" location={location} onClick={close} />
+          <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
+          <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} />
+          <SidebarLink to="/card-points" label="Omens" location={location} onClick={close} />
+
+          {/* Summit Stats */}
+          <SidebarHeading label="Summit Stats" />
           <SidebarLink to="/elo" label="ELO Leaderboards" location={location} onClick={close} />
-          <SidebarLink to="/elo/limited" label="Limited Leaderboard" location={location} onClick={close} />
           <SidebarLink to="/match-history" label="Match History" location={location} onClick={close} />
+          <SidebarLink to="/rumble" label="Rumble" location={location} onClick={close} />
+          <SidebarLink to="/fun-stats" label="Fun Stats" location={location} onClick={close} />
+
+          {/* Tools & Info */}
+          <SidebarHeading label="Tools & Info" />
+          <SidebarLink to="/deck-builder" label="Deck Visualizer" location={location} onClick={close} />
           <SidebarLink to="/life-counter" label="Life Counter" location={location} onClick={close} />
           <SidebarLink to="/help" label="Help" location={location} onClick={close} />
           <SidebarLink to="/community" label="Community" location={location} onClick={close} />
           {user?.is_store_admin && <SidebarLink to="/store" label="Store" location={location} onClick={close} />}
-          <SidebarLink to="/curio-tracking" label="Curio Tracking" location={location} onClick={close} />
-          <SidebarLink to="/card-points" label="Omens" location={location} onClick={close} />
         </div>
       </aside>
 
@@ -782,6 +785,14 @@ export default function Nav() {
         />
       )}
     </>
+  )
+}
+
+function SidebarHeading({ label }) {
+  return (
+    <div className="px-4 pt-4 pb-1">
+      <span className="text-xs font-bold text-text-muted uppercase tracking-wider">{label}</span>
+    </div>
   )
 }
 

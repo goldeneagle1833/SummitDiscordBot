@@ -49,6 +49,17 @@ def create_card_points_tables():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS card_points_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            action TEXT NOT NULL,
+            card_name TEXT,
+            old_value TEXT,
+            new_value TEXT,
+            changed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+        )
+    """)
+
     # Set default max budget if not exists
     cursor.execute("""
         INSERT OR IGNORE INTO points_config (key, value) VALUES ('max_budget', '50')

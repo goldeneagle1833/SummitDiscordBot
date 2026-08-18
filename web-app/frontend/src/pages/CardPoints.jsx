@@ -44,12 +44,16 @@ export default function CardPoints() {
   const [deckUrl, setDeckUrl] = useState('')
   const [deckResult, setDeckResult] = useState(null)
   const [deckChecking, setDeckChecking] = useState(false)
+  const [history, setHistory] = useState(null)
 
   useEffect(() => {
     get('/api/card-points/public')
       .then(setData)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
+    get('/api/card-points/history')
+      .then((res) => res.success ? setHistory(res.history) : null)
+      .catch(() => {})
   }, [])
 
   const checkDeck = () => {
@@ -217,6 +221,64 @@ export default function CardPoints() {
             <p className="text-center text-text-muted py-8">No matching cards found.</p>
           )}
         </>
+      )}
+
+      {/* History */}
+      {history && history.length > 0 && (
+        <div className="mt-10">
+          <h2 className="text-xl font-display text-secondary mb-4">Change History</h2>
+          <div className="bg-bg-surface border border-border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-text-muted">
+                  <th className="px-4 py-2">Date</th>
+                  <th className="px-4 py-2">Change</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((entry) => (
+                  <tr key={entry.id} className="border-b border-border/50 last:border-0">
+                    <td className="px-4 py-2 text-text-muted whitespace-nowrap">
+                      {new Date(entry.changed_at + 'Z').toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-2">
+                      {entry.action === 'added' && (
+                        <span>
+                          <span className="text-green-400">Added</span>{' '}
+                          <span className="font-semibold text-text">{entry.card_name}</span>{' '}
+                          at <span className="text-secondary">{entry.new_value} pt{entry.new_value !== '1' ? 's' : ''}</span>
+                        </span>
+                      )}
+                      {entry.action === 'removed' && (
+                        <span>
+                          <span className="text-red-400">Removed</span>{' '}
+                          <span className="font-semibold text-text">{entry.card_name}</span>{' '}
+                          <span className="text-text-muted">(was {entry.old_value} pt{entry.old_value !== '1' ? 's' : ''})</span>
+                        </span>
+                      )}
+                      {entry.action === 'changed' && (
+                        <span>
+                          <span className="font-semibold text-text">{entry.card_name}</span>{' '}
+                          <span className="text-text-muted">{entry.old_value}</span>{' '}
+                          <span className="text-text-muted">&rarr;</span>{' '}
+                          <span className="text-secondary">{entry.new_value} pt{entry.new_value !== '1' ? 's' : ''}</span>
+                        </span>
+                      )}
+                      {entry.action === 'budget_changed' && (
+                        <span>
+                          <span className="text-yellow-400">Budget changed</span>{' '}
+                          <span className="text-text-muted">{entry.old_value}</span>{' '}
+                          <span className="text-text-muted">&rarr;</span>{' '}
+                          <span className="text-secondary">{entry.new_value}</span>
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </div>
   )

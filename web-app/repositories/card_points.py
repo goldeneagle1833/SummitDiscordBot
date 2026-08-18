@@ -43,6 +43,12 @@ class CardPointsRepository:
     def set_card_points(self, card_name: str, point_value: int) -> dict:
         """Set or update point value for a card. Returns the upserted row."""
         conn = self._get_connection()
+        # Check existing value for history logging
+        existing = conn.execute(
+            "SELECT point_value FROM card_points WHERE card_name = ? COLLATE NOCASE",
+            (card_name,),
+        ).fetchone()
+
         conn.execute(
             "INSERT INTO card_points (card_name, point_value) VALUES (?, ?) "
             "ON CONFLICT(card_name) DO UPDATE SET "
@@ -50,6 +56,12 @@ class CardPointsRepository:
             "updated_at = strftime('%Y-%m-%d %H:%M:%S', 'now')",
             (card_name, point_value),
         )
+
+        if existing is None:
+            self._log_history(conn, "added", card_name, None, str(point_value))
+        elif existing["point_value"] != point_value:
+            self._log_history(conn, "changed", card_name, str(existing["point_value"]), str(point_value))
+
         conn.commit()
         row = conn.execute(
             "SELECT id, card_name, point_value, created_at, updated_at "
@@ -62,10 +74,16 @@ class CardPointsRepository:
     def delete_card_points(self, card_name: str) -> bool:
         """Remove a card's point assignment. Returns True if a row was deleted."""
         conn = self._get_connection()
+        existing = conn.execute(
+            "SELECT point_value FROM card_points WHERE card_name = ? COLLATE NOCASE",
+            (card_name,),
+        ).fetchone()
         cur = conn.execute(
             "DELETE FROM card_points WHERE card_name = ? COLLATE NOCASE",
             (card_name,),
         )
+        if cur.rowcount > 0 and existing:
+            self._log_history(conn, "removed", card_name, str(existing["point_value"]), None)
         conn.commit()
         conn.close()
         return cur.rowcount > 0
@@ -116,7 +134,35 @@ class CardPointsRepository:
 
     def set_max_budget(self, budget: int) -> None:
         """Set the max point budget for decks."""
+        old_budget = self.get_config("max_budget", "50")
         self.set_config("max_budget", str(budget))
+        if str(budget) != old_budget:
+            conn = self._get_connection()
+            self._log_history(conn, "budget_changed", None, old_budget, str(budget))
+            conn.commit()
+            conn.close()
+
+    # --- History ---
+
+    def _log_history(self, conn, action: str, card_name: str | None,
+                     old_value: str | None, new_value: str | None) -> None:
+        """Log a change to card_points_history (uses existing connection)."""
+        conn.execute(
+            "INSERT INTO card_points_history (action, card_name, old_value, new_value) "
+            "VALUES (?, ?, ?, ?)",
+            (action, card_name, old_value, new_value),
+        )
+
+    def get_history(self, limit: int = 100) -> list[dict]:
+        """Get recent card points history entries."""
+        conn = self._get_connection()
+        rows = conn.execute(
+            "SELECT id, action, card_name, old_value, new_value, changed_at "
+            "FROM card_points_history ORDER BY changed_at DESC, id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
 
     # --- Card points admins ---
 

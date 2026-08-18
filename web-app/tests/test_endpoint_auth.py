@@ -46,6 +46,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
 
     # -- Card points (public, pilot-gated) --
     "api.card_points.get_card_points_public",
+    "api.card_points.get_card_points_history",
     "api.card_points.check_deck",
 
     # -- Match history (public read-only) --

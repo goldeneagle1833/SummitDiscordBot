@@ -164,6 +164,14 @@ def get_card_points_public():
     })
 
 
+@card_points_bp.route("/history", methods=["GET"])
+def get_card_points_history():
+    """Public endpoint: get recent card points change history."""
+    repo = CardPointsRepository()
+    history = repo.get_history(limit=200)
+    return jsonify({"success": True, "history": history})
+
+
 @card_points_bp.route("/check-deck", methods=["POST"])
 def check_deck():
     """Check if a deck URL meets the points budget."""

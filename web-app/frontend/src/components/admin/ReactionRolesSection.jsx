@@ -219,7 +219,7 @@ export default function ReactionRolesSection() {
                       type="text"
                       value={newEmoji}
                       onChange={e => setNewEmoji(e.target.value)}
-                      placeholder="Paste emoji or name"
+                      placeholder="Paste emoji or type name (e.g. volcano)"
                       className="w-full px-3 py-1.5 text-sm bg-bg-primary border border-border rounded focus:border-secondary outline-none"
                     />
                   </div>

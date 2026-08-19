@@ -1,6 +1,7 @@
 """Reaction roles admin API routes."""
 
 import logging
+import unicodedata
 
 from flask import Blueprint, jsonify, request
 
@@ -85,6 +86,15 @@ def add_mapping():
 
     if not message_id or not emoji or not role_id:
         return jsonify({"success": False, "error": "message_id, emoji, and role_id are required"}), 400
+
+    # Normalize emoji: convert names like ":volcano:" or "volcano" to the Unicode character
+    if emoji.isascii():
+        name = emoji.strip(":").strip()
+        if name:
+            try:
+                emoji = unicodedata.lookup(name.upper())
+            except KeyError:
+                pass  # Keep original (may be a custom emoji name like "HATE")
 
     repo = ReactionRolesRepository()
 

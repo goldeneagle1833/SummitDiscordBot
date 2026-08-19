@@ -7,7 +7,8 @@ import config
 from cogs.lfg.state import lfg_queue
 from cogs.lfg.helpers import scrub_urls
 from cogs.lfg.match_reporting import MatchCardView
-from utils.database import save_pairing
+from utils.database import get_active_event, save_pairing
+from utils.avatar_elo import avatar_input_error, canonicalize_avatar_name
 
 logger = logging.getLogger("discord_bot")
 
@@ -48,6 +49,13 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
         max_length=200,
     )
 
+    avatar = discord.ui.TextInput(
+        label="Your Avatar for this match",
+        placeholder="Enter the exact Avatar card name",
+        required=True,
+        max_length=100,
+    )
+
     def __init__(self, challenger, opponent, lfg_channel, bot, guild_id=None):
         super().__init__()
         self.challenger = challenger
@@ -55,11 +63,26 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
         self.lfg_channel = lfg_channel
         self.bot = bot
         self.guild_id = guild_id
+        self.event_snapshot = get_active_event()
+        self.avatar_specific = bool(
+            self.event_snapshot and self.event_snapshot.get("avatar_specific")
+        )
+        if not self.avatar_specific:
+            self.remove_item(self.avatar)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
         url = self.deck_url.value if self.deck_url.value else None
+        challenger_avatar = None
+        if self.avatar_specific:
+            challenger_avatar = canonicalize_avatar_name(self.avatar.value)
+            if not challenger_avatar:
+                await interaction.followup.send(
+                    avatar_input_error("your avatar", self.avatar.value),
+                    ephemeral=True,
+                )
+                return
         challenger_global = self.challenger.global_name or self.challenger.display_name
         opponent_global = self.opponent.global_name or self.opponent.display_name
 
@@ -69,6 +92,8 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
             self.lfg_channel,
             challenger_deck_url=url,
             guild_id=self.guild_id,
+            challenger_avatar=challenger_avatar,
+            event_snapshot=self.event_snapshot,
         )
 
         try:
@@ -137,6 +162,13 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         max_length=200,
     )
 
+    avatar = discord.ui.TextInput(
+        label="Your Avatar for this match",
+        placeholder="Enter the exact Avatar card name",
+        required=True,
+        max_length=100,
+    )
+
     def __init__(
         self,
         challenger_id: int,
@@ -144,6 +176,8 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         channel=None,
         challenger_deck_url: str = None,
         guild_id: int = None,
+        challenger_avatar: str = None,
+        event_snapshot: dict = None,
     ):
         super().__init__()
         self.challenger_id = challenger_id
@@ -151,6 +185,13 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         self.channel = channel
         self.challenger_deck_url = challenger_deck_url
         self.guild_id = guild_id
+        self.challenger_avatar = challenger_avatar
+        self.event_snapshot = event_snapshot
+        self.avatar_specific = bool(
+            event_snapshot and event_snapshot.get("avatar_specific")
+        )
+        if not self.avatar_specific:
+            self.remove_item(self.avatar)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -158,6 +199,25 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         challenger = await interaction.client.fetch_user(self.challenger_id)
         accepter_global = interaction.user.global_name or interaction.user.display_name
         accepter_deck_url = self.deck_url.value if self.deck_url.value else None
+        accepter_avatar = None
+        if self.avatar_specific:
+            current_event = get_active_event()
+            if (
+                not current_event
+                or current_event.get("event_id") != self.event_snapshot.get("event_id")
+            ):
+                await interaction.followup.send(
+                    "The event changed before this challenge was accepted. Please send a new challenge.",
+                    ephemeral=True,
+                )
+                return
+            accepter_avatar = canonicalize_avatar_name(self.avatar.value)
+            if not accepter_avatar:
+                await interaction.followup.send(
+                    avatar_input_error("your avatar", self.avatar.value),
+                    ephemeral=True,
+                )
+                return
 
         # Remove both players from the LFG queue if they're in it
         if self.challenger_id in lfg_queue:
@@ -193,6 +253,9 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
                     player1_deck_url=self.challenger_deck_url,
                     player2_deck_url=accepter_deck_url,
                     match_type="ranked",
+                    player1_avatar=self.challenger_avatar,
+                    player2_avatar=accepter_avatar,
+                    event_snapshot=self.event_snapshot,
                 )
                 logger.info(
                     f"Saved challenge pairing {pairing_id} in guild {self.guild_id}: "
@@ -230,6 +293,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
                 self.challenger_global,
                 challenger,
                 self.challenger_deck_url,  # Challenger's deck URL (if provided)
+                self.challenger_avatar,
                 False,
             ),
             (
@@ -237,6 +301,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
                 accepter_global,
                 interaction.user,
                 accepter_deck_url,  # Accepter's deck URL
+                accepter_avatar,
                 True,
             ),
         ]
@@ -246,9 +311,10 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
             reporter_global,
             reporter_user,
             reporter_deck_url,
+            reporter_avatar,
             reporter_is_accepter,
         ) = reporter_player
-        other_id, other_global, other_user, other_deck_url, other_is_accepter = (
+        other_id, other_global, other_user, other_deck_url, other_avatar, other_is_accepter = (
             other_player
         )
 
@@ -257,6 +323,17 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
             f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
         )
         other_deck_text = f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
+        reporter_avatar_text = ""
+        other_avatar_text = ""
+        if reporter_avatar and other_avatar:
+            reporter_avatar_text = (
+                f"\n**Your Avatar:** {reporter_avatar}"
+                f"\n**Opponent Avatar:** {other_avatar}"
+            )
+            other_avatar_text = (
+                f"\n**Your Avatar:** {other_avatar}"
+                f"\n**Opponent Avatar:** {reporter_avatar}"
+            )
 
         # Use pairing_id if we saved one, otherwise 0
         challenge_pairing_id = pairing_id if self.guild_id else 0
@@ -274,6 +351,9 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
             match_start_time=match_start_time,
             guild_id=self.guild_id,
             match_type="ranked",
+            player1_avatar=reporter_avatar,
+            player2_avatar=other_avatar,
+            event_snapshot=self.event_snapshot,
         )
 
         # Send match card to the selected reporter
@@ -281,7 +361,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
             # Reporter is the one who accepted - use followup since we deferred
             try:
                 await interaction.followup.send(
-                    f"⚔️ **Challenge Accepted!** You're playing against {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n"
+                    f"⚔️ **Challenge Accepted!** You're playing against {other_user.mention} (**{other_global}**)!{reporter_deck_text}{reporter_avatar_text}\n\n"
                     f"Use the button below to report the result when your match is done.\n\n"
                     f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** in the LFG channel for fresh ones!",
                     view=match_card_view,
@@ -293,7 +373,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
             # Reporter is the challenger - send via DM
             try:
                 await challenger.send(
-                    f"⚔️ **Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\n"
+                    f"⚔️ **Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}{reporter_avatar_text}\n\n"
                     f"Use the button below to report the result when your match is done.\n\n"
                     f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** in the LFG channel for fresh ones!",
                     view=match_card_view,
@@ -340,7 +420,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
             # Other is the challenger - send via DM
             try:
                 await challenger.send(
-                    f"⚔️ **Challenge Accepted!** **{accepter_global}** accepted your challenge!{other_deck_text}\n\n"
+                    f"⚔️ **Challenge Accepted!** **{accepter_global}** accepted your challenge!{other_deck_text}{other_avatar_text}\n\n"
                     f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome.\n\n"
                     f"💡 **Tip:** If you need fresh reporting buttons, click **'📋 Report Last Match'** in the LFG channel!"
                 )
@@ -386,6 +466,8 @@ class ChallengeButtons(discord.ui.View):
         channel=None,
         challenger_deck_url: str = None,
         guild_id: int = None,
+        challenger_avatar: str = None,
+        event_snapshot: dict = None,
     ):
         super().__init__(timeout=300)  # 5 minute timeout
         self.challenger_id = challenger_id
@@ -393,6 +475,8 @@ class ChallengeButtons(discord.ui.View):
         self.channel = channel
         self.challenger_deck_url = challenger_deck_url
         self.guild_id = guild_id
+        self.challenger_avatar = challenger_avatar
+        self.event_snapshot = event_snapshot
 
     @discord.ui.button(label="Accept Challenge", style=discord.ButtonStyle.success)
     async def accept_button(
@@ -405,6 +489,8 @@ class ChallengeButtons(discord.ui.View):
             channel=self.channel,
             challenger_deck_url=self.challenger_deck_url,
             guild_id=self.guild_id,
+            challenger_avatar=self.challenger_avatar,
+            event_snapshot=self.event_snapshot,
         )
         await interaction.response.send_modal(modal)
         await interaction.message.edit(view=None)

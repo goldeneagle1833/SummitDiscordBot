@@ -182,6 +182,8 @@ def submit_match_report():
     result = data.get("result")
     went_first = data.get("went_first")
     submitter_deck_url = data.get("submitter_deck_url")
+    submitter_avatar = data.get("submitter_avatar")
+    opponent_avatar = data.get("opponent_avatar")
     final_life_submitter = data.get("final_life_submitter")
     final_life_opponent = data.get("final_life_opponent")
     match_type = data.get("match_type", "ranked")  # Default to ranked if not provided
@@ -200,6 +202,8 @@ def submit_match_report():
             went_first=went_first,
             submitter_deck_url=submitter_deck_url,
             opponent_deck_url=None,  # Opponent provides their deck URL on confirmation
+            submitter_avatar=submitter_avatar,
+            opponent_avatar=opponent_avatar,
             final_life_submitter=final_life_submitter,
             final_life_opponent=final_life_opponent,
             match_type=match_type,
@@ -343,6 +347,13 @@ def get_pending_confirmations():
             # Add submitter info to confirmation
             confirmation["submitter_display_name"] = submitter_display_name
             confirmation["submitter_avatar"] = submitter_avatar
+            submitter_is_winner = (
+                str(confirmation["submitter_discord_id"])
+                == str(confirmation["winner_discord_id"])
+            )
+            confirmation["reported_match_avatar"] = confirmation.get(
+                "winner_avatar" if submitter_is_winner else "loser_avatar"
+            )
 
             # Remove deck URLs from confirmation response - they should not be visible until after confirmation
             confirmation.pop("winner_deck_url", None)
@@ -407,6 +418,7 @@ def confirm_match_report(confirmation_id):
     # Get optional deck URL and comment from request body
     data = request.get_json() or {}
     deck_url = data.get("deck_url")
+    avatar = data.get("avatar")
     confirmer_comment = data.get("match_comment", "")
 
     try:
@@ -414,7 +426,13 @@ def confirm_match_report(confirmation_id):
         service = MatchConfirmationService()
 
         # Confirm the match report
-        result = service.confirm_match_report(confirmation_id, current_user_id, deck_url, confirmer_comment=confirmer_comment)
+        result = service.confirm_match_report(
+            confirmation_id,
+            current_user_id,
+            deck_url,
+            opponent_avatar=avatar,
+            confirmer_comment=confirmer_comment,
+        )
 
         logger.info(
             f"Match confirmed: confirmation_id={confirmation_id}, "

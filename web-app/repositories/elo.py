@@ -101,8 +101,11 @@ class EloRepository:
             conn.close()
             return None
 
-        cur.execute("""
-            SELECT event_id, event_name, start_date
+        columns = {row[1] for row in cur.execute("PRAGMA table_info(events)")}
+        avatar_column = "avatar_specific" if "avatar_specific" in columns else "0"
+
+        cur.execute(f"""
+            SELECT event_id, event_name, start_date, {avatar_column}
             FROM events
             WHERE is_active = 1
             LIMIT 1
@@ -111,7 +114,12 @@ class EloRepository:
         conn.close()
 
         if row:
-            return {"event_id": row[0], "event_name": row[1], "start_date": row[2]}
+            return {
+                "event_id": row[0],
+                "event_name": row[1],
+                "start_date": row[2],
+                "avatar_specific": bool(row[3]),
+            }
         return None
 
     def get_all_elos(self) -> list[int]:
@@ -160,8 +168,11 @@ class EloRepository:
             conn.close()
             return []
 
-        cur.execute("""
-            SELECT event_id, event_name, start_date, end_date, is_active
+        columns = {row[1] for row in cur.execute("PRAGMA table_info(events)")}
+        avatar_column = "avatar_specific" if "avatar_specific" in columns else "0"
+
+        cur.execute(f"""
+            SELECT event_id, event_name, start_date, end_date, is_active, {avatar_column}
             FROM events
             ORDER BY start_date DESC
         """)
@@ -175,6 +186,7 @@ class EloRepository:
                 "start_date": row[2],
                 "end_date": row[3],
                 "is_active": bool(row[4]),
+                "avatar_specific": bool(row[5]),
             }
             for row in rows
         ]
@@ -183,6 +195,43 @@ class EloRepository:
         """Get a player's ELO and rank for a specific past event (handles both int and str)."""
         conn = self._get_connection()
         cur = conn.cursor()
+
+        try:
+            event_columns = {row[1] for row in cur.execute("PRAGMA table_info(events)")}
+            if "avatar_specific" in event_columns:
+                cur.execute(
+                    "SELECT event_name, avatar_specific FROM events WHERE event_id = ?",
+                    (event_id,),
+                )
+                event_row = cur.fetchone()
+                if event_row and event_row[1]:
+                    standings = cur.execute(
+                        """SELECT user_id, user_display_name, avatar_name, event_elo
+                           FROM event_avatar_standings
+                           WHERE event_id = ? AND source = 'online'
+                           ORDER BY event_elo DESC, user_display_name COLLATE NOCASE,
+                                    avatar_name COLLATE NOCASE""",
+                        (event_id,),
+                    ).fetchall()
+                    avatar_elos = [
+                        {
+                            "avatar": row[2],
+                            "elo": row[3],
+                            "rank": rank,
+                        }
+                        for rank, row in enumerate(standings, 1)
+                        if str(row[0]) == str(user_id)
+                    ]
+                    conn.close()
+                    if avatar_elos:
+                        return {
+                            "avatar_specific": True,
+                            "event_name": event_row[0],
+                            "avatar_elos": avatar_elos,
+                        }
+                    return None
+        except sqlite3.OperationalError:
+            pass
 
         # Check if event_standings_archive table exists
         cur.execute("""
@@ -247,6 +296,117 @@ class EloRepository:
             }
             for row in rows
         ]
+
+    def get_avatar_event_standings(self, event_id: int, source: str) -> list[dict]:
+        """Return player/avatar entries for an avatar-specific event."""
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        archive_exists = conn.execute(
+            """SELECT 1 FROM sqlite_master
+               WHERE type = 'table' AND name = 'event_avatar_standings_archive'"""
+        ).fetchone()
+        if archive_exists:
+            archived = conn.execute(
+                """SELECT user_id, user_display_name, avatar_name,
+                          final_event_elo AS event_elo, games, wins, losses,
+                          final_rank
+                   FROM event_avatar_standings_archive
+                   WHERE event_id = ? AND source = ? ORDER BY final_rank""",
+                (event_id, source),
+            ).fetchall()
+            if archived:
+                conn.close()
+                return [dict(row) for row in archived]
+        rows = conn.execute(
+            """SELECT user_id, user_display_name, avatar_name, event_elo
+               FROM event_avatar_standings
+               WHERE event_id = ? AND source = ?
+               ORDER BY event_elo DESC, user_display_name COLLATE NOCASE,
+                        avatar_name COLLATE NOCASE""",
+            (event_id, source),
+        ).fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    def get_locked_avatar_top_cut(self, event_id: int, source: str) -> list[dict]:
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        exists = conn.execute(
+            """SELECT 1 FROM sqlite_master
+               WHERE type = 'table' AND name = 'event_qualification_snapshots'"""
+        ).fetchone()
+        if not exists:
+            conn.close()
+            return []
+        rows = conn.execute(
+            """SELECT * FROM event_qualification_snapshots
+               WHERE event_id = ? AND source = ? ORDER BY seat""",
+            (event_id, source),
+        ).fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    def get_avatar_event_elo(
+        self, event_id: int, source: str, user_id: int | str, avatar_name: str
+    ) -> int | None:
+        conn = self._get_connection()
+        row = conn.execute(
+            """SELECT event_elo FROM event_avatar_standings
+               WHERE event_id = ? AND source = ? AND user_id = ?
+                 AND avatar_name = ? COLLATE NOCASE""",
+            (event_id, source, str(user_id), avatar_name),
+        ).fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    def set_avatar_event_elo(
+        self,
+        event_id: int,
+        source: str,
+        user_id: int | str,
+        display_name: str,
+        avatar_name: str,
+        new_elo: int,
+    ) -> int | None:
+        previous = self.get_avatar_event_elo(
+            event_id, source, user_id, avatar_name
+        )
+        conn = self._get_connection()
+        conn.execute(
+            """INSERT INTO event_avatar_standings
+               (event_id, source, user_id, user_display_name, avatar_name, event_elo)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(event_id, source, user_id, avatar_name)
+               DO UPDATE SET user_display_name = excluded.user_display_name,
+                             event_elo = excluded.event_elo""",
+            (event_id, source, str(user_id), display_name, avatar_name, new_elo),
+        )
+        conn.commit()
+        conn.close()
+        return previous
+
+    def delete_avatar_player(self, user_id: int | str) -> int:
+        conn = self._get_connection()
+        cur = conn.execute(
+            "DELETE FROM event_avatar_standings WHERE user_id = ?",
+            (str(user_id),),
+        )
+        deleted = cur.rowcount
+        conn.commit()
+        conn.close()
+        return deleted
+
+    def rename_avatar_player(self, user_id: int | str, new_name: str) -> int:
+        conn = self._get_connection()
+        cur = conn.execute(
+            """UPDATE event_avatar_standings SET user_display_name = ?
+               WHERE user_id = ?""",
+            (new_name, str(user_id)),
+        )
+        updated = cur.rowcount
+        conn.commit()
+        conn.close()
+        return updated
 
     def delete_player(self, user_id: int) -> bool:
         """Delete a player from overall_standings. Returns True if deleted."""

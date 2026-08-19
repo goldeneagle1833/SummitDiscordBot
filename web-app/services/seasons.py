@@ -279,7 +279,15 @@ class SeasonsService:
 
     # ── US6: Creator Match Reporting ──────────────────────────────
 
-    def report_match_as_creator(self, creator_id, season_id, winner_id, loser_id):
+    def report_match_as_creator(
+        self,
+        creator_id,
+        season_id,
+        winner_id,
+        loser_id,
+        winner_avatar=None,
+        loser_avatar=None,
+    ):
         """Report a match directly as the season creator (bypasses confirmation)."""
         creator_id = str(creator_id)
         winner_id = str(winner_id)
@@ -338,22 +346,34 @@ class SeasonsService:
         # Update paper ELO (unless repeat matchup)
         winner_elo_change = 0
         loser_elo_change = 0
+        winner_lifetime_change = 0
+        loser_lifetime_change = 0
+        winner_lifetime_after = None
+        loser_lifetime_after = None
         if is_repeat:
             logger.info(
                 "Repeat matchup: %s vs %s — paper ELO skipped", winner_id, loser_id
             )
         else:
-            from services.paper_elo import update_paper_elo
+            from services.paper_elo import update_paper_match_elos
+            winner_result, loser_result = update_paper_match_elos(
+                winner_id,
+                winner_name,
+                loser_id,
+                loser_name,
+                winner_avatar_name=winner_avatar,
+                loser_avatar_name=loser_avatar,
+            )
             (
-                _winner_new_elo, _winner_change,
+                winner_lifetime_after, winner_lifetime_change,
                 _winner_new_event_elo, winner_event_elo_change,
                 event_active,
-            ) = update_paper_elo(winner_id, winner_name, did_win=True, opponent_id=loser_id)
+            ) = winner_result
             (
-                _loser_new_elo, _loser_change,
+                loser_lifetime_after, loser_lifetime_change,
                 _loser_new_event_elo, loser_event_elo_change,
                 _,
-            ) = update_paper_elo(loser_id, loser_name, did_win=False, opponent_id=winner_id)
+            ) = loser_result
             if event_active:
                 winner_elo_change = winner_event_elo_change
                 loser_elo_change = loser_event_elo_change
@@ -371,9 +391,12 @@ class SeasonsService:
                 json_deck_data, json_deck_data_winner, json_deck_data_loser,
                 winner_elo_change, loser_elo_change,
                 winner_went_first, loser_went_first,
-                source, match_type, season_id)
+                source, match_type, season_id,
+                winner_lifetime_elo_after, loser_lifetime_elo_after,
+                winner_lifetime_elo_change, loser_lifetime_elo_change,
+                winner_avatar, loser_avatar)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                       ?, ?, ?, ?, ?, ?, ?)""",
+                       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 match_id, creator_id, winner_id, winner_name,
                 loser_id, loser_name, True, now,
@@ -383,6 +406,9 @@ class SeasonsService:
                 "{}", "{}", "{}",
                 winner_elo_change, loser_elo_change, None, None,
                 "Web", "ranked", season_id,
+                winner_lifetime_after, loser_lifetime_after,
+                winner_lifetime_change, loser_lifetime_change,
+                winner_avatar, loser_avatar,
             ),
         )
         conn.commit()

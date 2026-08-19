@@ -39,10 +39,24 @@ def _get_player_context(user_id: int, display_name: str) -> str:
         )
         row = cur.fetchone()
         if row:
-            event_elo = row[1] if row[1] else 1500
-            parts.append(
-                f"Event ELO: {event_elo}"
-            )
+            parts.append(f"Lifetime ELO: {row[0] or 1500}")
+            event = cur.execute(
+                "SELECT event_id, avatar_specific FROM events WHERE is_active = 1 LIMIT 1"
+            ).fetchone()
+            if event and event[1]:
+                avatar_rows = cur.execute(
+                    """SELECT avatar_name, event_elo FROM event_avatar_standings
+                       WHERE event_id = ? AND source = 'online' AND user_id = ?
+                       ORDER BY event_elo DESC""",
+                    (event[0], str(user_id)),
+                ).fetchall()
+                if avatar_rows:
+                    parts.append(
+                        "Avatar event ELOs: "
+                        + ", ".join(f"{avatar}: {elo}" for avatar, elo in avatar_rows)
+                    )
+            else:
+                parts.append(f"Event ELO: {row[1] or 1500}")
         else:
             parts.append("No ELO rating yet (hasn't played any ranked matches)")
         conn.close()

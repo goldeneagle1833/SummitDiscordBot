@@ -5,6 +5,11 @@ import sqlite3
 
 from repositories.elo import EloRepository
 from repositories.matches import MatchRepository
+from services.avatar_event_elo import (
+    recalculate_all_avatar_event_standings,
+    recalculate_avatar_event_for_timestamp,
+)
+from utils.avatar_elo import canonicalize_avatar_name
 from webapp_config import ELO_DB_PATH, MATCH_RECORDS_DB_PATH, RUMBLE_DB_PATH
 
 logger = logging.getLogger(__name__)
@@ -29,8 +34,9 @@ class AdminService:
         # Try bot standings first
         bot_elo = self._elo_repo.get_user_elo(user_id)
         paper_elo = self._elo_repo.get_user_paper_elo(str(user_id))
+        avatar_entries = self._elo_repo.delete_avatar_player(user_id)
 
-        if bot_elo is None and paper_elo is None:
+        if bot_elo is None and paper_elo is None and not avatar_entries:
             return {"success": False, "error": "Player not found in any standings"}
 
         removed_from = []
@@ -40,6 +46,8 @@ class AdminService:
         if paper_elo is not None:
             if self._elo_repo.delete_paper_player(str(user_id)):
                 removed_from.append(f"paper (ELO {paper_elo})")
+        if avatar_entries:
+            removed_from.append(f"{avatar_entries} avatar event entr{'y' if avatar_entries == 1 else 'ies'}")
 
         if removed_from:
             logger.info(f"Admin removed player {user_id} from: {', '.join(removed_from)}")
@@ -55,6 +63,94 @@ class AdminService:
         else:
             return self._remove_bot_match(match_id)
 
+    def correct_match_avatars(
+        self,
+        match_id: str,
+        winner_avatar: str,
+        loser_avatar: str,
+    ) -> dict:
+        """Correct only the avatars on a ranked avatar-event match and replay its ladder."""
+        canonical_winner = canonicalize_avatar_name(winner_avatar)
+        canonical_loser = canonicalize_avatar_name(loser_avatar)
+        if not canonical_winner or not canonical_loser:
+            return {
+                "success": False,
+                "error": "Both avatars must match names in the avatar catalog",
+            }
+
+        is_web = str(match_id).startswith("web_")
+        if is_web:
+            match = self._match_repo.get_web_match_full_details(match_id)
+            source = "paper"
+        else:
+            try:
+                numeric_id = int(match_id)
+            except (ValueError, TypeError):
+                return {"success": False, "error": f"Invalid match ID: {match_id}"}
+            match = self._match_repo.get_match_full_details(numeric_id)
+            source = "online"
+
+        if not match:
+            return {"success": False, "error": f"Match {match_id} was not found"}
+        if match.get("match_type") not in (None, "ranked"):
+            return {
+                "success": False,
+                "error": "Avatar corrections only apply to ranked matches",
+            }
+
+        event_id = self._avatar_event_id_for_timestamp(match.get("timestamp"))
+        if event_id is None:
+            return {
+                "success": False,
+                "error": "This match is not part of an avatar-specific event",
+            }
+
+        old_winner = match.get("winner_avatar")
+        old_loser = match.get("loser_avatar")
+        if is_web:
+            updated = self._match_repo.update_web_match_avatars(
+                match_id, canonical_winner, canonical_loser
+            )
+        else:
+            updated = self._match_repo.update_match_avatars(
+                numeric_id, canonical_winner, canonical_loser
+            )
+        if not updated:
+            return {"success": False, "error": "Failed to update match avatars"}
+
+        replayed = recalculate_avatar_event_for_timestamp(
+            source, match.get("timestamp")
+        )
+        return {
+            "success": True,
+            "match_id": str(match_id),
+            "source": source,
+            "event_id": event_id,
+            "winner_avatar_before": old_winner,
+            "loser_avatar_before": old_loser,
+            "winner_avatar": canonical_winner,
+            "loser_avatar": canonical_loser,
+            "matches_replayed": replayed,
+            "message": f"Corrected avatars for match {match_id} and replayed the event ladder",
+        }
+
+    @staticmethod
+    def _avatar_event_id_for_timestamp(timestamp: str | None) -> int | None:
+        if not timestamp:
+            return None
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        try:
+            row = conn.execute(
+                """SELECT event_id FROM events
+                   WHERE avatar_specific = 1 AND start_date <= ?
+                     AND (end_date IS NULL OR end_date >= ?)
+                   ORDER BY start_date DESC LIMIT 1""",
+                (timestamp, timestamp),
+            ).fetchone()
+            return int(row[0]) if row else None
+        finally:
+            conn.close()
+
     def _remove_bot_match(self, match_id: str) -> dict:
         """Remove a bot match (from match_records) and reverse ELO in overall_standings."""
         try:
@@ -68,8 +164,16 @@ class AdminService:
 
         winner_id = match["winner_id"]
         loser_id = match["loser_id"]
-        winner_elo_change = match["winner_elo_change"]
-        loser_elo_change = match["loser_elo_change"]
+        winner_elo_change = (
+            match["winner_lifetime_elo_change"]
+            if match["winner_lifetime_elo_change"] is not None
+            else match["winner_elo_change"]
+        )
+        loser_elo_change = (
+            match["loser_lifetime_elo_change"]
+            if match["loser_lifetime_elo_change"] is not None
+            else match["loser_elo_change"]
+        )
 
         # Reverse ELO for winner
         try:
@@ -95,6 +199,7 @@ class AdminService:
 
         deleted = self._match_repo.delete_match(numeric_id)
         if deleted:
+            recalculate_avatar_event_for_timestamp("online", match["timestamp"])
             logger.info(
                 f"Admin removed bot match #{match_id}: "
                 f"winner={winner_id} (ELO {winner_elo_change:+d} reversed), "
@@ -118,8 +223,16 @@ class AdminService:
 
         winner_id = str(match["winner_id"])
         loser_id = str(match["loser_id"])
-        winner_elo_change = match["winner_elo_change"]
-        loser_elo_change = match["loser_elo_change"]
+        winner_elo_change = (
+            match["winner_lifetime_elo_change"]
+            if match["winner_lifetime_elo_change"] is not None
+            else match["winner_elo_change"]
+        )
+        loser_elo_change = (
+            match["loser_lifetime_elo_change"]
+            if match["loser_lifetime_elo_change"] is not None
+            else match["loser_elo_change"]
+        )
 
         # Reverse paper ELO for winner
         winner_current = self._elo_repo.get_user_paper_elo(winner_id)
@@ -139,6 +252,7 @@ class AdminService:
 
         deleted = self._match_repo.delete_web_match(match_id)
         if deleted:
+            recalculate_avatar_event_for_timestamp("paper", match["timestamp"])
             logger.info(
                 f"Admin removed web match {match_id}: "
                 f"winner={winner_id} (paper ELO {winner_elo_change:+d} reversed), "
@@ -154,7 +268,13 @@ class AdminService:
             }
         return {"success": False, "error": "Failed to delete web match record"}
 
-    def reset_player_elo(self, user_id: str, new_elo: int = 1500, source: str = "both") -> dict:
+    def reset_player_elo(
+        self,
+        user_id: str,
+        new_elo: int = 1500,
+        source: str = "both",
+        avatar_name: str | None = None,
+    ) -> dict:
         """Set a player's ELO to a specified value.
 
         Args:
@@ -163,18 +283,45 @@ class AdminService:
             source: Which standings to reset - 'bot', 'paper', or 'both'
         """
         results = []
+        active_event = self._elo_repo.get_active_event()
+        avatar_specific = bool(active_event and active_event.get("avatar_specific"))
+        if avatar_specific:
+            avatar_name = canonicalize_avatar_name(avatar_name)
+            if not avatar_name:
+                return {
+                    "success": False,
+                    "error": "Select a catalog-valid avatar for the active avatar-specific event",
+                }
 
         if source in ("bot", "both"):
             current_bot = self._elo_repo.get_user_elo(user_id)
             if current_bot is not None:
                 if self._elo_repo.reset_player_elo(user_id, new_elo):
                     results.append(f"online: {current_bot} -> {new_elo}")
+            if avatar_specific:
+                display_name = self._elo_repo.get_display_name(str(user_id)) or f"User#{user_id}"
+                old_avatar_elo = self._elo_repo.set_avatar_event_elo(
+                    active_event["event_id"], "online", user_id,
+                    display_name, avatar_name, new_elo,
+                )
+                results.append(
+                    f"online {avatar_name}: {old_avatar_elo if old_avatar_elo is not None else 1500} -> {new_elo}"
+                )
 
         if source in ("paper", "both"):
             current_paper = self._elo_repo.get_user_paper_elo(str(user_id))
             if current_paper is not None:
                 if self._elo_repo.reset_paper_elo(str(user_id), new_elo):
                     results.append(f"paper: {current_paper} -> {new_elo}")
+            if avatar_specific:
+                display_name = self._elo_repo.get_display_name(str(user_id)) or f"User#{user_id}"
+                old_avatar_elo = self._elo_repo.set_avatar_event_elo(
+                    active_event["event_id"], "paper", user_id,
+                    display_name, avatar_name, new_elo,
+                )
+                results.append(
+                    f"paper {avatar_name}: {old_avatar_elo if old_avatar_elo is not None else 1500} -> {new_elo}"
+                )
 
         if not results:
             return {"success": False, "error": "Player not found in standings"}
@@ -281,6 +428,13 @@ class AdminService:
                     cur.execute("UPDATE user_profiles SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
                     updates["user_profiles"] = cur.rowcount
 
+            if "admin_audit_log" in tables:
+                cur.execute(
+                    "UPDATE admin_audit_log SET target_id = ? WHERE target_id = ?",
+                    (new_user_id, old_user_id),
+                )
+                updates["admin_audit_log"] = cur.rowcount
+
             # limited tables in match_records.db
             if "limited_match_records" in tables:
                 count = _update_cols(cur, "limited_match_records", ("winner_id", "loser_id", "reporter_id"), new_user_id, old_user_id)
@@ -346,6 +500,10 @@ class AdminService:
                 cur.execute("UPDATE event_standings_archive SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
                 updates["event_standings_archive"] = cur.rowcount
 
+            if "event_avatar_standings" in tables:
+                cur.execute("DELETE FROM event_avatar_standings WHERE user_id = ?", (old_user_id,))
+                updates["event_avatar_standings"] = cur.rowcount
+
             # limited_event_standings_archive
             if "limited_event_standings_archive" in tables:
                 cur.execute("UPDATE limited_event_standings_archive SET user_id = ? WHERE user_id = ?", (new_user_id, old_user_id))
@@ -367,6 +525,9 @@ class AdminService:
             logger.error(f"Failed to transfer elo.db: {e}")
             return {"success": False, "error": f"Failed during ELO transfer: {e}"}
 
+        replayed = recalculate_all_avatar_event_standings()
+        if replayed:
+            updates["avatar_event_matches_replayed"] = replayed
         summary = {k: v for k, v in updates.items() if v}
         total_rows = sum(v for v in updates.values() if isinstance(v, int))
 
@@ -467,6 +628,10 @@ class AdminService:
                     cur.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
                     deleted[table] = cur.rowcount
 
+            if "event_avatar_standings" in tables:
+                cur.execute("DELETE FROM event_avatar_standings WHERE user_id = ?", (user_id,))
+                deleted["event_avatar_standings"] = cur.rowcount
+
             if "event_standings_archive" in tables:
                 cur.execute("DELETE FROM event_standings_archive WHERE user_id = ?", (user_id,))
                 deleted["event_standings_archive"] = cur.rowcount
@@ -509,6 +674,9 @@ class AdminService:
         except Exception as e:
             logger.warning(f"Failed to delete from rumble.db (non-critical): {e}")
 
+        replayed = recalculate_all_avatar_event_standings()
+        if replayed:
+            deleted["avatar_event_matches_replayed"] = replayed
         summary = {k: v for k, v in deleted.items() if v}
         total_rows = sum(v for v in deleted.values() if isinstance(v, int))
         logger.info(f"Deleted account {user_id}: {total_rows} rows removed across {len(summary)} tables")
@@ -540,6 +708,26 @@ class AdminService:
 
         # Rename in web match records
         web_matches = self._match_repo.rename_player_in_web_matches(str(user_id), new_name)
+        avatar_entries = self._elo_repo.rename_avatar_player(user_id, new_name)
+        if avatar_entries:
+            renamed_any = True
+
+        try:
+            conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+            audit_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'admin_audit_log'"
+            ).fetchone()
+            if audit_exists:
+                conn.execute(
+                    "UPDATE admin_audit_log SET target_name = ? WHERE target_id = ?",
+                    (new_name, str(user_id)),
+                )
+                if conn.total_changes:
+                    renamed_any = True
+            conn.commit()
+            conn.close()
+        except sqlite3.Error as e:
+            logger.warning("Could not rename player in audit history: %s", e)
 
         if renamed_any:
             logger.info(

@@ -1,4 +1,6 @@
 export default function PlayerHeader({ data, eloText, rankText, eloSource, onSourceChange, eventFilter, pastEvents, onEventChange, canSeeLifetime }) {
+  const avatarEventElos = data.avatar_event_elos || []
+
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -28,6 +30,31 @@ export default function PlayerHeader({ data, eloText, rankText, eloSource, onSou
           </div>
           <p className="text-text-muted text-sm">{eloText}</p>
           {rankText && <p className="text-text-muted text-sm">{rankText}</p>}
+          {data.avatar_specific_event && (
+            <div className="mt-3">
+              <p className="text-xs uppercase tracking-wide text-text-muted mb-2">
+                {data.avatar_event?.event_name || 'Event'} avatar ELO
+              </p>
+              {avatarEventElos.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {avatarEventElos.map((entry) => (
+                    <div
+                      key={entry.avatar}
+                      className="bg-bg-raised border border-border rounded px-3 py-2 text-sm"
+                    >
+                      <span className="font-semibold text-text-primary">{entry.avatar}</span>
+                      <span className="text-secondary ml-2">{entry.elo} ELO</span>
+                      {entry.rank > 0 && (
+                        <span className="text-text-muted ml-2">#{entry.rank}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-text-muted">No games recorded for this event.</p>
+              )}
+            </div>
+          )}
         </div>
 
         <select

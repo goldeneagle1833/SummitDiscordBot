@@ -21,6 +21,8 @@ from repositories.elo_repo import (  # noqa: F401
     get_active_event,
     get_user_elo,
     get_user_event_elo,
+    get_user_avatar_event_elo,
+    get_best_avatar_event_elo,
     get_user_paper_elo,
     get_user_paper_event_elo,
     get_past_events,
@@ -64,13 +66,17 @@ from services.elo_service import (  # noqa: F401
     recalculate_event_elo,
     get_match_players,
     correct_match_record,
+    correct_match_avatars,
     correct_limited_match_record,
     remove_match_record,
     remove_player as remove_player_service,
 )
 
 # Admin repo functions
-from repositories.elo_repo import set_player_event_elo  # noqa: F401
+from repositories.elo_repo import (  # noqa: F401
+    set_player_event_elo,
+    set_player_avatar_event_elo,
+)
 
 # Limited queue (arena draft mode) data access
 from repositories.limited_repo import (  # noqa: F401

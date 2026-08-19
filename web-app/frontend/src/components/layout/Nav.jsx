@@ -46,11 +46,21 @@ function saveNavPrefs(labels) {
 
 function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
   const [deckUrl, setDeckUrl] = useState('')
+  const [avatar, setAvatar] = useState('')
+  const [avatars, setAvatars] = useState([])
   const [matchComment, setMatchComment] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
   const youWon = confirmation.winner_discord_id === confirmation.opponent_discord_id
+  const confirmingPlayerAvatar = youWon
+    ? confirmation.winner_avatar
+    : confirmation.loser_avatar
+  const avatarRequired = Boolean(
+    (confirmation.winner_avatar || confirmation.loser_avatar)
+    && !confirmingPlayerAvatar
+    && confirmation.match_type !== 'casual'
+  )
 
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
@@ -58,7 +68,18 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
 
+  useEffect(() => {
+    fetch('/api/list-all-avatars')
+      .then((response) => response.ok ? response.json() : [])
+      .then(setAvatars)
+      .catch(() => {})
+  }, [])
+
   const handleSubmit = async () => {
+    if (avatarRequired && !deckUrl.trim() && !avatar) {
+      setError('Provide your Curiosa deck URL or select the avatar you played.')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -66,7 +87,11 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deck_url: deckUrl.trim() || undefined, match_comment: matchComment.trim() || undefined }),
+        body: JSON.stringify({
+          deck_url: deckUrl.trim() || undefined,
+          avatar: avatar || undefined,
+          match_comment: matchComment.trim() || undefined,
+        }),
       })
       const data = await res.json()
       if (data.success) {
@@ -109,6 +134,21 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
                 <span className="text-white capitalize">{confirmation.match_type}</span>
               </div>
             )}
+            {(confirmation.winner_avatar || confirmation.loser_avatar) && (
+              <>
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">Winner avatar</span>
+                <span className="text-white">{confirmation.winner_avatar || 'Not provided'}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">Loser avatar</span>
+                <span className="text-white">{confirmation.loser_avatar || 'Not provided'}</span>
+              </div>
+              <p className="text-xs text-amber-300 pt-1">
+                Confirm only if both the result and avatars are correct. Otherwise, deny this report.
+              </p>
+              </>
+            )}
             {confirmation.went_first && (
               <div className="flex justify-between text-sm">
                 <span className="text-text-muted">First player</span>
@@ -128,6 +168,28 @@ function ConfirmMatchModal({ confirmation, onClose, onConfirmed }) {
               className="w-full bg-bg-elevated border border-border rounded px-3 py-2 text-sm"
             />
           </div>
+
+          {confirmingPlayerAvatar ? (
+            <div className="mb-4 rounded border border-border bg-bg-elevated px-3 py-2">
+              <p className="text-xs text-text-muted">Your reported avatar</p>
+              <p className="text-sm text-white font-medium">{confirmingPlayerAvatar}</p>
+              <p className="text-xs text-amber-300 mt-1">Deny the report if this is incorrect.</p>
+            </div>
+          ) : (
+            <div className="mb-4">
+              <label className="text-xs text-text-muted block mb-1">
+                Your Avatar {avatarRequired ? '(required if no deck URL)' : '(optional)'}
+              </label>
+              <select
+                value={avatar}
+                onChange={(e) => setAvatar(e.target.value)}
+                className="w-full bg-bg-elevated border border-border rounded px-3 py-2 text-sm"
+              >
+                <option value="">Detect from Curiosa deck</option>
+                {avatars.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </div>
+          )}
 
           {/* Match Comments */}
           <div className="mb-4">

@@ -102,7 +102,7 @@ class SlashCommandsCog(commands.Cog):
         if action == "rank":
             await elo_cog.rank(ctx)
         elif action == "leaderboard":
-            await elo_cog.leaderboard(ctx)
+            await elo_cog.event_leaderboard(ctx)
         elif action == "match_elo":
             await interaction.followup.send(
                 "Use `!match_elo <match_id>` for now.",
@@ -133,7 +133,12 @@ class SlashCommandsCog(commands.Cog):
         name="issue-challenge",
         description="Issue a ladder challenge (Top 16 event players only, once per day)",
     )
-    async def issue_challenge_slash(self, interaction: discord.Interaction):
+    @app_commands.describe(avatar="Avatar card name (required in avatar-specific events)")
+    async def issue_challenge_slash(
+        self,
+        interaction: discord.Interaction,
+        avatar: str | None = None,
+    ):
         """Ladder challenge - Top 16 event players can challenge the field with special ELO stakes"""
         await interaction.response.defer(ephemeral=True)
         ctx = FakeContext(self.bot, interaction)
@@ -145,7 +150,7 @@ class SlashCommandsCog(commands.Cog):
             )
             return
 
-        await lfg_cog.issue_challenge(ctx)
+        await lfg_cog.issue_challenge(ctx, avatar_name=avatar)
 
     # ==================== UTILITY COMMANDS ====================
 

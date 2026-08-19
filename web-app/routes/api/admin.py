@@ -113,11 +113,59 @@ def remove_match(match_id):
                 "winner_name": match.get("winner_name"),
                 "loser_id": str(match.get("loser_id")),
                 "loser_name": match.get("loser_name"),
+                "winner_avatar": match.get("winner_avatar"),
+                "loser_avatar": match.get("loser_avatar"),
             },
             new_state={"result": f"{match_type} match deleted, ELO reversed"},
-            details=f"Removed {match_type} match {match_id}: {match.get('winner_name')} vs {match.get('loser_name')}",
+            details=f"Removed {match_type} match {match_id}: {match.get('winner_name')}"
+            + (f" ({match.get('winner_avatar')})" if match.get("winner_avatar") else "")
+            + f" vs {match.get('loser_name')}"
+            + (f" ({match.get('loser_avatar')})" if match.get("loser_avatar") else ""),
         )
     status = 200 if result.get("success") else 404
+    return jsonify(result), status
+
+
+@admin_bp.route("/admin/correct-match-avatars/<path:match_id>", methods=["PUT"])
+@require_admin
+def correct_match_avatars(match_id):
+    """Correct a match's avatars without changing lifetime ELO."""
+    data = request.get_json(silent=True) or {}
+    winner_avatar = str(data.get("winner_avatar") or "").strip()
+    loser_avatar = str(data.get("loser_avatar") or "").strip()
+    if not winner_avatar or not loser_avatar:
+        return jsonify({
+            "success": False,
+            "error": "winner_avatar and loser_avatar are required",
+        }), 400
+
+    service = AdminService()
+    result = service.correct_match_avatars(
+        match_id, winner_avatar, loser_avatar
+    )
+    if result.get("success"):
+        admin_id, admin_name = _get_admin_info()
+        AuditRepository().log_action(
+            admin_id,
+            admin_name,
+            "web_correct_match_avatars",
+            target_id=str(match_id),
+            previous_state={
+                "winner_avatar": result.get("winner_avatar_before"),
+                "loser_avatar": result.get("loser_avatar_before"),
+            },
+            new_state={
+                "winner_avatar": result.get("winner_avatar"),
+                "loser_avatar": result.get("loser_avatar"),
+                "source": result.get("source"),
+            },
+            details=(
+                f"Corrected {result.get('source')} match {match_id} avatars: "
+                f"{result.get('winner_avatar_before')} / {result.get('loser_avatar_before')} -> "
+                f"{result.get('winner_avatar')} / {result.get('loser_avatar')}"
+            ),
+        )
+    status = 200 if result.get("success") else 400
     return jsonify(result), status
 
 
@@ -128,6 +176,7 @@ def reset_elo(user_id):
     data = request.get_json(silent=True)
     new_elo = 1500
     source = "both"
+    avatar_name = None
     if data:
         if data.get("new_elo") is not None:
             try:
@@ -138,11 +187,14 @@ def reset_elo(user_id):
                 return jsonify({"success": False, "error": "ELO must be between 0 and 5000"}), 400
         if data.get("source") in ("bot", "paper", "both"):
             source = data["source"]
+        avatar_name = data.get("avatar_name")
 
     service = AdminService()
     current_bot_elo = service._elo_repo.get_user_elo(user_id)
     current_paper_elo = service._elo_repo.get_user_paper_elo(str(user_id))
-    result = service.reset_player_elo(user_id, new_elo, source)
+    result = service.reset_player_elo(
+        user_id, new_elo, source, avatar_name=avatar_name
+    )
     if result.get("success"):
         admin_id, admin_name = _get_admin_info()
         audit = AuditRepository()
@@ -150,8 +202,12 @@ def reset_elo(user_id):
             admin_id, admin_name, "web_reset_elo",
             target_id=str(user_id),
             previous_state={"elo": current_bot_elo, "paper_elo": current_paper_elo},
-            new_state={"elo": new_elo, "source": source},
-            details=f"Reset ELO for player {user_id} ({source}): bot {current_bot_elo} -> {new_elo}, paper {current_paper_elo} -> {new_elo}",
+            new_state={
+                "elo": new_elo,
+                "source": source,
+                "avatar": avatar_name,
+            },
+            details=f"Reset ELO for player {user_id} ({source}{f', avatar {avatar_name}' if avatar_name else ''}): bot {current_bot_elo} -> {new_elo}, paper {current_paper_elo} -> {new_elo}",
         )
     status = 200 if result.get("success") else 404
     return jsonify(result), status
@@ -879,6 +935,7 @@ def start_event_route():
         return jsonify({"success": False, "error": "event_name is required"}), 400
 
     event_name = str(data["event_name"]).strip()
+    avatar_specific = bool(data.get("avatar_specific", False))
     if not event_name or len(event_name) > 100:
         return jsonify({"success": False, "error": "Invalid event name (1-100 characters)"}), 400
 
@@ -890,7 +947,7 @@ def start_event_route():
         previous_event = bot_db.get_active_event()
 
         # Start new event
-        result = bot_db.start_new_event(event_name)
+        result = bot_db.start_new_event(event_name, avatar_specific=avatar_specific)
 
         # Log action
         admin_id, admin_name = _get_admin_info()
@@ -899,14 +956,21 @@ def start_event_route():
             admin_id, admin_name, "web_start_event",
             target_name=event_name,
             previous_state={"event": previous_event["event_name"] if previous_event else None},
-            new_state={"event": event_name, "event_id": result["event_id"]},
-            details=f"Started new event '{event_name}' (ID: {result['event_id']})",
+            new_state={
+                "event": event_name,
+                "event_id": result["event_id"],
+                "avatar_specific": avatar_specific,
+            },
+            details=f"Started new event '{event_name}' (ID: {result['event_id']}, "
+            f"{'avatar-specific ELO' if avatar_specific else 'standard player ELO'})",
         )
 
         return jsonify({
             "success": True,
-            "message": f"Event '{event_name}' started successfully",
+            "message": f"Event '{event_name}' started successfully with "
+            f"{'avatar-specific ELO' if avatar_specific else 'standard player ELO'}",
             "event_id": result["event_id"],
+            "avatar_specific": avatar_specific,
             "previous_event": result.get("previous_event")
         }), 200
 

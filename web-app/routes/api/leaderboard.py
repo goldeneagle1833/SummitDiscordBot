@@ -250,9 +250,30 @@ def get_archived_event_leaderboard(event_id):
                 event_info = event
                 break
 
+        if event_info and event_info.get("avatar_specific"):
+            leaderboard = repo.get_avatar_event_standings(event_id, "online")
+            leaderboard = [
+                {
+                    "user_id": row["user_id"],
+                    "display_name": row["user_display_name"],
+                    "avatar": row["avatar_name"],
+                    "event_elo": row["event_elo"],
+                    "rank": rank,
+                    "games": row.get("games", 0),
+                    "wins": row.get("wins", 0),
+                    "losses": row.get("losses", 0),
+                }
+                for rank, row in enumerate(leaderboard, 1)
+            ]
+
         return jsonify({
             "event_info": event_info,
-            "leaderboard": leaderboard
+            "leaderboard": leaderboard,
+            "top_cut": (
+                repo.get_locked_avatar_top_cut(event_id, "online")
+                if event_info and event_info.get("avatar_specific")
+                else []
+            ),
         })
     except Exception as e:
         logger.error(f"Error fetching archived event leaderboard: {e}", exc_info=True)

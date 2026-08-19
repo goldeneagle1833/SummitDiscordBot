@@ -9,11 +9,23 @@ import asyncio
 import sqlite3
 import os
 import sys
+import types
 from unittest.mock import MagicMock, AsyncMock, patch
 from datetime import datetime, timedelta
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Prevent collection-order-dependent partial config stubs. Production config is
+# intentionally gitignored; tests use a permissive, inert module instead.
+if "config" not in sys.modules:
+    test_config = types.ModuleType("config")
+    test_config.TOKEN = "test-token"
+    test_config.OPENAI_API_KEY = "test-api-key"
+    test_config.MASTERS_ROLE_IDS = set()
+    test_config.TICKET_HOLDER_ROLE_IDS = set()
+    test_config.__getattr__ = lambda _name: 0
+    sys.modules["config"] = test_config
 
 import repositories.elo_repo as elo_repo
 
@@ -30,17 +42,17 @@ def event_loop():
 
 
 @pytest.fixture(autouse=True)
-def setup_test_databases():
+def setup_test_databases(tmp_path, monkeypatch):
     """Setup and cleanup test databases before each test."""
+    database_dir = tmp_path / "databases"
+    database_dir.mkdir()
+    monkeypatch.chdir(database_dir)
     elo_repo._dual_elo_migrated = False
 
-    # Remove any existing test databases
-    for db_path in ["match_records.db", "elo.db"]:
-        if os.path.exists(db_path):
-            try:
-                os.remove(db_path)
-            except PermissionError:
-                pass
+    database_paths = [database_dir / "match_records.db", database_dir / "elo.db"]
+    for db_path in database_paths:
+        assert database_dir in db_path.parents
+        db_path.unlink(missing_ok=True)
 
     # Create fresh test database
     create_db()
@@ -95,12 +107,12 @@ def setup_test_databases():
     yield  # Run the test
 
     # Teardown: Clean up test databases
-    for db_path in ["match_records.db", "elo.db"]:
-        if os.path.exists(db_path):
-            try:
-                os.remove(db_path)
-            except PermissionError:
-                pass
+    for db_path in database_paths:
+        assert database_dir in db_path.parents
+        try:
+            db_path.unlink(missing_ok=True)
+        except PermissionError:
+            pass
 
 
 @pytest.fixture

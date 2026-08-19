@@ -661,7 +661,9 @@ class MatchRepository:
         cur = conn.cursor()
         cur.execute(
             """SELECT rowid, winner_id, losser_id, winner_display_name,
-                      losser_display_name, winner_elo_change, loser_elo_change, timestamp
+                      losser_display_name, winner_elo_change, loser_elo_change, timestamp,
+                      winner_lifetime_elo_change, loser_lifetime_elo_change,
+                      winner_avatar, loser_avatar, match_type
                FROM match_records WHERE rowid = ?""",
             (match_id,),
         )
@@ -678,6 +680,11 @@ class MatchRepository:
             "winner_elo_change": row[5] or 0,
             "loser_elo_change": row[6] or 0,
             "timestamp": row[7],
+            "winner_lifetime_elo_change": row[8],
+            "loser_lifetime_elo_change": row[9],
+            "winner_avatar": row[10],
+            "loser_avatar": row[11],
+            "match_type": row[12],
         }
 
     def delete_match(self, match_id: int) -> bool:
@@ -689,6 +696,25 @@ class MatchRepository:
         conn.commit()
         conn.close()
         return deleted
+
+    def update_match_avatars(
+        self, match_id: int, winner_avatar: str, loser_avatar: str
+    ) -> bool:
+        """Correct the recorded avatars for one Discord match."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE match_records SET winner_avatar = ?, loser_avatar = ? WHERE rowid = ?",
+                (winner_avatar, loser_avatar, match_id),
+            )
+            updated = cur.rowcount > 0
+            conn.commit()
+        except sqlite3.OperationalError:
+            updated = False
+        finally:
+            conn.close()
+        return updated
 
     def rename_player_in_matches(self, user_id: int, new_name: str) -> int:
         """Update a player's display name in all match records. Returns rows updated."""
@@ -795,13 +821,25 @@ class MatchRepository:
         try:
             cur.execute(
                 """SELECT match_id, winner_id, losser_id, winner_display_name,
-                          losser_display_name, winner_elo_change, loser_elo_change, timestamp
+                          losser_display_name, winner_elo_change, loser_elo_change, timestamp,
+                          winner_lifetime_elo_change, loser_lifetime_elo_change,
+                          winner_avatar, loser_avatar, match_type
                    FROM match_reports_web WHERE match_id = ?""",
                 (match_id,),
             )
             row = cur.fetchone()
         except sqlite3.OperationalError:
-            row = None
+            try:
+                cur.execute(
+                    """SELECT match_id, winner_id, losser_id, winner_display_name,
+                              losser_display_name, winner_elo_change, loser_elo_change, timestamp
+                       FROM match_reports_web WHERE match_id = ?""",
+                    (match_id,),
+                )
+                legacy = cur.fetchone()
+                row = (*legacy, None, None, None, None, None) if legacy else None
+            except sqlite3.OperationalError:
+                row = None
         conn.close()
         if not row:
             return None
@@ -814,6 +852,11 @@ class MatchRepository:
             "winner_elo_change": row[5] or 0,
             "loser_elo_change": row[6] or 0,
             "timestamp": row[7],
+            "winner_lifetime_elo_change": row[8],
+            "loser_lifetime_elo_change": row[9],
+            "winner_avatar": row[10],
+            "loser_avatar": row[11],
+            "match_type": row[12],
         }
 
     def delete_web_match(self, match_id: str) -> bool:
@@ -828,6 +871,27 @@ class MatchRepository:
             deleted = False
         conn.close()
         return deleted
+
+    def update_web_match_avatars(
+        self, match_id: str, winner_avatar: str, loser_avatar: str
+    ) -> bool:
+        """Correct the recorded avatars for one web/paper match."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """UPDATE match_reports_web
+                   SET winner_avatar = ?, loser_avatar = ?
+                   WHERE match_id = ?""",
+                (winner_avatar, loser_avatar, match_id),
+            )
+            updated = cur.rowcount > 0
+            conn.commit()
+        except sqlite3.OperationalError:
+            updated = False
+        finally:
+            conn.close()
+        return updated
 
     def rename_player_in_web_matches(self, user_id: str, new_name: str) -> int:
         """Update a player's display name in web match records. Returns rows updated."""

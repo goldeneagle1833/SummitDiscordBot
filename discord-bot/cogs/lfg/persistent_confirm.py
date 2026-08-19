@@ -24,7 +24,7 @@ from utils.database import (
     mark_pairing_reported,
     get_active_event,
 )
-from repositories.elo_repo import NON_ELO_MATCH_TYPES
+from repositories.elo_repo import NON_ELO_MATCH_TYPES, get_user_event_elo
 from services.dust_service import try_dust_drop, try_alter_card_drop
 from repositories.dust_repo import get_available_code_count
 from repositories.limited_repo import mark_limited_pairing_reported
@@ -49,6 +49,42 @@ def _is_valid_discord_id(value) -> bool:
         return True
     except (ValueError, TypeError):
         return False
+
+
+def _resolve_avatar_ladder_stakes(data: dict, ladder_info: dict | None) -> None:
+    """Resolve challenge stakes from the avatars that will be recorded."""
+    if not ladder_info or not ladder_info.get("avatar_stakes_pending"):
+        return
+    winner_avatar = data.get("winner_avatar")
+    loser_avatar = data.get("loser_avatar")
+    if not winner_avatar or not loser_avatar:
+        raise ValueError("Ladder challenge requires both played avatars")
+
+    challenger_id = int(ladder_info["challenger_id"])
+    winner_id = int(data["winner_id"])
+    loser_id = int(data["loser_id"])
+    if challenger_id == winner_id:
+        challenger_avatar = winner_avatar
+        opponent_id = loser_id
+        opponent_avatar = loser_avatar
+    else:
+        challenger_avatar = loser_avatar
+        opponent_id = winner_id
+        opponent_avatar = winner_avatar
+
+    challenger_elo = get_user_event_elo(challenger_id, challenger_avatar)
+    opponent_elo = get_user_event_elo(opponent_id, opponent_avatar)
+    elo_diff = abs(challenger_elo - opponent_elo)
+    if elo_diff < 100:
+        ladder_info["elo_multiplier_winner"] = 1.0
+        ladder_info["elo_multiplier_loser"] = 1.0
+    else:
+        ladder_info["elo_multiplier_winner"] = 2.0
+        ladder_info["elo_multiplier_loser"] = 0.5
+    ladder_info["challenger_avatar"] = challenger_avatar
+    ladder_info["opponent_avatar"] = opponent_avatar
+    ladder_info["elo_difference"] = elo_diff
+    ladder_info["avatar_stakes_pending"] = False
 
 
 # ──────────────────────────────────────────────
@@ -77,11 +113,14 @@ def ensure_pending_confirmations_table():
             match_comment     TEXT    DEFAULT '',
             winner_deck_url   TEXT,
             loser_deck_url    TEXT,
+            winner_avatar     TEXT,
+            loser_avatar      TEXT,
             ladder_info_json  TEXT,
             match_type        TEXT    DEFAULT 'ranked',
             guild_id          INTEGER,
             winner_run_id     INTEGER,
             loser_run_id      INTEGER,
+            event_snapshot_json TEXT,
             confirmer_comment TEXT    DEFAULT '',
             created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -92,6 +131,14 @@ def ensure_pending_confirmations_table():
     columns = {row[1] for row in cursor.fetchall()}
     if "confirmer_comment" not in columns:
         conn.execute("ALTER TABLE pending_confirmations ADD COLUMN confirmer_comment TEXT DEFAULT ''")
+    if "winner_avatar" not in columns:
+        conn.execute("ALTER TABLE pending_confirmations ADD COLUMN winner_avatar TEXT")
+    if "loser_avatar" not in columns:
+        conn.execute("ALTER TABLE pending_confirmations ADD COLUMN loser_avatar TEXT")
+    if "event_snapshot_json" not in columns:
+        conn.execute(
+            "ALTER TABLE pending_confirmations ADD COLUMN event_snapshot_json TEXT"
+        )
 
     conn.commit()
     conn.close()
@@ -99,6 +146,7 @@ def ensure_pending_confirmations_table():
 
 def save_pending_confirmation(data: dict) -> int:
     """Persist confirmation data and return the new row id."""
+    ensure_pending_confirmations_table()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -114,9 +162,9 @@ def save_pending_confirmation(data: dict) -> int:
             loser_id, loser_global, is_winner, reporter_global,
             opponent_global, match_start_time, first_player,
             match_time, match_comment, winner_deck_url, loser_deck_url,
-            ladder_info_json, match_type, guild_id,
-            winner_run_id, loser_run_id
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            winner_avatar, loser_avatar, ladder_info_json, match_type, guild_id,
+            winner_run_id, loser_run_id, event_snapshot_json
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             data["reporter_id"],
@@ -134,11 +182,16 @@ def save_pending_confirmation(data: dict) -> int:
             data.get("match_comment", ""),
             data.get("winner_deck_url"),
             data.get("loser_deck_url"),
+            data.get("winner_avatar"),
+            data.get("loser_avatar"),
             json.dumps(data.get("ladder_info")) if data.get("ladder_info") else None,
             data.get("match_type", "ranked"),
             data.get("guild_id"),
             data.get("winner_run_id"),
             data.get("loser_run_id"),
+            json.dumps(data.get("event_snapshot"), default=str)
+            if data.get("event_snapshot")
+            else None,
         ),
     )
     confirmation_id = cursor.lastrowid
@@ -165,6 +218,11 @@ def load_pending_confirmation(confirmation_id: int):
         data["ladder_info"] = json.loads(data["ladder_info_json"])
     else:
         data["ladder_info"] = None
+
+    if data.get("event_snapshot_json"):
+        data["event_snapshot"] = json.loads(data["event_snapshot_json"])
+    else:
+        data["event_snapshot"] = None
 
     if data.get("match_start_time"):
         try:
@@ -314,6 +372,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
         elo_multiplier_winner = 1.0
         elo_multiplier_loser = 1.0
         ladder_info = data.get("ladder_info")
+        _resolve_avatar_ladder_stakes(data, ladder_info)
         if ladder_info and data.get("match_type") not in (*NON_ELO_MATCH_TYPES, "limited"):
             challenger_id = ladder_info["challenger_id"]
             if data["winner_id"] != challenger_id:
@@ -337,6 +396,9 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
             match_type=data.get("match_type", "ranked"),
             elo_multiplier_winner=elo_multiplier_winner,
             elo_multiplier_loser=elo_multiplier_loser,
+            winner_avatar=data.get("winner_avatar"),
+            loser_avatar=data.get("loser_avatar"),
+            event_snapshot=data.get("event_snapshot"),
         )
 
         if ladder_info and data["match_type"] not in NON_ELO_MATCH_TYPES:
@@ -376,10 +438,17 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
     # ── update confirmation message ──
     if interaction_valid:
         try:
+            avatar_summary = ""
+            if data.get("winner_avatar") and data.get("loser_avatar"):
+                avatar_summary = (
+                    f" Winner avatar: {data['winner_avatar']};"
+                    f" loser avatar: {data['loser_avatar']}."
+                )
             await interaction.message.edit(
                 content=(
                     f"Match confirmed! **Match ID: #{match_id}** - "
-                    f"{data['winner_global']} won against {data['loser_global']}.{elo_msg}{stakes_msg}"
+                    f"{data['winner_global']} won against {data['loser_global']}."
+                    f"{avatar_summary}{elo_msg}{stakes_msg}"
                 ),
                 view=None,
             )
@@ -948,11 +1017,14 @@ def create_confirmation_view(
     match_comment="",
     winner_deck_url=None,
     loser_deck_url=None,
+    winner_avatar=None,
+    loser_avatar=None,
     ladder_info=None,
     match_type="ranked",
     guild_id=None,
     winner_run_id=None,
     loser_run_id=None,
+    event_snapshot=None,
 ) -> PersistentMatchConfirmView:
     """Persist confirmation data and return a view that works across restarts."""
     # Validate that reporter_id and opponent_id are valid Discord snowflakes
@@ -989,11 +1061,14 @@ def create_confirmation_view(
         "match_comment": match_comment,
         "winner_deck_url": winner_deck_url,
         "loser_deck_url": loser_deck_url,
+        "winner_avatar": winner_avatar,
+        "loser_avatar": loser_avatar,
         "ladder_info": ladder_info,
         "match_type": match_type,
         "guild_id": guild_id,
         "winner_run_id": winner_run_id,
         "loser_run_id": loser_run_id,
+        "event_snapshot": event_snapshot,
     }
     confirmation_id = save_pending_confirmation(data)
     return PersistentMatchConfirmView(confirmation_id)

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { recordGame, submitMatchReport, searchOpponents, listAllAvatars, getPlayerSeasons } from '@/api/games'
+import { get } from '@/api/client'
 
 export default function ReportGameModal({ playerId, onClose, onReported, initialLifeSubmitter, initialLifeOpponent }) {
   const [mode, setMode] = useState('ranked')
@@ -9,6 +10,8 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
 
   // Shared fields
   const [deckUrl, setDeckUrl] = useState('')
+  const [playerAvatar, setPlayerAvatar] = useState('')
+  const [avatarSpecificEvent, setAvatarSpecificEvent] = useState(false)
   const [result, setResult] = useState(null)
   const [wentFirst, setWentFirst] = useState(null)
 
@@ -30,6 +33,9 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
 
   useEffect(() => {
     listAllAvatars().then(setAvatars).catch(() => {})
+    get('/api/events')
+      .then((d) => setAvatarSpecificEvent(Boolean(d.active_event?.avatar_specific)))
+      .catch(() => {})
     getPlayerSeasons(playerId).then((d) => setSeasons(d.seasons || [])).catch(() => {})
   }, [playerId])
 
@@ -56,7 +62,7 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
   }
 
   const resetForm = () => {
-    setDeckUrl(''); setResult(null); setWentFirst(null)
+    setDeckUrl(''); setPlayerAvatar(''); setResult(null); setWentFirst(null)
     setOpponentQuery(''); setSelectedOpponent(null); setOpponentResults([])
     setLifeSubmitter(''); setLifeOpponent('')
     setSelectedSeason(null); setOpponentAvatar('')
@@ -91,6 +97,14 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
       if (!selectedOpponent) { setError('Select an opponent.'); return }
       if (result === null) { setError('Select a result.'); return }
       if (wentFirst === null) { setError('Select play/draw.'); return }
+      if (mode === 'ranked' && avatarSpecificEvent && !deckUrl.trim() && !playerAvatar) {
+        setError('Provide a Curiosa deck URL or select the avatar you played for this event.')
+        return
+      }
+      if (mode === 'ranked' && avatarSpecificEvent && !opponentAvatar) {
+        setError("Select the avatar your opponent played so they can verify it.")
+        return
+      }
       setSaving(true)
       try {
         await submitMatchReport({
@@ -98,6 +112,8 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
           result: result === 'won' ? 'won' : 'lost',
           went_first: wentFirst === 'first' ? 'submitter' : 'opponent',
           submitter_deck_url: deckUrl.trim() || undefined,
+          submitter_avatar: playerAvatar || undefined,
+          opponent_avatar: opponentAvatar || undefined,
           final_life_submitter: lifeSubmitter ? parseInt(lifeSubmitter) : 0,
           final_life_opponent: lifeOpponent ? parseInt(lifeOpponent) : 0,
           match_type: mode,
@@ -171,6 +187,11 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
               </div>
 
               {/* Deck URL */}
+              {mode === 'ranked' && avatarSpecificEvent && (
+                <div className="mb-4 rounded border border-secondary/30 bg-secondary/5 p-3 text-xs text-text-muted">
+                  This event uses avatar-specific ELO. Your avatar must be detected from a Curiosa deck or selected below, and your opponent will verify both avatars.
+                </div>
+              )}
               <div className="mb-4">
                 <label className="text-xs text-text-muted block mb-1">Deck URL (optional)</label>
                 <input
@@ -181,6 +202,34 @@ export default function ReportGameModal({ playerId, onClose, onReported, initial
                   className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm"
                 />
               </div>
+
+              <div className="mb-4">
+                <label className="text-xs text-text-muted block mb-1">
+                  Your Avatar {mode === 'ranked' && avatarSpecificEvent ? '(required if no deck URL)' : '(optional override)'}
+                </label>
+                <select
+                  value={playerAvatar}
+                  onChange={(e) => setPlayerAvatar(e.target.value)}
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm"
+                >
+                  <option value="">Detect from Curiosa deck</option>
+                  {avatars.map((avatar) => <option key={avatar} value={avatar}>{avatar}</option>)}
+                </select>
+              </div>
+
+              {mode === 'ranked' && avatarSpecificEvent && (
+                <div className="mb-4">
+                  <label className="text-xs text-text-muted block mb-1">Opponent Avatar (required)</label>
+                  <select
+                    value={opponentAvatar}
+                    onChange={(e) => setOpponentAvatar(e.target.value)}
+                    className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm"
+                  >
+                    <option value="">Select avatar...</option>
+                    {avatars.map((avatar) => <option key={avatar} value={avatar}>{avatar}</option>)}
+                  </select>
+                </div>
+              )}
 
               {/* Result */}
               <div className="mb-4">

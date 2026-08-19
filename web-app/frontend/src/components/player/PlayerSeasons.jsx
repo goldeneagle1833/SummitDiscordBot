@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   getPlayerSeasons, createSeason, searchSeasons, joinSeason,
   leaveSeason, modifySeason, endSeason, deleteSeason,
-  kickSeasonMember, reportSeasonMatch, getSeasonMembers,
+  kickSeasonMember, reportSeasonMatch, getSeasonMembers, listAllAvatars,
 } from '@/api/games'
 
 // ── Shared modal shell ──────────────────────────────────────────
@@ -337,12 +337,20 @@ function ReportSeasonMatchModal({ seasonId, onClose, onReported }) {
   const [loading, setLoading] = useState(true)
   const [winnerId, setWinnerId] = useState('')
   const [loserId, setLoserId] = useState('')
+  const [winnerAvatar, setWinnerAvatar] = useState('')
+  const [loserAvatar, setLoserAvatar] = useState('')
+  const [avatars, setAvatars] = useState([])
+  const [avatarSpecificEvent, setAvatarSpecificEvent] = useState(false)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    getSeasonMembers(seasonId)
-      .then((d) => setMembers(d.members || []))
+    Promise.all([getSeasonMembers(seasonId), listAllAvatars()])
+      .then(([d, avatarList]) => {
+        setMembers(d.members || [])
+        setAvatarSpecificEvent(Boolean(d.avatar_specific_event))
+        setAvatars(avatarList || [])
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [seasonId])
@@ -350,10 +358,16 @@ function ReportSeasonMatchModal({ seasonId, onClose, onReported }) {
   const handleSubmit = async () => {
     if (!winnerId || !loserId) { setError('Select both winner and loser'); return }
     if (winnerId === loserId) { setError('Winner and loser must be different'); return }
+    if (avatarSpecificEvent && (!winnerAvatar || !loserAvatar)) {
+      setError('Select the avatar played by both players for the active event')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
-      await reportSeasonMatch(seasonId, winnerId, loserId)
+      await reportSeasonMatch(
+        seasonId, winnerId, loserId, winnerAvatar, loserAvatar
+      )
       onReported()
       onClose()
     } catch (err) { setError(err.message) }
@@ -382,6 +396,29 @@ function ReportSeasonMatchModal({ seasonId, onClose, onReported }) {
               {members.map((m) => <option key={m.user_id} value={m.user_id}>{m.display_name}</option>)}
             </select>
           </div>
+          {avatarSpecificEvent && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded border border-secondary/30 bg-secondary/5 p-3">
+              <p className="sm:col-span-2 text-xs text-text-muted">
+                The active event uses avatar-specific ELO. Select the avatars actually played.
+              </p>
+              <div>
+                <label className="text-xs text-text-muted block mb-1">Winner Avatar *</label>
+                <select value={winnerAvatar} onChange={(e) => setWinnerAvatar(e.target.value)}
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm">
+                  <option value="">Select avatar...</option>
+                  {avatars.map((avatar) => <option key={avatar} value={avatar}>{avatar}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-text-muted block mb-1">Loser Avatar *</label>
+                <select value={loserAvatar} onChange={(e) => setLoserAvatar(e.target.value)}
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm">
+                  <option value="">Select avatar...</option>
+                  {avatars.map((avatar) => <option key={avatar} value={avatar}>{avatar}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
       )}
       {error && <p className="text-xs text-accent-red mt-3">{error}</p>}

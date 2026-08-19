@@ -5,7 +5,9 @@ import logging
 import math
 import os
 import sqlite3
+import sys
 from collections import Counter
+from pathlib import Path
 from urllib.parse import unquote
 
 from flask import Blueprint, jsonify, request
@@ -14,6 +16,12 @@ from repositories.card_catalog import CardCatalogRepository
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS, AVATAR_IMAGES_DIR
 from utils.formatting import generate_pseudonym
 from utils.auth import is_admin
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+
+from shared.avatar_qualification import build_avatar_top_cut
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +75,7 @@ def get_avatar_filters():
     """Return available events and sources for avatar page filtering."""
     events = []
     sources = []
+    active_event = None
 
     # Get events from elo.db
     try:
@@ -77,24 +86,33 @@ def get_avatar_filters():
             WHERE type='table' AND name='events'
         """)
         if cur.fetchone():
-            cur.execute("""
-                SELECT event_id, event_name, start_date, end_date, is_active
+            columns = {row[1] for row in cur.execute("PRAGMA table_info(events)")}
+            avatar_column = "avatar_specific" if "avatar_specific" in columns else "0"
+            cur.execute(f"""
+                SELECT event_id, event_name, start_date, end_date, is_active,
+                       {avatar_column}
                 FROM events
                 ORDER BY start_date DESC
             """)
             user_admin = is_admin()
             for row in cur.fetchall():
                 active = bool(row[4])
-                # Only admins can see active events
-                if active and not user_admin:
-                    continue
-                events.append({
+                avatar_specific = bool(row[5])
+                event = {
                     "event_id": row[0],
                     "event_name": row[1],
                     "start_date": row[2],
                     "end_date": row[3],
                     "is_active": active,
-                })
+                    "avatar_specific": avatar_specific,
+                }
+                if active and (user_admin or avatar_specific):
+                    active_event = event
+                # Active event match analytics remain private unless this is a
+                # public avatar-ELO ladder (or the viewer is an admin).
+                if active and not user_admin and not avatar_specific:
+                    continue
+                events.append(event)
         conn.close()
     except sqlite3.OperationalError as e:
         logger.warning(f"Could not query events: {e}")
@@ -121,7 +139,7 @@ def get_avatar_filters():
             "is_active": False,
         })
 
-    return jsonify({"events": events, "sources": sources})
+    return jsonify({"events": events, "sources": sources, "active_event": active_event})
 
 
 def _get_all_seasons():
@@ -709,13 +727,167 @@ def get_all_avatars():
     return jsonify(avatar_list)
 
 
+def _get_avatar_event_top_players(event_filter, source_filter, limit):
+    """Build per-avatar leaderboards from an avatar-specific event ladder."""
+    if event_filter in ("all", None):
+        return None
+    if source_filter not in ("discord", "web"):
+        return None
+
+    try:
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        cur = conn.cursor()
+        columns = {row[1] for row in cur.execute("PRAGMA table_info(events)")}
+        if "avatar_specific" not in columns:
+            conn.close()
+            return None
+
+        if event_filter == "current":
+            cur.execute(
+                """SELECT event_id, event_name, start_date, end_date, is_active,
+                          avatar_specific
+                   FROM events WHERE is_active = 1 LIMIT 1"""
+            )
+        else:
+            try:
+                event_id = int(event_filter)
+            except (TypeError, ValueError):
+                conn.close()
+                return None
+            cur.execute(
+                """SELECT event_id, event_name, start_date, end_date, is_active,
+                          avatar_specific
+                   FROM events WHERE event_id = ?""",
+                (event_id,),
+            )
+
+        event_row = cur.fetchone()
+        if not event_row or not event_row[5]:
+            conn.close()
+            return None
+
+        ladder_source = "online" if source_filter == "discord" else "paper"
+        cur.execute(
+            """SELECT user_id, user_display_name, avatar_name, event_elo
+               FROM event_avatar_standings
+               WHERE event_id = ? AND source = ?
+               ORDER BY event_elo DESC, user_display_name COLLATE NOCASE,
+                        avatar_name COLLATE NOCASE""",
+            (event_row[0], ladder_source),
+        )
+        standings = [
+            {
+                "user_id": str(row[0]),
+                "user_display_name": row[1] or f"Player {row[0]}",
+                "avatar_name": row[2],
+                "event_elo": row[3],
+            }
+            for row in cur.fetchall()
+        ]
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning("Could not query avatar event standings: %s", e)
+        return None
+
+    matches = []
+    try:
+        match_conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        table = "match_records" if ladder_source == "online" else "match_reports_web"
+        columns = {
+            row[1] for row in match_conn.execute(f"PRAGMA table_info({table})")
+        }
+        if {"winner_avatar", "loser_avatar"}.issubset(columns):
+            event_clause = "timestamp >= ? AND (? IS NULL OR timestamp <= ?)"
+            params = [event_row[2], event_row[3], event_row[3]]
+            if "event_id" in columns:
+                legacy_format_filter = (
+                    " AND event_avatar_specific = 1"
+                    if "event_avatar_specific" in columns
+                    else ""
+                )
+                event_clause = (
+                    "(event_id = ? OR (event_id IS NULL"
+                    f"{legacy_format_filter} AND timestamp >= ? "
+                    "AND (? IS NULL OR timestamp <= ?)))"
+                )
+                params = [event_row[0], event_row[2], event_row[3], event_row[3]]
+            match_conn.row_factory = sqlite3.Row
+            matches = [
+                dict(row)
+                for row in match_conn.execute(
+                    f"""SELECT winner_id, winner_avatar,
+                               losser_id AS loser_id, loser_avatar
+                        FROM {table}
+                        WHERE {event_clause}
+                          AND (match_type IS NULL OR match_type = 'ranked')
+                          AND winner_avatar IS NOT NULL
+                          AND loser_avatar IS NOT NULL""",
+                    params,
+                )
+            ]
+        match_conn.close()
+    except sqlite3.OperationalError as error:
+        logger.warning("Could not query avatar event match records: %s", error)
+
+    qualification = build_avatar_top_cut(standings, matches)
+    status_by_entry = {
+        (entry["user_id"], entry["avatar_name"].casefold()): entry
+        for entry in qualification["entries"]
+    }
+
+    avatars = {}
+    for ladder_rank, row in enumerate(standings, start=1):
+        avatar_name = row["avatar_name"]
+        status = status_by_entry[(row["user_id"], avatar_name.casefold())]
+        avatar = avatars.setdefault(avatar_name, {"name": avatar_name, "players": []})
+        avatar["players"].append({
+            "player_id": row["user_id"],
+            "name": row["user_display_name"],
+            "event_elo": row["event_elo"],
+            "ladder_rank": ladder_rank,
+            "games": status["games"],
+            "wins": status["wins"],
+            "losses": status["losses"],
+            "win_rate": round(status["win_rate"] * 100, 1),
+            "absolute_avatar_leader": status["absolute_avatar_leader"],
+            "qualified": status["qualified"],
+            "qualification_path": status["qualification_path"],
+            "qualification_reasons": status["qualification_reasons"],
+        })
+
+    avatar_list = []
+    for avatar in avatars.values():
+        avatar["players"] = avatar["players"][:limit]
+        for avatar_rank, player in enumerate(avatar["players"], start=1):
+            player["rank"] = avatar_rank
+        avatar_list.append(avatar)
+    avatar_list.sort(key=lambda avatar: avatar["name"].lower())
+
+    return {
+        "avatars": avatar_list,
+        "limit": limit,
+        "source": source_filter,
+        "event": event_filter,
+        "ranking": "event_elo",
+        "avatar_specific": True,
+        "projected_top_cut": qualification["seats"],
+        "qualification_policy": qualification["policy"],
+        "top_cut_eligibility_applied": False,
+        "event_info": {
+            "event_id": event_row[0],
+            "event_name": event_row[1],
+            "start_date": event_row[2],
+            "end_date": event_row[3],
+            "is_active": bool(event_row[4]),
+        },
+    }
+
+
 @avatars_bp.route("/avatars/top-players")
 def get_avatar_top_players():
-    """Return the top players for each avatar, ranked by Avatar Score."""
+    """Return the top players for each avatar."""
     source_filter = request.args.get("source", "discord")
     event_filter = request.args.get("event", "all")
-    if event_filter == "current" and not is_admin():
-        event_filter = "all"
     try:
         limit = max(1, min(100, int(request.args.get("limit", 16))))
     except (TypeError, ValueError):
@@ -724,6 +896,15 @@ def get_avatar_top_players():
         min_games = max(1, int(request.args.get("min_games", 10)))
     except (TypeError, ValueError):
         min_games = 10
+
+    avatar_event_result = _get_avatar_event_top_players(
+        event_filter, source_filter, limit
+    )
+    if avatar_event_result is not None:
+        return jsonify(avatar_event_result)
+
+    if event_filter == "current" and not is_admin():
+        event_filter = "all"
 
     if not MATCH_RECORDS_DB_PATH.exists():
         logger.warning(f"Database not found at {MATCH_RECORDS_DB_PATH}")
@@ -2407,12 +2588,13 @@ def list_all_avatars():
 
     Includes both current event matches and archived matches for lifetime stats.
     """
+    rows = []
+    use_new_columns = True
     try:
         conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
         cur = conn.cursor()
 
         all_rows = []
-        use_new_columns = True
 
         # Query current match_records
         try:
@@ -2448,7 +2630,7 @@ def list_all_avatars():
         rows = all_rows
         conn.close()
     except sqlite3.OperationalError:
-        return jsonify([])
+        rows = []
 
     avatar_names = set()
 
@@ -2476,6 +2658,22 @@ def list_all_avatars():
             name = extract_avatar(row[0])
             if name:
                 avatar_names.add(name)
+
+    # The override picker must include every catalog-valid avatar, even one
+    # that has not appeared in a recorded match yet.
+    elo_conn = None
+    try:
+        elo_conn = sqlite3.connect(str(ELO_DB_PATH))
+        catalog_rows = elo_conn.execute(
+            """SELECT name FROM card_catalog
+               WHERE card_type = 'Avatar' COLLATE NOCASE"""
+        ).fetchall()
+        avatar_names.update(row[0] for row in catalog_rows if row[0])
+    except sqlite3.OperationalError:
+        pass
+    finally:
+        if elo_conn:
+            elo_conn.close()
 
     return jsonify(sorted(list(avatar_names)))
 

@@ -4,6 +4,7 @@ import { get, post } from '@/api/client'
 export default function AdminActionsSection({ onRefresh }) {
   const [activeEvent, setActiveEvent] = useState(undefined) // undefined = loading
   const [eventName, setEventName] = useState('')
+  const [avatarSpecific, setAvatarSpecific] = useState(false)
   const [activityHours, setActivityHours] = useState(24)
   const [activityResult, setActivityResult] = useState(null)
   const [activityLoading, setActivityLoading] = useState(false)
@@ -55,16 +56,20 @@ export default function AdminActionsSection({ onRefresh }) {
   const handleStartEvent = async () => {
     if (!eventName.trim()) { alert('Please enter an event name.'); return }
     if (!confirm(
-      `Start new event "${eventName}"?\n\nThis will archive the current event (if any) and reset event ELO for all players.`
+      `Start new event "${eventName}"?\n\nThis will archive the current event (if any) and reset event ELO for all players.${avatarSpecific ? '\n\nAvatar-specific ELO will be enabled and cannot be changed later.' : ''}`
     )) return
 
     setActionLoading('start')
     try {
-      const d = await post('/api/admin/start-event', { event_name: eventName.trim() })
+      const d = await post('/api/admin/start-event', {
+        event_name: eventName.trim(),
+        avatar_specific: avatarSpecific,
+      })
       if (d.success) {
         alert('✅ ' + d.message)
         setEventName('')
-        setActiveEvent({ event_name: eventName.trim() })
+        setAvatarSpecific(false)
+        setActiveEvent({ event_name: eventName.trim(), avatar_specific: avatarSpecific })
         onRefresh?.()
       } else {
         alert('❌ Error: ' + d.error)
@@ -106,8 +111,15 @@ export default function AdminActionsSection({ onRefresh }) {
             : 'bg-bg-raised border-border text-text-muted'
         }`}>
           {activeEvent
-            ? `📅 Current Event: ${activeEvent.event_name}${activeEvent.event_id ? ` (ID: ${activeEvent.event_id})` : ''}`
+            ? `📅 Current Event: ${activeEvent.event_name}${activeEvent.event_id ? ` (ID: ${activeEvent.event_id})` : ''}${activeEvent.avatar_specific ? ' — Avatar-specific ELO' : ''}`
             : 'ℹ️ No active event'}
+          {activeEvent && (
+            <div className="mt-1 text-xs">
+              ELO format: {activeEvent.avatar_specific
+                ? 'Avatar-specific (one rating per player/avatar)'
+                : 'Standard (one rating per player)'}
+            </div>
+          )}
         </div>
       )}
 
@@ -183,6 +195,18 @@ export default function AdminActionsSection({ onRefresh }) {
             className="w-full bg-bg-surface border border-border rounded px-3 py-1.5 text-sm"
             maxLength={100}
           />
+          <label className="flex items-start gap-2 text-xs text-text-muted cursor-pointer">
+            <input
+              type="checkbox"
+              checked={avatarSpecific}
+              onChange={e => setAvatarSpecific(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              Avatar-specific ELO — each player/avatar combination starts at 1500.
+              This cannot be changed after the event starts.
+            </span>
+          </label>
           <button
             onClick={handleStartEvent}
             disabled={actionLoading === 'start'}

@@ -3,7 +3,7 @@ import logging
 import sqlite3
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 import config
 
@@ -170,12 +170,23 @@ class ReactionRolesCog(commands.Cog):
         self._role_map = _load_role_map()
         self._channel_map = _load_channel_map()
 
+    def cog_unload(self):
+        self._refresh_mappings.cancel()
+
+    @tasks.loop(minutes=5)
+    async def _refresh_mappings(self):
+        """Periodically reload mappings so web UI changes take effect."""
+        self._reload()
+        logger.debug("ReactionRoles: refreshed mappings from database")
+
     # ------------------------------------------------------------------
     # Startup sync
     # ------------------------------------------------------------------
     @commands.Cog.listener()
     async def on_ready(self):
         self._reload()
+        if not self._refresh_mappings.is_running():
+            self._refresh_mappings.start()
         await self._sync_reaction_roles()
 
     async def _sync_reaction_roles(self):

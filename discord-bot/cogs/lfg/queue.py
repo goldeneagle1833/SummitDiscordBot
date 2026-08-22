@@ -200,11 +200,11 @@ class LimitedQueueModal(discord.ui.Modal, title="Join Limited Queue"):
 
 
 class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
-    """Modal for joining the Rumble (Omens) queue — requires a Curiosa deck URL."""
+    """Modal for joining the Rumble (Omens) queue — requires a Curiosa or DraftSorcery deck URL."""
 
     deck_url = discord.ui.TextInput(
-        label="Curiosa Deck URL (required)",
-        placeholder="https://curiosa.io/decks/...",
+        label="Deck URL (required)",
+        placeholder="https://curiosa.io/decks/... or https://draftsorcery.com/?deck=...",
         required=True,
         max_length=200,
     )
@@ -225,9 +225,9 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
         await interaction.response.defer(ephemeral=True)
 
         deck_url = self.deck_url.value.strip()
-        if not deck_url or "curiosa.io" not in deck_url.lower():
+        if not deck_url or ("curiosa.io" not in deck_url.lower() and "draftsorcery.com" not in deck_url.lower()):
             await interaction.followup.send(
-                "Please provide a valid Curiosa deck URL (e.g. https://curiosa.io/decks/...).",
+                "Please provide a valid deck URL (Curiosa or DraftSorcery).",
                 ephemeral=True,
             )
             return

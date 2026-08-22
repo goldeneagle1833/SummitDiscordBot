@@ -1,12 +1,72 @@
 """Service for validating deck point budgets."""
 
+import asyncio
 import json
 import logging
+from urllib.parse import urlparse, parse_qs
+
+import requests
 
 from utils.deck_checker import scrape_curosa_async
 from repositories.card_points_repo import get_all_card_points, get_max_budget
 
 logger = logging.getLogger("discord_bot")
+
+
+async def _fetch_draftsorcery_deck(url: str) -> dict | None:
+    """Fetch and normalize a deck from DraftSorcery API.
+
+    Returns deck data in Curiosa-style format (avatar, spellbook, atlas, sideboard)
+    or None on failure.
+    """
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+    deck_code = params.get("deck", [None])[0]
+    if not deck_code:
+        return None
+
+    def _fetch():
+        try:
+            response = requests.get(
+                f"https://draftsorcery.com/api/decks/{deck_code}",
+                timeout=30,
+            )
+            if response.status_code != 200:
+                return None
+            return response.json()
+        except Exception:
+            return None
+
+    data = await asyncio.to_thread(_fetch)
+    if not data:
+        return None
+
+    deck_cards = data.get("deck", {}).get("cards", [])
+    if not deck_cards:
+        return None
+
+    card_counts = {}
+    for entry in deck_cards:
+        card_info = entry.get("card", {})
+        name = card_info.get("name", "")
+        card_type = (card_info.get("type") or "").lower()
+        if not name:
+            continue
+        if name not in card_counts:
+            card_counts[name] = {"name": name, "quantity": 0, "type": card_type}
+        card_counts[name]["quantity"] += 1
+
+    avatar, spellbook, atlas = [], [], []
+    for info in card_counts.values():
+        entry = {"name": info["name"], "quantity": info["quantity"]}
+        if info["type"] == "avatar":
+            avatar.append(entry)
+        elif info["type"] == "site":
+            atlas.append(entry)
+        else:
+            spellbook.append(entry)
+
+    return {"avatar": avatar, "spellbook": spellbook, "atlas": atlas, "sideboard": []}
 
 
 def calculate_deck_points(deck_data: dict, card_points: dict[str, int]) -> tuple[int, list[dict]]:
@@ -56,15 +116,19 @@ async def validate_deck_points(deck_url: str) -> tuple[bool, str, int, int]:
         # No cards have points assigned yet — all decks pass
         return True, "No point restrictions configured.", 0, max_budget
 
-    # Fetch deck data from Curiosa
-    deck_json_str = await scrape_curosa_async(deck_url)
-    if not deck_json_str or deck_json_str == "{}":
-        return False, "Could not fetch deck data from Curiosa. Check the URL and try again.", 0, max_budget
-
-    try:
-        deck_data = json.loads(deck_json_str)
-    except json.JSONDecodeError:
-        return False, "Invalid deck data received from Curiosa.", 0, max_budget
+    # Fetch deck data from DraftSorcery or Curiosa
+    if "draftsorcery.com" in deck_url.lower():
+        deck_data = await _fetch_draftsorcery_deck(deck_url)
+        if not deck_data:
+            return False, "Could not fetch deck data from DraftSorcery. Check the URL and try again.", 0, max_budget
+    else:
+        deck_json_str = await scrape_curosa_async(deck_url)
+        if not deck_json_str or deck_json_str == "{}":
+            return False, "Could not fetch deck data from Curiosa. Check the URL and try again.", 0, max_budget
+        try:
+            deck_data = json.loads(deck_json_str)
+        except json.JSONDecodeError:
+            return False, "Invalid deck data received from Curiosa.", 0, max_budget
 
     total_points, costed_cards = calculate_deck_points(deck_data, card_points)
 

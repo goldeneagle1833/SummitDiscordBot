@@ -349,9 +349,9 @@ export default function Events() {
                   )}
                 </div>
               </div>
-              {/* Event Details Card */}
+              {/* Event Details Card (desktop only — mobile uses accordion in event list) */}
               {(selectedTop8.length > 0 || selectedEventData) && (
-                <div className="mt-3 bg-bg-surface border border-border rounded-lg divide-y divide-border">
+                <div className="mt-3 bg-bg-surface border border-border rounded-lg divide-y divide-border hidden lg:block">
                   {/* Element + Avatar Stats (top) */}
                   {selectedEventData && (
                     <div className="grid grid-cols-2 divide-x divide-border">
@@ -519,48 +519,172 @@ export default function Events() {
                     const isSelected = selected?.folder === event.folder
                     const isLatest = event.folder === (featuredFolder || filtered[0]?.folder)
                     return (
-                      <button
-                        key={event.folder}
-                        onClick={() => setSelectedFolder(event.folder)}
-                        className={`w-full text-left rounded-lg p-3 transition-all group ${
-                          isSelected
-                            ? 'bg-primary/10 border border-primary/40'
-                            : 'bg-bg-surface border border-border hover:border-primary/30 hover:bg-bg-elevated/50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          {/* Selection indicator */}
-                          <div className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-primary' : 'bg-border'}`} />
+                      <div key={event.folder}>
+                        <button
+                          onClick={() => {
+                            // On mobile: toggle accordion. On desktop: always select.
+                            const isLg = window.matchMedia('(min-width: 1024px)').matches
+                            setSelectedFolder(isSelected && !isLg ? null : event.folder)
+                          }}
+                          className={`w-full text-left rounded-lg p-3 transition-all group ${
+                            isSelected
+                              ? 'bg-primary/10 border border-primary/40 rounded-t-lg rounded-b-none lg:rounded-lg'
+                              : 'bg-bg-surface border border-border hover:border-primary/30 hover:bg-bg-elevated/50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            {/* Selection indicator */}
+                            <div className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-primary' : 'bg-border'}`} />
 
-                          {/* Event info */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-0.5">
-                              <span className={`font-semibold truncate ${isSelected ? 'text-primary-light' : 'text-text'}`}>
-                                {event.name || event.folder}
-                              </span>
-                              {isLatest && (
-                                <span className="text-[10px] font-semibold text-primary uppercase tracking-wide bg-primary/10 px-1.5 py-0.5 rounded shrink-0">
-                                  New
+                            {/* Event info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <span className={`font-semibold truncate ${isSelected ? 'text-primary-light' : 'text-text'}`}>
+                                  {event.name || event.folder}
                                 </span>
-                              )}
+                                {isLatest && (
+                                  <span className="text-[10px] font-semibold text-primary uppercase tracking-wide bg-primary/10 px-1.5 py-0.5 rounded shrink-0">
+                                    New
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 text-xs text-text-muted">
+                                {event.event_date_display && <span>{event.event_date_display}</span>}
+                                {event.winner_username && <span className="truncate">Winner: {event.winner_username}</span>}
+                                <span className="shrink-0">{event.player_count || 0} decks</span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-3 text-xs text-text-muted">
-                              {event.event_date_display && <span>{event.event_date_display}</span>}
-                              {event.winner_username && <span className="truncate">Winner: {event.winner_username}</span>}
-                              <span className="shrink-0">{event.player_count || 0} decks</span>
-                            </div>
-                          </div>
 
-                          {/* View link */}
-                          <Link
-                            to={`/top-8/${event.folder}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="shrink-0 text-xs text-text-muted hover:text-primary transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                          >
-                            View →
-                          </Link>
-                        </div>
-                      </button>
+                            {/* View link (desktop) / chevron (mobile) */}
+                            <Link
+                              to={`/top-8/${event.folder}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="shrink-0 text-xs text-text-muted hover:text-primary transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 hidden lg:block"
+                            >
+                              View →
+                            </Link>
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                              className={`w-4 h-4 shrink-0 text-text-muted transition-transform lg:hidden ${isSelected ? 'rotate-180' : ''}`}
+                            >
+                              <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                        </button>
+                        {/* Mobile accordion */}
+                        {isSelected && (
+                          <div className="lg:hidden border border-t-0 border-primary/40 rounded-b-lg bg-bg-surface overflow-hidden">
+                            {/* View Decks link */}
+                            <div className="p-3 border-b border-border">
+                              <Link
+                                to={`/top-8/${event.folder}`}
+                                className="inline-flex items-center gap-2 bg-primary text-black px-3 py-1.5 rounded font-semibold text-sm hover:bg-primary-light transition-colors"
+                              >
+                                View Decks
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path fillRule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clipRule="evenodd" />
+                                </svg>
+                              </Link>
+                            </div>
+                            {/* Stats + Placements */}
+                            {selectedEventData && (
+                              <div className="grid grid-cols-2 divide-x divide-border border-b border-border">
+                                {selectedEventData.element_stats?.dominant_element?.length > 0 && (
+                                  <div className="p-3">
+                                    <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-widest mb-2">Elements</h3>
+                                    <div className="space-y-1.5">
+                                      {[...selectedEventData.element_stats.dominant_element].sort((a, b) => b.percent - a.percent).map((el) => {
+                                        const colors = ELEMENT_COLORS[el.name] || {}
+                                        return (
+                                          <div key={el.name}>
+                                            <div className="flex items-baseline justify-between mb-0.5">
+                                              <span className={`text-[11px] font-medium ${colors.label || 'text-text-muted'}`}>{el.name}</span>
+                                              <span className="text-[10px] text-text-muted/60 tabular-nums">{el.percent}%</span>
+                                            </div>
+                                            <div className="h-3 bg-white/5 rounded overflow-hidden">
+                                              <div
+                                                className={`h-full rounded ${colors.bar || 'bg-gray-500'}`}
+                                                style={{ width: `${Math.max(el.percent, 3)}%` }}
+                                              />
+                                            </div>
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                                {selectedEventData.all_decks?.length > 0 && (() => {
+                                  const counts = {}
+                                  for (const d of selectedEventData.all_decks) {
+                                    const av = d.avatar || 'Unknown'
+                                    counts[av] = (counts[av] || 0) + 1
+                                  }
+                                  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+                                  return (
+                                    <div className="p-3">
+                                      <div className="flex items-baseline justify-between mb-2">
+                                        <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-widest">Avatars</h3>
+                                        <span className="text-[10px] text-text-muted/50">{sorted.length} unique</span>
+                                      </div>
+                                      <div className="space-y-1">
+                                        {sorted.slice(0, 6).map(([avatar, count]) => (
+                                          <div key={avatar} className="flex items-center gap-2 text-[11px]">
+                                            <span className="text-text/90 truncate flex-1">{avatar}</span>
+                                            <span className="text-text-muted/60 tabular-nums shrink-0">{count}</span>
+                                          </div>
+                                        ))}
+                                        {sorted.length > 6 && (
+                                          <p className="text-[10px] text-text-muted/40">+{sorted.length - 6} more</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )
+                                })()}
+                              </div>
+                            )}
+                            {selectedTop8.length > 0 && (
+                              <div className="p-3">
+                                <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-widest mb-2">Placements</h3>
+                                <ol className="space-y-1">
+                                  {selectedTop8.slice(0, 8).map((deck, i) => {
+                                    const elems = deck.elements || []
+                                    return (
+                                      <li key={deck.deck_id || i}>
+                                        {deck.deck_id ? (
+                                          <Link
+                                            to={`/deck-rec/${deck.deck_id}`}
+                                            className="flex items-center text-[13px] gap-1.5 hover:bg-white/5 rounded px-1 -mx-1 py-0.5 transition-colors"
+                                          >
+                                            <span className={`w-5 text-[11px] font-bold shrink-0 tabular-nums ${
+                                              i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-600' : 'text-text-muted/60'
+                                            }`}>{i + 1}.</span>
+                                            <span className={`truncate ${i < 3 ? 'text-text font-medium' : 'text-text/80'}`}>{deck.player}</span>
+                                            <span className="ml-auto flex items-center gap-1 shrink-0">
+                                              <span className="text-secondary text-[11px]">{deck.avatar}</span>
+                                              {elems.length > 0 && <span className="text-white text-[10px]">({elems.join('/')})</span>}
+                                            </span>
+                                          </Link>
+                                        ) : (
+                                          <div className="flex items-center text-[13px] gap-1.5 px-1 -mx-1 py-0.5">
+                                            <span className={`w-5 text-[11px] font-bold shrink-0 tabular-nums ${
+                                              i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-600' : 'text-text-muted/60'
+                                            }`}>{i + 1}.</span>
+                                            <span className={`truncate ${i < 3 ? 'text-text font-medium' : 'text-text/80'}`}>{deck.player}</span>
+                                            <span className="ml-auto flex items-center gap-1 shrink-0">
+                                              <span className="text-secondary text-[11px]">{deck.avatar}</span>
+                                              {elems.length > 0 && <span className="text-white text-[10px]">({elems.join('/')})</span>}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </li>
+                                    )
+                                  })}
+                                </ol>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )
                   })}
                 </div>

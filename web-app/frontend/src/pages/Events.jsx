@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { getEventsWithAdmin, reorderEvents, updateEventMetadata, createEvent, pollEventJob, setFeaturedEvent } from '@/api/events'
+import { getEventsWithAdmin, getEvent, reorderEvents, updateEventMetadata, createEvent, pollEventJob, setFeaturedEvent } from '@/api/events'
 import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -80,6 +80,7 @@ export default function Events() {
   const [selectedFolder, setSelectedFolder] = useState(null)
   const [featuredFolder, setFeaturedFolder] = useState(null)
   const [imageFiles, setImageFiles] = useState([])
+  const [selectedTop8, setSelectedTop8] = useState([])
 
   // Admin state
   const [editModal, setEditModal] = useState(null)
@@ -131,6 +132,14 @@ export default function Events() {
     }
     return filtered[0] || null
   }, [filtered, selectedFolder, featuredFolder])
+
+  // Fetch top 8 decks for selected event
+  useEffect(() => {
+    if (!selected) { setSelectedTop8([]); return }
+    getEvent(selected.folder)
+      .then((data) => setSelectedTop8(data.top8_decks || []))
+      .catch(() => setSelectedTop8([]))
+  }, [selected?.folder])
 
   const yearGroups = useMemo(() => groupByYear(filtered), [filtered])
 
@@ -324,6 +333,25 @@ export default function Events() {
                   )}
                 </div>
               </div>
+              {/* Top 8 Preview */}
+              {selectedTop8.length > 0 && (
+                <div className="mt-3 p-3 bg-bg-surface border border-border rounded-lg">
+                  <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Top 8</h3>
+                  <ol className="space-y-1">
+                    {selectedTop8.slice(0, 8).map((deck, i) => (
+                      <li key={deck.deck_id || i} className="flex items-center gap-2 text-sm">
+                        <span className={`w-5 text-right text-xs font-bold shrink-0 ${
+                          i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-600' : 'text-text-muted'
+                        }`}>
+                          {i + 1}.
+                        </span>
+                        <span className="text-text truncate">{deck.player}</span>
+                        <span className="text-text-muted text-xs truncate ml-auto">({deck.avatar})</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
             </div>
           ) : (
             <div className="rounded-lg border border-border bg-bg-surface p-8 text-center text-text-muted">
@@ -371,7 +399,7 @@ export default function Events() {
           </div>
 
           {/* Event List grouped by year */}
-          <div className="space-y-4 max-h-[calc(100vh-220px)] overflow-y-auto pr-1 lg:scrollbar-thin">
+          <div className="space-y-4">
             {yearGroups.length === 0 && (
               <p className="text-center text-text-muted py-8">No events match your filters.</p>
             )}

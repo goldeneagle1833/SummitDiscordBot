@@ -270,7 +270,7 @@ export default function Events() {
         {/* Left Panel — Featured/Selected Event Preview */}
         <div className="lg:w-5/12 xl:w-5/12 shrink-0">
           {selected ? (
-            <div className="sticky top-4">
+            <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
               <div className="relative rounded-lg overflow-hidden border-2 border-primary/30 bg-bg-surface" style={{ minHeight: '280px' }}>
                 {selectedImg && (
                   <>

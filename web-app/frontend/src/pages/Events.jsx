@@ -368,15 +368,15 @@ export default function Events() {
                   </ol>
                 </div>
               )}
-              {/* Element + Avatar Preview */}
+              {/* Dominant Element + Avatar Preview */}
               {selectedEventData && (
                 <div className="mt-3 grid grid-cols-2 gap-3">
-                  {/* Element Distribution */}
-                  {selectedEventData.element_stats?.length > 0 && (
+                  {/* Dominant Element Distribution */}
+                  {selectedEventData.element_stats?.dominant_element?.length > 0 && (
                     <div className="p-3 bg-bg-surface border border-border rounded-lg">
-                      <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Elements</h3>
+                      <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Dominant Element</h3>
                       <div className="space-y-1.5">
-                        {[...selectedEventData.element_stats].sort((a, b) => b.percent - a.percent).map((el) => {
+                        {[...selectedEventData.element_stats.dominant_element].sort((a, b) => b.percent - a.percent).map((el) => {
                           const colors = ELEMENT_COLORS[el.name] || {}
                           return (
                             <div key={el.name} className="flex items-center gap-2">

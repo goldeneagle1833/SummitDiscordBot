@@ -368,9 +368,9 @@ export default function Events() {
                                     <span className={`text-xs font-medium ${colors.label || 'text-text-muted'}`}>{el.name}</span>
                                     <span className="text-[10px] text-text-muted/60 tabular-nums">{el.percent}%</span>
                                   </div>
-                                  <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                  <div className="h-4 bg-white/5 rounded overflow-hidden">
                                     <div
-                                      className={`h-full rounded-full ${colors.bar || 'bg-gray-500'} transition-all duration-500`}
+                                      className={`h-full rounded ${colors.bar || 'bg-gray-500'} transition-all duration-500`}
                                       style={{ width: `${Math.max(el.percent, 3)}%` }}
                                     />
                                   </div>

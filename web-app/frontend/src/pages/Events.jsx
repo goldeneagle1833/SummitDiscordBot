@@ -6,7 +6,12 @@ import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
 const YEARS = ['2026', '2025', '2024', '2023']
-const FORMATS = ['cornerstone', 'crossroads']
+const SORT_OPTIONS = [
+  { value: 'date-desc', label: 'Newest First' },
+  { value: 'date-asc', label: 'Oldest First' },
+  { value: 'players-desc', label: 'Most Players' },
+  { value: 'players-asc', label: 'Fewest Players' },
+]
 
 function getAvatarImagePath(name, files) {
   if (!name || !files?.length) return null
@@ -24,6 +29,46 @@ function getAvatarImagePath(name, files) {
   return null
 }
 
+function parseEventDate(ev) {
+  if (ev.event_date) return new Date(ev.event_date).getTime()
+  // Try to extract year from name/folder
+  const match = ((ev.name || '') + ' ' + (ev.folder || '')).match(/20\d{2}/)
+  return match ? new Date(match[0] + '-01-01').getTime() : 0
+}
+
+function sortEvents(events, sortBy) {
+  const sorted = [...events]
+  switch (sortBy) {
+    case 'date-desc':
+      return sorted.sort((a, b) => parseEventDate(b) - parseEventDate(a))
+    case 'date-asc':
+      return sorted.sort((a, b) => parseEventDate(a) - parseEventDate(b))
+    case 'players-desc':
+      return sorted.sort((a, b) => (b.player_count || 0) - (a.player_count || 0))
+    case 'players-asc':
+      return sorted.sort((a, b) => (a.player_count || 0) - (b.player_count || 0))
+    default:
+      return sorted
+  }
+}
+
+function groupByYear(events) {
+  const groups = {}
+  for (const ev of events) {
+    const combined = ((ev.name || '') + ' ' + (ev.folder || '')).toLowerCase()
+    const match = combined.match(/20\d{2}/)
+    const year = match ? match[0] : 'Other'
+    if (!groups[year]) groups[year] = []
+    groups[year].push(ev)
+  }
+  // Sort year keys descending (Other at end)
+  return Object.entries(groups).sort(([a], [b]) => {
+    if (a === 'Other') return 1
+    if (b === 'Other') return -1
+    return Number(b) - Number(a)
+  })
+}
+
 export default function Events() {
   usePageTitle('Top 8 Decks by Event')
   const [events, setEvents] = useState([])
@@ -31,11 +76,13 @@ export default function Events() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [yearFilter, setYearFilter] = useState('')
-  const [formatFilter, setFormatFilter] = useState('')
-  const [dragIdx, setDragIdx] = useState(null)
-  const [dirty, setDirty] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [editModal, setEditModal] = useState(null) // { folder, name, rating }
+  const [sortBy, setSortBy] = useState('date-desc')
+  const [selectedFolder, setSelectedFolder] = useState(null)
+  const [featuredFolder, setFeaturedFolder] = useState(null)
+  const [imageFiles, setImageFiles] = useState([])
+
+  // Admin state
+  const [editModal, setEditModal] = useState(null)
   const [editSaving, setEditSaving] = useState(false)
   const [createModal, setCreateModal] = useState(false)
   const [createForm, setCreateForm] = useState({ title: '', ranked: Array(8).fill(''), bulk: '' })
@@ -43,8 +90,6 @@ export default function Events() {
   const [createError, setCreateError] = useState(null)
   const [createResult, setCreateResult] = useState(null)
   const [createProgress, setCreateProgress] = useState(null)
-  const [featuredFolder, setFeaturedFolder] = useState(null)
-  const [imageFiles, setImageFiles] = useState([])
 
   useEffect(() => {
     getAvatarImageFiles()
@@ -64,44 +109,30 @@ export default function Events() {
   }, [])
 
   const filtered = useMemo(() => {
-    return events.filter((ev) => {
-      const combined = ((ev.name || '') + ' ' + (ev.folder || '')).toLowerCase()
-      if (yearFilter && !combined.includes(yearFilter)) return false
-      if (formatFilter && !combined.includes(formatFilter)) return false
-      return true
-    })
-  }, [events, yearFilter, formatFilter])
+    let result = events
+    if (yearFilter) {
+      result = result.filter((ev) => {
+        const combined = ((ev.name || '') + ' ' + (ev.folder || '')).toLowerCase()
+        return combined.includes(yearFilter)
+      })
+    }
+    return sortEvents(result, sortBy)
+  }, [events, yearFilter, sortBy])
 
-  const canDrag = isAdmin && !yearFilter && !formatFilter
+  // Auto-select: featured event, or first in filtered list
+  const selected = useMemo(() => {
+    if (selectedFolder) {
+      const found = filtered.find((e) => e.folder === selectedFolder)
+      if (found) return found
+    }
+    if (featuredFolder) {
+      const found = filtered.find((e) => e.folder === featuredFolder)
+      if (found) return found
+    }
+    return filtered[0] || null
+  }, [filtered, selectedFolder, featuredFolder])
 
-  const handleDragStart = (idx) => setDragIdx(idx)
-  const handleDragOver = (e) => e.preventDefault()
-  const handleDrop = useCallback((targetIdx) => {
-    if (dragIdx === null || dragIdx === targetIdx) return
-    setEvents((prev) => {
-      const reordered = [...prev]
-      const [moved] = reordered.splice(dragIdx, 1)
-      reordered.splice(targetIdx, 0, moved)
-      return reordered
-    })
-    setDirty(true)
-    setDragIdx(null)
-  }, [dragIdx])
-
-  const [saveError, setSaveError] = useState(null)
-
-  const saveOrder = useCallback(async () => {
-    setSaving(true)
-    setSaveError(null)
-    try {
-      const order = events.map((e) => e.folder)
-      const result = await reorderEvents(order)
-      if (result.success) setDirty(false)
-      else setSaveError(result.error || 'Failed to save order')
-    } catch (err) {
-      setSaveError(err.message || 'Failed to save order')
-    } finally { setSaving(false) }
-  }, [events])
+  const yearGroups = useMemo(() => groupByYear(filtered), [filtered])
 
   const saveMetadata = useCallback(async () => {
     if (!editModal) return
@@ -153,7 +184,6 @@ export default function Events() {
         setCreateError(submitResult.error || 'Failed to start event creation')
         return
       }
-      // Poll for completion
       const result = await pollEventJob(submitResult.job_id, {
         onProgress: (p) => setCreateProgress(p),
       })
@@ -193,6 +223,8 @@ export default function Events() {
   if (loading) return <Spinner className="py-20" />
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
 
+  const selectedImg = selected ? getAvatarImagePath(selected.winner_avatar, imageFiles) : null
+
   return (
     <div>
       {/* Hero */}
@@ -204,197 +236,83 @@ export default function Events() {
           <a href="https://discord.gg/ZDqHSK9VGx" target="_blank" rel="noopener noreferrer" className="text-[#5865f2] hover:underline">
             Summit Discord
           </a>{' '}
-          and I'll be happy to add them!
+          and I&apos;ll be happy to add them!
         </p>
       </section>
 
-      {/* Filters + Save */}
-      <div className="flex flex-wrap items-end gap-4 mb-4 p-3 bg-bg-surface rounded-lg border border-border">
-        <div>
-          <label className="text-xs text-text-muted block mb-1">Year</label>
-          <select
-            className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
-            value={yearFilter}
-            onChange={(e) => setYearFilter(e.target.value)}
-          >
-            <option value="">All Years</option>
-            {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="text-xs text-text-muted block mb-1">Format</label>
-          <select
-            className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
-            value={formatFilter}
-            onChange={(e) => setFormatFilter(e.target.value)}
-          >
-            <option value="">All Formats</option>
-            {FORMATS.map((f) => <option key={f} value={f}>{f.charAt(0).toUpperCase() + f.slice(1)}</option>)}
-          </select>
-        </div>
-        <span className="text-text-muted text-xs ml-auto self-end pb-1">
-          {filtered.length} of {events.length} events
-        </span>
-        {isAdmin && (
-          <button
-            className="text-xs bg-primary text-black px-3 py-1.5 rounded font-semibold self-end"
-            onClick={openCreateModal}
-          >
-            + Add Event
-          </button>
-        )}
-        {isAdmin && dirty && (
-          <button
-            className="text-xs bg-secondary text-black px-3 py-1.5 rounded font-semibold disabled:opacity-50 self-end"
-            onClick={saveOrder}
-            disabled={saving}
-          >
-            {saving ? 'Saving...' : 'Save Order'}
-          </button>
-        )}
-      </div>
-
-      {isAdmin && !canDrag && dirty && (
-        <p className="text-xs text-text-muted mb-2">Clear filters to drag and reorder events.</p>
-      )}
-      {saveError && (
-        <p className="text-xs text-red-400 mb-2">Error saving order: {saveError}</p>
-      )}
-
-      {/* Featured Latest Event */}
-      {filtered.length > 0 && (() => {
-        const featured = (featuredFolder && filtered.find((e) => e.folder === featuredFolder)) || filtered[0]
-        const featuredImg = getAvatarImagePath(featured.winner_avatar, imageFiles)
-        return (
-          <Link
-            to={`/top-8/${featured.folder}`}
-            className="relative block mb-6 bg-bg-surface border-2 border-primary/30 rounded-lg overflow-hidden hover:border-primary/60 hover:-translate-y-0.5 transition-all"
-            style={{ minHeight: '120px' }}
-          >
-            {featuredImg && (
-              <>
-                <div
-                  className="absolute inset-0 bg-cover bg-center"
-                  style={{ backgroundImage: `url('/avatar-images/${featuredImg}')`, opacity: 0.35, filter: 'brightness(0.8)' }}
-                />
-                <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/40 to-transparent" />
-              </>
-            )}
-            <div className="relative p-5">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-semibold text-primary uppercase tracking-wide">Latest Event</span>
-                <span className="flex items-center gap-2">
-                  {isAdmin && featuredFolder && (
-                    <button
-                      onClick={(e) => { e.preventDefault(); handleClearFeatured() }}
-                      className="text-xs text-text-muted hover:text-accent-red transition-colors"
-                      title="Remove manual featured selection"
-                    >
-                      Unpin
-                    </button>
-                  )}
-                  {featured.event_date_display && (
-                    <span className="text-sm text-text-muted">{featured.event_date_display}</span>
-                  )}
-                </span>
-              </div>
-              <h2 className="text-xl font-display text-secondary mb-2">{featured.name || featured.folder}</h2>
-              <div className="flex flex-wrap items-center gap-4 text-sm text-text-muted">
-                {featured.winner_username && (
-                  <span>
-                    Winner: <span className="text-text">{featured.winner_username}</span>
-                    {featured.winner_avatar && <span className="text-text-muted"> ({featured.winner_avatar})</span>}
-                  </span>
+      {/* Split View */}
+      <div className="flex flex-col lg:flex-row gap-4">
+        {/* Left Panel — Featured/Selected Event Preview */}
+        <div className="lg:w-5/12 xl:w-5/12 shrink-0">
+          {selected ? (
+            <div className="sticky top-4">
+              <div className="relative rounded-lg overflow-hidden border-2 border-primary/30 bg-bg-surface" style={{ minHeight: '280px' }}>
+                {selectedImg && (
+                  <>
+                    <div
+                      className="absolute inset-0 bg-cover bg-center"
+                      style={{ backgroundImage: `url('/avatar-images/${selectedImg}')`, opacity: 0.35, filter: 'brightness(0.8)' }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
+                  </>
                 )}
-                <span>{featured.player_count || 0} decks</span>
-              </div>
-            </div>
-          </Link>
-        )
-      })()}
-
-      {/* Grid */}
-      {(() => {
-        const featured = (featuredFolder && filtered.find((e) => e.folder === featuredFolder)) || filtered[0]
-        const gridEvents = filtered.filter((e) => e.folder !== featured?.folder)
-        return gridEvents.length === 0 ? (
-          filtered.length === 0 && <p className="text-center text-text-muted py-8">No events match your filters.</p>
-        ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {gridEvents.map((event) => {
-            const eventsIdx = events.indexOf(event)
-            return (
-              <div
-                key={event.folder}
-                draggable={canDrag}
-                onDragStart={() => handleDragStart(eventsIdx)}
-                onDragOver={handleDragOver}
-                onDrop={() => handleDrop(eventsIdx)}
-                className={canDrag ? 'cursor-grab active:cursor-grabbing' : ''}
-              >
-                <div className="relative h-full">
-                  {(() => {
-                    const cardImg = getAvatarImagePath(event.winner_avatar, imageFiles)
-                    return (
-                      <Link
-                        to={`/top-8/${event.folder}`}
-                        className="block bg-bg-surface border border-border rounded-lg overflow-hidden hover:border-primary/50 hover:-translate-y-0.5 transition-all h-full relative"
-                        draggable={false}
-                      >
-                        {cardImg && (
-                          <>
-                            <div
-                              className="absolute inset-0 bg-cover bg-center"
-                              style={{ backgroundImage: `url('/avatar-images/${cardImg}')`, opacity: 0.2, filter: 'brightness(0.7)' }}
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent" />
-                          </>
-                        )}
-                        <div className="relative p-4">
-                          <div className="flex items-start gap-2">
-                            {canDrag && (
-                              <span className="text-text-muted/50 select-none mt-0.5">⠁⠁</span>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start justify-between gap-2 mb-1">
-                                <h3 className="font-semibold truncate">{event.name || event.folder}</h3>
-                                {event.event_date_display && (
-                                  <span className="text-xs text-text-muted whitespace-nowrap shrink-0">{event.event_date_display}</span>
-                                )}
-                              </div>
-                              {event.winner_username && (
-                                <p className="text-sm text-text-muted mb-1 truncate">
-                                  Winner: {event.winner_username}{event.winner_avatar ? ` (${event.winner_avatar})` : ''}
-                                </p>
-                              )}
-                              <div className="text-sm text-text-muted">
-                                {event.player_count || 0} decks
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </Link>
-                    )
-                  })()}
+                <div className="relative p-6 flex flex-col justify-end min-h-[280px]">
+                  <div className="flex items-center gap-2 mb-2">
+                    {selected.folder === (featuredFolder || filtered[0]?.folder) && (
+                      <span className="text-xs font-semibold text-primary uppercase tracking-wide bg-primary/10 px-2 py-0.5 rounded">
+                        Latest
+                      </span>
+                    )}
+                    {selected.rating > 0 && (
+                      <span className="text-yellow-400 text-sm">
+                        {'★'.repeat(selected.rating)}{'☆'.repeat(3 - selected.rating)}
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-2xl font-display text-secondary mb-2">{selected.name || selected.folder}</h2>
+                  {selected.event_date_display && (
+                    <p className="text-sm text-text-muted mb-2">{selected.event_date_display}</p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-4 text-sm text-text-muted mb-4">
+                    {selected.winner_username && (
+                      <span>
+                        Winner: <span className="text-text font-semibold">{selected.winner_username}</span>
+                        {selected.winner_avatar && <span className="text-text-muted"> ({selected.winner_avatar})</span>}
+                      </span>
+                    )}
+                    <span>{selected.player_count || 0} decks</span>
+                  </div>
+                  <Link
+                    to={`/top-8/${selected.folder}`}
+                    className="inline-flex items-center gap-2 bg-primary text-black px-4 py-2 rounded font-semibold text-sm hover:bg-primary-light transition-colors w-fit"
+                  >
+                    View Decks
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path fillRule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clipRule="evenodd" />
+                    </svg>
+                  </Link>
                   {isAdmin && (
-                    <div className="absolute top-2 right-2 flex gap-1">
+                    <div className="absolute top-3 right-3 flex gap-1">
+                      {featuredFolder === selected.folder ? (
+                        <button
+                          onClick={handleClearFeatured}
+                          className="text-xs text-text-muted hover:text-accent-red bg-bg-raised/80 px-2 py-1 rounded transition-colors"
+                        >
+                          Unpin
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleSetFeatured(selected.folder)}
+                          className="p-1.5 rounded bg-bg-raised/80 hover:bg-bg-raised text-text-muted hover:text-primary transition-colors"
+                          title="Pin as featured"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                            <path d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" />
+                          </svg>
+                        </button>
+                      )}
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleSetFeatured(event.folder)
-                        }}
-                        className="p-1.5 rounded bg-bg-raised/80 hover:bg-bg-raised text-text-muted hover:text-primary transition-colors"
-                        title="Set as featured event"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                          <path d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setEditModal({ folder: event.folder, name: event.name || event.folder, rating: event.rating || 1, event_date: event.event_date || '' })
-                        }}
+                        onClick={() => setEditModal({ folder: selected.folder, name: selected.name || selected.folder, rating: selected.rating || 1, event_date: selected.event_date || '' })}
                         className="p-1.5 rounded bg-bg-raised/80 hover:bg-bg-raised text-text-muted hover:text-secondary transition-colors"
                         title="Edit event"
                       >
@@ -406,11 +324,119 @@ export default function Events() {
                   )}
                 </div>
               </div>
-            )
-          })}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border bg-bg-surface p-8 text-center text-text-muted">
+              No events found
+            </div>
+          )}
         </div>
-        )
-      })()}
+
+        {/* Right Panel — Event List */}
+        <div className="flex-1 min-w-0">
+          {/* Filters + Sort */}
+          <div className="flex flex-wrap items-end gap-3 mb-4 p-3 bg-bg-surface rounded-lg border border-border">
+            <div>
+              <label className="text-xs text-text-muted block mb-1">Sort</label>
+              <select
+                className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+              >
+                {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-text-muted block mb-1">Year</label>
+              <select
+                className="bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                value={yearFilter}
+                onChange={(e) => setYearFilter(e.target.value)}
+              >
+                <option value="">All Years</option>
+                {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+            <span className="text-text-muted text-xs ml-auto self-end pb-1">
+              {filtered.length} event{filtered.length !== 1 ? 's' : ''}
+            </span>
+            {isAdmin && (
+              <button
+                className="text-xs bg-primary text-black px-3 py-1.5 rounded font-semibold self-end"
+                onClick={openCreateModal}
+              >
+                + Add Event
+              </button>
+            )}
+          </div>
+
+          {/* Event List grouped by year */}
+          <div className="space-y-4 max-h-[calc(100vh-220px)] overflow-y-auto pr-1 lg:scrollbar-thin">
+            {yearGroups.length === 0 && (
+              <p className="text-center text-text-muted py-8">No events match your filters.</p>
+            )}
+            {yearGroups.map(([year, yearEvents]) => (
+              <div key={year}>
+                <div className="flex items-center gap-3 mb-2">
+                  <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wider">{year}</h3>
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-xs text-text-muted">{yearEvents.length}</span>
+                </div>
+                <div className="space-y-1">
+                  {yearEvents.map((event) => {
+                    const isSelected = selected?.folder === event.folder
+                    const isLatest = event.folder === (featuredFolder || filtered[0]?.folder)
+                    return (
+                      <button
+                        key={event.folder}
+                        onClick={() => setSelectedFolder(event.folder)}
+                        className={`w-full text-left rounded-lg p-3 transition-all group ${
+                          isSelected
+                            ? 'bg-primary/10 border border-primary/40'
+                            : 'bg-bg-surface border border-border hover:border-primary/30 hover:bg-bg-elevated/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          {/* Selection indicator */}
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-primary' : 'bg-border'}`} />
+
+                          {/* Event info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <span className={`font-semibold truncate ${isSelected ? 'text-primary-light' : 'text-text'}`}>
+                                {event.name || event.folder}
+                              </span>
+                              {isLatest && (
+                                <span className="text-[10px] font-semibold text-primary uppercase tracking-wide bg-primary/10 px-1.5 py-0.5 rounded shrink-0">
+                                  New
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-text-muted">
+                              {event.event_date_display && <span>{event.event_date_display}</span>}
+                              {event.winner_username && <span className="truncate">Winner: {event.winner_username}</span>}
+                              <span className="shrink-0">{event.player_count || 0} decks</span>
+                            </div>
+                          </div>
+
+                          {/* View link */}
+                          <Link
+                            to={`/top-8/${event.folder}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="shrink-0 text-xs text-text-muted hover:text-primary transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                          >
+                            View →
+                          </Link>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {/* Create Event Modal */}
       {createModal && (

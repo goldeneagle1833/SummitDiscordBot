@@ -504,6 +504,7 @@ class EventRepository:
                             ),
                             "deck_name": deck.get("name", "Unnamed Deck"),
                             "deck_id": deck.get("id", ""),
+                            "elements": self._get_deck_elements(deck),
                         }
                         top8_decks.append(deck_entry)
                         all_decks.append(deck_entry)
@@ -579,6 +580,21 @@ class EventRepository:
                 pass
 
         return all_decks if all_decks else None
+
+    @staticmethod
+    def _get_deck_elements(deck: dict) -> list[str]:
+        """Return the top 2 elements in a deck by card quantity."""
+        elements_order = ["Fire", "Water", "Earth", "Air"]
+        element_quantities = {e: 0 for e in elements_order}
+        for card in deck.get("spellbook", []):
+            card_elements = card.get("elements", "None")
+            quantity = card.get("quantity", 1)
+            for el in card_elements.split(", "):
+                el = el.strip()
+                if el in element_quantities:
+                    element_quantities[el] += quantity
+        ranked = sorted(elements_order, key=lambda e: element_quantities[e], reverse=True)
+        return [e for e in ranked if element_quantities[e] > 0][:2]
 
     @staticmethod
     def _compute_element_stats(decks: list[dict]) -> dict | None:

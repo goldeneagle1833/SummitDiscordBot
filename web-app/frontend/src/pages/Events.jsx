@@ -352,26 +352,7 @@ export default function Events() {
               {/* Event Details Card */}
               {(selectedTop8.length > 0 || selectedEventData) && (
                 <div className="mt-3 bg-bg-surface border border-border rounded-lg divide-y divide-border">
-                  {/* Top 8 */}
-                  {selectedTop8.length > 0 && (
-                    <div className="p-4">
-                      <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-widest mb-3">Top 8</h3>
-                      <ol className="space-y-1.5">
-                        {selectedTop8.slice(0, 8).map((deck, i) => (
-                          <li key={deck.deck_id || i} className="flex items-center text-sm">
-                            <span className={`w-6 text-xs font-bold shrink-0 tabular-nums ${
-                              i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-600' : 'text-text-muted/60'
-                            }`}>
-                              {i + 1}.
-                            </span>
-                            <span className={`truncate ${i < 3 ? 'text-text font-medium' : 'text-text/80'}`}>{deck.player}</span>
-                            <span className="text-text-muted/60 text-xs ml-auto pl-2 shrink-0">{deck.avatar}</span>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                  )}
-                  {/* Element + Avatar Stats */}
+                  {/* Element + Avatar Stats (top) */}
                   {selectedEventData && (
                     <div className="grid grid-cols-2 divide-x divide-border">
                       {/* Dominant Element Distribution */}
@@ -407,9 +388,13 @@ export default function Events() {
                           counts[av] = (counts[av] || 0) + 1
                         }
                         const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+                        const uniqueCount = sorted.length
                         return (
                           <div className="p-4">
-                            <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-widest mb-3">Avatars</h3>
+                            <div className="flex items-baseline justify-between mb-3">
+                              <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-widest">Avatars</h3>
+                              <span className="text-[10px] text-text-muted/50">{uniqueCount} unique</span>
+                            </div>
                             <div className="space-y-1.5">
                               {sorted.slice(0, 8).map(([avatar, count]) => (
                                 <div key={avatar} className="flex items-center gap-2 text-xs">
@@ -424,6 +409,49 @@ export default function Events() {
                           </div>
                         )
                       })()}
+                    </div>
+                  )}
+                  {/* Placements (bottom) */}
+                  {selectedTop8.length > 0 && (
+                    <div className="p-4">
+                      <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-widest mb-3">Placements</h3>
+                      <ol className="space-y-1.5">
+                        {selectedTop8.slice(0, 8).map((deck, i) => {
+                          const elems = deck.elements || []
+                          const content = (
+                            <>
+                              <span className={`w-5 text-xs font-bold shrink-0 tabular-nums ${
+                                i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-600' : 'text-text-muted/60'
+                              }`}>
+                                {i + 1}.
+                              </span>
+                              <span className={`truncate ${i < 3 ? 'text-text font-medium' : 'text-text/80'}`}>{deck.player}</span>
+                              <span className="ml-auto flex items-center gap-1.5 shrink-0">
+                                <span className="text-secondary text-xs">{deck.avatar}</span>
+                                {elems.length > 0 && (
+                                  <span className="text-text-muted/40 text-[10px]">
+                                    {elems.join('/')}
+                                  </span>
+                                )}
+                              </span>
+                            </>
+                          )
+                          return deck.deck_id ? (
+                            <li key={deck.deck_id}>
+                              <Link
+                                to={`/deck-rec/${deck.deck_id}`}
+                                className="flex items-center text-sm gap-2 hover:bg-white/5 rounded px-1 -mx-1 py-0.5 transition-colors"
+                              >
+                                {content}
+                              </Link>
+                            </li>
+                          ) : (
+                            <li key={i} className="flex items-center text-sm gap-2 px-1 -mx-1 py-0.5">
+                              {content}
+                            </li>
+                          )
+                        })}
+                      </ol>
                     </div>
                   )}
                 </div>

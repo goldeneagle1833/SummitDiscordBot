@@ -206,8 +206,8 @@ def _fetch_draftsorcery_deck(url: str) -> dict | None:
         logger.warning(f"DraftSorcery API request failed: {e}")
         return None
 
-    # Normalize: DraftSorcery uses flat card list with duplicates instead of quantities
-    deck_cards = data.get("deck", {}).get("cards", [])
+    # board entries have full card metadata; fall back to deck.cards
+    deck_cards = data.get("board") or data.get("deck", {}).get("cards", [])
     if not deck_cards:
         return None
 

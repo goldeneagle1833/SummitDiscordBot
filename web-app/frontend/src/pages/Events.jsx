@@ -5,6 +5,13 @@ import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
+const ELEMENT_COLORS = {
+  Fire: { label: 'text-red-400', bar: 'bg-red-500' },
+  Water: { label: 'text-blue-400', bar: 'bg-blue-500' },
+  Earth: { label: 'text-amber-700', bar: 'bg-amber-700' },
+  Air: { label: 'text-sky-300', bar: 'bg-sky-400' },
+}
+
 const YEARS = ['2026', '2025', '2024', '2023']
 const SORT_OPTIONS = [
   { value: 'date-desc', label: 'Newest First' },
@@ -81,6 +88,7 @@ export default function Events() {
   const [featuredFolder, setFeaturedFolder] = useState(null)
   const [imageFiles, setImageFiles] = useState([])
   const [selectedTop8, setSelectedTop8] = useState([])
+  const [selectedEventData, setSelectedEventData] = useState(null)
 
   // Admin state
   const [editModal, setEditModal] = useState(null)
@@ -133,12 +141,15 @@ export default function Events() {
     return filtered[0] || null
   }, [filtered, selectedFolder, featuredFolder])
 
-  // Fetch top 8 decks for selected event
+  // Fetch event detail for selected event preview
   useEffect(() => {
-    if (!selected) { setSelectedTop8([]); return }
+    if (!selected) { setSelectedTop8([]); setSelectedEventData(null); return }
     getEvent(selected.folder)
-      .then((data) => setSelectedTop8(data.top8_decks || []))
-      .catch(() => setSelectedTop8([]))
+      .then((data) => {
+        setSelectedTop8(data.top8_decks || [])
+        setSelectedEventData(data)
+      })
+      .catch(() => { setSelectedTop8([]); setSelectedEventData(null) })
   }, [selected?.folder])
 
   const yearGroups = useMemo(() => groupByYear(filtered), [filtered])
@@ -350,6 +361,59 @@ export default function Events() {
                       </li>
                     ))}
                   </ol>
+                </div>
+              )}
+              {/* Element + Avatar Preview */}
+              {selectedEventData && (
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  {/* Element Distribution */}
+                  {selectedEventData.element_stats?.length > 0 && (
+                    <div className="p-3 bg-bg-surface border border-border rounded-lg">
+                      <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Elements</h3>
+                      <div className="space-y-1.5">
+                        {[...selectedEventData.element_stats].sort((a, b) => b.percent - a.percent).map((el) => {
+                          const colors = ELEMENT_COLORS[el.name] || {}
+                          return (
+                            <div key={el.name} className="flex items-center gap-2">
+                              <span className={`w-10 text-xs font-semibold ${colors.label || 'text-text-muted'}`}>{el.name}</span>
+                              <div className="flex-1 h-4 bg-white/5 rounded overflow-hidden">
+                                <div
+                                  className={`h-full rounded ${colors.bar || 'bg-gray-500'} transition-all duration-500`}
+                                  style={{ width: `${Math.max(el.percent, 3)}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] text-text-muted w-8 text-right">{el.percent}%</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {/* Avatar Distribution */}
+                  {selectedEventData.all_decks?.length > 0 && (() => {
+                    const counts = {}
+                    for (const d of selectedEventData.all_decks) {
+                      const av = d.avatar || 'Unknown'
+                      counts[av] = (counts[av] || 0) + 1
+                    }
+                    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+                    return (
+                      <div className="p-3 bg-bg-surface border border-border rounded-lg">
+                        <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Avatars</h3>
+                        <div className="space-y-1">
+                          {sorted.slice(0, 8).map(([avatar, count]) => (
+                            <div key={avatar} className="flex items-center gap-2 text-xs">
+                              <span className="text-text truncate flex-1">{avatar}</span>
+                              <span className="text-text-muted shrink-0">x{count}</span>
+                            </div>
+                          ))}
+                          {sorted.length > 8 && (
+                            <p className="text-[10px] text-text-muted">+{sorted.length - 8} more</p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
             </div>

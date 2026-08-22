@@ -429,7 +429,7 @@ export default function Events() {
                               <span className="ml-auto flex items-center gap-1.5 shrink-0">
                                 <span className="text-secondary text-xs">{deck.avatar}</span>
                                 {elems.length > 0 && (
-                                  <span className="text-text-muted text-[11px]">
+                                  <span className="text-white text-[11px]">
                                     ({elems.join('/')})
                                   </span>
                                 )}

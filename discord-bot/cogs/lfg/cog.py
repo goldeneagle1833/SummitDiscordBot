@@ -1630,7 +1630,7 @@ class LFGCog(commands.Cog):
                 "`!correct_limited_match <match_id>` - Flip winner/loser & recalculate limited ELO\n"
                 "`!remove_limited_match <match_id>` - Remove a limited match & revert ELO\n"
                 "`!spot_limited_elo @user <elo>` - Set a player's limited ELO\n"
-                "`!start_limited_season` - Archive limited data & reset limited ELO\n"
+                "`!start_limited_season [name]` - Archive limited data & reset limited ELO\n"
                 "`!reset_limited_elo` - **DANGER:** Reset ALL limited data"
             ),
             inline=False,
@@ -3672,22 +3672,30 @@ class LFGCog(commands.Cog):
 
     @commands.command()
     @is_bot_admin()
-    async def start_limited_season(self, ctx):
+    async def start_limited_season(self, ctx, *, season_name: str = None):
         """
         Start a new limited season. Archives current limited data and resets limited ELO.
         Does NOT affect the constructed season/event.
+        Usage: !start_limited_season [season name]
+        If no name is given, uses the active event name. If no active event, a name is required.
         """
         from utils.database import get_active_event
         from services.limited_service import archive_limited_for_event, reset_limited_for_new_event
 
         try:
             active_event = get_active_event()
-            if not active_event:
-                await ctx.send("No active event found. Use `!start_event <name>` to create one first.")
-                return
 
-            event_id = active_event["event_id"]
-            event_name = active_event["event_name"]
+            if season_name:
+                # Use provided name with a synthetic negative event_id to avoid collisions
+                import time
+                event_id = -int(time.time())
+                event_name = season_name
+            elif active_event:
+                event_id = active_event["event_id"]
+                event_name = active_event["event_name"]
+            else:
+                await ctx.send("No active event found. Provide a season name: `!start_limited_season <name>`")
+                return
 
             # Archive current limited data
             limited_summary = archive_limited_for_event(event_id, event_name)

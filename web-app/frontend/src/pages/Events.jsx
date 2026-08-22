@@ -59,12 +59,20 @@ function sortEvents(events, sortBy) {
   }
 }
 
+function getEventYear(ev) {
+  if (ev.event_date) {
+    const m = ev.event_date.match(/^(20\d{2})/)
+    if (m) return m[1]
+  }
+  const combined = ((ev.name || '') + ' ' + (ev.folder || '')).toLowerCase()
+  const match = combined.match(/20\d{2}/)
+  return match ? match[0] : 'Other'
+}
+
 function groupByYear(events) {
   const groups = {}
   for (const ev of events) {
-    const combined = ((ev.name || '') + ' ' + (ev.folder || '')).toLowerCase()
-    const match = combined.match(/20\d{2}/)
-    const year = match ? match[0] : 'Other'
+    const year = getEventYear(ev)
     if (!groups[year]) groups[year] = []
     groups[year].push(ev)
   }
@@ -120,10 +128,7 @@ export default function Events() {
   const filtered = useMemo(() => {
     let result = events
     if (yearFilter) {
-      result = result.filter((ev) => {
-        const combined = ((ev.name || '') + ' ' + (ev.folder || '')).toLowerCase()
-        return combined.includes(yearFilter)
-      })
+      result = result.filter((ev) => getEventYear(ev) === yearFilter)
     }
     return sortEvents(result, sortBy)
   }, [events, yearFilter, sortBy])

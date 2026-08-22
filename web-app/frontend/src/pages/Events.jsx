@@ -349,76 +349,83 @@ export default function Events() {
                   )}
                 </div>
               </div>
-              {/* Top 8 Preview */}
-              {selectedTop8.length > 0 && (
-                <div className="mt-3 p-3 bg-bg-surface border border-border rounded-lg">
-                  <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Top 8</h3>
-                  <ol className="space-y-1">
-                    {selectedTop8.slice(0, 8).map((deck, i) => (
-                      <li key={deck.deck_id || i} className="flex items-center gap-2 text-sm">
-                        <span className={`w-5 text-right text-xs font-bold shrink-0 ${
-                          i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-600' : 'text-text-muted'
-                        }`}>
-                          {i + 1}.
-                        </span>
-                        <span className="text-text truncate">{deck.player}</span>
-                        <span className="text-text-muted text-xs truncate ml-auto">({deck.avatar})</span>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              )}
-              {/* Dominant Element + Avatar Preview */}
-              {selectedEventData && (
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  {/* Dominant Element Distribution */}
-                  {selectedEventData.element_stats?.dominant_element?.length > 0 && (
-                    <div className="p-3 bg-bg-surface border border-border rounded-lg">
-                      <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Dominant Element</h3>
-                      <div className="space-y-1.5">
-                        {[...selectedEventData.element_stats.dominant_element].sort((a, b) => b.percent - a.percent).map((el) => {
-                          const colors = ELEMENT_COLORS[el.name] || {}
-                          return (
-                            <div key={el.name} className="flex items-center gap-2">
-                              <span className={`w-10 text-xs font-semibold ${colors.label || 'text-text-muted'}`}>{el.name}</span>
-                              <div className="flex-1 h-4 bg-white/5 rounded overflow-hidden">
-                                <div
-                                  className={`h-full rounded ${colors.bar || 'bg-gray-500'} transition-all duration-500`}
-                                  style={{ width: `${Math.max(el.percent, 3)}%` }}
-                                />
-                              </div>
-                              <span className="text-[10px] text-text-muted w-8 text-right">{el.percent}%</span>
-                            </div>
-                          )
-                        })}
-                      </div>
+              {/* Event Details Card */}
+              {(selectedTop8.length > 0 || selectedEventData) && (
+                <div className="mt-3 bg-bg-surface border border-border rounded-lg divide-y divide-border">
+                  {/* Top 8 */}
+                  {selectedTop8.length > 0 && (
+                    <div className="p-4">
+                      <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-widest mb-3">Top 8</h3>
+                      <ol className="space-y-1.5">
+                        {selectedTop8.slice(0, 8).map((deck, i) => (
+                          <li key={deck.deck_id || i} className="flex items-center text-sm">
+                            <span className={`w-6 text-xs font-bold shrink-0 tabular-nums ${
+                              i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-600' : 'text-text-muted/60'
+                            }`}>
+                              {i + 1}.
+                            </span>
+                            <span className={`truncate ${i < 3 ? 'text-text font-medium' : 'text-text/80'}`}>{deck.player}</span>
+                            <span className="text-text-muted/60 text-xs ml-auto pl-2 shrink-0">{deck.avatar}</span>
+                          </li>
+                        ))}
+                      </ol>
                     </div>
                   )}
-                  {/* Avatar Distribution */}
-                  {selectedEventData.all_decks?.length > 0 && (() => {
-                    const counts = {}
-                    for (const d of selectedEventData.all_decks) {
-                      const av = d.avatar || 'Unknown'
-                      counts[av] = (counts[av] || 0) + 1
-                    }
-                    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
-                    return (
-                      <div className="p-3 bg-bg-surface border border-border rounded-lg">
-                        <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Avatars</h3>
-                        <div className="space-y-1">
-                          {sorted.slice(0, 8).map(([avatar, count]) => (
-                            <div key={avatar} className="flex items-center gap-2 text-xs">
-                              <span className="text-text truncate flex-1">{avatar}</span>
-                              <span className="text-text-muted shrink-0">x{count}</span>
-                            </div>
-                          ))}
-                          {sorted.length > 8 && (
-                            <p className="text-[10px] text-text-muted">+{sorted.length - 8} more</p>
-                          )}
+                  {/* Element + Avatar Stats */}
+                  {selectedEventData && (
+                    <div className="grid grid-cols-2 divide-x divide-border">
+                      {/* Dominant Element Distribution */}
+                      {selectedEventData.element_stats?.dominant_element?.length > 0 && (
+                        <div className="p-4">
+                          <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-widest mb-3">Elements</h3>
+                          <div className="space-y-2">
+                            {[...selectedEventData.element_stats.dominant_element].sort((a, b) => b.percent - a.percent).map((el) => {
+                              const colors = ELEMENT_COLORS[el.name] || {}
+                              return (
+                                <div key={el.name}>
+                                  <div className="flex items-baseline justify-between mb-1">
+                                    <span className={`text-xs font-medium ${colors.label || 'text-text-muted'}`}>{el.name}</span>
+                                    <span className="text-[10px] text-text-muted/60 tabular-nums">{el.percent}%</span>
+                                  </div>
+                                  <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full ${colors.bar || 'bg-gray-500'} transition-all duration-500`}
+                                      style={{ width: `${Math.max(el.percent, 3)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })()}
+                      )}
+                      {/* Avatar Distribution */}
+                      {selectedEventData.all_decks?.length > 0 && (() => {
+                        const counts = {}
+                        for (const d of selectedEventData.all_decks) {
+                          const av = d.avatar || 'Unknown'
+                          counts[av] = (counts[av] || 0) + 1
+                        }
+                        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+                        return (
+                          <div className="p-4">
+                            <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-widest mb-3">Avatars</h3>
+                            <div className="space-y-1.5">
+                              {sorted.slice(0, 8).map(([avatar, count]) => (
+                                <div key={avatar} className="flex items-center gap-2 text-xs">
+                                  <span className="text-text/90 truncate flex-1">{avatar}</span>
+                                  <span className="text-text-muted/60 tabular-nums shrink-0">{count}</span>
+                                </div>
+                              ))}
+                              {sorted.length > 8 && (
+                                <p className="text-[10px] text-text-muted/40 pt-0.5">+{sorted.length - 8} more</p>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

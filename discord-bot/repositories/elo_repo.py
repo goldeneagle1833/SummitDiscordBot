@@ -1163,14 +1163,18 @@ def validate_pairing(guild_id: int, user_id: int, opponent_id: int) -> bool:
     return user_id in players and opponent_id in players
 
 
-def mark_pairing_reported(guild_id: int, user_id: int, opponent_id: int) -> bool:
+def mark_pairing_reported(guild_id: int, user_id: int, opponent_id: int, pairing_id: int = None) -> bool:
     """
     Mark a pairing as reported (match result submitted).
+
+    When pairing_id is provided, only that specific pairing is marked.
+    Otherwise falls back to marking the most recent active pairing between the two players.
 
     Args:
         guild_id: Discord guild/server ID
         user_id: Discord ID of one player
         opponent_id: Discord ID of the other player
+        pairing_id: Optional specific pairing ID to mark
 
     Returns:
         True if a pairing was updated, False otherwise
@@ -1179,14 +1183,26 @@ def mark_pairing_reported(guild_id: int, user_id: int, opponent_id: int) -> bool
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
 
-    cur.execute(
-        """UPDATE active_pairings
-           SET status = 'reported'
-           WHERE status = 'active'
-           AND guild_id = ?
-           AND ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))""",
-        (guild_id, user_id, opponent_id, opponent_id, user_id),
-    )
+    if pairing_id:
+        cur.execute(
+            """UPDATE active_pairings
+               SET status = 'reported'
+               WHERE pairing_id = ? AND status = 'active' AND guild_id = ?""",
+            (pairing_id, guild_id),
+        )
+    else:
+        # Fallback: mark only the most recent active pairing between these players
+        cur.execute(
+            """UPDATE active_pairings
+               SET status = 'reported'
+               WHERE pairing_id = (
+                   SELECT pairing_id FROM active_pairings
+                   WHERE status = 'active' AND guild_id = ?
+                   AND ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))
+                   ORDER BY created_at DESC LIMIT 1
+               )""",
+            (guild_id, user_id, opponent_id, opponent_id, user_id),
+        )
 
     updated = cur.rowcount > 0
     conn.commit()

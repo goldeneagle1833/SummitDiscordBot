@@ -114,7 +114,9 @@ def _get_card_image_map() -> dict[str, str]:
             parts = base.split("-")
             if len(parts) >= 2:
                 name_key = parts[1]
-                mapping[name_key] = fname
+            else:
+                name_key = base
+            mapping[name_key] = fname
     _card_image_map = mapping
     return mapping
 

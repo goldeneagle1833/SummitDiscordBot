@@ -6,7 +6,7 @@ import logging
 import config
 from cogs.lfg.state import lfg_queue
 from cogs.lfg.helpers import scrub_urls
-from cogs.lfg.match_reporting import MatchCardView
+from cogs.lfg.persistent_confirm import create_match_card_view
 from utils.database import save_pairing
 
 logger = logging.getLogger("discord_bot")
@@ -262,7 +262,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         challenge_pairing_id = pairing_id if self.guild_id else 0
 
         # Create match card view for the reporter (same as normal LFG flow)
-        match_card_view = MatchCardView(
+        match_card_view = create_match_card_view(
             bot=interaction.client,
             pairing_id=challenge_pairing_id,
             player1_id=reporter_id,

@@ -32,8 +32,8 @@ def get_earnings_config() -> dict[str, int]:
         return {}
 
 
-def award_match_bones(winner_id: int, winner_name: str, loser_id: int, loser_name: str) -> tuple[int, int]:
-    """Award bones to winner and loser after a rumble match.
+def award_match_bones(winner_id: int, winner_name: str, loser_id: int, loser_name: str, *, reason_prefix: str = "Rumble") -> tuple[int, int]:
+    """Award bones to winner and loser after a rumble/omens match.
 
     Returns (winner_bones_awarded, loser_bones_awarded).
     """
@@ -48,8 +48,8 @@ def award_match_bones(winner_id: int, winner_name: str, loser_id: int, loser_nam
         conn = _connect()
 
         for user_id, display_name, amount, reason in [
-            (str(winner_id), winner_name, win_bones, "Rumble match win"),
-            (str(loser_id), loser_name, loss_bones, "Rumble match loss"),
+            (str(winner_id), winner_name, win_bones, f"{reason_prefix} match win"),
+            (str(loser_id), loser_name, loss_bones, f"{reason_prefix} match loss"),
         ]:
             if amount <= 0:
                 continue

@@ -50,9 +50,11 @@ def _get_card_image_map() -> dict[str, str]:
                     break
             if "-" in base:
                 card_name_normalized = base.split("-", 1)[1]
-                is_standard = "-b-s" in fname.lower() or "-bt-s" in fname.lower()
-                if card_name_normalized not in mapping or is_standard:
-                    mapping[card_name_normalized] = fname
+            else:
+                card_name_normalized = base
+            is_standard = "-b-s" in fname.lower() or "-bt-s" in fname.lower()
+            if card_name_normalized not in mapping or is_standard:
+                mapping[card_name_normalized] = fname
     _card_image_map = mapping
     return mapping
 

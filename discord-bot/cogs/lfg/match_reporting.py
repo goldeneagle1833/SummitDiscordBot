@@ -416,6 +416,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                     guild_id=view.guild_id,
                     winner_run_id=view.reporter_run_id,  # Reporter won
                     loser_run_id=view.opponent_run_id,
+                    pairing_id=view.match_id,
                 )
 
                 confirm_msg = f"**Match Report Confirmation**\n\nYou **LOST** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
@@ -578,6 +579,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
                     guild_id=view.guild_id,
                     winner_run_id=view.opponent_run_id,  # Opponent won
                     loser_run_id=view.reporter_run_id,
+                    pairing_id=view.match_id,
                 )
 
                 confirm_msg = f"**Match Report Confirmation**\n\nYou **WON** against {original_interaction.user.global_name}\n\nPlease confirm or dispute this result:"
@@ -1067,6 +1069,7 @@ class LFGReportButtons(discord.ui.View):
                     guild_id=self.guild_id,
                     winner_run_id=self.reporter_run_id,  # Reporter won
                     loser_run_id=self.opponent_run_id,
+                    pairing_id=self.match_id,
                 )
 
                 confirm_msg = f"**Match Report Confirmation**\n\nYou **LOST** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
@@ -1238,6 +1241,7 @@ class LFGReportButtons(discord.ui.View):
                     guild_id=self.guild_id,
                     winner_run_id=self.opponent_run_id,  # Opponent won
                     loser_run_id=self.reporter_run_id,
+                    pairing_id=self.match_id,
                 )
 
                 confirm_msg = f"**Match Report Confirmation**\n\nYou **WON** against {interaction.user.global_name}\n\nPlease confirm or dispute this result:"
@@ -1319,175 +1323,6 @@ class LFGReportButtons(discord.ui.View):
 #  New DM Dropdown Report Flow
 # ──────────────────────────────────────────────
 
-class MatchCardView(discord.ui.View):
-    """Match card view sent via DM when a match is found.
-    Uses pairing_id in custom_ids so multiple active matches don't conflict.
-    Reporter clicks 'Report Result' to get ephemeral select-menu dropdowns.
-    """
-
-    def __init__(
-        self,
-        bot,
-        pairing_id: int,
-        player1_id: int,
-        player1_global: str,
-        player2_id: int,
-        player2_global: str,
-        player1_deck_url: str = None,
-        player2_deck_url: str = None,
-        match_start_time=None,
-        guild_id: int = None,
-        ladder_info: dict = None,
-        match_type: str = "ranked",
-        player1_run_id: int = 0,
-        player2_run_id: int = 0,
-    ):
-        super().__init__(timeout=None)
-        self.bot = bot
-        self.pairing_id = pairing_id
-        self.player1_id = player1_id
-        self.player1_global = player1_global
-        self.player2_id = player2_id
-        self.player2_global = player2_global
-        self.player1_deck_url = player1_deck_url
-        self.player2_deck_url = player2_deck_url
-        self.match_start_time = match_start_time or datetime.datetime.now()
-        self.guild_id = guild_id
-        self.ladder_info = ladder_info or {}
-        self.match_type = match_type
-        self.player1_run_id = player1_run_id
-        self.player2_run_id = player2_run_id
-
-        report_btn = discord.ui.Button(
-            label="Report Result",
-            style=discord.ButtonStyle.primary,
-            custom_id=f"match_card_report:{pairing_id}",
-        )
-        report_btn.callback = self.report_result
-        self.add_item(report_btn)
-
-        cancel_btn = discord.ui.Button(
-            label="Cancel Match",
-            style=discord.ButtonStyle.danger,
-            custom_id=f"match_card_cancel:{pairing_id}",
-        )
-        cancel_btn.callback = self.cancel_match
-        self.add_item(cancel_btn)
-
-    async def report_result(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-
-        reporter_id = interaction.user.id
-        if reporter_id not in (self.player1_id, self.player2_id):
-            await interaction.followup.send("You're not part of this match.", ephemeral=True)
-            return
-
-        opponent_id = self.player2_id if reporter_id == self.player1_id else self.player1_id
-        if (reporter_id, opponent_id) in pending_match_reports or (opponent_id, reporter_id) in pending_match_reports:
-            await interaction.followup.send(
-                "A report for this match is already pending confirmation.", ephemeral=True
-            )
-            return
-
-        reporter_global = interaction.user.global_name or interaction.user.display_name
-        opponent_global = self.player2_global if reporter_id == self.player1_id else self.player1_global
-        reporter_deck_url = self.player1_deck_url if reporter_id == self.player1_id else self.player2_deck_url
-        opponent_deck_url = self.player2_deck_url if reporter_id == self.player1_id else self.player1_deck_url
-        reporter_run_id = self.player1_run_id if reporter_id == self.player1_id else self.player2_run_id
-        opponent_run_id = self.player2_run_id if reporter_id == self.player1_id else self.player1_run_id
-
-        # Disable buttons while reporter fills in the dropdowns
-        for item in self.children:
-            item.disabled = True
-        try:
-            await interaction.message.edit(view=self)
-        except Exception:
-            pass
-
-        # Notify opponent that reporting has started
-        try:
-            opponent_user = await self.bot.fetch_user(opponent_id)
-            try:
-                await opponent_user.send(
-                    f"**{reporter_global}** is reporting the result for your match. "
-                    f"You'll receive a confirmation request shortly."
-                )
-            except discord.Forbidden:
-                pass
-        except Exception:
-            pass
-
-        view = ReportResultSelectView(
-            bot=self.bot,
-            reporter_id=reporter_id,
-            reporter_global=reporter_global,
-            reporter_deck_url=reporter_deck_url,
-            opponent_id=opponent_id,
-            opponent_global=opponent_global,
-            opponent_deck_url=opponent_deck_url,
-            player1_id=self.player1_id,
-            player1_global=self.player1_global,
-            player2_id=self.player2_id,
-            player2_global=self.player2_global,
-            match_start_time=self.match_start_time,
-            guild_id=self.guild_id,
-            ladder_info=self.ladder_info,
-            match_type=self.match_type,
-            reporter_run_id=reporter_run_id,
-            opponent_run_id=opponent_run_id,
-        )
-
-        msg = "**Report Match Result:**\nSelect who went first, then who won, then click **Submit Report**."
-        if not reporter_deck_url and self.match_type not in ("testing", "rumble"):
-            msg += "\nYou'll be asked for your deck URL after selecting."
-
-        await interaction.followup.send(msg, view=view, ephemeral=True)
-
-    async def cancel_match(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-
-        if interaction.user.id not in (self.player1_id, self.player2_id):
-            await interaction.followup.send("You're not part of this match.", ephemeral=True)
-            return
-
-        canceler_global = interaction.user.global_name or interaction.user.display_name
-        other_id = self.player2_id if interaction.user.id == self.player1_id else self.player1_id
-
-        for item in self.children:
-            item.disabled = True
-        try:
-            await interaction.message.edit(content="**Match Cancelled**", view=self)
-        except Exception:
-            pass
-
-        # If this was a ladder challenge, delete the DB record so it doesn't count as daily use
-        if self.ladder_info and self.ladder_info.get("challenge_id"):
-            try:
-                delete_ladder_challenge(self.ladder_info["challenge_id"])
-                logger.info(
-                    f"Deleted ladder challenge {self.ladder_info['challenge_id']} due to match cancellation"
-                )
-            except Exception as e:
-                logger.error(f"Failed to delete ladder challenge on cancel: {e}")
-
-        try:
-            other_user = await self.bot.fetch_user(other_id)
-            try:
-                await other_user.send(
-                    f"Your match against **{canceler_global}** has been cancelled.\n"
-                    f"If this was a mistake, use the **📋 Report Last Match** button in the LFG channel."
-                )
-            except discord.Forbidden:
-                pass
-        except Exception:
-            pass
-
-        await interaction.followup.send(
-            "Match cancelled. If this was a mistake, use **📋 Report Last Match** in the LFG channel.",
-            ephemeral=True,
-        )
-
-
 class ReportResultSelectView(discord.ui.View):
     """Ephemeral view with turn-order and winner selects plus submit button."""
 
@@ -1510,6 +1345,7 @@ class ReportResultSelectView(discord.ui.View):
         match_type: str = "ranked",
         reporter_run_id: int = 0,
         opponent_run_id: int = 0,
+        pairing_id: int = None,
     ):
         super().__init__(timeout=300)
         self.bot = bot
@@ -1529,6 +1365,7 @@ class ReportResultSelectView(discord.ui.View):
         self.match_type = match_type
         self.reporter_run_id = reporter_run_id
         self.opponent_run_id = opponent_run_id
+        self.pairing_id = pairing_id
         self.selected_winner_id = None
         self.selected_first_id = None
         self._submit_interaction = None
@@ -1693,6 +1530,7 @@ class ReportResultSelectView(discord.ui.View):
             guild_id=self.guild_id,
             winner_run_id=winner_run_id,
             loser_run_id=loser_run_id,
+            pairing_id=self.pairing_id,
         )
 
         opponent_won = (winner_id == self.opponent_id)

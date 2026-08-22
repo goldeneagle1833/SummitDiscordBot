@@ -20,7 +20,8 @@ from cogs.lfg.state import (
     LADDER_CHALLENGE_MAX_JOINERS,
 )
 from cogs.lfg.helpers import scrub_urls, send_milestone_announcement
-from cogs.lfg.match_reporting import MatchCardView, LFGReportButtons, _apply_ladder_elo, LimitedReportView
+from cogs.lfg.match_reporting import LFGReportButtons, _apply_ladder_elo, LimitedReportView
+from cogs.lfg.persistent_confirm import create_match_card_view
 from cogs.lfg.challenge import ChallengeInitView, ChallengerDeckModal
 from cogs.lfg.ladder import (
     LadderChallengeJoinButton,
@@ -654,13 +655,13 @@ class LFGCog(commands.Cog):
 
                 if points_details:
                     embed.add_field(
-                        name="\U0001f4ca Omens Queue",
+                        name="\U0001f4ca Rumble (Omens) Queue",
                         value="\n".join(points_details),
                         inline=False,
                     )
                 else:
                     embed.add_field(
-                        name="\U0001f4ca Omens Queue",
+                        name="\U0001f4ca Rumble (Omens) Queue",
                         value="`Empty`",
                         inline=False,
                     )
@@ -1384,7 +1385,7 @@ class LFGCog(commands.Cog):
             match_type_emoji = "⚔️" if match_type == "ranked" else "⭐"
             match_type_label = "Ranked" if match_type == "ranked" else "Casual"
 
-            match_card_view = MatchCardView(
+            match_card_view = create_match_card_view(
                 bot=self.bot,
                 pairing_id=pairing_id,
                 player1_id=reporter_id,
@@ -1581,23 +1582,11 @@ class LFGCog(commands.Cog):
         embed.add_field(
             name="Match Reporting",
             value=(
-                "`!admin_report @winner @loser`\n"
-                "Manually report a match result between two players.\n"
-                "**When to use:** When a match wasn't reported through normal channels, "
-                "or to correct a missed game.\n\n"
-                "`!admin_challenge_report @winner @loser @top16_player`\n"
-                "Manually report a ladder challenge match. `@top16_player` is the **Top 16 player who issued `!issue_challenge`** (NOT the non-Top16 player).\n"
-                "**When to use:** When a challenge match wasn't reported correctly or the challenge feature broke. "
-                "Applies the same ELO rules as normal challenges (2x/0.5x if 100+ ELO apart).\n\n"
-                "`!top_cut_report @winner @loser`\n"
-                "Report a top cut match that only affects lifetime ELO (event ELO unchanged).\n"
-                "**When to use:** For top cut matches where only lifetime ELO should be updated.\n\n"
-                "`!reset_challenge @user`\n"
-                "Reset a player's daily ladder challenge so they can use `!issue_challenge` again.\n"
-                "**When to use:** When a player's challenge was wasted due to a bug or other issue.\n\n"
-                "`!admin_reset_pairings @user`\n"
-                "Reset all active pairings and pending reports for a player.\n"
-                "**When to use:** When a player gets a 'table locked' error or can't report matches."
+                "`!admin_report @winner @loser` - Manually report a match result\n"
+                "`!admin_challenge_report @winner @loser @top16_player` - Report a ladder challenge match (`@top16_player` = the Top 16 challenger)\n"
+                "`!top_cut_report @winner @loser` - Report top cut match (lifetime ELO only)\n"
+                "`!reset_challenge @user` - Reset a player's daily ladder challenge\n"
+                "`!admin_reset_pairings @user` - Reset active pairings & pending reports (fixes 'table locked' errors)"
             ),
             inline=False,
         )
@@ -1606,10 +1595,7 @@ class LFGCog(commands.Cog):
         embed.add_field(
             name="ELO Management",
             value=(
-                "`!spot_elo_reset @user [elo]`\n"
-                "Set a specific user's ELO to a custom value (0-5000).\n"
-                "**When to use:** To correct ELO errors, set starting ELO for "
-                "experienced players, or adjust ratings after disputes."
+                "`!spot_elo_reset @user [elo]` - Set a player's ELO to a custom value (0-5000)"
             ),
             inline=False,
         )
@@ -1618,12 +1604,8 @@ class LFGCog(commands.Cog):
         embed.add_field(
             name="Match Correction & Removal",
             value=(
-                "`!correct_match <match_id>`\n"
-                "Flip the winner/loser and recalculate ALL affected ELO.\n"
-                "**Recommended** for incorrect reports.\n\n"
-                "`!remove_match <match_id>`\n"
-                "Remove a match and revert its ELO changes.\n"
-                "**When to use:** Test games or matches that never happened."
+                "`!correct_match <match_id>` - Flip winner/loser & recalculate ELO (recommended for wrong reports)\n"
+                "`!remove_match <match_id>` - Remove a match & revert ELO changes"
             ),
             inline=False,
         )
@@ -1632,8 +1614,7 @@ class LFGCog(commands.Cog):
         embed.add_field(
             name="Player Removal",
             value=(
-                "`!remove_player @user`\n"
-                "Remove a player and revert ALL ELO changes from their matches.\n"
+                "`!remove_player @user` - Remove a player & revert ALL their match ELO changes\n"
                 "**Warning:** This affects all opponents' ELO as well!"
             ),
             inline=False,
@@ -1643,20 +1624,13 @@ class LFGCog(commands.Cog):
         embed.add_field(
             name="Limited Management",
             value=(
-                "`!admin_start_run @player <deck_url>`\n"
-                "Manually start a limited arena run for a player.\n"
-                "**When to use:** When a player's run was lost due to a reset or bug.\n\n"
-                "`!admin_end_run @player`\n"
-                "End a player's active limited arena run (no ELO penalty).\n\n"
-                "`!admin_limited_report @winner @loser`\n"
-                "Manually report a limited match result.\n\n"
-                "`!correct_limited_match <match_id>`\n"
-                "Flip the winner/loser and recalculate ELO for a limited match.\n"
-                "**Recommended** for incorrect limited reports.\n\n"
-                "`!remove_limited_match <match_id>`\n"
-                "Remove a limited match and revert ELO changes.\n\n"
-                "`!spot_limited_elo @user <elo>`\n"
-                "Set a specific user's limited ELO to a custom value.\n\n"
+                "`!admin_start_run @player <deck_url>` - Start a limited arena run for a player\n"
+                "`!admin_end_run @player` - End a player's active run (no ELO penalty)\n"
+                "`!admin_limited_report @winner @loser` - Report a limited match result\n"
+                "`!correct_limited_match <match_id>` - Flip winner/loser & recalculate limited ELO\n"
+                "`!remove_limited_match <match_id>` - Remove a limited match & revert ELO\n"
+                "`!spot_limited_elo @user <elo>` - Set a player's limited ELO\n"
+                "`!start_limited_season` - Archive limited data & reset limited ELO\n"
                 "`!reset_limited_elo` - **DANGER:** Reset ALL limited data"
             ),
             inline=False,
@@ -2576,7 +2550,7 @@ class LFGCog(commands.Cog):
         # Clear any processed match tracking involving this user
         processed_keys_to_remove = [
             key for key in processed_matches
-            if member.id in key
+            if isinstance(key, frozenset) and member.id in key
         ]
         for key in processed_keys_to_remove:
             del processed_matches[key]
@@ -3694,6 +3668,91 @@ class LFGCog(commands.Cog):
             await ctx.send("You need administrator permissions to use this command.")
         else:
             logger.error(f"reset_limited_elo error: {error}")
+            await ctx.send(f"An error occurred: {error}")
+
+    @commands.command()
+    @is_bot_admin()
+    async def start_limited_season(self, ctx):
+        """
+        Start a new limited season. Archives current limited data and resets limited ELO.
+        Does NOT affect the constructed season/event.
+        """
+        from utils.database import get_active_event
+        from services.limited_service import archive_limited_for_event, reset_limited_for_new_event
+
+        try:
+            active_event = get_active_event()
+            if not active_event:
+                await ctx.send("No active event found. Use `!start_event <name>` to create one first.")
+                return
+
+            event_id = active_event["event_id"]
+            event_name = active_event["event_name"]
+
+            # Archive current limited data
+            limited_summary = archive_limited_for_event(event_id, event_name)
+
+            # Reset limited ELO to 1500
+            reset_limited_for_new_event()
+
+            embed = discord.Embed(
+                title="New Limited Season Started!",
+                description="Limited data has been archived and ELO ratings reset.",
+                color=discord.Color.green(),
+            )
+
+            if limited_summary:
+                limited_top_str = (
+                    "\n".join(
+                        [f"  {i+1}. {name} ({elo} ELO)" for i, (name, elo) in enumerate(limited_summary["top_players"])]
+                    ) or "No ranked players"
+                )
+                embed.add_field(
+                    name="Archived Limited Season",
+                    value=(
+                        f"**Total Matches:** {limited_summary['total_matches']}\n"
+                        f"**Arena Runs:** {limited_summary['total_runs']}\n"
+                        f"**Ranked Players:** {limited_summary['total_players']}\n"
+                        f"**Top 3:**\n{limited_top_str}"
+                    ),
+                    inline=False,
+                )
+
+            embed.add_field(
+                name="New Season",
+                value="All limited ELO ratings have been reset to 1500.\nConstructed season is unaffected.",
+                inline=False,
+            )
+
+            embed.set_footer(text=f"Started by {ctx.author.display_name}")
+            await ctx.send(embed=embed)
+
+            log_admin_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "start_limited_season",
+                previous_state=limited_summary,
+                new_state={"result": "limited season reset, constructed unaffected"},
+                details=f"Limited season reset by {ctx.author.display_name}",
+            )
+
+            logger.info(f"Limited season started by {ctx.author} (ID: {ctx.author.id})")
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="Limited Season Start Failed",
+                description=f"An error occurred: {str(e)}",
+                color=discord.Color.red(),
+            )
+            await ctx.send(embed=error_embed)
+            logger.error(f"start_limited_season failed: {e}")
+
+    @start_limited_season.error
+    async def start_limited_season_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You need administrator permissions to use this command.")
+        else:
+            logger.error(f"start_limited_season error: {error}")
             await ctx.send(f"An error occurred: {error}")
 
     @commands.command()

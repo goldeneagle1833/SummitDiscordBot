@@ -5,6 +5,7 @@ import logging
 import os
 import re
 
+import requests as http_requests
 from flask import Blueprint, jsonify, request
 
 from repositories.card_catalog import CardCatalogRepository
@@ -172,6 +173,72 @@ def get_card_points_history():
     return jsonify({"success": True, "history": history})
 
 
+def _is_draftsorcery_url(url: str) -> bool:
+    """Check if a URL is from draftsorcery.com."""
+    return "draftsorcery.com" in url.lower()
+
+
+def _fetch_draftsorcery_deck(url: str) -> dict | None:
+    """Fetch and normalize a deck from DraftSorcery API.
+
+    Returns deck data in the same format as Curiosa (with avatar, spellbook, atlas, sideboard sections)
+    or None on failure.
+    """
+    from urllib.parse import urlparse, parse_qs
+
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+    deck_code = params.get("deck", [None])[0]
+    if not deck_code:
+        return None
+
+    try:
+        response = http_requests.get(
+            f"https://draftsorcery.com/api/decks/{deck_code}",
+            timeout=30,
+        )
+        if response.status_code != 200:
+            logger.warning(f"DraftSorcery API returned status {response.status_code}")
+            return None
+
+        data = response.json()
+    except (http_requests.exceptions.RequestException, json.JSONDecodeError) as e:
+        logger.warning(f"DraftSorcery API request failed: {e}")
+        return None
+
+    # Normalize: DraftSorcery uses flat card list with duplicates instead of quantities
+    deck_cards = data.get("deck", {}).get("cards", [])
+    if not deck_cards:
+        return None
+
+    # Count card occurrences and group by type
+    card_counts = {}
+    for entry in deck_cards:
+        card_info = entry.get("card", {})
+        name = card_info.get("name", "")
+        card_type = (card_info.get("type") or "").lower()
+        if not name:
+            continue
+        if name not in card_counts:
+            card_counts[name] = {"name": name, "quantity": 0, "type": card_type}
+        card_counts[name]["quantity"] += 1
+
+    # Map to Curiosa-style sections
+    avatar = []
+    spellbook = []
+    atlas = []
+    for info in card_counts.values():
+        entry = {"name": info["name"], "quantity": info["quantity"]}
+        if info["type"] == "avatar":
+            avatar.append(entry)
+        elif info["type"] == "site":
+            atlas.append(entry)
+        else:
+            spellbook.append(entry)
+
+    return {"avatar": avatar, "spellbook": spellbook, "atlas": atlas, "sideboard": []}
+
+
 @card_points_bp.route("/check-deck", methods=["POST"])
 def check_deck():
     """Check if a deck URL meets the points budget."""
@@ -181,16 +248,21 @@ def check_deck():
 
     deck_url = data["deck_url"].strip()
 
-    # Fetch deck from Curiosa
-    service = CuriosaService()
-    deck_json_str = service.fetch_deck_data(deck_url)
-    if not deck_json_str or deck_json_str == "{}":
-        return jsonify({"success": False, "error": "Could not fetch deck data. Check the URL and try again."}), 400
+    # Fetch deck from DraftSorcery or Curiosa
+    if _is_draftsorcery_url(deck_url):
+        deck_data = _fetch_draftsorcery_deck(deck_url)
+        if not deck_data:
+            return jsonify({"success": False, "error": "Could not fetch deck data from DraftSorcery. Check the URL and try again."}), 400
+    else:
+        service = CuriosaService()
+        deck_json_str = service.fetch_deck_data(deck_url)
+        if not deck_json_str or deck_json_str == "{}":
+            return jsonify({"success": False, "error": "Could not fetch deck data. Check the URL and try again."}), 400
 
-    try:
-        deck_data = json.loads(deck_json_str)
-    except json.JSONDecodeError:
-        return jsonify({"success": False, "error": "Invalid deck data received."}), 400
+        try:
+            deck_data = json.loads(deck_json_str)
+        except json.JSONDecodeError:
+            return jsonify({"success": False, "error": "Invalid deck data received."}), 400
 
     # Calculate points
     repo = CardPointsRepository()

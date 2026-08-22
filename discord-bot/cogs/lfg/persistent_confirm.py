@@ -87,11 +87,13 @@ def ensure_pending_confirmations_table():
         )
         """
     )
-    # Migrate: add confirmer_comment if missing (table may predate this column)
+    # Migrate: add columns if missing (table may predate these columns)
     cursor = conn.execute("PRAGMA table_info(pending_confirmations)")
     columns = {row[1] for row in cursor.fetchall()}
     if "confirmer_comment" not in columns:
         conn.execute("ALTER TABLE pending_confirmations ADD COLUMN confirmer_comment TEXT DEFAULT ''")
+    if "pairing_id" not in columns:
+        conn.execute("ALTER TABLE pending_confirmations ADD COLUMN pairing_id INTEGER")
 
     conn.commit()
     conn.close()
@@ -115,8 +117,8 @@ def save_pending_confirmation(data: dict) -> int:
             opponent_global, match_start_time, first_player,
             match_time, match_comment, winner_deck_url, loser_deck_url,
             ladder_info_json, match_type, guild_id,
-            winner_run_id, loser_run_id
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            winner_run_id, loser_run_id, pairing_id
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             data["reporter_id"],
@@ -139,6 +141,7 @@ def save_pending_confirmation(data: dict) -> int:
             data.get("guild_id"),
             data.get("winner_run_id"),
             data.get("loser_run_id"),
+            data.get("pairing_id"),
         ),
     )
     confirmation_id = cursor.lastrowid
@@ -215,7 +218,9 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
     bot = interaction.client
 
     # ── duplicate guard (atomic check-and-set under lock) ──
-    match_key = frozenset({data["winner_id"], data["loser_id"]})
+    # Use pairing_id as key when available for precise dedup; fall back to player pair
+    pairing_id = data.get("pairing_id")
+    match_key = f"pairing:{pairing_id}" if pairing_id else frozenset({data["winner_id"], data["loser_id"]})
     now = datetime.datetime.now()
     async with processed_matches_lock:
         if match_key in processed_matches:
@@ -351,18 +356,18 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 event_active,
             )
 
-        if data["match_type"] == "rumble":
+        if data["match_type"] in ("rumble", "points"):
             from utils.rumble_bones import award_match_bones
+            label = "Rumble (Omens)" if data["match_type"] == "points" else "Rumble"
             win_bones, loss_bones = award_match_bones(
                 data["winner_id"], data["winner_global"],
                 data["loser_id"], data["loser_global"],
+                reason_prefix=label,
             )
             if win_bones or loss_bones:
-                elo_msg = f" *(Rumble - {data['winner_global']} +{win_bones} bones, {data['loser_global']} +{loss_bones} bones)*"
+                elo_msg = f" *({label} - {data['winner_global']} +{win_bones} bones, {data['loser_global']} +{loss_bones} bones)*"
             else:
-                elo_msg = " *(Rumble match - ELO not affected)*"
-        elif data["match_type"] == "points":
-            elo_msg = " *(Omens match - ELO not affected)*"
+                elo_msg = f" *({label} match - ELO not affected)*"
         elif data["match_type"] in ("testing",):
             elo_msg = " *(Casual match - ELO not affected)*"
         elif not event_active:
@@ -433,7 +438,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
         if guild_id:
             mark_limited_pairing_reported(guild_id, data["winner_id"], data["loser_id"])
     elif guild_id:
-        mark_pairing_reported(guild_id, data["winner_id"], data["loser_id"])
+        mark_pairing_reported(guild_id, data["winner_id"], data["loser_id"], pairing_id=data.get("pairing_id"))
 
     # ── limited run status DMs ──
     if data["match_type"] == "limited":
@@ -953,6 +958,7 @@ def create_confirmation_view(
     guild_id=None,
     winner_run_id=None,
     loser_run_id=None,
+    pairing_id=None,
 ) -> PersistentMatchConfirmView:
     """Persist confirmation data and return a view that works across restarts."""
     # Validate that reporter_id and opponent_id are valid Discord snowflakes
@@ -994,9 +1000,407 @@ def create_confirmation_view(
         "guild_id": guild_id,
         "winner_run_id": winner_run_id,
         "loser_run_id": loser_run_id,
+        "pairing_id": pairing_id,
     }
     confirmation_id = save_pending_confirmation(data)
     return PersistentMatchConfirmView(confirmation_id)
+
+
+# ──────────────────────────────────────────────
+#  Persistent Match Card (Report/Cancel survive restarts)
+# ──────────────────────────────────────────────
+
+def ensure_match_cards_table():
+    """Create the active_match_cards table if it doesn't exist."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS active_match_cards (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            pairing_id        INTEGER NOT NULL,
+            player1_id        INTEGER NOT NULL,
+            player1_global    TEXT    NOT NULL,
+            player2_id        INTEGER NOT NULL,
+            player2_global    TEXT    NOT NULL,
+            player1_deck_url  TEXT,
+            player2_deck_url  TEXT,
+            match_start_time  TEXT,
+            guild_id          INTEGER,
+            ladder_info_json  TEXT,
+            match_type        TEXT    DEFAULT 'ranked',
+            player1_run_id    INTEGER DEFAULT 0,
+            player2_run_id    INTEGER DEFAULT 0,
+            created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def save_match_card(data: dict) -> int:
+    """Persist match card data and return the new row id."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    match_start = None
+    ms = data.get("match_start_time")
+    if ms:
+        match_start = ms.isoformat() if isinstance(ms, datetime.datetime) else str(ms)
+
+    cursor.execute(
+        """
+        INSERT INTO active_match_cards (
+            pairing_id, player1_id, player1_global, player2_id, player2_global,
+            player1_deck_url, player2_deck_url, match_start_time,
+            guild_id, ladder_info_json, match_type,
+            player1_run_id, player2_run_id
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            data["pairing_id"],
+            data["player1_id"],
+            data["player1_global"],
+            data["player2_id"],
+            data["player2_global"],
+            data.get("player1_deck_url"),
+            data.get("player2_deck_url"),
+            match_start,
+            data.get("guild_id"),
+            json.dumps(data.get("ladder_info")) if data.get("ladder_info") else None,
+            data.get("match_type", "ranked"),
+            data.get("player1_run_id", 0),
+            data.get("player2_run_id", 0),
+        ),
+    )
+    card_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return card_id
+
+
+def load_match_card(card_id: int):
+    """Return match card dict or None."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM active_match_cards WHERE id = ?", (card_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+
+    data = dict(row)
+    if data.get("ladder_info_json"):
+        data["ladder_info"] = json.loads(data["ladder_info_json"])
+    else:
+        data["ladder_info"] = {}
+
+    if data.get("match_start_time"):
+        try:
+            data["match_start_time"] = datetime.datetime.fromisoformat(data["match_start_time"])
+        except (ValueError, TypeError):
+            data["match_start_time"] = None
+    else:
+        data["match_start_time"] = None
+
+    return data
+
+
+def delete_match_card(card_id: int):
+    """Remove a match card row."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM active_match_cards WHERE id = ?", (card_id,))
+    conn.commit()
+    conn.close()
+
+
+def delete_match_cards_for_pairing(pairing_id: int):
+    """Remove all match card rows for a given pairing."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM active_match_cards WHERE pairing_id = ?", (pairing_id,))
+    conn.commit()
+    conn.close()
+
+
+class PersistentMatchCardReportButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"pmcr:(?P<id>\d+)",
+):
+    """Report Result button that survives bot restarts."""
+
+    def __init__(self, card_id: int):
+        super().__init__(
+            discord.ui.Button(
+                label="Report Result",
+                style=discord.ButtonStyle.primary,
+                custom_id=f"pmcr:{card_id}",
+            )
+        )
+        self.card_id = card_id
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(card_id=int(match["id"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            data = load_match_card(self.card_id)
+            if not data:
+                try:
+                    await interaction.response.send_message(
+                        "This match card has expired or was already processed.",
+                        ephemeral=True,
+                    )
+                except discord.errors.NotFound:
+                    pass
+                return
+
+            reporter_id = interaction.user.id
+            player1_id = data["player1_id"]
+            player2_id = data["player2_id"]
+
+            if reporter_id not in (player1_id, player2_id):
+                await interaction.response.send_message(
+                    "You're not part of this match.", ephemeral=True
+                )
+                return
+
+            opponent_id = player2_id if reporter_id == player1_id else player1_id
+            if (reporter_id, opponent_id) in pending_match_reports or (opponent_id, reporter_id) in pending_match_reports:
+                await interaction.response.send_message(
+                    "A report for this match is already pending confirmation.",
+                    ephemeral=True,
+                )
+                return
+
+            await interaction.response.defer(ephemeral=True)
+
+            reporter_global = interaction.user.global_name or interaction.user.display_name
+            opponent_global = data["player2_global"] if reporter_id == player1_id else data["player1_global"]
+            reporter_deck_url = data["player1_deck_url"] if reporter_id == player1_id else data["player2_deck_url"]
+            opponent_deck_url = data["player2_deck_url"] if reporter_id == player1_id else data["player1_deck_url"]
+            reporter_run_id = data["player1_run_id"] if reporter_id == player1_id else data["player2_run_id"]
+            opponent_run_id = data["player2_run_id"] if reporter_id == player1_id else data["player1_run_id"]
+
+            # Disable buttons while reporter fills in the dropdowns
+            if self.view:
+                for item in self.view.children:
+                    item.disabled = True
+                try:
+                    await interaction.message.edit(view=self.view)
+                except Exception:
+                    pass
+
+            # Notify opponent that reporting has started
+            bot = interaction.client
+            try:
+                opponent_user = await bot.fetch_user(opponent_id)
+                try:
+                    await opponent_user.send(
+                        f"**{reporter_global}** is reporting the result for your match. "
+                        f"You'll receive a confirmation request shortly."
+                    )
+                except discord.Forbidden:
+                    pass
+            except Exception:
+                pass
+
+            # Import here to avoid circular dependency
+            from cogs.lfg.match_reporting import ReportResultSelectView
+
+            view = ReportResultSelectView(
+                bot=bot,
+                reporter_id=reporter_id,
+                reporter_global=reporter_global,
+                reporter_deck_url=reporter_deck_url,
+                opponent_id=opponent_id,
+                opponent_global=opponent_global,
+                opponent_deck_url=opponent_deck_url,
+                player1_id=player1_id,
+                player1_global=data["player1_global"],
+                player2_id=player2_id,
+                player2_global=data["player2_global"],
+                match_start_time=data["match_start_time"],
+                guild_id=data["guild_id"],
+                ladder_info=data["ladder_info"],
+                match_type=data["match_type"],
+                reporter_run_id=reporter_run_id,
+                opponent_run_id=opponent_run_id,
+                pairing_id=data["pairing_id"],
+            )
+
+            msg = "**Report Match Result:**\nSelect who went first, then who won, then click **Submit Report**."
+            if not reporter_deck_url and data["match_type"] not in ("testing", "rumble"):
+                msg += "\nYou'll be asked for your deck URL after selecting."
+
+            await interaction.followup.send(msg, view=view, ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"Error in PersistentMatchCardReportButton: {e}", exc_info=True)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "An error occurred. Please try again or contact an admin.",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "An error occurred. Please try again or contact an admin.",
+                        ephemeral=True,
+                    )
+            except Exception:
+                pass
+
+
+class PersistentMatchCardCancelButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"pmcc:(?P<id>\d+)",
+):
+    """Cancel Match button that survives bot restarts."""
+
+    def __init__(self, card_id: int):
+        super().__init__(
+            discord.ui.Button(
+                label="Cancel Match",
+                style=discord.ButtonStyle.danger,
+                custom_id=f"pmcc:{card_id}",
+            )
+        )
+        self.card_id = card_id
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(card_id=int(match["id"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            data = load_match_card(self.card_id)
+            if not data:
+                try:
+                    await interaction.response.send_message(
+                        "This match card has expired or was already processed.",
+                        ephemeral=True,
+                    )
+                except discord.errors.NotFound:
+                    pass
+                return
+
+            player1_id = data["player1_id"]
+            player2_id = data["player2_id"]
+
+            if interaction.user.id not in (player1_id, player2_id):
+                await interaction.response.send_message(
+                    "You're not part of this match.", ephemeral=True
+                )
+                return
+
+            await interaction.response.defer(ephemeral=True)
+
+            canceler_global = interaction.user.global_name or interaction.user.display_name
+            other_id = player2_id if interaction.user.id == player1_id else player1_id
+
+            if self.view:
+                for item in self.view.children:
+                    item.disabled = True
+                try:
+                    await interaction.message.edit(content="**Match Cancelled**", view=self.view)
+                except Exception:
+                    pass
+
+            # If this was a ladder challenge, delete the DB record
+            ladder_info = data.get("ladder_info") or {}
+            if ladder_info.get("challenge_id"):
+                try:
+                    from utils.database import delete_ladder_challenge
+                    delete_ladder_challenge(ladder_info["challenge_id"])
+                    logger.info(
+                        f"Deleted ladder challenge {ladder_info['challenge_id']} due to match cancellation"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to delete ladder challenge on cancel: {e}")
+
+            bot = interaction.client
+            try:
+                other_user = await bot.fetch_user(other_id)
+                try:
+                    await other_user.send(
+                        f"Your match against **{canceler_global}** has been cancelled.\n"
+                        f"If this was a mistake, use the **Report Last Match** button in the LFG channel."
+                    )
+                except discord.Forbidden:
+                    pass
+            except Exception:
+                pass
+
+            await interaction.followup.send(
+                "Match cancelled. If this was a mistake, use **Report Last Match** in the LFG channel.",
+                ephemeral=True,
+            )
+
+            delete_match_card(self.card_id)
+
+        except Exception as e:
+            logger.error(f"Error in PersistentMatchCardCancelButton: {e}", exc_info=True)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "An error occurred. Please try again or contact an admin.",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "An error occurred. Please try again or contact an admin.",
+                        ephemeral=True,
+                    )
+            except Exception:
+                pass
+
+
+class PersistentMatchCardView(discord.ui.View):
+    """Match card view whose Report/Cancel buttons survive bot restarts."""
+
+    def __init__(self, card_id: int):
+        super().__init__(timeout=None)
+        self.add_item(PersistentMatchCardReportButton(card_id))
+        self.add_item(PersistentMatchCardCancelButton(card_id))
+
+
+def create_match_card_view(
+    *,
+    bot,
+    pairing_id: int,
+    player1_id: int,
+    player1_global: str,
+    player2_id: int,
+    player2_global: str,
+    player1_deck_url: str = None,
+    player2_deck_url: str = None,
+    match_start_time=None,
+    guild_id: int = None,
+    ladder_info: dict = None,
+    match_type: str = "ranked",
+    player1_run_id: int = 0,
+    player2_run_id: int = 0,
+) -> PersistentMatchCardView:
+    """Persist match card data and return a view that works across restarts."""
+    data = {
+        "pairing_id": pairing_id,
+        "player1_id": player1_id,
+        "player1_global": player1_global,
+        "player2_id": player2_id,
+        "player2_global": player2_global,
+        "player1_deck_url": player1_deck_url,
+        "player2_deck_url": player2_deck_url,
+        "match_start_time": match_start_time,
+        "guild_id": guild_id,
+        "ladder_info": ladder_info,
+        "match_type": match_type,
+        "player1_run_id": player1_run_id,
+        "player2_run_id": player2_run_id,
+    }
+    card_id = save_match_card(data)
+    return PersistentMatchCardView(card_id)
 
 
 # ──────────────────────────────────────────────

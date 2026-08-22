@@ -122,7 +122,7 @@ export default function CardPoints() {
         <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
-            placeholder="Paste a Curiosa deck URL..."
+            placeholder="Paste a Curiosa or DraftSorcery deck URL..."
             value={deckUrl}
             onChange={(e) => setDeckUrl(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && checkDeck()}

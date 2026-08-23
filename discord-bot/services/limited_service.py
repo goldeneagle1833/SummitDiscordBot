@@ -7,7 +7,6 @@ forfeit penalty calculation, and run lifecycle.
 import logging
 
 from services.elo_service import update_elo
-from repositories.elo_repo import get_active_event
 from utils.deck_checker import scrape_Curosa
 from repositories.limited_repo import (
     create_limited_tables,
@@ -68,15 +67,11 @@ def start_arena_run(user_id: int, display_name: str, deck_url: str) -> dict:
     """Start a new arena run for a player.
 
     Checks for existing active run (error if one exists).
-    Raises ValueError if no active event (between seasons).
     Records starting ELO and scrapes deck data.
 
     Returns:
         dict with run info (run_id, wins, losses, deck_url, starting_elo, etc.)
     """
-    if not get_active_event():
-        raise ValueError("No active event — arena runs cannot be started between seasons.")
-
     active = get_active_arena_run(user_id)
     if active:
         raise ValueError(f"User {user_id} already has an active arena run (run_id={active['run_id']})")
@@ -189,23 +184,15 @@ def limited_winner_report(
     """Report a limited match from the winner's perspective.
 
     Updates limited ELO for both players, inserts a limited match record,
-    and increments arena run records.
-
-    ELO is only updated when an active event exists (skipped between seasons).
+    and increments arena run records. Limited ELO always updates
+    independently of the constructed event system.
 
     Returns:
         Tuple of (match_id, winner_run_complete, loser_run_complete, winner_elo_change, loser_elo_change)
     """
-    event_active = bool(get_active_event())
-
-    # Update Limited ELO for both players (skip between seasons)
-    winner_elo_change = 0
-    loser_elo_change = 0
-    if event_active:
-        _, winner_elo_change = update_limited_elo(winner_id, winner_display_name, True, loser_id)
-        _, loser_elo_change = update_limited_elo(loser_id, loser_display_name, False, winner_id)
-    else:
-        logger.info("No active event — limited match recorded without ELO changes")
+    # Update Limited ELO for both players (always, independent of constructed events)
+    _, winner_elo_change = update_limited_elo(winner_id, winner_display_name, True, loser_id)
+    _, loser_elo_change = update_limited_elo(loser_id, loser_display_name, False, winner_id)
 
     # Insert limited match record
     match_id = insert_limited_match_record(
@@ -279,18 +266,9 @@ def limited_elo_only_report(
     Returns:
         Tuple of (match_id, winner_new_elo, loser_new_elo)
     """
-    event_active = bool(get_active_event())
-
-    # Update Limited ELO for both players (skip between seasons)
-    if event_active:
-        winner_new_elo, winner_elo_change = update_limited_elo(winner_id, winner_display_name, True, loser_id)
-        loser_new_elo, loser_elo_change = update_limited_elo(loser_id, loser_display_name, False, winner_id)
-    else:
-        logger.info("No active event — limited ELO-only match recorded without ELO changes")
-        winner_new_elo = get_limited_elo(winner_id)
-        loser_new_elo = get_limited_elo(loser_id)
-        winner_elo_change = 0
-        loser_elo_change = 0
+    # Update Limited ELO for both players (always, independent of constructed events)
+    winner_new_elo, winner_elo_change = update_limited_elo(winner_id, winner_display_name, True, loser_id)
+    loser_new_elo, loser_elo_change = update_limited_elo(loser_id, loser_display_name, False, winner_id)
 
     # Insert limited match record (no run IDs)
     match_id = insert_limited_match_record(

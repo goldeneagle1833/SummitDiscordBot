@@ -18,6 +18,7 @@ from cogs.lfg.state import (
     active_ladder_challenges,
     ladder_challenge_lock,
     LADDER_CHALLENGE_MAX_JOINERS,
+    matching_web_users,
 )
 from cogs.lfg.helpers import scrub_urls, send_milestone_announcement
 from cogs.lfg.match_reporting import LFGReportButtons, _apply_ladder_elo, LimitedReportView
@@ -30,7 +31,16 @@ from cogs.lfg.ladder import (
     _resolve_ladder_challenge,
     _ladder_challenge_timeout,
 )
-from cogs.lfg.queue import DeckURLModal, JoinQueueButtons, ActiveQueueButtons
+from cogs.lfg.queue import (
+    ActiveQueueButtons,
+    DeckURLModal,
+    JoinQueueButtons,
+    PrivateSeatLinkButton,
+    PrivateSeatLinkView,
+    match_delivery_extras,
+    provision_match_and_publish_results,
+)
+from cogs.lfg.queue_definitions import enabled_queue_definitions
 from utils.database import (
     record_match,
     check_milestone,
@@ -604,153 +614,27 @@ class LFGCog(commands.Cog):
             # GREEN - Active queue
             now = datetime.datetime.now()
 
-            # Build ranked queue details
-            ranked_details = []
-            for user_id, user_data in lfg_queue.items():
-                entry = user_data.get("queues", {}).get("ranked")
-                if entry:
-                    time_elapsed = (now - entry["timestamp"]).total_seconds() / 60
-                    time_remaining = entry["timeframe"] - time_elapsed
-                    placeholder = SORCERY_NICKNAMES[
-                        randrange(0, len(SORCERY_NICKNAMES))
-                    ]
-                    ranked_details.append(
-                        f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`"
-                    )
-
-            # Build testing queue details
-            testing_details = []
-            for user_id, user_data in lfg_queue.items():
-                entry = user_data.get("queues", {}).get("testing")
-                if entry:
-                    time_elapsed = (now - entry["timestamp"]).total_seconds() / 60
-                    time_remaining = entry["timeframe"] - time_elapsed
-                    placeholder = SORCERY_NICKNAMES[
-                        randrange(0, len(SORCERY_NICKNAMES))
-                    ]
-                    testing_details.append(
-                        f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`"
-                    )
-
             embed = discord.Embed(
                 title="\U0001f7e2 LFG Queue Status",
                 description=f"**{len(lfg_queue)} player(s) looking for a game!!**\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
                 color=discord.Color.green(),
             )
 
-            # Points queue section (only show when pilot is active)
-            if is_pilot_active("PointsQueue"):
-                points_details = []
-                for user_id, user_data in lfg_queue.items():
-                    entry = user_data.get("queues", {}).get("points")
-                    if entry:
-                        time_elapsed = (now - entry["timestamp"]).total_seconds() / 60
-                        time_remaining = entry["timeframe"] - time_elapsed
-                        placeholder = SORCERY_NICKNAMES[
-                            randrange(0, len(SORCERY_NICKNAMES))
-                        ]
-                        points_details.append(
-                            f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`"
-                        )
-
-                if points_details:
-                    embed.add_field(
-                        name="\U0001f4ca Rumble (Omens) Queue",
-                        value="\n".join(points_details),
-                        inline=False,
-                    )
-                else:
-                    embed.add_field(
-                        name="\U0001f4ca Rumble (Omens) Queue",
-                        value="`Empty`",
-                        inline=False,
-                    )
-
-            # Ranked queue section (only show when pilot is active)
-            if is_pilot_active("RankedQueue"):
-                if ranked_details:
-                    embed.add_field(
-                        name="\u2694\ufe0f Ranked Queue",
-                        value="\n".join(ranked_details),
-                        inline=False,
-                    )
-                else:
-                    embed.add_field(
-                        name="\u2694\ufe0f Ranked Queue",
-                        value="`Empty`",
-                        inline=False,
-                    )
-
-            # Casual queue section (only show when pilot is active)
-            if is_pilot_active("CasualQueue"):
-                if testing_details:
-                    embed.add_field(
-                        name="\U0001f9ea Casual Queue",
-                        value="\n".join(testing_details),
-                        inline=False,
-                    )
-                else:
-                    embed.add_field(
-                        name="\U0001f9ea Casual Queue",
-                        value="`Empty`",
-                        inline=False,
-                    )
-
-            # Limited queue section (only show when pilot is active)
-            if is_pilot_active("GrewWolves"):
-                limited_details = []
-                for user_id, user_data in lfg_queue.items():
-                    entry = user_data.get("queues", {}).get("limited")
-                    if entry:
-                        time_elapsed = (now - entry["timestamp"]).total_seconds() / 60
-                        time_remaining = entry["timeframe"] - time_elapsed
-                        placeholder = SORCERY_NICKNAMES[
-                            randrange(0, len(SORCERY_NICKNAMES))
-                        ]
-                        limited_details.append(
-                            f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`"
-                        )
-
-                if limited_details:
-                    embed.add_field(
-                        name="\U0001f3b2 Limited Queue",
-                        value="\n".join(limited_details),
-                        inline=False,
-                    )
-                else:
-                    embed.add_field(
-                        name="\U0001f3b2 Limited Queue",
-                        value="`Empty`",
-                        inline=False,
-                    )
-
-            # Rumble queue section (only show when pilot is active)
-            if is_pilot_active("RumbleQueue"):
-                rumble_details = []
-                for user_id, user_data in lfg_queue.items():
-                    entry = user_data.get("queues", {}).get("rumble")
-                    if entry:
-                        time_elapsed = (now - entry["timestamp"]).total_seconds() / 60
-                        time_remaining = entry["timeframe"] - time_elapsed
-                        placeholder = SORCERY_NICKNAMES[
-                            randrange(0, len(SORCERY_NICKNAMES))
-                        ]
-                        rumble_details.append(
-                            f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`"
-                        )
-
-                if rumble_details:
-                    embed.add_field(
-                        name="\U0001f4a5 Rumble Queue",
-                        value="\n".join(rumble_details),
-                        inline=False,
-                    )
-                else:
-                    embed.add_field(
-                        name="\U0001f4a5 Rumble Queue",
-                        value="`Empty`",
-                        inline=False,
-                    )
+            for definition in enabled_queue_definitions():
+                details = []
+                for user_data in lfg_queue.values():
+                    entry = user_data.get("queues", {}).get(definition["type"])
+                    if not entry:
+                        continue
+                    time_elapsed = (now - entry["timestamp"]).total_seconds() / 60
+                    time_remaining = entry["timeframe"] - time_elapsed
+                    placeholder = SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]
+                    details.append(f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`")
+                embed.add_field(
+                    name=f'{definition.get("status_emoji", definition["emoji"])} {definition["label"]} Queue',
+                    value="\n".join(details) if details else "`Empty`",
+                    inline=False,
+                )
 
             embed.set_footer(text="Status updates automatically")
 
@@ -991,12 +875,14 @@ class LFGCog(commands.Cog):
         return best_match
 
     def add_to_lfg_queue(
-        self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None, run_id=None
+        self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None, run_id=None,
+        origin="discord"
     ):
         queue_entry = {
             "timestamp": datetime.datetime.now(),
             "timeframe": int(timeframe),
             "deck_url": deck_url,
+            "origin": origin,
         }
         if ladder_info:
             queue_entry["ladder_info"] = ladder_info
@@ -1247,6 +1133,7 @@ class LFGCog(commands.Cog):
                     # Get matched user info before removing from queue
                     matched_entry = lfg_queue.get(matched_user_id, {}).get("queues", {}).get("ranked", {})
                     matched_user_deck_url = matched_entry.get("deck_url")
+                    matched_user_origin = matched_entry.get("origin", "discord")
                     matched_queue_type = "ranked"
 
                     # Adjust ladder multipliers based on ELO difference
@@ -1270,6 +1157,8 @@ class LFGCog(commands.Cog):
                     # Remove both players from all queues
                     lfg_queue.pop(matched_user_id, None)
                     lfg_queue.pop(user_id, None)
+                    if matched_user_origin == "sorcery_online":
+                        matching_web_users[matched_user_id] = "ranked"
                     logger.info(
                         f"Lock acquired: Matching challenger {user_id} with {matched_user_id} (match_type={match_type})"
                     )
@@ -1300,6 +1189,7 @@ class LFGCog(commands.Cog):
                 matched_user = await self.bot.fetch_user(matched_user_id)
             except Exception as e:
                 logger.error(f"Failed to fetch matched user {matched_user_id}: {e}")
+                matching_web_users.pop(matched_user_id, None)
                 # Rollback: delete the challenge so daily usage is not consumed
                 if challenge_id:
                     delete_ladder_challenge(challenge_id)
@@ -1321,6 +1211,7 @@ class LFGCog(commands.Cog):
                 logger.error(
                     f"Cannot save pairing: guild_id is None for challenge by {user_id}"
                 )
+                matching_web_users.pop(matched_user_id, None)
                 # Rollback: delete the challenge so daily usage is not consumed
                 if challenge_id:
                     delete_ladder_challenge(challenge_id)
@@ -1344,6 +1235,7 @@ class LFGCog(commands.Cog):
                     f"Failed to save pairing for ladder challenge: {e}",
                     exc_info=True,
                 )
+                matching_web_users.pop(matched_user_id, None)
                 # Rollback: delete the challenge so daily usage is not consumed
                 if challenge_id:
                     delete_ladder_challenge(challenge_id)
@@ -1354,6 +1246,28 @@ class LFGCog(commands.Cog):
                 except discord.Forbidden:
                     pass
                 return
+
+            provisioned_links = await provision_match_and_publish_results(
+                guild_id,
+                pairing_id,
+                "ranked",
+                [
+                    {
+                        "discord_user_id": user_id,
+                        "display_name": user_global,
+                        "deck_url": None,
+                        "origin": "discord",
+                        "opponent_name": matched_global,
+                    },
+                    {
+                        "discord_user_id": matched_user_id,
+                        "display_name": matched_global,
+                        "deck_url": matched_user_deck_url,
+                        "origin": matched_user_origin,
+                        "opponent_name": user_global,
+                    },
+                ],
+            )
 
             # Randomly select which player gets the report buttons
             players = [
@@ -1381,6 +1295,17 @@ class LFGCog(commands.Cog):
             reporter_deck_text = (
                 f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
             )
+            (
+                reporter_game_url,
+                other_game_url,
+                reporter_game_text,
+                other_game_text,
+                voice_text,
+            ) = match_delivery_extras(
+                provisioned_links,
+                reporter_id,
+                other_id,
+            )
 
             match_type_emoji = "⚔️" if match_type == "ranked" else "⭐"
             match_type_label = "Ranked" if match_type == "ranked" else "Casual"
@@ -1403,7 +1328,8 @@ class LFGCog(commands.Cog):
             try:
                 await reporter_user.send(
                     f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n"
-                    f"Use the button below to report the result when your match is done.",
+                    f"Use the button below to report the result when your match is done."
+                    f"{reporter_game_text}{voice_text}",
                     view=match_card_view,
                 )
             except discord.Forbidden:
@@ -1420,11 +1346,14 @@ class LFGCog(commands.Cog):
                                     send_messages=True,
                                 )
 
-                        await dm_channel.send(
-                            scrub_urls(
+                        fallback_message = scrub_urls(
                                 f"{reporter_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n"
                                 f"Use the button below to report the result when your match is done."
-                            ),
+                            ) + voice_text
+                        if reporter_game_url:
+                            match_card_view.add_item(PrivateSeatLinkButton(reporter_id, reporter_game_url))
+                        await dm_channel.send(
+                            fallback_message,
                             view=match_card_view,
                         )
                 except Exception as e:
@@ -1437,6 +1366,7 @@ class LFGCog(commands.Cog):
                 await other_user.send(
                     f"🎮 **Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
                     f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome."
+                    f"{other_game_text}{voice_text}"
                 )
             except discord.Forbidden:
                 try:
@@ -1452,12 +1382,17 @@ class LFGCog(commands.Cog):
                                     send_messages=True,
                                 )
 
-                        await dm_channel.send(
-                            scrub_urls(
+                        fallback_message = scrub_urls(
                                 f"{other_user.mention} 🎮 **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
                                 f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome."
+                            ) + voice_text
+                        if other_game_url:
+                            await dm_channel.send(
+                                fallback_message,
+                                view=PrivateSeatLinkView(other_id, other_game_url),
                             )
-                        )
+                        else:
+                            await dm_channel.send(fallback_message)
                 except Exception as e:
                     logger.error(
                         f"Failed to handle DM failure for other player: {e}"
@@ -1557,7 +1492,7 @@ class LFGCog(commands.Cog):
         embed.add_field(
             name="Tips",
             value=(
-                "\u2022 Queue time: 5-120 minutes\n"
+                "\u2022 Queue time: 5-240 minutes\n"
                 "\u2022 Challenges expire after 5 minutes\n"
                 "\u2022 Enable DMs to receive match reports"
             ),

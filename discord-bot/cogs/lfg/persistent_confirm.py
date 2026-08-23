@@ -24,10 +24,13 @@ from utils.database import (
     mark_pairing_reported,
     get_active_event,
 )
-from repositories.elo_repo import NON_ELO_MATCH_TYPES
+from repositories.elo_repo import NON_ELO_MATCH_TYPES, get_pairing_by_id
 from services.dust_service import try_dust_drop, try_alter_card_drop
 from repositories.dust_repo import get_available_code_count
-from repositories.limited_repo import mark_limited_pairing_reported
+from repositories.limited_repo import (
+    get_limited_pairing_by_id,
+    mark_limited_pairing_reported,
+)
 from services.limited_service import limited_winner_report, get_run_summary
 
 logger = logging.getLogger("discord_bot")
@@ -220,7 +223,11 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
     # ── duplicate guard (atomic check-and-set under lock) ──
     # Use pairing_id as key when available for precise dedup; fall back to player pair
     pairing_id = data.get("pairing_id")
-    match_key = f"pairing:{pairing_id}" if pairing_id else frozenset({data["winner_id"], data["loser_id"]})
+    match_key = (
+        f"pairing:{data.get('match_type', 'ranked')}:{pairing_id}"
+        if pairing_id
+        else frozenset({data["winner_id"], data["loser_id"]})
+    )
     now = datetime.datetime.now()
     async with processed_matches_lock:
         if match_key in processed_matches:
@@ -241,7 +248,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                     except Exception:
                         pass
                 delete_pending_confirmation(confirmation_id)
-                return
+                return None
 
         processed_matches[match_key] = now
 
@@ -267,9 +274,14 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
         combined_comment = f"Opponent: {confirmer_comment} | {combined_comment}"
 
     # ── first player ──
-    reporter_went_first = data.get("first_player") and "y" in str(data["first_player"]).lower()
+    first_player = data.get("first_player")
+    first_player_known = str(first_player).lower() in ("y", "yes", "n", "no")
+    reporter_went_first = first_player_known and "y" in str(first_player).lower()
     reporter_is_winner = data["reporter_id"] == data["winner_id"]
-    if reporter_is_winner:
+    if not first_player_known:
+        winner_went_first = "unknown"
+        loser_went_first = "unknown"
+    elif reporter_is_winner:
         winner_went_first = "y" if reporter_went_first else "n"
         loser_went_first = "n" if reporter_went_first else "y"
     else:
@@ -295,7 +307,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 winner_display_name=data["winner_global"],
                 loser_id=data["loser_id"],
                 loser_display_name=data["loser_global"],
-                first_player=data.get("first_player", "n"),
+                first_player=first_player or "unknown",
                 match_time=match_time,
                 curiosa_url_winner=winner_deck,
                 curiosa_url_loser=loser_deck,
@@ -332,7 +344,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
             winner_global=data["winner_global"],
             loser_id=data["loser_id"],
             loser_global=data["loser_global"],
-            first_player=data.get("first_player", "n"),
+            first_player=first_player or "unknown",
             match_time=match_time,
             match_comment=combined_comment,
             winner_deck_url=data.get("winner_deck_url"),
@@ -411,22 +423,23 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
         "\n\n**Tip:** If the result was reported incorrectly, use `!correct_match` "
         "in <#1456299008023728302> on the Summit server to request a correction."
     )
-    try:
-        reporter = await bot.fetch_user(data["reporter_id"])
-        await reporter.send(
-            f"{data['opponent_global']} has confirmed your match report! Match has been recorded.{stakes_msg}{correct_match_tip}"
-        )
-    except discord.Forbidden:
-        match_report_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
-        if match_report_channel:
-            await match_report_channel.send(
-                scrub_urls(
-                    f"<@{data['reporter_id']}> {data['opponent_global']} has confirmed your match report! "
-                    f"Match has been recorded.{stakes_msg}{correct_match_tip}"
-                )
+    if data.get("notify_reporter", True):
+        try:
+            reporter = await bot.fetch_user(data["reporter_id"])
+            await reporter.send(
+                f"{data['opponent_global']} has confirmed your match report! Match has been recorded.{stakes_msg}{correct_match_tip}"
             )
-    except Exception:
-        pass
+        except discord.Forbidden:
+            match_report_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+            if match_report_channel:
+                await match_report_channel.send(
+                    scrub_urls(
+                        f"<@{data['reporter_id']}> {data['opponent_global']} has confirmed your match report! "
+                        f"Match has been recorded.{stakes_msg}{correct_match_tip}"
+                    )
+                )
+        except Exception:
+            pass
 
     # ── cleanup in-memory + DB ──
     guild_id = data.get("guild_id")
@@ -436,9 +449,16 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
     # ── mark pairing reported ──
     if data["match_type"] == "limited":
         if guild_id:
-            mark_limited_pairing_reported(guild_id, data["winner_id"], data["loser_id"])
+            mark_limited_pairing_reported(
+                guild_id,
+                data["winner_id"],
+                data["loser_id"],
+                pairing_id=data.get("pairing_id"),
+            )
     elif guild_id:
         mark_pairing_reported(guild_id, data["winner_id"], data["loser_id"], pairing_id=data.get("pairing_id"))
+    if pairing_id:
+        delete_match_cards_for_pairing(pairing_id, data.get("match_type", "ranked"))
 
     # ── limited run status DMs ──
     if data["match_type"] == "limited":
@@ -615,6 +635,8 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 await lfg_channel.send(embed=embed)
     except Exception as e:
         logger.error(f"Error in alter card drop: {e}", exc_info=True)
+
+    return match_id
 
 
 async def _execute_match_dispute(interaction: discord.Interaction, confirmation_id: int, data: dict):
@@ -1115,12 +1137,32 @@ def delete_match_card(card_id: int):
     conn.close()
 
 
-def delete_match_cards_for_pairing(pairing_id: int):
+def delete_match_cards_for_pairing(pairing_id: int, match_type: str = None):
     """Remove all match card rows for a given pairing."""
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM active_match_cards WHERE pairing_id = ?", (pairing_id,))
+    if match_type:
+        conn.execute(
+            "DELETE FROM active_match_cards WHERE pairing_id = ? AND match_type = ?",
+            (pairing_id, match_type),
+        )
+    else:
+        conn.execute("DELETE FROM active_match_cards WHERE pairing_id = ?", (pairing_id,))
     conn.commit()
     conn.close()
+
+
+def load_match_card_for_pairing(pairing_id: int, match_type: str):
+    """Load the newest Discord match card for an exact pairing and queue type."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        """SELECT id FROM active_match_cards
+           WHERE pairing_id = ? AND match_type = ?
+           ORDER BY created_at DESC, id DESC LIMIT 1""",
+        (pairing_id, match_type),
+    ).fetchone()
+    conn.close()
+    return load_match_card(row["id"]) if row else None
 
 
 class PersistentMatchCardReportButton(
@@ -1165,6 +1207,20 @@ class PersistentMatchCardReportButton(
                     "You're not part of this match.", ephemeral=True
                 )
                 return
+
+            if data.get("guild_id") and data.get("pairing_id"):
+                pairing = (
+                    get_limited_pairing_by_id(data["guild_id"], data["pairing_id"])
+                    if data["match_type"] == "limited"
+                    else get_pairing_by_id(data["guild_id"], data["pairing_id"])
+                )
+                if not pairing or pairing.get("status") != "active":
+                    delete_match_card(self.card_id)
+                    await interaction.response.send_message(
+                        "This match has already been recorded. Duplicate report prevented.",
+                        ephemeral=True,
+                    )
+                    return
 
             opponent_id = player2_id if reporter_id == player1_id else player1_id
             if (reporter_id, opponent_id) in pending_match_reports or (opponent_id, reporter_id) in pending_match_reports:

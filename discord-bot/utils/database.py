@@ -40,6 +40,7 @@ from repositories.elo_repo import (  # noqa: F401
     # Pairing functions
     save_pairing,
     get_active_pairing_for_user,
+    get_pairing_by_id,
     get_opponent_from_pairing,
     get_pairing_between_players,
     validate_pairing,

@@ -39,7 +39,7 @@ Shared pytest fixtures:
 ### test_lfg_queue.py (25+ tests)
 Queue operations and matching:
 - TestLFGQueueBasics - Add/remove users, duplicates, deck URLs
-- TestQueueExpiration - Expire entries, validate timeframes (5-120 min)
+- TestQueueExpiration - Expire entries, validate timeframes (5-240 min)
 - TestMatchingLogic - Two-user matching, empty queue handling
 - TestConcurrentAccess - Thread-safe operations with locks
 - TestQueueState - Pending reports, processed matches tracking

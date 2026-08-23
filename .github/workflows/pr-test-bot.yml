@@ -27,6 +27,8 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run pytest
+        env:
+          OPENAI_API_KEY: test-key
         run: |
           cd discord-bot
           cp config.example.py config.py

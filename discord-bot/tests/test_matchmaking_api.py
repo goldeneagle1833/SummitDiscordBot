@@ -1,5 +1,6 @@
 import time
 import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from aiohttp import web
@@ -17,7 +18,11 @@ from cogs.lfg.persistent_confirm import (
 )
 from repositories.elo_repo import save_pairing
 from services.matchmaking_api import _prune_results, _summit_member, start_matchmaking_api
-from services.sorcery_online_matchmaking import provision_sorcery_online_match
+from services import sorcery_online_matchmaking
+from services.sorcery_online_matchmaking import (
+    provision_sorcery_online_match,
+    summit_matchmaking_api_key,
+)
 from services.summit_result_reporting import record_sorcery_online_result
 
 
@@ -39,6 +44,14 @@ def test_complete_links_add_private_seats_and_voice_reminder():
     assert reporter_url in extras[2]
     assert other_url in extras[3]
     assert "Join To Make a Room" in extras[4]
+
+
+def test_matchmaking_key_prefers_shared_bot_env(monkeypatch, tmp_path: Path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("DRAFT_SORCERY_API_KEY=shared-file-key\n", encoding="utf-8")
+    monkeypatch.setenv("DRAFT_SORCERY_API_KEY", "stale-process-key")
+    monkeypatch.setattr(sorcery_online_matchmaking, "BOT_ENV_PATH", env_path)
+    assert summit_matchmaking_api_key() == "shared-file-key"
 
 
 @pytest.mark.asyncio

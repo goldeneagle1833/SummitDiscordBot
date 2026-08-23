@@ -2,15 +2,24 @@
 
 import logging
 import os
+from pathlib import Path
 
 import aiohttp
+from dotenv import dotenv_values
 
 
 logger = logging.getLogger("discord_bot")
+BOT_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+
+
+def summit_matchmaking_api_key():
+    """Read the shared integration key used by both Summit services."""
+    file_key = dotenv_values(BOT_ENV_PATH).get("DRAFT_SORCERY_API_KEY")
+    return str(file_key or os.getenv("DRAFT_SORCERY_API_KEY", "")).strip()
 
 
 async def provision_sorcery_online_match(guild_id, pairing_id, queue_type, players):
-    api_key = os.getenv("DRAFT_SORCERY_API_KEY", "").strip()
+    api_key = summit_matchmaking_api_key()
     endpoint = os.getenv(
         "SORCERY_ONLINE_MATCHMAKING_URL",
         "https://playsorceryonline.com/api/internal/summit-matchmaking/matches",

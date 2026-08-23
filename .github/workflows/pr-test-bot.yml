@@ -29,6 +29,7 @@ jobs:
       - name: Run pytest
         run: |
           cd discord-bot
+          cp config.example.py config.py
           python -m pytest tests/ -v
         continue-on-error: false
 

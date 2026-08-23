@@ -40,7 +40,6 @@ from cogs.lfg.persistent_confirm import (
 from repositories.elo_repo import migrate_to_dual_elo_system
 from services.elo_service import backfill_deck_data
 from services.matchmaking_api import start_matchmaking_api
-from services.sorcery_online_matchmaking import sorcery_online_matchmaking_enabled
 
 import config
 
@@ -199,11 +198,7 @@ async def main():
             PersistentMatchCardReportButton, PersistentMatchCardCancelButton,
         )
         await setup_cogs()
-        matchmaking_runner = None
-        if sorcery_online_matchmaking_enabled():
-            matchmaking_runner = await start_matchmaking_api(bot)
-        else:
-            logger.info("Sorcery Online matchmaking integration is disabled")
+        matchmaking_runner = await start_matchmaking_api(bot)
         try:
             await bot.start(TOKEN)
         finally:

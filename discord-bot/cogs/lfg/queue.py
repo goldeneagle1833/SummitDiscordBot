@@ -15,10 +15,7 @@ from utils.constants import SORCERY_NICKNAMES
 from utils.database import save_pairing
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
 from services.card_points_service import validate_deck_points
-from services.sorcery_online_matchmaking import (
-    provision_sorcery_online_match,
-    sorcery_online_matchmaking_enabled,
-)
+from services.sorcery_online_matchmaking import provision_sorcery_online_match
 
 logger = logging.getLogger("discord_bot")
 
@@ -33,10 +30,6 @@ def _clear_matching_web_users(*user_ids):
 
 async def provision_match_and_publish_results(guild_id, pairing_id, queue_type, players):
     """Provision seats and publish stable results for website-origin players."""
-    if not sorcery_online_matchmaking_enabled():
-        _clear_matching_web_users(*(player["discord_user_id"] for player in players))
-        return {}
-
     provisioned_links = await provision_sorcery_online_match(
         guild_id, pairing_id, queue_type, players
     ) or {}
@@ -59,12 +52,11 @@ async def provision_match_and_publish_results(guild_id, pairing_id, queue_type, 
 
 
 def match_delivery_extras(provisioned_links, reporter_id, other_id):
-    """Build opt-in additions without changing legacy match messages when disabled."""
-    if not sorcery_online_matchmaking_enabled():
-        return None, None, "", "", ""
-
+    """Add Sorcery Online details only after both private seats were provisioned."""
     reporter_game_url = provisioned_links.get(reporter_id)
     other_game_url = provisioned_links.get(other_id)
+    if not reporter_game_url or not other_game_url:
+        return None, None, "", "", ""
     reporter_game_text = (
         f"\n\n🎴 **Play on Sorcery Online:** {reporter_game_url}"
         if reporter_game_url

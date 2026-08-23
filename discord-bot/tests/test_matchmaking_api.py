@@ -17,49 +17,61 @@ from cogs.lfg.persistent_confirm import (
 )
 from repositories.elo_repo import save_pairing
 from services.matchmaking_api import _prune_results, _summit_member, start_matchmaking_api
-from services.sorcery_online_matchmaking import (
-    provision_sorcery_online_match,
-    sorcery_online_matchmaking_enabled,
-)
+from services.sorcery_online_matchmaking import provision_sorcery_online_match
 from services.summit_result_reporting import record_sorcery_online_result
 
 
-def test_sorcery_online_matchmaking_is_opt_in(monkeypatch):
-    monkeypatch.delenv("SORCERY_ONLINE_MATCHMAKING_ENABLED", raising=False)
-    assert sorcery_online_matchmaking_enabled() is False
-
-    for enabled_value in ("1", "true", "TRUE", "yes", "on"):
-        monkeypatch.setenv("SORCERY_ONLINE_MATCHMAKING_ENABLED", enabled_value)
-        assert sorcery_online_matchmaking_enabled() is True
-
-    for disabled_value in ("", "0", "false", "no", "off"):
-        monkeypatch.setenv("SORCERY_ONLINE_MATCHMAKING_ENABLED", disabled_value)
-        assert sorcery_online_matchmaking_enabled() is False
-
-
-def test_disabled_integration_adds_nothing_to_legacy_match_messages(monkeypatch):
-    monkeypatch.delenv("SORCERY_ONLINE_MATCHMAKING_ENABLED", raising=False)
-    extras = match_delivery_extras(
-        {10: "https://example.test/seat/10", 20: "https://example.test/seat/20"},
+def test_missing_links_add_nothing_to_legacy_match_messages():
+    assert match_delivery_extras({}, 10, 20) == (None, None, "", "", "")
+    assert match_delivery_extras(
+        {10: "https://example.test/seat/10"},
         10,
         20,
-    )
-    assert extras == (None, None, "", "", "")
+    ) == (None, None, "", "", "")
+
+
+def test_complete_links_add_private_seats_and_voice_reminder():
+    reporter_url = "https://example.test/seat/10"
+    other_url = "https://example.test/seat/20"
+    extras = match_delivery_extras({10: reporter_url, 20: other_url}, 10, 20)
+    assert extras[0] == reporter_url
+    assert extras[1] == other_url
+    assert reporter_url in extras[2]
+    assert other_url in extras[3]
+    assert "Join To Make a Room" in extras[4]
 
 
 @pytest.mark.asyncio
-async def test_disabled_integration_does_not_start_listener(monkeypatch):
-    monkeypatch.delenv("SORCERY_ONLINE_MATCHMAKING_ENABLED", raising=False)
-    with patch("services.matchmaking_api.web.AppRunner") as app_runner:
-        runner = await start_matchmaking_api(MagicMock())
-    assert runner is None
-    app_runner.assert_not_called()
+async def test_matchmaking_listener_starts_without_feature_flag():
+    runner = MagicMock()
+    runner.setup = AsyncMock()
+    runner.cleanup = AsyncMock()
+    site = MagicMock()
+    site.start = AsyncMock()
+    with (
+        patch("services.matchmaking_api.web.AppRunner", return_value=runner),
+        patch("services.matchmaking_api.web.TCPSite", return_value=site),
+    ):
+        result = await start_matchmaking_api(MagicMock())
+    assert result is runner
+    runner.setup.assert_awaited_once()
+    site.start.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_disabled_integration_never_calls_sorcery_online(monkeypatch):
-    monkeypatch.delenv("SORCERY_ONLINE_MATCHMAKING_ENABLED", raising=False)
-    monkeypatch.setenv("DRAFT_SORCERY_API_KEY", "already-configured-key")
+async def test_matchmaking_listener_failure_does_not_stop_the_bot():
+    runner = MagicMock()
+    runner.setup = AsyncMock(side_effect=OSError("port already in use"))
+    runner.cleanup = AsyncMock()
+    with patch("services.matchmaking_api.web.AppRunner", return_value=runner):
+        result = await start_matchmaking_api(MagicMock())
+    assert result is None
+    runner.cleanup.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_missing_key_skips_sorcery_online_provisioning(monkeypatch):
+    monkeypatch.delenv("DRAFT_SORCERY_API_KEY", raising=False)
     with patch("services.sorcery_online_matchmaking.aiohttp.ClientSession") as session:
         links = await provision_sorcery_online_match(1, 2, "ranked", [])
     assert links is None
@@ -67,8 +79,18 @@ async def test_disabled_integration_never_calls_sorcery_online(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_disabled_integration_does_not_publish_website_results(monkeypatch):
-    monkeypatch.delenv("SORCERY_ONLINE_MATCHMAKING_ENABLED", raising=False)
+async def test_unavailable_sorcery_online_provisioning_is_non_fatal(monkeypatch):
+    monkeypatch.setenv("DRAFT_SORCERY_API_KEY", "configured-key")
+    with patch(
+        "services.sorcery_online_matchmaking.aiohttp.ClientSession",
+        side_effect=OSError("endpoint unavailable"),
+    ):
+        links = await provision_sorcery_online_match(1, 2, "ranked", [])
+    assert links is None
+
+
+@pytest.mark.asyncio
+async def test_unavailable_provisioning_still_publishes_website_results():
     state.matching_web_users.clear()
     state.pending_web_matches.clear()
     state.matching_web_users[10] = "ranked"
@@ -88,12 +110,12 @@ async def test_disabled_integration_does_not_publish_website_results(monkeypatch
     ]
     with patch(
         "cogs.lfg.queue.provision_sorcery_online_match",
-        new=AsyncMock(),
+        new=AsyncMock(return_value=None),
     ) as provision:
         links = await provision_match_and_publish_results(1, 2, "ranked", players)
     assert links == {}
-    provision.assert_not_awaited()
-    assert state.pending_web_matches == {}
+    provision.assert_awaited_once()
+    assert state.pending_web_matches[10]["game_url"] is None
     assert state.matching_web_users == {}
 
 

@@ -15,7 +15,10 @@ from utils.constants import SORCERY_NICKNAMES
 from utils.database import save_pairing
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
 from services.card_points_service import validate_deck_points
-from services.sorcery_online_matchmaking import provision_sorcery_online_match
+from services.sorcery_online_matchmaking import (
+    provision_sorcery_online_match,
+    sorcery_online_matchmaking_enabled,
+)
 
 logger = logging.getLogger("discord_bot")
 
@@ -30,6 +33,10 @@ def _clear_matching_web_users(*user_ids):
 
 async def provision_match_and_publish_results(guild_id, pairing_id, queue_type, players):
     """Provision seats and publish stable results for website-origin players."""
+    if not sorcery_online_matchmaking_enabled():
+        _clear_matching_web_users(*(player["discord_user_id"] for player in players))
+        return {}
+
     provisioned_links = await provision_sorcery_online_match(
         guild_id, pairing_id, queue_type, players
     ) or {}
@@ -49,6 +56,27 @@ async def provision_match_and_publish_results(guild_id, pairing_id, queue_type, 
             }
         matching_web_users.pop(user_id, None)
     return provisioned_links
+
+
+def match_delivery_extras(provisioned_links, reporter_id, other_id):
+    """Build opt-in additions without changing legacy match messages when disabled."""
+    if not sorcery_online_matchmaking_enabled():
+        return None, None, "", "", ""
+
+    reporter_game_url = provisioned_links.get(reporter_id)
+    other_game_url = provisioned_links.get(other_id)
+    reporter_game_text = (
+        f"\n\n🎴 **Play on Sorcery Online:** {reporter_game_url}"
+        if reporter_game_url
+        else ""
+    )
+    other_game_text = (
+        f"\n\n🎴 **Play on Sorcery Online:** {other_game_url}"
+        if other_game_url
+        else ""
+    )
+    voice_text = f"\n\n🔊 **Voice chat:** [Join To Make a Room]({SUMMIT_VOICE_URL})"
+    return reporter_game_url, other_game_url, reporter_game_text, other_game_text, voice_text
 
 
 LIMITED_RUN_REQUIRED_MESSAGE = (
@@ -569,11 +597,17 @@ async def _process_queue_join(
         other_id, other_global, other_user, other_deck_url, _ = other_player
 
         reporter_deck_text = f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
-        reporter_game_url = provisioned_links.get(reporter_id)
-        other_game_url = provisioned_links.get(other_id)
-        reporter_game_text = f"\n\n🎴 **Play on Sorcery Online:** {reporter_game_url}" if reporter_game_url else ""
-        other_game_text = f"\n\n🎴 **Play on Sorcery Online:** {other_game_url}" if other_game_url else ""
-        voice_text = f"\n\n🔊 **Voice chat:** [Join To Make a Room]({SUMMIT_VOICE_URL})"
+        (
+            reporter_game_url,
+            other_game_url,
+            reporter_game_text,
+            other_game_text,
+            voice_text,
+        ) = match_delivery_extras(
+            provisioned_links,
+            reporter_id,
+            other_id,
+        )
 
         if match_type == "limited":
             if reporter_is_joiner:
@@ -677,10 +711,13 @@ async def _process_queue_join(
                             f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome.\n\n"
                             f"💡 **Tip:** If you need fresh reporting buttons, click **'📋 Report Last Match'**!"
                         ) + voice_text
-                    await dm_channel.send(
-                        fallback_message,
-                        view=PrivateSeatLinkView(other_id, other_game_url) if other_game_url else None,
-                    )
+                    if other_game_url:
+                        await dm_channel.send(
+                            fallback_message,
+                            view=PrivateSeatLinkView(other_id, other_game_url),
+                        )
+                    else:
+                        await dm_channel.send(fallback_message)
             except Exception as e:
                 logger.error(f"Failed to handle DM failure for other player: {e}")
 

@@ -37,7 +37,7 @@ from cogs.lfg.queue import (
     JoinQueueButtons,
     PrivateSeatLinkButton,
     PrivateSeatLinkView,
-    SUMMIT_VOICE_URL,
+    match_delivery_extras,
     provision_match_and_publish_results,
 )
 from cogs.lfg.queue_definitions import enabled_queue_definitions
@@ -631,7 +631,7 @@ class LFGCog(commands.Cog):
                     placeholder = SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]
                     details.append(f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`")
                 embed.add_field(
-                    name=f'{definition["emoji"]} {definition["label"]} Queue',
+                    name=f'{definition.get("status_emoji", definition["emoji"])} {definition["label"]} Queue',
                     value="\n".join(details) if details else "`Empty`",
                     inline=False,
                 )
@@ -1295,11 +1295,17 @@ class LFGCog(commands.Cog):
             reporter_deck_text = (
                 f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
             )
-            reporter_game_url = provisioned_links.get(reporter_id)
-            other_game_url = provisioned_links.get(other_id)
-            reporter_game_text = f"\n\n🎴 **Play on Sorcery Online:** {reporter_game_url}" if reporter_game_url else ""
-            other_game_text = f"\n\n🎴 **Play on Sorcery Online:** {other_game_url}" if other_game_url else ""
-            voice_text = f"\n\n🔊 **Voice chat:** [Join To Make a Room]({SUMMIT_VOICE_URL})"
+            (
+                reporter_game_url,
+                other_game_url,
+                reporter_game_text,
+                other_game_text,
+                voice_text,
+            ) = match_delivery_extras(
+                provisioned_links,
+                reporter_id,
+                other_id,
+            )
 
             match_type_emoji = "⚔️" if match_type == "ranked" else "⭐"
             match_type_label = "Ranked" if match_type == "ranked" else "Casual"
@@ -1380,10 +1386,13 @@ class LFGCog(commands.Cog):
                                 f"{other_user.mention} 🎮 **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
                                 f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome."
                             ) + voice_text
-                        await dm_channel.send(
-                            fallback_message,
-                            view=PrivateSeatLinkView(other_id, other_game_url) if other_game_url else None,
-                        )
+                        if other_game_url:
+                            await dm_channel.send(
+                                fallback_message,
+                                view=PrivateSeatLinkView(other_id, other_game_url),
+                            )
+                        else:
+                            await dm_channel.send(fallback_message)
                 except Exception as e:
                     logger.error(
                         f"Failed to handle DM failure for other player: {e}"

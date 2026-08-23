@@ -14,6 +14,7 @@ from cogs.lfg.queue_definitions import enabled_queue_definitions, queue_definiti
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
 from repositories.limited_repo import get_active_arena_run
 from services.card_points_service import validate_deck_points
+from services.sorcery_online_matchmaking import sorcery_online_matchmaking_enabled
 
 
 logger = logging.getLogger("discord_bot")
@@ -114,6 +115,10 @@ async def _status(bot, user_id):
 
 
 async def start_matchmaking_api(bot):
+    if not sorcery_online_matchmaking_enabled():
+        logger.info("Sorcery Online matchmaking bot API is disabled")
+        return None
+
     async def status(request):
         user_id = int(request.match_info["user_id"])
         return web.json_response(await _status(bot, user_id))

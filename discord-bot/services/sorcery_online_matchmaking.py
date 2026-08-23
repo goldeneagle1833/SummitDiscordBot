@@ -9,7 +9,20 @@ import aiohttp
 logger = logging.getLogger("discord_bot")
 
 
+def sorcery_online_matchmaking_enabled():
+    """Return whether the Sorcery Online integration was explicitly enabled."""
+    return os.getenv("SORCERY_ONLINE_MATCHMAKING_ENABLED", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 async def provision_sorcery_online_match(guild_id, pairing_id, queue_type, players):
+    if not sorcery_online_matchmaking_enabled():
+        return None
+
     api_key = os.getenv("DRAFT_SORCERY_API_KEY", "").strip()
     endpoint = os.getenv(
         "SORCERY_ONLINE_MATCHMAKING_URL",

@@ -6,7 +6,14 @@ from services.pilots_service import is_pilot_active
 QUEUE_DEFINITIONS = (
     {"type": "points", "label": "Rumble (Omens)", "emoji": "📊", "pilot": "PointsQueue", "deck_mode": "required"},
     {"type": "ranked", "label": "Ranked", "emoji": "⚔️", "pilot": "RankedQueue", "deck_mode": "required"},
-    {"type": "testing", "label": "Casual", "emoji": "⭐", "pilot": "CasualQueue", "deck_mode": "required"},
+    {
+        "type": "testing",
+        "label": "Casual",
+        "emoji": "⭐",
+        "status_emoji": "🧪",
+        "pilot": "CasualQueue",
+        "deck_mode": "required",
+    },
     {"type": "limited", "label": "Limited", "emoji": "🎲", "pilot": "GrewWolves", "deck_mode": "active_run"},
     {"type": "rumble", "label": "Rumble", "emoji": "💥", "pilot": "RumbleQueue", "deck_mode": "required"},
 )

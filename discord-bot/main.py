@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import os
 import logging
+from pathlib import Path
 from dotenv import load_dotenv
 
 from cogs.lfg import LFGCog
@@ -43,7 +44,7 @@ from services.matchmaking_api import start_matchmaking_api
 
 import config
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 TOKEN = os.getenv("TOKEN")
 
 # Configure logging

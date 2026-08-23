@@ -15,6 +15,7 @@ from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pendin
 from repositories.limited_repo import get_active_arena_run
 from services.card_points_service import validate_deck_points
 from services.sorcery_online_matchmaking import sorcery_online_matchmaking_enabled
+from services.summit_result_reporting import record_sorcery_online_result
 
 
 logger = logging.getLogger("discord_bot")
@@ -185,11 +186,36 @@ async def start_matchmaking_api(bot):
             pending_web_matches.pop(user_id, None)
         return web.json_response({"acknowledged": True})
 
+    async def report_result(request):
+        payload = await request.json()
+        try:
+            result = await record_sorcery_online_result(
+                bot,
+                guild_id=int(request.match_info["guild_id"]),
+                pairing_id=int(request.match_info["pairing_id"]),
+                queue_type=str(payload.get("queue_type", "")),
+                reporter_id=int(payload["reporter_id"]),
+                winner_id=int(payload["winner_id"]),
+                loser_id=int(payload["loser_id"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise web.HTTPBadRequest(text=str(exc) or "Invalid result")
+        except LookupError as exc:
+            raise web.HTTPNotFound(text=str(exc))
+        except Exception as exc:
+            logger.error("Could not record Sorcery Online result: %s", exc, exc_info=True)
+            raise web.HTTPInternalServerError(text="Could not record match result")
+        return web.json_response(result)
+
     app = web.Application(middlewares=[_authentication], client_max_size=16 * 1024)
     app.router.add_get("/users/{user_id}/status", status)
     app.router.add_post("/users/{user_id}/queues", join)
     app.router.add_delete("/users/{user_id}/queues", leave)
     app.router.add_post("/users/{user_id}/results/{result_id}/ack", acknowledge)
+    app.router.add_post(
+        "/matches/{guild_id}/{pairing_id}/results",
+        report_result,
+    )
     runner = web.AppRunner(app)
     await runner.setup()
     host = os.getenv("MATCHMAKING_BOT_API_HOST", "127.0.0.1")

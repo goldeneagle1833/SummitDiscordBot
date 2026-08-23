@@ -10,11 +10,18 @@ sys.modules.setdefault("config", MagicMock(GUILD_ID=1))
 from cogs.lfg import state
 from cogs.lfg.queue import match_delivery_extras, provision_match_and_publish_results
 from cogs.lfg.queue_definitions import enabled_queue_definitions, queue_definition
+from cogs.lfg.persistent_confirm import (
+    create_match_card_view,
+    ensure_match_cards_table,
+    load_match_card_for_pairing,
+)
+from repositories.elo_repo import save_pairing
 from services.matchmaking_api import _prune_results, _summit_member, start_matchmaking_api
 from services.sorcery_online_matchmaking import (
     provision_sorcery_online_match,
     sorcery_online_matchmaking_enabled,
 )
+from services.summit_result_reporting import record_sorcery_online_result
 
 
 def test_sorcery_online_matchmaking_is_opt_in(monkeypatch):
@@ -88,6 +95,104 @@ async def test_disabled_integration_does_not_publish_website_results(monkeypatch
     provision.assert_not_awaited()
     assert state.pending_web_matches == {}
     assert state.matching_web_users == {}
+
+
+@pytest.mark.asyncio
+async def test_sorcery_online_result_is_idempotent_by_pairing(mock_bot):
+    ensure_match_cards_table()
+    pairing_id = save_pairing(1, 10, 20, "deck-a", "deck-b", "ranked")
+    create_match_card_view(
+        bot=mock_bot,
+        pairing_id=pairing_id,
+        player1_id=10,
+        player1_global="Alice",
+        player2_id=20,
+        player2_global="Bob",
+        guild_id=1,
+        match_type="ranked",
+    )
+
+    async def record_once(_interaction, _confirmation_id, data, **_kwargs):
+        from repositories.elo_repo import mark_pairing_reported
+        mark_pairing_reported(1, data["winner_id"], data["loser_id"], pairing_id=pairing_id)
+        return 77
+
+    with patch(
+        "services.summit_result_reporting._execute_match_confirmation",
+        new=AsyncMock(side_effect=record_once),
+    ) as execute:
+        first = await record_sorcery_online_result(
+            mock_bot,
+            guild_id=1,
+            pairing_id=pairing_id,
+            queue_type="ranked",
+            reporter_id=10,
+            winner_id=10,
+            loser_id=20,
+        )
+        retry = await record_sorcery_online_result(
+            mock_bot,
+            guild_id=1,
+            pairing_id=pairing_id,
+            queue_type="ranked",
+            reporter_id=20,
+            winner_id=10,
+            loser_id=20,
+        )
+    assert first == {"recorded": True, "duplicate": False, "match_id": 77}
+    assert retry == {"recorded": False, "duplicate": True, "match_id": None}
+    execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_sorcery_online_result_rejects_queue_and_player_spoofing(mock_bot):
+    pairing_id = save_pairing(1, 10, 20, "deck-a", "deck-b", "ranked")
+    with pytest.raises(ValueError, match="Queue type"):
+        await record_sorcery_online_result(
+            mock_bot,
+            guild_id=1,
+            pairing_id=pairing_id,
+            queue_type="testing",
+            reporter_id=10,
+            winner_id=10,
+            loser_id=20,
+        )
+    with pytest.raises(ValueError, match="players"):
+        await record_sorcery_online_result(
+            mock_bot,
+            guild_id=1,
+            pairing_id=pairing_id,
+            queue_type="ranked",
+            reporter_id=10,
+            winner_id=10,
+            loser_id=30,
+        )
+
+
+def test_match_card_lookup_isolated_by_queue_type(mock_bot):
+    ensure_match_cards_table()
+    create_match_card_view(
+        bot=mock_bot,
+        pairing_id=5,
+        player1_id=10,
+        player1_global="Ranked Alice",
+        player2_id=20,
+        player2_global="Ranked Bob",
+        guild_id=1,
+        match_type="ranked",
+    )
+    create_match_card_view(
+        bot=mock_bot,
+        pairing_id=5,
+        player1_id=30,
+        player1_global="Limited Alice",
+        player2_id=40,
+        player2_global="Limited Bob",
+        guild_id=1,
+        match_type="limited",
+    )
+    assert load_match_card_for_pairing(5, "ranked")["player1_id"] == 10
+    assert load_match_card_for_pairing(5, "limited")["player1_id"] == 30
 
 
 def test_enabled_queue_definitions_are_pilot_driven():

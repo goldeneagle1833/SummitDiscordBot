@@ -61,3 +61,13 @@ def leave_queues(user_id):
 @matchmaking_api_key
 def acknowledge_result(user_id, result_id):
     return _relay("POST", f"/users/{user_id}/results/{result_id}/ack")
+
+
+@matchmaking_bp.post("/matches/<guild_id>/<pairing_id>/results")
+@matchmaking_api_key
+def report_result(guild_id, pairing_id):
+    return _relay(
+        "POST",
+        f"/matches/{guild_id}/{pairing_id}/results",
+        request.get_json(silent=True) or {},
+    )

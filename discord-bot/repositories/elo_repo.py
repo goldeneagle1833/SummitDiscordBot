@@ -1078,6 +1078,22 @@ def get_active_pairing_for_user(guild_id: int, user_id: int) -> dict | None:
     return None
 
 
+def get_pairing_by_id(guild_id: int, pairing_id: int) -> dict | None:
+    """Get a pairing by its stable ID, including already reported pairings."""
+    create_active_pairings_table()
+    conn = sqlite3.connect("match_records.db")
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        """SELECT pairing_id, guild_id, player1_id, player2_id,
+                  player1_deck_url, player2_deck_url, created_at, status, match_type
+           FROM active_pairings
+           WHERE guild_id = ? AND pairing_id = ?""",
+        (guild_id, pairing_id),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def get_opponent_from_pairing(guild_id: int, user_id: int) -> int | None:
     """
     Get the opponent ID from an active pairing in a specific guild.

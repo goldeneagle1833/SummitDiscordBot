@@ -176,7 +176,7 @@ class TestQueueExpiration:
 
     @pytest.mark.asyncio
     async def test_timeframe_bounds(self):
-        """Test that timeframe is within bounds (5-120 minutes)."""
+        """Test that timeframe is within bounds (5-240 minutes)."""
         lfg_queue.clear()
 
         test_cases = [
@@ -184,12 +184,13 @@ class TestQueueExpiration:
             (5, 5),      # Valid
             (30, 30),    # Valid
             (120, 120),  # Valid
-            (150, 120),  # Too high -> 120
+            (150, 150),  # Valid
+            (300, 240),  # Too high -> 240
         ]
 
         for input_time, expected_time in test_cases:
             # Clamp timeframe to valid range
-            clamped = max(5, min(120, input_time))
+            clamped = max(5, min(240, input_time))
             assert clamped == expected_time
 
 

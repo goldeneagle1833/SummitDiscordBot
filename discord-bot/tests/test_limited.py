@@ -575,7 +575,7 @@ class TestLimitedQueueJoinModal:
     async def test_join_limited_button_uses_limited_modal(self, mock_bot, mock_interaction):
         view = JoinQueueButtons(mock_bot)
 
-        with patch("cogs.lfg.queue.is_pilot_active", return_value=True):
+        with patch("cogs.lfg.queue.queue_is_enabled", return_value=True):
             await view._handle_join(mock_interaction, "limited")
 
         modal = mock_interaction.response.send_modal.await_args.args[0]

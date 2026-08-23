@@ -39,6 +39,7 @@ from cogs.lfg.persistent_confirm import (
 )
 from repositories.elo_repo import migrate_to_dual_elo_system
 from services.elo_service import backfill_deck_data
+from services.matchmaking_api import start_matchmaking_api
 
 import config
 
@@ -197,7 +198,11 @@ async def main():
             PersistentMatchCardReportButton, PersistentMatchCardCancelButton,
         )
         await setup_cogs()
-        await bot.start(TOKEN)
+        matchmaking_runner = await start_matchmaking_api(bot)
+        try:
+            await bot.start(TOKEN)
+        finally:
+            await matchmaking_runner.cleanup()
 
 
 if __name__ == "__main__":

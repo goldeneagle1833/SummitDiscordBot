@@ -575,8 +575,9 @@ class TestLimitedQueueJoinModal:
 
         modal = mock_interaction.response.send_modal.await_args.args[0]
         assert isinstance(modal, LimitedQueueModal)
-        assert len(modal.children) == 1
-        assert len(modal.children) == 1
+        assert len(modal.children) == 2
+        assert modal.children[0].label == "Queue Duration (minutes)"
+        assert modal.children[1].label == "DraftSorcery Draft URL (if no active run)"
 
     @pytest.mark.asyncio
     async def test_limited_modal_queues_with_active_run_data(self, mock_bot, mock_interaction):

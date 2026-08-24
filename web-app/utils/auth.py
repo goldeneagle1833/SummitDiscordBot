@@ -1,5 +1,6 @@
 """Authentication and authorization utilities."""
 
+import hmac
 import logging
 from functools import wraps
 from flask import request, session, jsonify
@@ -9,22 +10,34 @@ from webapp_config import VALID_API_KEYS, ADMINS, CURIO_EDITORS
 logger = logging.getLogger(__name__)
 
 
+def _extract_api_key():
+    """Pull the API key from X-API-Key or Authorization: Bearer headers."""
+    provided_key = request.headers.get("X-API-Key") or request.headers.get(
+        "Authorization"
+    )
+    if provided_key and provided_key.startswith("Bearer "):
+        provided_key = provided_key[7:]
+    return provided_key
+
+
+def _api_key_valid(provided_key) -> bool:
+    """Constant-time comparison of the provided key against configured keys."""
+    if not provided_key:
+        return False
+    return any(hmac.compare_digest(provided_key, key) for key in VALID_API_KEYS)
+
+
 def require_api_key(f):
     """Decorator to require API key authentication for endpoints."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        provided_key = request.headers.get("X-API-Key") or request.headers.get(
-            "Authorization"
-        )
-
-        if provided_key and provided_key.startswith("Bearer "):
-            provided_key = provided_key[7:]
+        provided_key = _extract_api_key()
 
         if not VALID_API_KEYS:
             logger.error("No API keys configured in environment")
             return jsonify({"error": "API authentication not configured"}), 500
 
-        if not provided_key or provided_key not in VALID_API_KEYS:
+        if not _api_key_valid(provided_key):
             logger.warning(
                 f"Unauthorized API access attempt from {request.remote_addr}"
             )
@@ -50,13 +63,7 @@ def require_auth(f):
             return f(*args, **kwargs)
 
         # Check API key
-        provided_key = request.headers.get("X-API-Key") or request.headers.get(
-            "Authorization"
-        )
-        if provided_key and provided_key.startswith("Bearer "):
-            provided_key = provided_key[7:]
-
-        if provided_key and provided_key in VALID_API_KEYS:
+        if _api_key_valid(_extract_api_key()):
             return f(*args, **kwargs)
 
         logger.warning(
@@ -72,23 +79,18 @@ def is_admin() -> bool:
     """Check if the current user is an admin.
 
     Access granted if:
-    - Request is from localhost
     - User is in ADMINS list (session auth)
     - Request has valid API key
-    """
-    # Localhost has full admin access
-    remote_addr = request.remote_addr or ""
-    host = request.host or ""
-    if remote_addr in ("127.0.0.1", "::1", "localhost") or host.startswith("localhost") or host.startswith("127.0.0.1"):
-        return True
 
+    NOTE: The previous localhost/Host-header shortcut was removed. `request.host`
+    is attacker-controlled (the client's Host header is proxied through nginx),
+    so `Host: localhost` granted full admin to unauthenticated requests under
+    default-vhost conditions. Behind the gunicorn unix socket, `remote_addr` is
+    also not a meaningful client IP. Local maintenance should authenticate with
+    an API key instead.
+    """
     # API key grants access
-    provided_key = request.headers.get("X-API-Key") or request.headers.get(
-        "Authorization"
-    )
-    if provided_key and provided_key.startswith("Bearer "):
-        provided_key = provided_key[7:]
-    if provided_key and provided_key in VALID_API_KEYS:
+    if _api_key_valid(_extract_api_key()):
         return True
 
     # Check session user against admin list

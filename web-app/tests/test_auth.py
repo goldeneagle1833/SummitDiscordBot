@@ -109,8 +109,15 @@ class TestAdminAccess:
                 from utils.auth import is_admin
                 assert is_admin() is False
 
-    def test_localhost_is_always_admin(self, app):
-        """Localhost requests always get admin access."""
+    def test_localhost_is_not_admin(self, app):
+        """Localhost/Host-header requests must NOT get admin access.
+
+        request.host comes from the client-supplied Host header (proxied
+        through nginx via `proxy_set_header Host $host`), so treating it as
+        proof of local origin allowed unauthenticated remote requests with
+        `Host: localhost` to gain full admin. Admin now requires a session
+        user in ADMIN_IDS or a valid API key.
+        """
         with app.test_request_context():
             with patch("utils.auth.request") as mock_req:
                 mock_req.remote_addr = "127.0.0.1"
@@ -118,7 +125,18 @@ class TestAdminAccess:
                 mock_req.headers = {}
 
                 from utils.auth import is_admin
-                assert is_admin() is True
+                assert is_admin() is False
+
+    def test_host_header_spoof_is_not_admin(self, app):
+        """Remote request spoofing Host: localhost must be denied."""
+        with app.test_request_context():
+            with patch("utils.auth.request") as mock_req:
+                mock_req.remote_addr = "203.0.113.1"
+                mock_req.host = "localhost"
+                mock_req.headers = {}
+
+                from utils.auth import is_admin
+                assert is_admin() is False
 
 
 class TestApiKeyAuth:

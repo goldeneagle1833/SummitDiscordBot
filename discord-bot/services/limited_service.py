@@ -5,6 +5,8 @@ forfeit penalty calculation, and run lifecycle.
 """
 
 import logging
+import requests
+from urllib.parse import urlparse, parse_qs
 
 from services.elo_service import update_elo
 from utils.deck_checker import scrape_Curosa
@@ -61,6 +63,52 @@ def update_limited_elo(user_id: int, display_name: str, did_win: bool, opponent_
 
 
 # --- Arena Run Management ---
+
+
+def validate_draftsorcery_url(url: str) -> tuple[bool, str | None]:
+    """Call the DraftSorcery API to verify a draft URL is real.
+
+    Returns:
+        (is_valid, normalized_url) where normalized_url is
+        ``https://draftsorcery.com/?deck=<code>`` on success, None on failure.
+    """
+    try:
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        deck_code = params.get("deck", [None])[0]
+        if not deck_code:
+            return False, None
+
+        response = requests.get(
+            f"https://draftsorcery.com/api/decks/{deck_code}",
+            timeout=15,
+        )
+        if response.status_code != 200:
+            return False, None
+
+        data = response.json()
+        if not data:
+            return False, None
+
+        return True, f"https://draftsorcery.com/?deck={deck_code}"
+    except Exception as e:
+        logger.warning("Failed to validate DraftSorcery URL %s: %s", url, e)
+        return False, None
+
+
+def auto_start_arena_run(user_id: int, display_name: str, draft_url: str) -> dict:
+    """Validate a DraftSorcery URL and auto-create an arena run.
+
+    Raises ValueError if the URL is invalid or the player already has an active run.
+    Returns the new run dict on success.
+    """
+    is_valid, normalized_url = validate_draftsorcery_url(draft_url)
+    if not is_valid:
+        raise ValueError(
+            "Could not find a valid DraftSorcery draft at that URL. "
+            "Make sure you paste the full URL, e.g. https://draftsorcery.com/?deck=..."
+        )
+    return start_arena_run(user_id, display_name, normalized_url or draft_url)
 
 
 def start_arena_run(user_id: int, display_name: str, deck_url: str) -> dict:

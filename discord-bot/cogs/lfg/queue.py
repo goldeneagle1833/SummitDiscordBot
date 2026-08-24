@@ -13,12 +13,14 @@ from utils.database import save_pairing
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
 from services.pilots_service import is_pilot_active
 from services.card_points_service import validate_deck_points
+from services.limited_service import auto_start_arena_run
 
 logger = logging.getLogger("discord_bot")
 
 LIMITED_RUN_REQUIRED_MESSAGE = (
-    "You need an active Limited run to join the queue. "
-    "Start a new run by drafting at https://draftsorcery.com/."
+    "You don't have an active Limited run. "
+    "Paste your DraftSorcery draft URL (e.g. `https://draftsorcery.com/?deck=...`) "
+    "in the **DraftSorcery Draft URL** field and we'll start your run automatically."
 )
 
 
@@ -128,13 +130,32 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
 
         deck_url = self.deck_url.value.strip() if self.deck_url.value else None
 
-        # For limited queue, player must have an active arena run (created via Draft Sorcery)
+        # For limited queue, player must have an active arena run.
+        # If none exists, attempt to auto-create one from the provided DraftSorcery URL.
         run_id = None
         if self.queue_type == "limited":
             active_run = get_active_arena_run(interaction.user.id)
             if active_run and active_run["status"] == "active" and active_run["wins"] < 4 and active_run["losses"] < 2:
                 run_id = active_run["run_id"]
                 deck_url = active_run["deck_url"]
+            elif deck_url and "draftsorcery.com" in deck_url.lower():
+                try:
+                    display_name = interaction.user.global_name or interaction.user.display_name
+                    active_run = await interaction.client.loop.run_in_executor(
+                        None, auto_start_arena_run, interaction.user.id, display_name, deck_url
+                    )
+                    run_id = active_run["run_id"]
+                    deck_url = active_run["deck_url"]
+                except ValueError as e:
+                    await interaction.followup.send(str(e), ephemeral=True)
+                    return
+                except Exception as e:
+                    logger.error("Failed to auto-start arena run for %s: %s", interaction.user.id, e)
+                    await interaction.followup.send(
+                        "Failed to start your Limited run. Please check the URL or contact an admin.",
+                        ephemeral=True,
+                    )
+                    return
             else:
                 await interaction.followup.send(
                     LIMITED_RUN_REQUIRED_MESSAGE,
@@ -153,7 +174,11 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
 
 
 class LimitedQueueModal(discord.ui.Modal, title="Join Limited Queue"):
-    """Modal for joining the Limited queue with only a duration."""
+    """Modal for joining the Limited queue.
+
+    If the player has no active run in the DB, they can paste their DraftSorcery
+    draft URL and we'll validate it via the SorceryDraft API and auto-create the run.
+    """
 
     timeframe = discord.ui.TextInput(
         label="Queue Duration (minutes)",
@@ -161,6 +186,13 @@ class LimitedQueueModal(discord.ui.Modal, title="Join Limited Queue"):
         required=False,
         default="30",
         max_length=3,
+    )
+
+    draft_url = discord.ui.TextInput(
+        label="DraftSorcery Draft URL (if no active run)",
+        placeholder="https://draftsorcery.com/?deck=...",
+        required=False,
+        max_length=200,
     )
 
     def __init__(self, bot):
@@ -173,26 +205,37 @@ class LimitedQueueModal(discord.ui.Modal, title="Join Limited Queue"):
         timeframe_value = parse_queue_timeframe(self.timeframe.value)
 
         active_run = get_active_arena_run(interaction.user.id)
-        if not (
-            active_run
-            and active_run["status"] == "active"
-            and active_run["wins"] < 4
-            and active_run["losses"] < 2
-        ):
-            await interaction.followup.send(
-                LIMITED_RUN_REQUIRED_MESSAGE,
-                ephemeral=True,
-            )
-            return
-
-        queue_type = "limited"
-        run_id = int(active_run["run_id"])
-        deck_url = active_run["deck_url"]
+        if active_run and active_run["status"] == "active" and active_run["wins"] < 4 and active_run["losses"] < 2:
+            run_id = int(active_run["run_id"])
+            deck_url = active_run["deck_url"]
+        else:
+            # No active run — try to auto-create one from the provided DraftSorcery URL
+            url_value = self.draft_url.value.strip() if self.draft_url.value else ""
+            if not url_value or "draftsorcery.com" not in url_value.lower():
+                await interaction.followup.send(LIMITED_RUN_REQUIRED_MESSAGE, ephemeral=True)
+                return
+            try:
+                display_name = interaction.user.global_name or interaction.user.display_name
+                active_run = await interaction.client.loop.run_in_executor(
+                    None, auto_start_arena_run, interaction.user.id, display_name, url_value
+                )
+                run_id = int(active_run["run_id"])
+                deck_url = active_run["deck_url"]
+            except ValueError as e:
+                await interaction.followup.send(str(e), ephemeral=True)
+                return
+            except Exception as e:
+                logger.error("Failed to auto-start arena run for %s: %s", interaction.user.id, e)
+                await interaction.followup.send(
+                    "Failed to start your Limited run. Please check the URL or contact an admin.",
+                    ephemeral=True,
+                )
+                return
 
         await _process_queue_join(
             self.bot,
             interaction,
-            queue_type,
+            "limited",
             timeframe_value,
             deck_url,
             run_id,

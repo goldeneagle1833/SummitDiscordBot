@@ -61,6 +61,17 @@ const RARITY_COLORS = {
   Unique: '#eab308',
 }
 
+const TCGPLAYER_IMPACT_LINK = 'https://partner.tcgplayer.com/c/5746741/1780961/21018'
+
+function buildTcgPlayerUrl(cards) {
+  if (!cards?.length) return null
+  const cardList = cards.map((c) => `${c.quantity || 1} ${c.name}`).join('||')
+  const massEntryUrl =
+    'https://www.tcgplayer.com/massentry?productline=Sorcery+Contested+Realm&c=' +
+    encodeURIComponent(cardList)
+  return TCGPLAYER_IMPACT_LINK + '?u=' + encodeURIComponent(massEntryUrl)
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getCardType(card) {
@@ -2149,6 +2160,8 @@ export default function DeckBuilder() {
     })
   }, [mainboard])
 
+  const tcgUrl = useMemo(() => buildTcgPlayerUrl(mainboard), [mainboard])
+
   // Apply filters
   const allCards = useMemo(() => [...mainboard, ...sideboard], [mainboard, sideboard])
   const filteredMainboard = useMemo(() => mainboard.filter((c) => cardMatchesFilter(c, filters)), [mainboard, filters])
@@ -2383,14 +2396,28 @@ export default function DeckBuilder() {
               </div>
             </div>
 
-            {/* Export */}
-            <button
-              onClick={handleExport}
-              className="ml-auto px-3 py-1.5 bg-bg-elevated border border-border rounded text-xs font-medium hover:border-secondary transition-colors"
-              title="Copy deck list to clipboard (Curiosa bulk format)"
-            >
-              {exportCopied ? 'Copied!' : 'Export List'}
-            </button>
+            {/* Export & Buy */}
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={handleExport}
+                className="px-3 py-1.5 bg-bg-elevated border border-border rounded text-xs font-medium hover:border-secondary transition-colors"
+                title="Copy deck list to clipboard (Curiosa bulk format)"
+              >
+                {exportCopied ? 'Copied!' : 'Export List'}
+              </button>
+              {tcgUrl && (
+                <a
+                  href={tcgUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+                  onClick={() => navigator.sendBeacon?.('/api/analytics/banner-click',
+                    new Blob([JSON.stringify({ banner_type: 'tcgplayer_buy' })], { type: 'application/json' }))}
+                >
+                  Buy on TCGPlayer ↗
+                </a>
+              )}
+            </div>
           </div>
 
           {layout === 'sandbox' ? (

@@ -14,7 +14,6 @@ from cogs.lfg.queue_definitions import enabled_queue_definitions, queue_definiti
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
 from repositories.limited_repo import get_active_arena_run
 from services.card_points_service import validate_deck_points
-from services.sorcery_online_matchmaking import summit_matchmaking_api_key
 from services.summit_result_reporting import record_sorcery_online_result
 
 
@@ -38,16 +37,14 @@ class WebsiteInteraction:
         self.followup = WebsiteFollowup()
 
 
-def _authorized(request):
-    expected = summit_matchmaking_api_key()
-    provided = request.headers.get("X-API-Key", "")
-    return bool(expected and provided and hmac.compare_digest(expected, provided))
+def _is_loopback_request(request):
+    return request.remote in {"127.0.0.1", "::1"}
 
 
 @web.middleware
 async def _authentication(request, handler):
-    if not _authorized(request):
-        raise web.HTTPUnauthorized(text="Unauthorized")
+    if not _is_loopback_request(request):
+        raise web.HTTPForbidden(text="Loopback access only")
     return await handler(request)
 
 

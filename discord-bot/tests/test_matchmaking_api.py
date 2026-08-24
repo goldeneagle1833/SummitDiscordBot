@@ -17,7 +17,13 @@ from cogs.lfg.persistent_confirm import (
     load_match_card_for_pairing,
 )
 from repositories.elo_repo import save_pairing
-from services.matchmaking_api import _prune_results, _summit_member, start_matchmaking_api
+from services.matchmaking_api import (
+    _authentication,
+    _is_loopback_request,
+    _prune_results,
+    _summit_member,
+    start_matchmaking_api,
+)
 from services import sorcery_online_matchmaking
 from services.sorcery_online_matchmaking import (
     provision_sorcery_online_match,
@@ -52,6 +58,19 @@ def test_matchmaking_key_prefers_shared_bot_env(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("DRAFT_SORCERY_API_KEY", "stale-process-key")
     monkeypatch.setattr(sorcery_online_matchmaking, "BOT_ENV_PATH", env_path)
     assert summit_matchmaking_api_key() == "shared-file-key"
+
+
+def test_bot_api_accepts_only_loopback_callers():
+    assert _is_loopback_request(MagicMock(remote="127.0.0.1")) is True
+    assert _is_loopback_request(MagicMock(remote="::1")) is True
+    assert _is_loopback_request(MagicMock(remote="203.0.113.10")) is False
+
+
+@pytest.mark.asyncio
+async def test_bot_api_rejects_non_loopback_callers():
+    with pytest.raises(web.HTTPForbidden) as exc_info:
+        await _authentication(MagicMock(remote="203.0.113.10"), AsyncMock())
+    assert exc_info.value.text == "Loopback access only"
 
 
 @pytest.mark.asyncio

@@ -7,6 +7,30 @@ import logging
 from random import randrange
 from openai import OpenAI
 
+# Uber-rare Curio Shart variants: the first Curio Shart ever (post-deploy) is
+# always one of these; after that, 10% of Curio Sharts forever. The claimed flag
+# survives FART GAME RESET and must never return to the guaranteed-100% state.
+UBER_RARE_CURIO_VARIANTS = {
+    "lavashart": {
+        "name": "LAVASHART",
+        "emoji": "🌋💥",
+        "color": 0x8B4513,  # reddish brown
+        "flavor": (
+            "Molten legendary essence erupts from the void — "
+            "an ***UBER-RARE CURIO*** forged in impossible heat!"
+        ),
+    },
+    "frostshart": {
+        "name": "FROSTSHART",
+        "emoji": "❄🥶",
+        "color": 0x6B8A9E,  # blueish gray
+        "flavor": (
+            "Absolute zero ruptures reality — "
+            "an ***UBER-RARE CURIO*** crystallized from pure entropy!"
+        ),
+    },
+}
+
 import config
 from utils.text import find_best_command_match
 from utils.checks import is_bot_admin
@@ -518,6 +542,321 @@ class FunCog(commands.Cog):
             if "conn" in locals():
                 conn.close()
 
+    @staticmethod
+    def classify_fart_roll(roll):
+        """Return (fart_message, fart_type) from a 1-100 roll."""
+        if roll >= 96:
+            return "Curio Shart! 💩💨💨💨💨", "curio_shart"
+        if roll >= 86:
+            return "Unique Fart! 💨💨💨💨", "unique"
+        if roll >= 66:
+            return "Elite Fart! 💨💨💨", "elite"
+        if roll >= 36:
+            return "Exceptional Fart! 💨💨", "exceptional"
+        return "Ordinary Fart! 💨", "ordinary"
+
+    def _ensure_uber_rare_curio_table(self, cur):
+        """Permanent singleton flag: first-ever Curio special (survives FART GAME RESET)."""
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS uber_rare_curio_claimed (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                claimed_by_user_id INTEGER,
+                variant TEXT NOT NULL,
+                claimed_at TEXT NOT NULL
+            )
+        """)
+
+    def is_uber_rare_guaranteed_claimed(self):
+        """True once the one-time guaranteed lavashart/frostshart has ever been awarded."""
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_uber_rare_curio_table(cur)
+            cur.execute("SELECT 1 FROM uber_rare_curio_claimed WHERE id = 1")
+            claimed = cur.fetchone() is not None
+            conn.close()
+            return claimed
+        except sqlite3.Error as e:
+            logger.error(f"Error checking uber-rare curio claimed flag: {e}")
+            if "conn" in locals():
+                conn.close()
+            # Fail closed: treat as claimed so we don't spam 100% specials on DB errors
+            return True
+
+    def mark_uber_rare_guaranteed_claimed(self, user_id, variant):
+        """Record the one-time guaranteed uber-rare Curio (never cleared by season reset)."""
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_uber_rare_curio_table(cur)
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO uber_rare_curio_claimed
+                    (id, claimed_by_user_id, variant, claimed_at)
+                VALUES (1, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    variant,
+                    datetime.datetime.now().isoformat(),
+                ),
+            )
+            conn.commit()
+            conn.close()
+        except sqlite3.Error as e:
+            logger.error(f"Error marking uber-rare curio claimed: {e}")
+            if "conn" in locals():
+                conn.close()
+
+    def roll_uber_rare_curio_variant(self, user_id=None):
+        """Roll lavashart/frostshart for a Curio Shart.
+
+        First Curio Shart ever (after deploy): 100% special, 50/50.
+        After that forever: 10% chance of special, still 50/50 lavashart vs frostshart.
+        The claimed flag survives FART GAME RESET — 100% never comes back.
+        Returns 'lavashart', 'frostshart', or None.
+        """
+        claimed = self.is_uber_rare_guaranteed_claimed()
+        if claimed:
+            if randrange(1, 101) > 10:
+                return None
+        variant = "lavashart" if randrange(2) == 0 else "frostshart"
+        if not claimed:
+            self.mark_uber_rare_guaranteed_claimed(user_id, variant)
+        return variant
+
+    @staticmethod
+    def format_uber_rare_highlight(variant):
+        """Crazy bold/italic highlight text for the chat message."""
+        info = UBER_RARE_CURIO_VARIANTS[variant]
+        emoji = info["emoji"]
+        name = info["name"]
+        return (
+            f"{emoji} ***__⚡ UBER-RARE CURIO UNLOCKED: {name} ⚡__*** {emoji}\n"
+            f"***_{info['flavor']}_***\n"
+        )
+
+    @staticmethod
+    def build_uber_rare_embed(variant):
+        """Colored embed (reddish-brown lava / blueish-gray frost) for the special."""
+        info = UBER_RARE_CURIO_VARIANTS[variant]
+        embed = discord.Embed(
+            title=f"{info['emoji']} UBER-RARE CURIO: {info['name']} {info['emoji']}",
+            description=(
+                f"***{info['flavor']}***\n\n"
+                f"*The default Curio Shart has mutated into something impossibly rare...*"
+            ),
+            color=info["color"],
+        )
+        embed.set_footer(text="Something impossible just happened...")
+        return embed
+
+    LAVASHART_DAMAGE = 50
+
+    @staticmethod
+    def _format_player_mentions(mentions):
+        """Join Discord player mentions for effect broadcast messages."""
+        if not mentions:
+            return ""
+        return ", ".join(mentions)
+
+    @staticmethod
+    def _format_lavashart_damage_line(mention, actual_damage):
+        if actual_damage == FunCog.LAVASHART_DAMAGE:
+            return mention
+        return f"{mention} (-{actual_damage} pts)"
+
+    def _ensure_frost_shart_freeze_table(self, cur):
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS frost_shart_freeze (
+                user_id INTEGER PRIMARY KEY,
+                frozen_until TEXT NOT NULL
+            )
+        """)
+
+    def is_frost_frozen(self, user_id):
+        """True if Frostshart has disabled this player's shop items until midnight EST."""
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_frost_shart_freeze_table(cur)
+            cur.execute(
+                """
+                SELECT 1 FROM frost_shart_freeze
+                WHERE user_id = ? AND frozen_until > datetime('now')
+                """,
+                (user_id,),
+            )
+            frozen = cur.fetchone() is not None
+            conn.close()
+            return frozen
+        except sqlite3.Error as e:
+            logger.error(f"Error checking frost shart freeze: {e}")
+            if "conn" in locals():
+                conn.close()
+            return False
+
+    def _get_player_display_name(self, user_id):
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT user_display_name FROM fart_scores WHERE user_id = ?",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            conn.close()
+            if row and row[0]:
+                return row[0]
+        except sqlite3.Error as e:
+            logger.error(f"Error fetching display name for {user_id}: {e}")
+            if "conn" in locals():
+                conn.close()
+        return "Unknown User"
+
+    def apply_frost_shart_freeze(self, user_id, user_display_name=None):
+        """Disable farting + shop items for rest of day (EST midnight)."""
+        now = get_est_now()
+        frozen_until = get_est_midnight()
+        display_name = user_display_name or self._get_player_display_name(user_id)
+        self.mark_daily_action_used(user_id, display_name, now)
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_frost_shart_freeze_table(cur)
+            cur.execute(
+                """
+                INSERT OR REPLACE INTO frost_shart_freeze (user_id, frozen_until)
+                VALUES (?, ?)
+                """,
+                (user_id, frozen_until.isoformat()),
+            )
+            conn.commit()
+            conn.close()
+        except sqlite3.Error as e:
+            logger.error(f"Error applying frost shart freeze to {user_id}: {e}")
+            if "conn" in locals():
+                conn.close()
+
+    async def apply_uber_rare_variant_effect(self, ctx, roller_id, variant):
+        """Apply lavashart/frostshart area effects. Star-protected players are skipped."""
+        if not variant:
+            return ""
+        shop = self.bot.get_cog("ShopCog")
+        if shop is None:
+            logger.error("ShopCog not loaded; cannot apply uber-rare variant effect")
+            return ""
+        if variant == "lavashart":
+            return await self._apply_lavashart_effect(ctx, roller_id, shop)
+        if variant == "frostshart":
+            return await self._apply_frostshart_effect(roller_id, shop)
+        return ""
+
+    async def _apply_lavashart_effect(self, ctx, roller_id, shop):
+        players = await shop.get_sorted_players()
+        if not players:
+            return ""
+
+        hit_players = []
+        hit_player_ids = []
+        protected_players = []
+
+        for player_id, _ in players:
+            if player_id == roller_id:
+                continue
+            if await shop.is_protected(player_id):
+                protected_players.append(f"<@{player_id}>")
+            else:
+                actual_damage = await shop.deduct_damage(
+                    player_id, self.LAVASHART_DAMAGE
+                )
+                hit_players.append((f"<@{player_id}>", actual_damage))
+                hit_player_ids.append((player_id, actual_damage))
+
+        lines = []
+        if hit_players:
+            scorched = [
+                self._format_lavashart_damage_line(mention, actual_damage)
+                for mention, actual_damage in hit_players
+            ]
+            lines.append(
+                "🌋💥 **LAVASHART ERUPTION!** Molten Curio wrath detonates across the "
+                "fart realm — everyone else feels the burn!"
+            )
+            lines.append(
+                f"**Scorched for {self.LAVASHART_DAMAGE} damage:** "
+                f"{self._format_player_mentions(scorched)}"
+            )
+        if protected_players:
+            lines.append(
+                f"⭐ **Star-shielded (no damage):** "
+                f"{self._format_player_mentions(protected_players)}"
+            )
+        if not lines:
+            return ""
+
+        for player_id, actual_damage in hit_player_ids:
+            await shop.check_gas_shield(ctx, player_id, roller_id, actual_damage)
+
+        return "\n".join(lines) + "\n"
+
+    async def _apply_frostshart_effect(self, roller_id, shop):
+        players = await shop.get_sorted_players()
+        if not players:
+            return ""
+
+        frozen_players = []
+        protected_players = []
+
+        for player_id, _ in players:
+            if player_id == roller_id:
+                continue
+            if await shop.is_protected(player_id):
+                protected_players.append(f"<@{player_id}>")
+            else:
+                self.apply_frost_shart_freeze(player_id)
+                frozen_players.append(f"<@{player_id}>")
+
+        lines = []
+        if frozen_players:
+            lines.append(
+                "❄🥶 **FROSTSHART BLIZZARD!** Absolute zero ripples outward — "
+                "the unlucky are entombed in glacial stench!"
+            )
+            lines.append(
+                "**Frozen until midnight EST (no farting, no shop items):** "
+                f"{self._format_player_mentions(frozen_players)}"
+            )
+        if protected_players:
+            lines.append(
+                f"⭐ **Star-shielded (immune):** "
+                f"{self._format_player_mentions(protected_players)}"
+            )
+        if not lines:
+            return ""
+
+        return "\n".join(lines) + "\n"
+
+    def maybe_uber_rare_curio(self, fart_type, user_id=None):
+        """If this is a Curio Shart, maybe attach lavashart/frostshart flair.
+
+        Returns (highlight_prefix, embed_or_None, variant_or_None).
+        """
+        if fart_type != "curio_shart":
+            return "", None, None
+        try:
+            variant = self.roll_uber_rare_curio_variant(user_id)
+        except Exception as e:
+            logger.error(f"Error rolling uber-rare curio: {e}")
+            return "", None, None
+        if not variant:
+            return "", None, None
+        return (
+            self.format_uber_rare_highlight(variant),
+            self.build_uber_rare_embed(variant),
+            variant,
+        )
+
     @commands.command(aliases=["farthelp", "help_fart", "fart_help"])
     async def helpfart(self, ctx):
         """Get detailed help on all fart commands."""
@@ -702,21 +1041,13 @@ class FunCog(commands.Cog):
                     conn.close()
 
             # Determine fart type based on roll (higher is better now)
-            if roll >= 96:
-                fart_message = "Curio Shart! 💩💨💨💨💨"
-                fart_type = "curio_shart"
-            elif roll >= 86:
-                fart_message = "Unique Fart! 💨💨💨💨"
-                fart_type = "unique"
-            elif roll >= 66:
-                fart_message = "Elite Fart! 💨💨💨"
-                fart_type = "elite"
-            elif roll >= 36:
-                fart_message = "Exceptional Fart! 💨💨"
-                fart_type = "exceptional"
-            else:
-                fart_message = "Ordinary Fart! 💨"
-                fart_type = "ordinary"
+            fart_message, fart_type = self.classify_fart_roll(roll)
+            uber_prefix, uber_embed, uber_variant = self.maybe_uber_rare_curio(
+                fart_type, ctx.author.id
+            )
+            variant_effect_msg = await self.apply_uber_rare_variant_effect(
+                ctx, ctx.author.id, uber_variant
+            )
 
             now = datetime.datetime.now()
             points_earned = roll  # Points equal to roll value
@@ -748,7 +1079,9 @@ class FunCog(commands.Cog):
                     "**MUSHROOM BOOST ACTIVATED!** \n" if lucky_charm_active else ""
                 )
                 await ctx.send(
-                    f"{mushroom_boost_msg}{fart_message} {fart_message_add} You earned {points_earned} points."
+                    f"{uber_prefix}{variant_effect_msg}{mushroom_boost_msg}{fart_message} "
+                    f"{fart_message_add} You earned {points_earned} points.",
+                    embed=uber_embed,
                 )
 
             except Exception as e:
@@ -893,21 +1226,13 @@ class FunCog(commands.Cog):
                 if "conn" in locals():
                     conn.close()
 
-            if roll >= 96:
-                fart_message = "Curio Shart! 💩💨💨💨💨"
-                fart_type = "curio_shart"
-            elif roll >= 86:
-                fart_message = "Unique Fart! 💨💨💨💨"
-                fart_type = "unique"
-            elif roll >= 66:
-                fart_message = "Elite Fart! 💨💨💨"
-                fart_type = "elite"
-            elif roll >= 36:
-                fart_message = "Exceptional Fart! 💨💨"
-                fart_type = "exceptional"
-            else:
-                fart_message = "Ordinary Fart! 💨"
-                fart_type = "ordinary"
+            fart_message, fart_type = self.classify_fart_roll(roll)
+            uber_prefix, uber_embed, uber_variant = self.maybe_uber_rare_curio(
+                fart_type, ctx.author.id
+            )
+            variant_effect_msg = await self.apply_uber_rare_variant_effect(
+                ctx, ctx.author.id, uber_variant
+            )
 
             now = datetime.datetime.now()
             points_earned = roll
@@ -940,10 +1265,11 @@ class FunCog(commands.Cog):
                 "**MUSHROOM BOOST ACTIVATED!** \n" if lucky_charm_active else ""
             )
             await ctx.send(
-                f"{mushroom_boost_msg}🎁 **FART GIFT!** {ctx.author.mention} rolled a {fart_message} "
-                f"{fart_message_add}\n"
+                f"{uber_prefix}{variant_effect_msg}{mushroom_boost_msg}🎁 **FART GIFT!** "
+                f"{ctx.author.mention} rolled a {fart_message} {fart_message_add}\n"
                 f"<@{target.id}> received **{points_earned}** points — how nice!\n"
-                f"(Once per player per season)"
+                f"(Once per player per season)",
+                embed=uber_embed,
             )
 
             try:
@@ -1650,21 +1976,14 @@ class FartPredictionView(discord.ui.View):
                 conn.close()
 
         # Determine actual fart result
-        if roll >= 96:
-            fart_message = "Curio Shart! 💩💨💨💨💨"
-            fart_type = "curio_shart"
-        elif roll >= 86:
-            fart_message = "Unique Fart! 💨💨💨💨"
-            fart_type = "unique"
-        elif roll >= 66:
-            fart_message = "Elite Fart! 💨💨💨"
-            fart_type = "elite"
-        elif roll >= 36:
-            fart_message = "Exceptional Fart! 💨💨"
-            fart_type = "exceptional"
-        else:
-            fart_message = "Ordinary Fart! 💨"
-            fart_type = "ordinary"
+        fart_message, fart_type = cog.classify_fart_roll(roll)
+        uber_prefix, uber_embed, uber_variant = cog.maybe_uber_rare_curio(
+            fart_type, self.user_id
+        )
+        effect_ctx = await cog.bot.get_context(interaction)
+        variant_effect_msg = await cog.apply_uber_rare_variant_effect(
+            effect_ctx, self.user_id, uber_variant
+        )
 
         now = datetime.datetime.now()
         points_earned = roll  # Points equal to roll value
@@ -1700,9 +2019,10 @@ class FartPredictionView(discord.ui.View):
         )
 
         await interaction.followup.send(
-            f"🔮 **Your Prediction:** {chosen_prediction}\n"
+            f"{uber_prefix}{variant_effect_msg}🔮 **Your Prediction:** {chosen_prediction}\n"
             f"💨 **Actual Result:** {mushroom_boost_msg}{fart_message} {fart_message_add}\n"
-            f"{result_message} You earned **{points_earned}** points!"
+            f"{result_message} You earned **{points_earned}** points!",
+            embed=uber_embed,
         )
 
         try:

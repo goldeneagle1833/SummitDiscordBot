@@ -231,6 +231,204 @@ class TestUserProfileRepository:
 
 
 class TestFartRepositoryReset:
+    def _seed_full_fart_db(self, db_path):
+        """Create every known tracking table plus config + a future unknown table."""
+        conn = sqlite3.connect(str(db_path))
+        schema = {
+            "fart_scores": """
+                CREATE TABLE fart_scores (
+                    user_id INTEGER PRIMARY KEY,
+                    user_display_name TEXT,
+                    date_last_updated TEXT,
+                    score INTEGER
+                )
+            """,
+            "fart_history": """
+                CREATE TABLE fart_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    username TEXT NOT NULL,
+                    fart_type TEXT NOT NULL,
+                    roll INTEGER NOT NULL,
+                    timestamp TEXT NOT NULL
+                )
+            """,
+            "command_usage": """
+                CREATE TABLE command_usage (
+                    user_id INTEGER,
+                    command_name TEXT,
+                    last_used TEXT,
+                    PRIMARY KEY (user_id, command_name)
+                )
+            """,
+            "lucky_charms": """
+                CREATE TABLE lucky_charms (
+                    user_id INTEGER PRIMARY KEY,
+                    activated_at TEXT
+                )
+            """,
+            "lucky_charm_usage": """
+                CREATE TABLE lucky_charm_usage (
+                    user_id INTEGER,
+                    command_name TEXT,
+                    last_used TEXT,
+                    PRIMARY KEY (user_id, command_name)
+                )
+            """,
+            "fart_leader_only_once": """
+                CREATE TABLE fart_leader_only_once (
+                    user_id INTEGER PRIMARY KEY,
+                    user_display_name TEXT
+                )
+            """,
+            "evil_star_usage": """
+                CREATE TABLE evil_star_usage (
+                    user_id INTEGER PRIMARY KEY,
+                    used_at TEXT NOT NULL
+                )
+            """,
+            "fart_donation_usage": """
+                CREATE TABLE fart_donation_usage (
+                    donor_id INTEGER NOT NULL,
+                    recipient_id INTEGER NOT NULL,
+                    donated_at TEXT NOT NULL,
+                    PRIMARY KEY (donor_id, recipient_id)
+                )
+            """,
+            "fart_gift_usage": """
+                CREATE TABLE fart_gift_usage (
+                    gifter_id INTEGER NOT NULL,
+                    recipient_id INTEGER NOT NULL,
+                    gifted_at TEXT NOT NULL,
+                    PRIMARY KEY (gifter_id, recipient_id)
+                )
+            """,
+            "protection_status": """
+                CREATE TABLE protection_status (
+                    user_id INTEGER PRIMARY KEY,
+                    protected_until TIMESTAMP
+                )
+            """,
+            "shop_blocks": """
+                CREATE TABLE shop_blocks (
+                    user_id INTEGER PRIMARY KEY,
+                    blocked_until TIMESTAMP
+                )
+            """,
+            "gas_shields": """
+                CREATE TABLE gas_shields (
+                    user_id INTEGER PRIMARY KEY
+                )
+            """,
+            "fart_traps": """
+                CREATE TABLE fart_traps (
+                    user_id INTEGER PRIMARY KEY,
+                    set_by INTEGER NOT NULL
+                )
+            """,
+            "frost_shart_freeze": """
+                CREATE TABLE frost_shart_freeze (
+                    user_id INTEGER PRIMARY KEY,
+                    frozen_until TEXT NOT NULL
+                )
+            """,
+            "uber_rare_curio_claimed": """
+                CREATE TABLE uber_rare_curio_claimed (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    claimed_by_user_id INTEGER,
+                    variant TEXT NOT NULL,
+                    claimed_at TEXT NOT NULL
+                )
+            """,
+            # Config tables — must survive reset
+            "fart_game_commands": """
+                CREATE TABLE fart_game_commands (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    label TEXT NOT NULL
+                )
+            """,
+            "fart_shop_items": """
+                CREATE TABLE fart_shop_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    label TEXT NOT NULL
+                )
+            """,
+            # Future tracker that must still be wiped even if not listed
+            "future_season_tracker": """
+                CREATE TABLE future_season_tracker (
+                    user_id INTEGER PRIMARY KEY,
+                    used_at TEXT NOT NULL
+                )
+            """,
+        }
+        for ddl in schema.values():
+            conn.execute(ddl)
+
+        conn.execute(
+            "INSERT INTO fart_scores VALUES (1, 'Alice', '2026-08-01T00:00:00', 100)"
+        )
+        conn.execute(
+            "INSERT INTO fart_history (user_id, username, fart_type, roll, timestamp) "
+            "VALUES (1, 'Alice', 'ordinary', 10, '2026-08-01T00:00:00')"
+        )
+        # !bullfart weekly + shop daily/weekly items
+        conn.execute(
+            "INSERT INTO command_usage VALUES (1, 'bullfart', '2026-08-01T00:00:00')"
+        )
+        conn.execute(
+            "INSERT INTO command_usage VALUES (1, 'blue_shell', '2026-08-01T00:00:00')"
+        )
+        conn.execute(
+            "INSERT INTO command_usage VALUES (1, 'thunder_fart', '2026-08-01T00:00:00')"
+        )
+        # !mushroom once/week + active buff
+        conn.execute(
+            "INSERT INTO lucky_charm_usage VALUES (1, 'mushroom', '2026-08-01T00:00:00')"
+        )
+        conn.execute(
+            "INSERT INTO lucky_charms VALUES (1, '2026-08-01T00:00:00')"
+        )
+        # !taxes / !wealth once/reign
+        conn.execute(
+            "INSERT INTO fart_leader_only_once VALUES (1, 'Alice')"
+        )
+        conn.execute(
+            "INSERT INTO evil_star_usage VALUES (1, '2026-08-01T00:00:00')"
+        )
+        conn.execute(
+            "INSERT INTO fart_donation_usage VALUES (1, 2, '2026-08-01T00:00:00')"
+        )
+        conn.execute(
+            "INSERT INTO fart_gift_usage VALUES (1, 2, '2026-08-01T00:00:00')"
+        )
+        conn.execute(
+            "INSERT INTO protection_status VALUES (1, '2099-01-01T00:00:00')"
+        )
+        conn.execute(
+            "INSERT INTO shop_blocks VALUES (2, '2099-01-01T00:00:00')"
+        )
+        conn.execute("INSERT INTO gas_shields VALUES (1)")
+        conn.execute("INSERT INTO fart_traps VALUES (2, 1)")
+        conn.execute(
+            "INSERT INTO frost_shart_freeze VALUES (2, '2099-01-01T00:00:00')"
+        )
+        conn.execute(
+            "INSERT INTO uber_rare_curio_claimed VALUES (1, 1, 'lavashart', '2026-08-01T00:00:00')"
+        )
+        conn.execute(
+            "INSERT INTO fart_game_commands (name, label) VALUES ('fart', 'Fart')"
+        )
+        conn.execute(
+            "INSERT INTO fart_shop_items (name, label) VALUES ('mushroom', 'Mushroom')"
+        )
+        conn.execute(
+            "INSERT INTO future_season_tracker VALUES (1, '2026-08-01T00:00:00')"
+        )
+        conn.commit()
+        conn.close()
+
     def test_reset_game_clears_gift_and_donation_usage(self, tmp_path):
         from repositories.fart import FartRepository
 
@@ -271,4 +469,81 @@ class TestFartRepositoryReset:
         assert conn.execute("SELECT COUNT(*) FROM fart_gift_usage").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM fart_donation_usage").fetchone()[0] == 0
         conn.close()
+
+    def test_reset_game_clears_mushroom_bullfart_and_all_tracking(self, tmp_path):
+        from repositories.fart import FartRepository
+
+        db_path = tmp_path / "fart_scores.db"
+        self._seed_full_fart_db(db_path)
+
+        repo = FartRepository(db_path=db_path)
+        cleared = repo.reset_game()
+
+        # Item/action cooldowns the UI was missing
+        assert cleared["lucky_charm_usage"] == 1  # !mushroom
+        assert cleared["lucky_charms"] == 1
+        assert cleared["command_usage"] == 3  # bullfart + blue_shell + thunder_fart
+        assert cleared["fart_leader_only_once"] == 1  # taxes/wealth once/reign
+        assert cleared["evil_star_usage"] == 1
+        assert cleared["fart_scores"] == 1
+        assert cleared["frost_shart_freeze"] == 1
+        assert cleared["future_season_tracker"] == 1  # unknown tables also wiped
+        # Permanent one-time flag must NOT be wiped
+        assert "uber_rare_curio_claimed" not in cleared
+
+        # Config must NOT be wiped
+        assert "fart_game_commands" not in cleared
+        assert "fart_shop_items" not in cleared
+
+        conn = sqlite3.connect(str(db_path))
+        tracking = [
+            "fart_scores",
+            "fart_history",
+            "command_usage",
+            "lucky_charms",
+            "lucky_charm_usage",
+            "fart_leader_only_once",
+            "evil_star_usage",
+            "fart_donation_usage",
+            "fart_gift_usage",
+            "protection_status",
+            "shop_blocks",
+            "gas_shields",
+            "fart_traps",
+            "frost_shart_freeze",
+            "future_season_tracker",
+        ]
+        for table in tracking:
+            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0, table
+        assert conn.execute("SELECT COUNT(*) FROM fart_game_commands").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM fart_shop_items").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM uber_rare_curio_claimed").fetchone()[0] == 1
+        conn.close()
+
+    def test_reset_game_known_tracking_tables_match_docs(self):
+        from repositories.fart import FartRepository
+
+        # Guardrail: if someone adds a tracker constant, keep docs in sync
+        expected = {
+            "fart_scores",
+            "fart_history",
+            "command_usage",
+            "lucky_charms",
+            "lucky_charm_usage",
+            "fart_leader_only_once",
+            "evil_star_usage",
+            "fart_donation_usage",
+            "fart_gift_usage",
+            "protection_status",
+            "shop_blocks",
+            "gas_shields",
+            "fart_traps",
+            "frost_shart_freeze",
+        }
+        assert FartRepository._KNOWN_TRACKING_TABLES == expected
+        assert FartRepository._PRESERVE_ON_RESET == {
+            "fart_game_commands",
+            "fart_shop_items",
+            "uber_rare_curio_claimed",
+        }
 

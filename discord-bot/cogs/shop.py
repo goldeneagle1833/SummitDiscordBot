@@ -130,6 +130,26 @@ class ShopCog(commands.Cog):
         cur = conn.cursor()
         try:
             cur.execute("""
+                CREATE TABLE IF NOT EXISTS frost_shart_freeze (
+                    user_id INTEGER PRIMARY KEY,
+                    frozen_until TEXT NOT NULL
+                )
+            """)
+            cur.execute(
+                """
+                SELECT frozen_until FROM frost_shart_freeze
+                WHERE user_id = ? AND frozen_until > datetime('now')
+                """,
+                (ctx.author.id,),
+            )
+            if cur.fetchone():
+                await ctx.send(
+                    f"{ctx.author.mention}, you're frozen solid by a Frostshart! "
+                    f"No shop items until midnight EST!"
+                )
+                return False
+
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS shop_blocks (
                     user_id INTEGER PRIMARY KEY,
                     blocked_until TIMESTAMP

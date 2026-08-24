@@ -311,7 +311,7 @@ def redeem_prize(prize_id):
 @rumble_bp.route("/rumble/admin/fart/reset", methods=["POST"])
 @require_rumble_admin
 def reset_fart_game():
-    """Reset the fart game - clear all scores, history, and cooldowns."""
+    """Full season reset — clear all scores, history, and every tracking table."""
     repo = FartRepository()
     result = repo.reset_game()
     return jsonify({"success": True, "cleared": result})

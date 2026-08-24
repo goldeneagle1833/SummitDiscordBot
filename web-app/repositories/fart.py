@@ -397,33 +397,69 @@ class FartRepository:
 
     # --- Game management ---
 
+    # Never wipe on season reset: admin config + permanent one-time flags.
+    _PRESERVE_ON_RESET = frozenset({
+        "fart_game_commands",
+        "fart_shop_items",
+        # First Curio ever → lavashart/frostshart; then 10% forever (never re-guarantee)
+        "uber_rare_curio_claimed",
+    })
+
+    # Known gameplay / tracking tables (documentation + test coverage).
+    # reset_game() also dynamically clears ANY other non-config table so
+    # newly added daily/weekly/season/reign trackers cannot be missed.
+    _KNOWN_TRACKING_TABLES = frozenset({
+        "fart_scores",
+        "fart_history",
+        "command_usage",          # !bullfart, shop daily/weekly items, !fart_court, etc.
+        "lucky_charms",           # active !mushroom buff
+        "lucky_charm_usage",      # !mushroom once/week
+        "fart_leader_only_once",  # !taxes / !wealth once/reign
+        "evil_star_usage",        # once/season + star locks
+        "fart_donation_usage",    # once/recipient/season
+        "fart_gift_usage",        # once/recipient/season
+        "protection_status",      # !star 72h
+        "shop_blocks",            # !stink_cloud 24h
+        "gas_shields",
+        "fart_traps",
+        "frost_shart_freeze",     # Frostshart: no shop items until EST midnight
+    })
+
+    @staticmethod
+    def _is_safe_table_name(name: str) -> bool:
+        """Only allow simple SQLite identifiers (blocks injection via odd names)."""
+        return bool(name) and name.replace("_", "").isalnum() and not name[0].isdigit()
+
     def reset_game(self) -> dict:
-        """Reset the fart game / season — clear scores, history, cooldowns, and season locks."""
+        """Full season reset — wipe ALL gameplay and tracking state.
+
+        Clears every table in fart_scores.db except preserved tables
+        (fart_game_commands, fart_shop_items, uber_rare_curio_claimed).
+        Uses dynamic discovery so daily / weekly / season / reign cooldowns,
+        item usage, gifts, donations, protections, and any future trackers
+        are all cleared. The one-time uber-rare Curio flag is intentionally kept.
+        """
         conn = self._get_connection()
-        tables = [
-            "fart_scores",
-            "fart_history",
-            "command_usage",
-            "lucky_charms",
-            "lucky_charm_usage",
-            "fart_leader_only_once",
-            # Season-scoped locks / status
-            "evil_star_usage",
-            "fart_donation_usage",
-            "fart_gift_usage",
-            "protection_status",
-            "shop_blocks",
-            "gas_shields",
-            "fart_traps",
-        ]
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' "
+            "ORDER BY name"
+        ).fetchall()
         cleared = {}
-        for table in tables:
-            try:
-                count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-                conn.execute(f"DELETE FROM {table}")
-                cleared[table] = count
-            except sqlite3.OperationalError:
-                cleared[table] = 0
+        for row in rows:
+            table = row[0] if not isinstance(row, sqlite3.Row) else row["name"]
+            if table in self._PRESERVE_ON_RESET:
+                continue
+            if not self._is_safe_table_name(table):
+                continue
+            count = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+            conn.execute(f'DELETE FROM "{table}"')
+            cleared[table] = count
+        # Reset AUTOINCREMENT counters for wiped tables (ignore if unused)
+        try:
+            conn.execute("DELETE FROM sqlite_sequence")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
         conn.close()
         return cleared

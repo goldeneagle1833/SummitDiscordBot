@@ -125,6 +125,13 @@ def post_user_run(user_id):
         return jsonify({"success": False, "error": "Invalid user_id"}), 400
 
     body = request.get_json(silent=True) or {}
+    logger.info(
+        "POST run for user %s: content_type=%s body_keys=%s raw=%s",
+        user_id,
+        request.content_type,
+        list(body.keys()) if body else "EMPTY",
+        request.get_data(as_text=True)[:200],
+    )
 
     try:
         if body.get("forfeit"):

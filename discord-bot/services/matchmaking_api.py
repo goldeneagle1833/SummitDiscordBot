@@ -14,6 +14,7 @@ from cogs.lfg.queue_definitions import enabled_queue_definitions, queue_definiti
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
 from repositories.limited_repo import get_active_arena_run
 from services.card_points_service import validate_deck_points
+from services.sorcery_online_matchmaking import summit_matchmaking_api_key
 from services.summit_result_reporting import record_sorcery_online_result
 
 
@@ -38,7 +39,7 @@ class WebsiteInteraction:
 
 
 def _authorized(request):
-    expected = os.getenv("DRAFT_SORCERY_API_KEY", "").strip()
+    expected = summit_matchmaking_api_key()
     provided = request.headers.get("X-API-Key", "")
     return bool(expected and provided and hmac.compare_digest(expected, provided))
 

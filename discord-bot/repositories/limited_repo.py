@@ -550,22 +550,47 @@ def get_limited_pairing_between_players(
     return None
 
 
+def get_limited_pairing_by_id(guild_id: int, pairing_id: int) -> dict | None:
+    """Get a Limited pairing by its stable ID, including reported pairings."""
+    create_limited_tables()
+    conn = sqlite3.connect("match_records.db")
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        """SELECT pairing_id, guild_id, player1_id, player2_id,
+                  player1_deck_url, player2_deck_url,
+                  player1_run_id, player2_run_id, created_at, status
+           FROM limited_active_pairings
+           WHERE guild_id = ? AND pairing_id = ?""",
+        (guild_id, pairing_id),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def mark_limited_pairing_reported(
-    guild_id: int, user_id: int, opponent_id: int
+    guild_id: int, user_id: int, opponent_id: int, pairing_id: int = None
 ) -> bool:
     """Mark a limited pairing as reported. Returns True if updated."""
     create_limited_tables()
     conn = sqlite3.connect("match_records.db")
     cur = conn.cursor()
 
-    cur.execute(
-        """UPDATE limited_active_pairings
-           SET status = 'reported'
-           WHERE status = 'active'
-           AND guild_id = ?
-           AND ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))""",
-        (guild_id, user_id, opponent_id, opponent_id, user_id),
-    )
+    if pairing_id:
+        cur.execute(
+            """UPDATE limited_active_pairings
+               SET status = 'reported'
+               WHERE pairing_id = ? AND guild_id = ? AND status = 'active'""",
+            (pairing_id, guild_id),
+        )
+    else:
+        cur.execute(
+            """UPDATE limited_active_pairings
+               SET status = 'reported'
+               WHERE status = 'active'
+               AND guild_id = ?
+               AND ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))""",
+            (guild_id, user_id, opponent_id, opponent_id, user_id),
+        )
 
     updated = cur.rowcount > 0
     conn.commit()

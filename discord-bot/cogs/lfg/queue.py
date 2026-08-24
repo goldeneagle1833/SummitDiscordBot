@@ -1,21 +1,76 @@
 import discord
 import random
 import datetime
+import hashlib
 import logging
 import sqlite3
+import time
 
 import config
-from cogs.lfg.state import lfg_queue, lfg_queue_lock
+from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
+from cogs.lfg.queue_definitions import queue_definition, queue_is_enabled
 from cogs.lfg.helpers import scrub_urls
 from cogs.lfg.persistent_confirm import create_match_card_view
 from utils.constants import SORCERY_NICKNAMES
 from utils.database import save_pairing
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
-from services.pilots_service import is_pilot_active
 from services.card_points_service import validate_deck_points
 from services.limited_service import auto_start_arena_run
+from services.sorcery_online_matchmaking import provision_sorcery_online_match
 
 logger = logging.getLogger("discord_bot")
+
+SUMMIT_VOICE_URL = "https://discord.gg/zSvyvyAVT"
+WEB_MATCH_TTL_SECONDS = 30 * 60
+
+
+def _clear_matching_web_users(*user_ids):
+    for user_id in user_ids:
+        matching_web_users.pop(user_id, None)
+
+
+async def provision_match_and_publish_results(guild_id, pairing_id, queue_type, players):
+    """Provision seats and publish stable results for website-origin players."""
+    provisioned_links = await provision_sorcery_online_match(
+        guild_id, pairing_id, queue_type, players
+    ) or {}
+    result_id_base = f"{guild_id}:{pairing_id}"
+    matched_at = int(time.time() * 1000)
+    for player in players:
+        user_id = player["discord_user_id"]
+        if player.get("origin") == "sorcery_online":
+            result_id = hashlib.sha256(f"{result_id_base}:{user_id}".encode()).hexdigest()
+            pending_web_matches[user_id] = {
+                "id": result_id,
+                "queue_type": queue_type,
+                "opponent_name": player["opponent_name"],
+                "matched_at": matched_at,
+                "game_url": provisioned_links.get(user_id),
+                "expires_at": time.time() + WEB_MATCH_TTL_SECONDS,
+            }
+        matching_web_users.pop(user_id, None)
+    return provisioned_links
+
+
+def match_delivery_extras(provisioned_links, reporter_id, other_id):
+    """Add Sorcery Online details only after both private seats were provisioned."""
+    reporter_game_url = provisioned_links.get(reporter_id)
+    other_game_url = provisioned_links.get(other_id)
+    if not reporter_game_url or not other_game_url:
+        return None, None, "", "", ""
+    reporter_game_text = (
+        f"\n\n🎴 **Play on Sorcery Online:** {reporter_game_url}"
+        if reporter_game_url
+        else ""
+    )
+    other_game_text = (
+        f"\n\n🎴 **Play on Sorcery Online:** {other_game_url}"
+        if other_game_url
+        else ""
+    )
+    voice_text = f"\n\n🔊 **Voice chat:** [Join To Make a Room]({SUMMIT_VOICE_URL})"
+    return reporter_game_url, other_game_url, reporter_game_text, other_game_text, voice_text
+
 
 LIMITED_RUN_REQUIRED_MESSAGE = (
     "You don't have an active Limited run. "
@@ -31,8 +86,8 @@ def parse_queue_timeframe(raw_value):
         timeframe_value = int(raw_value) if raw_value else 30
         if timeframe_value < 5:
             timeframe_value = 5
-        elif timeframe_value > 120:
-            timeframe_value = 120
+        elif timeframe_value > 240:
+            timeframe_value = 240
     except ValueError:
         timeframe_value = 30
 
@@ -247,7 +302,7 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
 
     deck_url = discord.ui.TextInput(
         label="Deck URL (required)",
-        placeholder="https://curiosa.io/decks/... or https://draftsorcery.com/?deck=...",
+        placeholder="Curiosa, Sorcery Online, or DraftSorcery deck link",
         required=True,
         max_length=200,
     )
@@ -268,9 +323,11 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
         await interaction.response.defer(ephemeral=True)
 
         deck_url = self.deck_url.value.strip()
-        if not deck_url or ("curiosa.io" not in deck_url.lower() and "draftsorcery.com" not in deck_url.lower()):
+        if not deck_url or not any(host in deck_url.lower() for host in (
+            "curiosa.io", "draftsorcery.com", "playsorceryonline.com"
+        )):
             await interaction.followup.send(
-                "Please provide a valid deck URL (Curiosa or DraftSorcery).",
+                "Please provide a valid deck URL (Curiosa, Sorcery Online, or DraftSorcery).",
                 ephemeral=True,
             )
             return
@@ -295,7 +352,31 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
         )
 
 
-async def _process_queue_join(bot, interaction, queue_type, timeframe_value, deck_url, run_id=None):
+class PrivateSeatLinkButton(discord.ui.Button):
+    def __init__(self, user_id, game_url):
+        super().__init__(label="Open my Sorcery Online seat", style=discord.ButtonStyle.success)
+        self.user_id = int(user_id)
+        self.game_url = game_url
+
+    async def callback(self, interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("That private seat belongs to the matched player.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            f"Your private Sorcery Online seat: {self.game_url}",
+            ephemeral=True,
+        )
+
+
+class PrivateSeatLinkView(discord.ui.View):
+    def __init__(self, user_id, game_url):
+        super().__init__(timeout=WEB_MATCH_TTL_SECONDS)
+        self.add_item(PrivateSeatLinkButton(user_id, game_url))
+
+
+async def _process_queue_join(
+    bot, interaction, queue_type, timeframe_value, deck_url, run_id=None, origin="discord"
+):
     """Handle queue join flow after modal validation."""
 
     class FakeContext:
@@ -336,6 +417,7 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             matched_queue_type = queue_type
             matched_ladder_info = matched_entry.get("ladder_info")
             matched_run_id = int(matched_entry.get("run_id") or 0)
+            matched_user_origin = matched_entry.get("origin", "discord")
             match_type = lfg_cog.resolve_match_type(queue_type, matched_queue_type)
 
             if matched_ladder_info:
@@ -378,6 +460,10 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             lfg_queue.pop(matched_user_id, None)
             # Also remove the joiner from any other queues they may be in
             lfg_queue.pop(interaction.user.id, None)
+            if origin == "sorcery_online":
+                matching_web_users[interaction.user.id] = queue_type
+            if matched_user_origin == "sorcery_online":
+                matching_web_users[matched_user_id] = queue_type
             logger.info(
                 f"Lock acquired: Matching {interaction.user.id} with {matched_user_id} (match_type={match_type})"
             )
@@ -386,6 +472,7 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             matched_user_deck_url = None
             matched_ladder_info = None
             matched_run_id = None
+            matched_user_origin = None
             match_type = None
             lfg_cog.add_to_lfg_queue(
                 ctx,
@@ -393,6 +480,7 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                 deck_url,
                 queue_type,
                 run_id=run_id,
+                origin=origin,
             )
 
     # Notify limited ping channel when someone is waiting (no match found)
@@ -432,6 +520,7 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             matched_user = await bot.fetch_user(matched_user_id)
         except Exception as e:
             logger.error(f"Failed to fetch matched user {matched_user_id}: {e}")
+            _clear_matching_web_users(interaction.user.id, matched_user_id)
             # Rollback ladder challenge so daily usage is not consumed
             if matched_ladder_info and matched_ladder_info.get("challenge_id"):
                 delete_ladder_challenge(matched_ladder_info["challenge_id"])
@@ -450,6 +539,7 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             logger.error(
                 f"Cannot save pairing: guild_id is None for users {interaction.user.id} and {matched_user_id}"
             )
+            _clear_matching_web_users(interaction.user.id, matched_user_id)
             # Rollback ladder challenge so daily usage is not consumed
             if matched_ladder_info and matched_ladder_info.get("challenge_id"):
                 delete_ladder_challenge(matched_ladder_info["challenge_id"])
@@ -488,6 +578,7 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                 f"Failed to save pairing for users {interaction.user.id} and {matched_user_id}: {e}",
                 exc_info=True,
             )
+            _clear_matching_web_users(interaction.user.id, matched_user_id)
             # Rollback ladder challenge so daily usage is not consumed
             if matched_ladder_info and matched_ladder_info.get("challenge_id"):
                 delete_ladder_challenge(matched_ladder_info["challenge_id"])
@@ -496,6 +587,28 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                 ephemeral=True,
             )
             return
+
+        provisioned_links = await provision_match_and_publish_results(
+            interaction.guild.id,
+            pairing_id,
+            queue_type,
+            [
+                {
+                    "discord_user_id": interaction.user.id,
+                    "display_name": joiner_global,
+                    "deck_url": deck_url,
+                    "origin": origin,
+                    "opponent_name": matched_global,
+                },
+                {
+                    "discord_user_id": matched_user_id,
+                    "display_name": matched_global,
+                    "deck_url": matched_user_deck_url,
+                    "origin": matched_user_origin,
+                    "opponent_name": joiner_global,
+                },
+            ],
+        )
 
         try:
             guild = bot.get_guild(config.GUILD_ID)
@@ -519,6 +632,17 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
         other_id, other_global, other_user, other_deck_url, _ = other_player
 
         reporter_deck_text = f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
+        (
+            reporter_game_url,
+            other_game_url,
+            reporter_game_text,
+            other_game_text,
+            voice_text,
+        ) = match_delivery_extras(
+            provisioned_links,
+            reporter_id,
+            other_id,
+        )
 
         if match_type == "limited":
             if reporter_is_joiner:
@@ -553,7 +677,8 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
             await reporter_user.send(
                 f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n"
                 f"Use the button below to report the result when your match is done.\n\n"
-                f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** in the LFG channel for fresh ones!",
+                f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** in the LFG channel for fresh ones!"
+                f"{reporter_game_text}{voice_text}",
                 view=match_card_view,
             )
         except discord.Forbidden:
@@ -575,12 +700,15 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                                 f"Granted channel access to {reporter_user.global_name} (can't receive DMs)"
                             )
 
-                    await dm_channel.send(
-                        scrub_urls(
+                    fallback_message = scrub_urls(
                             f"{reporter_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n"
                             f"Use the button below to report the result when your match is done.\n\n"
                             f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** for fresh ones!"
-                        ),
+                        ) + voice_text
+                    if reporter_game_url:
+                        match_card_view.add_item(PrivateSeatLinkButton(reporter_id, reporter_game_url))
+                    await dm_channel.send(
+                        fallback_message,
                         view=match_card_view,
                     )
             except Exception as e:
@@ -593,6 +721,7 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                 f"🎮 **Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
                 f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome.\n\n"
                 f"💡 **Tip:** If you need fresh reporting buttons, click **'📋 Report Last Match'** in the LFG channel!"
+                f"{other_game_text}{voice_text}"
             )
         except discord.Forbidden:
             try:
@@ -612,13 +741,18 @@ async def _process_queue_join(bot, interaction, queue_type, timeframe_value, dec
                                 f"Granted channel access to {other_user.global_name} (can't receive DMs)"
                             )
 
-                    await dm_channel.send(
-                        scrub_urls(
+                    fallback_message = scrub_urls(
                             f"{other_user.mention} 🎮 **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
                             f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome.\n\n"
                             f"💡 **Tip:** If you need fresh reporting buttons, click **'📋 Report Last Match'**!"
+                        ) + voice_text
+                    if other_game_url:
+                        await dm_channel.send(
+                            fallback_message,
+                            view=PrivateSeatLinkView(other_id, other_game_url),
                         )
-                    )
+                    else:
+                        await dm_channel.send(fallback_message)
             except Exception as e:
                 logger.error(f"Failed to handle DM failure for other player: {e}")
 
@@ -679,16 +813,19 @@ class JoinQueueButtons(discord.ui.View):
     def __init__(self, bot):
         super().__init__(timeout=None)
         self.bot = bot
-        if not is_pilot_active("PointsQueue"):
-            self.remove_item(self.join_points_button)
-        if not is_pilot_active("RankedQueue"):
-            self.remove_item(self.join_ranked_button)
-        if not is_pilot_active("CasualQueue"):
-            self.remove_item(self.join_testing_button)
-        if not is_pilot_active("GrewWolves"):
-            self.remove_item(self.join_limited_button)
-        if not is_pilot_active("RumbleQueue"):
-            self.remove_item(self.join_rumble_button)
+        buttons = {
+            "points": self.join_points_button,
+            "ranked": self.join_ranked_button,
+            "testing": self.join_testing_button,
+            "limited": self.join_limited_button,
+            "rumble": self.join_rumble_button,
+        }
+        for queue_type, button in buttons.items():
+            definition = queue_definition(queue_type)
+            if definition:
+                button.label = f'{definition["emoji"]} Join {definition["label"]}'
+            if not queue_is_enabled(queue_type):
+                self.remove_item(button)
 
     async def _handle_join(self, interaction: discord.Interaction, queue_type: str):
         """Shared handler for all join buttons"""
@@ -715,7 +852,7 @@ class JoinQueueButtons(discord.ui.View):
     async def join_points_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if not is_pilot_active("PointsQueue"):
+        if not queue_is_enabled("points"):
             await interaction.response.send_message(
                 "Rumble (Omens) queue is not currently available.", ephemeral=True
             )
@@ -730,7 +867,7 @@ class JoinQueueButtons(discord.ui.View):
     async def join_ranked_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if not is_pilot_active("RankedQueue"):
+        if not queue_is_enabled("ranked"):
             await interaction.response.send_message(
                 "Ranked queue is not currently available.", ephemeral=True
             )
@@ -745,7 +882,7 @@ class JoinQueueButtons(discord.ui.View):
     async def join_testing_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if not is_pilot_active("CasualQueue"):
+        if not queue_is_enabled("testing"):
             await interaction.response.send_message(
                 "Casual queue is not currently available.", ephemeral=True
             )
@@ -760,7 +897,7 @@ class JoinQueueButtons(discord.ui.View):
     async def join_limited_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if not is_pilot_active("GrewWolves"):
+        if not queue_is_enabled("limited"):
             await interaction.response.send_message(
                 "Limited queue is not currently available.", ephemeral=True
             )
@@ -775,7 +912,7 @@ class JoinQueueButtons(discord.ui.View):
     async def join_rumble_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if not is_pilot_active("RumbleQueue"):
+        if not queue_is_enabled("rumble"):
             await interaction.response.send_message(
                 "Rumble queue is not currently available.", ephemeral=True
             )

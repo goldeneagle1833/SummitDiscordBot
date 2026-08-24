@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import os
 import logging
+from pathlib import Path
 from dotenv import load_dotenv
 
 from cogs.lfg import LFGCog
@@ -39,10 +40,11 @@ from cogs.lfg.persistent_confirm import (
 )
 from repositories.elo_repo import migrate_to_dual_elo_system
 from services.elo_service import backfill_deck_data
+from services.matchmaking_api import start_matchmaking_api
 
 import config
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 TOKEN = os.getenv("TOKEN")
 
 # Configure logging
@@ -197,7 +199,12 @@ async def main():
             PersistentMatchCardReportButton, PersistentMatchCardCancelButton,
         )
         await setup_cogs()
-        await bot.start(TOKEN)
+        matchmaking_runner = await start_matchmaking_api(bot)
+        try:
+            await bot.start(TOKEN)
+        finally:
+            if matchmaking_runner:
+                await matchmaking_runner.cleanup()
 
 
 if __name__ == "__main__":

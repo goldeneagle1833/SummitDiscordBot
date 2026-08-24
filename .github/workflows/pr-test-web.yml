@@ -100,11 +100,15 @@ jobs:
         with:
           script: |
             const success = '${{ job.status }}' === 'success'
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: success
-                ? '✅ Web app checks passed! Python syntax OK, backend tests passed, frontend tests passed, and frontend built successfully.'
-                : '❌ Web app checks failed. Check the Actions tab for details.'
-            })
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: success
+                  ? '✅ Web app checks passed! Python syntax OK, backend tests passed, frontend tests passed, and frontend built successfully.'
+                  : '❌ Web app checks failed. Check the Actions tab for details.'
+              })
+            } catch (error) {
+              core.warning(`Unable to comment on PR: ${error.message}`)
+            }

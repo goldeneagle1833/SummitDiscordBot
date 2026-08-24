@@ -70,6 +70,23 @@ async def _fetch_draftsorcery_deck(url: str) -> dict | None:
     return {"avatar": avatar, "spellbook": spellbook, "atlas": atlas, "sideboard": []}
 
 
+async def _fetch_sorcery_online_deck(url: str) -> dict | None:
+    """Fetch the public deck export without exposing the link in logs."""
+
+    def _fetch():
+        try:
+            response = requests.get(
+                "https://playsorceryonline.com/api/decks/export",
+                params={"input": url},
+                timeout=30,
+            )
+            return response.json() if response.status_code == 200 else None
+        except Exception:
+            return None
+
+    return await asyncio.to_thread(_fetch)
+
+
 def calculate_deck_points(deck_data: dict, card_points: dict[str, int]) -> tuple[int, list[dict]]:
     """Calculate total points for a deck based on card point assignments.
 
@@ -118,7 +135,11 @@ async def validate_deck_points(deck_url: str) -> tuple[bool, str, int, int]:
         return True, "No point restrictions configured.", 0, max_budget
 
     # Fetch deck data from DraftSorcery or Curiosa
-    if "draftsorcery.com" in deck_url.lower():
+    if "playsorceryonline.com" in deck_url.lower():
+        deck_data = await _fetch_sorcery_online_deck(deck_url)
+        if not deck_data:
+            return False, "Could not fetch deck data from Sorcery Online. Check the URL and try again.", 0, max_budget
+    elif "draftsorcery.com" in deck_url.lower():
         deck_data = await _fetch_draftsorcery_deck(deck_url)
         if not deck_data:
             return False, "Could not fetch deck data from DraftSorcery. Check the URL and try again.", 0, max_budget

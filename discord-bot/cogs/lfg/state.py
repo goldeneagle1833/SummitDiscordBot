@@ -21,6 +21,12 @@ lfg_queue = {}
 # Lock to prevent race conditions when accessing the queue
 lfg_queue_lock = asyncio.Lock()
 
+# Website-origin matches remain pollable for 30 minutes or until acknowledged.
+# user_id: {"id", "queue_type", "opponent_name", "matched_at", "game_url", "expires_at"}
+pending_web_matches = {}
+# Website players whose queue entry has been consumed while provisioning/messages finish.
+matching_web_users = {}
+
 # Lock to prevent concurrent update_lfg_status calls (avoids duplicate messages)
 lfg_status_lock = asyncio.Lock()
 

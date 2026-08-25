@@ -5,7 +5,7 @@ import logging
 import os
 import random
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, COMMUNITY_DB_PATH, OPENAI_API_KEY, AVATAR_IMAGES_DIR
@@ -365,6 +365,79 @@ def _get_community_website(rng: random.Random) -> dict | None:
     except Exception:
         logger.error("Failed to get community website", exc_info=True)
         return None
+
+
+# ── Random Recent Event ───────────────────────────────────────
+
+_EVENT_TEMPLATES = [
+    "Won with {avatar} at {event}.",
+    "{avatar} took the crown at {event}.",
+    "1st place finish piloting {avatar}.",
+    "Claimed victory with {avatar}.",
+]
+
+_EVENT_CACHE = {}  # {date_str: event_spotlight_dict}
+
+
+def get_random_recent_event() -> dict:
+    """Return a random top-8 event from the last 3 months, cached daily."""
+    today = date.today().isoformat()
+
+    if today in _EVENT_CACHE:
+        return _EVENT_CACHE[today]
+
+    try:
+        from repositories.events import EventRepository
+
+        rng = random.Random(today + "_event")
+        repo = EventRepository()
+        all_events = repo.get_all_events()
+
+        # Filter to events with a date in the last 3 months
+        cutoff = (date.today() - timedelta(days=90)).isoformat()
+        recent = [
+            e for e in all_events
+            if e.get("event_date") and e["event_date"] >= cutoff
+            and e.get("has_top8")
+        ]
+
+        if not recent:
+            result = {"success": True, "event_spotlight": None}
+            _EVENT_CACHE.clear()
+            _EVENT_CACHE[today] = result
+            return result
+
+        event = rng.choice(recent)
+        winner_avatar = event.get("winner_avatar")
+        avatar_image = _find_avatar_image(winner_avatar) if winner_avatar else None
+
+        if winner_avatar:
+            template = rng.choice(_EVENT_TEMPLATES)
+            subtitle = template.format(avatar=winner_avatar, event=event["name"])
+        else:
+            subtitle = f"Check out the top 8 decklists from {event['name']}."
+
+        spotlight = {
+            "type": "recent_event",
+            "badge_text": "EVENT",
+            "color": "purple",
+            "title": event["name"],
+            "subtitle": subtitle,
+            "link": f"/top-8/{event['folder']}",
+            "image_url": avatar_image,
+            "event_date": event.get("event_date"),
+            "winner_username": event.get("winner_username"),
+            "winner_avatar": winner_avatar,
+        }
+
+        result = {"success": True, "event_spotlight": spotlight}
+        _EVENT_CACHE.clear()
+        _EVENT_CACHE[today] = result
+        return result
+
+    except Exception:
+        logger.error("Failed to get random recent event", exc_info=True)
+        return {"success": True, "event_spotlight": None}
 
 
 # ── Handler registry ───────────────────────────────────────────

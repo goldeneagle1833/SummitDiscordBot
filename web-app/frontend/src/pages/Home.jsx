@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { get } from '@/api/client'
 import { getEventLeaderboard, getPaperEventLeaderboard, getLimitedLeaderboard } from '@/api/leaderboard'
@@ -144,232 +144,196 @@ function PlayerSearch() {
   )
 }
 
-// ── Promo Banners ─────────────────────────────────────────────
+// ── Promo Carousel ────────────────────────────────────────────
 
-const BANNER_COLORS = {
-  blue:   { border: 'border-blue-500/40',   badge: 'bg-blue-500',   glow: 'hover:border-blue-400/60' },
-  gold:   { border: 'border-yellow-500/40', badge: 'bg-yellow-500', glow: 'hover:border-yellow-400/60' },
-  green:  { border: 'border-green-500/40',  badge: 'bg-green-500',  glow: 'hover:border-green-400/60' },
-  purple: { border: 'border-purple-500/40', badge: 'bg-purple-500', glow: 'hover:border-purple-400/60' },
-  red:    { border: 'border-red-500/40',    badge: 'bg-red-500',    glow: 'hover:border-red-400/60' },
+const BADGE_COLORS = {
+  blue:   'bg-blue-500',
+  gold:   'bg-yellow-500',
+  green:  'bg-green-500',
+  purple: 'bg-purple-500',
+  red:    'bg-red-500',
 }
 
-function extractDominantColor(imgEl) {
-  const canvas = document.createElement('canvas')
-  canvas.width = 50
-  canvas.height = 50
-  const ctx = canvas.getContext('2d')
-  ctx.drawImage(imgEl, 0, 0, 50, 50)
-  const { data } = ctx.getImageData(0, 0, 50, 50)
-  let r = 0, g = 0, b = 0, count = 0
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] < 128) continue // skip transparent
-    r += data[i]; g += data[i + 1]; b += data[i + 2]; count++
-  }
-  if (!count) return null
-  return [Math.round(r / count), Math.round(g / count), Math.round(b / count)]
-}
+function CarouselCard({ item }) {
+  const badgeColor = BADGE_COLORS[item.color] || BADGE_COLORS.blue
+  const isExternal = item.link && !item.link.startsWith('/')
 
-function PromoBanner({ b }) {
-  const images = useMemo(() => b.images || [], [b.images])
-  const [imgIdx, setImgIdx] = useState(0)
-  const [dominantColor, setDominantColor] = useState(null)
-  const colors = BANNER_COLORS[b.color] || BANNER_COLORS.blue
-
-  useEffect(() => {
-    if (images.length <= 1) return
-    const id = setInterval(() => setImgIdx(i => (i + 1) % images.length), 10000)
-    return () => clearInterval(id)
-  }, [images.length])
-
-  // Reset color when image changes
-  useEffect(() => { setDominantColor(null) }, [imgIdx])
-
-  const handleImageLoad = (e) => {
-    try {
-      setDominantColor(extractDominantColor(e.target))
-    } catch { /* CORS blocked on external URLs */ }
+  const handleClick = () => {
+    navigator.sendBeacon?.('/api/analytics/banner-click',
+      new Blob([JSON.stringify({ banner_type: item.analyticsType || 'promo' })], { type: 'application/json' }))
   }
 
-  const dc = dominantColor
-  const imgBg = dc
-    ? `linear-gradient(135deg, rgba(${dc},0.55) 0%, rgba(${dc[0]},${dc[1]},${dc[2]},0.25) 60%, rgba(0,0,0,0.6) 100%)`
-    : undefined
-  const cardShadow = dc
-    ? { boxShadow: `0 4px 28px rgba(${dc[0]},${dc[1]},${dc[2]},0.45)` }
-    : undefined
-
-  return (
-    <a
-      href={b.link}
-      onClick={() => {
-        navigator.sendBeacon?.('/api/analytics/banner-click',
-          new Blob([JSON.stringify({ banner_type: `promo_${b.id}` })], { type: 'application/json' }))
-      }}
-      className={`block overflow-hidden rounded-soft border bg-bg-surface transition-all duration-300 group ${colors.border} ${colors.glow}`}
-      style={cardShadow}
-    >
-      {/* Image panel */}
-      {images.length > 0 ? (
-        <div
-          className="w-full h-44 flex items-center justify-center overflow-hidden transition-all duration-700"
-          style={{ background: imgBg || 'rgba(0,0,0,0.6)' }}
-        >
+  const inner = (
+    <div className="flex items-stretch gap-0 h-full">
+      {/* Thumbnail */}
+      {item.thumbnail ? (
+        <div className="w-16 sm:w-20 flex-shrink-0 bg-black/40 flex items-center justify-center overflow-hidden">
           <img
-            key={images[imgIdx]}
-            src={images[imgIdx]}
+            src={item.thumbnail}
             alt=""
-            crossOrigin="anonymous"
-            className="w-full h-full object-contain block transition-transform duration-500 group-hover:scale-[1.02]"
-            onLoad={handleImageLoad}
-            onError={(e) => { e.target.parentElement.style.display = 'none' }}
+            className="w-full h-full object-cover"
+            onError={(e) => { e.target.parentElement.classList.add('hidden') }}
           />
         </div>
       ) : (
-        <div className="h-10" />
+        <div className={`w-2 flex-shrink-0 ${badgeColor}`} />
       )}
-
-      {/* Text strip */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-bg-raised border-t border-border/50">
-        <span className={`text-xs font-bold px-2 py-0.5 ${colors.badge} text-white rounded flex-shrink-0`}>
-          {b.badge_text}
-        </span>
+      {/* Content */}
+      <div className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3">
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-sm text-text-primary leading-tight">{b.title}</div>
-          {b.subtitle && (
-            <div className="text-text-muted text-xs mt-0.5 leading-tight">{b.subtitle}</div>
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 ${badgeColor} text-white rounded leading-none flex-shrink-0 uppercase`}>
+              {item.badge}
+            </span>
+          </div>
+          <div className="font-semibold text-sm text-text-primary leading-tight truncate">{item.title}</div>
+          {item.subtitle && (
+            <div className="text-text-muted text-xs mt-0.5 leading-tight line-clamp-2">{item.subtitle}</div>
           )}
         </div>
         <span className="text-text-muted text-base group-hover:translate-x-1 transition-transform flex-shrink-0">&rarr;</span>
       </div>
-    </a>
-  )
-}
-
-function PromoBanners() {
-  const [banners, setBanners] = useState([])
-
-  useEffect(() => {
-    get('/api/analytics/banners/active')
-      .then((data) => { if (data.success) setBanners(data.banners || []) })
-      .catch(() => {})
-  }, [])
-
-  if (!banners.length) return null
-
-  return (
-    <div className="flex flex-col gap-2 h-full">
-      {banners.map((b) => <PromoBanner key={b.id} b={b} />)}
     </div>
   )
-}
 
-// ── Community Spotlight ───────────────────────────────────────
-
-function CommunitySpotlight() {
-  const [spotlight, setSpotlight] = useState(null)
-
-  useEffect(() => {
-    get('/api/spotlight')
-      .then((data) => { if (data.success && data.spotlight) setSpotlight(data.spotlight) })
-      .catch(() => {})
-  }, [])
-
-  if (!spotlight) return null
-
-  const colors = BANNER_COLORS[spotlight.color] || BANNER_COLORS.blue
-  const isExternal = spotlight.link && !spotlight.link.startsWith('/')
-
-  const handleClick = () => {
-    navigator.sendBeacon?.('/api/analytics/banner-click',
-      new Blob([JSON.stringify({ banner_type: `spotlight_${spotlight.type}` })], { type: 'application/json' }))
-  }
-
-  const stats = spotlight.stats
-  const avatarBgImage = stats?.avatar_bg_image
-  const elements = stats?.elements || []
-  const isPlayerCard = spotlight.type === 'player_of_the_day' && avatarBgImage
-
-  const ELEMENT_COLORS = {
-    Earth: 'text-green-400',
-    Fire: 'text-red-400',
-    Water: 'text-blue-400',
-    Air: 'text-yellow-300',
-  }
-
-  const inner = isPlayerCard ? (
-    // Player card matching promo banner layout: image panel + text strip
-    <>
-      {/* Image panel — grows to fill available height */}
-      <div className="relative w-full min-h-44 flex-1 overflow-hidden flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url('${avatarBgImage}')`, backgroundPosition: '50% 25%', opacity: 0.5 }}
-        />
-        <div className="absolute inset-0 bg-black/20" />
-        {spotlight.image_url && (
-          <img
-            src={spotlight.image_url}
-            alt=""
-            className="relative w-20 h-20 rounded-full object-cover border-2 border-white/40"
-            style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.7)' }}
-            onError={(e) => { e.target.style.display = 'none' }}
-          />
-        )}
-      </div>
-
-      {/* Text strip (matches promo banner layout) */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-bg-raised border-t border-border/50">
-        <span className={`text-xs font-bold px-2 py-0.5 ${colors.badge} text-white rounded flex-shrink-0`}>
-          {spotlight.badge_text}
-        </span>
-        <div className="flex-1 min-w-0">
-          <div className="font-semibold text-sm text-text-primary leading-tight">{spotlight.title}</div>
-          <div className="text-text-muted text-xs mt-0.5 leading-tight">{spotlight.subtitle}</div>
-        </div>
-        <span className="text-text-muted text-base group-hover:translate-x-1 transition-transform flex-shrink-0">&rarr;</span>
-      </div>
-    </>
-  ) : (
-    // Standard card for community channel / website (no avatar image)
-    <>
-      <div className="flex items-center gap-3 px-4 py-3 bg-bg-raised border-b border-border/50">
-        <span className={`text-xs font-bold px-2 py-0.5 ${colors.badge} text-white rounded flex-shrink-0`}>
-          {spotlight.badge_text}
-        </span>
-        <div className="flex-1 min-w-0">
-          <div className="font-semibold text-sm text-text-primary leading-tight">{spotlight.title}</div>
-          <div className="text-text-muted text-xs mt-0.5 leading-tight">{spotlight.subtitle}</div>
-        </div>
-        <span className="text-text-muted text-base group-hover:translate-x-1 transition-transform flex-shrink-0">&rarr;</span>
-      </div>
-    </>
-  )
-
-  const wrapperClass = `flex flex-col overflow-hidden rounded-soft border bg-bg-surface transition-all duration-300 group h-full ${colors.border} ${colors.glow}`
+  const cls = 'flex-shrink-0 w-72 sm:w-80 snap-start overflow-hidden rounded-soft border border-border bg-bg-surface hover:border-primary/50 transition-all duration-200 group'
 
   if (isExternal) {
-    return (
-      <a
-        href={spotlight.link}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={handleClick}
-        className={wrapperClass}
-      >
-        {inner}
-      </a>
-    )
+    return <a href={item.link} target="_blank" rel="noopener noreferrer" onClick={handleClick} className={cls}>{inner}</a>
+  }
+  return <Link to={item.link} onClick={handleClick} className={cls}>{inner}</Link>
+}
+
+function PromoCarousel() {
+  const [items, setItems] = useState([])
+  const scrollRef = useRef(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  useEffect(() => {
+    const promises = [
+      get('/api/analytics/banners/active').then(d => d.success ? d.banners || [] : []).catch(() => []),
+      get('/api/spotlight').then(d => d.success && d.spotlight ? d.spotlight : null).catch(() => null),
+      get('/api/event-spotlight').then(d => d.success && d.event_spotlight ? d.event_spotlight : null).catch(() => null),
+      get('/api/recent-event').then(d => d.event || null).catch(() => null),
+    ]
+    Promise.all(promises).then(([banners, spotlight, eventSpotlight, newEvent]) => {
+      const cards = []
+
+      // New event (highest priority — time-sensitive)
+      if (newEvent) {
+        cards.push({
+          key: 'new-event',
+          badge: 'NEW',
+          color: 'blue',
+          title: newEvent.name,
+          subtitle: 'New Top 8 decklists added',
+          link: `/top-8/${newEvent.folder}`,
+          thumbnail: null,
+          analyticsType: 'new_event',
+        })
+      }
+
+      // Promo banners
+      for (const b of banners) {
+        cards.push({
+          key: `promo-${b.id}`,
+          badge: b.badge_text,
+          color: b.color,
+          title: b.title,
+          subtitle: b.subtitle,
+          link: b.link,
+          thumbnail: b.images?.[0] || null,
+          analyticsType: `promo_${b.id}`,
+        })
+      }
+
+      // Community spotlight
+      if (spotlight) {
+        cards.push({
+          key: 'spotlight',
+          badge: spotlight.badge_text,
+          color: spotlight.color,
+          title: spotlight.title,
+          subtitle: spotlight.subtitle,
+          link: spotlight.link,
+          thumbnail: spotlight.image_url || spotlight.stats?.avatar_bg_image || null,
+          analyticsType: `spotlight_${spotlight.type}`,
+        })
+      }
+
+      // Random recent event
+      if (eventSpotlight) {
+        cards.push({
+          key: 'event-spotlight',
+          badge: eventSpotlight.badge_text,
+          color: eventSpotlight.color,
+          title: eventSpotlight.title,
+          subtitle: eventSpotlight.subtitle,
+          link: eventSpotlight.link,
+          thumbnail: eventSpotlight.image_url || null,
+          analyticsType: 'event_spotlight',
+        })
+      }
+
+      setItems(cards)
+    })
+  }, [])
+
+  const updateScrollButtons = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    setCanScrollLeft(el.scrollLeft > 4)
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4)
+  }, [])
+
+  useEffect(() => {
+    updateScrollButtons()
+    const el = scrollRef.current
+    if (!el) return
+    el.addEventListener('scroll', updateScrollButtons, { passive: true })
+    const ro = new ResizeObserver(updateScrollButtons)
+    ro.observe(el)
+    return () => { el.removeEventListener('scroll', updateScrollButtons); ro.disconnect() }
+  }, [items, updateScrollButtons])
+
+  const scroll = (dir) => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollBy({ left: dir * 320, behavior: 'smooth' })
   }
 
+  if (!items.length) return null
+
   return (
-    <Link
-      to={spotlight.link}
-      onClick={handleClick}
-      className={wrapperClass}
-    >
-      {inner}
-    </Link>
+    <div className="relative mt-4">
+      {/* Scroll arrows */}
+      {canScrollLeft && (
+        <button
+          onClick={() => scroll(-1)}
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-bg-elevated/90 border border-border text-text-muted hover:text-text-primary hover:border-primary/50 transition-colors -ml-3"
+          aria-label="Scroll left"
+        >
+          &lsaquo;
+        </button>
+      )}
+      {canScrollRight && (
+        <button
+          onClick={() => scroll(1)}
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-bg-elevated/90 border border-border text-text-muted hover:text-text-primary hover:border-primary/50 transition-colors -mr-3"
+          aria-label="Scroll right"
+        >
+          &rsaquo;
+        </button>
+      )}
+      {/* Scrollable track */}
+      <div
+        ref={scrollRef}
+        className="flex gap-3 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-2 hide-scrollbar"
+      >
+        {items.map((item) => <CarouselCard key={item.key} item={item} />)}
+      </div>
+    </div>
   )
 }
 
@@ -514,17 +478,9 @@ export default function Home() {
   )
   const [eventData, setEventData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [newEvent, setNewEvent] = useState(null)
   const titleClickCount = useRef(0)
   const titleTimer = useRef(null)
   const navigate = useNavigate()
-
-  // Fetch new event banner
-  useEffect(() => {
-    get('/api/recent-event')
-      .then((data) => setNewEvent(data.event || null))
-      .catch(() => {})
-  }, [])
 
   // Fetch event leaderboard
   const fetchLeaderboard = useCallback(async (src) => {
@@ -583,26 +539,7 @@ export default function Home() {
           Welcome to the Sorcery Community Leaderboard
         </h1>
 
-        {/* New Event Banner */}
-        {newEvent && (
-          <a
-            href={`/top-8/${newEvent.folder}`}
-            onClick={() => {
-              navigator.sendBeacon?.('/api/analytics/banner-click',
-                new Blob([JSON.stringify({ banner_type: 'new_event' })], { type: 'application/json' }))
-            }}
-            className="inline-flex items-center gap-3 mt-4 px-4 py-2 bg-bg-surface border border-primary/40 rounded-soft hover:border-primary transition-colors"
-          >
-            <span className="text-xs font-bold px-2 py-0.5 bg-primary text-black rounded">NEW</span>
-            <span className="text-sm font-medium">New Top 8 decklists added: {newEvent.name}</span>
-            <span className="text-text-muted">&rarr;</span>
-          </a>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-          <PromoBanners />
-          <CommunitySpotlight />
-        </div>
+        <PromoCarousel />
         <PlayerSearch />
       </section>
 

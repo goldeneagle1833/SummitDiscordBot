@@ -75,6 +75,13 @@ def spotlight():
     return jsonify(get_daily_spotlight())
 
 
+@misc_bp.route("/event-spotlight")
+def event_spotlight():
+    """Get a random recent top-8 event for the homepage carousel."""
+    from services.spotlight import get_random_recent_event
+    return jsonify(get_random_recent_event())
+
+
 @misc_bp.route("/community")
 def community():
     """Get community links: Discord servers, websites, and YouTube channels."""

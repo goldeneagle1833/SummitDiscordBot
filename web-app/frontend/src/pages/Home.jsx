@@ -146,13 +146,15 @@ function PlayerSearch() {
 
 // ── Promo Carousel ────────────────────────────────────────────
 
-const BADGE_COLORS = {
-  blue:   'bg-blue-500',
-  gold:   'bg-yellow-500',
-  green:  'bg-green-500',
-  purple: 'bg-purple-500',
-  red:    'bg-red-500',
+const BADGE_STYLES = {
+  blue:   'bg-white/10 text-white/90 border border-white/20',
+  gold:   'bg-white/10 text-white/90 border border-white/20',
+  green:  'bg-white/10 text-white/90 border border-white/20',
+  purple: 'bg-white/10 text-white/90 border border-white/20',
+  red:    'bg-white/10 text-white/90 border border-white/20',
 }
+
+const isYouTubeLink = (url) => url && /youtu\.?be/i.test(url)
 
 function PromoCarousel() {
   const [items, setItems] = useState([])
@@ -178,8 +180,9 @@ function PromoCarousel() {
       }
 
       for (const b of banners) {
+        const badge = isYouTubeLink(b.link) ? 'VIDEO' : b.badge_text
         slides.push({
-          key: `promo-${b.id}`, badge: b.badge_text, color: b.color,
+          key: `promo-${b.id}`, badge, color: b.color,
           title: b.title, subtitle: b.subtitle, link: b.link,
           thumbnail: b.images?.[0] || null, analyticsType: `promo_${b.id}`,
         })
@@ -228,7 +231,7 @@ function PromoCarousel() {
   if (!items.length) return null
 
   const item = items[active]
-  const badgeColor = BADGE_COLORS[item.color] || BADGE_COLORS.blue
+  const badgeStyle = BADGE_STYLES[item.color] || BADGE_STYLES.blue
   const isExternal = item.link && !item.link.startsWith('/')
 
   const handleClick = () => {
@@ -263,7 +266,7 @@ function PromoCarousel() {
         </div>
 
         {/* Content overlay */}
-        <div className="relative px-6 py-8 sm:py-10 sm:px-8 text-center flex flex-col items-center">
+        <div className="relative px-6 py-12 sm:py-16 sm:px-8 text-center flex flex-col items-center">
           <h3 className="text-2xl sm:text-3xl font-display text-text-primary leading-tight mb-2">
             {item.title}
           </h3>
@@ -272,8 +275,8 @@ function PromoCarousel() {
               {item.subtitle}
             </p>
           )}
-          <div className="flex items-center gap-3 mt-3">
-            <span className={`inline-block text-[10px] font-bold px-2 py-0.5 ${badgeColor} text-white rounded uppercase tracking-wide`}>
+          <div className="flex items-center gap-3 mt-4">
+            <span className={`inline-block text-[10px] font-semibold px-2.5 py-0.5 ${badgeStyle} rounded-full uppercase tracking-wider`}>
               {item.badge}
             </span>
             <span className="inline-flex items-center gap-1 text-xs font-medium text-primary group-hover:text-primary-light transition-colors">
@@ -283,19 +286,19 @@ function PromoCarousel() {
         </div>
       </Wrapper>
 
-      {/* Navigation arrows */}
+      {/* Navigation arrows — full-height hit area */}
       {items.length > 1 && (
         <>
           <button
             onClick={() => navigate(-1)}
-            className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 flex items-center justify-center rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white transition-colors text-sm"
+            className="absolute left-0 top-0 bottom-0 z-10 w-12 flex items-center justify-center text-white/0 hover:text-white/70 hover:bg-gradient-to-r hover:from-black/30 hover:to-transparent transition-all text-lg"
             aria-label="Previous"
           >
             &lsaquo;
           </button>
           <button
             onClick={() => navigate(1)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 flex items-center justify-center rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white transition-colors text-sm"
+            className="absolute right-0 top-0 bottom-0 z-10 w-12 flex items-center justify-center text-white/0 hover:text-white/70 hover:bg-gradient-to-l hover:from-black/30 hover:to-transparent transition-all text-lg"
             aria-label="Next"
           >
             &rsaquo;

@@ -159,6 +159,7 @@ const isYouTubeLink = (url) => url && /youtu\.?be/i.test(url)
 function PromoCarousel() {
   const [items, setItems] = useState([])
   const [active, setActive] = useState(0)
+  const [direction, setDirection] = useState(1) // 1 = next/right, -1 = prev/left
   const timerRef = useRef(null)
 
   useEffect(() => {
@@ -224,20 +225,27 @@ function PromoCarousel() {
   // Auto-advance every 25 seconds
   useEffect(() => {
     if (items.length <= 1) return
-    timerRef.current = setInterval(() => setActive(i => (i + 1) % items.length), 25000)
+    timerRef.current = setInterval(() => {
+      setDirection(1)
+      setActive(i => (i + 1) % items.length)
+    }, 25000)
     return () => clearInterval(timerRef.current)
   }, [items.length])
 
-  const goTo = (idx) => {
+  const goTo = (idx, dir) => {
+    setDirection(dir ?? (idx > active ? 1 : -1))
     setActive(idx)
     clearInterval(timerRef.current)
     if (items.length > 1) {
-      timerRef.current = setInterval(() => setActive(i => (i + 1) % items.length), 25000)
+      timerRef.current = setInterval(() => {
+        setDirection(1)
+        setActive(i => (i + 1) % items.length)
+      }, 25000)
     }
   }
 
   const navigate = (dir) => {
-    goTo((active + dir + items.length) % items.length)
+    goTo((active + dir + items.length) % items.length, dir)
   }
 
   if (!items.length) return null
@@ -267,7 +275,7 @@ function PromoCarousel() {
             className="absolute inset-0 overflow-hidden group transition-all duration-700 ease-in-out"
             style={{
               opacity: isActive ? 1 : 0,
-              transform: isActive ? 'translateX(0)' : 'translateX(40px)',
+              transform: isActive ? 'translateX(0)' : `translateX(${direction * 60}px)`,
               pointerEvents: isActive ? 'auto' : 'none',
             }}
           >

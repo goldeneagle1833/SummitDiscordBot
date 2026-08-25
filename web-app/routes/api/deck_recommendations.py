@@ -199,15 +199,18 @@ def staff_pick():
             rng = random.Random(str(date.today()) + "staff-pick")
             deck = rng.choice(admin_decks)
 
-        # Resolve avatar image
+        # Resolve avatar image — strip non-alphanumeric for fuzzy match
         avatar_image = None
         if deck.avatar_name:
-            avatar_key = deck.avatar_name.lower().replace(" ", "_").replace("'", "").replace(",", "")
+            norm = re.sub(r'[^a-z0-9]', '', deck.avatar_name.lower())
             from webapp_config import AVATAR_IMAGES_DIR
             if AVATAR_IMAGES_DIR.exists():
-                for f in os.listdir(AVATAR_IMAGES_DIR):
-                    if f.lower().startswith(avatar_key) and f.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                        avatar_image = f"/avatar-images/{f}"
+                for fname in os.listdir(AVATAR_IMAGES_DIR):
+                    if not fname.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                        continue
+                    fname_norm = re.sub(r'[^a-z0-9]', '', fname.rsplit('.', 1)[0].lower())
+                    if norm in fname_norm or fname_norm.startswith(norm):
+                        avatar_image = f"/avatar-images/{fname}"
                         break
 
         return jsonify({

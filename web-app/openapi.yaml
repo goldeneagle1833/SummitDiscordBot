@@ -1,0 +1,5565 @@
+openapi: 3.1.0
+info:
+  title: Summit Web App API
+  version: 1.0.0
+  description: 'REST API for the Sorcerers Summit web application (SummitDiscordBot companion app).
+
+
+    Generated from the Flask route definitions in `web-app/routes/`. Auth model:
+
+    - **Browser users**: Discord/Google OAuth session cookie (`SessionAuth`)
+
+    - **Server-to-server**: `X-API-Key` header or `Authorization: Bearer <key>`
+
+
+    Request/response bodies marked as generic objects should be refined from the handler source; endpoints documented
+    in `API_DOCUMENTATION.md` include full schemas.'
+  contact:
+    name: goldeneagle1833
+    url: https://github.com/goldeneagle1833/SummitDiscordBot
+servers:
+- url: https://sorcererssummit.com
+  description: Production
+- url: http://localhost:5000
+  description: Local development
+tags:
+- name: leaderboard
+  description: ELO leaderboards (current, lifetime, archived seasons)
+- name: matches
+  description: Ranked match records and date-range queries
+- name: players
+  description: Player profiles, stats, display names, blocking, account management
+- name: avatars
+  description: Avatar statistics, matchups, and image settings
+- name: cards
+  description: Card catalog, card stats, and card usage analytics
+- name: games
+  description: Game/deck data endpoints
+- name: misc
+  description: Status/health and miscellaneous endpoints
+- name: streamers
+  description: Streamer spotlight endpoints
+- name: external_matches
+  description: Server-to-server external match reporting (API-key only)
+- name: admin
+  description: Admin-only management endpoints
+- name: match_reporting
+  description: Web match reporting with two-party confirmation
+- name: curios
+  description: Curio tracking entries and sets
+- name: seasons
+  description: Season management
+- name: limited
+  description: Limited (draft/sealed) arena runs and matchmaking
+- name: fun_stats
+  description: Fun/novelty statistics
+- name: events
+  description: Tournament event data and top-8 decks
+- name: analytics
+  description: Public page-view/heartbeat analytics ingestion
+- name: deck_rec
+  description: Deck recommendation engine
+- name: creator
+  description: Content-creator tools (requires creator role)
+- name: explorer
+  description: Explorer standings events and seasons
+- name: rumble
+  description: Rumble game mode
+- name: deck_builder
+  description: Deck builder persistence and Curiosa import
+- name: store
+  description: Store products, cart, Stripe checkout, and order management
+- name: card_points
+  description: Card points budget deck validation
+- name: reaction_roles
+  description: Discord reaction-role configuration
+- name: matchmaking
+  description: Matchmaking queue endpoints
+- name: auth
+  description: Discord/Google OAuth login flows (browser session)
+paths:
+  /api/admin/audit-log:
+    get:
+      tags:
+      - admin
+      summary: Get admin audit log entries (admin only).
+      operationId: admin_audit_log
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/admin/avatar-image-settings:
+    get:
+      tags:
+      - admin
+      summary: Get all avatar image display settings (admin only).
+      operationId: admin_get_all_avatar_image_settings
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/admin/avatar-image-settings/{avatar_name}:
+    delete:
+      tags:
+      - admin
+      summary: Reset display settings for an avatar image to defaults (admin only).
+      operationId: admin_delete_avatar_image_settings
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: avatar_name
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    put:
+      tags:
+      - admin
+      summary: Update display settings for an avatar image (admin only).
+      operationId: admin_update_avatar_image_settings
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: avatar_name
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `admin.py::update_avatar_image_settings` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/admin/blocked-users:
+    get:
+      tags:
+      - admin
+      summary: List every block record with resolved names (admin only).
+      operationId: admin_all_blocked_users
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/admin/creator-access:
+    get:
+      tags:
+      - admin
+      summary: List all users with manually-granted creator access (admin only).
+      operationId: admin_list_creator_access
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - admin
+      summary: Grant creator access to a user (admin only).
+      operationId: admin_add_creator_access
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `admin.py::add_creator_access` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/admin/creator-access/{user_id}:
+    delete:
+      tags:
+      - admin
+      summary: Revoke creator access from a user (admin only).
+      operationId: admin_remove_creator_access
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/admin/dashboard-stats:
+    get:
+      tags:
+      - admin
+      summary: Get time-series stats for the admin dashboard (unique players, games over time).
+      operationId: admin_dashboard_stats
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/admin/delete-account/{user_id}:
+    delete:
+      tags:
+      - admin
+      summary: Permanently delete a player account and all associated data (admin only).
+      operationId: admin_delete_account
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/admin/end-event:
+    post:
+      tags:
+      - admin
+      summary: End the current event without starting a new one (admin only).
+      operationId: admin_end_event_route
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `admin.py::end_event_route` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/admin/external-matches:
+    get:
+      tags:
+      - admin
+      summary: List all external matches with pagination (admin only).
+      operationId: admin_list_external_matches
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/admin/game-activity:
+    get:
+      tags:
+      - admin
+      summary: Get game statistics for the last X hours (admin only).
+      operationId: admin_game_activity
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/admin/matches-with-notes:
+    get:
+      tags:
+      - admin
+      summary: Get all matches that have a user-provided match comment (admin only).
+      operationId: admin_matches_with_notes
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/admin/omens-matches:
+    get:
+      tags:
+      - admin
+      summary: Get all Omens (points) matches with card point breakdowns.
+      operationId: admin_omens_matches
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/admin/remove-match/{match_id}:
+    delete:
+      tags:
+      - admin
+      summary: Remove a match record and reverse ELO changes (admin only).
+      operationId: admin_remove_match
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: match_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/admin/remove-player/{user_id}:
+    delete:
+      tags:
+      - admin
+      summary: Remove a player from standings (admin only). Supports both numeric and google_ IDs.
+      operationId: admin_remove_player
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/admin/rename-player/{user_id}:
+    post:
+      tags:
+      - admin
+      summary: Rename a player's display name (admin only). Supports both numeric and google_ IDs.
+      operationId: admin_rename_player
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `admin.py::rename_player` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/admin/reset-all-elo:
+    post:
+      tags:
+      - admin
+      summary: 'DANGER: Completely reset ALL ELO ratings and match history (admin only).'
+      operationId: admin_reset_all_elo
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `admin.py::reset_all_elo` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/admin/reset-elo/{user_id}:
+    post:
+      tags:
+      - admin
+      summary: Reset a player's ELO to a specified value (admin only). Supports both numeric and google_ IDs.
+      operationId: admin_reset_elo
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `admin.py::reset_elo` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/admin/search-users:
+    get:
+      tags:
+      - admin
+      summary: Search users by display name for admin operations (admin only).
+      operationId: admin_search_users
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/admin/start-event:
+    post:
+      tags:
+      - admin
+      summary: Start a new event/season (admin only).
+      operationId: admin_start_event_route
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `admin.py::start_event_route` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/admin/transfer-history:
+    post:
+      tags:
+      - admin
+      summary: Transfer all history from one user account to another (admin only).
+      operationId: admin_transfer_history
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `admin.py::transfer_history` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/analytics/active-sessions:
+    get:
+      tags:
+      - analytics
+      summary: Get all active sessions with metadata (admin only).
+      operationId: analytics_active_sessions_list
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/analytics/active-users:
+    get:
+      tags:
+      - analytics
+      summary: Get the number of currently active site users (admin only).
+      operationId: analytics_active_users
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/analytics/banner-click:
+    post:
+      tags:
+      - analytics
+      summary: Record a banner click (public endpoint).
+      operationId: analytics_banner_click
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `analytics.py::banner_click` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/analytics/banners:
+    get:
+      tags:
+      - analytics
+      summary: Get all banners for admin management.
+      operationId: analytics_list_banners
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - analytics
+      summary: Create a new promo banner.
+      operationId: analytics_create_banner
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `analytics.py::create_banner` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/analytics/banners/{banner_id}:
+    delete:
+      tags:
+      - analytics
+      summary: Delete a promo banner.
+      operationId: analytics_delete_banner
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: banner_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/analytics/banners/{banner_id}/toggle:
+    post:
+      tags:
+      - analytics
+      summary: Toggle a banner's active state.
+      operationId: analytics_toggle_banner
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: banner_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `analytics.py::toggle_banner` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/analytics/banners/active:
+    get:
+      tags:
+      - analytics
+      summary: Get all active, non-expired promo banners (public endpoint).
+      operationId: analytics_active_banners
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/analytics/banners/upload-image:
+    post:
+      tags:
+      - analytics
+      summary: Upload a banner image. Returns the URL path.
+      operationId: analytics_upload_banner_image
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `analytics.py::upload_banner_image` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/analytics/heartbeat:
+    post:
+      tags:
+      - analytics
+      summary: Record a heartbeat from an active browser session (public endpoint).
+      operationId: analytics_heartbeat
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `analytics.py::heartbeat` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/analytics/page-view:
+    post:
+      tags:
+      - analytics
+      summary: Record a page view from the React SPA (public endpoint).
+      operationId: analytics_page_view
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `analytics.py::page_view` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/analytics/stats:
+    get:
+      tags:
+      - analytics
+      summary: Get site analytics (admin only).
+      operationId: analytics_analytics_stats
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/analytics/unique-visitors:
+    get:
+      tags:
+      - analytics
+      summary: Get unique visitor statistics (admin only).
+      operationId: analytics_unique_visitors
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/avatar/{avatar_name}:
+    get:
+      tags:
+      - avatars
+      summary: API endpoint for a specific avatar's stats and match history.
+      operationId: avatars_get_avatar
+      parameters:
+      - name: avatar_name
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/avatar/{avatar_name}/deck-composition:
+    get:
+      tags:
+      - avatars
+      summary: API endpoint for deck element composition for a specific avatar.
+      operationId: avatars_get_avatar_deck_composition
+      parameters:
+      - name: avatar_name
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/avatar/{avatar_name}/elo-matrix:
+    get:
+      tags:
+      - avatars
+      summary: Win rate matrix by ELO bracket for a specific avatar.
+      operationId: avatars_get_avatar_elo_matrix
+      parameters:
+      - name: avatar_name
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/avatar/{avatar_name}/matchups:
+    get:
+      tags:
+      - avatars
+      summary: API endpoint for avatar vs avatar matchup statistics.
+      operationId: avatars_get_avatar_matchups
+      parameters:
+      - name: avatar_name
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/avatar/{avatar_name}/popularity:
+    get:
+      tags:
+      - avatars
+      summary: API endpoint for avatar popularity over time.
+      operationId: avatars_get_avatar_popularity
+      parameters:
+      - name: avatar_name
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/avatars:
+    get:
+      tags:
+      - avatars
+      summary: API endpoint for global avatar stats from all matches with deck data.
+      operationId: avatars_get_all_avatars
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/avatars/elo-bracket-matrix:
+    get:
+      tags:
+      - avatars
+      summary: 'Win rate matrix: player ELO bracket vs opponent ELO bracket.'
+      operationId: avatars_get_elo_bracket_matrix
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/avatars/elo-breakdown:
+    get:
+      tags:
+      - avatars
+      summary: Cross-avatar win rate breakdown by ELO bracket.
+      operationId: avatars_get_avatars_elo_breakdown
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/avatars/elo-breakdown/matches:
+    get:
+      tags:
+      - avatars
+      summary: Return detailed match list for a specific avatar + player ELO bracket cell.
+      operationId: avatars_get_elo_breakdown_matches
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/avatars/filters:
+    get:
+      tags:
+      - avatars
+      summary: Return available events and sources for avatar page filtering.
+      operationId: avatars_get_avatar_filters
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/avatars/image-files:
+    get:
+      tags:
+      - avatars
+      summary: List available avatar image filenames.
+      operationId: avatars_get_avatar_image_files
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/avatars/play-draw-stats:
+    get:
+      tags:
+      - avatars
+      summary: API endpoint for overall on-the-play vs on-the-draw win rates.
+      operationId: avatars_get_play_draw_stats
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/avatars/popularity:
+    get:
+      tags:
+      - avatars
+      summary: API endpoint for all avatars' popularity over time.
+      operationId: avatars_get_all_avatars_popularity
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/avatars/season-stats:
+    get:
+      tags:
+      - avatars
+      summary: Return game counts per season (events from elo.db + configured season filters).
+      operationId: avatars_get_season_stats
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/avatars/top-players:
+    get:
+      tags:
+      - avatars
+      summary: Return the top players for each avatar, ranked by Avatar Score.
+      operationId: avatars_get_avatar_top_players
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/card-points/{card_name}:
+    delete:
+      tags:
+      - card_points
+      summary: Remove a card's point assignment.
+      operationId: card_points_delete_card_points
+      parameters:
+      - name: card_name
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/card-points/admins:
+    get:
+      tags:
+      - card_points
+      summary: List card points admins. Global admin only.
+      operationId: card_points_get_card_points_admins
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - card_points
+      summary: Add a card points admin. Global admin only.
+      operationId: card_points_add_card_points_admin
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `card_points.py::add_card_points_admin` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/card-points/admins/{discord_user_id}:
+    delete:
+      tags:
+      - card_points
+      summary: Remove a card points admin. Global admin only.
+      operationId: card_points_remove_card_points_admin
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: discord_user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/card-points/check-deck:
+    post:
+      tags:
+      - card_points
+      summary: Check if a deck URL meets the points budget.
+      operationId: card_points_check_deck
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `card_points.py::check_deck` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/card-points/config:
+    get:
+      tags:
+      - card_points
+      summary: Get points system configuration.
+      operationId: card_points_get_config
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      tags:
+      - card_points
+      summary: Update points system configuration.
+      operationId: card_points_set_config
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `card_points.py::set_config` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/card-points/history:
+    get:
+      tags:
+      - card_points
+      summary: 'Public endpoint: get recent card points change history.'
+      operationId: card_points_get_card_points_history
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/card-points/public:
+    get:
+      tags:
+      - card_points
+      summary: 'Public endpoint: get all card points + max budget + card images.'
+      operationId: card_points_get_card_points_public
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/card-points/search-cards:
+    get:
+      tags:
+      - card_points
+      summary: Search for cards by name (from card_catalog DB table).
+      operationId: card_points_search_cards
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/card/{card_name}:
+    get:
+      tags:
+      - cards
+      summary: 'API endpoint for individual card detail: metadata + match stats.'
+      operationId: cards_get_card_stats
+      parameters:
+      - name: card_name
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/card/{card_name}/popularity:
+    get:
+      tags:
+      - cards
+      summary: API endpoint for card popularity over time.
+      operationId: cards_get_card_popularity
+      parameters:
+      - name: card_name
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/cards:
+    get:
+      tags:
+      - cards
+      summary: API endpoint for per-card winrates from all matches with deck data.
+      operationId: cards_get_cards
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/cards/popularity:
+    get:
+      tags:
+      - cards
+      summary: API endpoint for all cards' popularity over time.
+      operationId: cards_get_all_cards_popularity
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/community:
+    get:
+      tags:
+      - misc
+      summary: 'Get community links: Discord servers, websites, and YouTube channels.'
+      operationId: misc_community
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      tags:
+      - misc
+      summary: Add a community entry (Discord server, YouTube channel, or website). Admin only.
+      operationId: misc_add_community_entry
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `misc.py::add_community_entry` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/community/{entry_type}/{entry_id}:
+    delete:
+      tags:
+      - misc
+      summary: Delete a community entry by type and ID. Admin only.
+      operationId: misc_delete_community_entry
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: entry_type
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: entry_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/creator/card-history:
+    get:
+      tags:
+      - creator
+      summary: Monthly popularity trend for a specific card.
+      operationId: creator_get_card_history
+      description: Creator role required
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/creator/filters:
+    get:
+      tags:
+      - creator
+      summary: Return available past events and sources for the creator page filter dropdown.
+      operationId: creator_get_creator_filters
+      description: Creator role required
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/creator/popular-cards:
+    get:
+      tags:
+      - creator
+      summary: Card popularity stats from match_records (same source as live-popular-cards).
+      operationId: creator_get_creator_popular_cards
+      description: Creator role required
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/curios/:
+    get:
+      tags:
+      - curios
+      summary: List all curio entries with set information.
+      operationId: curios_list_entries
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      tags:
+      - curios
+      summary: Create a new curio entry with image upload.
+      operationId: curios_create_entry
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `curios.py::create_entry` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/curios/{entry_id}:
+    delete:
+      tags:
+      - curios
+      summary: Delete a curio entry and its image.
+      operationId: curios_delete_entry
+      parameters:
+      - name: entry_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    put:
+      tags:
+      - curios
+      summary: Update an existing curio entry.
+      operationId: curios_update_entry
+      parameters:
+      - name: entry_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `curios.py::update_entry` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/curios/sets:
+    get:
+      tags:
+      - curios
+      summary: List all available sets.
+      operationId: curios_list_sets
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      tags:
+      - curios
+      summary: Create a new custom set.
+      operationId: curios_create_set
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `curios.py::create_set` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/debug/database-status:
+    get:
+      tags:
+      - misc
+      summary: Debug endpoint to check database file paths and existence (admin only).
+      operationId: misc_database_status
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/deck-builder/{deck_id}:
+    delete:
+      tags:
+      - deck_builder
+      summary: Delete a saved deck.
+      operationId: deck_builder_delete_saved_deck
+      description: Session login or API key
+      parameters:
+      - name: deck_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    get:
+      tags:
+      - deck_builder
+      summary: Load a saved deck by id (only if owned by user).
+      operationId: deck_builder_get_saved_deck
+      description: Session login or API key
+      parameters:
+      - name: deck_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags:
+      - deck_builder
+      summary: Update an existing saved deck.
+      operationId: deck_builder_update_deck
+      description: Session login or API key
+      parameters:
+      - name: deck_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `deck_builder.py::update_deck` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/deck-builder/all-cards:
+    get:
+      tags:
+      - deck_builder
+      summary: Return all available cards with enriched metadata. Cached after first call.
+      operationId: deck_builder_all_cards
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/deck-builder/fetch:
+    post:
+      tags:
+      - deck_builder
+      summary: Fetch a deck from Curiosa by URL and return enriched card data.
+      operationId: deck_builder_fetch_deck
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `deck_builder.py::fetch_deck` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/deck-builder/my-decks:
+    get:
+      tags:
+      - deck_builder
+      summary: List all saved decks for the logged-in user.
+      operationId: deck_builder_list_my_decks
+      description: Session login or API key
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/deck-builder/save:
+    post:
+      tags:
+      - deck_builder
+      summary: Save a new deck for the logged-in user.
+      operationId: deck_builder_save_deck
+      description: Session login or API key
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `deck_builder.py::save_deck` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/deck-composition:
+    get:
+      tags:
+      - cards
+      summary: API endpoint for deck element composition across all decks.
+      operationId: cards_get_deck_composition
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/deck-rec/{deck_id}/info:
+    get:
+      tags:
+      - deck_rec
+      summary: Return seed info + deck contents without expensive clustering.
+      operationId: deck_rec_get_deck_info
+      parameters:
+      - name: deck_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/deck-rec/{deck_id}/recommendations:
+    get:
+      tags:
+      - deck_rec
+      summary: Return aggregated archetype recommendation for a top-8 seed deck.
+      operationId: deck_rec_get_recommendations
+      parameters:
+      - name: deck_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/deck-rec/admin/add-deck:
+    post:
+      tags:
+      - deck_rec
+      summary: Add an admin-recommended deck by Curiosa URL. Admin only.
+      operationId: deck_rec_admin_add_deck
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `deck_recommendations.py::admin_add_deck` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/deck-rec/admin/remove-deck/{deck_id}:
+    delete:
+      tags:
+      - deck_rec
+      summary: Remove an admin-recommended deck. Admin only.
+      operationId: deck_rec_admin_remove_deck
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: deck_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/deck-rec/admin/update-deck/{deck_id}:
+    patch:
+      tags:
+      - deck_rec
+      summary: Update primer and stars for an existing admin deck. Admin only.
+      operationId: deck_rec_admin_update_deck
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: deck_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `deck_recommendations.py::admin_update_deck` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/deck-rec/decks:
+    get:
+      tags:
+      - deck_rec
+      summary: Return all top-8 archetype seed decks with cluster size preview.
+      operationId: deck_rec_get_decks
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/deck-snapshot/{match_id}/{player_id}:
+    get:
+      tags:
+      - players
+      summary: Get deck snapshot for a specific player in a match.
+      operationId: players_deck_snapshot
+      parameters:
+      - name: match_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/delete-recorded-game/{report_id}:
+    delete:
+      tags:
+      - games
+      summary: API endpoint to delete a recorded game (solo_match_report).
+      operationId: games_delete_recorded_game
+      description: Session login or API key
+      parameters:
+      - name: report_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/elements:
+    get:
+      tags:
+      - cards
+      summary: API endpoint for elemental winrates from all matches with deck data.
+      operationId: cards_get_elements
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/elements/filters:
+    get:
+      tags:
+      - cards
+      summary: Return available events for element page filtering.
+      operationId: cards_get_element_filters
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/elo-distribution:
+    get:
+      tags:
+      - leaderboard
+      summary: Get ELO distribution across bands (public, based on lifetime ELO).
+      operationId: leaderboard_get_elo_distribution
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/events:
+    get:
+      tags:
+      - leaderboard
+      summary: Get all events for ELO filtering.
+      operationId: leaderboard_get_events
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/events/{event_folder}:
+    delete:
+      tags:
+      - events
+      summary: Delete an event and all its data (admin only).
+      operationId: events_delete_event
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: event_folder
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    get:
+      tags:
+      - events
+      summary: Return deck tables, card stats, and element charts for a single event.
+      operationId: events_get_event_detail
+      parameters:
+      - name: event_folder
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/events/{event_folder}/decks:
+    post:
+      tags:
+      - events
+      summary: Add or replace decks in an existing event via Curiosa URLs (admin only).
+      operationId: events_update_event_decks
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: event_folder
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `events.py::update_event_decks` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/events/{event_folder}/metadata:
+    put:
+      tags:
+      - events
+      summary: Update display name and/or star rating for an event (admin only).
+      operationId: events_update_event_metadata
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: event_folder
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `events.py::update_event_metadata` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/events/{event_folder}/refresh:
+    post:
+      tags:
+      - events
+      summary: Re-fetch all deck data from Curiosa for an event (admin only).
+      operationId: events_refresh_event
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: event_folder
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `events.py::refresh_event` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/events/{event_folder}/reorder:
+    post:
+      tags:
+      - events
+      summary: Reorder decks in an event's JSON file (admin only).
+      operationId: events_reorder_event_decks
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: event_folder
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `events.py::reorder_event_decks` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/events/create:
+    post:
+      tags:
+      - events
+      summary: Create a new event from Curiosa deck URLs (admin only).
+      operationId: events_create_event
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `events.py::create_event` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/events/featured:
+    put:
+      tags:
+      - events
+      summary: Set or clear the featured (latest) event on the top 8 page (admin only).
+      operationId: events_set_featured_event
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `events.py::set_featured_event` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/events/jobs/{job_id}:
+    get:
+      tags:
+      - events
+      summary: Poll for background event job status.
+      operationId: events_get_event_job_status
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/events/reorder:
+    post:
+      tags:
+      - events
+      summary: Reorder the events listing page (admin only).
+      operationId: events_reorder_events_list
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `events.py::reorder_events_list` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/explorer/admins:
+    get:
+      tags:
+      - explorer
+      summary: List Explorer admins. Global admin only.
+      operationId: explorer_get_admins
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - explorer
+      summary: Add an Explorer admin. Global admin only.
+      operationId: explorer_add_admin
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `explorer.py::add_admin` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/explorer/admins/{discord_user_id}:
+    delete:
+      tags:
+      - explorer
+      summary: Remove an Explorer admin. Global admin only.
+      operationId: explorer_remove_admin
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: discord_user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/explorer/events:
+    post:
+      tags:
+      - explorer
+      summary: Import and save an event from a carde.io URL.
+      operationId: explorer_save_event
+      description: Explorer admin required
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `explorer.py::save_event` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/explorer/events/{event_id}:
+    delete:
+      tags:
+      - explorer
+      summary: Remove an event and all its results.
+      operationId: explorer_delete_event
+      description: Explorer admin required
+      parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/explorer/events/preview:
+    post:
+      tags:
+      - explorer
+      summary: Fetch event data from carde.io and return a preview without saving.
+      operationId: explorer_preview_event
+      description: Explorer admin required
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `explorer.py::preview_event` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/explorer/leaderboard/{season_id}:
+    get:
+      tags:
+      - explorer
+      summary: Compute and return the three-track season leaderboard. Public.
+      operationId: explorer_get_leaderboard
+      parameters:
+      - name: season_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/explorer/seasons:
+    get:
+      tags:
+      - explorer
+      summary: List all Explorer seasons. Public.
+      operationId: explorer_get_seasons
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      tags:
+      - explorer
+      summary: Create a new Explorer season.
+      operationId: explorer_create_season
+      description: Explorer admin required
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `explorer.py::create_season` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/explorer/seasons/{season_id}:
+    delete:
+      tags:
+      - explorer
+      summary: Delete a season and all its events/results.
+      operationId: explorer_delete_season
+      description: Explorer admin required
+      parameters:
+      - name: season_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/explorer/seasons/{season_id}/events:
+    get:
+      tags:
+      - explorer
+      summary: List all events in a season. Public.
+      operationId: explorer_get_season_events
+      parameters:
+      - name: season_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/fun-stats:
+    get:
+      tags:
+      - fun_stats
+      summary: Return all fun stats, optionally filtered by event and source.
+      operationId: fun_stats_get_fun_stats
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/fun-stats/filters:
+    get:
+      tags:
+      - fun_stats
+      summary: Return available events and sources for fun stats filtering.
+      operationId: fun_stats_get_fun_stats_filters
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/leaderboard:
+    get:
+      tags:
+      - leaderboard
+      summary: Get lifetime ELO leaderboard with win/loss records.
+      operationId: leaderboard_get_leaderboard
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/leaderboard/archived/{event_id}:
+    get:
+      tags:
+      - leaderboard
+      summary: Get full leaderboard for a specific archived event.
+      operationId: leaderboard_get_archived_event_leaderboard
+      parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/leaderboard/archived/season/{season_id}:
+    get:
+      tags:
+      - leaderboard
+      summary: Get leaderboard for a season date-range filter (computed from match records).
+      operationId: leaderboard_get_season_leaderboard
+      parameters:
+      - name: season_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/leaderboard/combined:
+    get:
+      tags:
+      - leaderboard
+      summary: Get both lifetime and event leaderboards.
+      operationId: leaderboard_get_combined_leaderboard
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/leaderboard/event:
+    get:
+      tags:
+      - leaderboard
+      summary: Get current event ELO leaderboard.
+      operationId: leaderboard_get_event_leaderboard
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/leaderboard/limited:
+    get:
+      tags:
+      - leaderboard
+      summary: Get limited format ELO leaderboard with stats and trophy runs.
+      operationId: leaderboard_get_limited_leaderboard
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/leaderboard/limited/archived:
+    get:
+      tags:
+      - leaderboard
+      summary: Get list of archived limited events.
+      operationId: leaderboard_get_archived_limited_events
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/leaderboard/limited/archived/{event_id}:
+    get:
+      tags:
+      - leaderboard
+      summary: Get archived limited leaderboard for a specific event.
+      operationId: leaderboard_get_archived_limited_leaderboard
+      parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/leaderboard/paper:
+    get:
+      tags:
+      - leaderboard
+      summary: Get paper ELO leaderboard (web-reported matches only).
+      operationId: leaderboard_get_paper_leaderboard
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/leaderboard/paper-event:
+    get:
+      tags:
+      - leaderboard
+      summary: Get paper event ELO leaderboard (web-reported matches only).
+      operationId: leaderboard_get_paper_event_leaderboard
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/leaderboard/source/{source}:
+    get:
+      tags:
+      - leaderboard
+      summary: Get ELO leaderboard for a specific external source.
+      operationId: leaderboard_get_source_leaderboard
+      parameters:
+      - name: source
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/leaderboard/sources:
+    get:
+      tags:
+      - leaderboard
+      summary: Get all available match sources (Discord, external platforms, etc.).
+      operationId: leaderboard_get_leaderboard_sources
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/limited/match-history:
+    get:
+      tags:
+      - limited
+      summary: Get limited match history with deck links.
+      operationId: limited_get_match_history
+      description: API key required
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/limited/report-match:
+    post:
+      tags:
+      - limited
+      summary: Submit a limited match result from a 3rd party source.
+      operationId: limited_post_report_match
+      description: API key required
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `limited.py::post_report_match` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/limited/run/{run_id}/matchups:
+    get:
+      tags:
+      - limited
+      summary: Get detailed matchups for an arena run. Public endpoint.
+      operationId: limited_get_run_matchups_endpoint
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/limited/user/{user_id}/end-run:
+    post:
+      tags:
+      - limited
+      summary: End the current active run (clean close, no ELO penalties).
+      operationId: limited_post_end_run
+      description: API key required
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `limited.py::post_end_run` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/limited/user/{user_id}/run:
+    post:
+      tags:
+      - limited
+      summary: Start a new arena run or forfeit the current one.
+      operationId: limited_post_user_run
+      description: API key required
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `limited.py::post_user_run` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/limited/user/{user_id}/status:
+    get:
+      tags:
+      - limited
+      summary: Get a player's current limited arena status.
+      operationId: limited_get_user_status
+      description: API key required
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/list-all-avatars:
+    get:
+      tags:
+      - avatars
+      summary: API endpoint to list all unique avatar names from match records.
+      operationId: avatars_list_all_avatars
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/live-popular-cards:
+    get:
+      tags:
+      - cards
+      summary: API endpoint for live card popularity stats from all matches with deck data.
+      operationId: cards_get_live_popular_cards
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/logout:
+    get:
+      tags:
+      - misc
+      summary: Clear session and log out user (API alias for /auth/logout).
+      operationId: misc_logout
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/match-history:
+    get:
+      tags:
+      - matches
+      summary: Get match history, optionally filtered by date.
+      operationId: matches_match_history
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/match-history/available-dates:
+    get:
+      tags:
+      - matches
+      summary: Get dates that have match data.
+      operationId: matches_available_dates
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/match-report/confirm/{confirmation_id}:
+    post:
+      tags:
+      - match_reporting
+      summary: POST /api/match-report/confirm/<confirmation_id>
+      operationId: match_reporting_confirm_match_report
+      parameters:
+      - name: confirmation_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `match_reporting.py::confirm_match_report` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/match-report/deny/{confirmation_id}:
+    post:
+      tags:
+      - match_reporting
+      summary: POST /api/match-report/deny/<confirmation_id>
+      operationId: match_reporting_deny_match_report
+      parameters:
+      - name: confirmation_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `match_reporting.py::deny_match_report` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/match-report/edit-comment:
+    post:
+      tags:
+      - match_reporting
+      summary: Edit the logged-in user's match comment/note.
+      operationId: match_reporting_edit_match_comment
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `match_reporting.py::edit_match_comment` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/match-report/pending:
+    get:
+      tags:
+      - match_reporting
+      summary: GET /api/match-report/pending
+      operationId: match_reporting_get_pending_confirmations
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/match-report/search-opponents:
+    get:
+      tags:
+      - match_reporting
+      summary: GET /api/match-report/search-opponents
+      operationId: match_reporting_search_opponents
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/match-report/submit:
+    post:
+      tags:
+      - match_reporting
+      summary: POST /api/match-report/submit
+      operationId: match_reporting_submit_match_report
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchReportSubmission'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/matches/date-range:
+    get:
+      tags:
+      - matches
+      summary: Get matches between two dates (inclusive).
+      operationId: matches_matches_date_range
+      description: API key required
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/me:
+    get:
+      tags:
+      - misc
+      summary: Return current authenticated user from session, or 401 if not logged in.
+      operationId: misc_me
+      description: Logged-in session required (checked in handler)
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/nav-prefs:
+    get:
+      tags:
+      - players
+      summary: Get the logged-in user's nav bar preferences.
+      operationId: players_get_nav_prefs
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      tags:
+      - players
+      summary: Save the logged-in user's nav bar preferences.
+      operationId: players_set_nav_prefs
+      description: Logged-in session required (checked in handler)
+      security:
+      - SessionAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `players.py::set_nav_prefs` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/player/{player_id}/account:
+    delete:
+      tags:
+      - players
+      summary: Delete the logged-in user's own account and all associated data.
+      operationId: players_delete_own_account
+      description: Logged-in session required (checked in handler)
+      parameters:
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/player/{player_id}/reset-profile:
+    post:
+      tags:
+      - players
+      summary: Reset the logged-in user's profile. Hides match history before the reset date.
+      operationId: players_reset_own_profile
+      description: Logged-in session required (checked in handler)
+      parameters:
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `players.py::reset_own_profile` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/player/{player_id}/undo-reset:
+    post:
+      tags:
+      - players
+      summary: Undo a profile reset, restoring full match history visibility.
+      operationId: players_undo_profile_reset
+      description: Logged-in session required (checked in handler)
+      parameters:
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `players.py::undo_profile_reset` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/player/{player_id}:
+    get:
+      tags:
+      - players
+      summary: Get comprehensive player stats and match history.
+      operationId: players_player_api
+      parameters:
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/player/{player_id}/avatar/{avatar_name}:
+    get:
+      tags:
+      - players
+      summary: Get detailed stats for a specific avatar used by a player.
+      operationId: players_player_avatar_stats
+      parameters:
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: avatar_name
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/player/{player_id}/blocked-users:
+    get:
+      tags:
+      - players
+      summary: Get a player's block list (owner only).
+      operationId: players_get_blocked_users
+      description: Logged-in session required (checked in handler)
+      parameters:
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+      - players
+      summary: Add a user to the block list (owner only).
+      operationId: players_block_user
+      description: Logged-in session required (checked in handler)
+      parameters:
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `players.py::block_user` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/player/{player_id}/blocked-users/{blocked_user_id}:
+    delete:
+      tags:
+      - players
+      summary: Remove a user from the block list (owner only).
+      operationId: players_unblock_user
+      description: Logged-in session required (checked in handler)
+      parameters:
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: blocked_user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/player/{player_id}/event/{event_id}:
+    get:
+      tags:
+      - leaderboard
+      summary: Get a player's stats for a specific past event.
+      operationId: leaderboard_get_player_event_stats
+      parameters:
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/player/{player_id}/seasons:
+    get:
+      tags:
+      - seasons
+      summary: Get player seasons
+      operationId: seasons_get_player_seasons
+      parameters:
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/player/{player_id}/set-display-name:
+    post:
+      tags:
+      - players
+      summary: Set a custom display name for the logged-in user (one-time only).
+      operationId: players_set_display_name
+      description: Logged-in session required (checked in handler)
+      parameters:
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `players.py::set_display_name` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/player/{player_id}/visibility:
+    get:
+      tags:
+      - players
+      summary: Get profile visibility settings for a player.
+      operationId: players_get_profile_visibility
+      parameters:
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      tags:
+      - players
+      summary: Update profile visibility settings (owner only).
+      operationId: players_set_profile_visibility
+      description: Logged-in session required (checked in handler)
+      parameters:
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `players.py::set_profile_visibility` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/players/{player_id}/deck-stats:
+    get:
+      tags:
+      - players
+      summary: Get detailed stats for a specific deck URL for a player.
+      operationId: players_get_deck_stats
+      parameters:
+      - name: player_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/players/search:
+    get:
+      tags:
+      - players
+      summary: Public player search for autocomplete. GET /api/players/search?q=<query>&limit=8
+      operationId: players_search_players
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/reaction-roles/mappings:
+    post:
+      tags:
+      - reaction_roles
+      summary: Add an emoji -> role mapping to a tracked message.
+      operationId: reaction_roles_add_mapping
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `reaction_roles.py::add_mapping` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/reaction-roles/mappings/{mapping_id}:
+    delete:
+      tags:
+      - reaction_roles
+      summary: Remove an emoji -> role mapping.
+      operationId: reaction_roles_delete_mapping
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: mapping_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/reaction-roles/messages:
+    get:
+      tags:
+      - reaction_roles
+      summary: List all tracked reaction role messages with their mappings.
+      operationId: reaction_roles_get_messages
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - reaction_roles
+      summary: Add a new message to track for reaction roles.
+      operationId: reaction_roles_add_message
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `reaction_roles.py::add_message` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/reaction-roles/messages/{message_id}:
+    delete:
+      tags:
+      - reaction_roles
+      summary: Remove a tracked message and all its mappings.
+      operationId: reaction_roles_delete_message
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: message_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/recent-event:
+    get:
+      tags:
+      - misc
+      summary: Get the most recently added top-8 event if within 48 hours.
+      operationId: misc_recent_event
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/record-game:
+    post:
+      tags:
+      - games
+      summary: API endpoint for users to record personal match results (non-ELO).
+      operationId: games_record_game
+      description: Session login or API key
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `games.py::record_game` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/report-external-match:
+    post:
+      tags:
+      - external_matches
+      summary: API endpoint for external applications to report match results.
+      operationId: external_matches_report_external_match
+      description: API key required
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalMatchReport'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble:
+    get:
+      tags:
+      - rumble
+      summary: Return rumble standings, recent matches, bones leaderboard, prizes, and earnings config.
+      operationId: rumble_get_rumble
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/rumble/admin/admins:
+    get:
+      tags:
+      - rumble
+      summary: List all rumble admins.
+      operationId: rumble_list_rumble_admins
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - rumble
+      summary: Add a rumble admin (global admins only).
+      operationId: rumble_add_rumble_admin
+      description: Admin access required (admin session or API key)
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::add_rumble_admin` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/admins/{discord_user_id}:
+    delete:
+      tags:
+      - rumble
+      summary: Remove a rumble admin (global admins only).
+      operationId: rumble_remove_rumble_admin
+      description: Admin access required (admin session or API key)
+      parameters:
+      - name: discord_user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/bones:
+    post:
+      tags:
+      - rumble
+      summary: Add or remove bones for a player.
+      operationId: rumble_adjust_player_bones
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::adjust_player_bones` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/bones/{discord_user_id}:
+    delete:
+      tags:
+      - rumble
+      summary: Delete a player's bone balance and transaction history.
+      operationId: rumble_delete_bone_entry
+      parameters:
+      - name: discord_user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    put:
+      tags:
+      - rumble
+      summary: Update a player's bone entry (display name, balance).
+      operationId: rumble_update_bone_entry
+      parameters:
+      - name: discord_user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::update_bone_entry` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/bones/{discord_user_id}/transactions:
+    get:
+      tags:
+      - rumble
+      summary: Get transaction history for a player.
+      operationId: rumble_get_bone_transactions
+      parameters:
+      - name: discord_user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/rumble/admin/bones/set:
+    post:
+      tags:
+      - rumble
+      summary: Set a player's bones to an exact amount.
+      operationId: rumble_set_player_bones
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::set_player_bones` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/earnings:
+    put:
+      tags:
+      - rumble
+      summary: Update bone earnings for a config key.
+      operationId: rumble_update_earnings_config
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::update_earnings_config` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/fart/commands:
+    get:
+      tags:
+      - rumble
+      summary: Get all fart game command configs.
+      operationId: rumble_get_fart_commands
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      tags:
+      - rumble
+      summary: Add a new fart game command config.
+      operationId: rumble_add_fart_command
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::add_fart_command` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/fart/commands/{command_id}:
+    delete:
+      tags:
+      - rumble
+      summary: Delete a fart game command config.
+      operationId: rumble_delete_fart_command
+      parameters:
+      - name: command_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    put:
+      tags:
+      - rumble
+      summary: Update a fart game command config.
+      operationId: rumble_update_fart_command
+      parameters:
+      - name: command_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::update_fart_command` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/fart/evil-start:
+    post:
+      tags:
+      - rumble
+      summary: Evil start - reset game and give players random chaotic starting scores.
+      operationId: rumble_evil_start_fart_game
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::evil_start_fart_game` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/fart/reset:
+    post:
+      tags:
+      - rumble
+      summary: Reset the fart game - clear all scores, history, and cooldowns.
+      operationId: rumble_reset_fart_game
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::reset_fart_game` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/fart/shop:
+    get:
+      tags:
+      - rumble
+      summary: Get all fart shop item configs.
+      operationId: rumble_get_fart_shop_items
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      tags:
+      - rumble
+      summary: Add a new fart shop item.
+      operationId: rumble_add_fart_shop_item
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::add_fart_shop_item` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/fart/shop/{item_id}:
+    delete:
+      tags:
+      - rumble
+      summary: Delete a fart shop item.
+      operationId: rumble_delete_fart_shop_item
+      parameters:
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    put:
+      tags:
+      - rumble
+      summary: Update a fart shop item.
+      operationId: rumble_update_fart_shop_item
+      parameters:
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::update_fart_shop_item` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/prizes:
+    post:
+      tags:
+      - rumble
+      summary: Add a new prize to the prize wall.
+      operationId: rumble_add_prize
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::add_prize` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/prizes/{prize_id}:
+    delete:
+      tags:
+      - rumble
+      summary: Delete a prize from the wall.
+      operationId: rumble_delete_prize
+      parameters:
+      - name: prize_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    put:
+      tags:
+      - rumble
+      summary: Update a prize (cost, stock, name, etc).
+      operationId: rumble_update_prize
+      parameters:
+      - name: prize_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::update_prize` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/prizes/reorder:
+    post:
+      tags:
+      - rumble
+      summary: Swap sort_order between two prizes.
+      operationId: rumble_reorder_prizes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::reorder_prizes` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/admin/redemptions:
+    get:
+      tags:
+      - rumble
+      summary: Return recent prize redemption history (rumble admins only).
+      operationId: rumble_get_redemptions
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/rumble/admin/standings/{user_id}:
+    delete:
+      tags:
+      - rumble
+      summary: Delete all rumble match records for a player.
+      operationId: rumble_delete_rumble_standing
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    put:
+      tags:
+      - rumble
+      summary: Update a player's rumble standing (display name, wins, losses).
+      operationId: rumble_update_rumble_standing
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::update_rumble_standing` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/rumble/redeem/{prize_id}:
+    post:
+      tags:
+      - rumble
+      summary: Redeem a prize using bones.
+      operationId: rumble_redeem_prize
+      description: Session login or API key
+      parameters:
+      - name: prize_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `rumble.py::redeem_prize` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/seasons:
+    post:
+      tags:
+      - seasons
+      summary: Create season
+      operationId: seasons_create_season
+      description: Session login or API key
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `seasons.py::create_season` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/seasons/{season_id}:
+    delete:
+      tags:
+      - seasons
+      summary: Delete season
+      operationId: seasons_delete_season
+      description: Session login or API key
+      parameters:
+      - name: season_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    get:
+      tags:
+      - seasons
+      summary: Public endpoint returning season info + members as a leaderboard.
+      operationId: seasons_get_season
+      parameters:
+      - name: season_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      tags:
+      - seasons
+      summary: Modify season
+      operationId: seasons_modify_season
+      description: Session login or API key
+      parameters:
+      - name: season_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `seasons.py::modify_season` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/seasons/{season_id}/end:
+    post:
+      tags:
+      - seasons
+      summary: End season
+      operationId: seasons_end_season
+      description: Session login or API key
+      parameters:
+      - name: season_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `seasons.py::end_season` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/seasons/{season_id}/join:
+    post:
+      tags:
+      - seasons
+      summary: Join season
+      operationId: seasons_join_season
+      description: Session login or API key
+      parameters:
+      - name: season_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `seasons.py::join_season` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/seasons/{season_id}/kick:
+    post:
+      tags:
+      - seasons
+      summary: Kick member
+      operationId: seasons_kick_member
+      description: Session login or API key
+      parameters:
+      - name: season_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `seasons.py::kick_member` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/seasons/{season_id}/leave:
+    post:
+      tags:
+      - seasons
+      summary: Leave season
+      operationId: seasons_leave_season
+      description: Session login or API key
+      parameters:
+      - name: season_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `seasons.py::leave_season` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/seasons/{season_id}/members:
+    get:
+      tags:
+      - seasons
+      summary: Get season members
+      operationId: seasons_get_season_members
+      parameters:
+      - name: season_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/seasons/{season_id}/report-match:
+    post:
+      tags:
+      - seasons
+      summary: Report season match
+      operationId: seasons_report_season_match
+      description: Session login or API key
+      parameters:
+      - name: season_id
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `seasons.py::report_season_match` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/seasons/browse:
+    get:
+      tags:
+      - seasons
+      summary: Public endpoint for browsing/searching seasons (no auth required).
+      operationId: seasons_browse_seasons
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/seasons/search:
+    get:
+      tags:
+      - seasons
+      summary: Search seasons
+      operationId: seasons_search_seasons
+      description: Session login or API key
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/spotlight:
+    get:
+      tags:
+      - misc
+      summary: Get today's community spotlight (player of the day, community link, etc.).
+      operationId: misc_spotlight
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/status:
+    get:
+      tags:
+      - misc
+      summary: Simple API endpoint to check if the server is running.
+      operationId: misc_status
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/store/admin/audit:
+    get:
+      tags:
+      - store
+      summary: Admin audit log
+      operationId: store_admin_audit_log
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/store/admin/backup:
+    get:
+      tags:
+      - store
+      summary: Stream a consistent snapshot of store.db to the admin's machine.
+      operationId: store_admin_download_backup
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/store/admin/orders:
+    get:
+      tags:
+      - store
+      summary: Admin list orders
+      operationId: store_admin_list_orders
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/store/admin/orders/{order_id}:
+    get:
+      tags:
+      - store
+      summary: Admin get order
+      operationId: store_admin_get_order
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/store/admin/orders/{order_id}/ship:
+    post:
+      tags:
+      - store
+      summary: Admin ship order
+      operationId: store_admin_ship_order
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `store.py::admin_ship_order` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/store/admin/orders/{order_id}/status:
+    post:
+      tags:
+      - store
+      summary: Admin set order status
+      operationId: store_admin_set_order_status
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `store.py::admin_set_order_status` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/store/admin/orders/export:
+    get:
+      tags:
+      - store
+      summary: Export orders as CSV for the current filter.
+      operationId: store_admin_export_orders
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/store/admin/products:
+    get:
+      tags:
+      - store
+      summary: Admin list products
+      operationId: store_admin_list_products
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      tags:
+      - store
+      summary: Admin create product
+      operationId: store_admin_create_product
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `store.py::admin_create_product` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/store/admin/products/{product_id}:
+    patch:
+      tags:
+      - store
+      summary: Admin update product
+      operationId: store_admin_update_product
+      parameters:
+      - name: product_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `store.py::admin_update_product` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/store/admin/products/{product_id}/deactivate:
+    post:
+      tags:
+      - store
+      summary: 'Soft delete: products referenced by orders must never be hard-deleted.'
+      operationId: store_admin_deactivate_product
+      parameters:
+      - name: product_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `store.py::admin_deactivate_product` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/store/admin/products/upload-image:
+    post:
+      tags:
+      - store
+      summary: Upload a product image. Returns the URL path to store on the product.
+      operationId: store_upload_product_image
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `store.py::upload_product_image` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/store/checkout:
+    post:
+      tags:
+      - store
+      summary: Create a pending order and return a Stripe hosted checkout URL.
+      operationId: store_create_checkout
+      description: Session login or API key
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `store.py::create_checkout` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/store/checkout/prefill:
+    get:
+      tags:
+      - store
+      summary: Return email for pre-filling the checkout form.
+      operationId: store_checkout_prefill
+      description: Session login or API key
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/store/notifications:
+    get:
+      tags:
+      - store
+      summary: Return undismissed web notifications for the logged-in user.
+      operationId: store_list_web_notifications
+      description: Session login or API key
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/store/notifications/{nid}/dismiss:
+    post:
+      tags:
+      - store
+      summary: Dismiss web notification
+      operationId: store_dismiss_web_notification
+      description: Session login or API key
+      parameters:
+      - name: nid
+        in: path
+        required: true
+        schema:
+          type: string
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `store.py::dismiss_web_notification` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/store/orders/mine:
+    get:
+      tags:
+      - store
+      summary: List the logged-in user's own orders (most recent first).
+      operationId: store_my_orders
+      description: Session login or API key
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/store/orders/user/{user_id}:
+    get:
+      tags:
+      - store
+      summary: View a specific user's orders (admin only).
+      operationId: store_admin_user_orders
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/store/products:
+    get:
+      tags:
+      - store
+      summary: List products
+      operationId: store_list_products
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/store/webhooks/stripe:
+    post:
+      tags:
+      - store
+      summary: Receive Stripe events. This is the ONLY path that marks orders paid.
+      operationId: store_stripe_webhook
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/streamers:
+    get:
+      tags:
+      - streamers
+      summary: Get all currently streaming members.
+      operationId: streamers_list_streamers
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/streamers/banner:
+    get:
+      tags:
+      - streamers
+      summary: Get a simplified response for the banner display.
+      operationId: streamers_streamer_banner
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/top-8-events:
+    get:
+      tags:
+      - events
+      summary: Return all top-8 event folders with metadata.
+      operationId: events_list_top8_events
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/update-match-deck:
+    put:
+      tags:
+      - games
+      summary: API endpoint to update a player's deck URL/data for an existing match.
+      operationId: games_update_match_deck
+      description: Session login or API key
+      security:
+      - SessionAuth: []
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: See `games.py::update_match_deck` for accepted fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/youtube-videos:
+    get:
+      tags:
+      - misc
+      summary: Get latest videos from community YouTube channels.
+      operationId: misc_youtube_videos
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /auth/discord:
+    get:
+      tags:
+      - auth
+      summary: Redirect user to Discord OAuth authorization.
+      operationId: auth_discord_login
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /auth/discord/callback:
+    get:
+      tags:
+      - auth
+      summary: Handle Discord OAuth callback.
+      operationId: auth_discord_callback
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /auth/google:
+    get:
+      tags:
+      - auth
+      summary: Redirect user to Google OAuth authorization.
+      operationId: auth_google_login
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /auth/google/callback:
+    get:
+      tags:
+      - auth
+      summary: Handle Google OAuth callback.
+      operationId: auth_google_callback
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /auth/login:
+    get:
+      tags:
+      - auth
+      summary: Display login selection page.
+      operationId: auth_login
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+  /auth/logout:
+    get:
+      tags:
+      - auth
+      summary: Clear session and log out user.
+      operationId: auth_logout
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: API key sent as a Bearer token
+    SessionAuth:
+      type: apiKey
+      in: cookie
+      name: session
+      description: Flask session cookie set after Discord/Google OAuth login
+  responses:
+    Unauthorized:
+      description: Authentication required or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Authenticated but lacking required role
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: Invalid or missing request data
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+        error:
+          type: string
+        message:
+          type: string
+    ExternalMatchReport:
+      type: object
+      required:
+      - winner_id
+      - loser_id
+      - winner_deck_url
+      - loser_deck_url
+      - source
+      properties:
+        winner_id:
+          type: string
+          description: Discord user ID of the winner
+        loser_id:
+          type: string
+          description: Discord user ID of the loser
+        winner_deck_url:
+          type: string
+          format: uri
+        loser_deck_url:
+          type: string
+          format: uri
+        source:
+          type: string
+          description: Identifier for the reporting application
+        winner_name:
+          type: string
+        loser_name:
+          type: string
+        winner_went_first:
+          type: boolean
+        match_time:
+          type: integer
+          description: Duration in seconds
+        match_comment:
+          type: string
+    MatchReportSubmission:
+      type: object
+      required:
+      - opponent_user_id
+      - result
+      - went_first
+      properties:
+        opponent_user_id:
+          type: string
+        result:
+          type: string
+          enum:
+          - won
+          - lost
+        went_first:
+          type: string
+          enum:
+          - submitter
+          - opponent
+        submitter_deck_url:
+          type: string
+          format: uri
+        opponent_deck_url:
+          type: string
+          format: uri
+        final_life_submitter:
+          type: integer
+        final_life_opponent:
+          type: integer

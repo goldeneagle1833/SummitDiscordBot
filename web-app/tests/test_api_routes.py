@@ -143,7 +143,7 @@ class TestExternalMatchRoute:
 
 
 class TestAdminRoutes:
-    """Admin routes tested via localhost (always admin in Flask test client)."""
+    """Admin routes tested via an admin session (localhost no longer grants admin)."""
 
     def test_audit_log_returns_entries(self, admin_session):
         resp = admin_session.get("/api/admin/audit-log")

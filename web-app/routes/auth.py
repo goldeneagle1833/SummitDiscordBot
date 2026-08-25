@@ -2,6 +2,7 @@
 
 import json
 import logging
+import secrets
 from urllib.parse import urlencode, urlparse
 
 import requests
@@ -52,6 +53,21 @@ def _get_post_login_redirect():
     return next_url or FRONTEND_URL
 
 
+def _validate_oauth_state() -> bool:
+    """Validate the OAuth `state` parameter against the value stored in the session.
+
+    Protects the OAuth callbacks against login CSRF: without this, an attacker
+    could complete the code exchange in a victim's browser and silently log the
+    victim into an attacker-controlled account. The stored state is single-use
+    (popped regardless of outcome).
+    """
+    expected = session.pop("oauth_state", None)
+    provided = request.args.get("state")
+    if not expected or not provided:
+        return False
+    return secrets.compare_digest(expected, provided)
+
+
 @auth_bp.route("/login")
 def login():
     """Display login selection page."""
@@ -71,11 +87,16 @@ def discord_login():
         logger.error("DISCORD_CLIENT_ID not configured")
         return "OAuth not configured", 500
 
+    # CSRF protection: bind this login attempt to the user's session
+    state = secrets.token_urlsafe(32)
+    session["oauth_state"] = state
+
     params = {
         "client_id": DISCORD_CLIENT_ID,
         "redirect_uri": DISCORD_REDIRECT_URI,
         "response_type": "code",
         "scope": "identify email guilds.members.read",
+        "state": state,
     }
     auth_url = f"https://discord.com/api/oauth2/authorize?{urlencode(params)}"
     return redirect(auth_url)
@@ -84,6 +105,10 @@ def discord_login():
 @auth_bp.route("/discord/callback")
 def discord_callback():
     """Handle Discord OAuth callback."""
+    if not _validate_oauth_state():
+        logger.warning("Discord OAuth callback with missing/invalid state parameter")
+        return redirect(FRONTEND_URL)
+
     error = request.args.get("error")
     if error:
         logger.error(f"Discord OAuth error: {error}")
@@ -196,12 +221,17 @@ def google_login():
         logger.error("GOOGLE_CLIENT_ID not configured")
         return "Google OAuth not configured", 500
 
+    # CSRF protection: bind this login attempt to the user's session
+    state = secrets.token_urlsafe(32)
+    session["oauth_state"] = state
+
     params = {
         "client_id": GOOGLE_CLIENT_ID,
         "redirect_uri": GOOGLE_REDIRECT_URI,
         "response_type": "code",
         "scope": "openid email profile",
         "access_type": "online",
+        "state": state,
     }
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
     return redirect(auth_url)
@@ -210,6 +240,10 @@ def google_login():
 @auth_bp.route("/google/callback")
 def google_callback():
     """Handle Google OAuth callback."""
+    if not _validate_oauth_state():
+        logger.warning("Google OAuth callback with missing/invalid state parameter")
+        return redirect(FRONTEND_URL)
+
     error = request.args.get("error")
     if error:
         logger.error(f"Google OAuth error: {error}")

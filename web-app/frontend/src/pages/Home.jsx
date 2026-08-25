@@ -221,10 +221,10 @@ function PromoCarousel() {
     })
   }, [])
 
-  // Auto-advance every 12 seconds
+  // Auto-advance every 25 seconds
   useEffect(() => {
     if (items.length <= 1) return
-    timerRef.current = setInterval(() => setActive(i => (i + 1) % items.length), 12000)
+    timerRef.current = setInterval(() => setActive(i => (i + 1) % items.length), 25000)
     return () => clearInterval(timerRef.current)
   }, [items.length])
 
@@ -232,7 +232,7 @@ function PromoCarousel() {
     setActive(idx)
     clearInterval(timerRef.current)
     if (items.length > 1) {
-      timerRef.current = setInterval(() => setActive(i => (i + 1) % items.length), 12000)
+      timerRef.current = setInterval(() => setActive(i => (i + 1) % items.length), 25000)
     }
   }
 
@@ -242,61 +242,70 @@ function PromoCarousel() {
 
   if (!items.length) return null
 
-  const item = items[active]
-  const badgeStyle = BADGE_STYLES[item.color] || BADGE_STYLES.blue
-  const isExternal = item.link && !item.link.startsWith('/')
-
-  const handleClick = () => {
-    navigator.sendBeacon?.('/api/analytics/banner-click',
-      new Blob([JSON.stringify({ banner_type: item.analyticsType || 'promo' })], { type: 'application/json' }))
-  }
-
-  const Wrapper = isExternal ? 'a' : Link
-  const wrapperProps = isExternal
-    ? { href: item.link, target: '_blank', rel: 'noopener noreferrer' }
-    : { to: item.link }
-
   return (
-    <div className="relative mt-4">
-      <Wrapper
-        {...wrapperProps}
-        onClick={handleClick}
-        className="block relative overflow-hidden group"
-      >
-        {/* Background — image or gradient */}
-        <div className="absolute inset-0 bg-bg-elevated">
-          {item.thumbnail && (
-            <img
-              key={item.thumbnail}
-              src={item.thumbnail}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover opacity-30 group-hover:opacity-40 transition-opacity duration-500"
-              onError={(e) => { e.target.style.display = 'none' }}
-            />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-bg-dark/95 via-bg-dark/70 to-bg-dark/50" />
-        </div>
+    <div className="relative mt-4 h-48 sm:h-56 overflow-hidden">
+      {/* All slides rendered, positioned absolutely, with slide transition */}
+      {items.map((item, i) => {
+        const badgeStyle = BADGE_STYLES[item.color] || BADGE_STYLES.blue
+        const isExternal = item.link && !item.link.startsWith('/')
+        const Wrapper = isExternal ? 'a' : Link
+        const wrapperProps = isExternal
+          ? { href: item.link, target: '_blank', rel: 'noopener noreferrer' }
+          : { to: item.link }
+        const isActive = i === active
 
-        {/* Content overlay */}
-        <div className="relative px-6 py-12 sm:py-16 sm:px-8 text-center flex flex-col items-center">
-          <h3 className="text-3xl sm:text-4xl font-display text-text-primary leading-tight mb-2">
-            {item.title}
-          </h3>
-          {item.subtitle && (
-            <p className="text-base text-text-muted leading-relaxed max-w-lg mx-auto">
-              {item.subtitle}
-            </p>
-          )}
-          <div className="flex items-center gap-3 mt-4">
-            <span className={`inline-block text-[10px] font-semibold px-2.5 py-0.5 ${badgeStyle} rounded-full uppercase tracking-wider`}>
-              {item.badge}
-            </span>
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-primary group-hover:text-primary-light transition-colors">
-              Learn more <span className="group-hover:translate-x-1 transition-transform">&rarr;</span>
-            </span>
-          </div>
-        </div>
-      </Wrapper>
+        const handleClick = () => {
+          navigator.sendBeacon?.('/api/analytics/banner-click',
+            new Blob([JSON.stringify({ banner_type: item.analyticsType || 'promo' })], { type: 'application/json' }))
+        }
+
+        return (
+          <Wrapper
+            key={item.key}
+            {...wrapperProps}
+            onClick={handleClick}
+            className="absolute inset-0 overflow-hidden group transition-all duration-700 ease-in-out"
+            style={{
+              opacity: isActive ? 1 : 0,
+              transform: isActive ? 'translateX(0)' : 'translateX(40px)',
+              pointerEvents: isActive ? 'auto' : 'none',
+            }}
+          >
+            {/* Background — image or gradient */}
+            <div className="absolute inset-0 bg-bg-elevated">
+              {item.thumbnail && (
+                <img
+                  src={item.thumbnail}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover opacity-30 group-hover:opacity-40 transition-opacity duration-500"
+                  onError={(e) => { e.target.style.display = 'none' }}
+                />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-bg-dark/95 via-bg-dark/70 to-bg-dark/50" />
+            </div>
+
+            {/* Content overlay */}
+            <div className="relative h-full px-6 sm:px-8 text-center flex flex-col items-center justify-center">
+              <h3 className="text-3xl sm:text-4xl font-display text-text-primary leading-tight mb-2">
+                {item.title}
+              </h3>
+              {item.subtitle && (
+                <p className="text-base text-text-muted leading-relaxed max-w-lg mx-auto">
+                  {item.subtitle}
+                </p>
+              )}
+              <div className="flex items-center gap-3 mt-4">
+                <span className={`inline-block text-[10px] font-semibold px-2.5 py-0.5 ${badgeStyle} rounded-full uppercase tracking-wider`}>
+                  {item.badge}
+                </span>
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-primary group-hover:text-primary-light transition-colors">
+                  Learn more <span className="group-hover:translate-x-1 transition-transform">&rarr;</span>
+                </span>
+              </div>
+            </div>
+          </Wrapper>
+        )
+      })}
 
       {/* Navigation arrows — full-height hit area */}
       {items.length > 1 && (
@@ -320,7 +329,7 @@ function PromoCarousel() {
 
       {/* Dot indicators */}
       {items.length > 1 && (
-        <div className="flex justify-center gap-1.5 mt-2">
+        <div className="absolute bottom-3 left-0 right-0 z-10 flex justify-center gap-1.5">
           {items.map((s, i) => (
             <button
               key={s.key}

@@ -212,7 +212,8 @@ function PromoCarousel() {
         slides.push({
           key: 'staff-pick', badge, color: 'gold',
           title: staffPick.deck_name, subtitle,
-          link: `/deck-rec/${staffPick.deck_id}`, thumbnail: null, analyticsType: 'staff_pick',
+          link: `/deck-rec/${staffPick.deck_id}`,
+          thumbnail: staffPick.avatar_image || null, analyticsType: 'staff_pick',
         })
       }
 

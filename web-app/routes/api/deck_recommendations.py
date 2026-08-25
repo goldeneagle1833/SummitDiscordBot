@@ -199,6 +199,17 @@ def staff_pick():
             rng = random.Random(str(date.today()) + "staff-pick")
             deck = rng.choice(admin_decks)
 
+        # Resolve avatar image
+        avatar_image = None
+        if deck.avatar_name:
+            avatar_key = deck.avatar_name.lower().replace(" ", "_").replace("'", "").replace(",", "")
+            from webapp_config import AVATAR_IMAGES_DIR
+            if AVATAR_IMAGES_DIR.exists():
+                for f in os.listdir(AVATAR_IMAGES_DIR):
+                    if f.lower().startswith(avatar_key) and f.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                        avatar_image = f"/avatar-images/{f}"
+                        break
+
         return jsonify({
             "success": True,
             "staff_pick": {
@@ -209,6 +220,7 @@ def staff_pick():
                 "stars": deck.stars,
                 "curiosa_url": deck.curiosa_url,
                 "is_new": is_new,
+                "avatar_image": avatar_image,
             },
         })
     except Exception as e:

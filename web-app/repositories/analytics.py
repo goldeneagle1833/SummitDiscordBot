@@ -3,11 +3,16 @@
 import json
 import sqlite3
 import logging
+import time
 from datetime import datetime, timedelta
 
 from webapp_config import ANALYTICS_DB_PATH
 
 logger = logging.getLogger(__name__)
+
+# Throttle persist_expired_sessions to run at most once per 60 seconds
+_last_persist_time = 0
+_PERSIST_INTERVAL = 60
 
 
 class AnalyticsRepository:
@@ -126,6 +131,7 @@ class AnalyticsRepository:
                          user_agent: str | None = None, path: str | None = None,
                          timezone: str | None = None):
         """Record or update a session heartbeat with metadata."""
+        global _last_persist_time
         try:
             self._ensure_active_sessions_table()
             conn = self._connect()
@@ -140,8 +146,6 @@ class AnalyticsRepository:
                                 timezone = COALESCE(excluded.timezone, active_sessions.timezone)""",
                 (session_id, ip, user_agent, path, timezone),
             )
-            # Persist expired sessions before deleting them
-            self.persist_expired_sessions()
             # Clean up stale sessions older than 2 minutes
             conn.execute(
                 "DELETE FROM active_sessions WHERE last_seen < strftime('%Y-%m-%d %H:%M:%S', 'now', '-120 seconds')"
@@ -150,6 +154,15 @@ class AnalyticsRepository:
             conn.close()
         except Exception as e:
             logger.debug(f"Failed to record heartbeat: {e}")
+
+        # Persist expired sessions at most once per 60 seconds (separate transaction)
+        now = time.monotonic()
+        if now - _last_persist_time >= _PERSIST_INTERVAL:
+            _last_persist_time = now
+            try:
+                self.persist_expired_sessions()
+            except Exception as e:
+                logger.debug(f"Failed to persist sessions: {e}")
 
     def get_active_user_count(self) -> int:
         """Get the number of active users (heartbeat within last 60 seconds)."""

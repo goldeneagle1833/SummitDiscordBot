@@ -546,6 +546,59 @@ class DeckRecRepository:
             logger.error("Failed to get admin deck ids: %s", e)
             return []
 
+    # ------------------------------------------------------------------ #
+    # Hidden decks                                                         #
+    # ------------------------------------------------------------------ #
+
+    def _ensure_hidden_table(self, conn: sqlite3.Connection) -> None:
+        """Create hidden_decks table if it doesn't exist."""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS hidden_decks (
+                deck_id TEXT PRIMARY KEY,
+                hidden_by TEXT,
+                hidden_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+
+    def hide_deck(self, deck_id: str, hidden_by: str) -> bool:
+        """Hide a deck from the listing. Returns True if newly hidden."""
+        conn = sqlite3.connect(str(self._db_path))
+        self._ensure_hidden_table(conn)
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO hidden_decks (deck_id, hidden_by) VALUES (?, ?)",
+            (deck_id, hidden_by),
+        )
+        inserted = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return inserted
+
+    def unhide_deck(self, deck_id: str) -> bool:
+        """Unhide a deck. Returns True if a row was removed."""
+        conn = sqlite3.connect(str(self._db_path))
+        self._ensure_hidden_table(conn)
+        cur = conn.execute("DELETE FROM hidden_decks WHERE deck_id = ?", (deck_id,))
+        deleted = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return deleted
+
+    def get_hidden_deck_ids(self) -> set[str]:
+        """Return set of hidden deck IDs."""
+        if not self._db_path.exists():
+            return set()
+        try:
+            conn = sqlite3.connect(str(self._db_path))
+            self._ensure_hidden_table(conn)
+            cur = conn.execute("SELECT deck_id FROM hidden_decks")
+            ids = {row[0] for row in cur.fetchall()}
+            conn.close()
+            return ids
+        except Exception as e:
+            logger.error("Failed to get hidden deck ids: %s", e)
+            return set()
+
     def compute_cluster_win_rate(self, seed, threshold: float = 0.3) -> dict:
         """Scan every match row and count wins/losses for decks similar to seed.
 

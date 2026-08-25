@@ -4,19 +4,11 @@ on:
   push:
     branches: [main]
     paths: ["web-app/**"]
-  pull_request:
-    types: [closed]
-    branches: [main]
-    paths: ["web-app/**"]
   workflow_dispatch: {}
 
 jobs:
   deploy:
-    # Run on push, or on a merged PR, or when manually dispatched
-    if: |
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to Linode

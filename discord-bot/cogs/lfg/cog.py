@@ -834,8 +834,8 @@ class LFGCog(commands.Cog):
         best_match = None
         best_timestamp = None
 
-        # Casual (testing), rumble, and limited have no pairing restrictions
-        is_casual = queue_type in ("testing", "rumble", "limited")
+        # Casual (testing), rumble, limited, and omens (points) have no pairing restrictions
+        is_casual = queue_type in ("testing", "rumble", "limited", "points")
 
         for user_id, user_data in lfg_queue.items():
             if user_id == ctx.author.id:

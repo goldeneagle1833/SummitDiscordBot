@@ -237,31 +237,40 @@ def get_decks():
     try:
         _repo, seeds, _community, clusters = _load_and_cluster()
 
+        # Filter out hidden decks (admins can opt-in to see them)
+        repo = DeckRecRepository()
+        hidden_ids = repo.get_hidden_deck_ids()
+        show_hidden = request.args.get("show_hidden") == "1" and is_admin()
+
         deck_list = []
         for seed in seeds:
+            is_hidden = seed.deck_id in hidden_ids
+            if is_hidden and not show_hidden:
+                continue
             cluster_members = clusters.get(seed.deck_id, [])
-            deck_list.append(
-                {
-                    "deck_id": seed.deck_id,
-                    "deck_name": seed.deck_name,
-                    "avatar_name": seed.avatar_name,
-                    "player_name": seed.player_name,
-                    "event_name": seed.event_name,
-                    "card_count": seed.card_count,
-                    "curiosa_url": seed.curiosa_url,
-                    "cluster_size": len(cluster_members),
-                    "elements": sorted(seed.elements),
-                    "event_year": seed.event_year,
-                    "is_admin_rec": seed.is_admin_rec,
-                    "primer": seed.primer or "",
-                    "stars": seed.stars,
-                }
-            )
+            entry = {
+                "deck_id": seed.deck_id,
+                "deck_name": seed.deck_name,
+                "avatar_name": seed.avatar_name,
+                "player_name": seed.player_name,
+                "event_name": seed.event_name,
+                "card_count": seed.card_count,
+                "curiosa_url": seed.curiosa_url,
+                "cluster_size": len(cluster_members),
+                "elements": sorted(seed.elements),
+                "event_year": seed.event_year,
+                "is_admin_rec": seed.is_admin_rec,
+                "primer": seed.primer or "",
+                "stars": seed.stars,
+            }
+            if show_hidden:
+                entry["is_hidden"] = is_hidden
+            deck_list.append(entry)
 
         # Sort: most community engagement first, then alphabetical
         deck_list.sort(key=lambda d: (-d["cluster_size"], d["deck_name"].lower()))
 
-        return jsonify({"decks": deck_list, "total": len(deck_list)})
+        return jsonify({"decks": deck_list, "total": len(deck_list), "hidden_count": len(hidden_ids)})
 
     except Exception as e:
         logger.exception("Error in get_decks: %s", e)
@@ -601,3 +610,30 @@ def admin_remove_deck(deck_id: str):
     except Exception as e:
         logger.exception("Error in admin_remove_deck for %s: %s", deck_id, e)
         return jsonify({"error": "Failed to remove deck"}), 500
+
+
+@deck_rec_bp.route("/admin/hide-deck/<deck_id>", methods=["POST"])
+@require_admin
+def admin_hide_deck(deck_id: str):
+    """Hide a deck from the public listing. Admin only."""
+    try:
+        hidden_by = session.get("username") or str(session.get("user_id", "admin"))
+        repo = DeckRecRepository()
+        repo.hide_deck(deck_id, hidden_by)
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.exception("Error in admin_hide_deck for %s: %s", deck_id, e)
+        return jsonify({"error": "Failed to hide deck"}), 500
+
+
+@deck_rec_bp.route("/admin/unhide-deck/<deck_id>", methods=["POST"])
+@require_admin
+def admin_unhide_deck(deck_id: str):
+    """Unhide a previously hidden deck. Admin only."""
+    try:
+        repo = DeckRecRepository()
+        repo.unhide_deck(deck_id)
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.exception("Error in admin_unhide_deck for %s: %s", deck_id, e)
+        return jsonify({"error": "Failed to unhide deck"}), 500

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef } from 'react'
 import { createBrowserRouter, RouterProvider, Outlet, useLocation } from 'react-router-dom'
-import { AuthProvider } from '@/context/AuthContext'
+import { AuthProvider, useAuth } from '@/context/AuthContext'
 import Nav from '@/components/layout/Nav'
 import Footer from '@/components/layout/Footer'
 import AdminGuard from '@/components/layout/AdminGuard'
@@ -64,6 +64,7 @@ import AuditLog from '@/pages/admin/AuditLog'
 import StoreAdmin from '@/pages/admin/StoreAdmin'
 import ActiveConnections from '@/pages/admin/ActiveConnections'
 import UniqueUsers from '@/pages/admin/UniqueUsers'
+import SessionAnalytics from '@/pages/admin/SessionAnalytics'
 import ExternalMatchesAdmin from '@/pages/admin/ExternalMatches'
 import OmensMatchesAdmin from '@/pages/admin/OmensMatches'
 
@@ -78,11 +79,16 @@ function LazyPage({ children }) {
 const SESSION_ID = crypto.randomUUID?.() || Math.random().toString(36).slice(2)
 const USER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || null
 
-function useHeartbeat() {
+function useHeartbeat(user) {
   const location = useLocation()
   useEffect(() => {
     const send = () => {
-      const body = JSON.stringify({ sid: SESSION_ID, path: location.pathname, timezone: USER_TZ })
+      const payload = { sid: SESSION_ID, path: location.pathname, timezone: USER_TZ }
+      if (user && user.id) {
+        payload.user_id = String(user.id)
+        payload.username = user.username || null
+      }
+      const body = JSON.stringify(payload)
       if (navigator.sendBeacon) {
         navigator.sendBeacon('/api/analytics/heartbeat', new Blob([body], { type: 'application/json' }))
       } else {
@@ -92,37 +98,49 @@ function useHeartbeat() {
     send()
     const id = setInterval(send, 30000)
     return () => clearInterval(id)
-  }, [location.pathname])
+  }, [location.pathname, user])
 }
 
-function usePageTracking() {
+function usePageTracking(user) {
   const location = useLocation()
   const prevPath = useRef(null)
   useEffect(() => {
     const path = location.pathname
     if (path === prevPath.current) return
     prevPath.current = path
-    const body = JSON.stringify({ path, referrer: document.referrer || null })
+    const payload = { path, referrer: document.referrer || null, sid: SESSION_ID }
+    if (user && user.id) {
+      payload.user_id = String(user.id)
+      payload.username = user.username || null
+    }
+    const body = JSON.stringify(payload)
     if (navigator.sendBeacon) {
       navigator.sendBeacon('/api/analytics/page-view', new Blob([body], { type: 'application/json' }))
     } else {
       fetch('/api/analytics/page-view', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
     }
-  }, [location.pathname])
+  }, [location.pathname, user])
+}
+
+function TrackingProvider({ children }) {
+  const { user } = useAuth()
+  usePageTracking(user || null)
+  useHeartbeat(user || null)
+  return children
 }
 
 function Layout() {
-  usePageTracking()
-  useHeartbeat()
   return (
     <AuthProvider>
-      <div className="min-h-screen flex flex-col">
-        <Nav />
-        <main className="flex-1 max-w-content mx-auto w-full px-4 py-6">
-          <Outlet />
-        </main>
-        <Footer />
-      </div>
+      <TrackingProvider>
+        <div className="min-h-screen flex flex-col">
+          <Nav />
+          <main className="flex-1 max-w-content mx-auto w-full px-4 py-6">
+            <Outlet />
+          </main>
+          <Footer />
+        </div>
+      </TrackingProvider>
     </AuthProvider>
   )
 }
@@ -185,6 +203,7 @@ const router = createBrowserRouter([
       { path: '/admin/audit-log', element: <AdminGuard><AuditLog /></AdminGuard> },
       { path: '/admin/active-connections', element: <AdminGuard><ActiveConnections /></AdminGuard> },
       { path: '/admin/unique-users', element: <AdminGuard><UniqueUsers /></AdminGuard> },
+      { path: '/admin/session-analytics', element: <AdminGuard><SessionAnalytics /></AdminGuard> },
       { path: '/admin/external-matches', element: <AdminGuard><ExternalMatchesAdmin /></AdminGuard> },
       { path: '/admin/omens-matches', element: <AdminGuard><OmensMatchesAdmin /></AdminGuard> },
       // Error & 404

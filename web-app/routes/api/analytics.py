@@ -23,11 +23,21 @@ def page_view():
     """Record a page view from the React SPA (public endpoint)."""
     data = request.get_json(silent=True) or {}
     path = data.get("path", "/")
-    AnalyticsRepository().log_page_view(
+    repo = AnalyticsRepository()
+    repo.log_page_view(
         path,
         request.headers.get("User-Agent"),
         data.get("referrer"),
     )
+    # Record session-level page view for journey tracking
+    sid = data.get("sid", "")
+    if sid and len(sid) <= 64:
+        repo.record_session_page_view(
+            session_id=sid,
+            path=path,
+            user_id=data.get("user_id"),
+            username=data.get("username"),
+        )
     return "", 204
 
 
@@ -79,6 +89,16 @@ def unique_visitors():
     """Get unique visitor statistics (admin only)."""
     stats = AnalyticsRepository().get_unique_visitor_stats()
     return jsonify({"success": True, **stats})
+
+
+@analytics_bp.route("/analytics/session-analytics", methods=["GET"])
+@require_admin
+def session_analytics():
+    """Get session-level analytics: journeys, bounce rate, duration, referrers (admin only)."""
+    hours = request.args.get("hours", type=int)
+    repo = AnalyticsRepository()
+    data = repo.get_session_analytics(hours=hours)
+    return jsonify({"success": True, **data})
 
 
 @analytics_bp.route("/analytics/stats", methods=["GET"])

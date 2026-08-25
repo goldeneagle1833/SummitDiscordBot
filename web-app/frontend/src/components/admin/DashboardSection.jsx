@@ -202,6 +202,23 @@ function ActiveUsersCard() {
   )
 }
 
+function SessionAnalyticsCard() {
+  const [stats, setStats] = useState(null)
+
+  useEffect(() => {
+    get('/api/analytics/session-analytics?hours=168')
+      .then(d => { if (d.success) setStats(d) })
+      .catch(() => {})
+  }, [])
+
+  return (
+    <Link to="/admin/session-analytics" className="bg-bg-raised border border-border rounded-lg p-4 text-center hover:border-blue-400/50 transition-colors cursor-pointer block">
+      <div className="text-2xl font-bold text-blue-400">{stats?.bounce_rate != null ? `${stats.bounce_rate}%` : '--'}</div>
+      <div className="text-xs text-text-muted mt-1 leading-tight">Bounce Rate (7d)</div>
+    </Link>
+  )
+}
+
 function UniqueUsersCard() {
   const [stats, setStats] = useState(null)
 
@@ -259,6 +276,7 @@ export default function DashboardSection() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10 gap-3">
         <ActiveUsersCard />
         <UniqueUsersCard />
+        <SessionAnalyticsCard />
         {summaryCards.map(c => {
           const inner = (
             <>

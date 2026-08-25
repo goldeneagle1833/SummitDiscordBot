@@ -1,7 +1,8 @@
 import { get, post, del } from './client'
 
 // Deck Rec endpoints (prefix: /api/deck-rec)
-export const getDeckRecList = () => get('/api/deck-rec/decks')
+export const getDeckRecList = ({ showHidden } = {}) =>
+  get(`/api/deck-rec/decks${showHidden ? '?show_hidden=1' : ''}`)
 export const getDeckInfo = (deckId) =>
   get(`/api/deck-rec/${encodeURIComponent(deckId)}/info`)
 export const getDeckRecommendations = (deckId) =>
@@ -18,6 +19,10 @@ export const adminUpdateDeck = (deckId, body) =>
   }).then((r) => r.json())
 export const adminRemoveDeck = (deckId) =>
   del(`/api/deck-rec/admin/remove-deck/${encodeURIComponent(deckId)}`)
+export const adminHideDeck = (deckId) =>
+  post(`/api/deck-rec/admin/hide-deck/${encodeURIComponent(deckId)}`)
+export const adminUnhideDeck = (deckId) =>
+  post(`/api/deck-rec/admin/unhide-deck/${encodeURIComponent(deckId)}`)
 
 // Card detail (existing)
 export const getDeck = (deckId) => get(`/api/cards/${deckId}`)

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import AvatarImageAdmin from '@/components/ui/AvatarImageAdmin'
-import { getDeckRecList, adminAddDeck, adminUpdateDeck, adminRemoveDeck } from '@/api/decks'
+import { getDeckRecList, adminAddDeck, adminUpdateDeck, adminRemoveDeck, adminHideDeck, adminUnhideDeck } from '@/api/decks'
 import { getAvatarImageFiles } from '@/api/cards'
 import { getAvatarImageSettings } from '@/api/admin'
 import { useAuth } from '@/context/AuthContext'
@@ -52,7 +52,7 @@ function DeckCardSkeleton() {
 }
 
 /* ---- Deck Card ---- */
-function DeckCard({ deck, imageFiles, imageSettings, isAdmin, onEdit, onRemove, isAdminRec, onImageSettingsSaved }) {
+function DeckCard({ deck, imageFiles, imageSettings, isAdmin, onEdit, onRemove, onHide, onUnhide, isAdminRec, onImageSettingsSaved }) {
   const navigate = useNavigate()
   const imgFile = getAvatarImagePath(deck.avatar_name, imageFiles)
   const imgSrc = imgFile ? `/avatar-images/${imgFile}` : null
@@ -66,7 +66,7 @@ function DeckCard({ deck, imageFiles, imageSettings, isAdmin, onEdit, onRemove, 
   return (
     <div
       onClick={() => navigate(`/deck-rec/${encodeURIComponent(deck.deck_id)}`)}
-      className={`relative block rounded-lg overflow-hidden transition-all group cursor-pointer hover:-translate-y-0.5 ${isAdminRec ? 'border border-secondary/40 bg-bg-surface hover:border-secondary/70' : 'bg-bg-surface border border-border hover:border-border/80'}`}
+      className={`relative block rounded-lg overflow-hidden transition-all group cursor-pointer hover:-translate-y-0.5 ${deck.is_hidden ? 'opacity-50' : ''} ${isAdminRec ? 'border border-secondary/40 bg-bg-surface hover:border-secondary/70' : 'bg-bg-surface border border-border hover:border-border/80'}`}
       style={{ minHeight: '160px' }}
     >
       {imgSrc && (
@@ -83,9 +83,14 @@ function DeckCard({ deck, imageFiles, imageSettings, isAdmin, onEdit, onRemove, 
           <div className="absolute inset-0 bg-gradient-to-t from-bg-base/95 via-bg-base/60 to-bg-base/10 pointer-events-none" />
         </>
       )}
-      {isAdminRec && (
+      {isAdminRec && !deck.is_hidden && (
         <div className="absolute top-2 right-2 z-10 text-[10px] font-semibold uppercase tracking-wider bg-bg-base/80 text-secondary border border-secondary/50 px-1.5 py-0.5 rounded">
           Staff Pick
+        </div>
+      )}
+      {deck.is_hidden && (
+        <div className="absolute top-2 right-2 z-10 text-[10px] font-semibold uppercase tracking-wider bg-bg-base/80 text-accent-red border border-accent-red/50 px-1.5 py-0.5 rounded">
+          Hidden
         </div>
       )}
       <div className="relative p-4 flex flex-col h-full" style={{ textShadow: imgSrc ? '0 1px 3px rgba(0,0,0,0.8)' : 'none' }}>
@@ -125,6 +130,21 @@ function DeckCard({ deck, imageFiles, imageSettings, isAdmin, onEdit, onRemove, 
                   Remove
                 </button>
               </>
+            )}
+            {deck.is_hidden ? (
+              <button
+                className="text-xs text-text-muted hover:text-green-400"
+                onClick={(e) => { e.stopPropagation(); onUnhide(deck) }}
+              >
+                Unhide
+              </button>
+            ) : (
+              <button
+                className="text-xs text-text-muted hover:text-accent-red"
+                onClick={(e) => { e.stopPropagation(); onHide(deck) }}
+              >
+                Hide
+              </button>
             )}
           </div>
         )}
@@ -331,6 +351,8 @@ export default function DeckRecommendations() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editDeck, setEditDeck] = useState(null)
   const [staffPicksOpen, setStaffPicksOpen] = useState(true)
+  const [showHidden, setShowHidden] = useState(false)
+  const [hiddenCount, setHiddenCount] = useState(0)
 
   // Load images first (fast), decks separately (slow)
   useEffect(() => {
@@ -358,11 +380,14 @@ export default function DeckRecommendations() {
 
   const fetchData = useCallback(() => {
     setDecksLoading(true)
-    getDeckRecList()
-      .then((data) => setAllDecks(data.decks || []))
+    getDeckRecList({ showHidden })
+      .then((data) => {
+        setAllDecks(data.decks || [])
+        setHiddenCount(data.hidden_count || 0)
+      })
       .catch((err) => setError(err.message))
       .finally(() => setDecksLoading(false))
-  }, [])
+  }, [showHidden])
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -434,6 +459,21 @@ export default function DeckRecommendations() {
     } catch { alert('Failed to remove deck') }
   }
 
+  const handleHide = async (deck) => {
+    if (!confirm(`Hide "${deck.deck_name}" from public listing?`)) return
+    try {
+      await adminHideDeck(deck.deck_id)
+      fetchData()
+    } catch { alert('Failed to hide deck') }
+  }
+
+  const handleUnhide = async (deck) => {
+    try {
+      await adminUnhideDeck(deck.deck_id)
+      fetchData()
+    } catch { alert('Failed to unhide deck') }
+  }
+
   if (error && !allDecks.length) return <p className="text-center text-accent-red py-8">{error}</p>
 
   return (
@@ -499,6 +539,20 @@ export default function DeckRecommendations() {
             <option value="alpha">A - Z</option>
           </select>
         </div>
+
+        {isAdmin && hiddenCount > 0 && (
+          <div className="ml-auto">
+            <label className="flex items-center gap-2 text-sm text-text-muted cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showHidden}
+                onChange={(e) => setShowHidden(e.target.checked)}
+                className="accent-accent-red"
+              />
+              Show hidden ({hiddenCount})
+            </label>
+          </div>
+        )}
       </div>
 
       {/* Admin Recommendations Accordion */}
@@ -541,6 +595,8 @@ export default function DeckRecommendations() {
                         isAdminRec
                         onEdit={(d) => { setEditDeck(d); setModalOpen(true) }}
                         onRemove={handleRemove}
+                        onHide={handleHide}
+                        onUnhide={handleUnhide}
                         onImageSettingsSaved={handleImageSettingsSaved}
                       />
                     ))}
@@ -572,6 +628,8 @@ export default function DeckRecommendations() {
                 imageFiles={imageFiles}
                 imageSettings={imageSettings}
                 isAdmin={isAdmin}
+                onHide={handleHide}
+                onUnhide={handleUnhide}
                 onImageSettingsSaved={handleImageSettingsSaved}
               />
             ))}

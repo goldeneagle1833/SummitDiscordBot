@@ -154,64 +154,18 @@ const BADGE_COLORS = {
   red:    'bg-red-500',
 }
 
-function CarouselCard({ item }) {
-  const badgeColor = BADGE_COLORS[item.color] || BADGE_COLORS.blue
-  const isExternal = item.link && !item.link.startsWith('/')
-
-  const handleClick = () => {
-    navigator.sendBeacon?.('/api/analytics/banner-click',
-      new Blob([JSON.stringify({ banner_type: item.analyticsType || 'promo' })], { type: 'application/json' }))
-  }
-
-  const [imgFailed, setImgFailed] = useState(false)
-  const showThumb = item.thumbnail && !imgFailed
-
-  const inner = (
-    <div className="flex items-stretch gap-0 h-full">
-      {/* Thumbnail or accent bar */}
-      {showThumb ? (
-        <div className="w-16 sm:w-20 flex-shrink-0 bg-black/40 flex items-center justify-center overflow-hidden">
-          <img
-            src={item.thumbnail}
-            alt=""
-            className="w-full h-full object-cover"
-            onError={() => setImgFailed(true)}
-          />
-        </div>
-      ) : (
-        <div className={`w-2 flex-shrink-0 ${badgeColor}`} />
-      )}
-      {/* Content */}
-      <div className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 ${badgeColor} text-white rounded leading-none flex-shrink-0 uppercase`}>
-              {item.badge}
-            </span>
-          </div>
-          <div className="font-semibold text-sm text-text-primary leading-tight truncate">{item.title}</div>
-          {item.subtitle && (
-            <div className="text-text-muted text-xs mt-0.5 leading-tight line-clamp-2">{item.subtitle}</div>
-          )}
-        </div>
-        <span className="text-text-muted text-base group-hover:translate-x-1 transition-transform flex-shrink-0">&rarr;</span>
-      </div>
-    </div>
-  )
-
-  const cls = 'flex-shrink-0 w-72 sm:w-80 snap-start overflow-hidden rounded-soft border border-border bg-bg-surface hover:border-primary/50 transition-all duration-200 group'
-
-  if (isExternal) {
-    return <a href={item.link} target="_blank" rel="noopener noreferrer" onClick={handleClick} className={cls}>{inner}</a>
-  }
-  return <Link to={item.link} onClick={handleClick} className={cls}>{inner}</Link>
+const ACCENT_BORDERS = {
+  blue:   'border-blue-500/60',
+  gold:   'border-yellow-500/60',
+  green:  'border-green-500/60',
+  purple: 'border-purple-500/60',
+  red:    'border-red-500/60',
 }
 
 function PromoCarousel() {
   const [items, setItems] = useState([])
-  const scrollRef = useRef(null)
-  const [canScrollLeft, setCanScrollLeft] = useState(false)
-  const [canScrollRight, setCanScrollRight] = useState(false)
+  const [active, setActive] = useState(0)
+  const timerRef = useRef(null)
 
   useEffect(() => {
     const promises = [
@@ -221,121 +175,156 @@ function PromoCarousel() {
       get('/api/recent-event').then(d => d.event || null).catch(() => null),
     ]
     Promise.all(promises).then(([banners, spotlight, eventSpotlight, newEvent]) => {
-      const cards = []
+      const slides = []
 
-      // New event (highest priority — time-sensitive)
       if (newEvent) {
-        cards.push({
-          key: 'new-event',
-          badge: 'NEW',
-          color: 'blue',
-          title: newEvent.name,
-          subtitle: 'New Top 8 decklists added',
-          link: `/top-8/${newEvent.folder}`,
-          thumbnail: null,
-          analyticsType: 'new_event',
+        slides.push({
+          key: 'new-event', badge: 'NEW', color: 'blue',
+          title: newEvent.name, subtitle: 'New Top 8 decklists added',
+          link: `/top-8/${newEvent.folder}`, thumbnail: null, analyticsType: 'new_event',
         })
       }
 
-      // Promo banners
       for (const b of banners) {
-        cards.push({
-          key: `promo-${b.id}`,
-          badge: b.badge_text,
-          color: b.color,
-          title: b.title,
-          subtitle: b.subtitle,
-          link: b.link,
-          thumbnail: b.images?.[0] || null,
-          analyticsType: `promo_${b.id}`,
+        slides.push({
+          key: `promo-${b.id}`, badge: b.badge_text, color: b.color,
+          title: b.title, subtitle: b.subtitle, link: b.link,
+          thumbnail: b.images?.[0] || null, analyticsType: `promo_${b.id}`,
         })
       }
 
-      // Community spotlight
       if (spotlight) {
-        cards.push({
-          key: 'spotlight',
-          badge: spotlight.badge_text,
-          color: spotlight.color,
-          title: spotlight.title,
-          subtitle: spotlight.subtitle,
-          link: spotlight.link,
+        slides.push({
+          key: 'spotlight', badge: spotlight.badge_text, color: spotlight.color,
+          title: spotlight.title, subtitle: spotlight.subtitle, link: spotlight.link,
           thumbnail: spotlight.image_url || spotlight.stats?.avatar_bg_image || null,
           analyticsType: `spotlight_${spotlight.type}`,
         })
       }
 
-      // Random recent event
       if (eventSpotlight) {
-        cards.push({
-          key: 'event-spotlight',
-          badge: eventSpotlight.badge_text,
-          color: eventSpotlight.color,
-          title: eventSpotlight.title,
-          subtitle: eventSpotlight.subtitle,
-          link: eventSpotlight.link,
-          thumbnail: eventSpotlight.image_url || null,
-          analyticsType: 'event_spotlight',
+        slides.push({
+          key: 'event-spotlight', badge: eventSpotlight.badge_text, color: eventSpotlight.color,
+          title: eventSpotlight.title, subtitle: eventSpotlight.subtitle, link: eventSpotlight.link,
+          thumbnail: eventSpotlight.image_url || null, analyticsType: 'event_spotlight',
         })
       }
 
-      setItems(cards)
+      setItems(slides)
     })
   }, [])
 
-  const updateScrollButtons = useCallback(() => {
-    const el = scrollRef.current
-    if (!el) return
-    setCanScrollLeft(el.scrollLeft > 4)
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4)
-  }, [])
-
+  // Auto-advance every 8 seconds
   useEffect(() => {
-    updateScrollButtons()
-    const el = scrollRef.current
-    if (!el) return
-    el.addEventListener('scroll', updateScrollButtons, { passive: true })
-    const ro = new ResizeObserver(updateScrollButtons)
-    ro.observe(el)
-    return () => { el.removeEventListener('scroll', updateScrollButtons); ro.disconnect() }
-  }, [items, updateScrollButtons])
+    if (items.length <= 1) return
+    timerRef.current = setInterval(() => setActive(i => (i + 1) % items.length), 8000)
+    return () => clearInterval(timerRef.current)
+  }, [items.length])
 
-  const scroll = (dir) => {
-    const el = scrollRef.current
-    if (!el) return
-    el.scrollBy({ left: dir * 320, behavior: 'smooth' })
+  const goTo = (idx) => {
+    setActive(idx)
+    clearInterval(timerRef.current)
+    if (items.length > 1) {
+      timerRef.current = setInterval(() => setActive(i => (i + 1) % items.length), 8000)
+    }
+  }
+
+  const navigate = (dir) => {
+    goTo((active + dir + items.length) % items.length)
   }
 
   if (!items.length) return null
 
+  const item = items[active]
+  const badgeColor = BADGE_COLORS[item.color] || BADGE_COLORS.blue
+  const accentBorder = ACCENT_BORDERS[item.color] || ACCENT_BORDERS.blue
+  const isExternal = item.link && !item.link.startsWith('/')
+
+  const handleClick = () => {
+    navigator.sendBeacon?.('/api/analytics/banner-click',
+      new Blob([JSON.stringify({ banner_type: item.analyticsType || 'promo' })], { type: 'application/json' }))
+  }
+
+  const Wrapper = isExternal ? 'a' : Link
+  const wrapperProps = isExternal
+    ? { href: item.link, target: '_blank', rel: 'noopener noreferrer' }
+    : { to: item.link }
+
   return (
-    <div className="relative mt-4">
-      {/* Scroll arrows */}
-      {canScrollLeft && (
-        <button
-          onClick={() => scroll(-1)}
-          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-bg-elevated/90 border border-border text-text-muted hover:text-text-primary hover:border-primary/50 transition-colors -ml-3"
-          aria-label="Scroll left"
-        >
-          &lsaquo;
-        </button>
-      )}
-      {canScrollRight && (
-        <button
-          onClick={() => scroll(1)}
-          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-bg-elevated/90 border border-border text-text-muted hover:text-text-primary hover:border-primary/50 transition-colors -mr-3"
-          aria-label="Scroll right"
-        >
-          &rsaquo;
-        </button>
-      )}
-      {/* Scrollable track */}
-      <div
-        ref={scrollRef}
-        className="flex gap-3 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-2 hide-scrollbar"
+    <div className="relative mt-6">
+      <Wrapper
+        {...wrapperProps}
+        onClick={handleClick}
+        className={`block relative overflow-hidden rounded-soft border-b-2 ${accentBorder} group`}
       >
-        {items.map((item) => <CarouselCard key={item.key} item={item} />)}
-      </div>
+        {/* Background — image or gradient */}
+        <div className="absolute inset-0 bg-bg-elevated">
+          {item.thumbnail && (
+            <img
+              key={item.thumbnail}
+              src={item.thumbnail}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover opacity-30 group-hover:opacity-40 transition-opacity duration-500"
+              onError={(e) => { e.target.style.display = 'none' }}
+            />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-r from-bg-dark/95 via-bg-dark/70 to-transparent" />
+        </div>
+
+        {/* Content overlay */}
+        <div className="relative px-6 py-8 sm:py-10 sm:px-8">
+          <span className={`inline-block text-[10px] font-bold px-2 py-1 ${badgeColor} text-white rounded uppercase tracking-wide mb-3`}>
+            {item.badge}
+          </span>
+          <h3 className="text-lg sm:text-xl font-display text-text-primary leading-tight mb-1">
+            {item.title}
+          </h3>
+          {item.subtitle && (
+            <p className="text-sm text-text-muted leading-relaxed max-w-lg">
+              {item.subtitle}
+            </p>
+          )}
+          <span className="inline-flex items-center gap-1 mt-3 text-xs font-medium text-primary group-hover:text-primary-light transition-colors">
+            Learn more <span className="group-hover:translate-x-1 transition-transform">&rarr;</span>
+          </span>
+        </div>
+      </Wrapper>
+
+      {/* Navigation arrows */}
+      {items.length > 1 && (
+        <>
+          <button
+            onClick={() => navigate(-1)}
+            className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 flex items-center justify-center rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white transition-colors text-sm"
+            aria-label="Previous"
+          >
+            &lsaquo;
+          </button>
+          <button
+            onClick={() => navigate(1)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 flex items-center justify-center rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white transition-colors text-sm"
+            aria-label="Next"
+          >
+            &rsaquo;
+          </button>
+        </>
+      )}
+
+      {/* Dot indicators */}
+      {items.length > 1 && (
+        <div className="flex justify-center gap-1.5 mt-2">
+          {items.map((s, i) => (
+            <button
+              key={s.key}
+              onClick={() => goTo(i)}
+              className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
+                i === active ? 'bg-primary w-4' : 'bg-text-muted/30 hover:bg-text-muted/50'
+              }`}
+              aria-label={`Go to slide ${i + 1}`}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

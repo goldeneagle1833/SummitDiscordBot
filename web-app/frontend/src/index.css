@@ -26,7 +26,3 @@ option {
   background-color: #161b22;
   color: #f0f6fc;
 }
-
-/* Hide scrollbar on horizontal carousels */
-.hide-scrollbar::-webkit-scrollbar { display: none; }
-.hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }

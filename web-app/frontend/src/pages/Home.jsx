@@ -163,16 +163,19 @@ function CarouselCard({ item }) {
       new Blob([JSON.stringify({ banner_type: item.analyticsType || 'promo' })], { type: 'application/json' }))
   }
 
+  const [imgFailed, setImgFailed] = useState(false)
+  const showThumb = item.thumbnail && !imgFailed
+
   const inner = (
     <div className="flex items-stretch gap-0 h-full">
-      {/* Thumbnail */}
-      {item.thumbnail ? (
+      {/* Thumbnail or accent bar */}
+      {showThumb ? (
         <div className="w-16 sm:w-20 flex-shrink-0 bg-black/40 flex items-center justify-center overflow-hidden">
           <img
             src={item.thumbnail}
             alt=""
             className="w-full h-full object-cover"
-            onError={(e) => { e.target.parentElement.classList.add('hidden') }}
+            onError={() => setImgFailed(true)}
           />
         </div>
       ) : (

@@ -124,7 +124,7 @@ class ContentMonitorCog(commands.Cog):
             match = pattern.search(url)
             if match:
                 video_id = match.group(1)
-                return f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
+                return f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
 
         # Fallback: use embed thumbnail from Discord
         for embed in message.embeds:

@@ -267,11 +267,11 @@ function PromoCarousel() {
 
         {/* Content overlay */}
         <div className="relative px-6 py-12 sm:py-16 sm:px-8 text-center flex flex-col items-center">
-          <h3 className="text-2xl sm:text-3xl font-display text-text-primary leading-tight mb-2">
+          <h3 className="text-3xl sm:text-4xl font-display text-text-primary leading-tight mb-2">
             {item.title}
           </h3>
           {item.subtitle && (
-            <p className="text-sm text-text-muted leading-relaxed max-w-lg mx-auto">
+            <p className="text-base text-text-muted leading-relaxed max-w-lg mx-auto">
               {item.subtitle}
             </p>
           )}
@@ -522,7 +522,7 @@ export default function Home() {
       <section className="text-center pt-6">
         <h1
           onClick={handleTitleClick}
-          className="text-3xl font-display text-secondary mb-2 cursor-default select-none"
+          className="text-4xl sm:text-5xl font-display text-secondary mb-2 cursor-default select-none"
         >
           Welcome to the Sorcery Community Leaderboard
         </h1>

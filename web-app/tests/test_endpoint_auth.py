@@ -113,6 +113,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.deck_rec.get_decks",
     "api.deck_rec.get_deck_info",
     "api.deck_rec.get_recommendations",
+    "api.deck_rec.staff_pick",
 
     # -- Fun stats (public read-only) --
     "api.fun_stats.get_fun_stats_filters",

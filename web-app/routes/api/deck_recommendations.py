@@ -8,8 +8,11 @@ Endpoints:
 import json
 import logging
 import os
+import random
 import re
+import sqlite3
 import time
+from datetime import date
 
 from flask import Blueprint, jsonify, request, session
 
@@ -148,6 +151,69 @@ def _invalidate_cluster_cache():
     global _cluster_cache, _cluster_cache_time
     _cluster_cache = None
     _cluster_cache_time = 0
+
+
+def _get_newest_admin_deck(repo):
+    """Return the newest admin deck if added within the last 48 hours, else None."""
+    from datetime import datetime, timezone, timedelta
+    try:
+        conn = sqlite3.connect(str(repo._db_path))
+        conn.row_factory = sqlite3.Row
+        repo._ensure_admin_table(conn)
+        cur = conn.execute(
+            "SELECT deck_id, added_at FROM admin_recommended_decks ORDER BY added_at DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        conn.close()
+        if not row or not row["added_at"]:
+            return None
+        added = datetime.fromisoformat(row["added_at"]).replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - added > timedelta(hours=48):
+            return None
+        # Find the matching DeckRecord from the loaded admin decks
+        admin_decks = repo._load_admin_decks()
+        return next((d for d in admin_decks if d.deck_id == row["deck_id"]), None)
+    except Exception:
+        return None
+
+
+@deck_rec_bp.route("/staff-pick")
+def staff_pick():
+    """Return a staff-pick deck for the homepage carousel.
+
+    Shows the newest admin deck for 48 hours after it's added, then
+    rotates daily through a random pick until a new deck is added.
+    """
+    try:
+        repo = DeckRecRepository()
+        admin_decks = repo._load_admin_decks()
+        if not admin_decks:
+            return jsonify({"success": False})
+
+        # Check for a recently added deck (within 48 hours)
+        deck = _get_newest_admin_deck(repo)
+        is_new = deck is not None
+
+        if deck is None:
+            # Rotate daily through a random pick
+            rng = random.Random(str(date.today()) + "staff-pick")
+            deck = rng.choice(admin_decks)
+
+        return jsonify({
+            "success": True,
+            "staff_pick": {
+                "deck_id": deck.deck_id,
+                "deck_name": deck.deck_name,
+                "avatar_name": deck.avatar_name,
+                "primer": deck.primer or "",
+                "stars": deck.stars,
+                "curiosa_url": deck.curiosa_url,
+                "is_new": is_new,
+            },
+        })
+    except Exception as e:
+        logger.exception("Error in staff_pick: %s", e)
+        return jsonify({"success": False}), 500
 
 
 @deck_rec_bp.route("/decks")

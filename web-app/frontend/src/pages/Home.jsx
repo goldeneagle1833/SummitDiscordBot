@@ -167,8 +167,9 @@ function PromoCarousel() {
       get('/api/spotlight').then(d => d.success && d.spotlight ? d.spotlight : null).catch(() => null),
       get('/api/event-spotlight').then(d => d.success && d.event_spotlight ? d.event_spotlight : null).catch(() => null),
       get('/api/recent-event').then(d => d.event || null).catch(() => null),
+      get('/api/deck-rec/staff-pick').then(d => d.success && d.staff_pick ? d.staff_pick : null).catch(() => null),
     ]
-    Promise.all(promises).then(([banners, spotlight, eventSpotlight, newEvent]) => {
+    Promise.all(promises).then(([banners, spotlight, eventSpotlight, newEvent, staffPick]) => {
       const slides = []
 
       if (newEvent) {
@@ -202,6 +203,16 @@ function PromoCarousel() {
           key: 'event-spotlight', badge: eventSpotlight.badge_text, color: eventSpotlight.color,
           title: eventSpotlight.title, subtitle: eventSpotlight.subtitle, link: eventSpotlight.link,
           thumbnail: eventSpotlight.image_url || null, analyticsType: 'event_spotlight',
+        })
+      }
+
+      if (staffPick) {
+        const subtitle = staffPick.primer || `${staffPick.avatar_name} deck`
+        const badge = staffPick.is_new ? 'NEW STAFF PICK' : 'STAFF PICK'
+        slides.push({
+          key: 'staff-pick', badge, color: 'gold',
+          title: staffPick.deck_name, subtitle,
+          link: `/deck-rec/${staffPick.deck_id}`, thumbnail: null, analyticsType: 'staff_pick',
         })
       }
 

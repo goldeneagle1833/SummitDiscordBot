@@ -154,14 +154,6 @@ const BADGE_COLORS = {
   red:    'bg-red-500',
 }
 
-const ACCENT_BORDERS = {
-  blue:   'border-blue-500/60',
-  gold:   'border-yellow-500/60',
-  green:  'border-green-500/60',
-  purple: 'border-purple-500/60',
-  red:    'border-red-500/60',
-}
-
 function PromoCarousel() {
   const [items, setItems] = useState([])
   const [active, setActive] = useState(0)
@@ -214,10 +206,10 @@ function PromoCarousel() {
     })
   }, [])
 
-  // Auto-advance every 8 seconds
+  // Auto-advance every 12 seconds
   useEffect(() => {
     if (items.length <= 1) return
-    timerRef.current = setInterval(() => setActive(i => (i + 1) % items.length), 8000)
+    timerRef.current = setInterval(() => setActive(i => (i + 1) % items.length), 12000)
     return () => clearInterval(timerRef.current)
   }, [items.length])
 
@@ -225,7 +217,7 @@ function PromoCarousel() {
     setActive(idx)
     clearInterval(timerRef.current)
     if (items.length > 1) {
-      timerRef.current = setInterval(() => setActive(i => (i + 1) % items.length), 8000)
+      timerRef.current = setInterval(() => setActive(i => (i + 1) % items.length), 12000)
     }
   }
 
@@ -237,7 +229,6 @@ function PromoCarousel() {
 
   const item = items[active]
   const badgeColor = BADGE_COLORS[item.color] || BADGE_COLORS.blue
-  const accentBorder = ACCENT_BORDERS[item.color] || ACCENT_BORDERS.blue
   const isExternal = item.link && !item.link.startsWith('/')
 
   const handleClick = () => {
@@ -251,11 +242,11 @@ function PromoCarousel() {
     : { to: item.link }
 
   return (
-    <div className="relative mt-6">
+    <div className="relative mt-4">
       <Wrapper
         {...wrapperProps}
         onClick={handleClick}
-        className={`block relative overflow-hidden rounded-soft border-b-2 ${accentBorder} group`}
+        className="block relative overflow-hidden group"
       >
         {/* Background — image or gradient */}
         <div className="absolute inset-0 bg-bg-elevated">
@@ -268,25 +259,27 @@ function PromoCarousel() {
               onError={(e) => { e.target.style.display = 'none' }}
             />
           )}
-          <div className="absolute inset-0 bg-gradient-to-r from-bg-dark/95 via-bg-dark/70 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-bg-dark/95 via-bg-dark/70 to-bg-dark/50" />
         </div>
 
         {/* Content overlay */}
-        <div className="relative px-6 py-8 sm:py-10 sm:px-8">
-          <span className={`inline-block text-[10px] font-bold px-2 py-1 ${badgeColor} text-white rounded uppercase tracking-wide mb-3`}>
-            {item.badge}
-          </span>
-          <h3 className="text-lg sm:text-xl font-display text-text-primary leading-tight mb-1">
+        <div className="relative px-6 py-8 sm:py-10 sm:px-8 text-center flex flex-col items-center">
+          <h3 className="text-2xl sm:text-3xl font-display text-text-primary leading-tight mb-2">
             {item.title}
           </h3>
           {item.subtitle && (
-            <p className="text-sm text-text-muted leading-relaxed max-w-lg">
+            <p className="text-sm text-text-muted leading-relaxed max-w-lg mx-auto">
               {item.subtitle}
             </p>
           )}
-          <span className="inline-flex items-center gap-1 mt-3 text-xs font-medium text-primary group-hover:text-primary-light transition-colors">
-            Learn more <span className="group-hover:translate-x-1 transition-transform">&rarr;</span>
-          </span>
+          <div className="flex items-center gap-3 mt-3">
+            <span className={`inline-block text-[10px] font-bold px-2 py-0.5 ${badgeColor} text-white rounded uppercase tracking-wide`}>
+              {item.badge}
+            </span>
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-primary group-hover:text-primary-light transition-colors">
+              Learn more <span className="group-hover:translate-x-1 transition-transform">&rarr;</span>
+            </span>
+          </div>
         </div>
       </Wrapper>
 

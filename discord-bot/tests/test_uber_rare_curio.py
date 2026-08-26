@@ -1,6 +1,7 @@
 """Tests for uber-rare Curio Shart (lavashart / frostshart) permanent odds."""
 
 import asyncio
+import datetime
 import os
 import sqlite3
 import sys
@@ -22,6 +23,9 @@ sys.modules.setdefault(
 from cogs.fun import (  # noqa: E402
     FunCog,
     UBER_RARE_CURIO_VARIANTS,
+    YOURT_ATTACKS_TOTAL,
+    YOURT_ATTACK_EVERY_SECONDS,
+    drunken_case,
 )
 
 
@@ -40,21 +44,29 @@ class TestUberRareCurioPermanent:
         assert fart_db.is_uber_rare_guaranteed_claimed() is False
 
     def test_first_curio_always_special(self, fart_db):
-        with patch("cogs.fun.randrange", side_effect=[0]):  # lavashart
+        with patch("cogs.fun.randrange", return_value=1):  # 1-40 lavashart
             variant = fart_db.roll_uber_rare_curio_variant(user_id=42)
         assert variant == "lavashart"
         assert fart_db.is_uber_rare_guaranteed_claimed() is True
 
     def test_first_curio_can_be_frostshart(self, fart_db):
-        with patch("cogs.fun.randrange", side_effect=[1]):  # frostshart
+        with patch("cogs.fun.randrange", return_value=41):  # 41-80 frostshart
             variant = fart_db.roll_uber_rare_curio_variant(user_id=7)
         assert variant == "frostshart"
         assert fart_db.is_uber_rare_guaranteed_claimed() is True
 
+    def test_first_curio_40_40_20_boundaries(self, fart_db):
+        assert fart_db.pick_first_curio_variant(1) == "lavashart"
+        assert fart_db.pick_first_curio_variant(40) == "lavashart"
+        assert fart_db.pick_first_curio_variant(41) == "frostshart"
+        assert fart_db.pick_first_curio_variant(80) == "frostshart"
+        assert fart_db.pick_first_curio_variant(81) == "yourt"
+        assert fart_db.pick_first_curio_variant(100) == "yourt"
+
     def test_after_claim_10_percent_miss(self, fart_db):
         fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
-        # claimed path: randrange(1, 101) → 11 means miss (>10)
-        with patch("cogs.fun.randrange", return_value=11):
+        # claimed path: randrange(1, 101) → 16 means miss (>15)
+        with patch("cogs.fun.randrange", return_value=16):
             assert fart_db.roll_uber_rare_curio_variant(user_id=99) is None
 
     def test_after_claim_10_percent_hit(self, fart_db):
@@ -103,7 +115,7 @@ class TestUberRareCurioPermanent:
 
         assert fart_db.is_uber_rare_guaranteed_claimed() is True
         # Still on 10% path — 100% never comes back
-        with patch("cogs.fun.randrange", return_value=11):
+        with patch("cogs.fun.randrange", return_value=16):
             assert fart_db.roll_uber_rare_curio_variant(user_id=5) is None
 
     def test_maybe_uber_rare_skips_non_curio(self, fart_db):
@@ -123,8 +135,10 @@ class TestUberRareCurioPermanent:
 
         lava_embed = fart_db.build_uber_rare_embed("lavashart")
         frost_embed = fart_db.build_uber_rare_embed("frostshart")
+        yourt_embed = fart_db.build_uber_rare_embed("yourt")
         assert lava_embed.color.value == UBER_RARE_CURIO_VARIANTS["lavashart"]["color"]
         assert frost_embed.color.value == UBER_RARE_CURIO_VARIANTS["frostshart"]["color"]
+        assert yourt_embed.color.value == UBER_RARE_CURIO_VARIANTS["yourt"]["color"]
 
     def test_classify_curio_threshold(self):
         msg, typ = FunCog.classify_fart_roll(96)
@@ -142,6 +156,8 @@ class TestUberRareCurioPermanent:
         assert "Curio Shart" in help_section
         assert "Lavashart" not in help_section
         assert "Frostshart" not in help_section
+        assert "Yourt" not in help_section
+        assert "Yourtshart" not in help_section
         assert "Uber-rare Curio" not in help_section
         assert "10% of Curios" not in help_section
 
@@ -294,8 +310,144 @@ class TestUberRareOncePerSeason:
             assert fart_db.roll_uber_rare_curio_variant(user_id=2) == "frostshart"
 
     def test_first_roll_records_season_flag(self, fart_db):
-        with patch("cogs.fun.randrange", side_effect=[0]):
+        with patch("cogs.fun.randrange", return_value=1):
             assert fart_db.roll_uber_rare_curio_variant(user_id=42) == "lavashart"
         assert fart_db.has_rolled_uber_rare_this_season(42, "lavashart") is True
         assert fart_db.has_rolled_uber_rare_this_season(42, "frostshart") is False
+
+
+class TestYourtCurioOdds:
+    def test_yourt_hits_on_11_through_15(self, fart_db):
+        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
+        for bucket in (11, 12, 13, 14, 15):
+            with patch("cogs.fun.randrange", return_value=bucket):
+                assert fart_db.roll_uber_rare_curio_variant(user_id=99) == "yourt"
+
+    def test_yourt_does_not_claim_guaranteed_flag(self, fart_db):
+        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
+        with patch("cogs.fun.randrange", return_value=12):
+            assert fart_db.roll_uber_rare_curio_variant(user_id=7) == "yourt"
+        conn = sqlite3.connect("fart_scores.db")
+        row = conn.execute(
+            "SELECT variant FROM uber_rare_curio_claimed WHERE id = 1"
+        ).fetchone()
+        conn.close()
+        assert row == ("lavashart",)
+
+    def test_first_curio_can_be_yourt_and_claims_flag(self, fart_db):
+        with patch("cogs.fun.randrange", return_value=81):
+            assert fart_db.roll_uber_rare_curio_variant(user_id=1) == "yourt"
+        assert fart_db.is_uber_rare_guaranteed_claimed() is True
+        conn = sqlite3.connect("fart_scores.db")
+        row = conn.execute(
+            "SELECT variant FROM uber_rare_curio_claimed WHERE id = 1"
+        ).fetchone()
+        conn.close()
+        assert row == ("yourt",)
+        # Yourt is not a once-per-season lava/frost collectible
+        assert fart_db.has_rolled_uber_rare_this_season(1, "yourt") is False
+
+    def test_yourt_skipped_while_rampage_active(self, fart_db):
+        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
+        assert fart_db.start_yourt_rampage(channel_id=1, summoned_by_user_id=1) is True
+        with patch("cogs.fun.randrange", return_value=11):
+            assert fart_db.roll_uber_rare_curio_variant(user_id=2) is None
+
+    def test_yourt_highlight_is_green_and_drunken(self, fart_db):
+        text = fart_db.format_uber_rare_highlight("yourt")
+        assert ":yourt:" in text
+        assert drunken_case("YOURTSHART") in text
+        embed = fart_db.build_uber_rare_embed("yourt")
+        assert embed.color.value == 0x2ECC71
+
+
+class TestYourtRampage:
+    def test_start_and_active_window(self, fart_db):
+        assert fart_db.is_yourt_rampage_active() is False
+        assert fart_db.start_yourt_rampage(99, 7) is True
+        assert fart_db.is_yourt_rampage_active() is True
+        assert fart_db.start_yourt_rampage(99, 8) is False
+
+    def test_expected_attacks_every_ten_minutes(self, fart_db):
+        fart_db.start_yourt_rampage(1, 1)
+        state = fart_db.get_yourt_rampage_state()
+        started = datetime.datetime.fromisoformat(state["started_at"])
+        assert fart_db.expected_yourt_attacks(state, now=started) == 0
+        assert (
+            fart_db.expected_yourt_attacks(
+                state, now=started + datetime.timedelta(minutes=10)
+            )
+            == 1
+        )
+        assert (
+            fart_db.expected_yourt_attacks(
+                state, now=started + datetime.timedelta(minutes=59)
+            )
+            == 5
+        )
+        assert (
+            fart_db.expected_yourt_attacks(
+                state, now=started + datetime.timedelta(minutes=60)
+            )
+            == YOURT_ATTACKS_TOTAL
+        )
+        assert YOURT_ATTACK_EVERY_SECONDS == 600
+
+    def test_apply_yourt_sends_here_ping(self, fart_db):
+        ctx = MagicMock()
+        ctx.channel.id = 123
+        ctx.channel.send = AsyncMock()
+        ctx.guild = None
+        msg = asyncio.run(
+            fart_db.apply_uber_rare_variant_effect(ctx, roller_id=1, variant="yourt")
+        )
+        assert fart_db.is_yourt_rampage_active() is True
+        assert "vendor tent" in msg.lower() or "dirt" in msg.lower()
+        ctx.channel.send.assert_awaited()
+        sent = ctx.channel.send.await_args.args[0]
+        assert "@here" in sent
+        assert ":yourt:" in sent
+        assert "YOURT" in sent.upper() or "YoUrT" in sent
+
+    def test_retreat_clears_window(self, fart_db):
+        fart_db.start_yourt_rampage(1, 1)
+        state = fart_db.get_yourt_rampage_state()
+        asyncio.run(fart_db._yourt_retreat(state))
+        assert fart_db.is_yourt_rampage_active() is False
+        assert fart_db.get_yourt_rampage_state() is None
+
+    def test_ticker_fires_due_attacks_then_retreats(self, fart_db):
+        fart_db.start_yourt_rampage(1, 1)
+        state = fart_db.get_yourt_rampage_state()
+        started = datetime.datetime.fromisoformat(state["started_at"])
+        past_end = started + datetime.timedelta(hours=1, seconds=1)
+        fart_db._yourt_random_attack = AsyncMock()
+        fart_db._yourt_retreat = AsyncMock()
+        asyncio.run(fart_db._tick_yourt_rampage(now=past_end))
+        assert fart_db._yourt_random_attack.await_count == YOURT_ATTACKS_TOTAL
+        fart_db._yourt_retreat.assert_awaited()
+
+
+class TestYourtAttacks:
+    def test_yourt_banana_hits_unprotected_player(self, fart_db):
+        shop = MagicMock()
+        shop.get_sorted_players = AsyncMock(return_value=[(1, 100), (2, 80)])
+        shop.is_protected = AsyncMock(return_value=False)
+        shop.deduct_damage = AsyncMock(return_value=7)
+        shop.roll_damage = MagicMock(return_value=7)
+        shop.roll_d10_damage = MagicMock(return_value=12)
+        fart_db.bot.get_cog.return_value = shop
+        fart_db._send_yourt_channel_message = AsyncMock()
+        with patch("cogs.fun.random.choice", side_effect=["banana", 2]):
+            asyncio.run(
+                fart_db._yourt_random_attack(
+                    {"channel_id": 1, "started_at": "x", "ends_at": "y", "attacks_done": 0}
+                )
+            )
+        shop.deduct_damage.assert_awaited()
+        fart_db._send_yourt_channel_message.assert_awaited()
+        sent = fart_db._send_yourt_channel_message.await_args.args[1]
+        assert "<@2>" in sent
+        assert "YOURT" in sent.upper() or "YoUrT" in sent
+
 

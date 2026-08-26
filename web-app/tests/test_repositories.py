@@ -348,6 +348,16 @@ class TestFartRepositoryReset:
                     PRIMARY KEY (user_id, variant)
                 )
             """,
+            "yourt_rampage": """
+                CREATE TABLE yourt_rampage (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    started_at TEXT NOT NULL,
+                    ends_at TEXT NOT NULL,
+                    attacks_done INTEGER NOT NULL DEFAULT 0,
+                    channel_id INTEGER NOT NULL,
+                    summoned_by_user_id INTEGER
+                )
+            """,
             # Config tables — must survive reset
             "fart_game_commands": """
                 CREATE TABLE fart_game_commands (
@@ -432,6 +442,9 @@ class TestFartRepositoryReset:
             "INSERT INTO uber_rare_curio_season VALUES (1, 'frostshart', '2026-08-01T00:00:00')"
         )
         conn.execute(
+            "INSERT INTO yourt_rampage VALUES (1, '2026-08-01T00:00:00', '2026-08-01T01:00:00', 2, 1, 1)"
+        )
+        conn.execute(
             "INSERT INTO fart_game_commands (name, label) VALUES ('fart', 'Fart')"
         )
         conn.execute(
@@ -502,6 +515,7 @@ class TestFartRepositoryReset:
         assert cleared["fart_scores"] == 1
         assert cleared["frost_shart_freeze"] == 1
         assert cleared["uber_rare_curio_season"] == 2
+        assert cleared["yourt_rampage"] == 1
         assert cleared["future_season_tracker"] == 1  # unknown tables also wiped
         # Permanent one-time flag must NOT be wiped
         assert "uber_rare_curio_claimed" not in cleared
@@ -527,6 +541,7 @@ class TestFartRepositoryReset:
             "fart_traps",
             "frost_shart_freeze",
             "uber_rare_curio_season",
+            "yourt_rampage",
             "future_season_tracker",
         ]
         for table in tracking:
@@ -556,6 +571,7 @@ class TestFartRepositoryReset:
             "fart_traps",
             "frost_shart_freeze",
             "uber_rare_curio_season",
+            "yourt_rampage",
         }
         assert FartRepository._KNOWN_TRACKING_TABLES == expected
         assert FartRepository._PRESERVE_ON_RESET == {

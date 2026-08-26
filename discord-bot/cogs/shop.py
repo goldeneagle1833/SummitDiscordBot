@@ -29,6 +29,10 @@ class ShopCog(commands.Cog):
     SHOP_RATE_LIMIT_WINDOW_SECONDS = 30 * 60  # 30 minutes
     # Browse catalog freely; gas_gamble is intentionally unrestricted
     RATE_LIMIT_EXEMPT = frozenset({"fart_shop", "gas_gamble"})
+    # Point transfers / wagers / pacts are not "loot the floor" shop toys
+    YOURT_LOOT_EXEMPT = frozenset(
+        {"fart_shop", "gas_gamble", "fart_donation", "fart_court", "evil_star"}
+    )
 
     def __init__(self, bot):
         self.bot = bot
@@ -120,6 +124,37 @@ class ShopCog(commands.Cog):
             f"too quickly — wait **{wait}** before using more!"
         )
 
+    def yourt_waives_shop_limits(self) -> bool:
+        """True during Yourt's 1-hour free-shop crash (costs, CDs, peel-out off)."""
+        fun = self.bot.get_cog("FunCog")
+        if fun is None:
+            return False
+        check = getattr(fun, "is_yourt_rampage_active", None)
+        if not callable(check):
+            return False
+        try:
+            return check() is True
+        except Exception:
+            return False
+
+    def yourt_loot_message(self, mention: str, command_name: str) -> str:
+        from cogs.fun import YOURT_EMOJI_FALLBACK, drunken_case
+
+        emoji = YOURT_EMOJI_FALLBACK
+        fun = self.bot.get_cog("FunCog")
+        markup = getattr(fun, "yourt_emoji_markup", None) if fun is not None else None
+        if callable(markup):
+            rendered = markup()
+            if isinstance(rendered, str):
+                emoji = rendered
+        item = drunken_case(command_name.replace("_", " "))
+        looted = drunken_case("LOOTED")
+        cleanup = drunken_case("while the shopkeeper was cleaning up Yourt's mess")
+        return (
+            f"{emoji}{emoji} {mention} **{looted}** a **{item}** {cleanup}! "
+            f"{emoji}{emoji}{emoji}"
+        )
+
     async def cog_check(self, ctx):
         """Block shop commands if user is stink clouded, rate-limited, or fart-trapped."""
         if ctx.command.name in ('fart_shop',):
@@ -169,12 +204,17 @@ class ShopCog(commands.Cog):
             conn.close()
 
         # Peel-out rate limit: 5 shop items / 30 minutes (!gas_gamble exempt)
+        # Yourt rampage dumps the tent on the floor — peel-out is off.
         if ctx.command.name not in self.RATE_LIMIT_EXEMPT:
-            allowed, remaining = self.check_shop_rate_limit(ctx.author.id)
-            if not allowed:
-                await ctx.send(self.peel_out_message(ctx.author.mention, remaining))
-                return False
-            self.record_shop_usage(ctx.author.id)
+            if self.yourt_waives_shop_limits():
+                if hasattr(ctx.command, "reset_cooldown"):
+                    ctx.command.reset_cooldown(ctx)
+            else:
+                allowed, remaining = self.check_shop_rate_limit(ctx.author.id)
+                if not allowed:
+                    await ctx.send(self.peel_out_message(ctx.author.mention, remaining))
+                    return False
+                self.record_shop_usage(ctx.author.id)
 
         # Check fart trap on attack commands
         if ctx.command.name in self.ATTACK_COMMANDS:
@@ -183,6 +223,19 @@ class ShopCog(commands.Cog):
                 return False
 
         return True
+
+    async def cog_after_invoke(self, ctx):
+        """During Yourt chaos, announce that the item was looted off the tent floor."""
+        if not ctx.command or ctx.command.name in self.YOURT_LOOT_EXEMPT:
+            return
+        if not self.yourt_waives_shop_limits():
+            return
+        try:
+            await ctx.send(
+                self.yourt_loot_message(ctx.author.mention, ctx.command.name)
+            )
+        except Exception as e:
+            logger.error(f"Error sending Yourt loot message: {e}")
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -194,6 +247,13 @@ class ShopCog(commands.Cog):
         # swallows non-CommandNotFound errors before the default handler.
         if isinstance(error, commands.CommandOnCooldown):
             if ctx.command and ctx.command.cog is self:
+                if self.yourt_waives_shop_limits() and not getattr(
+                    ctx, "_yourt_cooldown_retry", False
+                ):
+                    ctx._yourt_cooldown_retry = True
+                    ctx.command.reset_cooldown(ctx)
+                    await ctx.reinvoke()
+                    return
                 await ctx.send(
                     f"{ctx.author.mention}, slow down! Try again in {error.retry_after:.0f}s."
                 )
@@ -726,6 +786,8 @@ class ShopCog(commands.Cog):
         Check daily/weekly command_usage cooldown.
         Returns (allowed: bool, message: str | None).
         """
+        if self.yourt_waives_shop_limits():
+            return True, None
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
         try:
@@ -782,6 +844,8 @@ class ShopCog(commands.Cog):
 
     async def mark_usage_cooldown(self, user_id: int, command_name: str):
         """Record successful use for daily/weekly cooldowns."""
+        if self.yourt_waives_shop_limits():
+            return
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
         try:
@@ -808,6 +872,8 @@ class ShopCog(commands.Cog):
             cur.execute("SELECT score FROM fart_scores WHERE user_id = ?", (user_id,))
             result = cur.fetchone()
             current_points = result[0] if result else 0
+            if self.yourt_waives_shop_limits():
+                return 0, current_points
             cost = max(1, int(current_points * percent))
             return cost, current_points
         finally:
@@ -815,6 +881,8 @@ class ShopCog(commands.Cog):
 
     async def deduct_amount(self, user_id: int, amount: int):
         """Deduct an explicit point amount from a user."""
+        if amount <= 0 or self.yourt_waives_shop_limits():
+            return
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
         try:
@@ -828,6 +896,8 @@ class ShopCog(commands.Cog):
 
     # Update the check_points method
     async def check_points(self, user_id: int, item_type: str = "red") -> bool:
+        if self.yourt_waives_shop_limits():
+            return True
         cost = self.item_costs.get(
             item_type, 10
         )  # Default to 10 if item type not found
@@ -847,6 +917,8 @@ class ShopCog(commands.Cog):
 
     # Update the deduct_points method
     async def deduct_points(self, user_id: int, item_type: str = "red"):
+        if self.yourt_waives_shop_limits():
+            return
         cost = self.item_costs.get(
             item_type, 10
         )  # Default to 10 if item type not found
@@ -1153,13 +1225,15 @@ class ShopCog(commands.Cog):
                     return
 
                 current_points = result[0]
-                # Calculate 10% cost (minimum 1 point)
-                star_cost = max(1, int(current_points * 0.10))
-
-                if current_points < star_cost:
-                    return await ctx.send(
-                        f"You don't have enough points! Star protection costs {star_cost} points (10% of your total)!"
-                    )
+                # Calculate 10% cost (minimum 1 point); Yourt crash = free
+                if self.yourt_waives_shop_limits():
+                    star_cost = 0
+                else:
+                    star_cost = max(1, int(current_points * 0.10))
+                    if current_points < star_cost:
+                        return await ctx.send(
+                            f"You don't have enough points! Star protection costs {star_cost} points (10% of your total)!"
+                        )
 
                 protection_end = datetime.datetime.now() + datetime.timedelta(hours=72)
                 logger.debug(f"Setting protection until: {protection_end}")
@@ -1235,7 +1309,7 @@ class ShopCog(commands.Cog):
             )
             cooldown_result = cur.fetchone()
 
-            if cooldown_result:
+            if cooldown_result and not self.yourt_waives_shop_limits():
                 last_used_date = datetime.datetime.fromisoformat(
                     cooldown_result[0]
                 ).date()
@@ -1276,16 +1350,17 @@ class ShopCog(commands.Cog):
                 (ctx.author.id, now.isoformat()),
             )
 
-            # Update weekly usage cooldown
-            cur.execute(
-                """
+            # Update weekly usage cooldown (skipped during Yourt — floor loot is free)
+            if not self.yourt_waives_shop_limits():
+                cur.execute(
+                    """
                 INSERT INTO lucky_charm_usage (user_id, command_name, last_used)
                 VALUES (?, 'mushroom', ?)
                 ON CONFLICT(user_id, command_name) 
                 DO UPDATE SET last_used = ?
                 """,
-                (ctx.author.id, now.isoformat(), now.isoformat()),
-            )
+                    (ctx.author.id, now.isoformat(), now.isoformat()),
+                )
 
             conn.commit()
             conn.close()
@@ -1503,7 +1578,11 @@ class ShopCog(commands.Cog):
         my_score = await self.get_user_score(ctx.author.id)
         target_score = await self.get_user_score(target[0])
 
-        cost = self.item_costs["fart_rocket"]
+        cost = (
+            0
+            if self.yourt_waives_shop_limits()
+            else self.item_costs["fart_rocket"]
+        )
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
         try:
@@ -1929,27 +2008,28 @@ class ShopCog(commands.Cog):
         if not allowed:
             return await ctx.send(cooldown_msg)
 
-        # Check daily action cooldown
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                "SELECT date_last_updated FROM fart_scores WHERE user_id=?",
-                (ctx.author.id,),
-            )
-            row = cur.fetchone()
-            if row:
-                parsed = safe_parse_datetime(row[0])
-                if parsed:
-                    last_date = parse_to_est_date(row[0])
-                    if last_date == get_est_date():
-                        await ctx.send(
-                            f"{ctx.author.mention}, you've already used your daily action today! "
-                            f"Fart Twister uses your daily fart."
-                        )
-                        return
-        finally:
-            conn.close()
+        # Check daily action cooldown (Yourt crash waives the daily fart cost)
+        if not self.yourt_waives_shop_limits():
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    "SELECT date_last_updated FROM fart_scores WHERE user_id=?",
+                    (ctx.author.id,),
+                )
+                row = cur.fetchone()
+                if row:
+                    parsed = safe_parse_datetime(row[0])
+                    if parsed:
+                        last_date = parse_to_est_date(row[0])
+                        if last_date == get_est_date():
+                            await ctx.send(
+                                f"{ctx.author.mention}, you've already used your daily action today! "
+                                f"Fart Twister uses your daily fart."
+                            )
+                            return
+            finally:
+                conn.close()
 
         if not await self.check_points(ctx.author.id, "fart_twister"):
             return await ctx.send(
@@ -1978,16 +2058,17 @@ class ShopCog(commands.Cog):
         # Deduct cost and update daily action
         await self.deduct_points(ctx.author.id, "fart_twister")
         await self.mark_usage_cooldown(ctx.author.id, "fart_twister")
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                "UPDATE fart_scores SET date_last_updated=? WHERE user_id=?",
-                (datetime.datetime.now().isoformat(), ctx.author.id),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        if not self.yourt_waives_shop_limits():
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    "UPDATE fart_scores SET date_last_updated=? WHERE user_id=?",
+                    (datetime.datetime.now().isoformat(), ctx.author.id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
 
         # Apply damage to both targets
         actual_damage_a = await self.deduct_damage(player_a_id, damage)
@@ -2110,13 +2191,29 @@ class ShopCog(commands.Cog):
     @commands.command(name="fart_shop", aliases=["fartshop", "shop_fart", "shopfart", "shop"])
     async def fart_shop(self, ctx):
         """Display all available shop items"""
+        yourt_free = self.yourt_waives_shop_limits()
+        shop_title = "💨 Fart Shop"
+        shop_description = (
+            "Use the commands below to purchase items:\n"
+            "Aliases: `!fart_shop` `!fartshop` `!shop_fart` `!shopfart` `!shop`"
+        )
+        shop_color = discord.Color.gold()
+        if yourt_free:
+            from cogs.fun import drunken_case
+
+            shop_title = ":yourt: " + drunken_case("Fart Shop YOURT MESS")
+            shop_description = (
+                ":yourt: "
+                + drunken_case("items everywhere grab them they are FREE for one hour")
+                + " :yourt:\n"
+                + shop_description
+            )
+            shop_color = discord.Color.green()
+
         embed = discord.Embed(
-            title="💨 Fart Shop",
-            description=(
-                "Use the commands below to purchase items:\n"
-                "Aliases: `!fart_shop` `!fartshop` `!shop_fart` `!shopfart` `!shop`"
-            ),
-            color=discord.Color.gold(),
+            title=shop_title,
+            description=shop_description,
+            color=shop_color,
         )
 
         items = [
@@ -2233,7 +2330,9 @@ class ShopCog(commands.Cog):
         ]
 
         for name, description, cost in items:
-            if isinstance(cost, str):
+            if yourt_free and cost not in ("Custom", "Max 100", "FREE"):
+                cost_display = "FREE"
+            elif isinstance(cost, str):
                 cost_display = cost
             else:
                 cost_display = f"{cost} points"
@@ -2375,12 +2474,14 @@ class ShopCog(commands.Cog):
                 )
                 result = cur.fetchone()
                 user_score = result[0] if result else 0
-                cost = max(1, int(user_score * 0.10))
-
-                if user_score < 1:
-                    return await ctx.send(
-                        f"You don't have enough points! Fart Star costs 10% of your points (minimum 1)."
-                    )
+                if self.yourt_waives_shop_limits():
+                    cost = 0
+                else:
+                    cost = max(1, int(user_score * 0.10))
+                    if user_score < 1:
+                        return await ctx.send(
+                            f"You don't have enough points! Fart Star costs 10% of your points (minimum 1)."
+                        )
 
                 # Get protected users whose protection hasn't expired
                 cur.execute(

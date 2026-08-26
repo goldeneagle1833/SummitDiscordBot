@@ -231,3 +231,71 @@ class TestUberRareVariantEffects:
         ).fetchone()[0]
         conn.close()
         assert bob_last is not None
+        assert cog.is_frost_frozen(1) is False  # roller not frozen
+
+
+class TestFrostshartFartMessaging:
+    def test_frozen_player_gets_shop_style_fart_message_not_daily_expiry(self, fart_db):
+        fart_db.apply_frost_shart_freeze(2, "Bob")
+        msg = fart_db.frostshart_fart_block_message(2, "<@2>")
+        assert msg is not None
+        assert "frozen solid by a Frostshart" in msg
+        assert "No farting until midnight EST!" in msg
+        assert "daily action" not in msg.lower()
+        assert "already used" not in msg.lower()
+
+    def test_unfrozen_player_has_no_frost_block_message(self, fart_db):
+        assert fart_db.frostshart_fart_block_message(2, "<@2>") is None
+
+    def test_frost_block_checked_before_daily_expiry_in_fart_command(self):
+        fun_path = os.path.join(os.path.dirname(__file__), "..", "cogs", "fun.py")
+        with open(fun_path, encoding="utf-8") as f:
+            source = f.read()
+        fart_cmd = source.split("async def fart(self, ctx):", 1)[1].split(
+            "async def fart_gift", 1
+        )[0]
+        frost_idx = fart_cmd.find("frostshart_fart_block_message")
+        daily_idx = fart_cmd.find("daily_usage_message")
+        assert frost_idx != -1
+        assert daily_idx != -1
+        assert frost_idx < daily_idx
+
+
+class TestUberRareOncePerSeason:
+    def test_same_player_cannot_roll_same_variant_twice(self, fart_db):
+        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
+        fart_db.mark_uber_rare_rolled_this_season(99, "lavashart")
+        # 10% hit + lavashart, but player already has lavashart this season
+        with patch("cogs.fun.randrange", side_effect=[5, 0]):
+            assert fart_db.roll_uber_rare_curio_variant(user_id=99) is None
+
+    def test_same_player_can_still_roll_the_other_variant(self, fart_db):
+        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
+        fart_db.mark_uber_rare_rolled_this_season(99, "lavashart")
+        # 10% hit + frostshart
+        with patch("cogs.fun.randrange", side_effect=[5, 1]):
+            assert fart_db.roll_uber_rare_curio_variant(user_id=99) == "frostshart"
+        assert fart_db.has_rolled_uber_rare_this_season(99, "frostshart") is True
+        assert fart_db.has_rolled_uber_rare_this_season(99, "lavashart") is True
+
+    def test_both_variants_blocked_for_player(self, fart_db):
+        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
+        fart_db.mark_uber_rare_rolled_this_season(7, "lavashart")
+        fart_db.mark_uber_rare_rolled_this_season(7, "frostshart")
+        with patch("cogs.fun.randrange", side_effect=[1, 0]):
+            assert fart_db.roll_uber_rare_curio_variant(user_id=7) is None
+        with patch("cogs.fun.randrange", side_effect=[1, 1]):
+            assert fart_db.roll_uber_rare_curio_variant(user_id=7) is None
+
+    def test_other_player_can_still_roll_same_variant(self, fart_db):
+        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
+        fart_db.mark_uber_rare_rolled_this_season(99, "frostshart")
+        with patch("cogs.fun.randrange", side_effect=[5, 1]):
+            assert fart_db.roll_uber_rare_curio_variant(user_id=2) == "frostshart"
+
+    def test_first_roll_records_season_flag(self, fart_db):
+        with patch("cogs.fun.randrange", side_effect=[0]):
+            assert fart_db.roll_uber_rare_curio_variant(user_id=42) == "lavashart"
+        assert fart_db.has_rolled_uber_rare_this_season(42, "lavashart") is True
+        assert fart_db.has_rolled_uber_rare_this_season(42, "frostshart") is False
+

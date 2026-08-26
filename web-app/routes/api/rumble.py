@@ -320,7 +320,7 @@ def reset_fart_game():
 @rumble_bp.route("/rumble/admin/fart/evil-start", methods=["POST"])
 @require_rumble_admin
 def evil_start_fart_game():
-    """Evil start - reset game and give players random chaotic starting scores."""
+    """Reset the game and give players random chaotic starting scores (-250 to 250)."""
     repo = FartRepository()
     result = repo.evil_start()
     return jsonify({"success": True, **result})

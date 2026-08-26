@@ -714,7 +714,7 @@ function FartAdmin({ data, onRefresh }) {
   }
 
   const handleReset = async () => {
-    if (!confirm('Reset the entire fart game / season? This clears ALL scores, history, and every tracked cooldown/usage (daily, weekly, season, reign) — including items like !mushroom, actions like !bullfart, Evil Star locks, gifts/donations, and status effects. Shop/command config is kept. This cannot be undone.')) return
+    if (!confirm('Reset the entire fart game / season? This clears ALL scores, history, and every tracked cooldown/usage (daily, weekly, season, reign) — including items like !mushroom, actions like !bullfart, Evil Star locks, gifts/donations, status effects, and per-player uber-rare Curio (lavashart/frostshart) once-per-season flags. Shop/command config is kept. This cannot be undone.')) return
     setLoading(true)
     try {
       const res = await post('/api/rumble/admin/fart/reset')
@@ -729,7 +729,7 @@ function FartAdmin({ data, onRefresh }) {
   }
 
   const handleEvilStart = async () => {
-    if (!confirm('Evil Start: Reset the game and give all players random chaotic scores (-50 to 50). Continue?')) return
+    if (!confirm('Evil Start: Same full game reset as Reset Fart Game, then give all players random chaotic scores (-250 to 250). Continue?')) return
     setLoading(true)
     try {
       const res = await post('/api/rumble/admin/fart/evil-start')
@@ -1354,7 +1354,7 @@ function FartAdmin({ data, onRefresh }) {
           <div className="p-3 border border-border rounded-lg">
             <h3 className="text-sm font-semibold mb-1">Reset Game</h3>
             <p className="text-xs text-text-muted mb-3">
-              Wipe all gameplay state: scores, history, and every cooldown/usage lock (daily, weekly, season, reign) — mushroom, bullfart, taxes/wealth, Evil Star, gifts/donations, protections, and any other trackers. Keeps shop/command config. Players start a fresh season.
+              Wipe all gameplay state: scores, history, and every cooldown/usage lock (daily, weekly, season, reign) — mushroom, bullfart, taxes/wealth, Evil Star, gifts/donations, protections, uber-rare Curio once-per-season flags, and any other trackers. Keeps shop/command config. Players start a fresh season.
             </p>
             <button
               onClick={handleReset}
@@ -1367,7 +1367,7 @@ function FartAdmin({ data, onRefresh }) {
           <div className="p-3 border border-border rounded-lg">
             <h3 className="text-sm font-semibold mb-1">Evil Start</h3>
             <p className="text-xs text-text-muted mb-3">
-              Reset the game and give all existing players random chaotic starting scores between -50 and 50. Pure chaos.
+              Same full reset as Reset Fart Game, then give all existing players random chaotic starting scores between -250 and 250. Pure chaos.
             </p>
             <button
               onClick={handleEvilStart}

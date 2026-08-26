@@ -423,6 +423,7 @@ class FartRepository:
         "gas_shields",
         "fart_traps",
         "frost_shart_freeze",     # Frostshart: no shop items until EST midnight
+        "uber_rare_curio_season", # lavashart/frostshart once each per player per season
     })
 
     @staticmethod
@@ -436,8 +437,9 @@ class FartRepository:
         Clears every table in fart_scores.db except preserved tables
         (fart_game_commands, fart_shop_items, uber_rare_curio_claimed).
         Uses dynamic discovery so daily / weekly / season / reign cooldowns,
-        item usage, gifts, donations, protections, and any future trackers
-        are all cleared. The one-time uber-rare Curio flag is intentionally kept.
+        item usage, gifts, donations, protections, per-player uber-rare
+        once-per-season flags, and any future trackers are all cleared.
+        The one-time global uber-rare Curio flag is intentionally kept.
         """
         conn = self._get_connection()
         rows = conn.execute(
@@ -464,8 +466,11 @@ class FartRepository:
         conn.close()
         return cleared
 
+    EVIL_START_SCORE_MIN = -250
+    EVIL_START_SCORE_MAX = 250
+
     def evil_start(self) -> dict:
-        """Evil start - reset game then give all known players random chaotic starting scores (-50 to 50)."""
+        """Evil start - same as reset_game, then random starting scores (-250 to 250)."""
         conn = self._get_connection()
         # Gather known players before reset
         try:
@@ -477,7 +482,7 @@ class FartRepository:
             players = []
         conn.close()
 
-        # Reset everything first
+        # Reset everything first (same as the red Reset Fart Game button)
         self.reset_game()
 
         if not players:
@@ -495,7 +500,7 @@ class FartRepository:
         """)
         results = []
         for user_id, display_name in players:
-            score = randint(-50, 50)
+            score = randint(self.EVIL_START_SCORE_MIN, self.EVIL_START_SCORE_MAX)
             conn.execute(
                 "INSERT INTO fart_scores (user_id, user_display_name, date_last_updated, score) VALUES (?, ?, NULL, ?)",
                 (user_id, display_name, score),

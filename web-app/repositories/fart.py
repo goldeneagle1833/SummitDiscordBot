@@ -401,7 +401,7 @@ class FartRepository:
     _PRESERVE_ON_RESET = frozenset({
         "fart_game_commands",
         "fart_shop_items",
-        # First Curio ever → lavashart/frostshart; then 10% forever (never re-guarantee)
+        # First Curio ever → 40/40/20 lava/frost/Yourt; then 10% lava/frost + 5% Yourt forever
         "uber_rare_curio_claimed",
     })
 
@@ -424,6 +424,7 @@ class FartRepository:
         "fart_traps",
         "frost_shart_freeze",     # Frostshart: no shop items until EST midnight
         "uber_rare_curio_season", # lavashart/frostshart once each per player per season
+        "yourt_rampage",          # 1-hour Yourt shop-chaos window + attack ticker
     })
 
     @staticmethod

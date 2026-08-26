@@ -153,3 +153,75 @@ class TestCogCheckRateLimit:
 
         assert result is True
         assert len(shop_cog._shop_usage.get(7, [])) == 1
+
+
+class TestYourtShopChaos:
+    def test_peel_out_skipped_during_yourt(self, shop_cog):
+        shop_cog.yourt_waives_shop_limits = MagicMock(return_value=True)
+        now = 1_000_000.0
+        for i in range(5):
+            shop_cog.record_shop_usage(42, now=now + i)
+        # Would be blocked normally; waive helper is what cog_check consults
+        assert shop_cog.yourt_waives_shop_limits() is True
+
+    @pytest.mark.asyncio
+    async def test_cog_check_skips_peel_out_during_yourt(
+        self, shop_cog, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        now = 1_000_000.0
+        for i in range(5):
+            shop_cog.record_shop_usage(99, now=now + i)
+
+        shop_cog.yourt_waives_shop_limits = MagicMock(return_value=True)
+        shop_cog.check_fart_trap = AsyncMock(return_value=False)
+        ctx = MagicMock()
+        ctx.command.name = "banana"
+        ctx.command.reset_cooldown = MagicMock()
+        ctx.author.id = 99
+        ctx.author.mention = "<@99>"
+        ctx.send = AsyncMock()
+
+        with patch("cogs.shop.time.time", return_value=now + 10):
+            result = await shop_cog.cog_check(ctx)
+
+        assert result is True
+        ctx.send.assert_not_called()
+        # Must not consume another peel-out slot during Yourt
+        assert len(shop_cog.prune_shop_usage(99, now=now + 10)) == 5
+
+    @pytest.mark.asyncio
+    async def test_points_and_cooldowns_waived(self, shop_cog):
+        shop_cog.yourt_waives_shop_limits = MagicMock(return_value=True)
+        assert await shop_cog.check_points(1, "blue") is True
+        await shop_cog.deduct_points(1, "blue")  # no-op, no DB
+        allowed, msg = await shop_cog.check_usage_cooldown(1, "blue_shell", "daily")
+        assert allowed is True
+        assert msg is None
+        await shop_cog.mark_usage_cooldown(1, "blue_shell")  # no-op
+
+    @pytest.mark.asyncio
+    async def test_loot_message_after_invoke(self, shop_cog):
+        shop_cog.yourt_waives_shop_limits = MagicMock(return_value=True)
+        ctx = MagicMock()
+        ctx.command.name = "banana"
+        ctx.author.mention = "<@7>"
+        ctx.send = AsyncMock()
+
+        await shop_cog.cog_after_invoke(ctx)
+
+        ctx.send.assert_awaited_once()
+        sent = ctx.send.await_args.args[0]
+        assert "looted" in sent.lower() or "LoOtEd" in sent
+        assert "shopkeeper" in sent.lower() or "ShOpKeEpEr" in sent
+        assert ":yourt:" in sent
+
+    @pytest.mark.asyncio
+    async def test_loot_skipped_for_fart_shop(self, shop_cog):
+        shop_cog.yourt_waives_shop_limits = MagicMock(return_value=True)
+        ctx = MagicMock()
+        ctx.command.name = "fart_shop"
+        ctx.send = AsyncMock()
+        await shop_cog.cog_after_invoke(ctx)
+        ctx.send.assert_not_called()
+

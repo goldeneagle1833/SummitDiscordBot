@@ -1,17 +1,30 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import datetime
 from zoneinfo import ZoneInfo
 import sqlite3
 import logging
+import random
 from random import randrange
 from openai import OpenAI
 
 # Uber-rare Curio Shart variants: the first Curio Shart ever (post-deploy) is
-# always one of these; after that, 10% of Curio Sharts forever. The global
+# always special — 40% lavashart / 40% frostshart / 20% Yourt. After that,
+# 10% of Curio Sharts are lava/frost forever and 5% are Yourt. The global
 # claimed flag survives FART GAME RESET (100% never comes back). Each player
-# may receive each variant at most once per season; those flags reset with
-# the red Reset Fart Game button.
+# may receive each lava/frost variant at most once per season; those flags
+# reset with the red Reset Fart Game button.
+UBER_RARE_CURIO_CHANCE = 10  # lavashart / frostshart (combined, after first)
+YOURT_CURIO_CHANCE = 5
+# First-ever Curio d100: 1-40 lava, 41-80 frost, 81-100 Yourt (40/40/20)
+FIRST_CURIO_LAVA_MAX = 40
+FIRST_CURIO_FROST_MAX = 80
+YOURT_RAMPAGE_SECONDS = 60 * 60
+YOURT_ATTACK_EVERY_SECONDS = 10 * 60
+YOURT_ATTACKS_TOTAL = 6
+YOURT_EMOJI_NAME = "yourt"
+YOURT_EMOJI_FALLBACK = ":yourt:"
+
 UBER_RARE_CURIO_VARIANTS = {
     "lavashart": {
         "name": "LAVASHART",
@@ -31,7 +44,42 @@ UBER_RARE_CURIO_VARIANTS = {
             "an ***UBER-RARE CURIO*** crystallized from pure entropy!"
         ),
     },
+    "yourt": {
+        "name": "YOURTSHART",
+        "emoji": YOURT_EMOJI_FALLBACK,
+        "color": 0x2ECC71,  # green, matching the curio announcement vibe
+        "flavor": (
+            "YoUrT tUmBlEs oUt oF tHe dRuNkEn fArT aBySs — "
+            "an ***UBER-RARE CURIO*** soaked in tavern stank and bad decisions!"
+        ),
+    },
 }
+
+# Shop attack toys Yourt drunkenly hurls during the rampage.
+YOURT_ATTACK_ITEMS = (
+    "banana",
+    "green_shell",
+    "red_shell",
+    "blue_shell",
+    "big_banana",
+    "stink_bomb",
+    "bobomb",
+    "thunder_fart",
+    "fart_lance",
+)
+
+
+def drunken_case(text):
+    """SpongeBob / drunken ShOuTiNg case, letters only."""
+    out = []
+    upper = True
+    for ch in text:
+        if ch.isalpha():
+            out.append(ch.upper() if upper else ch.lower())
+            upper = not upper
+        else:
+            out.append(ch)
+    return "".join(out)
 
 import config
 from utils.text import find_best_command_match
@@ -129,6 +177,14 @@ class FunCog(commands.Cog):
         self.guild_id = config.GUILD_ID
         self.leader_role_id = config.LEADER_ROLE_ID
         self.fun_channel_id = config.FART_CHANNEL_ID
+
+    async def cog_load(self):
+        if not self.yourt_rampage_ticker.is_running():
+            self.yourt_rampage_ticker.start()
+
+    def cog_unload(self):
+        if self.yourt_rampage_ticker.is_running():
+            self.yourt_rampage_ticker.cancel()
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -628,7 +684,7 @@ class FunCog(commands.Cog):
                 conn.close()
 
     def is_uber_rare_guaranteed_claimed(self):
-        """True once the one-time guaranteed lavashart/frostshart has ever been awarded."""
+        """True once the one-time guaranteed uber-rare Curio has ever been awarded."""
         try:
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
@@ -669,31 +725,81 @@ class FunCog(commands.Cog):
             if "conn" in locals():
                 conn.close()
 
-    def roll_uber_rare_curio_variant(self, user_id=None):
-        """Roll lavashart/frostshart for a Curio Shart.
+    def pick_first_curio_variant(self, roll=None):
+        """40% lavashart / 40% frostshart / 20% Yourt for the first Curio ever."""
+        roll = randrange(1, 101) if roll is None else roll
+        if roll <= FIRST_CURIO_LAVA_MAX:
+            return "lavashart"
+        if roll <= FIRST_CURIO_FROST_MAX:
+            return "frostshart"
+        return "yourt"
 
-        First Curio Shart ever (after deploy): 100% special, 50/50.
-        After that forever: 10% chance of special, still 50/50 lavashart vs frostshart.
+    def roll_uber_rare_curio_variant(self, user_id=None):
+        """Roll lavashart/frostshart/yourt for a Curio Shart.
+
+        First Curio Shart ever (after deploy): 100% special, 40/40/20
+        lavashart / frostshart / Yourt.
+        After that forever:
+          - 10% lavashart/frostshart (50/50 between those two)
+          - 5% Yourt (skipped if a Yourt rampage is already running)
         The global claimed flag survives FART GAME RESET — 100% never comes back.
-        Each player may receive each variant at most once per season.
-        Returns 'lavashart', 'frostshart', or None.
+        Each player may receive each lava/frost variant at most once per season.
+        Returns 'lavashart', 'frostshart', 'yourt', or None.
         """
         claimed = self.is_uber_rare_guaranteed_claimed()
-        if claimed:
-            if randrange(1, 101) > 10:
-                return None
-        variant = "lavashart" if randrange(2) == 0 else "frostshart"
-        if self.has_rolled_uber_rare_this_season(user_id, variant):
-            return None
         if not claimed:
+            variant = self.pick_first_curio_variant()
+            if variant in ("lavashart", "frostshart"):
+                if self.has_rolled_uber_rare_this_season(user_id, variant):
+                    return None
+                self.mark_uber_rare_rolled_this_season(user_id, variant)
+            elif variant == "yourt" and self.is_yourt_rampage_active():
+                return None
             self.mark_uber_rare_guaranteed_claimed(user_id, variant)
-        self.mark_uber_rare_rolled_this_season(user_id, variant)
-        return variant
+            return variant
 
-    @staticmethod
-    def format_uber_rare_highlight(variant):
+        bucket = randrange(1, 101)
+        if bucket <= UBER_RARE_CURIO_CHANCE:
+            variant = "lavashart" if randrange(2) == 0 else "frostshart"
+            if self.has_rolled_uber_rare_this_season(user_id, variant):
+                return None
+            self.mark_uber_rare_rolled_this_season(user_id, variant)
+            return variant
+        if bucket <= UBER_RARE_CURIO_CHANCE + YOURT_CURIO_CHANCE:
+            if self.is_yourt_rampage_active():
+                return None
+            return "yourt"
+        return None
+
+    def yourt_emoji_markup(self, guild=None):
+        """Server :yourt: custom emoji, falling back to the :yourt: name."""
+        try:
+            guild = guild or self.bot.get_guild(self.guild_id)
+            emojis = getattr(guild, "emojis", None) if guild is not None else None
+            if emojis:
+                for emoji in emojis:
+                    name = getattr(emoji, "name", None)
+                    emoji_id = getattr(emoji, "id", None)
+                    if name == YOURT_EMOJI_NAME and isinstance(emoji_id, int):
+                        return str(emoji)
+                    # MagicMocks / async getters are not real emoji caches
+                    if not isinstance(name, str):
+                        break
+        except Exception:
+            pass
+        return YOURT_EMOJI_FALLBACK
+
+    def format_uber_rare_highlight(self, variant, guild=None):
         """Crazy bold/italic highlight text for the chat message."""
         info = UBER_RARE_CURIO_VARIANTS[variant]
+        if variant == "yourt":
+            e = self.yourt_emoji_markup(guild)
+            name = drunken_case(info["name"])
+            return (
+                f"{e}{e}{e} ***__⚡ {drunken_case('UBER-RARE CURIO UNLOCKED')}: {name} ⚡__*** "
+                f"{e}{e}{e}\n"
+                f"***_{info['flavor']}_*** {e}\n"
+            )
         emoji = info["emoji"]
         name = info["name"]
         return (
@@ -701,10 +807,26 @@ class FunCog(commands.Cog):
             f"***_{info['flavor']}_***\n"
         )
 
-    @staticmethod
-    def build_uber_rare_embed(variant):
-        """Colored embed (reddish-brown lava / blueish-gray frost) for the special."""
+    def build_uber_rare_embed(self, variant, guild=None):
+        """Colored embed (lava brown / frost gray / Yourt green)."""
         info = UBER_RARE_CURIO_VARIANTS[variant]
+        if variant == "yourt":
+            e = self.yourt_emoji_markup(guild)
+            embed = discord.Embed(
+                title=(
+                    f"{e}{e} {drunken_case('UBER-RARE CURIO')}: "
+                    f"{drunken_case(info['name'])} {e}{e}"
+                ),
+                description=(
+                    f"***{info['flavor']}*** {e}\n\n"
+                    f"*{drunken_case('the curio shart burped and Yourt fell out')}* {e}{e}"
+                ),
+                color=info["color"],
+            )
+            embed.set_footer(
+                text=drunken_case("something sloshy just happened...")
+            )
+            return embed
         embed = discord.Embed(
             title=f"{info['emoji']} UBER-RARE CURIO: {info['name']} {info['emoji']}",
             description=(
@@ -813,9 +935,11 @@ class FunCog(commands.Cog):
                 conn.close()
 
     async def apply_uber_rare_variant_effect(self, ctx, roller_id, variant):
-        """Apply lavashart/frostshart area effects. Star-protected players are skipped."""
+        """Apply lavashart/frostshart/yourt effects. Star-protected players are skipped."""
         if not variant:
             return ""
+        if variant == "yourt":
+            return await self._apply_yourt_effect(ctx, roller_id)
         shop = self.bot.get_cog("ShopCog")
         if shop is None:
             logger.error("ShopCog not loaded; cannot apply uber-rare variant effect")
@@ -911,8 +1035,326 @@ class FunCog(commands.Cog):
 
         return "\n".join(lines) + "\n"
 
+    def _ensure_yourt_rampage_table(self, cur):
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS yourt_rampage (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                started_at TEXT NOT NULL,
+                ends_at TEXT NOT NULL,
+                attacks_done INTEGER NOT NULL DEFAULT 0,
+                channel_id INTEGER NOT NULL,
+                summoned_by_user_id INTEGER
+            )
+        """)
+
+    def get_yourt_rampage_state(self):
+        """Return active/expired rampage row as a dict, or None."""
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_yourt_rampage_table(cur)
+            cur.execute(
+                """
+                SELECT started_at, ends_at, attacks_done, channel_id, summoned_by_user_id
+                FROM yourt_rampage WHERE id = 1
+                """
+            )
+            row = cur.fetchone()
+            conn.close()
+        except sqlite3.Error as e:
+            logger.error(f"Error reading Yourt rampage: {e}")
+            if "conn" in locals():
+                conn.close()
+            return None
+        if not row:
+            return None
+        return {
+            "started_at": row[0],
+            "ends_at": row[1],
+            "attacks_done": row[2],
+            "channel_id": row[3],
+            "summoned_by_user_id": row[4],
+        }
+
+    def is_yourt_rampage_active(self):
+        """True while the 1-hour free-shop Yourt chaos window is running."""
+        state = self.get_yourt_rampage_state()
+        if not state:
+            return False
+        try:
+            ends = datetime.datetime.fromisoformat(state["ends_at"])
+        except (TypeError, ValueError):
+            return False
+        return datetime.datetime.now() < ends
+
+    def start_yourt_rampage(self, channel_id, summoned_by_user_id):
+        """Open the 1-hour shop chaos window. Returns False if already active."""
+        if self.is_yourt_rampage_active():
+            return False
+        now = datetime.datetime.now()
+        ends = now + datetime.timedelta(seconds=YOURT_RAMPAGE_SECONDS)
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_yourt_rampage_table(cur)
+            cur.execute(
+                """
+                INSERT OR REPLACE INTO yourt_rampage
+                    (id, started_at, ends_at, attacks_done, channel_id, summoned_by_user_id)
+                VALUES (1, ?, ?, 0, ?, ?)
+                """,
+                (
+                    now.isoformat(),
+                    ends.isoformat(),
+                    channel_id,
+                    summoned_by_user_id,
+                ),
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Error starting Yourt rampage: {e}")
+            if "conn" in locals():
+                conn.close()
+            return False
+
+    def clear_yourt_rampage(self):
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_yourt_rampage_table(cur)
+            cur.execute("DELETE FROM yourt_rampage WHERE id = 1")
+            conn.commit()
+            conn.close()
+        except sqlite3.Error as e:
+            logger.error(f"Error clearing Yourt rampage: {e}")
+            if "conn" in locals():
+                conn.close()
+
+    def _set_yourt_attacks_done(self, attacks_done):
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_yourt_rampage_table(cur)
+            cur.execute(
+                "UPDATE yourt_rampage SET attacks_done = ? WHERE id = 1",
+                (attacks_done,),
+            )
+            conn.commit()
+            conn.close()
+        except sqlite3.Error as e:
+            logger.error(f"Error updating Yourt attacks: {e}")
+            if "conn" in locals():
+                conn.close()
+
+    def yourt_allowed_mentions(self):
+        return discord.AllowedMentions(everyone=True, users=True, roles=False)
+
+    async def _send_yourt_channel_message(self, channel, content):
+        if channel is None:
+            return
+        try:
+            await channel.send(
+                content, allowed_mentions=self.yourt_allowed_mentions()
+            )
+        except Exception as e:
+            logger.error(f"Error sending Yourt channel message: {e}")
+
+    def _resolve_yourt_channel(self, state=None, ctx=None):
+        channel = getattr(ctx, "channel", None) if ctx is not None else None
+        if channel is not None:
+            return channel
+        channel_id = None
+        if state:
+            channel_id = state.get("channel_id")
+        channel_id = channel_id or self.fart_channel_id
+        return self.bot.get_channel(channel_id)
+
+    async def _apply_yourt_effect(self, ctx, roller_id):
+        """Summon Yourt: ping the channel and open the free-shop window."""
+        channel = self._resolve_yourt_channel(ctx=ctx)
+        channel_id = getattr(channel, "id", None) or self.fart_channel_id
+        guild = getattr(ctx, "guild", None) or getattr(channel, "guild", None)
+        e = self.yourt_emoji_markup(guild)
+        started = self.start_yourt_rampage(channel_id, roller_id)
+        if not started:
+            return (
+                f"{e}{e} {drunken_case('yourt is already wrecking the vendor tent')} "
+                f"*hIc* {e}\n"
+            )
+
+        crash = (
+            f"@here {e}{e}{e}{e}\n"
+            f"**{drunken_case('YOURT IS SUMMONED')}** {e}{e}\n"
+            f"{e} {drunken_case('hicc')} {drunken_case('YOURT drunkenly CRASHES into the shop vendor tent')} "
+            f"{e}{e}{e}\n"
+            f"{drunken_case('ITEMS go FLYING everywhere')} {e} *bLeEhH* {e}{e}\n"
+            f"{e} {drunken_case('grab what you can for ONE HOUR')} "
+            f"{drunken_case('while the shopkeeper mops up the mess')} {e}{e}{e}"
+        )
+        await self._send_yourt_channel_message(channel, crash)
+        return (
+            f"{e}{e}{e} {drunken_case('the vendor tent is RUINED')} "
+            f"{drunken_case('shop stuff is all over the dirt')} {e}{e}\n"
+        )
+
+    def expected_yourt_attacks(self, state, now=None):
+        """How many of the 6 attacks should have fired by `now`."""
+        now = datetime.datetime.now() if now is None else now
+        try:
+            started = datetime.datetime.fromisoformat(state["started_at"])
+        except (TypeError, ValueError):
+            return 0
+        elapsed = max(0.0, (now - started).total_seconds())
+        due = int(elapsed // YOURT_ATTACK_EVERY_SECONDS)
+        return min(YOURT_ATTACKS_TOTAL, due)
+
+    async def _unprotected_players(self, shop, exclude_ids=None):
+        exclude = set(exclude_ids or ())
+        players = await shop.get_sorted_players()
+        open_players = []
+        for player_id, _ in players:
+            if player_id in exclude:
+                continue
+            if await shop.is_protected(player_id):
+                continue
+            open_players.append(player_id)
+        return players, open_players
+
+    async def _yourt_hit_player(self, shop, player_id, damage):
+        return await shop.deduct_damage(player_id, damage)
+
+    async def _yourt_random_attack(self, state):
+        shop = self.bot.get_cog("ShopCog")
+        channel = self._resolve_yourt_channel(state=state)
+        guild = getattr(channel, "guild", None)
+        e = self.yourt_emoji_markup(guild)
+        if shop is None:
+            logger.error("ShopCog not loaded; Yourt cannot throw items")
+            await self._send_yourt_channel_message(
+                channel,
+                f"{e}{e} {drunken_case('yourt swings at the air and misses everything')} *hIc* {e}",
+            )
+            return
+
+        item = random.choice(YOURT_ATTACK_ITEMS)
+        all_players, open_players = await self._unprotected_players(shop)
+        item_label = drunken_case(item.replace("_", " "))
+
+        if item == "thunder_fart":
+            hits = []
+            if not open_players:
+                body = f"{drunken_case('everybody hid under a star oops')}"
+            else:
+                for pid in open_players:
+                    actual = await self._yourt_hit_player(shop, pid, 10)
+                    hits.append(f"<@{pid}> (-{actual})")
+                body = (
+                    f"{drunken_case('THUNDER FART all over the tent')} "
+                    f"{', '.join(hits)}"
+                )
+        elif item == "bobomb":
+            top = [pid for pid, _ in all_players[:5] if pid in set(open_players)]
+            if not top:
+                body = f"{drunken_case('bobomb rolled into a star and fizzled')}"
+            else:
+                damage = shop.roll_damage(3)
+                hits = []
+                for pid in top:
+                    actual = await self._yourt_hit_player(shop, pid, damage)
+                    hits.append(f"<@{pid}> (-{actual})")
+                body = f"{drunken_case('BOBOMB go boom on the top stinkers')} {', '.join(hits)}"
+        elif item == "fart_lance":
+            if len(open_players) < 1:
+                body = f"{drunken_case('lance went into the punch bowl')}"
+            else:
+                dice = [3, 2, 1]
+                targets = open_players[:3]
+                hits = []
+                for pid, num_dice in zip(targets, dice):
+                    actual = await self._yourt_hit_player(
+                        shop, pid, shop.roll_damage(num_dice)
+                    )
+                    hits.append(f"<@{pid}> (-{actual})")
+                body = f"{drunken_case('FART LANCE whoosh')} {', '.join(hits)}"
+        else:
+            if not open_players:
+                body = f"{drunken_case('yourt forgot who to throw at')}"
+            else:
+                target_id = random.choice(open_players)
+                if item == "big_banana":
+                    damage = shop.roll_d10_damage(4)
+                elif item in {"blue_shell"}:
+                    damage = shop.roll_damage(6)
+                elif item in {"red_shell", "stink_bomb"}:
+                    damage = shop.roll_damage(3)
+                else:
+                    damage = shop.roll_damage(2)
+                actual = await self._yourt_hit_player(shop, target_id, damage)
+                body = (
+                    f"{drunken_case('YOURT yeets a')} **{item_label}** "
+                    f"{drunken_case('at')} <@{target_id}> "
+                    f"{drunken_case('for')} {actual} {drunken_case('damage')}!"
+                )
+
+        msg = (
+            f"{e}{e}{e} **{drunken_case('YOURT ATTACK')}** {e}{e}{e}\n"
+            f"{e} {drunken_case('hic')} {body} {e}{e}\n"
+            f"{e} {drunken_case('who put that on the floor')} {e}"
+        )
+        await self._send_yourt_channel_message(channel, msg)
+
+    async def _yourt_retreat(self, state):
+        channel = self._resolve_yourt_channel(state=state)
+        guild = getattr(channel, "guild", None)
+        e = self.yourt_emoji_markup(guild)
+        msg = (
+            f"{e}{e}{e}{e} **{drunken_case('YOURT RETREATS')}** {e}{e}{e}{e}\n"
+            f"{e} {drunken_case('ughhh the shopkeeper is yelling')} *hIcC* {e}{e}\n"
+            f"{e}{e} {drunken_case('YOURT staggers back into the drunken fart abyss')} "
+            f"{e}{e}{e}\n"
+            f"{drunken_case('the vendor tent is a shop again')} {e}"
+        )
+        await self._send_yourt_channel_message(channel, msg)
+        self.clear_yourt_rampage()
+
+    async def _tick_yourt_rampage(self, now=None):
+        """Fire Yourt's 10-minute attacks and close the window at 1 hour."""
+        state = self.get_yourt_rampage_state()
+        if not state:
+            return
+        now = datetime.datetime.now() if now is None else now
+        try:
+            ends = datetime.datetime.fromisoformat(state["ends_at"])
+        except (TypeError, ValueError):
+            self.clear_yourt_rampage()
+            return
+
+        due = self.expected_yourt_attacks(state, now=now)
+        expired = now >= ends
+        if expired:
+            due = YOURT_ATTACKS_TOTAL
+
+        attacks_done = state["attacks_done"] or 0
+        while attacks_done < due:
+            await self._yourt_random_attack(state)
+            attacks_done += 1
+            self._set_yourt_attacks_done(attacks_done)
+
+        if expired:
+            await self._yourt_retreat(state)
+
+    @tasks.loop(minutes=1)
+    async def yourt_rampage_ticker(self):
+        await self._tick_yourt_rampage()
+
+    @yourt_rampage_ticker.before_loop
+    async def before_yourt_rampage_ticker(self):
+        await self.bot.wait_until_ready()
+
     def maybe_uber_rare_curio(self, fart_type, user_id=None):
-        """If this is a Curio Shart, maybe attach lavashart/frostshart flair.
+        """If this is a Curio Shart, maybe attach lavashart/frostshart/yourt flair.
 
         Returns (highlight_prefix, embed_or_None, variant_or_None).
         """

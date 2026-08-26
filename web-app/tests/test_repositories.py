@@ -340,6 +340,14 @@ class TestFartRepositoryReset:
                     claimed_at TEXT NOT NULL
                 )
             """,
+            "uber_rare_curio_season": """
+                CREATE TABLE uber_rare_curio_season (
+                    user_id INTEGER NOT NULL,
+                    variant TEXT NOT NULL,
+                    rolled_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, variant)
+                )
+            """,
             # Config tables — must survive reset
             "fart_game_commands": """
                 CREATE TABLE fart_game_commands (
@@ -418,6 +426,12 @@ class TestFartRepositoryReset:
             "INSERT INTO uber_rare_curio_claimed VALUES (1, 1, 'lavashart', '2026-08-01T00:00:00')"
         )
         conn.execute(
+            "INSERT INTO uber_rare_curio_season VALUES (1, 'lavashart', '2026-08-01T00:00:00')"
+        )
+        conn.execute(
+            "INSERT INTO uber_rare_curio_season VALUES (1, 'frostshart', '2026-08-01T00:00:00')"
+        )
+        conn.execute(
             "INSERT INTO fart_game_commands (name, label) VALUES ('fart', 'Fart')"
         )
         conn.execute(
@@ -487,6 +501,7 @@ class TestFartRepositoryReset:
         assert cleared["evil_star_usage"] == 1
         assert cleared["fart_scores"] == 1
         assert cleared["frost_shart_freeze"] == 1
+        assert cleared["uber_rare_curio_season"] == 2
         assert cleared["future_season_tracker"] == 1  # unknown tables also wiped
         # Permanent one-time flag must NOT be wiped
         assert "uber_rare_curio_claimed" not in cleared
@@ -511,6 +526,7 @@ class TestFartRepositoryReset:
             "gas_shields",
             "fart_traps",
             "frost_shart_freeze",
+            "uber_rare_curio_season",
             "future_season_tracker",
         ]
         for table in tracking:
@@ -539,6 +555,7 @@ class TestFartRepositoryReset:
             "gas_shields",
             "fart_traps",
             "frost_shart_freeze",
+            "uber_rare_curio_season",
         }
         assert FartRepository._KNOWN_TRACKING_TABLES == expected
         assert FartRepository._PRESERVE_ON_RESET == {
@@ -546,4 +563,64 @@ class TestFartRepositoryReset:
             "fart_shop_items",
             "uber_rare_curio_claimed",
         }
+
+    def test_evil_start_resets_then_reseeds_scores_in_plus_minus_250(self, tmp_path, monkeypatch):
+        from repositories import fart as fart_mod
+        from repositories.fart import FartRepository
+
+        db_path = tmp_path / "fart_scores.db"
+        self._seed_full_fart_db(db_path)
+
+        scores = iter([-250, 0, 250])
+        monkeypatch.setattr(fart_mod, "randint", lambda a, b: next(scores))
+
+        repo = FartRepository(db_path=db_path)
+        result = repo.evil_start()
+
+        assert repo.EVIL_START_SCORE_MIN == -250
+        assert repo.EVIL_START_SCORE_MAX == 250
+        assert result["players_affected"] == 1
+        assert result["players"][0]["score"] == -250
+
+        conn = sqlite3.connect(str(db_path))
+        score = conn.execute("SELECT score FROM fart_scores WHERE user_id = 1").fetchone()[0]
+        assert score == -250
+        # Same wipe as Reset Fart Game for season uber-rare flags
+        assert conn.execute("SELECT COUNT(*) FROM uber_rare_curio_season").fetchone()[0] == 0
+        # Global first-ever flag still preserved
+        assert conn.execute("SELECT COUNT(*) FROM uber_rare_curio_claimed").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM fart_shop_items").fetchone()[0] == 1
+        conn.close()
+
+    def test_evil_start_uses_full_chaotic_range(self, tmp_path, monkeypatch):
+        from repositories import fart as fart_mod
+        from repositories.fart import FartRepository
+
+        captured = {}
+
+        def fake_randint(a, b):
+            captured["a"] = a
+            captured["b"] = b
+            return 123
+
+        monkeypatch.setattr(fart_mod, "randint", fake_randint)
+
+        db_path = tmp_path / "fart_scores.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE fart_scores (
+                user_id INTEGER PRIMARY KEY,
+                user_display_name TEXT,
+                date_last_updated TEXT,
+                score INTEGER
+            )
+        """)
+        conn.execute("INSERT INTO fart_scores VALUES (9, 'Chaos', NULL, 10)")
+        conn.commit()
+        conn.close()
+
+        repo = FartRepository(db_path=db_path)
+        result = repo.evil_start()
+        assert captured == {"a": -250, "b": 250}
+        assert result["players"][0]["score"] == 123
 

@@ -8,8 +8,10 @@ from random import randrange
 from openai import OpenAI
 
 # Uber-rare Curio Shart variants: the first Curio Shart ever (post-deploy) is
-# always one of these; after that, 10% of Curio Sharts forever. The claimed flag
-# survives FART GAME RESET and must never return to the guaranteed-100% state.
+# always one of these; after that, 10% of Curio Sharts forever. The global
+# claimed flag survives FART GAME RESET (100% never comes back). Each player
+# may receive each variant at most once per season; those flags reset with
+# the red Reset Fart Game button.
 UBER_RARE_CURIO_VARIANTS = {
     "lavashart": {
         "name": "LAVASHART",
@@ -566,6 +568,65 @@ class FunCog(commands.Cog):
             )
         """)
 
+    def _ensure_uber_rare_season_table(self, cur):
+        """Per-player per-variant uber-rare awards for the current season (wiped on reset)."""
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS uber_rare_curio_season (
+                user_id INTEGER NOT NULL,
+                variant TEXT NOT NULL,
+                rolled_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, variant)
+            )
+        """)
+
+    def has_rolled_uber_rare_this_season(self, user_id, variant):
+        """True if this player already received this uber-rare variant this season."""
+        if user_id is None or variant not in UBER_RARE_CURIO_VARIANTS:
+            return False
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_uber_rare_season_table(cur)
+            cur.execute(
+                """
+                SELECT 1 FROM uber_rare_curio_season
+                WHERE user_id = ? AND variant = ?
+                """,
+                (user_id, variant),
+            )
+            already = cur.fetchone() is not None
+            conn.close()
+            return already
+        except sqlite3.Error as e:
+            logger.error(f"Error checking uber-rare season flag: {e}")
+            if "conn" in locals():
+                conn.close()
+            # Fail closed so a player cannot farm the same variant on DB errors
+            return True
+
+    def mark_uber_rare_rolled_this_season(self, user_id, variant):
+        """Record that this player received this uber-rare variant this season."""
+        if user_id is None or variant not in UBER_RARE_CURIO_VARIANTS:
+            return
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_uber_rare_season_table(cur)
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO uber_rare_curio_season
+                    (user_id, variant, rolled_at)
+                VALUES (?, ?, ?)
+                """,
+                (user_id, variant, datetime.datetime.now().isoformat()),
+            )
+            conn.commit()
+            conn.close()
+        except sqlite3.Error as e:
+            logger.error(f"Error marking uber-rare season roll: {e}")
+            if "conn" in locals():
+                conn.close()
+
     def is_uber_rare_guaranteed_claimed(self):
         """True once the one-time guaranteed lavashart/frostshart has ever been awarded."""
         try:
@@ -613,7 +674,8 @@ class FunCog(commands.Cog):
 
         First Curio Shart ever (after deploy): 100% special, 50/50.
         After that forever: 10% chance of special, still 50/50 lavashart vs frostshart.
-        The claimed flag survives FART GAME RESET — 100% never comes back.
+        The global claimed flag survives FART GAME RESET — 100% never comes back.
+        Each player may receive each variant at most once per season.
         Returns 'lavashart', 'frostshart', or None.
         """
         claimed = self.is_uber_rare_guaranteed_claimed()
@@ -621,8 +683,11 @@ class FunCog(commands.Cog):
             if randrange(1, 101) > 10:
                 return None
         variant = "lavashart" if randrange(2) == 0 else "frostshart"
+        if self.has_rolled_uber_rare_this_season(user_id, variant):
+            return None
         if not claimed:
             self.mark_uber_rare_guaranteed_claimed(user_id, variant)
+        self.mark_uber_rare_rolled_this_season(user_id, variant)
         return variant
 
     @staticmethod
@@ -674,8 +739,17 @@ class FunCog(commands.Cog):
             )
         """)
 
+    def frostshart_fart_block_message(self, user_id, mention):
+        """Shop-style freeze reply for !fart, or None if the player is not frozen."""
+        if not self.is_frost_frozen(user_id):
+            return None
+        return (
+            f"{mention}, you're frozen solid by a Frostshart! "
+            f"No farting until midnight EST!"
+        )
+
     def is_frost_frozen(self, user_id):
-        """True if Frostshart has disabled this player's shop items until midnight EST."""
+        """True if Frostshart has disabled this player's farting + shop items until midnight EST."""
         try:
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
@@ -991,6 +1065,13 @@ class FunCog(commands.Cog):
                 if "conn" in locals():
                     conn.close()
 
+            frost_block = self.frostshart_fart_block_message(
+                ctx.author.id, ctx.author.mention
+            )
+            if frost_block:
+                await ctx.send(frost_block)
+                return
+
             if did_user_fart_today:
                 # Calculate time until next fart (midnight EST)
                 now = get_est_now()
@@ -1184,6 +1265,13 @@ class FunCog(commands.Cog):
             finally:
                 if "conn" in locals():
                     conn.close()
+
+            frost_block = self.frostshart_fart_block_message(
+                ctx.author.id, ctx.author.mention
+            )
+            if frost_block:
+                await ctx.send(frost_block)
+                return
 
             if did_user_fart_today:
                 now = get_est_now()
@@ -1937,6 +2025,13 @@ class FartPredictionView(discord.ui.View):
             logger.error(f"Error checking daily action: {e}")
         finally:
             conn.close()
+
+        frost_block = cog.frostshart_fart_block_message(
+            self.user_id, f"<@{self.user_id}>"
+        )
+        if frost_block:
+            await interaction.followup.send(frost_block)
+            return
 
         if did_user_fart_today:
             await interaction.followup.send(f"<@{self.user_id}>, {daily_usage_message}")

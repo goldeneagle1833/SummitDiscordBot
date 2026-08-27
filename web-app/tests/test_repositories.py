@@ -340,6 +340,12 @@ class TestFartRepositoryReset:
                     claimed_at TEXT NOT NULL
                 )
             """,
+            "frostshart_legacy_repair": """
+                CREATE TABLE frostshart_legacy_repair (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    repaired_at TEXT NOT NULL
+                )
+            """,
             "uber_rare_curio_season": """
                 CREATE TABLE uber_rare_curio_season (
                     user_id INTEGER NOT NULL,
@@ -436,6 +442,9 @@ class TestFartRepositoryReset:
             "INSERT INTO uber_rare_curio_claimed VALUES (1, 1, 'lavashart', '2026-08-01T00:00:00')"
         )
         conn.execute(
+            "INSERT INTO frostshart_legacy_repair VALUES (1, '2026-08-01T00:00:00')"
+        )
+        conn.execute(
             "INSERT INTO uber_rare_curio_season VALUES (1, 'lavashart', '2026-08-01T00:00:00')"
         )
         conn.execute(
@@ -519,6 +528,7 @@ class TestFartRepositoryReset:
         assert cleared["future_season_tracker"] == 1  # unknown tables also wiped
         # Permanent one-time flag must NOT be wiped
         assert "uber_rare_curio_claimed" not in cleared
+        assert "frostshart_legacy_repair" not in cleared
 
         # Config must NOT be wiped
         assert "fart_game_commands" not in cleared
@@ -549,6 +559,7 @@ class TestFartRepositoryReset:
         assert conn.execute("SELECT COUNT(*) FROM fart_game_commands").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM fart_shop_items").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM uber_rare_curio_claimed").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM frostshart_legacy_repair").fetchone()[0] == 1
         conn.close()
 
     def test_reset_game_known_tracking_tables_match_docs(self):
@@ -578,6 +589,7 @@ class TestFartRepositoryReset:
             "fart_game_commands",
             "fart_shop_items",
             "uber_rare_curio_claimed",
+            "frostshart_legacy_repair",
         }
 
     def test_evil_start_resets_then_reseeds_scores_in_plus_minus_250(self, tmp_path, monkeypatch):

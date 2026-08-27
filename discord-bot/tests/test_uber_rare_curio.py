@@ -371,7 +371,87 @@ class TestFrostshartFartMessaging:
         assert fart_db.is_frost_frozen(2, now=now) is False
 
 
-class TestUberRareOncePerSeason:
+class TestFrostshartLegacyRepair:
+    def _seed_frozen_player(self, user_id, name, score, last_updated, with_history_today=False):
+        conn = sqlite3.connect("fart_scores.db")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS fart_scores ("
+            "user_id INTEGER PRIMARY KEY, user_display_name TEXT, "
+            "date_last_updated TEXT, score INTEGER)"
+        )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS fart_history ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, "
+            "username TEXT NOT NULL, fart_type TEXT NOT NULL, "
+            "roll INTEGER NOT NULL, timestamp TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO fart_scores VALUES (?, ?, ?, ?)",
+            (user_id, name, last_updated, score),
+        )
+        if with_history_today:
+            conn.execute(
+                "INSERT INTO fart_history (user_id, username, fart_type, roll, timestamp) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (user_id, name, "ordinary", 10, last_updated),
+            )
+        conn.commit()
+        conn.close()
+
+    def test_repair_clears_freezes_and_restores_unused_daily(self, fart_db):
+        now = datetime.datetime(2026, 8, 27, 15, 0, 0)
+        self._seed_frozen_player(2, "Bob", 80, now.isoformat(), with_history_today=False)
+        fart_db.apply_frost_shart_freeze(2)
+        assert fart_db.is_frost_frozen(2) is True
+
+        result = fart_db.repair_legacy_frostshart_locks(now=now)
+        assert result["ran"] is True
+        assert result["cleared_freezes"] == 1
+        assert result["restored_dailies"] == 1
+        assert fart_db.is_frost_frozen(2) is False
+        assert fart_db.has_frostshart_legacy_repair_ran() is True
+
+        conn = sqlite3.connect("fart_scores.db")
+        last = conn.execute(
+            "SELECT date_last_updated FROM fart_scores WHERE user_id = 2"
+        ).fetchone()[0]
+        freeze_count = conn.execute("SELECT COUNT(*) FROM frost_shart_freeze").fetchone()[0]
+        conn.close()
+        assert last is None
+        assert freeze_count == 0
+
+    def test_repair_keeps_daily_if_real_fart_logged_today(self, fart_db):
+        now = datetime.datetime(2026, 8, 27, 15, 0, 0)
+        self._seed_frozen_player(3, "Casey", 60, now.isoformat(), with_history_today=True)
+        fart_db.apply_frost_shart_freeze(3)
+
+        result = fart_db.repair_legacy_frostshart_locks(now=now)
+        assert result["ran"] is True
+        assert result["cleared_freezes"] == 1
+        assert result["restored_dailies"] == 0
+
+        conn = sqlite3.connect("fart_scores.db")
+        last = conn.execute(
+            "SELECT date_last_updated FROM fart_scores WHERE user_id = 3"
+        ).fetchone()[0]
+        conn.close()
+        assert last == now.isoformat()
+        assert fart_db.is_frost_frozen(3) is False
+
+    def test_repair_does_not_clear_freezes_applied_after_one_shot(self, fart_db):
+        now = datetime.datetime(2026, 8, 27, 15, 0, 0)
+        self._seed_frozen_player(2, "Bob", 80, now.isoformat())
+        fart_db.apply_frost_shart_freeze(2)
+        first = fart_db.repair_legacy_frostshart_locks(now=now)
+        assert first["ran"] is True
+
+        fart_db.apply_frost_shart_freeze(2)
+        assert fart_db.is_frost_frozen(2) is True
+        second = fart_db.repair_legacy_frostshart_locks(now=now)
+        assert second["ran"] is False
+        assert second["cleared_freezes"] == 0
+        assert fart_db.is_frost_frozen(2) is True
+
     def test_same_player_cannot_roll_same_variant_twice(self, fart_db):
         fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
         fart_db.mark_uber_rare_rolled_this_season(99, "lavashart")

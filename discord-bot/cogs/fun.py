@@ -183,6 +183,16 @@ class FunCog(commands.Cog):
         self.fun_channel_id = config.FART_CHANNEL_ID
 
     async def cog_load(self):
+        try:
+            result = self.repair_legacy_frostshart_locks()
+            if result.get("ran"):
+                logger.info(
+                    "One-shot Frostshart repair: cleared %s freezes, restored %s dailies",
+                    result.get("cleared_freezes", 0),
+                    result.get("restored_dailies", 0),
+                )
+        except Exception as e:
+            logger.error(f"Error running one-shot Frostshart repair: {e}")
         if not self.yourt_rampage_ticker.is_running():
             self.yourt_rampage_ticker.start()
 
@@ -955,6 +965,119 @@ class FunCog(commands.Cog):
             logger.error(f"Error applying frost shart freeze to {user_id}: {e}")
             if "conn" in locals():
                 conn.close()
+
+    def _ensure_frostshart_legacy_repair_table(self, cur):
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS frostshart_legacy_repair (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                repaired_at TEXT NOT NULL
+            )
+        """)
+
+    def has_frostshart_legacy_repair_ran(self):
+        """True after the one-shot stuck-Frostshart cleanup has completed."""
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_frostshart_legacy_repair_table(cur)
+            cur.execute("SELECT 1 FROM frostshart_legacy_repair WHERE id = 1")
+            ran = cur.fetchone() is not None
+            conn.close()
+            return ran
+        except sqlite3.Error as e:
+            logger.error(f"Error checking Frostshart legacy repair flag: {e}")
+            if "conn" in locals():
+                conn.close()
+            return False
+
+    def _user_has_real_fart_on_est_date(self, cur, user_id, est_date):
+        """True if fart_history has a real roll for this player on the EST calendar day."""
+        try:
+            cur.execute(
+                "SELECT timestamp FROM fart_history WHERE user_id = ?",
+                (user_id,),
+            )
+        except sqlite3.Error:
+            return False
+        for (timestamp,) in cur.fetchall():
+            if parse_to_est_date(timestamp) == est_date:
+                return True
+        return False
+
+    def repair_legacy_frostshart_locks(self, now=None):
+        """One-shot: clear stuck Frostshart rows and restore unused dailies.
+
+        Runs once (persisted flag). Later 24h Frostsharts are left alone.
+        Daily rewind only happens when there is no fart_history for today EST.
+        """
+        today = parse_to_est_date((now or get_est_now()).isoformat())
+        if today is None:
+            today = get_est_date()
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_frost_shart_freeze_table(cur)
+            self._ensure_frostshart_legacy_repair_table(cur)
+            cur.execute("""CREATE TABLE IF NOT EXISTS fart_history
+                           (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER NOT NULL,
+                            username TEXT NOT NULL,
+                            fart_type TEXT NOT NULL,
+                            roll INTEGER NOT NULL,
+                            timestamp TEXT NOT NULL
+                           )""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS fart_scores
+                           (user_id INTEGER PRIMARY KEY,
+                            user_display_name TEXT,
+                            date_last_updated TEXT,
+                            score INTEGER
+                           )""")
+            cur.execute("SELECT 1 FROM frostshart_legacy_repair WHERE id = 1")
+            if cur.fetchone():
+                conn.close()
+                return {
+                    "ran": False,
+                    "cleared_freezes": 0,
+                    "restored_dailies": 0,
+                }
+
+            cur.execute("SELECT user_id FROM frost_shart_freeze")
+            frozen_ids = [row[0] for row in cur.fetchall()]
+            restored = 0
+            for user_id in frozen_ids:
+                if self._user_has_real_fart_on_est_date(cur, user_id, today):
+                    continue
+                cur.execute(
+                    "UPDATE fart_scores SET date_last_updated = NULL WHERE user_id = ?",
+                    (user_id,),
+                )
+                if cur.rowcount:
+                    restored += 1
+
+            cur.execute("DELETE FROM frost_shart_freeze")
+            cleared = cur.rowcount if cur.rowcount is not None else 0
+            stamp = (now or datetime.datetime.now()).isoformat()
+            cur.execute(
+                "INSERT INTO frostshart_legacy_repair (id, repaired_at) VALUES (1, ?)",
+                (stamp,),
+            )
+            conn.commit()
+            conn.close()
+            return {
+                "ran": True,
+                "cleared_freezes": cleared,
+                "restored_dailies": restored,
+            }
+        except sqlite3.Error as e:
+            logger.error(f"Error repairing legacy Frostshart locks: {e}")
+            if "conn" in locals():
+                conn.close()
+            return {
+                "ran": False,
+                "cleared_freezes": 0,
+                "restored_dailies": 0,
+                "error": str(e),
+            }
 
     async def apply_uber_rare_variant_effect(self, ctx, roller_id, variant):
         """Apply lavashart/frostshart/yourt effects. Star-protected players are skipped."""

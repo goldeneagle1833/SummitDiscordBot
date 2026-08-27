@@ -403,6 +403,9 @@ class FartRepository:
         "fart_shop_items",
         # First Curio ever → 40/40/20 lava/frost/Yourt; then 10% lava/frost + 5% Yourt forever
         "uber_rare_curio_claimed",
+        # One-shot stuck-Frostshart cleanup; must survive reset so bot restart
+        # cannot wipe a legitimate 24h freeze after the season starts again.
+        "frostshart_legacy_repair",
     })
 
     # Known gameplay / tracking tables (documentation + test coverage).
@@ -436,7 +439,8 @@ class FartRepository:
         """Full season reset — wipe ALL gameplay and tracking state.
 
         Clears every table in fart_scores.db except preserved tables
-        (fart_game_commands, fart_shop_items, uber_rare_curio_claimed).
+        (fart_game_commands, fart_shop_items, uber_rare_curio_claimed,
+        frostshart_legacy_repair).
         Uses dynamic discovery so daily / weekly / season / reign cooldowns,
         item usage, gifts, donations, protections, per-player uber-rare
         once-per-season flags, and any future trackers are all cleared.

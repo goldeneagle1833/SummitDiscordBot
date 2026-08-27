@@ -751,6 +751,7 @@ export default function Nav() {
           <SidebarHeading label="Stats" />
           <SidebarLink to="/avatars" label="Avatar Winrates" location={location} onClick={close} />
           <SidebarLink to="/avatars/top-players" label="Avatar Top 16" location={location} onClick={close} />
+          {user?.is_admin && <SidebarLink to="/cards/played-winrates" label="Card Played Winrates" location={location} onClick={close} />}
           <SidebarLink to="/elements" label="Element Winrates" location={location} onClick={close} />
 
           {/* Event Info */}

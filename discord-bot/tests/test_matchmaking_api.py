@@ -1,3 +1,5 @@
+import json
+import sqlite3
 import time
 import sys
 from pathlib import Path
@@ -16,7 +18,7 @@ from cogs.lfg.persistent_confirm import (
     ensure_match_cards_table,
     load_match_card_for_pairing,
 )
-from repositories.elo_repo import save_pairing
+from repositories.elo_repo import get_pairing_by_id, save_pairing
 from services.matchmaking_api import (
     _authentication,
     _is_loopback_request,
@@ -196,6 +198,63 @@ async def test_sorcery_online_result_is_idempotent_by_pairing(mock_bot):
     assert first == {"recorded": True, "duplicate": False, "match_id": 77}
     assert retry == {"recorded": False, "duplicate": True, "match_id": None}
     execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_unknown_sorcery_online_outcome_closes_pairing_and_stores_public_cards(mock_bot):
+    pairing_id = save_pairing(1, 10, 20, "deck-a", "deck-b", "ranked")
+    players = [
+        {
+            "player_id": "10",
+            "played_cards": [
+                {"card_id": "site-a", "card_name": "Site A", "quantity": 2},
+            ],
+        },
+        {"player_id": "20", "played_cards": []},
+    ]
+    result = await record_sorcery_online_result(
+        mock_bot,
+        guild_id=1,
+        pairing_id=pairing_id,
+        queue_type="ranked",
+        outcome="unknown",
+        reporter_id=None,
+        winner_id=None,
+        loser_id=None,
+        players=players,
+    )
+    retry = await record_sorcery_online_result(
+        mock_bot,
+        guild_id=1,
+        pairing_id=pairing_id,
+        queue_type="ranked",
+        outcome="unknown",
+        reporter_id=None,
+        winner_id=None,
+        loser_id=None,
+        players=players,
+    )
+    assert result == {
+        "recorded": False,
+        "duplicate": False,
+        "match_id": None,
+        "outcome": "unknown",
+    }
+    assert retry == {"recorded": False, "duplicate": True, "match_id": None}
+    assert get_pairing_by_id(1, pairing_id)["status"] == "reported"
+    conn = sqlite3.connect("match_records.db")
+    row = conn.execute(
+        """SELECT outcome, winner_id, loser_id, played_cards_json
+           FROM sorcery_online_match_callbacks
+           WHERE guild_id = 1 AND pairing_id = ? AND queue_type = 'ranked'""",
+        (pairing_id,),
+    ).fetchone()
+    conn.close()
+    assert row[:3] == ("unknown", None, None)
+    assert json.loads(row[3]) == [
+        {"player_id": 10, "played_cards": [{"card_id": "site-a", "card_name": "Site A", "quantity": 2}]},
+        {"player_id": 20, "played_cards": []},
+    ]
 
 
 @pytest.mark.asyncio

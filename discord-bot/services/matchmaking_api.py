@@ -187,9 +187,11 @@ async def start_matchmaking_api(bot):
                 guild_id=int(request.match_info["guild_id"]),
                 pairing_id=int(request.match_info["pairing_id"]),
                 queue_type=str(payload.get("queue_type", "")),
-                reporter_id=int(payload["reporter_id"]),
-                winner_id=int(payload["winner_id"]),
-                loser_id=int(payload["loser_id"]),
+                outcome=str(payload.get("outcome", "decided")),
+                reporter_id=payload.get("reporter_id"),
+                winner_id=payload.get("winner_id"),
+                loser_id=payload.get("loser_id"),
+                players=payload.get("players"),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise web.HTTPBadRequest(text=str(exc) or "Invalid result")

@@ -139,6 +139,12 @@ class TestUberRareCurioPermanent:
         assert lava_embed.color.value == UBER_RARE_CURIO_VARIANTS["lavashart"]["color"]
         assert frost_embed.color.value == UBER_RARE_CURIO_VARIANTS["frostshart"]["color"]
         assert yourt_embed.color.value == UBER_RARE_CURIO_VARIANTS["yourt"]["color"]
+        # Flavor belongs on the embed once — not repeated in the chat banner.
+        frost_flavor = UBER_RARE_CURIO_VARIANTS["frostshart"]["flavor"]
+        assert frost_flavor in frost_embed.description
+        assert frost_flavor not in frost_text
+        assert "UNLOCKED" not in frost_text
+        assert frost_embed.footer.text is None or frost_embed.footer.text == ""
 
     def test_classify_curio_threshold(self):
         msg, typ = FunCog.classify_fart_roll(96)
@@ -209,8 +215,8 @@ class TestUberRareVariantEffects:
             cog.apply_uber_rare_variant_effect(ctx, roller_id=1, variant="lavashart")
         )
 
-        assert "LAVASHART ERUPTION" in msg
-        assert "Scorched for 50 damage" in msg
+        assert "LAVASHART!" in msg
+        assert "Scorched for 50" in msg
         assert "<@2>" in msg
         assert "<@99>" in msg
         assert "<@3>" in msg  # star-protected mention
@@ -231,11 +237,12 @@ class TestUberRareVariantEffects:
             )
         )
 
-        assert "FROSTSHART BLIZZARD" in msg
+        assert "FROSTSHART!" in msg
         assert "<@2>" in msg
         assert "<@99>" in msg
         assert "<@3>" in msg
-        assert "Frozen until midnight EST" in msg
+        assert "Frozen 24h" in msg
+        assert "`!fart` still works" in msg
         assert "Star-shielded" in msg
         assert cog.is_frost_frozen(2) is True
         assert cog.is_frost_frozen(99) is True
@@ -245,36 +252,123 @@ class TestUberRareVariantEffects:
         bob_last = conn.execute(
             "SELECT date_last_updated FROM fart_scores WHERE user_id = 2"
         ).fetchone()[0]
+        until = conn.execute(
+            "SELECT frozen_until FROM frost_shart_freeze WHERE user_id = 2"
+        ).fetchone()[0]
         conn.close()
-        assert bob_last is not None
+        assert bob_last is None  # default !fart is not consumed
+        parsed = (
+            until
+            if isinstance(until, datetime.datetime)
+            else datetime.datetime.fromisoformat(until)
+        )
+        remaining = parsed - datetime.datetime.now()
+        assert datetime.timedelta(hours=23, minutes=50) < remaining < datetime.timedelta(
+            hours=24, minutes=10
+        )
         assert cog.is_frost_frozen(1) is False  # roller not frozen
 
 
 class TestFrostshartFartMessaging:
-    def test_frozen_player_gets_shop_style_fart_message_not_daily_expiry(self, fart_db):
+    def test_frozen_player_gets_specials_block_not_default_fart_block(self, fart_db):
         fart_db.apply_frost_shart_freeze(2, "Bob")
         msg = fart_db.frostshart_fart_block_message(2, "<@2>")
         assert msg is not None
         assert "frozen solid by a Frostshart" in msg
-        assert "No farting until midnight EST!" in msg
+        assert "`!fart`" in msg
+        assert "!fartprediction" in msg
+        assert "24 hours" in msg
+        assert "No farting" not in msg
+        assert "midnight EST" not in msg
         assert "daily action" not in msg.lower()
         assert "already used" not in msg.lower()
 
     def test_unfrozen_player_has_no_frost_block_message(self, fart_db):
         assert fart_db.frostshart_fart_block_message(2, "<@2>") is None
 
-    def test_frost_block_checked_before_daily_expiry_in_fart_command(self):
+    def test_default_fart_command_does_not_frost_block(self):
         fun_path = os.path.join(os.path.dirname(__file__), "..", "cogs", "fun.py")
         with open(fun_path, encoding="utf-8") as f:
             source = f.read()
         fart_cmd = source.split("async def fart(self, ctx):", 1)[1].split(
             "async def fart_gift", 1
         )[0]
-        frost_idx = fart_cmd.find("frostshart_fart_block_message")
-        daily_idx = fart_cmd.find("daily_usage_message")
-        assert frost_idx != -1
-        assert daily_idx != -1
-        assert frost_idx < daily_idx
+        assert "frostshart_fart_block_message" not in fart_cmd
+        assert "is_frost_frozen" not in fart_cmd
+
+    def test_cog_check_allows_fart_but_blocks_specials(self, fart_db):
+        fart_db.apply_frost_shart_freeze(2)
+
+        async def run():
+            allowed_ctx = MagicMock()
+            allowed_ctx.command.name = "fart"
+            allowed_ctx.author.id = 2
+            allowed_ctx.author.mention = "<@2>"
+            allowed_ctx.send = AsyncMock()
+            assert await fart_db.cog_check(allowed_ctx) is True
+            allowed_ctx.send.assert_not_awaited()
+
+            blocked_ctx = MagicMock()
+            blocked_ctx.command.name = "taxes"
+            blocked_ctx.author.id = 2
+            blocked_ctx.author.mention = "<@2>"
+            blocked_ctx.send = AsyncMock()
+            assert await fart_db.cog_check(blocked_ctx) is False
+            blocked_ctx.send.assert_awaited()
+            assert "!fartprediction" in blocked_ctx.send.await_args.args[0]
+
+            pred_ctx = MagicMock()
+            pred_ctx.command.name = "fartprediction"
+            pred_ctx.author.id = 2
+            pred_ctx.author.mention = "<@2>"
+            pred_ctx.send = AsyncMock()
+            assert await fart_db.cog_check(pred_ctx) is False
+
+        asyncio.run(run())
+
+    def test_past_freeze_is_not_active(self, fart_db):
+        conn = sqlite3.connect("fart_scores.db")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS frost_shart_freeze (
+                user_id INTEGER PRIMARY KEY,
+                frozen_until TEXT NOT NULL
+            )
+            """
+        )
+        past = datetime.datetime.now() - datetime.timedelta(minutes=1)
+        conn.execute(
+            "INSERT INTO frost_shart_freeze VALUES (?, ?)",
+            (2, past.strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        conn.commit()
+        conn.close()
+        assert fart_db.is_frost_frozen(2) is False
+
+    def test_old_est_midnight_iso_freeze_expires_correctly(self, fart_db):
+        """Legacy tz-aware EST midnight strings must not linger via SQLite string compare."""
+        expired = datetime.datetime(
+            2026, 8, 26, 0, 0, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=-4))
+        )
+        conn = sqlite3.connect("fart_scores.db")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS frost_shart_freeze (
+                user_id INTEGER PRIMARY KEY,
+                frozen_until TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO frost_shart_freeze VALUES (?, ?)",
+            (2, expired.isoformat()),
+        )
+        conn.commit()
+        conn.close()
+        now = datetime.datetime(
+            2026, 8, 27, 12, 0, 0, tzinfo=datetime.timezone.utc
+        )
+        assert fart_db.is_frost_frozen(2, now=now) is False
 
 
 class TestUberRareOncePerSeason:
@@ -402,7 +496,7 @@ class TestYourtRampage:
             fart_db.apply_uber_rare_variant_effect(ctx, roller_id=1, variant="yourt")
         )
         assert fart_db.is_yourt_rampage_active() is True
-        assert "vendor tent" in msg.lower() or "dirt" in msg.lower()
+        assert "YOURT wrecked the shop".lower() in msg.lower() or "wrecked" in msg.lower()
         ctx.channel.send.assert_awaited()
         sent = ctx.channel.send.await_args.args[0]
         assert "@here" in sent

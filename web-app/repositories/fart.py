@@ -422,7 +422,7 @@ class FartRepository:
         "shop_blocks",            # !stink_cloud 24h
         "gas_shields",
         "fart_traps",
-        "frost_shart_freeze",     # Frostshart: no shop items until EST midnight
+        "frost_shart_freeze",     # Frostshart: shop + specials blocked for 24h (!fart ok)
         "uber_rare_curio_season", # lavashart/frostshart once each per player per season
         "yourt_rampage",          # 1-hour Yourt shop-chaos window + attack ticker
     })

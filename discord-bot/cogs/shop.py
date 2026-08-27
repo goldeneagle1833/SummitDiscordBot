@@ -160,28 +160,21 @@ class ShopCog(commands.Cog):
         if ctx.command.name in ('fart_shop',):
             return True
 
-        # Check stink cloud block
+        # Check frostshart / stink cloud blocks
         conn = sqlite3.connect("fart_scores.db")
         cur = conn.cursor()
         try:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS frost_shart_freeze (
-                    user_id INTEGER PRIMARY KEY,
-                    frozen_until TEXT NOT NULL
-                )
-            """)
-            cur.execute(
-                """
-                SELECT frozen_until FROM frost_shart_freeze
-                WHERE user_id = ? AND frozen_until > datetime('now')
-                """,
-                (ctx.author.id,),
-            )
-            if cur.fetchone():
-                await ctx.send(
-                    f"{ctx.author.mention}, you're frozen solid by a Frostshart! "
-                    f"No shop items until midnight EST!"
-                )
+            fun = self.bot.get_cog("FunCog")
+            frozen_check = getattr(fun, "is_frost_frozen", None) if fun is not None else None
+            if callable(frozen_check) and frozen_check(ctx.author.id) is True:
+                shop_msg = getattr(fun, "frostshart_shop_block_message", None)
+                if callable(shop_msg):
+                    await ctx.send(shop_msg(ctx.author.mention))
+                else:
+                    await ctx.send(
+                        f"{ctx.author.mention}, you're frozen solid by a Frostshart! "
+                        f"No shop items for 24 hours!"
+                    )
                 return False
 
             cur.execute("""

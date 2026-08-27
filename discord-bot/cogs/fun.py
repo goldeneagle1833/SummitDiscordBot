@@ -30,30 +30,34 @@ UBER_RARE_CURIO_VARIANTS = {
         "name": "LAVASHART",
         "emoji": "🌋💥",
         "color": 0x8B4513,  # reddish brown
-        "flavor": (
-            "Molten legendary essence erupts from the void — "
-            "an ***UBER-RARE CURIO*** forged in impossible heat!"
-        ),
+        "flavor": "Molten essence — an UBER-RARE CURIO forged in impossible heat!",
     },
     "frostshart": {
         "name": "FROSTSHART",
         "emoji": "❄🥶",
         "color": 0x6B8A9E,  # blueish gray
-        "flavor": (
-            "Absolute zero ruptures reality — "
-            "an ***UBER-RARE CURIO*** crystallized from pure entropy!"
-        ),
+        "flavor": "Absolute zero — an UBER-RARE CURIO crystallized from entropy!",
     },
     "yourt": {
         "name": "YOURTSHART",
         "emoji": YOURT_EMOJI_FALLBACK,
         "color": 0x2ECC71,  # green, matching the curio announcement vibe
-        "flavor": (
-            "YoUrT tUmBlEs oUt oF tHe dRuNkEn fArT aBySs — "
-            "an ***UBER-RARE CURIO*** soaked in tavern stank and bad decisions!"
-        ),
+        "flavor": "YoUrT fElL oUt — aN UBER-RARE CURIO soaked in tavern stank!",
     },
 }
+
+# Frostshart duration matches !stink_cloud (naive local now + 24h).
+FROSTSHART_DURATION = datetime.timedelta(hours=24)
+# Frozen players may still use default !fart plus lookups/admin.
+FROSTSHART_ALLOWED_COMMANDS = frozenset(
+    {
+        "fart",
+        "helpfart",
+        "fartrank",
+        "fart_leaderboard",
+        "reset_fart_cooldown",
+    }
+)
 
 # Shop attack toys Yourt drunkenly hurls during the rampage.
 YOURT_ATTACK_ITEMS = (
@@ -179,12 +183,33 @@ class FunCog(commands.Cog):
         self.fun_channel_id = config.FART_CHANNEL_ID
 
     async def cog_load(self):
+        try:
+            result = self.repair_legacy_frostshart_locks()
+            if result.get("ran"):
+                logger.info(
+                    "One-shot Frostshart repair: cleared %s freezes, restored %s dailies",
+                    result.get("cleared_freezes", 0),
+                    result.get("restored_dailies", 0),
+                )
+        except Exception as e:
+            logger.error(f"Error running one-shot Frostshart repair: {e}")
         if not self.yourt_rampage_ticker.is_running():
             self.yourt_rampage_ticker.start()
 
     def cog_unload(self):
         if self.yourt_rampage_ticker.is_running():
             self.yourt_rampage_ticker.cancel()
+
+    async def cog_check(self, ctx):
+        """Frostshart: allow default !fart; freeze shop specials and other actions."""
+        command = getattr(ctx, "command", None)
+        name = getattr(command, "name", None)
+        if not name or name in FROSTSHART_ALLOWED_COMMANDS:
+            return True
+        if not self.is_frost_frozen(ctx.author.id):
+            return True
+        await ctx.send(self.frostshart_action_block_message(ctx.author.mention))
+        return False
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -790,21 +815,17 @@ class FunCog(commands.Cog):
         return YOURT_EMOJI_FALLBACK
 
     def format_uber_rare_highlight(self, variant, guild=None):
-        """Crazy bold/italic highlight text for the chat message."""
+        """One-line unlock banner (flavor lives on the embed only)."""
         info = UBER_RARE_CURIO_VARIANTS[variant]
         if variant == "yourt":
             e = self.yourt_emoji_markup(guild)
             name = drunken_case(info["name"])
             return (
-                f"{e}{e}{e} ***__⚡ {drunken_case('UBER-RARE CURIO UNLOCKED')}: {name} ⚡__*** "
-                f"{e}{e}{e}\n"
-                f"***_{info['flavor']}_*** {e}\n"
+                f"{e}{e} ***__⚡ {drunken_case('UBER-RARE CURIO')}: {name} ⚡__*** {e}{e}\n"
             )
         emoji = info["emoji"]
-        name = info["name"]
         return (
-            f"{emoji} ***__⚡ UBER-RARE CURIO UNLOCKED: {name} ⚡__*** {emoji}\n"
-            f"***_{info['flavor']}_***\n"
+            f"{emoji} ***__⚡ UBER-RARE CURIO: {info['name']} ⚡__*** {emoji}\n"
         )
 
     def build_uber_rare_embed(self, variant, guild=None):
@@ -812,31 +833,16 @@ class FunCog(commands.Cog):
         info = UBER_RARE_CURIO_VARIANTS[variant]
         if variant == "yourt":
             e = self.yourt_emoji_markup(guild)
-            embed = discord.Embed(
-                title=(
-                    f"{e}{e} {drunken_case('UBER-RARE CURIO')}: "
-                    f"{drunken_case(info['name'])} {e}{e}"
-                ),
-                description=(
-                    f"***{info['flavor']}*** {e}\n\n"
-                    f"*{drunken_case('the curio shart burped and Yourt fell out')}* {e}{e}"
-                ),
+            return discord.Embed(
+                title=f"{e} {drunken_case(info['name'])} {e}",
+                description=f"*{info['flavor']}* {e}",
                 color=info["color"],
             )
-            embed.set_footer(
-                text=drunken_case("something sloshy just happened...")
-            )
-            return embed
-        embed = discord.Embed(
-            title=f"{info['emoji']} UBER-RARE CURIO: {info['name']} {info['emoji']}",
-            description=(
-                f"***{info['flavor']}***\n\n"
-                f"*The default Curio Shart has mutated into something impossibly rare...*"
-            ),
+        return discord.Embed(
+            title=f"{info['emoji']} {info['name']} {info['emoji']}",
+            description=f"*{info['flavor']}*",
             color=info["color"],
         )
-        embed.set_footer(text="Something impossible just happened...")
-        return embed
 
     LAVASHART_DAMAGE = 50
 
@@ -861,31 +867,60 @@ class FunCog(commands.Cog):
             )
         """)
 
-    def frostshart_fart_block_message(self, user_id, mention):
-        """Shop-style freeze reply for !fart, or None if the player is not frozen."""
-        if not self.is_frost_frozen(user_id):
-            return None
+    def frostshart_shop_block_message(self, mention):
         return (
             f"{mention}, you're frozen solid by a Frostshart! "
-            f"No farting until midnight EST!"
+            f"No shop items for 24 hours!"
         )
 
-    def is_frost_frozen(self, user_id):
-        """True if Frostshart has disabled this player's farting + shop items until midnight EST."""
+    def frostshart_action_block_message(self, mention):
+        return (
+            f"{mention}, you're frozen solid by a Frostshart! "
+            f"Only `!fart` works — no `!fartprediction`, `!taxes`, or other specials "
+            f"for 24 hours!"
+        )
+
+    def frostshart_fart_block_message(self, user_id, mention):
+        """Block reply for specials (not default !fart), or None if not frozen."""
+        if not self.is_frost_frozen(user_id):
+            return None
+        return self.frostshart_action_block_message(mention)
+
+    @staticmethod
+    def _frost_freeze_still_active(frozen_until, now=None):
+        """Compare freeze expiry in Python so ISO/tz strings don't outlive 24h."""
+        until = frozen_until
+        if isinstance(until, str):
+            until = safe_parse_datetime(until)
+        if until is None:
+            return False
+        if until.tzinfo is not None:
+            now = now or datetime.datetime.now(until.tzinfo)
+            if now.tzinfo is None:
+                now = now.replace(tzinfo=until.tzinfo)
+            else:
+                now = now.astimezone(until.tzinfo)
+        else:
+            now = now or datetime.datetime.now()
+            if now.tzinfo is not None:
+                now = now.replace(tzinfo=None)
+        return until > now
+
+    def is_frost_frozen(self, user_id, now=None):
+        """True if Frostshart is still blocking shop + specials (default !fart allowed)."""
         try:
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
             self._ensure_frost_shart_freeze_table(cur)
             cur.execute(
-                """
-                SELECT 1 FROM frost_shart_freeze
-                WHERE user_id = ? AND frozen_until > datetime('now')
-                """,
+                "SELECT frozen_until FROM frost_shart_freeze WHERE user_id = ?",
                 (user_id,),
             )
-            frozen = cur.fetchone() is not None
+            row = cur.fetchone()
             conn.close()
-            return frozen
+            if not row:
+                return False
+            return self._frost_freeze_still_active(row[0], now=now)
         except sqlite3.Error as e:
             logger.error(f"Error checking frost shart freeze: {e}")
             if "conn" in locals():
@@ -911,11 +946,8 @@ class FunCog(commands.Cog):
         return "Unknown User"
 
     def apply_frost_shart_freeze(self, user_id, user_display_name=None):
-        """Disable farting + shop items for rest of day (EST midnight)."""
-        now = get_est_now()
-        frozen_until = get_est_midnight()
-        display_name = user_display_name or self._get_player_display_name(user_id)
-        self.mark_daily_action_used(user_id, display_name, now)
+        """Block shop items + specials for 24 hours (same clock as !stink_cloud)."""
+        frozen_until = datetime.datetime.now() + FROSTSHART_DURATION
         try:
             conn = sqlite3.connect("fart_scores.db")
             cur = conn.cursor()
@@ -925,7 +957,7 @@ class FunCog(commands.Cog):
                 INSERT OR REPLACE INTO frost_shart_freeze (user_id, frozen_until)
                 VALUES (?, ?)
                 """,
-                (user_id, frozen_until.isoformat()),
+                (user_id, frozen_until),
             )
             conn.commit()
             conn.close()
@@ -933,6 +965,119 @@ class FunCog(commands.Cog):
             logger.error(f"Error applying frost shart freeze to {user_id}: {e}")
             if "conn" in locals():
                 conn.close()
+
+    def _ensure_frostshart_legacy_repair_table(self, cur):
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS frostshart_legacy_repair (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                repaired_at TEXT NOT NULL
+            )
+        """)
+
+    def has_frostshart_legacy_repair_ran(self):
+        """True after the one-shot stuck-Frostshart cleanup has completed."""
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_frostshart_legacy_repair_table(cur)
+            cur.execute("SELECT 1 FROM frostshart_legacy_repair WHERE id = 1")
+            ran = cur.fetchone() is not None
+            conn.close()
+            return ran
+        except sqlite3.Error as e:
+            logger.error(f"Error checking Frostshart legacy repair flag: {e}")
+            if "conn" in locals():
+                conn.close()
+            return False
+
+    def _user_has_real_fart_on_est_date(self, cur, user_id, est_date):
+        """True if fart_history has a real roll for this player on the EST calendar day."""
+        try:
+            cur.execute(
+                "SELECT timestamp FROM fart_history WHERE user_id = ?",
+                (user_id,),
+            )
+        except sqlite3.Error:
+            return False
+        for (timestamp,) in cur.fetchall():
+            if parse_to_est_date(timestamp) == est_date:
+                return True
+        return False
+
+    def repair_legacy_frostshart_locks(self, now=None):
+        """One-shot: clear stuck Frostshart rows and restore unused dailies.
+
+        Runs once (persisted flag). Later 24h Frostsharts are left alone.
+        Daily rewind only happens when there is no fart_history for today EST.
+        """
+        today = parse_to_est_date((now or get_est_now()).isoformat())
+        if today is None:
+            today = get_est_date()
+        try:
+            conn = sqlite3.connect("fart_scores.db")
+            cur = conn.cursor()
+            self._ensure_frost_shart_freeze_table(cur)
+            self._ensure_frostshart_legacy_repair_table(cur)
+            cur.execute("""CREATE TABLE IF NOT EXISTS fart_history
+                           (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER NOT NULL,
+                            username TEXT NOT NULL,
+                            fart_type TEXT NOT NULL,
+                            roll INTEGER NOT NULL,
+                            timestamp TEXT NOT NULL
+                           )""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS fart_scores
+                           (user_id INTEGER PRIMARY KEY,
+                            user_display_name TEXT,
+                            date_last_updated TEXT,
+                            score INTEGER
+                           )""")
+            cur.execute("SELECT 1 FROM frostshart_legacy_repair WHERE id = 1")
+            if cur.fetchone():
+                conn.close()
+                return {
+                    "ran": False,
+                    "cleared_freezes": 0,
+                    "restored_dailies": 0,
+                }
+
+            cur.execute("SELECT user_id FROM frost_shart_freeze")
+            frozen_ids = [row[0] for row in cur.fetchall()]
+            restored = 0
+            for user_id in frozen_ids:
+                if self._user_has_real_fart_on_est_date(cur, user_id, today):
+                    continue
+                cur.execute(
+                    "UPDATE fart_scores SET date_last_updated = NULL WHERE user_id = ?",
+                    (user_id,),
+                )
+                if cur.rowcount:
+                    restored += 1
+
+            cur.execute("DELETE FROM frost_shart_freeze")
+            cleared = cur.rowcount if cur.rowcount is not None else 0
+            stamp = (now or datetime.datetime.now()).isoformat()
+            cur.execute(
+                "INSERT INTO frostshart_legacy_repair (id, repaired_at) VALUES (1, ?)",
+                (stamp,),
+            )
+            conn.commit()
+            conn.close()
+            return {
+                "ran": True,
+                "cleared_freezes": cleared,
+                "restored_dailies": restored,
+            }
+        except sqlite3.Error as e:
+            logger.error(f"Error repairing legacy Frostshart locks: {e}")
+            if "conn" in locals():
+                conn.close()
+            return {
+                "ran": False,
+                "cleared_freezes": 0,
+                "restored_dailies": 0,
+                "error": str(e),
+            }
 
     async def apply_uber_rare_variant_effect(self, ctx, roller_id, variant):
         """Apply lavashart/frostshart/yourt effects. Star-protected players are skipped."""
@@ -978,16 +1123,12 @@ class FunCog(commands.Cog):
                 for mention, actual_damage in hit_players
             ]
             lines.append(
-                "🌋💥 **LAVASHART ERUPTION!** Molten Curio wrath detonates across the "
-                "fart realm — everyone else feels the burn!"
-            )
-            lines.append(
-                f"**Scorched for {self.LAVASHART_DAMAGE} damage:** "
+                f"🌋💥 **LAVASHART!** Scorched for {self.LAVASHART_DAMAGE}: "
                 f"{self._format_player_mentions(scorched)}"
             )
         if protected_players:
             lines.append(
-                f"⭐ **Star-shielded (no damage):** "
+                f"⭐ **Star-shielded:** "
                 f"{self._format_player_mentions(protected_players)}"
             )
         if not lines:
@@ -1018,16 +1159,13 @@ class FunCog(commands.Cog):
         lines = []
         if frozen_players:
             lines.append(
-                "❄🥶 **FROSTSHART BLIZZARD!** Absolute zero ripples outward — "
-                "the unlucky are entombed in glacial stench!"
-            )
-            lines.append(
-                "**Frozen until midnight EST (no farting, no shop items):** "
+                "❄🥶 **FROSTSHART!** Frozen 24h "
+                "(no shop, no specials — `!fart` still works): "
                 f"{self._format_player_mentions(frozen_players)}"
             )
         if protected_players:
             lines.append(
-                f"⭐ **Star-shielded (immune):** "
+                f"⭐ **Star-shielded:** "
                 f"{self._format_player_mentions(protected_players)}"
             )
         if not lines:
@@ -1185,19 +1323,13 @@ class FunCog(commands.Cog):
             )
 
         crash = (
-            f"@here {e}{e}{e}{e}\n"
-            f"**{drunken_case('YOURT IS SUMMONED')}** {e}{e}\n"
-            f"{e} {drunken_case('hicc')} {drunken_case('YOURT drunkenly CRASHES into the shop vendor tent')} "
-            f"{e}{e}{e}\n"
-            f"{drunken_case('ITEMS go FLYING everywhere')} {e} *bLeEhH* {e}{e}\n"
-            f"{e} {drunken_case('grab what you can for ONE HOUR')} "
-            f"{drunken_case('while the shopkeeper mops up the mess')} {e}{e}{e}"
+            f"@here {e}{e}\n"
+            f"**{drunken_case('YOURT IS SUMMONED')}** {e}\n"
+            f"{e} {drunken_case('YOURT crashes the shop')} — "
+            f"{drunken_case('grab free loot for ONE HOUR')}! *hIc* {e}"
         )
         await self._send_yourt_channel_message(channel, crash)
-        return (
-            f"{e}{e}{e} {drunken_case('the vendor tent is RUINED')} "
-            f"{drunken_case('shop stuff is all over the dirt')} {e}{e}\n"
-        )
+        return f"{e} {drunken_case('YOURT wrecked the shop')} {e}\n"
 
     def expected_yourt_attacks(self, state, now=None):
         """How many of the 6 attacks should have fired by `now`."""
@@ -1507,13 +1639,6 @@ class FunCog(commands.Cog):
                 if "conn" in locals():
                     conn.close()
 
-            frost_block = self.frostshart_fart_block_message(
-                ctx.author.id, ctx.author.mention
-            )
-            if frost_block:
-                await ctx.send(frost_block)
-                return
-
             if did_user_fart_today:
                 # Calculate time until next fart (midnight EST)
                 now = get_est_now()
@@ -1707,13 +1832,6 @@ class FunCog(commands.Cog):
             finally:
                 if "conn" in locals():
                     conn.close()
-
-            frost_block = self.frostshart_fart_block_message(
-                ctx.author.id, ctx.author.mention
-            )
-            if frost_block:
-                await ctx.send(frost_block)
-                return
 
             if did_user_fart_today:
                 now = get_est_now()

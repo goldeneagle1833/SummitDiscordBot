@@ -201,7 +201,8 @@ async def test_sorcery_online_result_is_idempotent_by_pairing(mock_bot):
 
 
 @pytest.mark.asyncio
-async def test_unknown_sorcery_online_outcome_closes_pairing_and_stores_public_cards(mock_bot):
+async def test_unknown_sorcery_online_outcome_leaves_pairing_active(mock_bot):
+    """Unknown outcomes leave the pairing active so players can report via Discord."""
     pairing_id = save_pairing(1, 10, 20, "deck-a", "deck-b", "ranked")
     players = [
         {
@@ -223,38 +224,14 @@ async def test_unknown_sorcery_online_outcome_closes_pairing_and_stores_public_c
         loser_id=None,
         players=players,
     )
-    retry = await record_sorcery_online_result(
-        mock_bot,
-        guild_id=1,
-        pairing_id=pairing_id,
-        queue_type="ranked",
-        outcome="unknown",
-        reporter_id=None,
-        winner_id=None,
-        loser_id=None,
-        players=players,
-    )
     assert result == {
         "recorded": False,
         "duplicate": False,
         "match_id": None,
         "outcome": "unknown",
     }
-    assert retry == {"recorded": False, "duplicate": True, "match_id": None}
-    assert get_pairing_by_id(1, pairing_id)["status"] == "reported"
-    conn = sqlite3.connect("match_records.db")
-    row = conn.execute(
-        """SELECT outcome, winner_id, loser_id, played_cards_json
-           FROM sorcery_online_match_callbacks
-           WHERE guild_id = 1 AND pairing_id = ? AND queue_type = 'ranked'""",
-        (pairing_id,),
-    ).fetchone()
-    conn.close()
-    assert row[:3] == ("unknown", None, None)
-    assert json.loads(row[3]) == [
-        {"player_id": 10, "played_cards": [{"card_id": "site-a", "card_name": "Site A", "quantity": 2}]},
-        {"player_id": 20, "played_cards": []},
-    ]
+    # Unknown should NOT close the pairing — it stays active
+    assert get_pairing_by_id(1, pairing_id)["status"] == "active"
 
 
 @pytest.mark.asyncio

@@ -42,11 +42,15 @@ async def provision_sorcery_online_match(guild_id, pairing_id, queue_type, playe
         ],
     }
     try:
-        timeout = aiohttp.ClientTimeout(total=5, connect=2)
+        timeout = aiohttp.ClientTimeout(total=15, connect=5)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(endpoint, json=payload, headers={"X-API-Key": api_key}) as response:
                 if response.status != 200:
-                    logger.warning("Sorcery Online provisioning returned status %s", response.status)
+                    body = await response.text()
+                    logger.warning(
+                        "Sorcery Online provisioning returned status %s: %s",
+                        response.status, body[:500],
+                    )
                     return None
                 data = await response.json()
         links = {
@@ -56,5 +60,5 @@ async def provision_sorcery_online_match(guild_id, pairing_id, queue_type, playe
         }
         return links if len(links) == 2 else None
     except Exception as exc:
-        logger.warning("Sorcery Online provisioning failed: %s", exc)
+        logger.warning("Sorcery Online provisioning failed: %r", exc, exc_info=True)
         return None

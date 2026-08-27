@@ -1,6 +1,7 @@
 """Card and element statistics API routes."""
 
 import json
+import math
 import os
 import re
 import logging
@@ -1293,3 +1294,250 @@ def get_deck_composition():
         })
 
     return jsonify({"total_decks": total_decks, "composition": composition_data})
+
+
+# ---------------------------------------------------------------------------
+# Card Played Winrates (from Sorcery Online match callbacks)
+# ---------------------------------------------------------------------------
+
+_PLAYED_WR_Z = 1.96  # 95% confidence
+
+
+def _played_wilson_lower(wins, total):
+    if total <= 0:
+        return 0
+    p = wins / total
+    z2 = _PLAYED_WR_Z ** 2
+    num = p + z2 / (2 * total) - _PLAYED_WR_Z * math.sqrt(
+        (p * (1 - p) / total) + (z2 / (4 * total ** 2))
+    )
+    return max(0, num / (1 + z2 / total))
+
+
+def _played_card_score(wins, losses):
+    total = wins + losses
+    if total <= 0:
+        return 0
+    base = _played_wilson_lower(wins, total) * 100
+    volume = 10 * math.log(total)
+    return int((base + volume) * 10 + 0.5)
+
+
+def _get_all_seasons_for_played():
+    """Return all seasons from elo.db events + SEASON_FILTERS."""
+    seasons = []
+    try:
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='events'")
+        if cur.fetchone():
+            cur.execute(
+                "SELECT event_id, event_name, start_date, end_date, is_active FROM events ORDER BY start_date ASC"
+            )
+            for row in cur.fetchall():
+                seasons.append({
+                    "id": row[0], "name": row[1],
+                    "start_date": row[2], "end_date": row[3],
+                    "is_active": bool(row[4]),
+                })
+        conn.close()
+    except sqlite3.OperationalError:
+        pass
+    db_names = [s["name"].lower() for s in seasons]
+    for sf in SEASON_FILTERS:
+        if any(sf["name"].lower() in n for n in db_names):
+            continue
+        seasons.append({
+            "id": sf["id"], "name": sf["name"],
+            "start_date": sf["start_date"], "end_date": sf["end_date"],
+            "is_active": False,
+        })
+    seasons.sort(key=lambda s: s["start_date"] or "")
+    return seasons
+
+
+@cards_bp.route("/cards/played-winrates/filters")
+def get_played_winrate_filters():
+    """Return available events for card played winrate filtering.
+
+    Active events are hidden from non-admins (same rule as avatar winrates).
+    """
+    events = []
+    try:
+        conn = sqlite3.connect(str(ELO_DB_PATH))
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='events'")
+        if cur.fetchone():
+            cur.execute(
+                "SELECT event_id, event_name, start_date, end_date, is_active FROM events ORDER BY start_date DESC"
+            )
+            user_admin = is_admin()
+            for row in cur.fetchall():
+                active = bool(row[4])
+                if active and not user_admin:
+                    continue
+                events.append({
+                    "event_id": row[0], "event_name": row[1],
+                    "start_date": row[2], "end_date": row[3],
+                    "is_active": active,
+                })
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning("Could not query events for played winrate filters: %s", e)
+
+    for sf in SEASON_FILTERS:
+        events.append({
+            "event_id": sf["id"], "event_name": sf["name"],
+            "start_date": sf["start_date"], "end_date": sf["end_date"],
+            "is_active": False,
+        })
+
+    return jsonify({"events": events})
+
+
+@cards_bp.route("/cards/played-winrates/season-stats")
+def get_played_winrate_season_stats():
+    """Return game counts per season that have played-card data."""
+    results = []
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+        # Check table exists
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sorcery_online_match_callbacks'")
+        if not cur.fetchone():
+            conn.close()
+            return jsonify(results)
+
+        for season in _get_all_seasons_for_played():
+            if season["end_date"]:
+                cur.execute(
+                    """SELECT COUNT(*) FROM sorcery_online_match_callbacks c
+                       JOIN match_records m ON c.match_id = m.match_id
+                       WHERE c.outcome = 'decided' AND c.played_cards IS NOT NULL
+                         AND m.timestamp >= ? AND m.timestamp < ?""",
+                    (season["start_date"], season["end_date"]),
+                )
+            else:
+                cur.execute(
+                    """SELECT COUNT(*) FROM sorcery_online_match_callbacks c
+                       JOIN match_records m ON c.match_id = m.match_id
+                       WHERE c.outcome = 'decided' AND c.played_cards IS NOT NULL
+                         AND m.timestamp >= ?""",
+                    (season["start_date"],),
+                )
+            total = cur.fetchone()[0]
+            results.append({
+                "id": season["id"], "name": season["name"],
+                "total_games": total, "is_active": season["is_active"],
+            })
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.warning("Could not query played winrate season stats: %s", e)
+    return jsonify(results)
+
+
+@cards_bp.route("/cards/played-winrates")
+def get_played_winrates():
+    """Card played winrates from Sorcery Online match callback data.
+
+    Returns per-card stats: when a card is played in a game, how often does that
+    player win? Supports ?event=all|current|<event_id> filtering.
+    Active events are admin-only (same rule as avatar winrates).
+    """
+    event_filter = request.args.get("event", "all")
+    if event_filter == "current" and not is_admin():
+        event_filter = "all"
+
+    if not MATCH_RECORDS_DB_PATH.exists():
+        return jsonify([])
+
+    # Determine date range
+    event_start, event_end = None, None
+    if event_filter not in ("all",):
+        event_start, event_end = _get_event_date_range(event_filter)
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        # Check table exists
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sorcery_online_match_callbacks'")
+        if not cur.fetchone():
+            conn.close()
+            return jsonify([])
+
+        # Build query
+        where_parts = [
+            "c.outcome = 'decided'",
+            "c.match_id IS NOT NULL",
+            "c.played_cards IS NOT NULL",
+        ]
+        params = []
+        if event_start:
+            where_parts.append("m.timestamp >= ?")
+            params.append(event_start)
+        if event_end:
+            where_parts.append("m.timestamp < ?")
+            params.append(event_end)
+
+        query = f"""
+            SELECT c.played_cards, m.winner_id, m.losser_id
+            FROM sorcery_online_match_callbacks c
+            JOIN match_records m ON c.match_id = m.match_id
+            WHERE {' AND '.join(where_parts)}
+        """
+        cur.execute(query, params)
+        rows = cur.fetchall()
+        conn.close()
+    except sqlite3.OperationalError as e:
+        logger.error("Database error in played winrates: %s", e)
+        return jsonify([])
+
+    # Tally per-card wins/losses
+    card_stats = {}  # card_name -> {"wins": N, "losses": N}
+    for played_json, winner_id, loser_id in rows:
+        try:
+            played = json.loads(played_json)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        winner_id = str(winner_id) if winner_id else None
+        loser_id = str(loser_id) if loser_id else None
+        for discord_id, cards in played.items():
+            is_winner = discord_id == winner_id
+            is_loser = discord_id == loser_id
+            if not is_winner and not is_loser:
+                continue
+            for card_name in cards:
+                if not card_name:
+                    continue
+                if card_name not in card_stats:
+                    card_stats[card_name] = {"wins": 0, "losses": 0}
+                if is_winner:
+                    card_stats[card_name]["wins"] += 1
+                else:
+                    card_stats[card_name]["losses"] += 1
+
+    # Build response with images
+    image_lookup = _build_card_image_lookup()
+    card_elements = _load_card_elements()
+    result = []
+    for name, stats in card_stats.items():
+        total = stats["wins"] + stats["losses"]
+        if total < 1:
+            continue
+        win_rate = round(stats["wins"] / total * 100, 1)
+        img_file = _find_card_image(name, image_lookup)
+        element = card_elements.get(name.lower())
+        result.append({
+            "name": name,
+            "wins": stats["wins"],
+            "losses": stats["losses"],
+            "total": total,
+            "win_rate": win_rate,
+            "played_score": _played_card_score(stats["wins"], stats["losses"]),
+            "image_url": f"/card-images/{img_file}" if img_file else None,
+            "element": element,
+        })
+
+    result.sort(key=lambda x: x["total"], reverse=True)
+    return jsonify(result)

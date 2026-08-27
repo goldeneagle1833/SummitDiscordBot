@@ -33,6 +33,7 @@ import AvatarTopPlayers from '@/pages/AvatarTopPlayers'
 import EloBreakdownMatches from '@/pages/EloBreakdownMatches'
 import Cards from '@/pages/Cards'
 import CardDetail from '@/pages/CardDetail'
+import CardPlayedWinrates from '@/pages/CardPlayedWinrates'
 import Elements from '@/pages/Elements'
 // Phase 6: Content & Interactive
 import Home from '@/pages/Home'
@@ -174,6 +175,7 @@ const router = createBrowserRouter([
       { path: '/avatar/:name', element: <AvatarDetail /> },
       { path: '/avatars/elo-matches', element: <EloBreakdownMatches /> },
       { path: '/cards', element: <Cards /> },
+      { path: '/cards/played-winrates', element: <CardPlayedWinrates /> },
       { path: '/card/:name', element: <CardDetail /> },
       { path: '/elements', element: <Elements /> },
       // Phase 6: Content & Interactive

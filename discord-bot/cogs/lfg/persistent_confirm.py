@@ -1215,11 +1215,17 @@ class PersistentMatchCardReportButton(
                     else get_pairing_by_id(data["guild_id"], data["pairing_id"])
                 )
                 if not pairing or pairing.get("status") != "active":
+                    status = pairing.get("status") if pairing else "missing"
+                    if status == "reported":
+                        msg = "This match has already been recorded. Duplicate report prevented."
+                    elif status == "expired":
+                        msg = "This pairing has expired. Please re-queue to start a new match."
+                    elif status == "cancelled":
+                        msg = "This pairing was cancelled."
+                    else:
+                        msg = "This pairing is no longer active."
                     delete_match_card(self.card_id)
-                    await interaction.response.send_message(
-                        "This match has already been recorded. Duplicate report prevented.",
-                        ephemeral=True,
-                    )
+                    await interaction.response.send_message(msg, ephemeral=True)
                     return
 
             opponent_id = player2_id if reporter_id == player1_id else player1_id

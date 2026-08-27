@@ -18,3 +18,9 @@ export const getCards = (params) => {
   return get(`/api/cards${query}`)
 }
 export const getCard = (name) => get(`/api/card/${encodeURIComponent(name)}`)
+export const getPlayedWinrates = (params) => {
+  const query = params ? `?${new URLSearchParams(params)}` : ''
+  return get(`/api/cards/played-winrates${query}`)
+}
+export const getPlayedWinrateFilters = () => get('/api/cards/played-winrates/filters')
+export const getPlayedWinrateSeasonStats = () => get('/api/cards/played-winrates/season-stats')

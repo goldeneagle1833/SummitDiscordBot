@@ -15,6 +15,7 @@ const ALL_NAV_OPTIONS = [
   { to: '/about', label: 'About' },
   { to: '/avatars', label: 'Avatar Winrates' },
   { to: '/avatars/top-players', label: 'Avatar Top 16' },
+  { to: '/cards/played-winrates', label: 'Card Played Winrates' },
   { to: '/deck-rec', label: 'Sorcery Deck Rec' },
   { to: '/deck-builder', label: 'Deck Visualizer' },
   { to: '/elements', label: 'Element Winrates' },

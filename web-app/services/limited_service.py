@@ -38,12 +38,9 @@ def _calculate_elo(player_elo, opponent_elo, did_win, k=32):
 def start_arena_run(user_id, display_name, deck_url):
     """Start a new arena run for a player.
 
-    Raises ValueError if the user already has an active run or no active event.
+    Raises ValueError if the user already has an active run.
     Returns dict with run info.
     """
-    if not EloRepository().get_active_event():
-        raise ValueError("No active event — arena runs cannot be started between seasons.")
-
     active = get_active_arena_run(user_id)
     if active:
         raise ValueError(f"User {user_id} already has an active arena run (run_id={active['run_id']})")

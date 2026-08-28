@@ -243,17 +243,6 @@ class ReactionRolesCog(commands.Cog):
                             logger.warning("ReactionRoles sync: cannot add %s to %s", role.name, member)
                         await asyncio.sleep(0.5)
 
-                for member in role.members:
-                    if member.bot:
-                        continue
-                    if member.id not in user_ids:
-                        try:
-                            await member.remove_roles(role, reason="Reaction role sync (no reaction)")
-                            logger.info("ReactionRoles sync: removed %s from %s", role.name, member)
-                        except discord.Forbidden:
-                            logger.warning("ReactionRoles sync: cannot remove %s from %s", role.name, member)
-                        await asyncio.sleep(0.5)
-
         logger.info("ReactionRoles: startup sync complete")
 
     # ------------------------------------------------------------------

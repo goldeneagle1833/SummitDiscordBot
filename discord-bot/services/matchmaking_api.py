@@ -112,6 +112,40 @@ async def _status(bot, user_id):
     }
 
 
+
+def _pick(payload, *keys, default=None):
+    """Return the first present, non-empty value among snake_case/camelCase keys."""
+    for key in keys:
+        value = payload.get(key)
+        if value is not None and value != "":
+            return value
+    return default
+
+
+def _result_fields(payload):
+    """Normalize a Sorcery Online result payload.
+
+    Accepts both snake_case (queue_type) and camelCase (queueType) keys —
+    the provisioning payload Summit sends *to* SO is camelCase, so SO may
+    reply the same way. For decided outcomes the reporter defaults to the
+    winner when not supplied.
+    """
+    outcome = str(_pick(payload, "outcome", default="decided")).strip().lower()
+    winner_id = _pick(payload, "winner_id", "winnerId", "winnerDiscordUserId")
+    loser_id = _pick(payload, "loser_id", "loserId", "loserDiscordUserId")
+    reporter_id = _pick(payload, "reporter_id", "reporterId", "reporterDiscordUserId")
+    if reporter_id is None and outcome == "decided":
+        reporter_id = winner_id
+    return {
+        "queue_type": str(_pick(payload, "queue_type", "queueType", default="")).strip(),
+        "outcome": outcome,
+        "reporter_id": reporter_id,
+        "winner_id": winner_id,
+        "loser_id": loser_id,
+        "players": _pick(payload, "players", "played_cards", "playedCards"),
+    }
+
+
 async def start_matchmaking_api(bot):
     async def status(request):
         user_id = int(request.match_info["user_id"])
@@ -180,18 +214,19 @@ async def start_matchmaking_api(bot):
         return web.json_response({"acknowledged": True})
 
     async def report_result(request):
-        payload = await request.json()
+        try:
+            payload = await request.json()
+        except ValueError:
+            raise web.HTTPBadRequest(text="Request body must be JSON")
+        if not isinstance(payload, dict):
+            raise web.HTTPBadRequest(text="Request body must be a JSON object")
+        fields = _result_fields(payload)
         try:
             result = await record_sorcery_online_result(
                 bot,
                 guild_id=int(request.match_info["guild_id"]),
                 pairing_id=int(request.match_info["pairing_id"]),
-                queue_type=str(payload.get("queue_type", "")),
-                outcome=str(payload.get("outcome", "decided")),
-                reporter_id=payload.get("reporter_id"),
-                winner_id=payload.get("winner_id"),
-                loser_id=payload.get("loser_id"),
-                players=payload.get("players"),
+                **fields,
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise web.HTTPBadRequest(text=str(exc) or "Invalid result")

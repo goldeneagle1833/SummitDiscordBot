@@ -25,26 +25,40 @@ logger = logging.getLogger("discord_bot")
 _result_lock = asyncio.Lock()
 _VALID_OUTCOMES = {"decided", "no_contest", "conflict", "unknown"}
 
-# Path to the match_records database (same one elo_repo uses for pairings)
-_MATCH_RECORDS_DB = None
+# The callback audit table lives in the same match_records.db the rest of
+# the bot uses (elo_repo / elo_service open it CWD-relative), so pairings,
+# match rows and callbacks always land in one file.
+MATCH_RECORDS_DB = "match_records.db"
+CALLBACK_TABLE = "sorcery_online_match_callbacks"
+_CALLBACK_COLUMNS = (
+    "id", "guild_id", "pairing_id", "queue_type", "outcome", "reporter_id",
+    "winner_id", "loser_id", "match_id", "played_cards", "raw_players", "created_at",
+)
 
 
 def _get_match_records_db():
-    global _MATCH_RECORDS_DB
-    if _MATCH_RECORDS_DB is None:
-        import os
-        _MATCH_RECORDS_DB = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), "match_records.db"
-        )
-    return _MATCH_RECORDS_DB
+    return MATCH_RECORDS_DB
 
 
 def _ensure_callback_table():
-    db_path = _get_match_records_db()
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(_get_match_records_db())
     try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS sorcery_online_match_callbacks (
+        existing = {
+            row[1] for row in conn.execute(f"PRAGMA table_info({CALLBACK_TABLE})")
+        }
+        if existing and not {"played_cards", "raw_players"}.issubset(existing):
+            # Earlier table shape (composite primary key, played_cards_json NOT NULL).
+            # CREATE TABLE IF NOT EXISTS won't upgrade it, so keep the old rows
+            # under a legacy name and start a fresh table.
+            legacy = f"{CALLBACK_TABLE}_legacy"
+            conn.execute(f"DROP TABLE IF EXISTS {legacy}")
+            conn.execute(f"ALTER TABLE {CALLBACK_TABLE} RENAME TO {legacy}")
+            logger.warning(
+                "Migrated old %s schema to %s; new callbacks use the current schema",
+                CALLBACK_TABLE, legacy,
+            )
+        conn.execute(f"""
+            CREATE TABLE IF NOT EXISTS {CALLBACK_TABLE} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 guild_id INTEGER NOT NULL,
                 pairing_id INTEGER NOT NULL,
@@ -67,26 +81,37 @@ def _ensure_callback_table():
 def _save_callback(guild_id, pairing_id, queue_type, outcome,
                    reporter_id, winner_id, loser_id, match_id,
                    played_cards, raw_players):
-    _ensure_callback_table()
-    db_path = _get_match_records_db()
-    conn = sqlite3.connect(db_path)
+    """Append an audit row for a Sorcery Online callback.
+
+    This is bookkeeping only. It must never turn an already-recorded match
+    into an error response (SO would retry and see a confusing duplicate),
+    so failures are logged and swallowed.
+    """
     try:
-        conn.execute(
-            """INSERT INTO sorcery_online_match_callbacks
-               (guild_id, pairing_id, queue_type, outcome,
-                reporter_id, winner_id, loser_id, match_id,
-                played_cards, raw_players)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                guild_id, pairing_id, queue_type, outcome,
-                reporter_id, winner_id, loser_id, match_id,
-                json.dumps(played_cards) if played_cards else None,
-                json.dumps(raw_players) if raw_players else None,
-            ),
+        _ensure_callback_table()
+        conn = sqlite3.connect(_get_match_records_db())
+        try:
+            conn.execute(
+                f"""INSERT INTO {CALLBACK_TABLE}
+                   (guild_id, pairing_id, queue_type, outcome,
+                    reporter_id, winner_id, loser_id, match_id,
+                    played_cards, raw_players)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    guild_id, pairing_id, queue_type, outcome,
+                    reporter_id, winner_id, loser_id, match_id,
+                    json.dumps(played_cards) if played_cards else None,
+                    json.dumps(raw_players) if raw_players else None,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        logger.error(
+            "Could not store Sorcery Online callback audit row for pairing %s (%s)",
+            pairing_id, outcome, exc_info=True,
         )
-        conn.commit()
-    finally:
-        conn.close()
 
 
 def _normalize_played_cards(players):

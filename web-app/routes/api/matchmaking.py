@@ -18,8 +18,18 @@ def matchmaking_api_key(view):
     return decorated
 
 
-def _relay(method, path, payload=None):
+BOT_UNAVAILABLE = {"membership": "unavailable", "queues": [], "result": None}
+
+
+def relay_to_bot(method, path, payload=None, unavailable_body=None):
+    """Forward a request to the bot's loopback API.
+
+    Returns (body_dict, status_code). Connection failures and bot 5xx
+    responses are collapsed to 503 with `unavailable_body` (defaults to
+    the matchmaking-status shape) so callers can treat them uniformly.
+    """
     base_url = os.getenv("MATCHMAKING_BOT_API_URL", "http://127.0.0.1:8765").rstrip("/")
+    unavailable = unavailable_body if unavailable_body is not None else BOT_UNAVAILABLE
     try:
         response = requests.request(
             method,
@@ -29,14 +39,19 @@ def _relay(method, path, payload=None):
             timeout=float(os.getenv("MATCHMAKING_BOT_API_TIMEOUT", "9")),
         )
     except requests.RequestException:
-        return jsonify({"membership": "unavailable", "queues": [], "result": None}), 503
+        return unavailable, 503
     if response.status_code >= 500:
-        return jsonify({"membership": "unavailable", "queues": [], "result": None}), 503
+        return unavailable, 503
     try:
         body = response.json()
     except ValueError:
         body = {"error": response.text.strip() or "Matchmaking request failed"}
-    return jsonify(body), response.status_code
+    return body, response.status_code
+
+
+def _relay(method, path, payload=None):
+    body, status = relay_to_bot(method, path, payload)
+    return jsonify(body), status
 
 
 @matchmaking_bp.get("/users/<user_id>/status")

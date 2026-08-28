@@ -314,3 +314,96 @@ async def test_missing_configured_guild_is_temporarily_unavailable():
     bot.get_guild.return_value = None
     with pytest.raises(web.HTTPServiceUnavailable):
         await _summit_member(bot, 123)
+
+
+# ── Sorcery Online results: payload casing, audit table robustness ──
+
+from services.matchmaking_api import _result_fields
+from services import summit_result_reporting
+
+
+def test_result_fields_accept_snake_and_camel_case():
+    snake = _result_fields({
+        "queue_type": "ranked", "reporter_id": "20",
+        "winner_id": "10", "loser_id": "20", "players": [],
+    })
+    camel = _result_fields({
+        "queueType": "ranked", "reporterId": "20",
+        "winnerId": "10", "loserId": "20", "playedCards": [],
+    })
+    assert snake == camel
+    assert snake["queue_type"] == "ranked"
+    assert snake["outcome"] == "decided"
+    assert snake["reporter_id"] == "20"
+
+
+def test_result_fields_default_reporter_to_winner_for_decided():
+    fields = _result_fields({"queueType": "ranked", "winnerId": 10, "loserId": 20})
+    assert fields["reporter_id"] == 10
+
+
+def test_result_fields_do_not_invent_reporter_for_non_decided():
+    fields = _result_fields({"queue_type": "ranked", "outcome": "UNKNOWN"})
+    assert fields["outcome"] == "unknown"
+    assert fields["reporter_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_camel_case_result_payload_records_match(mock_bot):
+    ensure_match_cards_table()
+    pairing_id = save_pairing(1, 10, 20, "deck-a", "deck-b", "ranked")
+
+    async def record_once(_interaction, _confirmation_id, data, **_kwargs):
+        from repositories.elo_repo import mark_pairing_reported
+        mark_pairing_reported(1, data["winner_id"], data["loser_id"], pairing_id=pairing_id)
+        return 91
+
+    with patch(
+        "services.summit_result_reporting._execute_match_confirmation",
+        new=AsyncMock(side_effect=record_once),
+    ):
+        result = await record_sorcery_online_result(
+            mock_bot,
+            guild_id=1,
+            pairing_id=pairing_id,
+            **_result_fields({"queueType": "ranked", "winnerId": "10", "loserId": "20"}),
+        )
+    assert result == {"recorded": True, "duplicate": False, "match_id": 91}
+    assert get_pairing_by_id(1, pairing_id)["status"] == "reported"
+
+
+def test_callback_table_migrates_legacy_schema():
+    conn = sqlite3.connect("match_records.db")
+    conn.execute("""CREATE TABLE sorcery_online_match_callbacks (
+        guild_id INTEGER NOT NULL, pairing_id INTEGER NOT NULL,
+        queue_type TEXT NOT NULL, outcome TEXT NOT NULL,
+        reporter_id INTEGER, winner_id INTEGER, loser_id INTEGER,
+        played_cards_json TEXT NOT NULL, match_id INTEGER, received_at TEXT NOT NULL,
+        PRIMARY KEY (guild_id, pairing_id, queue_type))""")
+    conn.execute(
+        "INSERT INTO sorcery_online_match_callbacks VALUES (1, 5, 'ranked', 'decided', 10, 10, 20, '[]', 3, 'x')"
+    )
+    conn.commit()
+    conn.close()
+
+    summit_result_reporting._save_callback(1, 6, "ranked", "decided", 10, 10, 20, 4, None, None)
+
+    conn = sqlite3.connect("match_records.db")
+    new_rows = conn.execute(
+        "SELECT pairing_id, match_id FROM sorcery_online_match_callbacks"
+    ).fetchall()
+    legacy_rows = conn.execute(
+        "SELECT pairing_id, match_id FROM sorcery_online_match_callbacks_legacy"
+    ).fetchall()
+    conn.close()
+    assert new_rows == [(6, 4)]
+    assert legacy_rows == [(5, 3)]
+
+
+def test_callback_save_failure_is_not_fatal(monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(summit_result_reporting, "_ensure_callback_table", boom)
+    # Must not raise: audit rows are bookkeeping, never a reason to fail a result
+    summit_result_reporting._save_callback(1, 6, "ranked", "decided", 10, 10, 20, 4, None, None)

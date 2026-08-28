@@ -2,14 +2,15 @@
 
 import sqlite3
 
-from webapp_config import MATCH_RECORDS_DB_PATH
+import webapp_config
 
 
 class ExternalMatchRepository:
     """Data access for the external_matches table in match_records.db."""
 
     def __init__(self, db_path=None):
-        self._db_path = str(db_path or MATCH_RECORDS_DB_PATH)
+        # Resolve at construction time so config/test overrides are honoured.
+        self._db_path = str(db_path or webapp_config.MATCH_RECORDS_DB_PATH)
 
     def _get_connection(self) -> sqlite3.Connection:
         return sqlite3.connect(self._db_path)

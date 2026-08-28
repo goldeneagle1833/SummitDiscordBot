@@ -1,6 +1,7 @@
 """Loopback-only HTTP API exposing the bot's authoritative LFG state."""
 
 import hmac
+import json
 import logging
 import os
 import time
@@ -136,6 +137,15 @@ def _result_fields(payload):
     reporter_id = _pick(payload, "reporter_id", "reporterId", "reporterDiscordUserId")
     if reporter_id is None and outcome == "decided":
         reporter_id = winner_id
+    players_key = (
+        "players" if payload.get("players") else
+        "played_cards" if payload.get("played_cards") else
+        "playedCards" if payload.get("playedCards") else "none"
+    )
+    logger.info(
+        "SO _result_fields: outcome=%s players_key=%s has_data=%s",
+        outcome, players_key, payload.get(players_key) is not None if players_key != "none" else False,
+    )
     return {
         "queue_type": str(_pick(payload, "queue_type", "queueType", default="")).strip(),
         "outcome": outcome,
@@ -220,7 +230,14 @@ async def start_matchmaking_api(bot):
             raise web.HTTPBadRequest(text="Request body must be JSON")
         if not isinstance(payload, dict):
             raise web.HTTPBadRequest(text="Request body must be a JSON object")
+        logger.info(
+            "SO report_result raw payload for guild=%s pairing=%s: %s",
+            request.match_info.get("guild_id"),
+            request.match_info.get("pairing_id"),
+            json.dumps(payload, default=str),
+        )
         fields = _result_fields(payload)
+        logger.info("SO report_result normalized fields: %s", fields)
         try:
             result = await record_sorcery_online_result(
                 bot,

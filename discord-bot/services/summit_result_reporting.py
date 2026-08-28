@@ -89,6 +89,14 @@ def _save_callback(guild_id, pairing_id, queue_type, outcome,
     """
     try:
         _ensure_callback_table()
+        played_json = json.dumps(played_cards) if played_cards else None
+        raw_json = json.dumps(raw_players) if raw_players else None
+        logger.info(
+            "SO _save_callback: pairing=%s outcome=%s match_id=%s "
+            "played_cards_null=%s raw_players_null=%s",
+            pairing_id, outcome, match_id,
+            played_json is None, raw_json is None,
+        )
         conn = sqlite3.connect(_get_match_records_db())
         try:
             conn.execute(
@@ -100,8 +108,7 @@ def _save_callback(guild_id, pairing_id, queue_type, outcome,
                 (
                     guild_id, pairing_id, queue_type, outcome,
                     reporter_id, winner_id, loser_id, match_id,
-                    json.dumps(played_cards) if played_cards else None,
-                    json.dumps(raw_players) if raw_players else None,
+                    played_json, raw_json,
                 ),
             )
             conn.commit()
@@ -176,6 +183,16 @@ async def record_sorcery_online_result(
     players=None,
 ):
     """Record one authoritative pairing result, returning duplicate success on retries."""
+    logger.info(
+        "SO record_sorcery_online_result called: guild=%s pairing=%s queue=%s outcome=%s "
+        "reporter=%s winner=%s loser=%s players_type=%s players_len=%s",
+        guild_id, pairing_id, queue_type, outcome,
+        reporter_id, winner_id, loser_id,
+        type(players).__name__ if players else None,
+        len(players) if isinstance(players, (list, dict)) else None,
+    )
+    if players:
+        logger.info("SO players raw data: %s", json.dumps(players, default=str)[:2000])
     async with _result_lock:
         is_limited = queue_type == "limited"
         pairing = (
@@ -192,6 +209,11 @@ async def record_sorcery_online_result(
             raise ValueError("Invalid Sorcery Online outcome")
 
         played_cards = _normalize_played_cards(players)
+        logger.info(
+            "SO pairing %s: played_cards normalized=%s",
+            pairing_id,
+            json.dumps(played_cards, default=str)[:1000] if played_cards else None,
+        )
 
         # --- Non-decided outcomes (no_contest, unknown, conflict) ---
         if outcome != "decided":

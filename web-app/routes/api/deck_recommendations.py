@@ -356,7 +356,7 @@ def get_deck_info(deck_id: str):
 
 def _fetch_curiosa_deck_info(deck_id: str):
     """Fetch deck info directly from Curiosa API for non-seed decks."""
-    curiosa_url = f"https://curiosa.io/decks/{deck_id}"
+    curiosa_url = f"https://sorcerytcg.com/decks/{deck_id}"
     try:
         fresh_json = CuriosaService().fetch_deck_data(curiosa_url)
         if not fresh_json or fresh_json in ("{}", ""):

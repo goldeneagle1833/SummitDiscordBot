@@ -828,8 +828,8 @@ class PersistentDisputeButton(
 
 class PersistentConfirmDeckModal(discord.ui.Modal, title="Enter Your Deck"):
     deck_url = discord.ui.TextInput(
-        label="Curiosa Deck URL",
-        placeholder="https://curiosa.io/decks/...",
+        label="Deck URL",
+        placeholder="https://sorcerytcg.com/decks/...",
         required=True,
     )
 

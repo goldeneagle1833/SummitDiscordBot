@@ -146,11 +146,11 @@ async def validate_deck_points(deck_url: str) -> tuple[bool, str, int, int]:
     else:
         deck_json_str = await scrape_curosa_async(deck_url)
         if not deck_json_str or deck_json_str == "{}":
-            return False, "Could not fetch deck data from Curiosa. Check the URL and try again.", 0, max_budget
+            return False, "Could not fetch deck data. Check the URL and try again.", 0, max_budget
         try:
             deck_data = json.loads(deck_json_str)
         except json.JSONDecodeError:
-            return False, "Invalid deck data received from Curiosa.", 0, max_budget
+            return False, "Invalid deck data received.", 0, max_budget
 
     total_points, costed_cards = calculate_deck_points(deck_data, card_points)
 

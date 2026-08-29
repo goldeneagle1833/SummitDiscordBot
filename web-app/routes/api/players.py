@@ -2151,7 +2151,7 @@ def player_api(player_id):
             "{}",
             "",
             None,
-        ) and str(player_deck_url_check).startswith("https://curiosa.io"):
+        ) and (str(player_deck_url_check).startswith("https://curiosa.io") or str(player_deck_url_check).startswith("https://sorcerytcg.com")):
             has_deck = True
         if player_deck_json and player_deck_json not in ("{}", "", None):
             has_deck = True
@@ -2339,7 +2339,7 @@ def player_api(player_id):
             "No URL provided",
             "Admin reported match",
             "{}",
-        ) or not str(player_deck_url).startswith("https://curiosa.io"):
+        ) or not (str(player_deck_url).startswith("https://curiosa.io") or str(player_deck_url).startswith("https://sorcerytcg.com")):
             continue
 
         # Normalize URL by stripping query parameters (e.g. ?tab=view)
@@ -2383,7 +2383,7 @@ def player_api(player_id):
         player_deck_url = em.get("winner_deck_url") if did_win else em.get("loser_deck_url")
         player_deck_json = em.get("json_deck_data_winner") if did_win else em.get("json_deck_data_loser")
 
-        if not player_deck_url or not str(player_deck_url).startswith("https://curiosa.io"):
+        if not player_deck_url or not (str(player_deck_url).startswith("https://curiosa.io") or str(player_deck_url).startswith("https://sorcerytcg.com")):
             continue
 
         player_deck_url = player_deck_url.split("?")[0]

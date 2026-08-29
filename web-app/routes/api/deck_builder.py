@@ -212,7 +212,7 @@ def fetch_deck():
         return jsonify({"error": "Missing deck URL"}), 400
 
     # Basic validation
-    if "curiosa.io" not in deck_url.lower() and not deck_url.startswith("http"):
+    if "curiosa.io" not in deck_url.lower() and "sorcerytcg.com" not in deck_url.lower() and not deck_url.startswith("http"):
         return jsonify({"error": "Invalid deck URL"}), 400
 
     try:

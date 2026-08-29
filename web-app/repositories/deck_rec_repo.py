@@ -123,7 +123,7 @@ class DeckRecord:
 class DeckRecRepository:
     """Loads and merges deck data from tournament JSON files and match records DB."""
 
-    CURIOSA_BASE = "https://curiosa.io/decks/"
+    CURIOSA_BASE = "https://sorcerytcg.com/decks/"
 
     def __init__(
         self,

@@ -42,8 +42,8 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
     """Modal for entering deck URL when sending a challenge"""
 
     deck_url = discord.ui.TextInput(
-        label="Your Curiosa Deck URL (optional)",
-        placeholder="https://curiosa.io/decks/...",
+        label="Your Deck URL (optional)",
+        placeholder="https://sorcerytcg.com/decks/...",
         required=False,
         max_length=200,
     )
@@ -131,8 +131,8 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
     """Modal for entering deck URL when accepting a challenge"""
 
     deck_url = discord.ui.TextInput(
-        label="Your Curiosa Deck URL (optional)",
-        placeholder="https://curiosa.io/decks/...",
+        label="Your Deck URL (optional)",
+        placeholder="https://sorcerytcg.com/decks/...",
         required=False,
         max_length=200,
     )

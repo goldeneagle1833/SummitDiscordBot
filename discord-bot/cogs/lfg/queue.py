@@ -156,8 +156,8 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
     """Modal for entering a deck URL when joining the LFG queue"""
 
     deck_url = discord.ui.TextInput(
-        label="Curiosa Deck URL",
-        placeholder="https://curiosa.io/decks/... (optional)",
+        label="Deck URL",
+        placeholder="https://sorcerytcg.com/decks/... (optional)",
         required=False,
         max_length=200,
     )
@@ -324,7 +324,7 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
 
         deck_url = self.deck_url.value.strip()
         if not deck_url or not any(host in deck_url.lower() for host in (
-            "curiosa.io", "draftsorcery.com", "playsorceryonline.com"
+            "curiosa.io", "sorcerytcg.com", "draftsorcery.com", "playsorceryonline.com"
         )):
             await interaction.followup.send(
                 "Please provide a valid deck URL (Curiosa, Sorcery Online, or DraftSorcery).",

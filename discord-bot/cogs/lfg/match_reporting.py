@@ -257,8 +257,8 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
     """Modal for capturing deck URL when reporter didn't provide one at queue join"""
 
     deck_url = discord.ui.TextInput(
-        label="Curiosa Deck URL",
-        placeholder="https://curiosa.io/decks/...",
+        label="Deck URL",
+        placeholder="https://sorcerytcg.com/decks/...",
         required=True,
     )
 
@@ -1562,8 +1562,8 @@ class MatchReportDeckModal(discord.ui.Modal, title="Enter Your Deck"):
     """Collects the reporter's deck URL before submitting the match report."""
 
     deck_url = discord.ui.TextInput(
-        label="Curiosa Deck URL",
-        placeholder="https://curiosa.io/decks/...",
+        label="Deck URL",
+        placeholder="https://sorcerytcg.com/decks/...",
         required=True,
     )
 

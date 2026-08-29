@@ -849,18 +849,22 @@ def _calculate_both_elo_changes(
     return (winner_lifetime_change, winner_event_change, loser_lifetime_change, loser_event_change)
 
 
-_VALID_DECK_URL_PREFIX = "https://curiosa.io/decks/"
+_VALID_DECK_URL_PREFIXES = (
+    "https://curiosa.io/decks/",
+    "https://sorcerytcg.com/decks/",
+)
 
 
 def _is_valid_deck_url(url: str) -> bool:
-    """Return True if url is a proper Curiosa deck URL with a non-empty deck ID."""
+    """Return True if url is a proper deck URL with a non-empty deck ID."""
     if not url or not isinstance(url, str):
         return False
     base = url.split("?")[0].rstrip("/")
-    if not base.startswith(_VALID_DECK_URL_PREFIX):
-        return False
-    deck_id = base[len(_VALID_DECK_URL_PREFIX):]
-    return bool(deck_id)
+    for prefix in _VALID_DECK_URL_PREFIXES:
+        if base.startswith(prefix):
+            deck_id = base[len(prefix):]
+            return bool(deck_id)
+    return False
 
 
 async def _update_deck_data(match_id: int, winner_url: str, loser_url: str, table: str = "match_records") -> None:

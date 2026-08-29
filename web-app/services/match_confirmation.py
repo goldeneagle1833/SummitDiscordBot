@@ -141,21 +141,21 @@ class MatchConfirmationService:
 
         # Validate deck URLs
         # Pattern supports: http/https, optional www, alphanumeric ID with hyphens/underscores, optional query params
-        deck_url_pattern = r"^https?://(www\.)?curiosa\.io/decks/[a-zA-Z0-9_-]+(\?.*)?$"
+        deck_url_pattern = r"^https?://(www\.)?(curiosa\.io|sorcerytcg\.com)/decks/[a-zA-Z0-9_-]+(\?.*)?$"
 
         # Submitter deck URL is optional, but must be valid if provided
         if submitter_deck_url:
             if not re.match(deck_url_pattern, submitter_deck_url):
                 errors[
                     "submitter_deck_url"
-                ] = "Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id]"
+                ] = "Invalid deck URL format. Expected: https://sorcerytcg.com/decks/[deck-id]"
 
         # Opponent deck URL is optional (provided during confirmation)
         if opponent_deck_url:
             if not re.match(deck_url_pattern, opponent_deck_url):
                 errors[
                     "opponent_deck_url"
-                ] = "Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id]"
+                ] = "Invalid deck URL format. Expected: https://sorcerytcg.com/decks/[deck-id]"
 
         return {"valid": len(errors) == 0, "errors": errors}
 
@@ -643,9 +643,9 @@ class MatchConfirmationService:
         if opponent_deck_url:
             # Validate deck URL format
             import re
-            deck_url_pattern = r"^https://curiosa\.io/decks/[a-zA-Z0-9_-]+(\?.*)?$"
+            deck_url_pattern = r"^https://(curiosa\.io|sorcerytcg\.com)/decks/[a-zA-Z0-9_-]+(\?.*)?$"
             if not re.match(deck_url_pattern, opponent_deck_url):
-                raise ValueError("Invalid Curiosa.io deck URL format. Expected: https://curiosa.io/decks/[deck-id]")
+                raise ValueError("Invalid deck URL format. Expected: https://sorcerytcg.com/decks/[deck-id]")
 
             # Determine if opponent is winner or loser (direct string comparison - no normalization)
             is_winner = str(confirmation["winner_discord_id"]) == str(opponent_user_id)

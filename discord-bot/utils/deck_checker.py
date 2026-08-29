@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import time
+import urllib.parse
 import requests
 try:
     import certifi
@@ -11,9 +12,12 @@ except Exception:
     _REQUESTS_VERIFY = True
     _SSL_CONTEXT = None
 
+# sorcerytcg.com tRPC API (formerly curiosa.io)
+_TRPC_BASE = "https://sorcerytcg.com/api/trpc/deck.get"
+
 
 def get_deck_id(url: str) -> str:
-    """Extract deck ID from Curiosa URL."""
+    """Extract deck ID from a Curiosa or sorcerytcg.com URL."""
     # Split on '?' to remove any query parameters
     base_url = url.split("?")[0]
     # Get the last part of the URL path
@@ -21,23 +25,106 @@ def get_deck_id(url: str) -> str:
     return deck_id
 
 
+def _convert_trpc_to_legacy(trpc_response: dict) -> dict:
+    """Convert a sorcerytcg.com tRPC deck response to the legacy Curiosa format.
+
+    The legacy format uses avatar/spellbook/atlas/sideboard sections with flat
+    card dicts.  All downstream consumers expect this shape, so we convert at
+    the API boundary.
+    """
+    deck = trpc_response.get("result", {}).get("data", {}).get("json", {})
+    if not deck:
+        return {}
+
+    avatar = []
+    spellbook = []
+    atlas = []
+    sideboard = []
+
+    for entry in deck.get("decklist", []):
+        board = entry.get("board", "")
+        card_info = entry.get("card", {})
+        engine = card_info.get("engine", {})
+        printing = entry.get("printing", {})
+        printing_meta = printing.get("meta", {})
+
+        # Build a flat card dict matching the old Curiosa format
+        elements_list = engine.get("elements", [])
+        elements_str = ", ".join(elements_list) if elements_list else "None"
+
+        card = {
+            "name": card_info.get("name", ""),
+            "quantity": entry.get("quantity", 1),
+            "type": engine.get("type", "Unknown"),
+            "rarity": engine.get("rarity", "Unknown"),
+            "cost": engine.get("cost"),
+            "elements": elements_str,
+            "image": printing_meta.get("image", ""),
+        }
+
+        # Optional fields from old format
+        if engine.get("rules"):
+            card["rules"] = engine["rules"]
+        if engine.get("category"):
+            card["category"] = engine["category"]
+
+        # Route to the correct section based on board + type
+        if board == "Avatar":
+            avatar.append(card)
+        elif board == "Main":
+            if engine.get("type") == "Site":
+                atlas.append(card)
+            else:
+                spellbook.append(card)
+        elif board == "Maybeboard":
+            sideboard.append(card)
+        # Skip "Collection" board — it's a wishlist, not part of the deck
+
+    owner = deck.get("owner", {})
+    return {
+        "id": deck.get("id", ""),
+        "name": deck.get("name", ""),
+        "username": owner.get("username", ""),
+        "avatar": avatar,
+        "spellbook": spellbook,
+        "atlas": atlas,
+        "sideboard": sideboard,
+    }
+
+
+def _fetch_deck_from_api(deck_id: str) -> dict | None:
+    """Fetch a single deck from the sorcerytcg.com tRPC API.
+
+    Returns the legacy-format dict or None on failure.
+    """
+    input_json = json.dumps({"json": {"id": deck_id}})
+    url = f"{_TRPC_BASE}?input={urllib.parse.quote(input_json)}"
+    response = requests.get(url, timeout=30, verify=_REQUESTS_VERIFY)
+    if response.status_code != 200:
+        return None
+    trpc_data = response.json()
+    legacy = _convert_trpc_to_legacy(trpc_data)
+    return legacy if legacy else None
+
+
 def scrape_Curosa(deck_url, name):
-    """Scrape deck data from Curiosa and save to file.
+    """Fetch deck data from sorcerytcg.com and save to file.
 
     Retries once after 30 seconds only if the API returns a 400 error.
     """
     deck_id = get_deck_id(deck_url)
+    input_json = json.dumps({"json": {"id": deck_id}})
+    api_url = f"{_TRPC_BASE}?input={urllib.parse.quote(input_json)}"
 
     for attempt in range(2):  # Try up to 2 times (only retry on 400)
         try:
             response = requests.get(
-                "https://curiosa.io/api/decks?ids=" + deck_id,
+                api_url,
                 timeout=30,
                 verify=_REQUESTS_VERIFY,
             )
 
             if response.status_code == 400:
-                # Only retry with 30 second delay on 400 errors
                 print(f"API returned 400 error (attempt {attempt + 1})")
                 if attempt == 0:
                     print("Retrying in 30 seconds...")
@@ -46,17 +133,16 @@ def scrape_Curosa(deck_url, name):
                 return "{}"
 
             if response.status_code != 200:
-                # Other non-200 errors - don't retry
                 print(
                     f"Failed to retrieve the website. Status code: {response.status_code}"
                 )
                 return "{}"
 
-            json_data = json.loads(response.text)
+            trpc_data = json.loads(response.text)
+            legacy_deck = _convert_trpc_to_legacy(trpc_data)
 
-            # Check if we got a valid list with data
-            if not isinstance(json_data, list) or len(json_data) == 0:
-                print(f"API did not return a valid list. Got: {type(json_data)}")
+            if not legacy_deck:
+                print("API did not return valid deck data.")
                 return "{}"
 
             # Load existing data from file if it exists
@@ -70,14 +156,14 @@ def scrape_Curosa(deck_url, name):
                 existing_data = []
 
             # Append the new data to existing data
-            existing_data.append(json_data[0])
+            existing_data.append(legacy_deck)
 
             # Write the updated data back to the file
             with open(name, "w") as f:
                 json.dump(existing_data, f, indent=2)
 
             # Return json data as a string to save in the db
-            return json.dumps(json_data[0])
+            return json.dumps(legacy_deck)
 
         except requests.exceptions.Timeout:
             print(f"Request timed out (attempt {attempt + 1})")
@@ -93,10 +179,10 @@ def scrape_Curosa(deck_url, name):
 
 
 async def scrape_curosa_async(deck_url: str) -> str:
-    """Fetch deck data from Curiosa asynchronously.
+    """Fetch deck data from sorcerytcg.com asynchronously.
 
     Runs the synchronous requests.get call in a thread to avoid blocking
-    the event loop — same approach as curosa.py but non-blocking.
+    the event loop.
     Returns a JSON string of the deck data, or '{}' on any failure.
     """
     def _fetch() -> str:
@@ -104,17 +190,10 @@ async def scrape_curosa_async(deck_url: str) -> str:
         if not deck_id:
             return "{}"
         try:
-            response = requests.get(
-                "https://curiosa.io/api/decks?ids=" + deck_id,
-                timeout=30,
-                verify=_REQUESTS_VERIFY,
-            )
-            if response.status_code != 200:
+            legacy = _fetch_deck_from_api(deck_id)
+            if not legacy:
                 return "{}"
-            json_data = json.loads(response.text)
-            if not isinstance(json_data, list) or len(json_data) == 0:
-                return "{}"
-            return json.dumps(json_data[0])
+            return json.dumps(legacy)
         except Exception:
             return "{}"
 

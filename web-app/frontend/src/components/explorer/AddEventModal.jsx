@@ -28,7 +28,7 @@ export default function AddEventModal({ seasons, onClose, onSaved }) {
     } catch (err) {
       if (err.status === 400) setError('Invalid URL. Must be a sorcerytcg.com event URL.')
       else if (err.status === 409) setError('This event has already been imported.')
-      else if (err.status === 502) setError('Could not reach carde.io. The event may not be published yet.')
+      else if (err.status === 502) setError('Could not reach sorcerytcg.com. The event may not be published yet.')
       else setError(err.message || 'Failed to fetch event')
     } finally {
       setLoading(false)
@@ -67,7 +67,7 @@ export default function AddEventModal({ seasons, onClose, onSaved }) {
                   type="url"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://play.sorcerytcg.com/events/..."
+                  placeholder="https://sorcerytcg.com/events/..."
                   className="w-full bg-bg-elevated border border-border rounded px-3 py-2 text-sm"
                   required
                   autoFocus

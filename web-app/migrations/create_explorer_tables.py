@@ -37,7 +37,7 @@ def create_explorer_tables():
             season_id INTEGER NOT NULL REFERENCES explorer_seasons(id),
             cardeio_event_id TEXT NOT NULL UNIQUE,
             cardeio_final_tournament_id TEXT,
-            cardeio_swiss_phase_id TEXT NOT NULL,
+            cardeio_swiss_phase_id TEXT,
             event_name TEXT NOT NULL,
             event_date TEXT,
             total_players INTEGER,
@@ -47,6 +47,45 @@ def create_explorer_tables():
             fetched_at TEXT DEFAULT (datetime('now'))
         )
     """)
+
+    # Migration: make cardeio_swiss_phase_id nullable for existing DBs
+    # (SQLite CREATE TABLE IF NOT EXISTS won't alter existing columns)
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS _explorer_events_migration_check (done INTEGER)
+        """)
+        check = cursor.execute(
+            "SELECT done FROM _explorer_events_migration_check LIMIT 1"
+        ).fetchone()
+        if not check:
+            # Rebuild table to allow NULL in cardeio_swiss_phase_id
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS explorer_events_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    season_id INTEGER NOT NULL REFERENCES explorer_seasons(id),
+                    cardeio_event_id TEXT NOT NULL UNIQUE,
+                    cardeio_final_tournament_id TEXT,
+                    cardeio_swiss_phase_id TEXT,
+                    event_name TEXT NOT NULL,
+                    event_date TEXT,
+                    total_players INTEGER,
+                    play_format TEXT,
+                    venue_name TEXT,
+                    source_url TEXT,
+                    fetched_at TEXT DEFAULT (datetime('now'))
+                )
+            """)
+            cursor.execute("""
+                INSERT OR IGNORE INTO explorer_events_new
+                SELECT * FROM explorer_events
+            """)
+            cursor.execute("DROP TABLE explorer_events")
+            cursor.execute("ALTER TABLE explorer_events_new RENAME TO explorer_events")
+            cursor.execute(
+                "INSERT INTO _explorer_events_migration_check (done) VALUES (1)"
+            )
+    except Exception:
+        pass  # table doesn't exist yet or migration already done
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS explorer_results (

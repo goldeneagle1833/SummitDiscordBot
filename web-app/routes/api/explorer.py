@@ -104,7 +104,7 @@ def get_season_events(season_id):
 @explorer_bp.route("/events/preview", methods=["POST"])
 @require_explorer_admin
 def preview_event():
-    """Fetch event data from carde.io and return a preview without saving."""
+    """Fetch event data from sorcerytcg.com and return a preview without saving."""
     data = request.get_json() or {}
     url = (data.get("url") or "").strip()
     season_id = data.get("season_id")
@@ -119,7 +119,7 @@ def preview_event():
         service = ExplorerService()
         event_data = service.fetch_event_data(url)
 
-        existing = repo.get_event_by_cardeio_id(event_data["cardeio_event_id"])
+        existing = repo.get_event_by_cardeio_id(event_data["event_id"])
         if existing:
             return jsonify({"error": "Event already imported"}), 409
 
@@ -128,7 +128,7 @@ def preview_event():
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         if "ExplorerFetchError" in type(e).__name__:
-            return jsonify({"error": f"Failed to fetch event from carde.io: {e}"}), 502
+            return jsonify({"error": f"Failed to fetch event from sorcerytcg.com: {e}"}), 502
         logger.error(f"Error previewing explorer event: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
@@ -136,7 +136,7 @@ def preview_event():
 @explorer_bp.route("/events", methods=["POST"])
 @require_explorer_admin
 def save_event():
-    """Import and save an event from a carde.io URL."""
+    """Import and save an event from a sorcerytcg.com URL."""
     data = request.get_json() or {}
     url = (data.get("url") or "").strip()
     season_id = data.get("season_id")
@@ -151,7 +151,7 @@ def save_event():
         service = ExplorerService()
         event_data = service.fetch_event_data(url)
 
-        existing = repo.get_event_by_cardeio_id(event_data["cardeio_event_id"])
+        existing = repo.get_event_by_cardeio_id(event_data["event_id"])
         if existing:
             return jsonify({"error": "Event already imported"}), 409
 
@@ -160,9 +160,7 @@ def save_event():
 
         event = repo.create_event(
             season_id=season_id,
-            cardeio_event_id=event_data["cardeio_event_id"],
-            cardeio_swiss_phase_id=event_data["cardeio_swiss_phase_id"],
-            cardeio_final_tournament_id=event_data.get("cardeio_final_tournament_id"),
+            event_external_id=event_data["event_id"],
             event_name=event_data["event_name"],
             event_date=event_data.get("event_date"),
             total_players=event_data.get("total_players"),
@@ -184,7 +182,7 @@ def save_event():
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         if "ExplorerFetchError" in type(e).__name__:
-            return jsonify({"error": f"Failed to fetch event from carde.io: {e}"}), 502
+            return jsonify({"error": f"Failed to fetch event from sorcerytcg.com: {e}"}), 502
         logger.error(f"Error saving explorer event: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 

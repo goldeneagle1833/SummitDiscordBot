@@ -10,11 +10,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-CARDEIO_BASE = "https://api.carde.io/api/play"
-SORCERY_GAME_ID = "74fac80c-c965-476d-9f2e-f6f1b2f35123"
-CARDEIO_HEADERS = {"game-id": SORCERY_GAME_ID}
+SORCERY_TRPC_BASE = "https://sorcerytcg.com/api/trpc"
 SORCERY_EVENT_URL_RE = re.compile(
-    r"https?://play\.sorcerytcg\.com/events/([0-9a-f-]{36})", re.IGNORECASE
+    r"https?://(?:play\.)?sorcerytcg\.com/events/([A-Za-z0-9_-]+)", re.IGNORECASE
 )
 
 DEFAULT_POINTS_CONFIG = {
@@ -26,7 +24,7 @@ DEFAULT_POINTS_CONFIG = {
 
 
 class ExplorerFetchError(Exception):
-    """Raised when carde.io API call fails."""
+    """Raised when sorcerytcg.com API call fails."""
 
 
 class ExplorerService:
@@ -41,258 +39,134 @@ class ExplorerService:
         match = SORCERY_EVENT_URL_RE.match(url.strip())
         if not match:
             raise ValueError(
-                "URL must be in the format https://play.sorcerytcg.com/events/{uuid}"
+                "URL must be in the format https://sorcerytcg.com/events/{id}"
             )
-        event_uuid = match.group(1)
+        event_id = match.group(1)
 
-        # Try as activity ID first (returns phases directly), fall back to events
-        data = self._fetch_activity_or_event(event_uuid)
-        phases = data.get("phases", {})
+        event = self._fetch_event_trpc(event_id)
 
-        # Identify Swiss phase (stage "1") and final phase (highest stage number)
-        swiss_phase = None
-        final_phase = None
-        highest_stage = 0
+        players_data = event.get("players", [])
 
-        for stage_key, phase_list in phases.items():
-            stage_num = int(stage_key)
-            for phase in phase_list:
-                if stage_num == 1:
-                    swiss_phase = phase
-                if stage_num > highest_stage:
-                    highest_stage = stage_num
-                    final_phase = phase
-
-        if swiss_phase is None:
-            raise ExplorerFetchError("No Swiss phase (stage 1) found in event data")
-
-        swiss_phase_id = swiss_phase["id"]
-        swiss_tournament_id = swiss_phase.get("tournament", {}).get("id")
-
-        final_tournament_id = None
-        if final_phase and final_phase["id"] != swiss_phase["id"]:
-            final_tournament_id = final_phase.get("tournament", {}).get("id")
-
-        # Fetch Swiss roster for full player list + win counts
-        swiss_roster = self._fetch_roster(swiss_phase_id)
-
-        # Fetch final standings if a top-cut exists
-        top_cut_standings = {}
-        if final_tournament_id:
-            top_cut_standings = self._fetch_final_standings(final_tournament_id)
-
-        # When no top cut, use Swiss tournament standings for proper placement order
-        swiss_standings = {}
-        if not final_tournament_id and swiss_tournament_id:
-            swiss_standings = self._fetch_final_standings(swiss_tournament_id)
-
-        results = self._merge_standings(swiss_roster, top_cut_standings, swiss_standings)
-
-        event_info = data.get("event", {})
-        owner = event_info.get("owner", {})
-        venue_name = owner.get("name")
-
-        # Derive play_format from configuration
+        # Derive play format from phases
+        phases = event.get("phases", [])
         play_format = None
-        config = data.get("configuration", {})
-        tournaments_config = config.get("tournaments", [])
-        if tournaments_config:
-            fmt = tournaments_config[0].get("gameplayFormatId")
-            play_format = fmt  # raw ID; display name not available from this endpoint
+        for phase in phases:
+            if phase.get("type") == "Play":
+                play_format = phase.get("format")
+                break
 
-        # Prefer event-level date
-        event_date = (event_info.get("startsAt") or data.get("startsAt") or "")
+        results = self._build_results(players_data, event.get("topcut"))
+
+        # Extract venue name from store or owner
+        venue_name = None
+        store = event.get("store")
+        if store:
+            venue_name = store.get("name")
+        if not venue_name:
+            owner = event.get("owner")
+            if owner:
+                venue_name = owner.get("name")
+
+        event_date = (event.get("startsAt") or "")
         if event_date:
             event_date = event_date[:10]  # YYYY-MM-DD
 
         return {
-            "cardeio_event_id": event_uuid,
-            "cardeio_swiss_phase_id": swiss_phase_id,
-            "cardeio_final_tournament_id": final_tournament_id,
-            "event_name": event_info.get("name") or data.get("name", ""),
+            "event_id": event_id,
+            "event_name": event.get("title", ""),
             "event_date": event_date or None,
-            "total_players": len(swiss_roster),
+            "total_players": len([p for p in players_data if p.get("status") != "Dropped" or p.get("seats")]),
             "venue_name": venue_name,
             "play_format": play_format,
-            "top_cut_size": len(top_cut_standings),
+            "top_cut_size": event.get("topcut") or 0,
             "results": results,
         }
 
-    def _fetch_activity_or_event(self, uuid: str) -> dict:
-        """Try fetching as activity first, then as event.
-
-        The sorcerytcg.com URL can contain either an activity ID or event ID.
-        The /activities/ endpoint returns phases directly.
-        """
-        # Try as activity
+    def _fetch_event_trpc(self, event_id: str) -> dict:
+        """Fetch event data from sorcerytcg.com tRPC endpoint."""
+        params = {
+            "batch": "1",
+            "input": json.dumps({"0": {"json": {"id": event_id}}}),
+        }
         try:
             resp = requests.get(
-                f"{CARDEIO_BASE}/activities/{uuid}",
-                headers=CARDEIO_HEADERS,
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                data = resp.json().get("data", {})
-                if data.get("phases"):
-                    return data
-        except requests.exceptions.RequestException:
-            pass
-
-        # Try as event (may contain multiple activities)
-        try:
-            resp = requests.get(
-                f"{CARDEIO_BASE}/events/{uuid}",
-                headers=CARDEIO_HEADERS,
-                timeout=10,
+                f"{SORCERY_TRPC_BASE}/event.get",
+                params=params,
+                timeout=15,
             )
         except requests.exceptions.RequestException as exc:
             raise ExplorerFetchError(f"Network error fetching event: {exc}") from exc
 
         if resp.status_code != 200:
             raise ExplorerFetchError(
-                f"carde.io returned {resp.status_code} for {uuid}"
+                f"sorcerytcg.com returned {resp.status_code} for event {event_id}"
             )
 
-        data = resp.json().get("data", {})
-        if data.get("phases"):
-            return data
-
-        # If the event endpoint returns activities list, fetch the first one
-        activities = data.get("activities", [])
-        if activities:
-            activity_id = activities[0].get("id") if isinstance(activities[0], dict) else activities[0]
-            try:
-                resp2 = requests.get(
-                    f"{CARDEIO_BASE}/activities/{activity_id}",
-                    headers=CARDEIO_HEADERS,
-                    timeout=10,
-                )
-                if resp2.status_code == 200:
-                    return resp2.json().get("data", {})
-            except requests.exceptions.RequestException as exc:
-                raise ExplorerFetchError(f"Network error fetching activity: {exc}") from exc
-
-        # Return whatever we got — caller will handle missing phases
-        return data
-
-    def _fetch_roster(self, activity_phase_id: str) -> list[dict]:
-        """Fetch all players from a Swiss phase roster, handling pagination."""
-        all_players = []
-        page = 1
-
-        while True:
-            try:
-                resp = requests.get(
-                    f"{CARDEIO_BASE}/activityPhases/{activity_phase_id}/roster",
-                    params={"sortBy": "seed", "page": page},
-                    headers=CARDEIO_HEADERS,
-                    timeout=10,
-                )
-            except requests.exceptions.RequestException as exc:
-                raise ExplorerFetchError(f"Network error fetching roster: {exc}") from exc
-
-            if resp.status_code != 200:
-                raise ExplorerFetchError(
-                    f"carde.io returned {resp.status_code} for roster {activity_phase_id}"
-                )
-
-            body = resp.json()
-            all_players.extend(body.get("data", []))
-
-            pagination = body.get("pagination", {})
-            if pagination.get("nextPage"):
-                page = pagination["nextPage"]
-            else:
-                break
-
-        return all_players
-
-    def _fetch_final_standings(self, tournament_id: str) -> dict:
-        """Fetch final top-cut standings keyed by carde.io user ID."""
         try:
-            resp = requests.get(
-                f"{CARDEIO_BASE}/tournaments/{tournament_id}/standings",
-                headers=CARDEIO_HEADERS,
-                timeout=10,
-            )
-        except requests.exceptions.RequestException as exc:
+            body = resp.json()
+            event = body[0]["result"]["data"]["json"]["event"]
+            return event
+        except (KeyError, IndexError, TypeError) as exc:
             raise ExplorerFetchError(
-                f"Network error fetching standings: {exc}"
+                f"Unexpected response format from sorcerytcg.com: {exc}"
             ) from exc
 
-        if resp.status_code != 200:
-            raise ExplorerFetchError(
-                f"carde.io returned {resp.status_code} for standings {tournament_id}"
-            )
+    def _build_results(self, players_data: list, top_cut_size: int | None) -> list[dict]:
+        """Build results list from the tRPC event players data.
 
-        standings = {}
-        for entry in resp.json().get("data", []):
-            user_id = entry.get("user", {}).get("id")
-            if user_id:
-                standings[user_id] = entry.get("standing")
-        return standings
-
-    def _merge_standings(
-        self, swiss_roster: list[dict], top_cut_standings: dict,
-        swiss_standings: dict | None = None,
-    ) -> list[dict]:
-        """Merge Swiss roster with optional top-cut standings.
-
-        Top-cut players use their final standing from top_cut_standings.
-        When no top cut exists but swiss_standings are provided, those are
-        used for placement (overall standings based on performance).
-        Each result has: cardeio_user_id, display_name, final_standing, wins,
-                         total_players, image_url, team_name
+        Each player has a seats array with round-by-round results.
+        We count wins from seats, then rank by total score (wins * 3).
         """
-        top_cut_size = len(top_cut_standings)
-        total_players = len(swiss_roster)
+        player_rows = []
 
-        results = []
-        swiss_rank_offset = top_cut_size  # next standing for non-top-cut players
-        non_top_cut = []
-
-        # Collect top-cut and non-top-cut players from Swiss roster
-        for player in swiss_roster:
+        for player in players_data:
             user = player.get("user", {})
-            game_user = player.get("gameUser", {})
             user_id = user.get("id", "")
-            display_name = user.get("displayName") or game_user.get("displayName") or ""
-            image_url = game_user.get("imageUrl")
-            team_name = game_user.get("teamName") or ""
-            tie_breakers = player.get("tieBreakers") or {}
-            wins = (tie_breakers.get("points") or 0) // 3
+            display_name = user.get("displayname") or user.get("username") or ""
 
-            row = {
+            # Avatar image from feature
+            image_url = None
+            feature = user.get("feature")
+            if feature:
+                meta = feature.get("meta", {})
+                image_url = meta.get("image")
+
+            # Count wins from seats
+            seats = player.get("seats", [])
+            wins = 0
+            total_score = 0
+            for seat in seats:
+                result = seat.get("result", {})
+                score = result.get("score", 0)
+                total_score += score
+                if result.get("result") == "Win":
+                    wins += 1
+
+            # Skip dropped players with no games played
+            if player.get("status") == "Dropped" and not seats:
+                continue
+
+            player_rows.append({
                 "cardeio_user_id": user_id,
                 "display_name": display_name,
                 "wins": wins,
-                "total_players": total_players,
+                "total_score": total_score,
                 "image_url": image_url,
-                "team_name": team_name,
-            }
+                "team_name": "",
+            })
 
-            if user_id in top_cut_standings:
-                row["final_standing"] = top_cut_standings[user_id]
-                results.append(row)
-            else:
-                non_top_cut.append(row)
+        # Sort by total score descending to determine standings
+        player_rows.sort(key=lambda r: -r["total_score"])
 
-        # Sort top-cut results by their final standing
-        results.sort(key=lambda r: r["final_standing"])
+        total_players = len(player_rows)
 
-        # Assign standings to non-top-cut players
-        if not top_cut_standings and swiss_standings:
-            # No top cut — use overall Swiss standings for placement
-            for row in non_top_cut:
-                row["final_standing"] = swiss_standings.get(row["cardeio_user_id"], total_players)
-            non_top_cut.sort(key=lambda r: r["final_standing"])
-        else:
-            # Top cut exists — assign sequential standings after top cut
-            for i, row in enumerate(non_top_cut):
-                row["final_standing"] = swiss_rank_offset + i + 1
+        # Assign final standings
+        for i, row in enumerate(player_rows):
+            row["final_standing"] = i + 1
+            row["total_players"] = total_players
+            del row["total_score"]
 
-        results.extend(non_top_cut)
-        return results
+        return player_rows
 
     def compute_leaderboard(self, season_id: int) -> dict:
         """Compute three-track season leaderboard from stored results.

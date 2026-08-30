@@ -63,9 +63,7 @@ class ExplorerRepository:
     def create_event(
         self,
         season_id: int,
-        cardeio_event_id: str,
-        cardeio_swiss_phase_id: str,
-        cardeio_final_tournament_id: str | None,
+        event_external_id: str,
         event_name: str,
         event_date: str | None,
         total_players: int | None,
@@ -76,13 +74,11 @@ class ExplorerRepository:
         with self._conn() as conn:
             cur = conn.execute(
                 """INSERT INTO explorer_events
-                   (season_id, cardeio_event_id, cardeio_swiss_phase_id,
-                    cardeio_final_tournament_id, event_name, event_date,
+                   (season_id, cardeio_event_id, event_name, event_date,
                     total_players, play_format, venue_name, source_url)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    season_id, cardeio_event_id, cardeio_swiss_phase_id,
-                    cardeio_final_tournament_id, event_name, event_date,
+                    season_id, event_external_id, event_name, event_date,
                     total_players, play_format, venue_name, source_url,
                 ),
             )

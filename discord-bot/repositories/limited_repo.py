@@ -99,6 +99,14 @@ def create_limited_tables():
         # Initialize lifetime_elo to current elo for existing players
         cur.execute("UPDATE limited_elo SET lifetime_elo = elo WHERE lifetime_elo = 1500 AND elo != 1500")
 
+    cur.execute("""CREATE TABLE IF NOT EXISTS limited_events (
+        event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_name TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT,
+        is_active INTEGER NOT NULL DEFAULT 0
+    )""")
+
     conn.commit()
     conn.close()
 
@@ -840,6 +848,64 @@ def archive_limited_arena_runs(event_id: int, archived_at: str) -> int:
     conn.close()
     logger.info("Archived %d limited arena runs for event %d", len(runs), event_id)
     return len(runs)
+
+
+def get_active_limited_event():
+    """Get the currently active limited event, or None."""
+    create_limited_tables()
+    conn = sqlite3.connect("elo.db")
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM limited_events WHERE is_active = 1 LIMIT 1")
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def start_limited_event(event_name: str) -> dict:
+    """Start a new limited event. Returns the new event info."""
+    create_limited_tables()
+    conn = sqlite3.connect("elo.db")
+    cur = conn.cursor()
+
+    start_date = datetime.datetime.now().isoformat()
+    cur.execute(
+        "INSERT INTO limited_events (event_name, start_date, is_active) VALUES (?, ?, 1)",
+        (event_name, start_date),
+    )
+    event_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+
+    logger.info("Started limited event %d: %s", event_id, event_name)
+    return {"event_id": event_id, "event_name": event_name, "start_date": start_date}
+
+
+def end_limited_event() -> dict | None:
+    """End the active limited event. Returns event info or None if no active event."""
+    create_limited_tables()
+    conn = sqlite3.connect("elo.db")
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM limited_events WHERE is_active = 1 LIMIT 1")
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return None
+
+    event = dict(row)
+    end_date = datetime.datetime.now().isoformat()
+    cur.execute(
+        "UPDATE limited_events SET is_active = 0, end_date = ? WHERE event_id = ?",
+        (end_date, event["event_id"]),
+    )
+    conn.commit()
+    conn.close()
+
+    event["end_date"] = end_date
+    logger.info("Ended limited event %d: %s", event["event_id"], event["event_name"])
+    return event
 
 
 def reset_limited_elo_to_default():

@@ -3612,31 +3612,29 @@ class LFGCog(commands.Cog):
         Start a new limited season. Archives current limited data and resets limited ELO.
         Does NOT affect the constructed season/event.
         Usage: !start_limited_season [season name]
-        If no name is given, uses the active event name. If no active event, a name is required.
+        If no name is given, a name is required.
         """
-        from utils.database import get_active_event
         from services.limited_service import archive_limited_for_event, reset_limited_for_new_event
+        from repositories.limited_repo import get_active_limited_event
 
         try:
-            active_event = get_active_event()
-
-            if season_name:
-                # Use provided name with a synthetic negative event_id to avoid collisions
-                import time
-                event_id = -int(time.time())
-                event_name = season_name
-            elif active_event:
-                event_id = active_event["event_id"]
-                event_name = active_event["event_name"]
-            else:
-                await ctx.send("No active event found. Provide a season name: `!start_limited_season <name>`")
+            if not season_name:
+                await ctx.send("Please provide a season name: `!start_limited_season <name>`")
                 return
 
-            # Archive current limited data
-            limited_summary = archive_limited_for_event(event_id, event_name)
+            # Use active limited event ID for archiving, or generate a synthetic one
+            active_limited = get_active_limited_event()
+            if active_limited:
+                event_id = active_limited["event_id"]
+            else:
+                import time
+                event_id = -int(time.time())
 
-            # Reset limited ELO to 1500
-            reset_limited_for_new_event()
+            # Archive current limited data (also ends the active limited event)
+            limited_summary = archive_limited_for_event(event_id, season_name)
+
+            # Reset limited ELO and start a new limited event
+            reset_limited_for_new_event(season_name)
 
             embed = discord.Embed(
                 title="New Limited Season Started!",

@@ -103,6 +103,14 @@ def create_limited_tables():
         cur.execute("ALTER TABLE limited_elo ADD COLUMN lifetime_elo INTEGER NOT NULL DEFAULT 1500")
         cur.execute("UPDATE limited_elo SET lifetime_elo = elo WHERE lifetime_elo = 1500 AND elo != 1500")
 
+    cur.execute("""CREATE TABLE IF NOT EXISTS limited_events (
+        event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_name TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT,
+        is_active INTEGER NOT NULL DEFAULT 0
+    )""")
+
     conn.commit()
     conn.close()
 
@@ -787,6 +795,18 @@ def get_limited_leaderboard_stats():
         "trophy_runs": trophy_count,
         "unique_players": len(unique_players),
     }
+
+
+def get_active_limited_event():
+    """Get the currently active limited event, or None."""
+    create_limited_tables()
+    conn = _elo_conn()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM limited_events WHERE is_active = 1 LIMIT 1")
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def get_archived_limited_events():

@@ -25,6 +25,9 @@ from repositories.limited_repo import (
     archive_limited_matches,
     archive_limited_arena_runs,
     reset_limited_elo_to_default,
+    get_active_limited_event,
+    start_limited_event,
+    end_limited_event,
 )
 
 logger = logging.getLogger("discord_bot")
@@ -412,13 +415,16 @@ def archive_limited_for_event(event_id: int, event_name: str) -> dict:
     """Archive all limited data at the end of an event.
 
     Copies standings, match records, and arena runs into their archive tables,
-    then clears the live tables.
+    then clears the live tables. Also ends the active limited event.
 
     Returns:
         dict with total_players, total_matches, total_runs, top_players (list of (name, elo))
     """
     import datetime as dt
     archived_at = dt.datetime.now().isoformat()
+
+    # End the active limited event
+    end_limited_event()
 
     # Close any active arena runs before archiving
     closed_runs = close_all_active_runs()
@@ -442,7 +448,9 @@ def archive_limited_for_event(event_id: int, event_name: str) -> dict:
     }
 
 
-def reset_limited_for_new_event():
-    """Reset limited ELO to 1500 for all players when a new event starts."""
+def reset_limited_for_new_event(event_name: str = "Limited Season"):
+    """Reset limited ELO to 1500 for all players and start a new limited event."""
     reset_limited_elo_to_default()
-    logger.info("Limited ELO reset to 1500 for new event")
+    event_info = start_limited_event(event_name)
+    logger.info("Limited ELO reset to 1500 for new limited event: %s (ID: %d)",
+                event_name, event_info["event_id"])

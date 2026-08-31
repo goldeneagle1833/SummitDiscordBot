@@ -1217,13 +1217,6 @@ def start_new_event(event_name):
     conn.commit()
     conn.close()
 
-    # Reset limited ELO for the new event
-    try:
-        from services.limited_service import reset_limited_for_new_event
-        reset_limited_for_new_event()
-    except Exception as e:
-        logger.error("Failed to reset limited ELO for new event: %s", e)
-
     return {
         "event_id": event_id,
         "event_name": event_name,

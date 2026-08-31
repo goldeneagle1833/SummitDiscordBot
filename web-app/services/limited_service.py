@@ -6,7 +6,6 @@ Handles arena run management, limited ELO updates, and forfeit penalty calculati
 import logging
 
 from services.curiosa import CuriosaService
-from repositories.elo import EloRepository
 from repositories.limited_repo import (
     create_limited_tables,
     get_limited_elo,
@@ -84,10 +83,7 @@ def report_match(winner_id, winner_display_name, loser_id, loser_display_name,
 
     Returns dict with match_id, ELO changes, and run statuses.
     Raises ValueError if either player lacks an active run.
-    ELO is only updated when an active event exists (skipped between seasons).
     """
-    event_active = bool(EloRepository().get_active_event())
-
     winner_run = get_active_arena_run(winner_id)
     loser_run = get_active_arena_run(loser_id)
 
@@ -99,25 +95,18 @@ def report_match(winner_id, winner_display_name, loser_id, loser_display_name,
     winner_run_id = winner_run["run_id"]
     loser_run_id = loser_run["run_id"]
 
-    # Update limited ELO for both players (skip between seasons)
+    # Update limited ELO for both players (always, independent of constructed events)
     winner_elo_before = get_limited_elo(winner_id)
     loser_elo_before = get_limited_elo(loser_id)
 
-    if event_active:
-        new_winner_elo = _calculate_elo(winner_elo_before, loser_elo_before, did_win=True)
-        new_loser_elo = _calculate_elo(loser_elo_before, winner_elo_before, did_win=False)
+    new_winner_elo = _calculate_elo(winner_elo_before, loser_elo_before, did_win=True)
+    new_loser_elo = _calculate_elo(loser_elo_before, winner_elo_before, did_win=False)
 
-        winner_elo_change = new_winner_elo - winner_elo_before
-        loser_elo_change = new_loser_elo - loser_elo_before
+    winner_elo_change = new_winner_elo - winner_elo_before
+    loser_elo_change = new_loser_elo - loser_elo_before
 
-        upsert_limited_elo(winner_id, winner_display_name, new_winner_elo, elo_change=winner_elo_change)
-        upsert_limited_elo(loser_id, loser_display_name, new_loser_elo, elo_change=loser_elo_change)
-    else:
-        logger.info("No active event — limited match recorded without ELO changes")
-        new_winner_elo = winner_elo_before
-        new_loser_elo = loser_elo_before
-        winner_elo_change = 0
-        loser_elo_change = 0
+    upsert_limited_elo(winner_id, winner_display_name, new_winner_elo, elo_change=winner_elo_change)
+    upsert_limited_elo(loser_id, loser_display_name, new_loser_elo, elo_change=loser_elo_change)
 
     # Determine who went first
     winner_went_first = "y" if first_player == str(winner_id) else "n"

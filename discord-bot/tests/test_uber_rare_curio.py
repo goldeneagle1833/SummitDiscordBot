@@ -270,21 +270,13 @@ class TestUberRareVariantEffects:
 
 
 class TestFrostshartFartMessaging:
-    def test_frozen_player_gets_specials_block_not_default_fart_block(self, fart_db):
+    def test_frozen_player_gets_shop_block_message(self, fart_db):
         fart_db.apply_frost_shart_freeze(2, "Bob")
-        msg = fart_db.frostshart_fart_block_message(2, "<@2>")
-        assert msg is not None
+        msg = fart_db.frostshart_shop_block_message("<@2>")
         assert "frozen solid by a Frostshart" in msg
-        assert "`!fart`" in msg
-        assert "!fartprediction" in msg
-        assert "24 hours" in msg
+        assert "No shop items for 24 hours" in msg
         assert "No farting" not in msg
         assert "midnight EST" not in msg
-        assert "daily action" not in msg.lower()
-        assert "already used" not in msg.lower()
-
-    def test_unfrozen_player_has_no_frost_block_message(self, fart_db):
-        assert fart_db.frostshart_fart_block_message(2, "<@2>") is None
 
     def test_default_fart_command_does_not_frost_block(self):
         fun_path = os.path.join(os.path.dirname(__file__), "..", "cogs", "fun.py")
@@ -295,36 +287,54 @@ class TestFrostshartFartMessaging:
         )[0]
         assert "frostshart_fart_block_message" not in fart_cmd
         assert "is_frost_frozen" not in fart_cmd
+        assert "async def cog_check" not in source.split("class FunCog", 1)[1].split(
+            "async def fart(self, ctx):", 1
+        )[0]
 
-    def test_cog_check_allows_fart_but_blocks_specials(self, fart_db):
-        fart_db.apply_frost_shart_freeze(2)
+    def test_fun_cog_does_not_frost_block_lookups_or_specials(self, fart_db):
+        """Frostshart no longer uses a FunCog deny-list (lookups/admin stay up)."""
+        for name in (
+            "helpfart",
+            "fartrank",
+            "fartleaderboard",
+            "reset_fart_cooldown",
+            "fartprediction",
+            "taxes",
+        ):
+            assert fart_db.frostshart_blocks_shop_command(name) is False
 
-        async def run():
-            allowed_ctx = MagicMock()
-            allowed_ctx.command.name = "fart"
-            allowed_ctx.author.id = 2
-            allowed_ctx.author.mention = "<@2>"
-            allowed_ctx.send = AsyncMock()
-            assert await fart_db.cog_check(allowed_ctx) is True
-            allowed_ctx.send.assert_not_awaited()
+    def test_shop_commands_are_frost_blocked_including_catalog(self, fart_db):
+        from cogs.fun import FROSTSHART_BLOCKED_SHOP_COMMANDS
 
-            blocked_ctx = MagicMock()
-            blocked_ctx.command.name = "taxes"
-            blocked_ctx.author.id = 2
-            blocked_ctx.author.mention = "<@2>"
-            blocked_ctx.send = AsyncMock()
-            assert await fart_db.cog_check(blocked_ctx) is False
-            blocked_ctx.send.assert_awaited()
-            assert "!fartprediction" in blocked_ctx.send.await_args.args[0]
-
-            pred_ctx = MagicMock()
-            pred_ctx.command.name = "fartprediction"
-            pred_ctx.author.id = 2
-            pred_ctx.author.mention = "<@2>"
-            pred_ctx.send = AsyncMock()
-            assert await fart_db.cog_check(pred_ctx) is False
-
-        asyncio.run(run())
+        for name in (
+            "fart_shop",
+            "blue_shell",
+            "red_shell",
+            "green_shell",
+            "banana",
+            "big_banana",
+            "star",
+            "mushroom",
+            "bobomb",
+            "fart_star",
+            "evil_star",
+            "thunder_fart",
+            "gas_shield",
+            "stink_bomb",
+            "fart_rocket",
+            "fart_lance",
+            "fart_trap",
+            "fart_twister",
+            "stink_cloud",
+            "gas_gamble",
+            "fart_leech",
+            "fart_donation",
+            "fart_court",
+        ):
+            assert name in FROSTSHART_BLOCKED_SHOP_COMMANDS
+            assert fart_db.frostshart_blocks_shop_command(name) is True
+        # Not in the freeze list — leave usable while frozen
+        assert fart_db.frostshart_blocks_shop_command("giga_fart_cannon") is False
 
     def test_past_freeze_is_not_active(self, fart_db):
         conn = sqlite3.connect("fart_scores.db")

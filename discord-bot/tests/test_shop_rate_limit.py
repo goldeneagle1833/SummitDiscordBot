@@ -225,3 +225,59 @@ class TestYourtShopChaos:
         await shop_cog.cog_after_invoke(ctx)
         ctx.send.assert_not_called()
 
+
+@pytest.mark.asyncio
+class TestFrostshartShopCogCheck:
+    async def _frozen_shop(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        from cogs.fun import FunCog
+
+        fun = FunCog(MagicMock())
+        fun.apply_frost_shart_freeze(99)
+        bot = MagicMock()
+        bot.get_cog.side_effect = lambda name: fun if name == "FunCog" else None
+        with patch.object(ShopCog, "setup_purchase_database"):
+            shop = ShopCog(bot)
+        return shop, fun
+
+    async def test_blocks_catalog_and_purchases(self, tmp_path, monkeypatch):
+        shop, _ = await self._frozen_shop(tmp_path, monkeypatch)
+        for name in ("fart_shop", "banana", "gas_gamble", "star"):
+            ctx = MagicMock()
+            ctx.command.name = name
+            ctx.author.id = 99
+            ctx.author.mention = "<@99>"
+            ctx.send = AsyncMock()
+            assert await shop.cog_check(ctx) is False
+            sent = ctx.send.await_args.args[0]
+            assert "frozen solid by a Frostshart" in sent
+            assert "No shop items" in sent
+
+    async def test_allows_unlisted_giga_cannon(self, tmp_path, monkeypatch):
+        shop, _ = await self._frozen_shop(tmp_path, monkeypatch)
+        shop.check_fart_trap = AsyncMock(return_value=False)
+        ctx = MagicMock()
+        ctx.command.name = "giga_fart_cannon"
+        ctx.author.id = 99
+        ctx.author.mention = "<@99>"
+        ctx.send = AsyncMock()
+        assert await shop.cog_check(ctx) is True
+        ctx.send.assert_not_called()
+
+    async def test_unfrozen_player_can_browse_shop(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        from cogs.fun import FunCog
+
+        fun = FunCog(MagicMock())
+        bot = MagicMock()
+        bot.get_cog.side_effect = lambda name: fun if name == "FunCog" else None
+        with patch.object(ShopCog, "setup_purchase_database"):
+            shop = ShopCog(bot)
+        ctx = MagicMock()
+        ctx.command.name = "fart_shop"
+        ctx.author.id = 99
+        ctx.author.mention = "<@99>"
+        ctx.send = AsyncMock()
+        assert await shop.cog_check(ctx) is True
+        ctx.send.assert_not_called()
+

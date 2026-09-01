@@ -17,6 +17,7 @@ from repositories.limited_repo import save_limited_pairing, get_active_arena_run
 from services.card_points_service import validate_deck_points
 from services.limited_service import auto_start_arena_run
 from services.sorcery_online_matchmaking import provision_sorcery_online_match
+from utils.deck_checker import clean_deck_url
 
 logger = logging.getLogger("discord_bot")
 
@@ -183,7 +184,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
 
         timeframe_value = parse_queue_timeframe(self.timeframe.value)
 
-        deck_url = self.deck_url.value.strip() if self.deck_url.value else None
+        deck_url = clean_deck_url(self.deck_url.value.strip()) if self.deck_url.value else None
 
         # For limited queue, player must have an active arena run.
         # If none exists, attempt to auto-create one from the provided DraftSorcery URL.
@@ -322,7 +323,7 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
-        deck_url = self.deck_url.value.strip()
+        deck_url = clean_deck_url(self.deck_url.value.strip())
         if not deck_url or not any(host in deck_url.lower() for host in (
             "curiosa.io", "sorcerytcg.com", "draftsorcery.com", "playsorceryonline.com"
         )):

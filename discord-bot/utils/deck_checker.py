@@ -17,12 +17,43 @@ _TRPC_BASE = "https://sorcerytcg.com/api/trpc/deck.get"
 
 
 def get_deck_id(url: str) -> str:
-    """Extract deck ID from a Curiosa or sorcerytcg.com URL."""
-    # Split on '?' to remove any query parameters
+    """Extract deck ID from a Curiosa or sorcerytcg.com URL.
+
+    Handles URLs like:
+        https://sorcerytcg.com/decks/abc123
+        https://sorcerytcg.com/decks/abc123/edit?filters=e:fire,t:magic
+    """
+    # Strip query parameters
     base_url = url.split("?")[0]
-    # Get the last part of the URL path
-    deck_id = base_url.rstrip("/").split("/")[-1]
-    return deck_id
+    parts = base_url.rstrip("/").split("/")
+    # Skip trailing path segments that aren't the deck ID (e.g. /edit)
+    _NON_ID_SEGMENTS = {"edit", "view", "copy"}
+    while parts and parts[-1].lower() in _NON_ID_SEGMENTS:
+        parts.pop()
+    return parts[-1] if parts else ""
+
+
+def clean_deck_url(url: str) -> str:
+    """Normalize a sorcerytcg.com / curiosa.io deck URL by stripping query
+    params and trailing /edit suffix.
+
+    DraftSorcery and other URLs are returned unchanged since their query
+    params carry meaningful data (e.g. ``?deck=...``).
+    """
+    if not url or not isinstance(url, str):
+        return url
+    # Only clean sorcerytcg.com and curiosa.io URLs
+    lower = url.lower()
+    if "sorcerytcg.com" not in lower and "curiosa.io" not in lower:
+        return url
+    # Strip query parameters
+    base = url.split("?")[0].rstrip("/")
+    # Remove trailing /edit, /view, /copy segments
+    _NON_ID_SEGMENTS = {"edit", "view", "copy"}
+    parts = base.split("/")
+    while len(parts) > 1 and parts[-1].lower() in _NON_ID_SEGMENTS:
+        parts.pop()
+    return "/".join(parts)
 
 
 def _convert_trpc_to_legacy(trpc_response: dict) -> dict:
@@ -76,9 +107,8 @@ def _convert_trpc_to_legacy(trpc_response: dict) -> dict:
                 atlas.append(card)
             else:
                 spellbook.append(card)
-        elif board == "Maybeboard":
+        elif board in ("Maybeboard", "Collection", "Sideboard"):
             sideboard.append(card)
-        # Skip "Collection" board — it's a wishlist, not part of the deck
 
     owner = deck.get("owner", {})
     return {

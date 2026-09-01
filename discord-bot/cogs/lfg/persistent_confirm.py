@@ -32,6 +32,7 @@ from repositories.limited_repo import (
     mark_limited_pairing_reported,
 )
 from services.limited_service import limited_winner_report, get_run_summary
+from utils.deck_checker import clean_deck_url
 
 logger = logging.getLogger("discord_bot")
 
@@ -849,7 +850,7 @@ class PersistentConfirmDeckModal(discord.ui.Modal, title="Enter Your Deck"):
         try:
             logger.info(f"Processing deck URL modal submission for confirmation {self.confirmation_id}")
 
-            deck_url = self.deck_url.value.strip() if self.deck_url.value else None
+            deck_url = clean_deck_url(self.deck_url.value.strip()) if self.deck_url.value else None
 
             if deck_url:
                 update_confirmation_deck_url(self.confirmation_id, self.is_winner, deck_url)

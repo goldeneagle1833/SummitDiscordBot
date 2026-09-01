@@ -8,6 +8,7 @@ from cogs.lfg.state import lfg_queue
 from cogs.lfg.helpers import scrub_urls
 from cogs.lfg.persistent_confirm import create_match_card_view
 from utils.database import save_pairing
+from utils.deck_checker import clean_deck_url
 
 logger = logging.getLogger("discord_bot")
 
@@ -59,7 +60,7 @@ class ChallengerDeckModal(discord.ui.Modal, title="Challenge Player"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
-        url = self.deck_url.value if self.deck_url.value else None
+        url = clean_deck_url(self.deck_url.value.strip()) if self.deck_url.value else None
         challenger_global = self.challenger.global_name or self.challenger.display_name
         opponent_global = self.opponent.global_name or self.opponent.display_name
 
@@ -157,7 +158,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
 
         challenger = await interaction.client.fetch_user(self.challenger_id)
         accepter_global = interaction.user.global_name or interaction.user.display_name
-        accepter_deck_url = self.deck_url.value if self.deck_url.value else None
+        accepter_deck_url = clean_deck_url(self.deck_url.value.strip()) if self.deck_url.value else None
 
         # Remove both players from the LFG queue if they're in it
         if self.challenger_id in lfg_queue:

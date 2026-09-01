@@ -63,9 +63,8 @@ def _convert_trpc_to_legacy(trpc_response: dict) -> dict:
                 atlas.append(card)
             else:
                 spellbook.append(card)
-        elif board == "Maybeboard":
+        elif board in ("Maybeboard", "Collection", "Sideboard"):
             sideboard.append(card)
-        # Skip "Collection" board
 
     owner = deck.get("owner", {})
     return {

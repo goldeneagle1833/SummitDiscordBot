@@ -19,6 +19,7 @@ from repositories.limited_repo import (
 )
 from services.limited_service import limited_winner_report, get_run_summary
 from cogs.lfg.persistent_confirm import create_confirmation_view
+from utils.deck_checker import clean_deck_url
 
 logger = logging.getLogger("discord_bot")
 
@@ -202,7 +203,7 @@ class MatchReportModal(discord.ui.Modal, title="Match Report"):
         )
 
         curiosa_link = (
-            self.curiosa_url.value if self.curiosa_url.value else "No URL provided"
+            clean_deck_url(self.curiosa_url.value) if self.curiosa_url.value else "No URL provided"
         )
         match_comment = self.match_comment.value if self.match_comment.value else ""
         first_player = self.first_player.value if self.first_player.value else "n"
@@ -280,7 +281,7 @@ class ReporterDeckURLModal(discord.ui.Modal, title="Enter Your Deck"):
     async def on_submit(self, interaction: discord.Interaction):
         # Update the reporter's deck URL
         self.view.reporter_deck_url = (
-            self.deck_url.value.strip() if self.deck_url.value else None
+            clean_deck_url(self.deck_url.value.strip()) if self.deck_url.value else None
         )
         # Store the match comment on the view
         self.view.match_comment = (
@@ -1580,7 +1581,7 @@ class MatchReportDeckModal(discord.ui.Modal, title="Enter Your Deck"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        url = self.deck_url.value.strip() if self.deck_url.value else None
+        url = clean_deck_url(self.deck_url.value.strip()) if self.deck_url.value else None
         comment = self.match_comment.value.strip() if self.match_comment.value else ""
         await self.report_view._submit(interaction, deck_url=url or None, match_comment=comment)
 

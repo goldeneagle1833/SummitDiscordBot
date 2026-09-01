@@ -190,3 +190,60 @@ class ExplorerRepository:
                 (discord_user_id,),
             ).fetchone()
         return row is not None
+
+    # ── Player Aliases ─────────────────────────────────────────────────────
+
+    def get_all_aliases(self) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM explorer_player_aliases ORDER BY created_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_alias_map(self) -> dict[str, str]:
+        """Return {alias_user_id: canonical_user_id} for all aliases."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT alias_user_id, canonical_user_id FROM explorer_player_aliases"
+            ).fetchall()
+        return {r["alias_user_id"]: r["canonical_user_id"] for r in rows}
+
+    def create_alias(
+        self,
+        alias_user_id: str,
+        canonical_user_id: str,
+        alias_display_name: str | None,
+        canonical_display_name: str | None,
+    ) -> dict:
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO explorer_player_aliases
+                   (alias_user_id, canonical_user_id, alias_display_name, canonical_display_name)
+                   VALUES (?, ?, ?, ?)""",
+                (alias_user_id, canonical_user_id, alias_display_name, canonical_display_name),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM explorer_player_aliases WHERE alias_user_id = ?",
+                (alias_user_id,),
+            ).fetchone()
+        return dict(row)
+
+    def delete_alias(self, alias_id: int) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "DELETE FROM explorer_player_aliases WHERE id = ?", (alias_id,)
+            )
+            conn.commit()
+        return cur.rowcount > 0
+
+    def get_all_unique_players(self) -> list[dict]:
+        """Return all unique players across all events with their cardeio_user_id and display_name."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT cardeio_user_id, display_name, COUNT(*) as event_count
+                   FROM explorer_results
+                   GROUP BY cardeio_user_id
+                   ORDER BY display_name COLLATE NOCASE ASC"""
+            ).fetchall()
+        return [dict(r) for r in rows]

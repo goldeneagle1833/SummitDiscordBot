@@ -30,3 +30,21 @@ export const addAdmin = (discordUserId, displayName) =>
 
 export const removeAdmin = (discordUserId) =>
   del(`/api/explorer/admins/${discordUserId}`)
+
+// Player merge / aliases
+export const fetchAllPlayers = () => get('/api/explorer/players')
+
+export const fetchPotentialDuplicates = () => get('/api/explorer/players/duplicates')
+
+export const fetchAliases = () => get('/api/explorer/players/aliases')
+
+export const mergePlayers = (aliasUserId, canonicalUserId, aliasDisplayName, canonicalDisplayName) =>
+  post('/api/explorer/players/merge', {
+    alias_user_id: aliasUserId,
+    canonical_user_id: canonicalUserId,
+    alias_display_name: aliasDisplayName,
+    canonical_display_name: canonicalDisplayName,
+  })
+
+export const deleteAlias = (aliasId) =>
+  del(`/api/explorer/players/aliases/${aliasId}`)

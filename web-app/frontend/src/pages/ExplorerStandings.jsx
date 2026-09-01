@@ -10,6 +10,7 @@ import {
 import AddSeasonModal from '@/components/explorer/AddSeasonModal'
 import AddEventModal from '@/components/explorer/AddEventModal'
 import ExplorerAdminPanel from '@/components/explorer/ExplorerAdminPanel'
+import PlayerMergePanel from '@/components/explorer/PlayerMergePanel'
 
 function QualifiedBadge() {
   return (
@@ -152,6 +153,7 @@ export default function ExplorerStandings() {
   const [showAddSeason, setShowAddSeason] = useState(false)
   const [showAddEvent, setShowAddEvent] = useState(false)
   const [showAdminPanel, setShowAdminPanel] = useState(false)
+  const [showMergePanel, setShowMergePanel] = useState(false)
   const [sortKey, setSortKey] = useState('rank')
   const [sortDir, setSortDir] = useState('asc')
   const [showDistribution, setShowDistribution] = useState(false)
@@ -271,6 +273,12 @@ export default function ExplorerStandings() {
                 + Import Event
               </button>
             )}
+            <button
+              onClick={() => setShowMergePanel(!showMergePanel)}
+              className="px-3 py-1.5 text-sm bg-bg-elevated border border-border rounded hover:border-secondary text-text-muted transition-colors"
+            >
+              {showMergePanel ? 'Hide Merge Panel' : 'Merge Players'}
+            </button>
             {isGlobalAdmin && (
               <button
                 onClick={() => setShowAdminPanel(!showAdminPanel)}
@@ -282,6 +290,18 @@ export default function ExplorerStandings() {
           </div>
         )}
       </div>
+
+      {/* Merge panel */}
+      {showMergePanel && isExplorerAdmin && (
+        <div className="mb-6 bg-bg-surface border border-border rounded-lg p-4">
+          <h3 className="text-base font-semibold text-text-primary mb-3">Merge Duplicate Players</h3>
+          <p className="text-xs text-text-muted mb-3">
+            Players with matching names across events are auto-detected. You can also manually merge any two players.
+            Merged players&apos; event results will be combined in the leaderboard.
+          </p>
+          <PlayerMergePanel />
+        </div>
+      )}
 
       {/* Admin panel */}
       {showAdminPanel && isGlobalAdmin && (

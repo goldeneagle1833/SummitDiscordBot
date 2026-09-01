@@ -110,6 +110,17 @@ def create_explorer_tables():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS explorer_player_aliases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alias_user_id TEXT NOT NULL UNIQUE,
+            canonical_user_id TEXT NOT NULL,
+            alias_display_name TEXT,
+            canonical_display_name TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
     conn.commit()
     conn.close()
     logger.info("explorer tables ready")

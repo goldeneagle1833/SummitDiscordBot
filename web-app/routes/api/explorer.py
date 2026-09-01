@@ -253,6 +253,90 @@ def add_admin():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Player Aliases / Merge ────────────────────────────────────────────────
+
+
+@explorer_bp.route("/players/duplicates")
+@require_explorer_admin
+def get_potential_duplicates():
+    """Find players that may be duplicates (name match). Explorer admin only."""
+    try:
+        from services.explorer import ExplorerService
+        service = ExplorerService()
+        return jsonify(service.find_potential_duplicates())
+    except Exception as e:
+        logger.error(f"Error finding duplicates: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@explorer_bp.route("/players/aliases")
+@require_explorer_admin
+def get_aliases():
+    """List all player aliases. Explorer admin only."""
+    try:
+        repo = ExplorerRepository()
+        return jsonify(repo.get_all_aliases())
+    except Exception as e:
+        logger.error(f"Error fetching aliases: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@explorer_bp.route("/players/merge", methods=["POST"])
+@require_explorer_admin
+def merge_players():
+    """Merge two player IDs (alias -> canonical). Explorer admin only."""
+    data = request.get_json() or {}
+    alias_user_id = (data.get("alias_user_id") or "").strip()
+    canonical_user_id = (data.get("canonical_user_id") or "").strip()
+    alias_display_name = (data.get("alias_display_name") or "").strip() or None
+    canonical_display_name = (data.get("canonical_display_name") or "").strip() or None
+
+    if not alias_user_id or not canonical_user_id:
+        return jsonify({"error": "alias_user_id and canonical_user_id are required"}), 400
+    if alias_user_id == canonical_user_id:
+        return jsonify({"error": "Cannot alias a player to themselves"}), 400
+
+    try:
+        repo = ExplorerRepository()
+        alias = repo.create_alias(
+            alias_user_id, canonical_user_id,
+            alias_display_name, canonical_display_name,
+        )
+        return jsonify({"success": True, "alias": alias}), 201
+    except Exception as e:
+        if "UNIQUE constraint" in str(e):
+            return jsonify({"error": "This player is already aliased"}), 409
+        logger.error(f"Error merging players: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@explorer_bp.route("/players/aliases/<int:alias_id>", methods=["DELETE"])
+@require_explorer_admin
+def delete_alias(alias_id):
+    """Remove a player alias. Explorer admin only."""
+    try:
+        repo = ExplorerRepository()
+        removed = repo.delete_alias(alias_id)
+        if not removed:
+            return jsonify({"error": "Alias not found"}), 404
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error(f"Error deleting alias: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@explorer_bp.route("/players")
+@require_explorer_admin
+def get_all_players():
+    """List all unique players across all events. Explorer admin only."""
+    try:
+        repo = ExplorerRepository()
+        return jsonify(repo.get_all_unique_players())
+    except Exception as e:
+        logger.error(f"Error fetching players: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @explorer_bp.route("/admins/<discord_user_id>", methods=["DELETE"])
 @require_admin
 def remove_admin(discord_user_id):

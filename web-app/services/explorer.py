@@ -27,6 +27,11 @@ class ExplorerFetchError(Exception):
     """Raised when sorcerytcg.com API call fails."""
 
 
+def _normalize_name(name: str) -> str:
+    """Lowercase, strip whitespace and common separators for fuzzy matching."""
+    return re.sub(r"[\s_\-\.]+", "", name.strip().lower())
+
+
 class ExplorerService:
     def fetch_event_data(self, url: str) -> dict:
         """Fetch and structure event data from a sorcerytcg.com event URL.
@@ -168,6 +173,44 @@ class ExplorerService:
 
         return player_rows
 
+    def find_potential_duplicates(self) -> list[dict]:
+        """Find players that may be duplicates based on normalized name matching.
+
+        Returns groups of players whose names match after normalization,
+        excluding pairs that are already aliased.
+        """
+        from repositories.explorer import ExplorerRepository
+
+        repo = ExplorerRepository()
+        all_players = repo.get_all_unique_players()
+        alias_map = repo.get_alias_map()
+
+        # Already-linked IDs (both directions)
+        linked = set(alias_map.keys()) | set(alias_map.values())
+
+        # Group by normalized name
+        name_groups: dict[str, list[dict]] = {}
+        for p in all_players:
+            norm = _normalize_name(p["display_name"])
+            if not norm:
+                continue
+            name_groups.setdefault(norm, []).append(p)
+
+        duplicates = []
+        for norm_name, group in name_groups.items():
+            if len(group) < 2:
+                continue
+            # Filter out groups where all members are already aliased together
+            unlinked = [p for p in group if p["cardeio_user_id"] not in alias_map]
+            if len(unlinked) < 2 and len(group) < 3:
+                continue
+            duplicates.append({
+                "normalized_name": norm_name,
+                "players": group,
+            })
+
+        return duplicates
+
     def compute_leaderboard(self, season_id: int) -> dict:
         """Compute three-track season leaderboard from stored results.
 
@@ -197,10 +240,14 @@ class ExplorerService:
 
         all_results = repo.get_results_for_season(season_id)
 
-        # Group results by player
+        # Build alias map: alias_user_id -> canonical_user_id
+        alias_map = repo.get_alias_map()
+
+        # Group results by player (resolving aliases to canonical IDs)
         players: dict[str, dict] = {}
         for row in all_results:
             uid = row["cardeio_user_id"]
+            uid = alias_map.get(uid, uid)  # resolve to canonical
             if uid not in players:
                 players[uid] = {
                     "cardeio_user_id": uid,

@@ -1,18 +1,16 @@
 """Open Graph preview routes for Discord/social media link embeds.
 
 Discord and other social platforms don't execute JavaScript, so they can't
-read meta tags set by the React SPA. These routes detect bot user agents
-(via Nginx forwarding) and return minimal HTML with dynamic OG meta tags.
-
-For regular users, Nginx serves the React SPA directly — these routes
-are only hit by crawlers.
+read meta tags set by the React SPA. Nginx routes /top-8 and /deck-rec
+paths to Flask. Flask checks the user agent: bot crawlers get minimal HTML
+with dynamic OG meta tags, regular users get the React SPA index.html.
 """
 
 import logging
 import re
 import os
 
-from flask import Blueprint, request
+from flask import Blueprint, request, send_from_directory
 
 from repositories.events import EventRepository
 from repositories.deck_rec_repo import DeckRecRepository
@@ -27,6 +25,25 @@ SITE_URL = "https://sorcererssummit.com"
 SITE_NAME = "Sorcerers Summit"
 DEFAULT_IMAGE = f"{SITE_URL}/static/images/favicon.png"
 THEME_COLOR = "#1a1a2e"
+
+# Path to the React SPA build output
+_SPA_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+
+BOT_USER_AGENTS = re.compile(
+    r"Discordbot|facebookexternalhit|Twitterbot|LinkedInBot|Slackbot|WhatsApp|TelegramBot",
+    re.IGNORECASE,
+)
+
+
+def _is_bot() -> bool:
+    """Check if the request is from a known bot crawler."""
+    ua = request.headers.get("User-Agent", "")
+    return bool(BOT_USER_AGENTS.search(ua))
+
+
+def _serve_spa():
+    """Serve the React SPA index.html for regular (non-bot) users."""
+    return send_from_directory(os.path.abspath(_SPA_DIR), "index.html")
 
 
 def _resolve_avatar_image_url(avatar_name: str) -> str | None:
@@ -69,6 +86,9 @@ def _og_html(title: str, description: str, url: str, image: str | None = None) -
 @og_preview_bp.route("/top-8")
 def og_events_list():
     """OG preview for the events listing page."""
+    if not _is_bot():
+        return _serve_spa()
+
     try:
         repo = EventRepository()
         events = repo.get_all_events()
@@ -87,6 +107,9 @@ def og_events_list():
 @og_preview_bp.route("/top-8/<event_folder>")
 def og_event_detail(event_folder: str):
     """OG preview for a specific event page."""
+    if not _is_bot():
+        return _serve_spa()
+
     try:
         repo = EventRepository()
         decks = repo.get_event_decks(event_folder)
@@ -126,6 +149,9 @@ def og_event_detail(event_folder: str):
 @og_preview_bp.route("/deck-rec")
 def og_deck_rec_list():
     """OG preview for the deck recommendations listing page."""
+    if not _is_bot():
+        return _serve_spa()
+
     return _og_html(
         title="Deck Recommendations — Sorcerers Summit",
         description="Browse tournament-proven archetypes and community deck recommendations for Sorcery: Contested Realm",
@@ -136,6 +162,9 @@ def og_deck_rec_list():
 @og_preview_bp.route("/deck-rec/<deck_id>")
 def og_deck_detail(deck_id: str):
     """OG preview for a specific deck recommendation page."""
+    if not _is_bot():
+        return _serve_spa()
+
     try:
         repo = DeckRecRepository()
         all_decks = repo.load_all_decks()

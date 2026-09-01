@@ -11,4 +11,4 @@ def register_blueprints(app: Flask) -> None:
 
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(api_bp, url_prefix="/api")
-    app.register_blueprint(og_preview_bp, url_prefix="/og")
+    app.register_blueprint(og_preview_bp)

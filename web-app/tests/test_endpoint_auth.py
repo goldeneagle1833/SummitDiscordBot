@@ -187,6 +187,10 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "og_preview.og_deck_rec_list",
     "og_preview.og_deck_detail",
     "og_preview.og_player",
+    "og_preview.og_elo",
+    "og_preview.og_avatars_list",
+    "og_preview.og_avatar_detail",
+    "og_preview.og_card_detail",
 }
 
 

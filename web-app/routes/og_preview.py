@@ -15,9 +15,10 @@ from flask import Blueprint, request, send_from_directory
 from repositories.events import EventRepository
 from repositories.deck_rec_repo import DeckRecRepository
 from repositories.elo import EloRepository
+from repositories.card_catalog import CardCatalogRepository
 from services.player import PlayerService
 from utils.formatting import format_event_name
-from webapp_config import AVATAR_IMAGES_DIR
+from webapp_config import AVATAR_IMAGES_DIR, MATCH_RECORDS_DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +208,46 @@ def og_deck_detail(deck_id: str):
     )
 
 
+def _get_avatar_stats(avatar_name: str) -> dict | None:
+    """Query win/loss stats for an avatar directly from match history."""
+    import sqlite3, json as _json
+
+    if not MATCH_RECORDS_DB_PATH.exists():
+        return None
+
+    wins = losses = 0
+    norm = avatar_name.lower().strip()
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT json_deck_data_winner, json_deck_data_loser FROM match_records "
+            "WHERE json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL"
+        )
+        for row in cur.fetchall():
+            for col, is_win in ((row[0], True), (row[1], False)):
+                if not col:
+                    continue
+                try:
+                    d = _json.loads(col)
+                    avatar_list = d.get("avatar", [])
+                    if avatar_list and avatar_list[0].get("name", "").lower().strip() == norm:
+                        if is_win:
+                            wins += 1
+                        else:
+                            losses += 1
+                except Exception:
+                    pass
+        conn.close()
+    except Exception:
+        return None
+
+    total = wins + losses
+    if total == 0:
+        return None
+    return {"wins": wins, "losses": losses, "total": total, "win_rate": round(wins / total * 100, 1)}
+
+
 @og_preview_bp.route("/player/<player_id>")
 def og_player(player_id: str):
     """OG preview for a player profile page."""
@@ -242,4 +283,102 @@ def og_player(player_id: str):
         title=f"{name} — Sorcerers Summit",
         description=description,
         url=f"{SITE_URL}/player/{player_id}",
+    )
+
+
+@og_preview_bp.route("/elo")
+def og_elo():
+    """OG preview for the ELO leaderboard page."""
+    if not _is_bot():
+        return _serve_spa()
+
+    try:
+        elo_repo = EloRepository()
+        standings = elo_repo.get_all_standings()
+        count = len(standings) if standings else 0
+        if standings:
+            top = standings[0]
+            top_name = top.get("display_name", "")
+            top_elo = top.get("online_elo", 0)
+            description = f"{count} ranked players | #1: {top_name} ({top_elo} ELO)"
+        else:
+            description = f"{count} ranked players on the Sorcery: Contested Realm leaderboard"
+    except Exception:
+        description = "ELO leaderboard for Sorcery: Contested Realm — see top ranked players"
+
+    return _og_html(
+        title="ELO Leaderboard — Sorcerers Summit",
+        description=description,
+        url=f"{SITE_URL}/elo",
+    )
+
+
+@og_preview_bp.route("/avatars")
+def og_avatars_list():
+    """OG preview for the avatars listing page."""
+    if not _is_bot():
+        return _serve_spa()
+
+    return _og_html(
+        title="Avatar Stats — Sorcerers Summit",
+        description="Win rates, match counts, and top players for every avatar in Sorcery: Contested Realm",
+        url=f"{SITE_URL}/avatars",
+    )
+
+
+@og_preview_bp.route("/avatar/<path:avatar_name>")
+def og_avatar_detail(avatar_name: str):
+    """OG preview for a specific avatar's stats page."""
+    if not _is_bot():
+        return _serve_spa()
+
+    stats = _get_avatar_stats(avatar_name)
+    image = _resolve_avatar_image_url(avatar_name)
+
+    if stats:
+        description = (
+            f"{stats['total']} matches | {stats['win_rate']}% win rate "
+            f"({stats['wins']}W – {stats['losses']}L)"
+        )
+    else:
+        description = f"Match stats and win rate for {avatar_name} in Sorcery: Contested Realm"
+
+    return _og_html(
+        title=f"{avatar_name} — Sorcerers Summit",
+        description=description,
+        url=f"{SITE_URL}/avatar/{avatar_name}",
+        image=image,
+    )
+
+
+@og_preview_bp.route("/card/<path:card_name>")
+def og_card_detail(card_name: str):
+    """OG preview for a specific card's stats page."""
+    if not _is_bot():
+        return _serve_spa()
+
+    try:
+        catalog = CardCatalogRepository()
+        card = catalog.get_card(card_name)
+        if card:
+            parts = []
+            if card.get("card_type"):
+                parts.append(card["card_type"])
+            if card.get("elements"):
+                parts.append(card["elements"])
+            if card.get("rarity"):
+                parts.append(card["rarity"])
+            description = " · ".join(parts) if parts else "Card stats for Sorcery: Contested Realm"
+            title = card["name"]
+        else:
+            title = card_name
+            description = "Card stats for Sorcery: Contested Realm"
+    except Exception:
+        title = card_name
+        description = "Card stats for Sorcery: Contested Realm"
+
+    return _og_html(
+        title=f"{title} — Sorcerers Summit",
+        description=description,
+        url=f"{SITE_URL}/card/{card_name}",
     )

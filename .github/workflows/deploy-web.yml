@@ -40,5 +40,5 @@ jobs:
             sudo systemctl restart summit-web
 
             # Update Nginx config and reload if it changed
-            sudo cp web-app/nginx/summit-web-cloudflare.conf /etc/nginx/sites-available/summit-web.conf
+            sudo cp web-app/nginx/summit-web-cloudflare.conf /etc/nginx/sites-available/summit-web
             sudo nginx -t && sudo nginx -s reload

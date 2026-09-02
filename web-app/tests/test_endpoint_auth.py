@@ -186,6 +186,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "og_preview.og_event_detail",
     "og_preview.og_deck_rec_list",
     "og_preview.og_deck_detail",
+    "og_preview.og_player",
 }
 
 

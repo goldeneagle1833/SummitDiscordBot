@@ -14,6 +14,8 @@ from flask import Blueprint, request, send_from_directory
 
 from repositories.events import EventRepository
 from repositories.deck_rec_repo import DeckRecRepository
+from repositories.elo import EloRepository
+from services.player import PlayerService
 from utils.formatting import format_event_name
 from webapp_config import AVATAR_IMAGES_DIR
 
@@ -202,4 +204,42 @@ def og_deck_detail(deck_id: str):
         description=description,
         url=f"{SITE_URL}/deck-rec/{deck_id}",
         image=image,
+    )
+
+
+@og_preview_bp.route("/player/<player_id>")
+def og_player(player_id: str):
+    """OG preview for a player profile page."""
+    if not _is_bot():
+        return _serve_spa()
+
+    try:
+        elo_repo = EloRepository()
+        player_service = PlayerService()
+
+        elo_data = elo_repo.get_user_elo(player_id)
+        standings = elo_repo.get_all_standings()
+        player_row = next((p for p in standings if str(p["user_id"]) == str(player_id)), None)
+
+        name = player_row["display_name"] if player_row else "Player"
+        elo = player_row["online_elo"] if player_row else 1500
+
+        stats = player_service.get_player_stats(player_id)
+        wins = stats["wins"] if stats else 0
+        losses = stats["losses"] if stats else 0
+        win_rate = stats["win_rate"] if stats else None
+
+        parts = [f"ELO: {elo}", f"{wins}W – {losses}L"]
+        if win_rate is not None and (wins + losses) > 0:
+            parts.append(f"{win_rate:.1f}% win rate")
+
+        description = " | ".join(parts)
+    except Exception:
+        name = "Player"
+        description = "Sorcery: Contested Realm player profile"
+
+    return _og_html(
+        title=f"{name} — Sorcerers Summit",
+        description=description,
+        url=f"{SITE_URL}/player/{player_id}",
     )

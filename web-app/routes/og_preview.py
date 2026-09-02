@@ -209,24 +209,32 @@ def og_deck_detail(deck_id: str):
 
 
 def _get_avatar_stats(avatar_name: str) -> dict | None:
-    """Query win/loss stats for an avatar directly from match history."""
+    """Query all-time win/loss stats for an avatar across all match sources.
+
+    Mirrors the ?event=all&source=all logic used by the avatar API:
+    - match_records (current event, Discord matches)
+    - match_records_archive (past events)
+    - match_records non-Discord sources
+    - external_matches table
+    """
     import sqlite3, json as _json
 
     if not MATCH_RECORDS_DB_PATH.exists():
         return None
 
-    wins = losses = 0
     norm = avatar_name.lower().strip()
-    try:
-        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT json_deck_data_winner, json_deck_data_loser FROM match_records "
-            "WHERE json_deck_data_winner IS NOT NULL OR json_deck_data_loser IS NOT NULL"
-        )
-        for row in cur.fetchall():
+    wins = losses = 0
+
+    _DECK_NOT_EMPTY = (
+        "((json_deck_data_winner IS NOT NULL AND json_deck_data_winner != '' AND json_deck_data_winner != '{}')"
+        " OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser != '' AND json_deck_data_loser != '{}'))"
+    )
+
+    def _tally(rows):
+        nonlocal wins, losses
+        for row in rows:
             for col, is_win in ((row[0], True), (row[1], False)):
-                if not col:
+                if not col or col in ("", "{}"):
                     continue
                 try:
                     d = _json.loads(col)
@@ -238,6 +246,51 @@ def _get_avatar_stats(avatar_name: str) -> dict | None:
                             losses += 1
                 except Exception:
                     pass
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        # Current event Discord matches
+        try:
+            cur.execute(
+                f"SELECT json_deck_data_winner, json_deck_data_loser FROM match_records "
+                f"WHERE {_DECK_NOT_EMPTY} AND (source = 'Discord' OR source IS NULL)"
+            )
+            _tally(cur.fetchall())
+        except sqlite3.OperationalError:
+            pass
+
+        # Archived past-event matches
+        try:
+            cur.execute(
+                f"SELECT json_deck_data_winner, json_deck_data_loser FROM match_records_archive "
+                f"WHERE {_DECK_NOT_EMPTY}"
+            )
+            _tally(cur.fetchall())
+        except sqlite3.OperationalError:
+            pass
+
+        # External / non-Discord matches stored in match_records
+        try:
+            cur.execute(
+                f"SELECT json_deck_data_winner, json_deck_data_loser FROM match_records "
+                f"WHERE {_DECK_NOT_EMPTY} AND source != 'Discord' AND source IS NOT NULL"
+            )
+            _tally(cur.fetchall())
+        except sqlite3.OperationalError:
+            pass
+
+        # Dedicated external_matches table
+        try:
+            cur.execute(
+                f"SELECT json_deck_data_winner, json_deck_data_loser FROM external_matches "
+                f"WHERE {_DECK_NOT_EMPTY}"
+            )
+            _tally(cur.fetchall())
+        except sqlite3.OperationalError:
+            pass
+
         conn.close()
     except Exception:
         return None

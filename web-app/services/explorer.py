@@ -60,7 +60,10 @@ class ExplorerService:
                 play_format = phase.get("format")
                 break
 
-        results = self._build_results(players_data, event.get("topcut"))
+        # Fetch the page HTML to get the authoritative standings order from Play Network
+        html_standings = self._fetch_page_standings(url)
+
+        results = self._build_results(players_data, html_standings)
 
         # Extract venue name from store or owner
         venue_name = None
@@ -86,6 +89,40 @@ class ExplorerService:
             "top_cut_size": event.get("topcut") or 0,
             "results": results,
         }
+
+    def _fetch_page_standings(self, url: str) -> dict[str, int]:
+        """Fetch the event page HTML and parse the Play Network standings order.
+
+        Returns a dict mapping display_name -> position (1-indexed).
+        Returns empty dict if parsing fails (caller falls back to algorithmic ranking).
+        """
+        try:
+            resp = requests.get(
+                url, timeout=15, headers={"User-Agent": "Mozilla/5.0"}
+            )
+            if resp.status_code != 200:
+                logger.warning("Failed to fetch page standings: HTTP %s", resp.status_code)
+                return {}
+            entries = re.findall(
+                r'<span class="w-4 text-center font-title text-lg">(\d+)</span>.*?'
+                r'<span class="truncate font-title">(.*?)</span>',
+                resp.text,
+                re.DOTALL,
+            )
+            # For duplicate names keep first occurrence (highest/best standing)
+            standings = {}
+            for pos_str, name in entries:
+                name = name.strip()
+                if name and name not in standings:
+                    standings[name] = int(pos_str)
+            if not standings:
+                logger.warning("Parsed 0 standings from page HTML — CSS may have changed")
+            else:
+                logger.info("Parsed %d standings from Play Network page", len(standings))
+            return standings
+        except Exception as exc:
+            logger.warning("Could not parse page standings: %s", exc)
+            return {}
 
     def _fetch_event_trpc(self, event_id: str) -> dict:
         """Fetch event data from sorcerytcg.com tRPC endpoint."""
@@ -116,11 +153,14 @@ class ExplorerService:
                 f"Unexpected response format from sorcerytcg.com: {exc}"
             ) from exc
 
-    def _build_results(self, players_data: list, top_cut_size: int | None) -> list[dict]:
+    def _build_results(self, players_data: list, html_standings: dict[str, int]) -> list[dict]:
         """Build results list from the tRPC event players data.
 
-        Each player has a seats array with round-by-round results.
-        We count wins from seats, then rank by total score (wins * 3).
+        Standing order comes from html_standings (Play Network page, source of truth).
+        Falls back to Swiss score descending if html_standings is empty or a player
+        is not found in the HTML (e.g. CSS class names changed).
+
+        Wins = total match wins (Swiss + top-cut), matching Play Network's displayed record.
         """
         player_rows = []
 
@@ -136,40 +176,43 @@ class ExplorerService:
                 meta = feature.get("meta", {})
                 image_url = meta.get("image")
 
-            # Count wins from seats
             seats = player.get("seats", [])
-            wins = 0
-            total_score = 0
-            for seat in seats:
-                result = seat.get("result", {})
-                score = result.get("score", 0)
-                total_score += score
-                if result.get("result") == "Win":
-                    wins += 1
 
             # Skip dropped players with no games played
             if player.get("status") == "Dropped" and not seats:
                 continue
 
+            wins = sum(1 for s in seats if s.get("result", {}).get("result") == "Win")
+            swiss_score = sum(
+                s.get("result", {}).get("score", 0) for s in seats
+                if s.get("round", {}).get("phase", {}).get("structure") == "Swiss"
+            )
+
             player_rows.append({
                 "cardeio_user_id": user_id,
                 "display_name": display_name,
                 "wins": wins,
-                "total_score": total_score,
+                "swiss_score": swiss_score,
                 "image_url": image_url,
                 "team_name": "",
             })
 
-        # Sort by total score descending to determine standings
-        player_rows.sort(key=lambda r: -r["total_score"])
+        # Sort by Play Network page standings (source of truth).
+        # Fall back to Swiss score descending for any player not found in the HTML.
+        fallback_rank = len(html_standings) + 1 if html_standings else 1
+        player_rows.sort(
+            key=lambda r: (
+                html_standings.get(r["display_name"], fallback_rank),
+                -r["swiss_score"],
+            )
+        )
 
         total_players = len(player_rows)
 
-        # Assign final standings
         for i, row in enumerate(player_rows):
             row["final_standing"] = i + 1
             row["total_players"] = total_players
-            del row["total_score"]
+            del row["swiss_score"]
 
         return player_rows
 

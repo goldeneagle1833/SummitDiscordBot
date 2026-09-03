@@ -6,7 +6,8 @@ import sqlite3
 import logging
 import random
 import time
-from openai import OpenAI
+# Shop attack flavor used to call OpenAI; unused after hardcoded fart copy.
+# from openai import OpenAI
 
 import config
 from utils.text import find_best_command_match
@@ -21,7 +22,7 @@ from cogs.fun import (
 
 logger = logging.getLogger("discord_bot")
 
-openai = OpenAI(api_key=config.OPENAI_API_KEY)
+# openai = OpenAI(api_key=config.OPENAI_API_KEY)
 
 
 class ShopCog(commands.Cog):

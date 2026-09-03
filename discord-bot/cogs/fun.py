@@ -6,7 +6,9 @@ import sqlite3
 import logging
 import random
 from random import randrange
-from openai import OpenAI
+# Fart flavor/proclamations are hardcoded (cogs.fart_flavor). Unused OpenAI
+# helpers are kept commented below if we ever want attack-line generation back.
+# from openai import OpenAI
 
 # Uber-rare Curio Shart variants: the first Curio Shart ever (post-deploy) is
 # always special — 40% lavashart / 40% frostshart / 20% Yourt. After that,
@@ -105,6 +107,7 @@ def drunken_case(text):
     return "".join(out)
 
 import config
+from cogs.fart_flavor import compose_fart_body, fart_roll_blurb, pick_fartlord_proclamation
 from utils.text import find_best_command_match
 from utils.checks import is_bot_admin
 
@@ -188,7 +191,7 @@ def safe_parse_datetime(date_string):
 
 logger = logging.getLogger("discord_bot")
 
-openai = OpenAI(api_key=config.OPENAI_API_KEY)
+# openai = OpenAI(api_key=config.OPENAI_API_KEY)
 
 daily_usage_message = "You have already used your daily action today. The actions are `!fart`, `!fart_gift`, `!fartprediction`. \n Use `!fartrank` to check your score."
 
@@ -407,26 +410,26 @@ class FunCog(commands.Cog):
             )
             return
 
-    def openai_response(self, prompt, name_of_user):
-        response = openai.responses.create(
-            model="gpt-4.1-nano",
-            instructions=f"in less than 10 words. Respond to the following prompt as if you were "
-            f"around {name_of_user} farting with a little bit of sarcasm and humor.",
-            input=prompt,
-        )
-        print(response)
-        return response.output_text
-
-    def openai_response_to_attack(self, prompt, name_of_user, damage):
-        response = openai.responses.create(
-            model="gpt-4.1-nano",
-            instructions=f"in less than 10 words. Respond to the following prompt as if you were "
-            f"around {name_of_user} farting to attack another users score with sarcasm and humor. "
-            f"The fart did {damage} damage to the opponent's score. keep the damage number in the response.",
-            input=prompt,
-        )
-        print(response)
-        return response.output_text
+    # def openai_response(self, prompt, name_of_user):
+    #     response = openai.responses.create(
+    #         model="gpt-4.1-nano",
+    #         instructions=f"in less than 10 words. Respond to the following prompt as if you were "
+    #         f"around {name_of_user} farting with a little bit of sarcasm and humor.",
+    #         input=prompt,
+    #     )
+    #     print(response)
+    #     return response.output_text
+    #
+    # def openai_response_to_attack(self, prompt, name_of_user, damage):
+    #     response = openai.responses.create(
+    #         model="gpt-4.1-nano",
+    #         instructions=f"in less than 10 words. Respond to the following prompt as if you were "
+    #         f"around {name_of_user} farting to attack another users score with sarcasm and humor. "
+    #         f"The fart did {damage} damage to the opponent's score. keep the damage number in the response.",
+    #         input=prompt,
+    #     )
+    #     print(response)
+    #     return response.output_text
 
     def save_fart_score(self, last_updated, user_id, user_display_name, level):
         logger.info(f"Saving fart score {level} for user {user_id}")
@@ -1711,14 +1714,7 @@ class FunCog(commands.Cog):
                 )
 
             try:
-                try:
-                    fart_message_add = self.openai_response(
-                        fart_message, ctx.author.name
-                    )
-                except Exception as e:
-                    logger.error(f"OpenAI API error: {e}")
-                    fart_message_add = "... *cough cough*"
-
+                blurb = fart_roll_blurb(fart_message, fart_type, uber_variant)
                 self.save_fart_score(
                     now, ctx.author.id, ctx.author.global_name, points_earned
                 )
@@ -1726,8 +1722,13 @@ class FunCog(commands.Cog):
                     "**MUSHROOM BOOST ACTIVATED!** \n" if lucky_charm_active else ""
                 )
                 await ctx.send(
-                    f"{uber_prefix}{variant_effect_msg}{mushroom_boost_msg}{fart_message} "
-                    f"{fart_message_add} You earned {points_earned} points.",
+                    compose_fart_body(
+                        uber_prefix,
+                        variant_effect_msg,
+                        mushroom_boost_msg,
+                        blurb,
+                        f"You earned {points_earned} points.",
+                    ),
                     embed=uber_embed,
                 )
 
@@ -1891,13 +1892,11 @@ class FunCog(commands.Cog):
             except sqlite3.Error as e:
                 logger.error(f"Error saving gifted fart type: {e}")
 
-            try:
-                fart_message_add = self.openai_response(
-                    fart_message, ctx.author.name
-                )
-            except Exception as e:
-                logger.error(f"OpenAI API error: {e}")
-                fart_message_add = "... *cough cough*"
+            blurb = fart_roll_blurb(fart_message, fart_type, uber_variant)
+            if blurb:
+                gift_roll_line = f"{ctx.author.mention} rolled a {blurb}\n"
+            else:
+                gift_roll_line = f"{ctx.author.mention} gifted this uber-rare curio\n"
 
             # Consume gifter's daily; award points to recipient; lock recipient for season
             self.mark_daily_action_used(
@@ -1913,7 +1912,7 @@ class FunCog(commands.Cog):
             )
             await ctx.send(
                 f"{uber_prefix}{variant_effect_msg}{mushroom_boost_msg}🎁 **FART GIFT!** "
-                f"{ctx.author.mention} rolled a {fart_message} {fart_message_add}\n"
+                f"{gift_roll_line}"
                 f"<@{target.id}> received **{points_earned}** points — how nice!\n"
                 f"(Once per player per season)",
                 embed=uber_embed,
@@ -2153,13 +2152,9 @@ class FunCog(commands.Cog):
     @commands.has_role(config.LEADER_ROLE_ID)
     async def fartlord(self, ctx):
         """Declare yourself the Fart Lord (Leader role only)."""
-        response_text = self.openai_response(
-            "as the new fart lord, make a grand proclamation in less than 20 words. about being the fart lord and how great it is to be the fart lord.",
-            ctx.author.name,
-        )
-
         await ctx.send(
-            f"Hear ye, hear ye! {ctx.author.mention} proclaims: {response_text}"
+            f"Hear ye, hear ye! {ctx.author.mention} proclaims: "
+            f"{pick_fartlord_proclamation()}"
         )
 
     def collect_taxes_for_fartlord(self):
@@ -2655,19 +2650,15 @@ class FartPredictionView(discord.ui.View):
             now, self.user_id, interaction.user.global_name, points_earned
         )
 
-        try:
-            fart_message_add = cog.openai_response(fart_message, interaction.user.name)
-        except Exception as e:
-            logger.error(f"OpenAI API error: {e}")
-            fart_message_add = "... *magical silence*"
-
+        blurb = fart_roll_blurb(fart_message, fart_type, uber_variant)
+        actual_result = blurb if blurb else "Uber-rare curio — see the highlight above."
         mushroom_boost_msg = (
             "**MUSHROOM BOOST ACTIVATED!** \n" if mushroom_boost_active else ""
         )
 
         await interaction.followup.send(
             f"{uber_prefix}{variant_effect_msg}🔮 **Your Prediction:** {chosen_prediction}\n"
-            f"💨 **Actual Result:** {mushroom_boost_msg}{fart_message} {fart_message_add}\n"
+            f"💨 **Actual Result:** {mushroom_boost_msg}{actual_result}\n"
             f"{result_message} You earned **{points_earned}** points!",
             embed=uber_embed,
         )

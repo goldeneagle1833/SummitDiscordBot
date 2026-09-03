@@ -48,14 +48,33 @@ UBER_RARE_CURIO_VARIANTS = {
 
 # Frostshart duration matches !stink_cloud (naive local now + 24h).
 FROSTSHART_DURATION = datetime.timedelta(hours=24)
-# Frozen players may still use default !fart plus lookups/admin.
-FROSTSHART_ALLOWED_COMMANDS = frozenset(
+# Frozen players keep lookups, daily rolls, leader specials, and admin commands.
+# Only the shop catalog and listed purchase commands are blocked (ShopCog).
+FROSTSHART_BLOCKED_SHOP_COMMANDS = frozenset(
     {
-        "fart",
-        "helpfart",
-        "fartrank",
-        "fart_leaderboard",
-        "reset_fart_cooldown",
+        "fart_shop",
+        "blue_shell",
+        "red_shell",
+        "green_shell",
+        "banana",
+        "big_banana",
+        "star",
+        "mushroom",
+        "bobomb",
+        "fart_star",
+        "evil_star",
+        "thunder_fart",
+        "gas_shield",
+        "stink_bomb",
+        "fart_rocket",
+        "fart_lance",
+        "fart_trap",
+        "fart_twister",
+        "stink_cloud",
+        "gas_gamble",
+        "fart_leech",
+        "fart_donation",
+        "fart_court",
     }
 )
 
@@ -199,17 +218,6 @@ class FunCog(commands.Cog):
     def cog_unload(self):
         if self.yourt_rampage_ticker.is_running():
             self.yourt_rampage_ticker.cancel()
-
-    async def cog_check(self, ctx):
-        """Frostshart: allow default !fart; freeze shop specials and other actions."""
-        command = getattr(ctx, "command", None)
-        name = getattr(command, "name", None)
-        if not name or name in FROSTSHART_ALLOWED_COMMANDS:
-            return True
-        if not self.is_frost_frozen(ctx.author.id):
-            return True
-        await ctx.send(self.frostshart_action_block_message(ctx.author.mention))
-        return False
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -873,18 +881,9 @@ class FunCog(commands.Cog):
             f"No shop items for 24 hours!"
         )
 
-    def frostshart_action_block_message(self, mention):
-        return (
-            f"{mention}, you're frozen solid by a Frostshart! "
-            f"Only `!fart` works — no `!fartprediction`, `!taxes`, or other specials "
-            f"for 24 hours!"
-        )
-
-    def frostshart_fart_block_message(self, user_id, mention):
-        """Block reply for specials (not default !fart), or None if not frozen."""
-        if not self.is_frost_frozen(user_id):
-            return None
-        return self.frostshart_action_block_message(mention)
+    def frostshart_blocks_shop_command(self, command_name):
+        """True when this shop command is frozen for Frostshart victims."""
+        return command_name in FROSTSHART_BLOCKED_SHOP_COMMANDS
 
     @staticmethod
     def _frost_freeze_still_active(frozen_until, now=None):
@@ -2585,13 +2584,6 @@ class FartPredictionView(discord.ui.View):
             logger.error(f"Error checking daily action: {e}")
         finally:
             conn.close()
-
-        frost_block = cog.frostshart_fart_block_message(
-            self.user_id, f"<@{self.user_id}>"
-        )
-        if frost_block:
-            await interaction.followup.send(frost_block)
-            return
 
         if did_user_fart_today:
             await interaction.followup.send(f"<@{self.user_id}>, {daily_usage_message}")

@@ -11,6 +11,7 @@ from openai import OpenAI
 import config
 from utils.text import find_best_command_match
 from cogs.fun import (
+    FROSTSHART_BLOCKED_SHOP_COMMANDS,
     parse_to_est_date,
     get_est_date,
     get_est_now,
@@ -157,8 +158,7 @@ class ShopCog(commands.Cog):
 
     async def cog_check(self, ctx):
         """Block shop commands if user is stink clouded, rate-limited, or fart-trapped."""
-        if ctx.command.name in ('fart_shop',):
-            return True
+        command_name = getattr(getattr(ctx, "command", None), "name", None)
 
         # Check frostshart / stink cloud blocks
         conn = sqlite3.connect("fart_scores.db")
@@ -166,7 +166,11 @@ class ShopCog(commands.Cog):
         try:
             fun = self.bot.get_cog("FunCog")
             frozen_check = getattr(fun, "is_frost_frozen", None) if fun is not None else None
-            if callable(frozen_check) and frozen_check(ctx.author.id) is True:
+            if (
+                command_name in FROSTSHART_BLOCKED_SHOP_COMMANDS
+                and callable(frozen_check)
+                and frozen_check(ctx.author.id) is True
+            ):
                 shop_msg = getattr(fun, "frostshart_shop_block_message", None)
                 if callable(shop_msg):
                     await ctx.send(shop_msg(ctx.author.mention))
@@ -176,6 +180,10 @@ class ShopCog(commands.Cog):
                         f"No shop items for 24 hours!"
                     )
                 return False
+
+            # Catalog browse skips stink cloud / peel-out / traps (Frostshart already applied)
+            if command_name == "fart_shop":
+                return True
 
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS shop_blocks (

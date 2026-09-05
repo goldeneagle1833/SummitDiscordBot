@@ -10,17 +10,11 @@ from random import randrange
 # helpers are kept commented below if we ever want attack-line generation back.
 # from openai import OpenAI
 
-# Uber-rare Curio Shart variants: the first Curio Shart ever (post-deploy) is
-# always special — 40% lavashart / 40% frostshart / 20% Yourt. After that,
-# 10% of Curio Sharts are lava/frost forever and 5% are Yourt. The global
-# claimed flag survives FART GAME RESET (100% never comes back). Each player
-# may receive each lava/frost variant at most once per season; those flags
-# reset with the red Reset Fart Game button.
-UBER_RARE_CURIO_CHANCE = 10  # lavashart / frostshart (combined, after first)
+# Uber-rare Curio Shart variants: every Curio Shart independently rolls
+# 10% frostshart / 10% lavashart / 5% Yourt (Yourt is the rarest).
+FROSTSHART_CURIO_CHANCE = 10
+LAVASHART_CURIO_CHANCE = 10
 YOURT_CURIO_CHANCE = 5
-# First-ever Curio d100: 1-40 lava, 41-80 frost, 81-100 Yourt (40/40/20)
-FIRST_CURIO_LAVA_MAX = 40
-FIRST_CURIO_FROST_MAX = 80
 YOURT_RAMPAGE_SECONDS = 60 * 60
 YOURT_ATTACK_EVERY_SECONDS = 10 * 60
 YOURT_ATTACKS_TOTAL = 6
@@ -649,159 +643,24 @@ class FunCog(commands.Cog):
             return "Exceptional Fart! 💨💨", "exceptional"
         return "Ordinary Fart! 💨", "ordinary"
 
-    def _ensure_uber_rare_curio_table(self, cur):
-        """Permanent singleton flag: first-ever Curio special (survives FART GAME RESET)."""
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS uber_rare_curio_claimed (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                claimed_by_user_id INTEGER,
-                variant TEXT NOT NULL,
-                claimed_at TEXT NOT NULL
-            )
-        """)
-
-    def _ensure_uber_rare_season_table(self, cur):
-        """Per-player per-variant uber-rare awards for the current season (wiped on reset)."""
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS uber_rare_curio_season (
-                user_id INTEGER NOT NULL,
-                variant TEXT NOT NULL,
-                rolled_at TEXT NOT NULL,
-                PRIMARY KEY (user_id, variant)
-            )
-        """)
-
-    def has_rolled_uber_rare_this_season(self, user_id, variant):
-        """True if this player already received this uber-rare variant this season."""
-        if user_id is None or variant not in UBER_RARE_CURIO_VARIANTS:
-            return False
-        try:
-            conn = sqlite3.connect("fart_scores.db")
-            cur = conn.cursor()
-            self._ensure_uber_rare_season_table(cur)
-            cur.execute(
-                """
-                SELECT 1 FROM uber_rare_curio_season
-                WHERE user_id = ? AND variant = ?
-                """,
-                (user_id, variant),
-            )
-            already = cur.fetchone() is not None
-            conn.close()
-            return already
-        except sqlite3.Error as e:
-            logger.error(f"Error checking uber-rare season flag: {e}")
-            if "conn" in locals():
-                conn.close()
-            # Fail closed so a player cannot farm the same variant on DB errors
-            return True
-
-    def mark_uber_rare_rolled_this_season(self, user_id, variant):
-        """Record that this player received this uber-rare variant this season."""
-        if user_id is None or variant not in UBER_RARE_CURIO_VARIANTS:
-            return
-        try:
-            conn = sqlite3.connect("fart_scores.db")
-            cur = conn.cursor()
-            self._ensure_uber_rare_season_table(cur)
-            cur.execute(
-                """
-                INSERT OR IGNORE INTO uber_rare_curio_season
-                    (user_id, variant, rolled_at)
-                VALUES (?, ?, ?)
-                """,
-                (user_id, variant, datetime.datetime.now().isoformat()),
-            )
-            conn.commit()
-            conn.close()
-        except sqlite3.Error as e:
-            logger.error(f"Error marking uber-rare season roll: {e}")
-            if "conn" in locals():
-                conn.close()
-
-    def is_uber_rare_guaranteed_claimed(self):
-        """True once the one-time guaranteed uber-rare Curio has ever been awarded."""
-        try:
-            conn = sqlite3.connect("fart_scores.db")
-            cur = conn.cursor()
-            self._ensure_uber_rare_curio_table(cur)
-            cur.execute("SELECT 1 FROM uber_rare_curio_claimed WHERE id = 1")
-            claimed = cur.fetchone() is not None
-            conn.close()
-            return claimed
-        except sqlite3.Error as e:
-            logger.error(f"Error checking uber-rare curio claimed flag: {e}")
-            if "conn" in locals():
-                conn.close()
-            # Fail closed: treat as claimed so we don't spam 100% specials on DB errors
-            return True
-
-    def mark_uber_rare_guaranteed_claimed(self, user_id, variant):
-        """Record the one-time guaranteed uber-rare Curio (never cleared by season reset)."""
-        try:
-            conn = sqlite3.connect("fart_scores.db")
-            cur = conn.cursor()
-            self._ensure_uber_rare_curio_table(cur)
-            cur.execute(
-                """
-                INSERT OR IGNORE INTO uber_rare_curio_claimed
-                    (id, claimed_by_user_id, variant, claimed_at)
-                VALUES (1, ?, ?, ?)
-                """,
-                (
-                    user_id,
-                    variant,
-                    datetime.datetime.now().isoformat(),
-                ),
-            )
-            conn.commit()
-            conn.close()
-        except sqlite3.Error as e:
-            logger.error(f"Error marking uber-rare curio claimed: {e}")
-            if "conn" in locals():
-                conn.close()
-
-    def pick_first_curio_variant(self, roll=None):
-        """40% lavashart / 40% frostshart / 20% Yourt for the first Curio ever."""
-        roll = randrange(1, 101) if roll is None else roll
-        if roll <= FIRST_CURIO_LAVA_MAX:
-            return "lavashart"
-        if roll <= FIRST_CURIO_FROST_MAX:
-            return "frostshart"
-        return "yourt"
-
     def roll_uber_rare_curio_variant(self, user_id=None):
-        """Roll lavashart/frostshart/yourt for a Curio Shart.
+        """Roll frostshart/lavashart/yourt for a Curio Shart.
 
-        First Curio Shart ever (after deploy): 100% special, 40/40/20
-        lavashart / frostshart / Yourt.
-        After that forever:
-          - 10% lavashart/frostshart (50/50 between those two)
+        Every Curio Shart uses the same d100:
+          - 10% frostshart
+          - 10% lavashart
           - 5% Yourt (skipped if a Yourt rampage is already running)
-        The global claimed flag survives FART GAME RESET — 100% never comes back.
-        Each player may receive each lava/frost variant at most once per season.
-        Returns 'lavashart', 'frostshart', 'yourt', or None.
+        Returns 'frostshart', 'lavashart', 'yourt', or None.
         """
-        claimed = self.is_uber_rare_guaranteed_claimed()
-        if not claimed:
-            variant = self.pick_first_curio_variant()
-            if variant in ("lavashart", "frostshart"):
-                if self.has_rolled_uber_rare_this_season(user_id, variant):
-                    return None
-                self.mark_uber_rare_rolled_this_season(user_id, variant)
-            elif variant == "yourt" and self.is_yourt_rampage_active():
-                return None
-            self.mark_uber_rare_guaranteed_claimed(user_id, variant)
-            return variant
-
         bucket = randrange(1, 101)
-        if bucket <= UBER_RARE_CURIO_CHANCE:
-            variant = "lavashart" if randrange(2) == 0 else "frostshart"
-            if self.has_rolled_uber_rare_this_season(user_id, variant):
-                return None
-            self.mark_uber_rare_rolled_this_season(user_id, variant)
-            return variant
-        if bucket <= UBER_RARE_CURIO_CHANCE + YOURT_CURIO_CHANCE:
+        frost_max = FROSTSHART_CURIO_CHANCE
+        lava_max = frost_max + LAVASHART_CURIO_CHANCE
+        yourt_max = lava_max + YOURT_CURIO_CHANCE
+        if bucket <= frost_max:
+            return "frostshart"
+        if bucket <= lava_max:
+            return "lavashart"
+        if bucket <= yourt_max:
             if self.is_yourt_rampage_active():
                 return None
             return "yourt"

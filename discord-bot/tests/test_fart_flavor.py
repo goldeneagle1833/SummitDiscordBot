@@ -36,10 +36,15 @@ class TestFlavorPools:
             assert len(lines) == 20, f"{tier} should have 20 lines"
             assert len(set(lines)) == 20, f"{tier} lines must be unique"
 
-    def test_every_line_includes_wind_emoji(self):
+    def test_flavor_lines_do_not_repeat_rank_emojis(self):
         for tier, lines in FART_FLAVOR_LINES.items():
             for line in lines:
-                assert "💨" in line, f"{tier} missing 💨: {line!r}"
+                assert not line.startswith(("💨", "💩")), (
+                    f"{tier} flavor should not prepend rank emojis: {line!r}"
+                )
+                assert "💨" not in line and "💩" not in line, (
+                    f"{tier} flavor should leave rank emojis to the title: {line!r}"
+                )
 
     def test_all_lines_globally_unique(self):
         all_lines = [line for lines in FART_FLAVOR_LINES.values() for line in lines]
@@ -62,12 +67,32 @@ class TestPickAndBlurb:
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "cogs.fart_flavor.pick_fart_flavor",
-                lambda fart_type: "💨 test flavor",
+                lambda fart_type: "test flavor",
             )
             msg, typ = FunCog.classify_fart_roll(14)
             blurb = fart_roll_blurb(msg, typ)
             assert blurb.startswith("Ordinary Fart!")
-            assert "💨 test flavor" in blurb
+            assert "test flavor" in blurb
+            assert blurb.count("💨") == 1
+
+    def test_blurb_keeps_rank_emoji_counts(self):
+        expected = {
+            14: ("Ordinary Fart! 💨", 1),
+            50: ("Exceptional Fart! 💨💨", 2),
+            70: ("Elite Fart! 💨💨💨", 3),
+            90: ("Unique Fart! 💨💨💨💨", 4),
+            99: ("Curio Shart! 💩💨💨💨💨", 4),
+        }
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "cogs.fart_flavor.pick_fart_flavor",
+                lambda fart_type: "plain flavor",
+            )
+            for roll, (title, winds) in expected.items():
+                msg, typ = FunCog.classify_fart_roll(roll)
+                blurb = fart_roll_blurb(msg, typ)
+                assert blurb.startswith(title)
+                assert blurb.count("💨") == winds
 
     def test_uber_rare_skips_default_curio_blurb(self):
         msg, typ = FunCog.classify_fart_roll(99)
@@ -92,7 +117,7 @@ class TestPickAndBlurb:
             "",
             "",
             "",
-            "Curio Shart! 💩💨💨💨💨 💩💨💨💨 A CURIO!",
+            "Curio Shart! 💩💨💨💨💨 A CURIO!",
             "You earned 98 points.",
         )
         assert body.startswith("Curio Shart!")

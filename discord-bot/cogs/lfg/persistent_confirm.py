@@ -1740,3 +1740,152 @@ class PersistentCorrectionConfirmView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(PersistentCorrectionConfirmButton(correction_id))
         self.add_item(PersistentCorrectionDenyButton(correction_id))
+
+
+# ──────────────────────────────────────────────
+#  PSO Ranked  —  Confirm / Dispute via web API
+# ──────────────────────────────────────────────
+
+async def _pso_call_web_api(endpoint: str, confirmation_id: int, user_id: str, extra: dict | None = None) -> dict:
+    """Call the web app's match-report API on behalf of a Discord user."""
+    import aiohttp
+
+    url = f"http://127.0.0.1:5000/api/match-report/{endpoint}/{confirmation_id}"
+    headers = {"Content-Type": "application/json"}
+    try:
+        api_key = config.WEB_APP_API_KEY
+        headers["X-API-Key"] = api_key
+    except AttributeError:
+        pass
+
+    body = {"user_id": user_id}
+    if extra:
+        body.update(extra)
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=body, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                data = await resp.json()
+                data["_status"] = resp.status
+                return data
+    except Exception as e:
+        logger.error(f"PSO web API call failed ({endpoint}/{confirmation_id}): {e}")
+        return {"success": False, "error": str(e), "_status": 500}
+
+
+class PersistentPSOConfirmButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"pso_confirm:(?P<id>\d+)",
+):
+    def __init__(self, confirmation_id: int):
+        super().__init__(
+            discord.ui.Button(
+                label="Confirm",
+                style=discord.ButtonStyle.success,
+                custom_id=f"pso_confirm:{confirmation_id}",
+            )
+        )
+        self.confirmation_id = confirmation_id
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(confirmation_id=int(match["id"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer()
+
+            result = await _pso_call_web_api(
+                "confirm", self.confirmation_id, str(interaction.user.id),
+            )
+
+            if result.get("success"):
+                # Disable buttons
+                if self.view:
+                    for child in self.view.children:
+                        child.disabled = True
+                    try:
+                        await interaction.message.edit(view=self.view)
+                    except Exception:
+                        pass
+                await interaction.followup.send(
+                    "Match confirmed! ELO ratings have been updated.", ephemeral=True,
+                )
+            else:
+                error = result.get("error", {})
+                msg = error.get("message", str(error)) if isinstance(error, dict) else str(error)
+                await interaction.followup.send(f"Could not confirm: {msg}", ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"Error in PersistentPSOConfirmButton: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(
+                    "An error occurred. Please try again or dispute on the website.",
+                    ephemeral=True,
+                )
+            except Exception:
+                pass
+
+
+class PersistentPSODisputeButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"pso_dispute:(?P<id>\d+)",
+):
+    def __init__(self, confirmation_id: int):
+        super().__init__(
+            discord.ui.Button(
+                label="Dispute",
+                style=discord.ButtonStyle.danger,
+                custom_id=f"pso_dispute:{confirmation_id}",
+            )
+        )
+        self.confirmation_id = confirmation_id
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(confirmation_id=int(match["id"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer()
+
+            result = await _pso_call_web_api(
+                "deny", self.confirmation_id, str(interaction.user.id),
+                extra={"reason": "Disputed via Discord DM"},
+            )
+
+            if result.get("success"):
+                # Disable buttons
+                if self.view:
+                    for child in self.view.children:
+                        child.disabled = True
+                    try:
+                        await interaction.message.edit(view=self.view)
+                    except Exception:
+                        pass
+                await interaction.followup.send(
+                    "Match disputed. No rating changes have been made.", ephemeral=True,
+                )
+            else:
+                error = result.get("error", {})
+                msg = error.get("message", str(error)) if isinstance(error, dict) else str(error)
+                await interaction.followup.send(f"Could not dispute: {msg}", ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"Error in PersistentPSODisputeButton: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(
+                    "An error occurred. Please try again or dispute on the website.",
+                    ephemeral=True,
+                )
+            except Exception:
+                pass
+
+
+class PersistentPSOMatchView(discord.ui.View):
+    """Confirm / Dispute view for PSO ranked matches (survives bot restarts)."""
+
+    def __init__(self, confirmation_id: int):
+        super().__init__(timeout=None)
+        self.add_item(PersistentPSOConfirmButton(confirmation_id))
+        self.add_item(PersistentPSODisputeButton(confirmation_id))

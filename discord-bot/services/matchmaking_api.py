@@ -254,6 +254,71 @@ async def start_matchmaking_api(bot):
             raise web.HTTPInternalServerError(text="Could not record match result")
         return web.json_response(result)
 
+    async def pso_match_notify(request):
+        """Send a Discord DM to the loser with confirm/dispute buttons for a PSO ranked match."""
+        from cogs.lfg.persistent_confirm import PersistentPSOMatchView
+
+        try:
+            payload = await request.json()
+        except ValueError:
+            raise web.HTTPBadRequest(text="Request body must be JSON")
+
+        loser_discord_id = payload.get("loser_discord_id")
+        winner_name = payload.get("winner_name", "Unknown")
+        loser_name = payload.get("loser_name", "Unknown")
+        confirmation_id = payload.get("confirmation_id")
+        winner_deck_url = payload.get("winner_deck_url", "")
+        loser_deck_url = payload.get("loser_deck_url", "")
+        expires_at = payload.get("expires_at")
+
+        if not loser_discord_id or not confirmation_id:
+            raise web.HTTPBadRequest(text="loser_discord_id and confirmation_id are required")
+
+        try:
+            loser_id_int = int(loser_discord_id)
+        except (ValueError, TypeError):
+            # Not a valid Discord snowflake (e.g. Google OAuth ID) — skip DM
+            logger.warning(f"PSO notify: loser_discord_id '{loser_discord_id}' is not a Discord snowflake, skipping DM")
+            return web.json_response({"sent": False, "reason": "not_discord_id"})
+
+        try:
+            user = await bot.fetch_user(loser_id_int)
+        except discord.NotFound:
+            logger.warning(f"PSO notify: could not find Discord user {loser_discord_id}")
+            return web.json_response({"sent": False, "reason": "user_not_found"})
+
+        embed = discord.Embed(
+            title="PSO Ranked Match Reported",
+            description=(
+                f"**{winner_name}** reported a ranked win against you (**{loser_name}**) "
+                f"on Play Sorcery Online."
+            ),
+            color=discord.Color.orange(),
+        )
+        if winner_deck_url:
+            embed.add_field(name="Winner's Deck", value=winner_deck_url, inline=False)
+        if loser_deck_url:
+            embed.add_field(name="Your Deck", value=loser_deck_url, inline=False)
+
+        if expires_at:
+            embed.add_field(
+                name="Auto-Confirm",
+                value=f"This match will auto-confirm <t:{expires_at}:R> if not disputed.",
+                inline=False,
+            )
+
+        embed.set_footer(text=f"Confirmation ID: {confirmation_id}")
+
+        view = PersistentPSOMatchView(confirmation_id)
+
+        try:
+            await user.send(embed=embed, view=view)
+            logger.info(f"PSO notify: sent DM to {loser_discord_id} for confirmation {confirmation_id}")
+            return web.json_response({"sent": True})
+        except discord.Forbidden:
+            logger.warning(f"PSO notify: cannot DM user {loser_discord_id} (DMs disabled)")
+            return web.json_response({"sent": False, "reason": "dms_disabled"})
+
     app = web.Application(middlewares=[_authentication], client_max_size=16 * 1024)
     app.router.add_get("/users/{user_id}/status", status)
     app.router.add_post("/users/{user_id}/queues", join)
@@ -263,6 +328,7 @@ async def start_matchmaking_api(bot):
         "/matches/{guild_id}/{pairing_id}/results",
         report_result,
     )
+    app.router.add_post("/pso-match-notify", pso_match_notify)
     runner = web.AppRunner(app)
     try:
         await runner.setup()

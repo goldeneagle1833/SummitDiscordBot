@@ -73,6 +73,16 @@ def report_external_match():
         if data.get("match_time") is not None:
             match_time = int(data["match_time"])
 
+        # PSO Ranked games always go through the ranked pipeline as
+        # pending confirmations (24h auto-confirm with ELO).
+        if source == "PSO Ranked":
+            return _record_pso_ranked(
+                data, winner_id, loser_id,
+                winner_name, loser_name,
+                winner_deck_url, loser_deck_url,
+                winner_went_first, match_time, match_comment,
+            )
+
         # Summit-queued games go through the bot pipeline, same as a
         # Discord Report-button match.
         pairing = _resolve_summit_pairing(data, winner_id, loser_id)
@@ -106,6 +116,116 @@ def report_external_match():
     except Exception as e:
         logger.error(f"Error recording external match: {e}", exc_info=True)
         return jsonify({"error": "Internal server error", "success": False}), 500
+
+
+def _record_pso_ranked(
+    data: dict,
+    winner_id: str,
+    loser_id: str,
+    winner_name: str | None,
+    loser_name: str | None,
+    winner_deck_url: str,
+    loser_deck_url: str,
+    winner_went_first: str | None,
+    match_time: int | None,
+    match_comment: str | None,
+):
+    """Create a pending ranked confirmation for a PSO-reported match."""
+    from services.match_confirmation import MatchConfirmationService
+
+    try:
+        service = MatchConfirmationService()
+        result = service.create_pso_match_report(
+            winner_id=winner_id,
+            loser_id=loser_id,
+            winner_deck_url=winner_deck_url,
+            loser_deck_url=loser_deck_url,
+            winner_name=winner_name,
+            loser_name=loser_name,
+            winner_went_first=winner_went_first,
+            match_time=match_time,
+            match_comment=match_comment or "",
+        )
+
+        # Send web notifications to both players
+        _notify_pso_match_players(winner_id, loser_id, result)
+
+        # Send Discord DM to the loser with confirm/dispute buttons
+        _notify_pso_loser_discord(
+            loser_id, result,
+            winner_deck_url=winner_deck_url,
+            loser_deck_url=loser_deck_url,
+        )
+
+        return jsonify(result)
+
+    except RuntimeError as e:
+        return jsonify({"success": False, "error": str(e), "pipeline": "pso_ranked"}), 409
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e), "pipeline": "pso_ranked"}), 400
+
+
+def _notify_pso_match_players(winner_id: str, loser_id: str, result: dict):
+    """Send web notifications to both players about the PSO match report."""
+    try:
+        from repositories.store import StoreRepository
+        store_repo = StoreRepository()
+
+        winner_name = result["winner"]["display_name"]
+        loser_name = result["loser"]["display_name"]
+        confirmation_id = result["confirmation_id"]
+
+        store_repo.create_web_notification(
+            user_id=winner_id,
+            ntype="pso_match_pending",
+            title="PSO Ranked Match Reported",
+            body=(
+                f"A ranked win against {loser_name} was reported by Play Sorcery Online. "
+                f"It will auto-confirm in 24h. Dispute on your profile if incorrect."
+            ),
+        )
+
+        store_repo.create_web_notification(
+            user_id=loser_id,
+            ntype="pso_match_pending",
+            title="PSO Ranked Match Reported",
+            body=(
+                f"A ranked loss against {winner_name} was reported by Play Sorcery Online. "
+                f"It will auto-confirm in 24h. Dispute on your profile if incorrect."
+            ),
+        )
+
+        logger.info(
+            f"Sent PSO match notifications: confirmation={confirmation_id}, "
+            f"winner={winner_id}, loser={loser_id}"
+        )
+    except Exception as e:
+        logger.error(f"Failed to send PSO match notifications: {e}", exc_info=True)
+
+
+def _notify_pso_loser_discord(loser_id: str, result: dict, *, winner_deck_url: str, loser_deck_url: str):
+    """Call the bot's loopback API to send a Discord DM to the loser with confirm/dispute buttons."""
+    try:
+        body, status = relay_to_bot(
+            "POST",
+            "/pso-match-notify",
+            {
+                "loser_discord_id": loser_id,
+                "winner_name": result["winner"]["display_name"],
+                "loser_name": result["loser"]["display_name"],
+                "confirmation_id": result["confirmation_id"],
+                "winner_deck_url": winner_deck_url,
+                "loser_deck_url": loser_deck_url,
+                "expires_at": result.get("expires_at"),
+            },
+            unavailable_body={"sent": False, "reason": "bot_unavailable"},
+        )
+        if body.get("sent"):
+            logger.info(f"Discord DM sent to loser {loser_id} for confirmation {result['confirmation_id']}")
+        else:
+            logger.warning(f"Discord DM not sent to loser {loser_id}: {body.get('reason', 'unknown')}")
+    except Exception as e:
+        logger.error(f"Failed to send Discord DM to loser {loser_id}: {e}", exc_info=True)
 
 
 def _resolve_summit_pairing(data: dict, winner_id: str, loser_id: str) -> dict | None:

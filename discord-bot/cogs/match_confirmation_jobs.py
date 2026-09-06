@@ -11,6 +11,8 @@ from discord.ext import commands, tasks
 import logging
 import sqlite3
 
+import config
+
 logger = logging.getLogger("discord_bot.match_confirmation_jobs")
 
 
@@ -351,6 +353,39 @@ class MatchConfirmationJobs(commands.Cog):
         except Exception as e:
             logger.error(f"Error sending expiration notification: {e}", exc_info=True)
 
+    async def _finalize_via_web_api(self, confirmation: dict) -> bool:
+        """
+        Call the web app API to auto-confirm and apply ELO for an expired confirmation.
+
+        Returns True if the web app successfully processed the match.
+        """
+        import aiohttp
+
+        confirmation_id = confirmation["id"]
+        try:
+            url = f"http://127.0.0.1:5000/api/match-report/auto-confirm/{confirmation_id}"
+            headers = {}
+            # Use API key if available
+            try:
+                api_key = config.WEB_APP_API_KEY
+                headers["X-API-Key"] = api_key
+            except AttributeError:
+                pass
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        logger.info(f"Web API auto-confirmed {confirmation_id}: {data.get('match_id', 'unknown')}")
+                        return True
+                    else:
+                        body = await resp.text()
+                        logger.warning(f"Web API auto-confirm failed for {confirmation_id} (status {resp.status}): {body}")
+                        return False
+        except Exception as e:
+            logger.error(f"Error calling web API for auto-confirm {confirmation_id}: {e}")
+            return False
+
     @tasks.loop(hours=1)
     async def reminder_job(self):
         """
@@ -414,14 +449,17 @@ class MatchConfirmationJobs(commands.Cog):
             for confirmation in confirmations:
                 confirmation_id = confirmation["id"]
 
-                # Auto-confirm the match
-                self._update_confirmation_status(confirmation_id, "auto_confirmed")
+                # Try to finalize the match via the web app API (ELO + match record)
+                elo_success = await self._finalize_via_web_api(confirmation)
+
+                if not elo_success:
+                    # Fallback: just mark as auto_confirmed without ELO
+                    self._update_confirmation_status(confirmation_id, "auto_confirmed")
 
                 # Send expiration notifications
                 await self._send_expiration_notification(confirmation, "auto_confirmed")
 
-                # TODO: Trigger ELO update (Phase 6)
-                logger.info(f"Auto-confirmed expired match: confirmation_id={confirmation_id}")
+                logger.info(f"Auto-confirmed expired match: confirmation_id={confirmation_id}, elo_applied={elo_success}")
 
             logger.info(f"Processed {len(confirmations)} expired confirmations")
 

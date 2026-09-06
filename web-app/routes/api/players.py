@@ -2468,6 +2468,57 @@ def player_api(player_id):
     # Fetch limited arena stats
     limited_stats = _get_limited_stats(player_id_normalized, event_filter, is_owner=is_owner)
 
+    # Fetch pending match confirmations for this player
+    pending_match_entries = []
+    try:
+        from repositories.match_confirmation import MatchConfirmationRepository
+        confirmation_repo = MatchConfirmationRepository()
+        pending_confirmations = confirmation_repo.get_all_pending_for_player(player_id_normalized)
+        # Also check with google_ prefix
+        if not str(player_id_normalized).startswith("google_"):
+            pending_confirmations += confirmation_repo.get_all_pending_for_player(f"google_{player_id_normalized}")
+        else:
+            numeric_id = str(player_id_normalized)[7:]
+            pending_confirmations += confirmation_repo.get_all_pending_for_player(numeric_id)
+        # Deduplicate
+        seen_ids = set()
+        unique_pending = []
+        for c in pending_confirmations:
+            if c["id"] not in seen_ids:
+                seen_ids.add(c["id"])
+                unique_pending.append(c)
+
+        from repositories.user_profiles import UserProfileRepository
+        user_profile_repo = UserProfileRepository()
+        for c in unique_pending:
+            is_winner = str(c["winner_discord_id"]) == str(player_id_normalized)
+            opponent_id = c["loser_discord_id"] if is_winner else c["winner_discord_id"]
+            # Get opponent display name
+            opponent_name = None
+            try:
+                opp_profile = user_profile_repo.get_by_user_id(str(opponent_id))
+                if opp_profile:
+                    opponent_name = opp_profile["display_name"]
+            except Exception:
+                pass
+            if not opponent_name:
+                opponent_name = f"User {opponent_id}"
+
+            pending_match_entries.append({
+                "confirmation_id": c["id"],
+                "opponent_id": str(opponent_id),
+                "opponent_name": opponent_name,
+                "result": "Win" if is_winner else "Loss",
+                "status": "pending",
+                "source": c.get("source") or "Web",
+                "match_type": c.get("match_type", "ranked"),
+                "created_at": c["created_at"],
+                "expires_at": c["expires_at"],
+                "is_submitter": str(c["submitter_discord_id"]) == str(player_id_normalized),
+            })
+    except Exception as e:
+        logger.warning(f"Failed to fetch pending confirmations for player {player_id_normalized}: {e}")
+
     admin = is_admin()
     show_lifetime = admin or is_owner
 
@@ -2531,6 +2582,7 @@ def player_api(player_id):
                 "has_previous": external_page > 1,
                 "has_next": external_page < total_external_pages,
             },
+            "pending_matches": pending_match_entries,
             "recorded_games": recorded_games if _section_visible("recorded_games") else [],
             "is_owner": is_owner,
             "is_admin": is_admin(),

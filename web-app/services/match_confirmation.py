@@ -71,28 +71,233 @@ class MatchConfirmationService:
         # Stub implementation - to be completed in T072-T075
         raise NotImplementedError("process_confirmation not yet implemented")
 
-    def auto_confirm_expired(self) -> int:
+    def auto_confirm_expired(self) -> list[dict]:
         """
-        Auto-confirm all expired pending confirmations.
+        Auto-confirm all expired pending confirmations and apply ELO.
 
         Returns:
-            int: Count of confirmations auto-confirmed
+            list[dict]: Results for each auto-confirmed match
         """
-        # Stub implementation - to be completed in T076
-        raise NotImplementedError("auto_confirm_expired not yet implemented")
+        expired = self.repo.get_expired_confirmations()
+        results = []
+
+        for confirmation in expired:
+            confirmation_id = confirmation["id"]
+            try:
+                # Use the same logic as confirm_match_report but bypass permission check
+                result = self._finalize_confirmed_match(confirmation)
+                self.repo.update_confirmation_status(
+                    confirmation_id=confirmation_id,
+                    status="auto_confirmed",
+                )
+                results.append({
+                    "confirmation_id": confirmation_id,
+                    "success": True,
+                    **result,
+                })
+                logger.info(f"Auto-confirmed expired match: confirmation_id={confirmation_id}")
+            except Exception as e:
+                logger.error(f"Failed to auto-confirm {confirmation_id}: {e}", exc_info=True)
+                # Mark as auto_confirmed anyway so it doesn't retry forever
+                self.repo.update_confirmation_status(
+                    confirmation_id=confirmation_id,
+                    status="auto_confirmed",
+                )
+                results.append({
+                    "confirmation_id": confirmation_id,
+                    "success": False,
+                    "error": str(e),
+                })
+
+        return results
 
     def _finalize_confirmed_match(self, confirmation: dict) -> dict:
         """
-        Internal helper to trigger ELO update and create match record.
+        Internal helper to create match record and update ELO.
+        Reuses the same logic as confirm_match_report but without permission checks.
 
         Args:
             confirmation: Confirmation record dict
 
         Returns:
-            dict: ELO changes {"winner": {...}, "loser": {...}}
+            dict: {"match_id": str, "elo_changes": dict}
         """
-        # Stub implementation - to be completed in T073-T075
-        raise NotImplementedError("_finalize_confirmed_match not yet implemented")
+        import time
+        from services.paper_elo import update_paper_elo
+        from webapp_config import MATCH_RECORDS_DB_PATH
+        from repositories.matches import MatchRepository
+        import sqlite3
+
+        reporter_id = str(confirmation["submitter_discord_id"])
+        winner_id = str(confirmation["winner_discord_id"])
+        loser_id = str(confirmation["loser_discord_id"])
+
+        winner_name = self._get_display_name_for_user(winner_id)
+        loser_name = self._get_display_name_for_user(loser_id)
+
+        # Check repeat matchup
+        match_repo = MatchRepository()
+        winner_last_opponent = match_repo.get_last_opponent(winner_id)
+        loser_last_opponent = match_repo.get_last_opponent(loser_id)
+        is_repeat_matchup = (
+            winner_last_opponent == loser_id or loser_last_opponent == winner_id
+        )
+
+        # Get deck URLs
+        winner_deck_url = confirmation.get("winner_deck_url") or "No URL provided"
+        loser_deck_url = confirmation.get("loser_deck_url") or "No URL provided"
+
+        # Fetch deck data from Curiosa
+        json_deck_data_winner = "{}"
+        json_deck_data_loser = "{}"
+
+        from services.curiosa import CuriosaService
+        curiosa = CuriosaService()
+
+        for url, label in [(winner_deck_url, "winner"), (loser_deck_url, "loser")]:
+            if url and url not in ("No URL provided", "Admin reported match"):
+                try:
+                    data = curiosa.fetch_deck_data(url)
+                    if data and data != "{}":
+                        if label == "winner":
+                            json_deck_data_winner = data
+                        else:
+                            json_deck_data_loser = data
+                except Exception as e:
+                    logger.error(f"Failed to fetch {label} deck data: {e}")
+
+        # Generate match_id
+        try:
+            id_conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+            id_cur = id_conn.cursor()
+            id_cur.execute("SELECT match_id FROM match_reports_web")
+            max_num = 0
+            for (mid,) in id_cur.fetchall():
+                if mid and mid.startswith("web_"):
+                    suffix = mid.split("_", 1)[1]
+                    try:
+                        num = int(suffix)
+                        if num > max_num:
+                            max_num = num
+                    except (ValueError, IndexError):
+                        pass
+            next_num = max_num + 1
+            id_conn.close()
+        except Exception:
+            next_num = 1
+        match_id = f"web_{next_num}"
+
+        is_casual = confirmation.get("match_type") == "casual"
+
+        # Update ELO
+        if is_repeat_matchup or is_casual:
+            winner_new_elo = winner_elo_change = 0
+            winner_new_event_elo = winner_event_elo_change = 0
+            loser_new_elo = loser_elo_change = 0
+            loser_new_event_elo = loser_event_elo_change = 0
+            event_active = False
+        else:
+            (winner_new_elo, winner_elo_change, winner_new_event_elo,
+             winner_event_elo_change, event_active) = update_paper_elo(
+                winner_id, winner_name, did_win=True, opponent_id=loser_id)
+            (loser_new_elo, loser_elo_change, loser_new_event_elo,
+             loser_event_elo_change, _) = update_paper_elo(
+                loser_id, loser_name, did_win=False, opponent_id=winner_id)
+
+        # Determine went_first
+        went_first_raw = confirmation.get("went_first", "Unknown")
+        submitter_is_winner = str(reporter_id) == str(winner_id)
+        if went_first_raw == "submitter":
+            winner_went_first_val = "Yes" if submitter_is_winner else "No"
+            loser_went_first_val = "No" if submitter_is_winner else "Yes"
+        elif went_first_raw == "opponent":
+            winner_went_first_val = "No" if submitter_is_winner else "Yes"
+            loser_went_first_val = "Yes" if submitter_is_winner else "No"
+        else:
+            winner_went_first_val = None
+            loser_went_first_val = None
+
+        # Determine source label
+        source_label = confirmation.get("source") or "Web"
+
+        # Insert match record
+        import datetime
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """INSERT INTO match_reports_web
+                   (match_id, reporter_id, winner_id, winner_display_name, losser_id, losser_display_name,
+                    did_win, timestamp, first_player, match_time, curiosa_url, curiosa_url_winner,
+                    curiosa_url_loser, match_comment, json_deck_data, json_deck_data_winner,
+                    json_deck_data_loser, winner_elo_change, loser_elo_change, winner_went_first,
+                    loser_went_first, source, match_type, season_id,
+                    winner_lifetime_elo_after, loser_lifetime_elo_after)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    match_id, reporter_id, winner_id, winner_name,
+                    loser_id, loser_name, True,
+                    datetime.datetime.now().isoformat(),
+                    went_first_raw, 0, winner_deck_url, winner_deck_url,
+                    loser_deck_url,
+                    confirmation.get("match_comment") or "Auto-confirmed match",
+                    json_deck_data_winner, json_deck_data_winner,
+                    json_deck_data_loser,
+                    winner_event_elo_change if event_active else 0,
+                    loser_event_elo_change if event_active else 0,
+                    winner_went_first_val, loser_went_first_val,
+                    source_label,
+                    confirmation.get("match_type", "ranked"),
+                    confirmation.get("season_id"),
+                    winner_new_elo if not is_repeat_matchup and not is_casual else None,
+                    loser_new_elo if not is_repeat_matchup and not is_casual else None,
+                ),
+            )
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise RuntimeError(f"Failed to create match record: {e}")
+        finally:
+            conn.close()
+
+        # Update season ELO if applicable
+        try:
+            stored_season_id = confirmation.get("season_id")
+            if stored_season_id:
+                from services.seasons import SeasonsService
+                season_match_data = {
+                    "reporter_id": reporter_id,
+                    "winner_id": winner_id,
+                    "loser_id": loser_id,
+                    "winner_display_name": winner_name,
+                    "loser_display_name": loser_name,
+                    "did_win": 1,
+                    "winner_went_first": winner_went_first_val,
+                    "loser_went_first": loser_went_first_val,
+                    "match_time": 0,
+                    "match_comment": "Auto-confirmed match",
+                    "curiosa_url_winner": winner_deck_url,
+                    "curiosa_url_loser": loser_deck_url,
+                    "json_deck_data_winner": json_deck_data_winner,
+                    "json_deck_data_loser": json_deck_data_loser,
+                    "source": source_label,
+                    "match_type": confirmation.get("match_type", "ranked"),
+                }
+                SeasonsService().update_season_elos(
+                    winner_id, loser_id, match_id,
+                    is_repeat_matchup, season_match_data,
+                    season_id=stored_season_id,
+                )
+        except Exception as e:
+            logger.error(f"Season ELO update failed (non-blocking): {e}", exc_info=True)
+
+        return {
+            "match_id": match_id,
+            "elo_changes": {
+                "winner": {"change": winner_elo_change, "event_change": winner_event_elo_change if event_active else 0},
+                "loser": {"change": loser_elo_change, "event_change": loser_event_elo_change if event_active else 0},
+            },
+        }
 
     def validate_match_report_input(
         self,
@@ -975,6 +1180,112 @@ class MatchConfirmationService:
                     "event_change": loser_event_elo_change if event_active else 0,
                 },
             },
+        }
+
+    def create_pso_match_report(
+        self,
+        winner_id: str,
+        loser_id: str,
+        winner_deck_url: str,
+        loser_deck_url: str,
+        winner_name: Optional[str] = None,
+        loser_name: Optional[str] = None,
+        winner_went_first: Optional[str] = None,
+        match_time: Optional[int] = None,
+        match_comment: str = "",
+    ) -> dict:
+        """
+        Create a pending match confirmation from a PSO Ranked report.
+
+        Both players are notified and can dispute within 24 hours.
+        Auto-confirms after 24 hours if not disputed.
+
+        Args:
+            winner_id: Discord user ID of winner
+            loser_id: Discord user ID of loser
+            winner_deck_url: Winner's deck URL
+            loser_deck_url: Loser's deck URL
+            winner_name: Optional winner display name
+            loser_name: Optional loser display name
+            winner_went_first: "y" or "n" or None
+            match_time: Match duration in minutes
+            match_comment: Optional notes
+
+        Returns:
+            dict with confirmation_id, expires_at, etc.
+        """
+        import time
+
+        winner_id_str = str(winner_id).strip()
+        loser_id_str = str(loser_id).strip()
+
+        if winner_id_str == loser_id_str:
+            raise ValueError("winner_id and loser_id must be different")
+
+        # Check for duplicate pending between these players
+        has_duplicate = self.repo.check_duplicate_pending(winner_id_str, loser_id_str)
+        if has_duplicate:
+            raise RuntimeError(
+                "There is already a pending match report between these players."
+            )
+
+        # Map went_first to submitter-relative format
+        # For PSO, winner is the "submitter"
+        if winner_went_first == "y":
+            went_first = "submitter"
+        elif winner_went_first == "n":
+            went_first = "opponent"
+        else:
+            went_first = "submitter"  # Default
+
+        # Build comment with match time if provided
+        comment_parts = []
+        if match_comment:
+            comment_parts.append(match_comment)
+        if match_time:
+            comment_parts.append(f"Match time: {match_time}min")
+        full_comment = " | ".join(comment_parts) if comment_parts else ""
+
+        # Create confirmation with 24h expiry and PSO source
+        confirmation_id = self.repo.create_confirmation(
+            submitter_id=winner_id_str,
+            opponent_id=loser_id_str,
+            winner_id=winner_id_str,
+            loser_id=loser_id_str,
+            final_life_winner=0,
+            final_life_loser=0,
+            went_first=went_first,
+            winner_deck_url=winner_deck_url,
+            loser_deck_url=loser_deck_url,
+            match_type="ranked",
+            match_comment=full_comment,
+            source="PSO Ranked",
+            expires_hours=24,
+        )
+
+        expires_at = int(time.time()) + (24 * 60 * 60)
+
+        # Resolve display names
+        winner_display = winner_name or self._get_display_name_for_user(winner_id_str)
+        loser_display = loser_name or self._get_display_name_for_user(loser_id_str)
+
+        logger.info(
+            f"PSO Ranked match report created: id={confirmation_id}, "
+            f"winner={winner_id_str} ({winner_display}), loser={loser_id_str} ({loser_display})"
+        )
+
+        return {
+            "success": True,
+            "confirmation_id": confirmation_id,
+            "expires_at": expires_at,
+            "pipeline": "pso_ranked",
+            "winner": {"user_id": winner_id_str, "display_name": winner_display},
+            "loser": {"user_id": loser_id_str, "display_name": loser_display},
+            "message": (
+                f"PSO Ranked match pending confirmation. "
+                f"{winner_display} beat {loser_display}. "
+                f"Auto-confirms in 24 hours if not disputed."
+            ),
         }
 
     def deny_match_report(

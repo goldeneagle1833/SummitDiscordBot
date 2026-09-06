@@ -14,6 +14,7 @@ import LimitedArena from '@/components/player/LimitedArena'
 import MatchHistoryTable from '@/components/player/MatchHistoryTable'
 import RecordedGames from '@/components/player/RecordedGames'
 import ExternalMatches from '@/components/player/ExternalMatches'
+import PendingMatches from '@/components/player/PendingMatches'
 import DisplayNameBanner from '@/components/player/DisplayNameBanner'
 import ReportGameModal from '@/components/player/ReportGameModal'
 import EditDeckModal from '@/components/player/EditDeckModal'
@@ -282,6 +283,13 @@ const [editDeck, setEditDeck] = useState(null)
         playerId={playerId}
         open={openSections.limitedArena}
         onToggle={() => toggle('limitedArena')}
+      />
+
+      <PendingMatches
+        matches={data.pending_matches}
+        playerId={playerId}
+        isOwner={data.is_owner}
+        onDispute={refreshCurrentPage}
       />
 
       <MatchHistoryTable

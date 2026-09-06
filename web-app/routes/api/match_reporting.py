@@ -381,7 +381,8 @@ def confirm_match_report(confirmation_id):
 
     Request Body (JSON, optional):
         {
-            "deck_url": str (optional Curiosa.io deck URL)
+            "deck_url": str (optional Curiosa.io deck URL),
+            "user_id": str (required when using API key auth instead of session)
         }
 
     Returns:
@@ -394,8 +395,16 @@ def confirm_match_report(confirmation_id):
         404: Confirmation not found or expired
         500: Server error
     """
-    # Check authentication
-    if "user_id" not in session:
+    # Check authentication — session or API key with user_id in body
+    from utils.auth import _extract_api_key, _api_key_valid
+
+    data = request.get_json() or {}
+
+    if _api_key_valid(_extract_api_key()) and data.get("user_id"):
+        current_user_id = str(data["user_id"])
+    elif "user_id" in session:
+        current_user_id = session["user_id"]
+    else:
         return jsonify({
             "success": False,
             "error": {
@@ -405,12 +414,10 @@ def confirm_match_report(confirmation_id):
         }), 401
 
     # Get optional deck URL and comment from request body
-    data = request.get_json() or {}
     deck_url = data.get("deck_url")
     confirmer_comment = data.get("match_comment", "")
 
     try:
-        current_user_id = session["user_id"]
         service = MatchConfirmationService()
 
         # Confirm the match report
@@ -479,7 +486,8 @@ def deny_match_report(confirmation_id):
 
     Request Body (JSON, optional):
         {
-            "reason": str (optional dispute reason)
+            "reason": str (optional dispute reason),
+            "user_id": str (required when using API key auth instead of session)
         }
 
     Returns:
@@ -492,8 +500,16 @@ def deny_match_report(confirmation_id):
         404: Confirmation not found or expired
         500: Server error
     """
-    # Check authentication
-    if "user_id" not in session:
+    # Check authentication — session or API key with user_id in body
+    from utils.auth import _extract_api_key, _api_key_valid
+
+    data = request.get_json() or {}
+
+    if _api_key_valid(_extract_api_key()) and data.get("user_id"):
+        current_user_id = str(data["user_id"])
+    elif "user_id" in session:
+        current_user_id = session["user_id"]
+    else:
         return jsonify({
             "success": False,
             "error": {
@@ -503,11 +519,9 @@ def deny_match_report(confirmation_id):
         }), 401
 
     # Get optional reason from request body
-    data = request.get_json() or {}
     reason = data.get("reason")
 
     try:
-        current_user_id = session["user_id"]
         service = MatchConfirmationService()
 
         # Deny the match report
@@ -562,6 +576,55 @@ def deny_match_report(confirmation_id):
                 "message": error_msg
             }
         }), 500
+
+
+@match_reporting_bp.route("/auto-confirm/<int:confirmation_id>", methods=["POST"])
+def auto_confirm_match(confirmation_id):
+    """
+    POST /api/match-report/auto-confirm/<confirmation_id>
+
+    Auto-confirm an expired pending match report (called by bot's expiration job).
+    Applies ELO and creates the match record.
+
+    Protected by API key (no user session required).
+    """
+    from utils.auth import _extract_api_key, _api_key_valid
+    if not _api_key_valid(_extract_api_key()):
+        # Also allow if user is logged in as admin
+        if "user_id" not in session:
+            return jsonify({"success": False, "error": "Authentication required"}), 401
+
+    try:
+        service = MatchConfirmationService()
+        confirmation = MatchConfirmationRepository().get_confirmation_by_id(confirmation_id)
+
+        if not confirmation:
+            return jsonify({"success": False, "error": "Confirmation not found"}), 404
+
+        if confirmation["status"] != "pending":
+            return jsonify({
+                "success": False,
+                "error": f"Confirmation already {confirmation['status']}"
+            }), 409
+
+        # Finalize the match (ELO + record) then mark as auto_confirmed
+        result = service._finalize_confirmed_match(confirmation)
+        service.repo.update_confirmation_status(
+            confirmation_id=confirmation_id,
+            status="auto_confirmed",
+        )
+
+        logger.info(f"Auto-confirmed match via API: confirmation_id={confirmation_id}")
+
+        return jsonify({
+            "success": True,
+            "message": "Match auto-confirmed with ELO applied",
+            **result,
+        })
+
+    except Exception as e:
+        logger.error(f"Error auto-confirming match {confirmation_id}: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @match_reporting_bp.route("/edit-comment", methods=["POST"])

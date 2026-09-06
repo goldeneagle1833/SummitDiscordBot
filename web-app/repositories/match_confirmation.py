@@ -137,6 +137,21 @@ class MatchConfirmationRepository:
             logger = logging.getLogger(__name__)
             logger.info("Added season_id column to match_confirmations table")
 
+        # Migration: Add source column if it doesn't exist
+        cursor.execute("PRAGMA table_info(match_confirmations)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if "source" not in columns:
+            cursor.execute("""
+                ALTER TABLE match_confirmations
+                ADD COLUMN source TEXT DEFAULT NULL
+            """)
+            conn.commit()
+
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("Added source column to match_confirmations table")
+
         conn.close()
 
     def create_confirmation(
@@ -153,6 +168,8 @@ class MatchConfirmationRepository:
         match_type: str = "ranked",
         season_id: Optional[int] = None,
         match_comment: str = "",
+        source: Optional[str] = None,
+        expires_hours: int = 48,
     ) -> int:
         """
         Create a new match confirmation request.
@@ -179,7 +196,7 @@ class MatchConfirmationRepository:
         cursor = conn.cursor()
 
         created_at = int(time.time())
-        expires_at = created_at + (48 * 60 * 60)  # 48 hours from now (updated from 24hr)
+        expires_at = created_at + (expires_hours * 60 * 60)
 
         cursor.execute(
             """
@@ -188,8 +205,8 @@ class MatchConfirmationRepository:
                 winner_discord_id, loser_discord_id,
                 winner_deck_url, loser_deck_url,
                 final_life_winner, final_life_loser,
-                went_first, match_type, season_id, match_comment, status, created_at, expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                went_first, match_type, season_id, match_comment, source, status, created_at, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
             """,
             (
                 str(submitter_id),
@@ -204,6 +221,7 @@ class MatchConfirmationRepository:
                 match_type,
                 season_id,
                 match_comment,
+                source,
                 created_at,
                 expires_at,
             ),
@@ -242,6 +260,41 @@ class MatchConfirmationRepository:
             ORDER BY created_at DESC
             """,
             (str(user_id), current_time),
+        )
+
+        rows = cursor.fetchall()
+        confirmations = [dict(row) for row in rows]
+
+        conn.close()
+        return confirmations
+
+    def get_all_pending_for_player(self, user_id: int | str) -> list[dict]:
+        """
+        Get all pending confirmations where user is either submitter or opponent.
+
+        Args:
+            user_id: Discord user ID (int or str)
+
+        Returns:
+            list[dict]: List of pending confirmation records
+        """
+        import time
+
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        current_time = int(time.time())
+
+        cursor.execute(
+            """
+            SELECT * FROM match_confirmations
+            WHERE (submitter_discord_id = ? OR opponent_discord_id = ?)
+              AND status = 'pending'
+              AND expires_at > ?
+            ORDER BY created_at DESC
+            """,
+            (str(user_id), str(user_id), current_time),
         )
 
         rows = cursor.fetchall()

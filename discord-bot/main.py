@@ -34,6 +34,8 @@ from cogs.lfg.persistent_confirm import (
     PersistentCorrectionDenyButton,
     PersistentMatchCardReportButton,
     PersistentMatchCardCancelButton,
+    PersistentPSOConfirmButton,
+    PersistentPSODisputeButton,
     ensure_pending_confirmations_table,
     ensure_pending_corrections_table,
     ensure_match_cards_table,
@@ -197,6 +199,7 @@ async def main():
             PersistentConfirmButton, PersistentDisputeButton,
             PersistentCorrectionConfirmButton, PersistentCorrectionDenyButton,
             PersistentMatchCardReportButton, PersistentMatchCardCancelButton,
+            PersistentPSOConfirmButton, PersistentPSODisputeButton,
         )
         await setup_cogs()
         matchmaking_runner = await start_matchmaking_api(bot)

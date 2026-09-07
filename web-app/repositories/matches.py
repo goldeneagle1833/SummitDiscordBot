@@ -323,6 +323,35 @@ class MatchRepository:
         conn.close()
         return count
 
+    def get_season_records(self, event_start: str) -> dict[str, dict[str, int]]:
+        """Get every player's win/loss record since the event started."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT user_id, SUM(wins), SUM(losses)
+            FROM (
+                SELECT winner_id AS user_id, COUNT(*) AS wins, 0 AS losses
+                FROM match_records
+                WHERE timestamp >= ? AND winner_id IS NOT NULL
+                GROUP BY winner_id
+                UNION ALL
+                SELECT losser_id AS user_id, 0 AS wins, COUNT(*) AS losses
+                FROM match_records
+                WHERE timestamp >= ? AND losser_id IS NOT NULL
+                GROUP BY losser_id
+            )
+            GROUP BY user_id
+            """,
+            (event_start, event_start),
+        )
+        records = {
+            str(row[0]): {"wins": int(row[1]), "losses": int(row[2])}
+            for row in cur.fetchall()
+        }
+        conn.close()
+        return records
+
     def get_season_players(self, event_start: str) -> list[int]:
         """Get all player IDs who have played since the event started."""
         conn = self._get_connection()

@@ -166,6 +166,22 @@ class TestMatchRepository:
         assert repo.get_losses_count("player2") == 2
         assert repo.get_losses_count("player1") == 0
 
+    def test_get_season_records(self, match_db):
+        seed_matches(match_db, [
+            {"winner_id": "player1", "loser_id": "player2", "timestamp": "2025-01-15 12:00:00"},
+            {"winner_id": "player1", "loser_id": "player3", "timestamp": "2025-01-16 12:00:00"},
+            {"winner_id": "player2", "loser_id": "player1", "timestamp": "2025-01-17 12:00:00"},
+            {"winner_id": "player3", "loser_id": "player1", "timestamp": "2024-12-31 12:00:00"},
+        ])
+        MatchRepository._columns_ensured = False
+        repo = MatchRepository(db_path=match_db)
+
+        assert repo.get_season_records("2025-01-01") == {
+            "player1": {"wins": 2, "losses": 1},
+            "player2": {"wins": 1, "losses": 1},
+            "player3": {"wins": 0, "losses": 1},
+        }
+
     def test_ensure_columns_idempotent(self, match_db):
         """Calling _ensure_columns twice shouldn't raise."""
         MatchRepository._columns_ensured = False

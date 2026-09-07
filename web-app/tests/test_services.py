@@ -23,11 +23,12 @@ class TestLeaderboardService:
         repo.get_user_elo.return_value = 1500
         return repo
 
-    def _make_match_repo(self, wins=0, losses=0, season_players=None):
+    def _make_match_repo(self, wins=0, losses=0, season_players=None, season_records=None):
         repo = MagicMock()
         repo.get_wins_count.return_value = wins
         repo.get_losses_count.return_value = losses
         repo.get_season_players.return_value = season_players or []
+        repo.get_season_records.return_value = season_records or {}
         repo.get_season_wins_count.return_value = wins
         repo.get_season_losses_count.return_value = losses
         return repo
@@ -64,6 +65,27 @@ class TestLeaderboardService:
         result = service.get_event_leaderboard()
         assert result["event"] is None
         assert result["leaderboard"] == []
+
+    def test_get_event_leaderboard_includes_season_record(self):
+        standings = [
+            {"user_id": "1", "display_name": "Alice", "event_elo": 1640},
+            {"user_id": "2", "display_name": "Bob", "event_elo": 1580},
+        ]
+        active_event = {"event_id": 7, "event_name": "Season 7", "start_date": "2025-01-01"}
+        match_repo = self._make_match_repo(
+            season_records={"1": {"wins": 5, "losses": 2}},
+        )
+        service = LeaderboardService(
+            elo_repo=self._make_elo_repo(standings=standings, active_event=active_event),
+            match_repo=match_repo,
+        )
+
+        result = service.get_event_leaderboard()
+
+        assert result["leaderboard"] == [
+            {"id": "1", "name": "Alice", "event_elo": 1640, "wins": 5, "losses": 2},
+        ]
+        match_repo.get_season_records.assert_called_once_with("2025-01-01")
 
     def test_get_combined_leaderboard_structure(self):
         elo_repo = self._make_elo_repo()

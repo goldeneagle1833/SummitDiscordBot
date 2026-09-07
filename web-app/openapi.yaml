@@ -2825,7 +2825,7 @@ paths:
     get:
       tags:
       - leaderboard
-      summary: Get current event ELO leaderboard.
+      summary: Get current event ELO leaderboard with season win/loss records.
       operationId: leaderboard_get_event_leaderboard
       responses:
         '200':
@@ -2834,6 +2834,35 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                - event
+                - leaderboard
+                properties:
+                  event:
+                    type:
+                    - object
+                    - 'null'
+                  leaderboard:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - id
+                      - name
+                      - event_elo
+                      - wins
+                      - losses
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        event_elo:
+                          type: integer
+                        wins:
+                          type: integer
+                        losses:
+                          type: integer
   /api/leaderboard/limited:
     get:
       tags:

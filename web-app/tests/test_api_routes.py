@@ -36,9 +36,32 @@ class TestLeaderboardRoutes:
         assert "lifetime" in data
         assert "event" in data
 
-    def test_get_event_leaderboard(self, client):
+    def test_get_event_leaderboard(self, client, elo_db, match_db):
+        seed_elo_data(elo_db, [
+            {"user_id": "1", "name": "Alice", "online_event_elo": 1620},
+            {"user_id": "2", "name": "Bob", "online_event_elo": 1580},
+        ])
+        conn = sqlite3.connect(str(elo_db))
+        conn.execute("INSERT INTO events (event_name, start_date, is_active) VALUES ('Season 7', '2025-01-01', 1)")
+        conn.commit()
+        conn.close()
+        seed_matches(match_db, [
+            {"winner_id": "1", "loser_id": "2", "timestamp": "2025-01-15 12:00:00"},
+        ])
+
         resp = client.get("/api/leaderboard/event")
+
         assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["leaderboard"][0] == {
+            "id": "1",
+            "name": "Alice",
+            "event_elo": 1620,
+            "wins": 1,
+            "losses": 0,
+        }
+        assert data["leaderboard"][1]["wins"] == 0
+        assert data["leaderboard"][1]["losses"] == 1
 
     def test_get_events(self, client, elo_db):
         conn = sqlite3.connect(str(elo_db))

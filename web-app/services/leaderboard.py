@@ -39,27 +39,29 @@ class LeaderboardService:
         return leaderboard_data
 
     def get_event_leaderboard(self) -> dict:
-        """Get event leaderboard with active event info."""
+        """Get event leaderboard with active event info and season records."""
         active_event = self._elo_repo.get_active_event()
         standings = self._elo_repo.get_event_standings()
 
-        # Get event participants from match_records
-        event_participants = set()
+        season_records = {}
         if active_event:
             event_start = active_event.get("start_date")
             if event_start:
-                event_participants = set(self._match_repo.get_season_players(event_start))
+                season_records = self._match_repo.get_season_records(event_start)
 
         leaderboard_data = []
         for standing in standings:
             user_id = standing["user_id"]
+            record = season_records.get(str(user_id))
             # Only include players who have played matches in the event
-            if user_id in event_participants:
+            if record:
                 leaderboard_data.append(
                     {
                         "id": str(user_id),
                         "name": standing["display_name"],
                         "event_elo": standing["event_elo"],
+                        "wins": record["wins"],
+                        "losses": record["losses"],
                     }
                 )
 
@@ -78,34 +80,25 @@ class LeaderboardService:
 
         # Get event start date for season stats and participant list
         event_start = None
-        event_participants = set()
+        season_records = {}
         if active_event:
             event_start = active_event.get("start_date")
             if event_start:
-                event_participants = set(self._match_repo.get_season_players(event_start))
+                season_records = self._match_repo.get_season_records(event_start)
 
         for standing in standings:
             user_id = standing["user_id"]
+            record = season_records.get(str(user_id))
 
             # Include in event if they have played matches in the event period
-            if user_id in event_participants:
-                season_wins = 0
-                season_losses = 0
-                if event_start:
-                    season_wins = self._match_repo.get_season_wins_count(
-                        user_id, event_start
-                    )
-                    season_losses = self._match_repo.get_season_losses_count(
-                        user_id, event_start
-                    )
-
+            if record:
                 event_data.append(
                     {
                         "id": str(user_id),
                         "name": standing["display_name"],
                         "event_elo": standing["event_elo"],
-                        "season_wins": season_wins,
-                        "season_losses": season_losses,
+                        "season_wins": record["wins"],
+                        "season_losses": record["losses"],
                     }
                 )
                 event_player_ids.add(user_id)

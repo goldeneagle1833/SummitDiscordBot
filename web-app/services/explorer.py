@@ -14,6 +14,9 @@ SORCERY_TRPC_BASE = "https://sorcerytcg.com/api/trpc"
 SORCERY_EVENT_URL_RE = re.compile(
     r"https?://(?:play\.)?sorcerytcg\.com/events/([A-Za-z0-9_-]+)", re.IGNORECASE
 )
+SORCERY_STORE_URL_RE = re.compile(
+    r"https?://(?:play\.)?sorcerytcg\.com/stores/([A-Za-z0-9_-]+)", re.IGNORECASE
+)
 
 DEFAULT_POINTS_CONFIG = {
     "participation": 10,
@@ -215,6 +218,180 @@ class ExplorerService:
             del row["swiss_score"]
 
         return player_rows
+
+    # ── Venue Attendance ────────────────────────────────────────────────────
+
+    def fetch_venue_attendance(self, url: str) -> dict:
+        """Fetch past event attendance for a store/venue from sorcerytcg.com.
+
+        Returns a dict with keys:
+          store_name, store_id, address, events (list of {date, title, player_count, tier, format})
+        """
+        match = SORCERY_STORE_URL_RE.match(url.strip().split("?")[0].split("/events")[0])
+        if not match:
+            raise ValueError(
+                "URL must be in the format https://sorcerytcg.com/stores/{id}"
+            )
+        store_id = match.group(1)
+
+        # Fetch store info
+        store_info = self._fetch_store_info(store_id)
+
+        # Fetch all past events (paginated)
+        all_events = self._fetch_store_events(store_id)
+
+        # Fetch player counts for each event via batched event.get calls
+        events_with_counts = self._fetch_event_player_counts(all_events)
+
+        return {
+            "store_id": store_id,
+            "store_name": store_info.get("name", "Unknown"),
+            "address": store_info.get("address", ""),
+            "status": store_info.get("status", ""),
+            "events": events_with_counts,
+        }
+
+    def _fetch_store_info(self, store_id: str) -> dict:
+        """Fetch basic store info from sorcerytcg.com tRPC."""
+        params = {
+            "batch": "1",
+            "input": json.dumps({"0": {"json": {"id": store_id}}}),
+        }
+        try:
+            resp = requests.get(
+                f"{SORCERY_TRPC_BASE}/store.get",
+                params=params,
+                timeout=15,
+            )
+        except requests.exceptions.RequestException as exc:
+            raise ExplorerFetchError(f"Network error fetching store: {exc}") from exc
+
+        if resp.status_code != 200:
+            raise ExplorerFetchError(
+                f"sorcerytcg.com returned {resp.status_code} for store {store_id}"
+            )
+        try:
+            return resp.json()[0]["result"]["data"]["json"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ExplorerFetchError(f"Unexpected store response format: {exc}") from exc
+
+    def _fetch_store_events(self, store_id: str) -> list[dict]:
+        """Fetch all past events for a store via paginated event.search."""
+        all_events = []
+        cursor = None
+        max_pages = 10  # safety limit
+
+        for _ in range(max_pages):
+            input_data = {
+                "0": {
+                    "json": {
+                        "scope": "store",
+                        "feed": "Past",
+                        "sort": "DateDesc",
+                        "query": "",
+                        "target": store_id,
+                        "tiers": [],
+                        "cursor": cursor,
+                    },
+                }
+            }
+            if cursor is None:
+                input_data["0"]["meta"] = {"values": {"cursor": ["undefined"]}}
+
+            try:
+                resp = requests.get(
+                    f"{SORCERY_TRPC_BASE}/event.search",
+                    params={"batch": "1", "input": json.dumps(input_data)},
+                    timeout=15,
+                )
+            except requests.exceptions.RequestException as exc:
+                raise ExplorerFetchError(f"Network error searching events: {exc}") from exc
+
+            if resp.status_code != 200:
+                raise ExplorerFetchError(
+                    f"sorcerytcg.com returned {resp.status_code} for event search"
+                )
+
+            try:
+                data = resp.json()[0]["result"]["data"]["json"]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise ExplorerFetchError(f"Unexpected search response: {exc}") from exc
+
+            events = data.get("events", [])
+            all_events.extend(events)
+
+            cursor = data.get("nextCursor")
+            if not cursor or not events:
+                break
+
+        return all_events
+
+    def _fetch_event_player_counts(self, events: list[dict]) -> list[dict]:
+        """Fetch player counts for events using batched event.get calls.
+
+        Returns list sorted by date ascending with attendance data.
+        """
+        BATCH_SIZE = 10
+        results = []
+
+        for i in range(0, len(events), BATCH_SIZE):
+            batch = events[i:i + BATCH_SIZE]
+            event_ids = [ev["id"] for ev in batch]
+
+            # Build batched tRPC request
+            input_data = {}
+            for j, eid in enumerate(event_ids):
+                input_data[str(j)] = {"json": {"id": eid}}
+
+            path = ",".join(["event.get"] * len(event_ids))
+            try:
+                resp = requests.get(
+                    f"{SORCERY_TRPC_BASE}/{path}",
+                    params={"batch": "1", "input": json.dumps(input_data)},
+                    timeout=30,
+                )
+            except requests.exceptions.RequestException as exc:
+                logger.warning("Batch event fetch failed: %s", exc)
+                # Fall back to basic info without player counts
+                for ev in batch:
+                    results.append(self._event_summary(ev, 0))
+                continue
+
+            if resp.status_code not in (200, 207):
+                logger.warning("Batch event fetch returned %s", resp.status_code)
+                for ev in batch:
+                    results.append(self._event_summary(ev, 0))
+                continue
+
+            try:
+                body = resp.json()
+                for j, ev in enumerate(batch):
+                    if j < len(body):
+                        detail = body[j].get("result", {}).get("data", {}).get("json", {}).get("event", {})
+                        players = detail.get("players", [])
+                        active = [p for p in players if p.get("status") != "Dropped" or p.get("seats")]
+                        results.append(self._event_summary(ev, len(active)))
+                    else:
+                        results.append(self._event_summary(ev, 0))
+            except (TypeError, AttributeError) as exc:
+                logger.warning("Error parsing batch response: %s", exc)
+                for ev in batch:
+                    results.append(self._event_summary(ev, 0))
+
+        # Sort by date ascending for chronological graph
+        results.sort(key=lambda r: r["date"] or "")
+        return results
+
+    @staticmethod
+    def _event_summary(event: dict, player_count: int) -> dict:
+        date = (event.get("startsAt") or "")[:10] or None
+        return {
+            "date": date,
+            "title": event.get("title", ""),
+            "player_count": player_count,
+            "tier": event.get("tier", ""),
+            "status": event.get("status", ""),
+        }
 
     def find_potential_duplicates(self) -> list[dict]:
         """Find players that may be duplicates based on normalized name matching.

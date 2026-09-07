@@ -31,6 +31,10 @@ export const addAdmin = (discordUserId, displayName) =>
 export const removeAdmin = (discordUserId) =>
   del(`/api/explorer/admins/${discordUserId}`)
 
+// Venue attendance
+export const fetchVenueAttendance = (url) =>
+  post('/api/explorer/venue-attendance', { url })
+
 // Player merge / aliases
 export const fetchAllPlayers = () => get('/api/explorer/players')
 

@@ -220,6 +220,32 @@ def get_leaderboard(season_id):
         return jsonify({"error": str(e)}), 500
 
 
+# ── Venue Attendance ──────────────────────────────────────────────────────
+
+
+@explorer_bp.route("/venue-attendance", methods=["POST"])
+@require_explorer_admin
+def venue_attendance():
+    """Fetch past event attendance for a venue/store. Explorer admin only."""
+    data = request.get_json() or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "url is required"}), 400
+
+    try:
+        from services.explorer import ExplorerFetchError, ExplorerService
+        service = ExplorerService()
+        result = service.fetch_venue_attendance(url)
+        return jsonify(result)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        if "ExplorerFetchError" in type(e).__name__:
+            return jsonify({"error": f"Failed to fetch venue data: {e}"}), 502
+        logger.error(f"Error fetching venue attendance: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Admins ────────────────────────────────────────────────────────────────────
 
 

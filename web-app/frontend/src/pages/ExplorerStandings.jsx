@@ -11,6 +11,7 @@ import AddSeasonModal from '@/components/explorer/AddSeasonModal'
 import AddEventModal from '@/components/explorer/AddEventModal'
 import ExplorerAdminPanel from '@/components/explorer/ExplorerAdminPanel'
 import PlayerMergePanel from '@/components/explorer/PlayerMergePanel'
+import VenueAttendancePanel from '@/components/explorer/VenueAttendancePanel'
 
 function QualifiedBadge() {
   return (
@@ -157,6 +158,7 @@ export default function ExplorerStandings() {
   const [sortKey, setSortKey] = useState('rank')
   const [sortDir, setSortDir] = useState('asc')
   const [showDistribution, setShowDistribution] = useState(false)
+  const [showVenueAttendance, setShowVenueAttendance] = useState(false)
 
   const loadSeasons = () => {
     fetchSeasons()
@@ -279,6 +281,12 @@ export default function ExplorerStandings() {
             >
               {showMergePanel ? 'Hide Merge Panel' : 'Merge Players'}
             </button>
+            <button
+              onClick={() => setShowVenueAttendance(!showVenueAttendance)}
+              className="px-3 py-1.5 text-sm bg-bg-elevated border border-border rounded hover:border-secondary text-text-muted transition-colors"
+            >
+              {showVenueAttendance ? 'Hide Attendance' : 'Venue Attendance'}
+            </button>
             {isGlobalAdmin && (
               <button
                 onClick={() => setShowAdminPanel(!showAdminPanel)}
@@ -300,6 +308,17 @@ export default function ExplorerStandings() {
             Merged players&apos; event results will be combined in the leaderboard.
           </p>
           <PlayerMergePanel />
+        </div>
+      )}
+
+      {/* Venue attendance panel */}
+      {showVenueAttendance && isExplorerAdmin && (
+        <div className="mb-6 bg-bg-surface border border-border rounded-lg p-4">
+          <h3 className="text-base font-semibold text-text-primary mb-1">Venue Attendance Lookup</h3>
+          <p className="text-xs text-text-muted mb-3">
+            Paste a sorcerytcg.com store URL to see their event attendance history.
+          </p>
+          <VenueAttendancePanel />
         </div>
       )}
 

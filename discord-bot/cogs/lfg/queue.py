@@ -518,7 +518,16 @@ async def _process_queue_join(
             match_type_label = "Casual"
 
         try:
-            matched_user = await bot.fetch_user(matched_user_id)
+            # Website-origin joins still represent Summit Discord members. Use
+            # the guild cache first so a transient Discord API lookup failure
+            # cannot prevent the Summit Bot match messages from being sent.
+            matched_user = (
+                interaction.guild.get_member(matched_user_id)
+                if interaction.guild
+                else None
+            )
+            if matched_user is None:
+                matched_user = await bot.fetch_user(matched_user_id)
         except Exception as e:
             logger.error(f"Failed to fetch matched user {matched_user_id}: {e}")
             _clear_matching_web_users(interaction.user.id, matched_user_id)
@@ -682,7 +691,7 @@ async def _process_queue_join(
                 f"{reporter_game_text}{voice_text}",
                 view=match_card_view,
             )
-        except discord.Forbidden:
+        except discord.HTTPException:
             reporter_dm_failed = True
             try:
                 dm_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
@@ -724,7 +733,7 @@ async def _process_queue_join(
                 f"💡 **Tip:** If you need fresh reporting buttons, click **'📋 Report Last Match'** in the LFG channel!"
                 f"{other_game_text}{voice_text}"
             )
-        except discord.Forbidden:
+        except discord.HTTPException:
             try:
                 dm_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
                 if dm_channel:

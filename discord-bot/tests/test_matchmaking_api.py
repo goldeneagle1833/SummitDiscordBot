@@ -36,7 +36,11 @@ from services.sorcery_online_matchmaking import (
     provision_sorcery_online_match,
     summit_matchmaking_api_key,
 )
-from services.summit_result_reporting import _normalize_played_cards, record_sorcery_online_result
+from services.summit_result_reporting import (
+    _normalize_played_cards,
+    _notify_sorcery_online_match_recorded,
+    record_sorcery_online_result,
+)
 
 
 def test_missing_links_add_nothing_to_legacy_match_messages():
@@ -57,6 +61,33 @@ def test_complete_links_add_private_seats_and_voice_reminder():
     assert reporter_url in extras[2]
     assert other_url in extras[3]
     assert "Join To Make a Room" in extras[4]
+
+
+@pytest.mark.asyncio
+async def test_sorcery_online_result_notifications_continue_and_fall_back_after_dm_failure():
+    winner = MagicMock()
+    winner.send = AsyncMock(side_effect=RuntimeError("DM unavailable"))
+    loser = MagicMock()
+    loser.send = AsyncMock()
+    fallback = MagicMock()
+    fallback.send = AsyncMock()
+    bot = MagicMock()
+    bot.fetch_user = AsyncMock(side_effect=[winner, loser])
+    bot.get_channel.return_value = fallback
+
+    await _notify_sorcery_online_match_recorded(
+        bot,
+        match_id=88,
+        match_type="ranked",
+        winner_id=10,
+        winner_name="Alice",
+        loser_id=20,
+        loser_name="Bob",
+    )
+
+    fallback.send.assert_awaited_once()
+    assert "<@10>" in fallback.send.await_args.args[0]
+    loser.send.assert_awaited_once()
 
 
 def test_matchmaking_key_prefers_shared_bot_env(monkeypatch, tmp_path: Path):
@@ -210,6 +241,15 @@ async def test_sorcery_online_result_is_idempotent_by_pairing(mock_bot):
 async def test_sorcery_online_decided_result_records_and_closes_each_queue_type(
     mock_bot, queue_type,
 ):
+    winner_user = MagicMock()
+    winner_user.send = AsyncMock()
+    loser_user = MagicMock()
+    loser_user.send = AsyncMock()
+
+    async def fetch_user(user_id):
+        return winner_user if user_id == 10 else loser_user
+
+    mock_bot.fetch_user.side_effect = fetch_user
     ensure_match_cards_table()
     if queue_type == "limited":
         pairing_id = save_limited_pairing(
@@ -263,6 +303,10 @@ async def test_sorcery_online_decided_result_records_and_closes_each_queue_type(
     assert recorded[0]["winner_deck_url"] == "deck-a"
     assert recorded[0]["loser_deck_url"] == "deck-b"
     assert recorded[0]["first_player"] == "y"
+    winner_user.send.assert_awaited_once()
+    loser_user.send.assert_awaited_once()
+    assert "Match ID: #88" in winner_user.send.await_args.args[0]
+    assert "Match ID: #88" in loser_user.send.await_args.args[0]
     if queue_type == "limited":
         assert recorded[0]["winner_run_id"] == 101
         assert recorded[0]["loser_run_id"] == 202

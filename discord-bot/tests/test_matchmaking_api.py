@@ -160,7 +160,68 @@ async def test_unavailable_sorcery_online_provisioning_is_non_fatal(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_unavailable_provisioning_still_publishes_website_results():
+async def test_transient_sorcery_online_provisioning_failure_is_retried(monkeypatch):
+    monkeypatch.setenv("DRAFT_SORCERY_API_KEY", "configured-key")
+    unavailable = MagicMock(status=500)
+    unavailable.text = AsyncMock(return_value="temporary failure")
+    unavailable.__aenter__ = AsyncMock(return_value=unavailable)
+    unavailable.__aexit__ = AsyncMock(return_value=None)
+    success = MagicMock(status=200)
+    success.json = AsyncMock(return_value={
+        "players": [
+            {"discordUserId": "10", "gameUrl": "https://playsorceryonline.com/?m=one"},
+            {"discordUserId": "20", "gameUrl": "https://playsorceryonline.com/?m=two"},
+        ],
+    })
+    success.__aenter__ = AsyncMock(return_value=success)
+    success.__aexit__ = AsyncMock(return_value=None)
+    session = MagicMock()
+    session.post.side_effect = [unavailable, success]
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch("services.sorcery_online_matchmaking.aiohttp.ClientSession", return_value=session),
+        patch("services.sorcery_online_matchmaking.asyncio.sleep", new=AsyncMock()) as sleep,
+    ):
+        links = await provision_sorcery_online_match(1, 2, "ranked", [
+            {"discord_user_id": 10, "display_name": "Alice"},
+            {"discord_user_id": 20, "display_name": "Bob"},
+        ])
+
+    assert links == {
+        10: "https://playsorceryonline.com/?m=one",
+        20: "https://playsorceryonline.com/?m=two",
+    }
+    assert session.post.call_count == 2
+    sleep.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_non_retryable_sorcery_online_provisioning_failure_falls_back_immediately(monkeypatch):
+    monkeypatch.setenv("DRAFT_SORCERY_API_KEY", "configured-key")
+    unauthorized = MagicMock(status=401)
+    unauthorized.text = AsyncMock(return_value="Unauthorized")
+    unauthorized.__aenter__ = AsyncMock(return_value=unauthorized)
+    unauthorized.__aexit__ = AsyncMock(return_value=None)
+    session = MagicMock()
+    session.post.return_value = unauthorized
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch("services.sorcery_online_matchmaking.aiohttp.ClientSession", return_value=session),
+        patch("services.sorcery_online_matchmaking.asyncio.sleep", new=AsyncMock()) as sleep,
+    ):
+        links = await provision_sorcery_online_match(1, 2, "ranked", [])
+
+    assert links is None
+    assert session.post.call_count == 1
+    sleep.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unavailable_provisioning_does_not_publish_an_unusable_website_result():
     state.matching_web_users.clear()
     state.pending_web_matches.clear()
     state.matching_web_users[10] = "ranked"
@@ -185,7 +246,7 @@ async def test_unavailable_provisioning_still_publishes_website_results():
         links = await provision_match_and_publish_results(1, 2, "ranked", players)
     assert links == {}
     provision.assert_awaited_once()
-    assert state.pending_web_matches[10]["game_url"] is None
+    assert state.pending_web_matches == {}
     assert state.matching_web_users == {}
 
 
@@ -475,9 +536,16 @@ def test_pending_website_results_expire_after_delivery_window():
     state.pending_web_matches.clear()
     state.pending_web_matches[1] = {"id": "expired", "expires_at": time.time() - 1}
     state.pending_web_matches[2] = {"id": "active", "expires_at": time.time() + 60}
+    state.pending_web_matches[3] = {
+        "id": "missing-link",
+        "game_url": None,
+        "expires_at": time.time() + 60,
+    }
+    state.pending_web_matches[2]["game_url"] = "https://playsorceryonline.com/?m=seat"
     _prune_results()
     assert 1 not in state.pending_web_matches
     assert state.pending_web_matches[2]["id"] == "active"
+    assert 3 not in state.pending_web_matches
 
 
 @pytest.mark.asyncio

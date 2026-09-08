@@ -40,15 +40,18 @@ async def provision_match_and_publish_results(guild_id, pairing_id, queue_type, 
     for player in players:
         user_id = player["discord_user_id"]
         if player.get("origin") == "sorcery_online":
-            result_id = hashlib.sha256(f"{result_id_base}:{user_id}".encode()).hexdigest()
-            pending_web_matches[user_id] = {
-                "id": result_id,
-                "queue_type": queue_type,
-                "opponent_name": player["opponent_name"],
-                "matched_at": matched_at,
-                "game_url": provisioned_links.get(user_id),
-                "expires_at": time.time() + WEB_MATCH_TTL_SECONDS,
-            }
+            pending_web_matches.pop(user_id, None)
+            game_url = provisioned_links.get(user_id)
+            if game_url:
+                result_id = hashlib.sha256(f"{result_id_base}:{user_id}".encode()).hexdigest()
+                pending_web_matches[user_id] = {
+                    "id": result_id,
+                    "queue_type": queue_type,
+                    "opponent_name": player["opponent_name"],
+                    "matched_at": matched_at,
+                    "game_url": game_url,
+                    "expires_at": time.time() + WEB_MATCH_TTL_SECONDS,
+                }
         matching_web_users.pop(user_id, None)
     return provisioned_links
 

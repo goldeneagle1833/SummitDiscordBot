@@ -1,5 +1,6 @@
 """Best-effort Sorcery Online table provisioning for Summit pairings."""
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -10,6 +11,8 @@ from dotenv import dotenv_values
 
 logger = logging.getLogger("discord_bot")
 BOT_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+PROVISION_ATTEMPTS = 3
+PROVISION_RETRY_DELAYS = (0.25, 0.75)
 
 
 def summit_matchmaking_api_key():
@@ -41,24 +44,48 @@ async def provision_sorcery_online_match(guild_id, pairing_id, queue_type, playe
             for player in players
         ],
     }
+    timeout = aiohttp.ClientTimeout(total=5, connect=2)
     try:
-        timeout = aiohttp.ClientTimeout(total=15, connect=5)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(endpoint, json=payload, headers={"X-API-Key": api_key}) as response:
-                if response.status != 200:
-                    body = await response.text()
+            for attempt in range(1, PROVISION_ATTEMPTS + 1):
+                retryable = False
+                try:
+                    async with session.post(
+                        endpoint,
+                        json=payload,
+                        headers={"X-API-Key": api_key},
+                    ) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            links = {
+                                int(player["discordUserId"]): player["gameUrl"]
+                                for player in data.get("players", [])
+                                if player.get("discordUserId") and player.get("gameUrl")
+                            }
+                            if len(links) != 2:
+                                logger.warning(
+                                    "Sorcery Online provisioning returned %s usable seat links",
+                                    len(links),
+                                )
+                                return None
+                            return links
+
+                        body = await response.text()
+                        retryable = response.status in {408, 425, 429} or response.status >= 500
+                        logger.warning(
+                            "Sorcery Online provisioning attempt %s/%s returned status %s: %s",
+                            attempt, PROVISION_ATTEMPTS, response.status, body[:500],
+                        )
+                except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                    retryable = True
                     logger.warning(
-                        "Sorcery Online provisioning returned status %s: %s",
-                        response.status, body[:500],
+                        "Sorcery Online provisioning attempt %s/%s failed: %r",
+                        attempt, PROVISION_ATTEMPTS, exc,
                     )
+
+                if not retryable or attempt == PROVISION_ATTEMPTS:
                     return None
-                data = await response.json()
-        links = {
-            int(player["discordUserId"]): player["gameUrl"]
-            for player in data.get("players", [])
-            if player.get("discordUserId") and player.get("gameUrl")
-        }
-        return links if len(links) == 2 else None
+                await asyncio.sleep(PROVISION_RETRY_DELAYS[attempt - 1])
     except Exception as exc:
         logger.warning("Sorcery Online provisioning failed: %r", exc, exc_info=True)
-        return None
+    return None

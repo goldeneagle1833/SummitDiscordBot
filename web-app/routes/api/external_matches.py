@@ -67,13 +67,35 @@ def report_external_match():
 
         winner_went_first = None
         if data.get("winner_went_first") is not None:
+            if not isinstance(data["winner_went_first"], bool):
+                return jsonify({
+                    "error": "winner_went_first must be a boolean",
+                    "success": False,
+                }), 400
             winner_went_first = "y" if data["winner_went_first"] else "n"
 
         match_time = None
         if data.get("match_time") is not None:
             match_time = int(data["match_time"])
 
-        # PSO Ranked games always go through the ranked pipeline as
+        # Summit-queued games go through the bot pipeline, same as a
+        # Discord Report-button match. Resolve this before the standalone
+        # PSO Ranked pipeline so an explicitly identified Summit pairing is
+        # completed instead of leaving its pairing active.
+        pairing = _resolve_summit_pairing(data, winner_id, loser_id)
+        if pairing is not None:
+            return _record_via_bot(pairing, data, winner_id, loser_id, source)
+
+        # An explicit pairing is authoritative. Never silently turn a stale,
+        # mistyped, or player-mismatched pairing callback into an unrelated
+        # external match, since PSO would consider that a successful report.
+        if data.get("pairing_id") is not None or data.get("pairingId") is not None:
+            return jsonify({
+                "error": "Summit pairing was not found or does not match these players",
+                "success": False,
+            }), 400
+
+        # Standalone PSO Ranked games always go through the ranked pipeline as
         # pending confirmations (24h auto-confirm with ELO).
         if source == "PSO Ranked":
             return _record_pso_ranked(
@@ -82,12 +104,6 @@ def report_external_match():
                 winner_deck_url, loser_deck_url,
                 winner_went_first, match_time, match_comment,
             )
-
-        # Summit-queued games go through the bot pipeline, same as a
-        # Discord Report-button match.
-        pairing = _resolve_summit_pairing(data, winner_id, loser_id)
-        if pairing is not None:
-            return _record_via_bot(pairing, data, winner_id, loser_id, source)
 
         # No Summit pairing: keep it as a stats-only external match.
         service = ExternalMatchService()
@@ -264,6 +280,8 @@ def _record_via_bot(pairing: dict, data: dict, winner_id: str, loser_id: str, so
         "loser_id": loser_id,
         "source": source,
     }
+    if data.get("winner_went_first") is not None:
+        payload["winner_went_first"] = bool(data["winner_went_first"])
     players = data.get("players") or data.get("played_cards") or data.get("playedCards")
     if players:
         payload["players"] = players

@@ -19,6 +19,11 @@ from cogs.lfg.persistent_confirm import (
     load_match_card_for_pairing,
 )
 from repositories.elo_repo import get_pairing_by_id, save_pairing
+from repositories.limited_repo import (
+    get_limited_pairing_by_id,
+    mark_limited_pairing_reported,
+    save_limited_pairing,
+)
 from services.matchmaking_api import (
     _authentication,
     _is_loopback_request,
@@ -31,7 +36,7 @@ from services.sorcery_online_matchmaking import (
     provision_sorcery_online_match,
     summit_matchmaking_api_key,
 )
-from services.summit_result_reporting import record_sorcery_online_result
+from services.summit_result_reporting import _normalize_played_cards, record_sorcery_online_result
 
 
 def test_missing_links_add_nothing_to_legacy_match_messages():
@@ -201,6 +206,112 @@ async def test_sorcery_online_result_is_idempotent_by_pairing(mock_bot):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("queue_type", ["ranked", "testing", "limited"])
+async def test_sorcery_online_decided_result_records_and_closes_each_queue_type(
+    mock_bot, queue_type,
+):
+    ensure_match_cards_table()
+    if queue_type == "limited":
+        pairing_id = save_limited_pairing(
+            1, 10, 20, "deck-a", "deck-b", 101, 202,
+        )
+    else:
+        pairing_id = save_pairing(1, 10, 20, "deck-a", "deck-b", queue_type)
+    create_match_card_view(
+        bot=mock_bot,
+        pairing_id=pairing_id,
+        player1_id=10,
+        player1_global="Alice",
+        player2_id=20,
+        player2_global="Bob",
+        guild_id=1,
+        match_type=queue_type,
+    )
+    recorded = []
+
+    async def record_once(_interaction, _confirmation_id, data, **_kwargs):
+        recorded.append(data)
+        if queue_type == "limited":
+            mark_limited_pairing_reported(1, 10, 20, pairing_id=pairing_id)
+        else:
+            from repositories.elo_repo import mark_pairing_reported
+            mark_pairing_reported(1, 10, 20, pairing_id=pairing_id)
+        return 88
+
+    with patch(
+        "services.summit_result_reporting._execute_match_confirmation",
+        new=AsyncMock(side_effect=record_once),
+    ):
+        result = await record_sorcery_online_result(
+            mock_bot,
+            guild_id=1,
+            pairing_id=pairing_id,
+            queue_type=queue_type,
+            reporter_id=10,
+            winner_id=10,
+            loser_id=20,
+            winner_went_first=True,
+            players=[
+                {"player_id": "10", "played_cards": [{"card_name": "Site A"}]},
+                {"player_id": "20", "played_cards": []},
+            ],
+        )
+
+    assert result == {"recorded": True, "duplicate": False, "match_id": 88}
+    assert len(recorded) == 1
+    assert recorded[0]["match_type"] == queue_type
+    assert recorded[0]["winner_deck_url"] == "deck-a"
+    assert recorded[0]["loser_deck_url"] == "deck-b"
+    assert recorded[0]["first_player"] == "y"
+    if queue_type == "limited":
+        assert recorded[0]["winner_run_id"] == 101
+        assert recorded[0]["loser_run_id"] == 202
+        pairing = get_limited_pairing_by_id(1, pairing_id)
+    else:
+        pairing = get_pairing_by_id(1, pairing_id)
+    assert pairing["status"] == "reported"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("queue_type", ["ranked", "testing", "limited"])
+async def test_sorcery_online_no_contest_closes_each_queue_without_a_match_record(
+    mock_bot, queue_type,
+):
+    if queue_type == "limited":
+        pairing_id = save_limited_pairing(
+            1, 10, 20, "deck-a", "deck-b", 101, 202,
+        )
+    else:
+        pairing_id = save_pairing(1, 10, 20, "deck-a", "deck-b", queue_type)
+
+    with patch(
+        "services.summit_result_reporting._execute_match_confirmation",
+        new=AsyncMock(),
+    ) as execute:
+        result = await record_sorcery_online_result(
+            mock_bot,
+            guild_id=1,
+            pairing_id=pairing_id,
+            queue_type=queue_type,
+            outcome="no_contest",
+        )
+
+    assert result == {
+        "recorded": False,
+        "duplicate": False,
+        "match_id": None,
+        "outcome": "no_contest",
+    }
+    execute.assert_not_awaited()
+    pairing = (
+        get_limited_pairing_by_id(1, pairing_id)
+        if queue_type == "limited"
+        else get_pairing_by_id(1, pairing_id)
+    )
+    assert pairing["status"] == "reported"
+
+
+@pytest.mark.asyncio
 async def test_unknown_sorcery_online_outcome_leaves_pairing_active(mock_bot):
     """Unknown outcomes leave the pairing active so players can report via Discord."""
     pairing_id = save_pairing(1, 10, 20, "deck-a", "deck-b", "ranked")
@@ -335,6 +446,22 @@ def test_result_fields_accept_snake_and_camel_case():
     assert snake["queue_type"] == "ranked"
     assert snake["outcome"] == "decided"
     assert snake["reporter_id"] == "20"
+
+
+def test_played_card_normalization_accepts_pso_player_id_contract():
+    assert _normalize_played_cards([
+        {
+            "player_id": "10",
+            "played_cards": [
+                {"card_id": "site-a", "card_name": "Site A", "quantity": 2},
+                "Site B",
+            ],
+        },
+        {"playerId": "20", "playedCards": [{"name": "Site C"}]},
+    ]) == {
+        "10": ["Site A", "Site B"],
+        "20": ["Site C"],
+    }
 
 
 def test_result_fields_default_reporter_to_winner_for_decided():

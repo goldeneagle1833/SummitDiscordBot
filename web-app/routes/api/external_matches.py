@@ -99,11 +99,13 @@ def report_external_match():
         # Standalone PSO Ranked games always go through the ranked pipeline as
         # pending confirmations (24h auto-confirm with ELO).
         if source == "PSO Ranked":
+            players = data.get("players") or data.get("played_cards") or data.get("playedCards")
             return _record_pso_ranked(
                 data, winner_id, loser_id,
                 winner_name, loser_name,
                 winner_deck_url, loser_deck_url,
                 winner_went_first, match_time, match_comment,
+                players=players,
             )
 
         # No Summit pairing: keep it as a stats-only external match.
@@ -146,6 +148,7 @@ def _record_pso_ranked(
     winner_went_first: str | None,
     match_time: int | None,
     match_comment: str | None,
+    players: list | None = None,
 ):
     """Create a pending ranked confirmation for a PSO-reported match."""
     from services.match_confirmation import MatchConfirmationService
@@ -162,6 +165,7 @@ def _record_pso_ranked(
             winner_went_first=winner_went_first,
             match_time=match_time,
             match_comment=match_comment or "",
+            players=players,
         )
 
         # Send web notifications to both players

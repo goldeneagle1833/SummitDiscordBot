@@ -13,6 +13,97 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+def _normalize_played_cards(players):
+    """Extract played card names from PSO player data.
+
+    Returns a dict mapping discord_id -> list of card names, or None.
+    """
+    if not players:
+        return None
+    result = {}
+    for p in players:
+        discord_id = (
+            p.get("discordId") or p.get("discord_id")
+            or p.get("playerId") or p.get("player_id")
+        )
+        cards = p.get("playedCards") or p.get("played_cards") or []
+        if discord_id and cards:
+            names = []
+            for c in cards:
+                if isinstance(c, str):
+                    names.append(c)
+                elif isinstance(c, dict):
+                    names.append(c.get("name") or c.get("card_name") or str(c))
+            result[str(discord_id)] = names
+    return result or None
+
+
+def _save_played_cards_callback(confirmation: dict, match_id: str):
+    """Write a sorcery_online_match_callbacks row for a confirmed PSO match.
+
+    This makes played-card data visible to the winrates endpoint, which
+    queries that table.  Only writes a row when the confirmation carries
+    ``played_cards`` (i.e. it came from a PSO report with card data).
+    """
+    played_cards_json = confirmation.get("played_cards")
+    if not played_cards_json:
+        return
+
+    import sqlite3
+    from webapp_config import MATCH_RECORDS_DB_PATH
+
+    try:
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        # Ensure the table exists (it may have been created by the bot, but
+        # the web-app can also be the first writer if the bot hasn't run yet).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sorcery_online_match_callbacks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER NOT NULL,
+                pairing_id INTEGER NOT NULL,
+                queue_type TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                reporter_id INTEGER,
+                winner_id INTEGER,
+                loser_id INTEGER,
+                match_id TEXT,
+                played_cards TEXT,
+                raw_players TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute(
+            """INSERT INTO sorcery_online_match_callbacks
+               (guild_id, pairing_id, queue_type, outcome,
+                reporter_id, winner_id, loser_id, match_id,
+                played_cards, raw_players)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                0,  # No guild for standalone PSO Ranked
+                confirmation.get("id", 0),  # Use confirmation_id as pairing_id
+                "ranked",
+                "decided",
+                confirmation["submitter_discord_id"],
+                confirmation["winner_discord_id"],
+                confirmation["loser_discord_id"],
+                match_id,
+                played_cards_json,
+                None,  # No raw_players for web pipeline
+            ),
+        )
+        conn.commit()
+        conn.close()
+        logger.info(
+            "Saved played_cards callback for PSO Ranked match_id=%s confirmation=%s",
+            match_id, confirmation.get("id"),
+        )
+    except sqlite3.Error:
+        logger.error(
+            "Could not store played_cards callback for match_id=%s",
+            match_id, exc_info=True,
+        )
+
+
 class MatchConfirmationService:
     """Business logic for match confirmations."""
 
@@ -290,6 +381,9 @@ class MatchConfirmationService:
                 )
         except Exception as e:
             logger.error(f"Season ELO update failed (non-blocking): {e}", exc_info=True)
+
+        # Save played_cards callback for PSO matches (non-blocking)
+        _save_played_cards_callback(confirmation, match_id)
 
         return {
             "match_id": match_id,
@@ -1150,6 +1244,9 @@ class MatchConfirmationService:
         except Exception as e:
             logger.error(f"Season ELO update failed (non-blocking): {e}", exc_info=True)
 
+        # Save played_cards callback for PSO matches (non-blocking)
+        _save_played_cards_callback(confirmation, match_id)
+
         # Customize message based on match type and repeat status
         if is_casual:
             message = "Casual match confirmed and recorded! No ELO changes."
@@ -1193,6 +1290,7 @@ class MatchConfirmationService:
         winner_went_first: Optional[str] = None,
         match_time: Optional[int] = None,
         match_comment: str = "",
+        players: Optional[list] = None,
     ) -> dict:
         """
         Create a pending match confirmation from a PSO Ranked report.
@@ -1246,6 +1344,14 @@ class MatchConfirmationService:
             comment_parts.append(f"Match time: {match_time}min")
         full_comment = " | ".join(comment_parts) if comment_parts else ""
 
+        # Normalize played cards from PSO player data
+        played_cards_json = None
+        if players:
+            played_cards = _normalize_played_cards(players)
+            if played_cards:
+                import json
+                played_cards_json = json.dumps(played_cards)
+
         # Create confirmation with 24h expiry and PSO source
         confirmation_id = self.repo.create_confirmation(
             submitter_id=winner_id_str,
@@ -1261,6 +1367,7 @@ class MatchConfirmationService:
             match_comment=full_comment,
             source="PSO Ranked",
             expires_hours=24,
+            played_cards=played_cards_json,
         )
 
         expires_at = int(time.time()) + (24 * 60 * 60)

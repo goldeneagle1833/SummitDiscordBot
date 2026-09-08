@@ -152,6 +152,21 @@ class MatchConfirmationRepository:
             logger = logging.getLogger(__name__)
             logger.info("Added source column to match_confirmations table")
 
+        # Migration: Add played_cards column for PSO card data
+        cursor.execute("PRAGMA table_info(match_confirmations)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if "played_cards" not in columns:
+            cursor.execute("""
+                ALTER TABLE match_confirmations
+                ADD COLUMN played_cards TEXT DEFAULT NULL
+            """)
+            conn.commit()
+
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("Added played_cards column to match_confirmations table")
+
         conn.close()
 
     def create_confirmation(
@@ -170,6 +185,7 @@ class MatchConfirmationRepository:
         match_comment: str = "",
         source: Optional[str] = None,
         expires_hours: int = 48,
+        played_cards: Optional[str] = None,
     ) -> int:
         """
         Create a new match confirmation request.
@@ -205,8 +221,9 @@ class MatchConfirmationRepository:
                 winner_discord_id, loser_discord_id,
                 winner_deck_url, loser_deck_url,
                 final_life_winner, final_life_loser,
-                went_first, match_type, season_id, match_comment, source, status, created_at, expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                went_first, match_type, season_id, match_comment, source,
+                played_cards, status, created_at, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
             """,
             (
                 str(submitter_id),
@@ -222,6 +239,7 @@ class MatchConfirmationRepository:
                 season_id,
                 match_comment,
                 source,
+                played_cards,
                 created_at,
                 expires_at,
             ),

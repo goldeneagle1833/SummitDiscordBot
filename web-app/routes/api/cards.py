@@ -1466,7 +1466,9 @@ def get_played_winrates():
             conn.close()
             return jsonify([])
 
-        # Build query
+        # Build query — use the callback's own winner/loser columns so we
+        # pick up both bot-pipeline matches (match_records) and web-pipeline
+        # PSO Ranked matches (match_reports_web) without a fragile JOIN.
         where_parts = [
             "c.outcome = 'decided'",
             "c.match_id IS NOT NULL",
@@ -1474,16 +1476,15 @@ def get_played_winrates():
         ]
         params = []
         if event_start:
-            where_parts.append("m.timestamp >= ?")
+            where_parts.append("c.created_at >= ?")
             params.append(event_start)
         if event_end:
-            where_parts.append("m.timestamp < ?")
+            where_parts.append("c.created_at < ?")
             params.append(event_end)
 
         query = f"""
-            SELECT c.played_cards, m.winner_id, m.losser_id
+            SELECT c.played_cards, c.winner_id, c.loser_id
             FROM sorcery_online_match_callbacks c
-            JOIN match_records m ON c.match_id = m.match_id
             WHERE {' AND '.join(where_parts)}
         """
         cur.execute(query, params)

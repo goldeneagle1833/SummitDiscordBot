@@ -3,6 +3,7 @@
 import sqlite3
 from unittest.mock import Mock, patch
 
+import pytest
 import requests
 import webapp_config
 
@@ -80,6 +81,62 @@ def _bot_ok(match_id=77, duplicate=False):
 
 
 class TestSummitPairedResultsUseBotPipeline:
+    @pytest.mark.parametrize(
+        ("queue_type", "limited"),
+        [("ranked", False), ("testing", False), ("limited", True)],
+    )
+    def test_pso_pairing_contract_routes_every_supported_queue_to_bot(
+        self, client, match_db, queue_type, limited,
+    ):
+        pairing_id = _seed_pairing(
+            match_db,
+            match_type=queue_type,
+            limited=limited,
+        )
+        payload = _payload(
+            source="Sorcery Online",
+            pairing_id=pairing_id,
+            queue_type=queue_type,
+            reporter_id="10",
+            winner_went_first=True,
+        )
+        with patch("routes.api.matchmaking.requests.request", return_value=_bot_ok()) as req, \
+             patch("routes.api.external_matches.ExternalMatchService") as service:
+            resp = client.post("/api/report-external-match", json=payload, headers=HEADERS)
+
+        assert resp.status_code == 200, resp.get_json()
+        assert resp.get_json()["pipeline"] == "bot"
+        assert resp.get_json()["queue_type"] == queue_type
+        service.assert_not_called()
+        sent = req.call_args.kwargs["json"]
+        assert sent["queue_type"] == queue_type
+        assert sent["outcome"] == "decided"
+        assert sent["reporter_id"] == "10"
+        assert sent["winner_id"] == "10"
+        assert sent["loser_id"] == "20"
+        assert sent["winner_went_first"] is True
+
+    def test_explicit_summit_pairing_takes_priority_over_standalone_pso_ranked_pipeline(
+        self, client, match_db,
+    ):
+        pairing_id = _seed_pairing(match_db, match_type="ranked")
+        with patch("routes.api.matchmaking.requests.request", return_value=_bot_ok()) as req, \
+             patch("routes.api.external_matches._record_pso_ranked") as standalone:
+            resp = client.post(
+                "/api/report-external-match",
+                json=_payload(
+                    source="PSO Ranked",
+                    pairing_id=pairing_id,
+                    queue_type="ranked",
+                ),
+                headers=HEADERS,
+            )
+
+        assert resp.status_code == 200, resp.get_json()
+        assert resp.get_json()["pipeline"] == "bot"
+        standalone.assert_not_called()
+        assert req.call_args.args[1].endswith(f"/matches/1/{pairing_id}/results")
+
     def test_active_pairing_is_relayed_to_bot_not_external_table(self, client, match_db):
         pairing_id = _seed_pairing(match_db)
         with patch("routes.api.matchmaking.requests.request", return_value=_bot_ok()) as req, \
@@ -195,7 +252,7 @@ class TestNonSummitResultsStayExternal:
         req.assert_not_called()
         service.return_value.report_match.assert_called_once()
 
-    def test_pairing_id_for_other_players_is_ignored(self, client, match_db):
+    def test_pairing_id_for_other_players_is_rejected(self, client, match_db):
         pairing_id = _seed_pairing(match_db, p1=30, p2=40)
         with patch("routes.api.matchmaking.requests.request") as req, \
              patch("routes.api.external_matches.ExternalMatchService") as service:
@@ -205,7 +262,19 @@ class TestNonSummitResultsStayExternal:
                 json=_payload(pairing_id=pairing_id),
                 headers=HEADERS,
             )
-        assert resp.status_code == 200
-        assert resp.get_json()["pipeline"] == "external"
+        assert resp.status_code == 400
+        assert "does not match" in resp.get_json()["error"]
         req.assert_not_called()
-        service.return_value.report_match.assert_called_once()
+        service.assert_not_called()
+
+    def test_unknown_explicit_pairing_is_rejected_instead_of_stored_as_external(self, client, match_db):
+        with patch("routes.api.matchmaking.requests.request") as req, \
+             patch("routes.api.external_matches.ExternalMatchService") as service:
+            resp = client.post(
+                "/api/report-external-match",
+                json=_payload(pairing_id=999, queue_type="testing"),
+                headers=HEADERS,
+            )
+        assert resp.status_code == 400
+        req.assert_not_called()
+        service.assert_not_called()

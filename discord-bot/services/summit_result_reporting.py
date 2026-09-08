@@ -130,7 +130,10 @@ def _normalize_played_cards(players):
         return None
     result = {}
     for p in players:
-        discord_id = p.get("discordId") or p.get("discord_id")
+        discord_id = (
+            p.get("discordId") or p.get("discord_id")
+            or p.get("playerId") or p.get("player_id")
+        )
         cards = p.get("playedCards") or p.get("played_cards") or []
         if discord_id and cards:
             names = []
@@ -180,6 +183,7 @@ async def record_sorcery_online_result(
     reporter_id=None,
     winner_id=None,
     loser_id=None,
+    winner_went_first=None,
     players=None,
 ):
     """Record one authoritative pairing result, returning duplicate success on retries."""
@@ -274,6 +278,11 @@ async def record_sorcery_online_result(
             int(pairing["player2_id"]): pairing.get("player2_run_id", 0),
         }
         opponent_id = loser_id if reporter_id == winner_id else winner_id
+        if winner_went_first is None:
+            first_player = None
+        else:
+            reporter_went_first = bool(winner_went_first) == (reporter_id == winner_id)
+            first_player = "y" if reporter_went_first else "n"
         data = {
             "reporter_id": reporter_id,
             "opponent_id": opponent_id,
@@ -284,7 +293,7 @@ async def record_sorcery_online_result(
             "reporter_global": winner_global if reporter_id == winner_id else loser_global,
             "opponent_global": loser_global if reporter_id == winner_id else winner_global,
             "match_start_time": card.get("match_start_time"),
-            "first_player": None,
+            "first_player": first_player,
             "match_time": _minutes_since(pairing.get("created_at")),
             "match_comment": "Automatically reported by Sorcery Online",
             "winner_deck_url": decks.get(winner_id),

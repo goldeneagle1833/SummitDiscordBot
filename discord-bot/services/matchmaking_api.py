@@ -135,6 +135,9 @@ def _result_fields(payload):
     winner_id = _pick(payload, "winner_id", "winnerId", "winnerDiscordUserId")
     loser_id = _pick(payload, "loser_id", "loserId", "loserDiscordUserId")
     reporter_id = _pick(payload, "reporter_id", "reporterId", "reporterDiscordUserId")
+    winner_went_first = _pick(payload, "winner_went_first", "winnerWentFirst")
+    if winner_went_first is not None and not isinstance(winner_went_first, bool):
+        raise ValueError("winner_went_first must be a boolean")
     if reporter_id is None and outcome == "decided":
         reporter_id = winner_id
     players_key = (
@@ -152,6 +155,7 @@ def _result_fields(payload):
         "reporter_id": reporter_id,
         "winner_id": winner_id,
         "loser_id": loser_id,
+        "winner_went_first": winner_went_first,
         "players": _pick(payload, "players", "played_cards", "playedCards"),
     }
 

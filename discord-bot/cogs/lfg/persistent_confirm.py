@@ -418,6 +418,18 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
             logger.warning(f"Could not send confirmation followup: {e}")
     else:
         logger.info(f"Interaction expired for confirmation {confirmation_id} — match #{match_id} saved successfully, skipping UI updates")
+        # Edit the original match card DM(s) to show the result
+        if pairing_id:
+            result_text = (
+                f"✅ **Match Recorded** — **Match ID: #{match_id}**\n"
+                f"{data['winner_global']} defeated {data['loser_global']}.{elo_msg}{stakes_msg}"
+            )
+            if data.get("match_comment", "").startswith("Automatically reported by"):
+                result_text += "\n*(Reported via Sorcery Online)*"
+            try:
+                await edit_match_card_messages(bot, pairing_id, data.get("match_type", "ranked"), result_text)
+            except Exception as e:
+                logger.warning(f"Could not edit match card messages for pairing {pairing_id}: {e}")
 
     # ── notify reporter ──
     correct_match_tip = (
@@ -1033,6 +1045,21 @@ def create_confirmation_view(
 #  Persistent Match Card (Report/Cancel survive restarts)
 # ──────────────────────────────────────────────
 
+def _migrate_match_cards_columns():
+    """Add message_id/channel_id columns if missing (existing installs)."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(active_match_cards)")}
+        for col in ("message_id", "channel_id"):
+            if col not in existing:
+                conn.execute(f"ALTER TABLE active_match_cards ADD COLUMN {col} INTEGER")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+    finally:
+        conn.close()
+
+
 def ensure_match_cards_table():
     """Create the active_match_cards table if it doesn't exist."""
     conn = sqlite3.connect(DB_PATH)
@@ -1053,6 +1080,8 @@ def ensure_match_cards_table():
             match_type        TEXT    DEFAULT 'ranked',
             player1_run_id    INTEGER DEFAULT 0,
             player2_run_id    INTEGER DEFAULT 0,
+            message_id        INTEGER,
+            channel_id        INTEGER,
             created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """
@@ -1164,6 +1193,55 @@ def load_match_card_for_pairing(pairing_id: int, match_type: str):
     ).fetchone()
     conn.close()
     return load_match_card(row["id"]) if row else None
+
+
+def update_match_card_message_ref(card_id: int, message_id: int, channel_id: int):
+    """Store the Discord message/channel IDs for a match card DM."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "UPDATE active_match_cards SET message_id = ?, channel_id = ? WHERE id = ?",
+        (message_id, channel_id, card_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _load_match_cards_for_pairing_all(pairing_id: int, match_type: str = None):
+    """Load ALL match card rows for a pairing (not just the newest)."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    if match_type:
+        rows = conn.execute(
+            "SELECT * FROM active_match_cards WHERE pairing_id = ? AND match_type = ?",
+            (pairing_id, match_type),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM active_match_cards WHERE pairing_id = ?",
+            (pairing_id,),
+        ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+async def edit_match_card_messages(bot, pairing_id: int, match_type: str, result_text: str):
+    """Edit the original match card DM messages to show the result and remove buttons.
+
+    Called when a match is recorded via an external source (e.g. Sorcery Online)
+    where there is no live interaction to update.
+    """
+    cards = _load_match_cards_for_pairing_all(pairing_id, match_type)
+    for card in cards:
+        msg_id = card.get("message_id")
+        ch_id = card.get("channel_id")
+        if not msg_id or not ch_id:
+            continue
+        try:
+            channel = bot.get_channel(ch_id) or await bot.fetch_channel(ch_id)
+            message = await channel.fetch_message(msg_id)
+            await message.edit(content=result_text, view=None)
+        except Exception as e:
+            logger.warning("Could not edit match card message %s in channel %s: %s", msg_id, ch_id, e)
 
 
 class PersistentMatchCardReportButton(
@@ -1425,6 +1503,7 @@ class PersistentMatchCardView(discord.ui.View):
 
     def __init__(self, card_id: int):
         super().__init__(timeout=None)
+        self.card_id = card_id
         self.add_item(PersistentMatchCardReportButton(card_id))
         self.add_item(PersistentMatchCardCancelButton(card_id))
 

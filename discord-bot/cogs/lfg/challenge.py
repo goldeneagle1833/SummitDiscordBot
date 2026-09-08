@@ -6,7 +6,7 @@ import logging
 import config
 from cogs.lfg.state import lfg_queue
 from cogs.lfg.helpers import scrub_urls
-from cogs.lfg.persistent_confirm import create_match_card_view
+from cogs.lfg.persistent_confirm import create_match_card_view, update_match_card_message_ref
 from utils.database import save_pairing
 from utils.deck_checker import clean_deck_url
 
@@ -293,12 +293,16 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
         else:
             # Reporter is the challenger - send via DM
             try:
-                await challenger.send(
+                dm_msg = await challenger.send(
                     f"⚔️ **Challenge Accepted!** **{accepter_global}** accepted your challenge!{reporter_deck_text}\n\n"
                     f"Use the button below to report the result when your match is done.\n\n"
                     f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** in the LFG channel for fresh ones!",
                     view=match_card_view,
                 )
+                try:
+                    update_match_card_message_ref(match_card_view.card_id, dm_msg.id, dm_msg.channel.id)
+                except Exception:
+                    logger.warning("Could not save match card message ref for card %s", match_card_view.card_id)
             except discord.Forbidden:
                 try:
                     dm_channel = interaction.client.get_channel(config.DM_DISABLED_CHANNEL_ID)
@@ -314,7 +318,7 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
                                 if role and role not in member.roles:
                                     await member.add_roles(role)
 
-                        await dm_channel.send(
+                        fb_msg = await dm_channel.send(
                             scrub_urls(
                                 f"{challenger.mention} ⚔️ **Challenge Accepted!** **{accepter_global}** accepted your challenge!\n\n"
                                 f"Use the button below to report the result when your match is done.\n\n"
@@ -322,6 +326,10 @@ class ChallengeAcceptModal(discord.ui.Modal, title="Accept Challenge"):
                             ),
                             view=match_card_view,
                         )
+                        try:
+                            update_match_card_message_ref(match_card_view.card_id, fb_msg.id, fb_msg.channel.id)
+                        except Exception:
+                            logger.warning("Could not save match card message ref for card %s", match_card_view.card_id)
                 except Exception as e:
                     logger.error(f"Failed to handle DM failure for challenger: {e}")
 

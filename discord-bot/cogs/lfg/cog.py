@@ -22,7 +22,7 @@ from cogs.lfg.state import (
 )
 from cogs.lfg.helpers import scrub_urls, send_milestone_announcement
 from cogs.lfg.match_reporting import LFGReportButtons, _apply_ladder_elo, LimitedReportView
-from cogs.lfg.persistent_confirm import create_match_card_view
+from cogs.lfg.persistent_confirm import create_match_card_view, update_match_card_message_ref
 from cogs.lfg.challenge import ChallengeInitView, ChallengerDeckModal
 from cogs.lfg.ladder import (
     LadderChallengeJoinButton,
@@ -1326,12 +1326,16 @@ class LFGCog(commands.Cog):
             )
 
             try:
-                await reporter_user.send(
+                dm_msg = await reporter_user.send(
                     f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n"
                     f"Use the button below to report the result when your match is done."
                     f"{reporter_game_text}{voice_text}",
                     view=match_card_view,
                 )
+                try:
+                    update_match_card_message_ref(match_card_view.card_id, dm_msg.id, dm_msg.channel.id)
+                except Exception:
+                    logger.warning("Could not save match card message ref for card %s", match_card_view.card_id)
             except discord.Forbidden:
                 try:
                     dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
@@ -1352,10 +1356,14 @@ class LFGCog(commands.Cog):
                             ) + voice_text
                         if reporter_game_url:
                             match_card_view.add_item(PrivateSeatLinkButton(reporter_id, reporter_game_url))
-                        await dm_channel.send(
+                        fb_msg = await dm_channel.send(
                             fallback_message,
                             view=match_card_view,
                         )
+                        try:
+                            update_match_card_message_ref(match_card_view.card_id, fb_msg.id, fb_msg.channel.id)
+                        except Exception:
+                            logger.warning("Could not save match card message ref for card %s", match_card_view.card_id)
                 except Exception as e:
                     logger.error(f"Failed to handle DM failure for reporter: {e}")
 

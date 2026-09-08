@@ -10,7 +10,7 @@ import config
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
 from cogs.lfg.queue_definitions import queue_definition, queue_is_enabled
 from cogs.lfg.helpers import scrub_urls
-from cogs.lfg.persistent_confirm import create_match_card_view
+from cogs.lfg.persistent_confirm import create_match_card_view, update_match_card_message_ref
 from utils.constants import SORCERY_NICKNAMES
 from utils.database import save_pairing
 from repositories.limited_repo import save_limited_pairing, get_active_arena_run
@@ -687,13 +687,17 @@ async def _process_queue_join(
 
         reporter_dm_failed = False
         try:
-            await reporter_user.send(
+            dm_msg = await reporter_user.send(
                 f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n"
                 f"Use the button below to report the result when your match is done.\n\n"
                 f"💡 **Tip:** If these buttons expire, click **'📋 Report Last Match'** in the LFG channel for fresh ones!"
                 f"{reporter_game_text}{voice_text}",
                 view=match_card_view,
             )
+            try:
+                update_match_card_message_ref(match_card_view.card_id, dm_msg.id, dm_msg.channel.id)
+            except Exception:
+                logger.warning("Could not save match card message ref for card %s", match_card_view.card_id)
         except discord.HTTPException:
             reporter_dm_failed = True
             try:
@@ -720,10 +724,14 @@ async def _process_queue_join(
                         ) + voice_text
                     if reporter_game_url:
                         match_card_view.add_item(PrivateSeatLinkButton(reporter_id, reporter_game_url))
-                    await dm_channel.send(
+                    fb_msg = await dm_channel.send(
                         fallback_message,
                         view=match_card_view,
                     )
+                    try:
+                        update_match_card_message_ref(match_card_view.card_id, fb_msg.id, fb_msg.channel.id)
+                    except Exception:
+                        logger.warning("Could not save match card message ref for card %s", match_card_view.card_id)
             except Exception as e:
                 logger.error(f"Failed to handle DM failure for reporter: {e}")
 
@@ -1045,10 +1053,14 @@ class JoinQueueButtons(discord.ui.View):
 
             # Try to send to DM first
             try:
-                await interaction.user.send(
+                dm_msg = await interaction.user.send(
                     f"{match_type_emoji} **{match_type_label} Match Report**\n\n**Opponent:** {opponent_user.mention} (**{opponent_user.global_name or opponent_user.display_name}**){reporter_deck_text}\n\nUse the button below to report the result.",
                     view=match_card_view,
                 )
+                try:
+                    update_match_card_message_ref(match_card_view.card_id, dm_msg.id, dm_msg.channel.id)
+                except Exception:
+                    logger.warning("Could not save match card message ref for card %s", match_card_view.card_id)
                 await interaction.followup.send(
                     "✅ Match reporting buttons sent! Check your DMs.",
                     ephemeral=True,
@@ -1067,10 +1079,14 @@ class JoinQueueButtons(discord.ui.View):
                                     member, read_messages=True, send_messages=True
                                 )
 
-                        await dm_channel.send(
+                        fb_msg = await dm_channel.send(
                             f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match Report**\n\n**Opponent:** {opponent_user.mention} (**{opponent_user.global_name or opponent_user.display_name}**){reporter_deck_text}\n\nUse the button below to report the result.",
                             view=match_card_view,
                         )
+                        try:
+                            update_match_card_message_ref(match_card_view.card_id, fb_msg.id, fb_msg.channel.id)
+                        except Exception:
+                            logger.warning("Could not save match card message ref for card %s", match_card_view.card_id)
                         await interaction.followup.send(
                             f"✅ Match reporting buttons sent to <#{config.DM_DISABLED_CHANNEL_ID}>!",
                             ephemeral=True,

@@ -39,6 +39,7 @@ from cogs.lfg.persistent_confirm import (
     ensure_pending_confirmations_table,
     ensure_pending_corrections_table,
     ensure_match_cards_table,
+    _migrate_match_cards_columns,
 )
 from repositories.elo_repo import migrate_to_dual_elo_system
 from services.elo_service import backfill_deck_data
@@ -193,6 +194,7 @@ async def main():
         ensure_pending_confirmations_table()
         ensure_pending_corrections_table()
         ensure_match_cards_table()
+        _migrate_match_cards_columns()
         ensure_card_catalog_table()
         # Register DynamicItem buttons so Confirm/Dispute survive bot restarts
         bot.add_dynamic_items(

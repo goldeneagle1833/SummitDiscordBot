@@ -121,6 +121,30 @@ def _save_callback(guild_id, pairing_id, queue_type, outcome,
         )
 
 
+def _recorded_callback_match_id(guild_id, pairing_id, queue_type):
+    """Return the match created by an earlier successful callback, if any."""
+    try:
+        _ensure_callback_table()
+        conn = sqlite3.connect(_get_match_records_db())
+        try:
+            row = conn.execute(
+                f"""SELECT match_id FROM {CALLBACK_TABLE}
+                    WHERE guild_id = ? AND pairing_id = ? AND queue_type = ?
+                      AND outcome = 'decided' AND match_id IS NOT NULL
+                    ORDER BY id DESC LIMIT 1""",
+                (guild_id, pairing_id, queue_type),
+            ).fetchone()
+            return int(row[0]) if row else None
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        logger.error(
+            "Could not check Sorcery Online callback state for pairing %s",
+            pairing_id, exc_info=True,
+        )
+        return None
+
+
 def _normalize_played_cards(players):
     """Extract played card names from SO player data.
 
@@ -319,12 +343,18 @@ async def record_sorcery_online_result(
         if {winner_id, loser_id} != participants:
             raise ValueError("Result players do not match this pairing")
         if pairing.get("status") != "active":
-            _save_callback(
-                guild_id, pairing_id, queue_type, outcome,
-                reporter_id, winner_id, loser_id, None,
-                played_cards, players,
+            existing_match_id = _recorded_callback_match_id(
+                guild_id, pairing_id, queue_type,
             )
-            return {"recorded": False, "duplicate": True, "match_id": None}
+            if existing_match_id is not None:
+                return {
+                    "recorded": False,
+                    "duplicate": True,
+                    "match_id": existing_match_id,
+                }
+            raise RuntimeError(
+                "Pairing is closed but has no successfully recorded Sorcery Online match"
+            )
 
         card = load_match_card_for_pairing(pairing_id, stored_type) or {}
         names = {
@@ -389,12 +419,15 @@ async def record_sorcery_online_result(
                 else get_pairing_by_id(guild_id, pairing_id)
             )
             if refreshed and refreshed.get("status") != "active":
-                _save_callback(
-                    guild_id, pairing_id, queue_type, outcome,
-                    reporter_id, winner_id, loser_id, None,
-                    played_cards, players,
+                existing_match_id = _recorded_callback_match_id(
+                    guild_id, pairing_id, queue_type,
                 )
-                return {"recorded": False, "duplicate": True, "match_id": None}
+                if existing_match_id is not None:
+                    return {
+                        "recorded": False,
+                        "duplicate": True,
+                        "match_id": existing_match_id,
+                    }
             async with processed_matches_lock:
                 processed_matches.pop(match_key, None)
             raise RuntimeError("Match result could not be recorded")

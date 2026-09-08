@@ -1,6 +1,7 @@
 """External match reporting API routes."""
 
 import logging
+import os
 
 from flask import Blueprint, jsonify, request
 
@@ -295,6 +296,10 @@ def _record_via_bot(pairing: dict, data: dict, winner_id: str, loser_id: str, so
             "error": "Summit bot is unavailable; retry later",
             "pipeline": "bot",
         },
+        # Match recording includes ELO and other durable bot-side work. Keep
+        # this below Sorcery Online's 35s timeout so its retry worker receives
+        # a definite match-history receipt or error.
+        timeout=float(os.getenv("MATCH_REPORT_BOT_API_TIMEOUT", "30")),
     )
     if status >= 400:
         logger.warning(

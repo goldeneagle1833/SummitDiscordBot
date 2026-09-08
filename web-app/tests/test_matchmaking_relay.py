@@ -25,7 +25,7 @@ def test_matchmaking_relay_forwards_status_with_timeout(client):
     assert request_mock.call_args.kwargs["headers"] == {"X-API-Key": "partner-test-key"}
 
 
-def test_matchmaking_relay_reports_bot_unavailable(client):
+def test_matchmaking_relay_reports_bot_unavailable(client, caplog):
     webapp_config.DRAFT_SORCERY_API_KEY = "partner-test-key"
     with patch("routes.api.matchmaking.requests.request", side_effect=requests.ConnectionError("offline")):
         response = client.get(
@@ -34,6 +34,21 @@ def test_matchmaking_relay_reports_bot_unavailable(client):
         )
     assert response.status_code == 503
     assert response.get_json()["membership"] == "unavailable"
+    assert "method=GET path=/users/123/status" in caplog.text
+    assert "offline" in caplog.text
+
+
+def test_matchmaking_relay_logs_bot_error_body(client, caplog):
+    webapp_config.DRAFT_SORCERY_API_KEY = "partner-test-key"
+    upstream = Mock(status_code=500, text="match transaction failed")
+    with patch("routes.api.matchmaking.requests.request", return_value=upstream):
+        response = client.get(
+            "/api/matchmaking/users/123/status",
+            headers={"X-API-Key": "partner-test-key"},
+        )
+    assert response.status_code == 503
+    assert response.get_json()["membership"] == "unavailable"
+    assert "match transaction failed" in caplog.text
 
 
 def test_matchmaking_relay_forwards_idempotent_result(client):

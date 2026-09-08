@@ -75,7 +75,7 @@ def _bot_ok(match_id=77, duplicate=False):
     upstream = Mock(status_code=200)
     upstream.json.return_value = {
         "recorded": not duplicate, "duplicate": duplicate,
-        "match_id": None if duplicate else match_id,
+        "match_id": match_id,
     }
     return upstream
 
@@ -109,6 +109,7 @@ class TestSummitPairedResultsUseBotPipeline:
         assert resp.get_json()["queue_type"] == queue_type
         service.assert_not_called()
         sent = req.call_args.kwargs["json"]
+        assert req.call_args.kwargs["timeout"] == 30
         assert sent["queue_type"] == queue_type
         assert sent["outcome"] == "decided"
         assert sent["reporter_id"] == "10"

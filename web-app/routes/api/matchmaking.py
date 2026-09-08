@@ -1,5 +1,6 @@
 """Authenticated relay between Sorcery Online and the loopback bot API."""
 
+import logging
 import os
 
 import requests
@@ -10,6 +11,7 @@ from utils.api_auth import require_api_key
 
 
 matchmaking_bp = Blueprint("matchmaking", __name__)
+logger = logging.getLogger(__name__)
 
 
 def matchmaking_api_key(view):
@@ -21,7 +23,7 @@ def matchmaking_api_key(view):
 BOT_UNAVAILABLE = {"membership": "unavailable", "queues": [], "result": None}
 
 
-def relay_to_bot(method, path, payload=None, unavailable_body=None):
+def relay_to_bot(method, path, payload=None, unavailable_body=None, timeout=None):
     """Forward a request to the bot's loopback API.
 
     Returns (body_dict, status_code). Connection failures and bot 5xx
@@ -36,11 +38,19 @@ def relay_to_bot(method, path, payload=None, unavailable_body=None):
             f"{base_url}{path}",
             json=payload,
             headers={"X-API-Key": webapp_config.DRAFT_SORCERY_API_KEY},
-            timeout=float(os.getenv("MATCHMAKING_BOT_API_TIMEOUT", "9")),
+            timeout=(
+                float(os.getenv("MATCHMAKING_BOT_API_TIMEOUT", "9"))
+                if timeout is None else timeout
+            ),
         )
     except requests.RequestException:
+        logger.exception("Bot relay request failed: method=%s path=%s", method, path)
         return unavailable, 503
     if response.status_code >= 500:
+        logger.error(
+            "Bot relay returned %s: method=%s path=%s body=%s",
+            response.status_code, method, path, response.text[:2000],
+        )
         return unavailable, 503
     try:
         body = response.json()

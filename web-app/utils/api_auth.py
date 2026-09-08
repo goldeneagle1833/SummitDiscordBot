@@ -40,4 +40,5 @@ def require_integration_api_key(f):
             return jsonify({"success": False, "error": "Invalid API key"}), 401
         return f(*args, **kwargs)
 
+    decorated._auth_required = True
     return decorated

@@ -161,6 +161,17 @@ class TestApiKeyAuth:
         )
         assert resp.status_code == 400  # past auth, hit validation
 
+    def test_external_match_accepts_dedicated_sorcery_key(self, client, monkeypatch):
+        import webapp_config
+
+        monkeypatch.setattr(webapp_config, "DRAFT_SORCERY_API_KEY", "sorcery-partner-key")
+        resp = client.post(
+            "/api/report-external-match",
+            json={},
+            headers={"X-API-Key": "sorcery-partner-key"},
+        )
+        assert resp.status_code == 400  # past auth, hit validation
+
 
 class TestCurioEditor:
     def test_curio_editor_check(self, app):

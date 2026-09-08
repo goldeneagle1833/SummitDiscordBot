@@ -67,7 +67,7 @@ async def _summit_member(bot, user_id):
 def _prune_results():
     now = time.time()
     for user_id, result in list(pending_web_matches.items()):
-        if result["expires_at"] <= now:
+        if result.get("expires_at", 0) <= now or not result.get("game_url"):
             pending_web_matches.pop(user_id, None)
 
 

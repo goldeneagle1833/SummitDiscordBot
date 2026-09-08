@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, request
 from repositories.pairings import PairingRepository
 from routes.api.matchmaking import relay_to_bot
 from services.external_match import ExternalMatchService
-from utils.auth import require_api_key
+from utils.api_auth import require_integration_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ external_matches_bp = Blueprint("external_matches", __name__)
 
 
 @external_matches_bp.route("/report-external-match", methods=["POST"])
-@require_api_key
+@require_integration_api_key
 def report_external_match():
     """
     API endpoint for external applications to report match results.

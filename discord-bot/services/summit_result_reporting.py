@@ -173,6 +173,70 @@ async def _display_name(bot, user_id):
         return str(user_id)
 
 
+async def _notify_sorcery_online_match_recorded(
+    bot,
+    *,
+    match_id,
+    match_type,
+    winner_id,
+    winner_name,
+    loser_id,
+    loser_name,
+):
+    """Best-effort Discord delivery for a result reported outside Discord.
+
+    Sorcery Online callbacks do not have a live Discord interaction, so the
+    normal confirmation follow-up cannot reach either player. Send both
+    players an explicit Summit Bot DM and fall back to the DM-disabled channel
+    independently if either delivery fails.
+    """
+    labels = {
+        "limited": "Limited",
+        "ranked": "Ranked",
+        "rumble": "Rumble",
+        "points": "Rumble (Omens)",
+        "testing": "Casual",
+    }
+    label = labels.get(match_type, str(match_type).capitalize())
+    messages = (
+        (
+            winner_id,
+            f"✅ **{label} Match Recorded** — You defeated **{loser_name}** on "
+            f"Sorcery Online. **Match ID: #{match_id}**",
+        ),
+        (
+            loser_id,
+            f"✅ **{label} Match Recorded** — **{winner_name}** defeated you on "
+            f"Sorcery Online. **Match ID: #{match_id}**",
+        ),
+    )
+
+    for user_id, message in messages:
+        try:
+            user = await bot.fetch_user(user_id)
+            await user.send(message)
+            logger.info(
+                "Sent Sorcery Online match result DM to %s for match %s",
+                user_id, match_id,
+            )
+            continue
+        except Exception as exc:
+            logger.warning(
+                "Could not DM Sorcery Online match result to %s: %s",
+                user_id, exc,
+            )
+
+        fallback_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
+        if fallback_channel:
+            try:
+                await fallback_channel.send(f"<@{user_id}> {message}")
+            except Exception as exc:
+                logger.error(
+                    "Could not send Sorcery Online match result fallback for %s: %s",
+                    user_id, exc,
+                )
+
+
 async def record_sorcery_online_result(
     bot,
     *,
@@ -334,6 +398,16 @@ async def record_sorcery_online_result(
             async with processed_matches_lock:
                 processed_matches.pop(match_key, None)
             raise RuntimeError("Match result could not be recorded")
+
+        await _notify_sorcery_online_match_recorded(
+            bot,
+            match_id=match_id,
+            match_type=stored_type,
+            winner_id=winner_id,
+            winner_name=winner_global,
+            loser_id=loser_id,
+            loser_name=loser_global,
+        )
 
         _save_callback(
             guild_id, pairing_id, queue_type, outcome,

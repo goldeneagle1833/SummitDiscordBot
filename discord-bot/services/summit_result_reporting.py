@@ -363,9 +363,18 @@ async def record_sorcery_online_result(
         }
         winner_global = names.get(winner_id) or await _display_name(bot, winner_id)
         loser_global = names.get(loser_id) or await _display_name(bot, loser_id)
+        pso_deck_urls = {}
+        if players:
+            for p in players:
+                pid = str(
+                    p.get("player_id") or p.get("discord_id") or ""
+                )
+                url = p.get("deck_url") or p.get("deckUrl") or ""
+                if pid and url:
+                    pso_deck_urls[int(pid)] = url
         decks = {
-            int(pairing["player1_id"]): pairing.get("player1_deck_url"),
-            int(pairing["player2_id"]): pairing.get("player2_deck_url"),
+            int(pairing["player1_id"]): pairing.get("player1_deck_url") or pso_deck_urls.get(int(pairing["player1_id"])),
+            int(pairing["player2_id"]): pairing.get("player2_deck_url") or pso_deck_urls.get(int(pairing["player2_id"])),
         }
         runs = {
             int(pairing["player1_id"]): pairing.get("player1_run_id", 0),

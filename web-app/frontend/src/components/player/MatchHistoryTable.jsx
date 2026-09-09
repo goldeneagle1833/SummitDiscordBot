@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { editMatchComment } from '@/api/games'
+import { editMatchComment, editMatchTime } from '@/api/games'
 
 const ELEMENT_IMG = '/static/images/elements/'
 const ELEMENT_FILE = {
@@ -31,6 +31,9 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
   const [editText, setEditText] = useState('')
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState(null)
+  const [editingTimeId, setEditingTimeId] = useState(null)
+  const [editTimeValue, setEditTimeValue] = useState('')
+  const [editTimeSaving, setEditTimeSaving] = useState(false)
 
   if (!matches?.length) {
     return (
@@ -123,7 +126,49 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                     {isWin ? '+' : ''}{m.elo_change}
                   </td>
                   <td className="py-2 px-3 text-text-muted">{m.first_player || '-'}</td>
-                  <td className="py-2 px-3 text-text-muted">{m.match_time ? `${m.match_time} min` : '-'}</td>
+                  <td className="py-2 px-3 text-text-muted">
+                    {isOwner && editingTimeId === m.match_id ? (
+                      <form
+                        className="flex items-center gap-1"
+                        onSubmit={async (e) => {
+                          e.preventDefault()
+                          const val = parseInt(editTimeValue, 10)
+                          if (isNaN(val) || val < 0 || val > 999) return
+                          setEditTimeSaving(true)
+                          try {
+                            await editMatchTime(m.match_id, m.match_source, val)
+                            onMatchUpdate?.()
+                          } catch { /* ignore */ }
+                          setEditTimeSaving(false)
+                          setEditingTimeId(null)
+                        }}
+                      >
+                        <input
+                          type="number"
+                          min="0"
+                          max="999"
+                          value={editTimeValue}
+                          onChange={(e) => setEditTimeValue(e.target.value)}
+                          className="w-14 text-xs bg-bg-raised border border-border rounded px-1 py-0.5 text-text-primary"
+                          autoFocus
+                          disabled={editTimeSaving}
+                          onKeyDown={(e) => { if (e.key === 'Escape') setEditingTimeId(null) }}
+                        />
+                        <button type="submit" disabled={editTimeSaving} className="text-xs text-accent-green hover:opacity-80">&#10003;</button>
+                        <button type="button" onClick={() => setEditingTimeId(null)} className="text-xs text-text-muted hover:text-text-primary">&times;</button>
+                      </form>
+                    ) : isOwner ? (
+                      <button
+                        onClick={() => { setEditingTimeId(m.match_id); setEditTimeValue(m.match_time || '') }}
+                        className="text-text-muted hover:text-secondary bg-transparent border-none p-0 cursor-pointer text-sm"
+                        title="Click to edit match time"
+                      >
+                        {m.match_time ? `${m.match_time} min` : '+ Add'}
+                      </button>
+                    ) : (
+                      m.match_time ? `${m.match_time} min` : '-'
+                    )}
+                  </td>
                   <td className="py-2 px-3 text-text-muted whitespace-nowrap">{m.date ? new Date(m.date).toLocaleDateString() : '-'}</td>
                   {isOwner && (
                     <td className="py-2 px-3 text-text-muted max-w-[100px]">

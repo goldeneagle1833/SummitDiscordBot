@@ -784,3 +784,104 @@ def edit_match_comment():
             exc_info=True,
         )
         return jsonify({"success": False, "error": f"Failed to update comment: {e}"}), 500
+
+
+@match_reporting_bp.route("/edit-match-time", methods=["POST"])
+def edit_match_time():
+    """Edit the logged-in user's match time (duration in minutes).
+
+    Request Body (JSON):
+        match_id (int): ID of the match
+        match_source (str): 'web' or 'bot'
+        match_time (int): New match time in minutes (0-999)
+    """
+    if "user_id" not in session:
+        return jsonify({"success": False, "error": "Authentication required"}), 401
+
+    data = request.get_json() or {}
+    match_id = data.get("match_id")
+    match_source = data.get("match_source")
+
+    try:
+        match_time = int(data.get("match_time", -1))
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "match_time must be a number"}), 400
+
+    if not match_id or match_source not in ("web", "bot"):
+        return jsonify({"success": False, "error": "match_id and match_source (web/bot) required"}), 400
+
+    if match_time < 0 or match_time > 999:
+        return jsonify({"success": False, "error": "Match time must be between 0 and 999 minutes"}), 400
+
+    current_user_id = str(session["user_id"])
+    auth_provider = session.get("auth_provider", "discord")
+
+    try:
+        db_path = str(MATCH_RECORDS_DB_PATH)
+        if match_source == "web":
+            table = "match_reports_web"
+            id_col = "match_id"
+            user_id_for_query = f"google_{current_user_id}" if auth_provider == "google" else current_user_id
+        else:
+            user_id_for_query = current_user_id
+            if user_id_for_query.startswith("google_"):
+                user_id_for_query = user_id_for_query[7:]
+            try:
+                numeric_match_id = int(match_id)
+            except (ValueError, TypeError):
+                numeric_match_id = 0
+            if numeric_match_id >= 1_000_000_000:
+                table = "match_records_archive"
+                id_col = "rowid"
+                match_id = numeric_match_id - 1_000_000_000
+            else:
+                table = "match_records"
+                id_col = "rowid"
+
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+
+        cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        )
+        if not cur.fetchone():
+            conn.close()
+            return jsonify({"success": False, "error": "Match table not found"}), 404
+
+        try:
+            cur.execute(
+                f"SELECT winner_id, losser_id FROM {table} WHERE {id_col} = ?",
+                (match_id,),
+            )
+        except sqlite3.OperationalError as e:
+            conn.close()
+            return jsonify({"success": False, "error": f"Database error: {e}"}), 500
+
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"success": False, "error": "Match not found"}), 404
+
+        winner_id, loser_id = row
+
+        if str(winner_id) != str(user_id_for_query) and str(loser_id) != str(user_id_for_query):
+            conn.close()
+            return jsonify({"success": False, "error": "Not authorized to edit this match"}), 403
+
+        cur.execute(
+            f"UPDATE {table} SET match_time = ? WHERE {id_col} = ?",
+            (match_time, match_id),
+        )
+        conn.commit()
+        conn.close()
+
+        return jsonify({"success": True, "match_time": match_time})
+
+    except Exception as e:
+        logger.error(
+            f"Error editing match time for match_id={match_id}, source={match_source}, "
+            f"user={current_user_id}: {e}",
+            exc_info=True,
+        )
+        return jsonify({"success": False, "error": f"Failed to update match time: {e}"}), 500

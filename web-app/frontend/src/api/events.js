@@ -10,6 +10,8 @@ export const createEvent = ({ title, ranked_urls, bulk_urls }) =>
   post('/api/events/create', { title, ranked_urls, bulk_urls })
 export const updateEventDecks = (folder, { table, mode, urls }) =>
   post(`/api/events/${folder}/decks`, { table, mode, urls })
+export const importEventFromUrl = ({ title, event_url }) =>
+  post('/api/events/import-from-url', { title, event_url })
 export const refreshEvent = (folder) => post(`/api/events/${folder}/refresh`)
 export const deleteEvent = (folder) => del(`/api/events/${folder}`)
 export const setFeaturedEvent = (folder) => put('/api/events/featured', { folder })

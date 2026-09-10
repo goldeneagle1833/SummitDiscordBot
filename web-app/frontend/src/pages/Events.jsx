@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { getEventsWithAdmin, getEvent, reorderEvents, updateEventMetadata, createEvent, pollEventJob, setFeaturedEvent } from '@/api/events'
+import { getEventsWithAdmin, getEvent, reorderEvents, updateEventMetadata, createEvent, importEventFromUrl, pollEventJob, setFeaturedEvent } from '@/api/events'
 import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -102,7 +102,10 @@ export default function Events() {
   const [editModal, setEditModal] = useState(null)
   const [editSaving, setEditSaving] = useState(false)
   const [createModal, setCreateModal] = useState(false)
+  const [createMode, setCreateMode] = useState('import') // 'import' or 'manual'
   const [createForm, setCreateForm] = useState({ title: '', ranked: Array(8).fill(''), bulk: '' })
+  const [importUrl, setImportUrl] = useState('')
+  const [importTitle, setImportTitle] = useState('')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState(null)
   const [createResult, setCreateResult] = useState(null)
@@ -184,27 +187,42 @@ export default function Events() {
 
   const openCreateModal = () => {
     setCreateForm({ title: '', ranked: Array(8).fill(''), bulk: '' })
+    setImportUrl('')
+    setImportTitle('')
+    setCreateMode('import')
     setCreateError(null)
     setCreateResult(null)
     setCreateModal(true)
   }
 
   const handleCreate = useCallback(async () => {
-    if (!createForm.title.trim()) return
+    if (createMode === 'import') {
+      if (!importUrl.trim()) return
+    } else {
+      if (!createForm.title.trim()) return
+    }
     setCreating(true)
     setCreateError(null)
     setCreateResult(null)
     setCreateProgress('Submitting...')
     try {
-      const bulk_urls = createForm.bulk
-        .split('\n')
-        .map((u) => u.trim())
-        .filter(Boolean)
-      const submitResult = await createEvent({
-        title: createForm.title.trim(),
-        ranked_urls: createForm.ranked,
-        bulk_urls,
-      })
+      let submitResult
+      if (createMode === 'import') {
+        submitResult = await importEventFromUrl({
+          title: importTitle.trim(),
+          event_url: importUrl.trim(),
+        })
+      } else {
+        const bulk_urls = createForm.bulk
+          .split('\n')
+          .map((u) => u.trim())
+          .filter(Boolean)
+        submitResult = await createEvent({
+          title: createForm.title.trim(),
+          ranked_urls: createForm.ranked,
+          bulk_urls,
+        })
+      }
       if (!submitResult.success || !submitResult.job_id) {
         setCreateError(submitResult.error || 'Failed to start event creation')
         return
@@ -229,7 +247,7 @@ export default function Events() {
       setCreating(false)
       setCreateProgress(null)
     }
-  }, [createForm])
+  }, [createForm, createMode, importUrl, importTitle])
 
   const handleSetFeatured = useCallback(async (folder) => {
     try {
@@ -700,42 +718,84 @@ export default function Events() {
           <div className="bg-bg-surface border border-border rounded-lg p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-display text-secondary mb-4">Add New Event</h3>
 
-            <label className="text-xs text-text-muted block mb-1">Event Title</label>
-            <input
-              type="text"
-              className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-4"
-              placeholder="e.g. SCG Con Dallas 2026"
-              value={createForm.title}
-              onChange={(e) => setCreateForm((f) => ({ ...f, title: e.target.value }))}
-            />
-
-            <p className="text-xs text-text-muted mb-2">Curiosa Deck URLs by Placement (all optional)</p>
-            <div className="space-y-2 mb-4">
-              {createForm.ranked.map((url, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="text-xs text-text-muted w-8 text-right shrink-0">{i === 0 ? '1st' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i + 1}th`}</span>
-                  <input
-                    type="text"
-                    className="flex-1 bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
-                    placeholder="https://curiosa.io/decks/..."
-                    value={url}
-                    onChange={(e) => {
-                      const next = [...createForm.ranked]
-                      next[i] = e.target.value
-                      setCreateForm((f) => ({ ...f, ranked: next }))
-                    }}
-                  />
-                </div>
-              ))}
+            {/* Mode tabs */}
+            <div className="flex gap-1 mb-4 bg-bg-raised rounded p-0.5">
+              <button
+                className={`flex-1 text-xs py-1.5 rounded font-semibold transition-colors ${createMode === 'import' ? 'bg-primary text-black' : 'text-text-muted hover:text-text'}`}
+                onClick={() => setCreateMode('import')}
+              >
+                Import from Event URL
+              </button>
+              <button
+                className={`flex-1 text-xs py-1.5 rounded font-semibold transition-colors ${createMode === 'manual' ? 'bg-primary text-black' : 'text-text-muted hover:text-text'}`}
+                onClick={() => setCreateMode('manual')}
+              >
+                Manual URLs
+              </button>
             </div>
 
-            <label className="text-xs text-text-muted block mb-1">Bulk Deck URLs (one per line)</label>
-            <textarea
-              className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-4 min-h-[80px]"
-              placeholder={"https://curiosa.io/decks/...\nhttps://curiosa.io/decks/..."}
-              value={createForm.bulk}
-              onChange={(e) => setCreateForm((f) => ({ ...f, bulk: e.target.value }))}
-            />
+            {createMode === 'import' ? (
+              <>
+                <label className="text-xs text-text-muted block mb-1">sorcerytcg.com Event URL</label>
+                <input
+                  type="text"
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-3"
+                  placeholder="https://sorcerytcg.com/events/..."
+                  value={importUrl}
+                  onChange={(e) => setImportUrl(e.target.value)}
+                />
+                <label className="text-xs text-text-muted block mb-1">Custom Title (optional, auto-detected from event)</label>
+                <input
+                  type="text"
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-4"
+                  placeholder="Leave blank to use event name"
+                  value={importTitle}
+                  onChange={(e) => setImportTitle(e.target.value)}
+                />
+                <p className="text-xs text-text-muted/60 mb-4">
+                  Automatically discovers all player decks registered for this event.
+                </p>
+              </>
+            ) : (
+              <>
+                <label className="text-xs text-text-muted block mb-1">Event Title</label>
+                <input
+                  type="text"
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-4"
+                  placeholder="e.g. SCG Con Dallas 2026"
+                  value={createForm.title}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, title: e.target.value }))}
+                />
+
+                <p className="text-xs text-text-muted mb-2">Curiosa Deck URLs by Placement (all optional)</p>
+                <div className="space-y-2 mb-4">
+                  {createForm.ranked.map((url, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="text-xs text-text-muted w-8 text-right shrink-0">{i === 0 ? '1st' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i + 1}th`}</span>
+                      <input
+                        type="text"
+                        className="flex-1 bg-bg-raised border border-border rounded px-3 py-1.5 text-sm"
+                        placeholder="https://sorcerytcg.com/decks/..."
+                        value={url}
+                        onChange={(e) => {
+                          const next = [...createForm.ranked]
+                          next[i] = e.target.value
+                          setCreateForm((f) => ({ ...f, ranked: next }))
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <label className="text-xs text-text-muted block mb-1">Bulk Deck URLs (one per line)</label>
+                <textarea
+                  className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-4 min-h-[80px]"
+                  placeholder={"https://sorcerytcg.com/decks/...\nhttps://sorcerytcg.com/decks/..."}
+                  value={createForm.bulk}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, bulk: e.target.value }))}
+                />
+              </>
+            )}
 
             {createError && (
               <p className="text-accent-red text-xs mb-3">{createError}</p>
@@ -768,7 +828,7 @@ export default function Events() {
                 <button
                   className="text-xs bg-secondary text-black px-3 py-1.5 rounded font-semibold disabled:opacity-50"
                   onClick={handleCreate}
-                  disabled={creating || !createForm.title.trim()}
+                  disabled={creating || (createMode === 'import' ? !importUrl.trim() : !createForm.title.trim())}
                 >
                   {creating ? (createProgress || 'Creating...') : 'Create Event'}
                 </button>

@@ -413,6 +413,133 @@ def refresh_event(event_folder):
     return jsonify({"success": True, "job_id": job_id}), 202
 
 
+def _run_event_import(job_id, title, event_url):
+    """Background worker for importing an event from a sorcerytcg.com URL."""
+    try:
+        from services.curiosa import CuriosaService
+        curiosa = CuriosaService()
+
+        def on_progress(msg):
+            _write_job(job_id, {"status": "processing", "progress": msg})
+
+        # Step 1: Discover deck IDs from event snapshots
+        discovery = curiosa.fetch_event_deck_ids(event_url, on_progress=on_progress)
+        errors = list(discovery.get("errors", []))
+
+        if not discovery["players"]:
+            _write_job(job_id, {
+                "status": "failed",
+                "result": {
+                    "success": False,
+                    "error": "No decks could be discovered from this event.",
+                    "fetch_errors": errors,
+                },
+            })
+            return
+
+        # Use event name as title if not provided
+        if not title:
+            title = discovery["event_name"] or "Imported Event"
+
+        deck_ids = [p["deck_id"] for p in discovery["players"]]
+        on_progress(f"Found {len(deck_ids)} decks, fetching deck data...")
+
+        # Step 2: Fetch full deck data using discovered IDs
+        total = len(deck_ids)
+        completed = [0]
+        original_rate_limit = curiosa._rate_limit
+        def _tracking_rate_limit():
+            original_rate_limit()
+            completed[0] += 1
+            _write_job(job_id, {
+                "status": "processing",
+                "progress": f"Fetching deck {completed[0]}/{total}...",
+            })
+        curiosa._rate_limit = _tracking_rate_limit
+
+        decks, failed_ids = curiosa.fetch_decks_by_ids(deck_ids)
+        if failed_ids:
+            errors.extend([f"Failed to fetch deck: {did}" for did in failed_ids])
+
+        if not decks:
+            _write_job(job_id, {
+                "status": "failed",
+                "result": {
+                    "success": False,
+                    "error": "No decks could be fetched. They may be private.",
+                    "fetch_errors": errors,
+                },
+            })
+            return
+
+        # Step 3: Create the event (all decks go to top8 file initially)
+        on_progress("Creating event...")
+        repo = EventRepository()
+        result = repo.create_event(title, decks, None)
+
+        if result.get("success"):
+            result["top8_added"] = len(decks)
+            result["bulk_added"] = 0
+            result["event_name"] = discovery["event_name"]
+            if discovery["event_date"]:
+                # Auto-set the event date from sorcerytcg.com
+                repo.update_event_metadata(
+                    title, event_date=discovery["event_date"]
+                )
+                result["event_date"] = discovery["event_date"]
+            if errors:
+                result["warnings"] = errors
+
+        _write_job(job_id, {
+            "status": "completed" if result.get("success") else "failed",
+            "result": result,
+        })
+
+    except Exception as e:
+        logger.exception("Background event import failed: %s", e)
+        _write_job(job_id, {
+            "status": "failed",
+            "result": {"success": False, "error": f"Internal error: {e}"},
+        })
+
+
+@events_bp.route("/events/import-from-url", methods=["POST"])
+@require_admin
+def import_event_from_url():
+    """Import an event by discovering decks from a sorcerytcg.com event URL.
+
+    Returns a job_id immediately; the client polls /events/jobs/<job_id>.
+    """
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"success": False, "error": "Request body required"}), 400
+
+    event_url = data.get("event_url", "").strip()
+    if not event_url:
+        return jsonify({"success": False, "error": "event_url is required"}), 400
+
+    from services.curiosa import CuriosaService
+    if not CuriosaService.get_event_id_from_url(event_url):
+        return jsonify({
+            "success": False,
+            "error": "Invalid URL. Must be a sorcerytcg.com event URL.",
+        }), 400
+
+    title = data.get("title", "").strip()
+
+    job_id = str(uuid.uuid4())
+    _write_job(job_id, {"status": "processing", "progress": "Starting import..."})
+
+    thread = threading.Thread(
+        target=_run_event_import,
+        args=(job_id, title, event_url),
+        daemon=True,
+    )
+    thread.start()
+
+    return jsonify({"success": True, "job_id": job_id}), 202
+
+
 @events_bp.route("/events/featured", methods=["PUT"])
 @require_admin
 def set_featured_event():

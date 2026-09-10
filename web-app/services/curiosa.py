@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import time
 import urllib.parse
 import requests
@@ -13,6 +14,11 @@ CURIOSA_REQUEST_DELAY = 20
 
 # sorcerytcg.com tRPC API (formerly curiosa.io)
 _TRPC_BASE = "https://sorcerytcg.com/api/trpc/deck.get"
+_TRPC_BASE_ROOT = "https://sorcerytcg.com/api/trpc"
+
+_EVENT_URL_RE = re.compile(
+    r"https?://(?:play\.)?sorcerytcg\.com/events/([A-Za-z0-9_-]+)", re.IGNORECASE
+)
 
 
 def _convert_trpc_to_legacy(trpc_response: dict) -> dict:
@@ -218,3 +224,168 @@ class CuriosaService:
                 failed.append(deck_id)
 
         return decks, failed
+
+    # ── Event snapshot import ─────────────────────────────────────────────
+
+    @staticmethod
+    def get_event_id_from_url(url: str) -> str | None:
+        """Extract event ID from a sorcerytcg.com event URL."""
+        match = _EVENT_URL_RE.match(url.strip())
+        return match.group(1) if match else None
+
+    def fetch_event_deck_ids(
+        self, event_url: str, on_progress=None
+    ) -> dict:
+        """Discover all player deck IDs from a sorcerytcg.com event URL.
+
+        Fetches the event player list, then batch-fetches playerSnapshot
+        for each player to extract their registered sourceDeck ID.
+
+        Returns:
+            {
+                "event_name": str,
+                "event_date": str | None,
+                "players": [{"name": str, "deck_id": str}, ...],
+                "errors": [str, ...],
+            }
+        """
+        event_id = self.get_event_id_from_url(event_url)
+        if not event_id:
+            raise ValueError(
+                "URL must be in the format https://sorcerytcg.com/events/{id}"
+            )
+
+        if on_progress:
+            on_progress("Fetching event data...")
+
+        # Step 1: Fetch event to get player list
+        event = self._fetch_event_trpc(event_id)
+        event_name = event.get("title", "")
+        event_date = (event.get("startsAt") or "")[:10] or None
+        players_data = event.get("players", [])
+
+        # Filter to players that are not dropped (or have seats = played games)
+        active_players = [
+            p for p in players_data
+            if p.get("status") != "Dropped" or p.get("seats")
+        ]
+
+        if not active_players:
+            return {
+                "event_name": event_name,
+                "event_date": event_date,
+                "players": [],
+                "errors": ["No active players found in this event"],
+            }
+
+        if on_progress:
+            on_progress(f"Found {len(active_players)} players, fetching deck snapshots...")
+
+        # Step 2: Batch-fetch playerSnapshot for all players
+        player_deck_ids = []
+        errors = []
+        BATCH_SIZE = 10
+
+        for i in range(0, len(active_players), BATCH_SIZE):
+            batch = active_players[i:i + BATCH_SIZE]
+            if on_progress:
+                on_progress(
+                    f"Fetching snapshots {i + 1}-{min(i + len(batch), len(active_players))}"
+                    f" of {len(active_players)}..."
+                )
+
+            batch_results = self._fetch_player_snapshots_batch(event_id, batch)
+            for player, result in zip(batch, batch_results):
+                user = player.get("user", {})
+                name = user.get("displayname") or user.get("username") or "Unknown"
+                if result is None:
+                    errors.append(f"No deck snapshot for {name}")
+                    continue
+                source_deck = result.get("sourceDeck")
+                if not source_deck or not source_deck.get("id"):
+                    errors.append(f"No source deck found for {name}")
+                    continue
+                player_deck_ids.append({
+                    "name": name,
+                    "deck_id": source_deck["id"],
+                })
+
+        return {
+            "event_name": event_name,
+            "event_date": event_date,
+            "players": player_deck_ids,
+            "errors": errors,
+        }
+
+    def _fetch_event_trpc(self, event_id: str) -> dict:
+        """Fetch event data from sorcerytcg.com tRPC endpoint."""
+        params = {
+            "batch": "1",
+            "input": json.dumps({"0": {"json": {"id": event_id}}}),
+        }
+        resp = requests.get(
+            f"{_TRPC_BASE_ROOT}/event.get", params=params, timeout=15
+        )
+        if resp.status_code != 200:
+            raise ValueError(
+                f"sorcerytcg.com returned {resp.status_code} for event {event_id}"
+            )
+        try:
+            return resp.json()[0]["result"]["data"]["json"]["event"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError(f"Unexpected event response format: {exc}") from exc
+
+    def _fetch_player_snapshots_batch(
+        self, event_id: str, players: list[dict]
+    ) -> list[dict | None]:
+        """Batch-fetch event.playerSnapshot for a list of players.
+
+        Returns a list of snapshot dicts (or None for failures), one per player.
+        """
+        if not players:
+            return []
+
+        # Build batched tRPC request
+        input_data = {}
+        for j, player in enumerate(players):
+            input_data[str(j)] = {
+                "json": {
+                    "eventId": event_id,
+                    "playerId": player["id"],
+                }
+            }
+
+        path = ",".join(["event.playerSnapshot"] * len(players))
+        try:
+            resp = requests.get(
+                f"{_TRPC_BASE_ROOT}/{path}",
+                params={"batch": "1", "input": json.dumps(input_data)},
+                timeout=30,
+            )
+        except requests.exceptions.RequestException as exc:
+            logger.warning("Batch snapshot fetch failed: %s", exc)
+            return [None] * len(players)
+
+        if resp.status_code != 200:
+            logger.warning("Batch snapshot fetch returned %s", resp.status_code)
+            return [None] * len(players)
+
+        results = []
+        try:
+            body = resp.json()
+            for j in range(len(players)):
+                if j < len(body):
+                    snapshot = (
+                        body[j]
+                        .get("result", {})
+                        .get("data", {})
+                        .get("json", {})
+                    )
+                    results.append(snapshot if snapshot else None)
+                else:
+                    results.append(None)
+        except (TypeError, AttributeError) as exc:
+            logger.warning("Error parsing batch snapshot response: %s", exc)
+            return [None] * len(players)
+
+        return results

@@ -232,7 +232,49 @@ function PlayerHalf({
   );
 }
 
-function DiceRollerStrip({ onReset, wakeLock, onToggleWakeLock }) {
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function TimerHalf({ seconds, isActive, onPassTurn, flipped }) {
+  return (
+    <div
+      className="flex-1 flex flex-col relative select-none"
+      style={{ transform: flipped ? "rotate(180deg)" : undefined }}>
+      <div className="flex-1 flex flex-col items-center justify-center">
+        {/* Pass Turn button at top of each player's half */}
+        <button
+          onClick={onPassTurn}
+          disabled={!isActive}
+          className={`px-8 py-3 rounded-soft font-semibold text-sm transition-all touch-manipulation ${
+            isActive
+              ? "bg-secondary text-black hover:opacity-90 active:scale-95"
+              : "bg-bg-surface/50 text-text-muted/40 cursor-not-allowed"
+          }`}>
+          Pass Turn
+        </button>
+
+        {/* Timer display */}
+        <span
+          className={`font-display leading-none pointer-events-none transition-colors ${
+            isActive ? "text-secondary" : "text-text-muted/50"
+          }`}
+          style={{ fontSize: "clamp(6rem, 28vw, 14rem)" }}>
+          {formatTime(seconds)}
+        </span>
+
+        {/* Active indicator */}
+        <span className={`text-sm font-semibold ${isActive ? "text-secondary" : "text-text-muted/30"}`}>
+          {isActive ? "Your turn" : "Waiting"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function DiceRollerStrip({ onReset, wakeLock, onToggleWakeLock, timerMode, onToggleTimer }) {
   const [rollResult, setRollResult] = useState(null);
   const [rolling, setRolling] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
@@ -364,6 +406,19 @@ function DiceRollerStrip({ onReset, wakeLock, onToggleWakeLock }) {
         </svg>
       </button>
 
+      {/* Timer mode toggle */}
+      <button
+        onClick={onToggleTimer}
+        className={`p-2 active:scale-110 transition-all touch-manipulation ${timerMode ? "text-secondary" : "text-text-muted hover:text-white"}`}
+        title={timerMode ? "Switch to life counter" : "Switch to turn timer"}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="13" r="8" />
+          <path d="M12 9v4l2 2" />
+          <path d="M9 1h6" />
+          <path d="M12 1v2" />
+        </svg>
+      </button>
+
       {/* Roll result overlay */}
       {rollResult && (
         <div
@@ -393,6 +448,13 @@ export default function LifeCounter() {
   const [showReport, setShowReport] = useState(false);
   const [wakeLock, setWakeLock] = useState(null);
   const wakeLockRef = useRef(null);
+
+  // Timer mode state
+  const [timerMode, setTimerMode] = useState(false);
+  const [activePlayer, setActivePlayer] = useState(null); // 1 or 2 or null
+  const [p1Time, setP1Time] = useState(0);
+  const [p2Time, setP2Time] = useState(0);
+  const timerRef = useRef(null);
 
   const toggleWakeLock = async () => {
     if (wakeLockRef.current) {
@@ -441,11 +503,38 @@ export default function LifeCounter() {
     };
   }, []);
 
+  // Timer tick
+  useEffect(() => {
+    if (activePlayer) {
+      timerRef.current = setInterval(() => {
+        if (activePlayer === 1) setP1Time((t) => t + 1);
+        else setP2Time((t) => t + 1);
+      }, 1000);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [activePlayer]);
+
+  const toggleTimerMode = () => {
+    setTimerMode((v) => !v);
+    setActivePlayer(null);
+    setP1Time(0);
+    setP2Time(0);
+  };
+
+  const passTurn = (fromPlayer) => {
+    if (fromPlayer === 1) setP1Time(0);
+    else setP2Time(0);
+    setActivePlayer(fromPlayer === 1 ? 2 : 1);
+  };
+
   const reset = () => {
     setP1Life(STARTING_LIFE);
     setP2Life(STARTING_LIFE);
     setP1Thresholds(defaultThresholds());
     setP2Thresholds(defaultThresholds());
+    setActivePlayer(null);
+    setP1Time(0);
+    setP2Time(0);
   };
 
   const someoneDead = p1Life <= 0 || p2Life <= 0;
@@ -458,34 +547,56 @@ export default function LifeCounter() {
         className="fixed inset-x-0 top-16 bottom-0 z-40 flex flex-col bg-bg-dark"
         style={{ touchAction: "manipulation" }}>
         {/* Player 2 (top, rotated 180) */}
-        <PlayerHalf
-          life={p2Life}
-          onLifeChange={setP2Life}
-          flipped={true}
-          playerNum={2}
-          isDead={p2Life <= 0}
-        />
+        {timerMode ? (
+          <TimerHalf
+            seconds={p2Time}
+            isActive={activePlayer === 2}
+            onPassTurn={() => passTurn(2)}
+            flipped={true}
+          />
+        ) : (
+          <PlayerHalf
+            life={p2Life}
+            onLifeChange={setP2Life}
+            flipped={true}
+            playerNum={2}
+            isDead={p2Life <= 0}
+          />
+        )}
 
         {/* Center: P2 thresholds, dice strip, P1 thresholds */}
+        {!timerMode && (
         <div className="relative z-20" style={{ transform: "rotate(180deg)" }}>
           <ThresholdRow thresholds={p2Thresholds} onChange={setP2Thresholds} />
         </div>
-        <DiceRollerStrip onReset={reset} wakeLock={wakeLock} onToggleWakeLock={toggleWakeLock} />
+        )}
+        <DiceRollerStrip onReset={reset} wakeLock={wakeLock} onToggleWakeLock={toggleWakeLock} timerMode={timerMode} onToggleTimer={toggleTimerMode} />
+        {!timerMode && (
         <div className="relative z-20">
           <ThresholdRow thresholds={p1Thresholds} onChange={setP1Thresholds} />
         </div>
+        )}
 
         {/* Player 1 (bottom, normal) */}
-        <PlayerHalf
-          life={p1Life}
-          onLifeChange={setP1Life}
-          flipped={false}
-          playerNum={1}
-          isDead={p1Life <= 0}
-        />
+        {timerMode ? (
+          <TimerHalf
+            seconds={p1Time}
+            isActive={activePlayer === 1}
+            onPassTurn={() => passTurn(1)}
+            flipped={false}
+          />
+        ) : (
+          <PlayerHalf
+            life={p1Life}
+            onLifeChange={setP1Life}
+            flipped={false}
+            playerNum={1}
+            isDead={p1Life <= 0}
+          />
+        )}
 
         {/* Report button — slides in when someone hits 0 */}
-        {someoneDead && (
+        {!timerMode && someoneDead && (
           <div className="absolute bottom-4 left-0 right-0 flex justify-center z-50 animate-fade-in">
             {canReport ? (
               <button

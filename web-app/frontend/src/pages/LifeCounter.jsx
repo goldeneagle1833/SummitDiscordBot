@@ -21,29 +21,10 @@ const DICE = [
     path: "M12 2L3.27 6.5v11L12 22l8.73-4.5v-11L12 2z",
   },
   {
-    sides: 12,
-    label: "d12",
-    // Pentagon
-    path: "M12 2L2.24 9.5 5.97 21h12.06l3.73-11.5L12 2z",
-  },
-  {
-    sides: 8,
-    label: "d8",
-    // Diamond
-    path: "M12 2L2 12l10 10 10-10L12 2z",
-  },
-  {
     sides: 6,
     label: "d6",
     // Square
     path: "M4 4h16v16H4z",
-  },
-  {
-    sides: 4,
-    label: "d4",
-    // Triangle
-    path: "M12 3L2 21h20L12 3z",
-    textY: 16,
   },
 ];
 
@@ -238,22 +219,23 @@ function formatTime(seconds) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function TimerHalf({ seconds, isActive, onPassTurn, flipped }) {
+function TimerHalf({ seconds, isActive, canStart, onPassTurn, flipped }) {
+  const enabled = isActive || canStart;
   return (
     <div
       className="flex-1 flex flex-col relative select-none"
       style={{ transform: flipped ? "rotate(180deg)" : undefined }}>
       <div className="flex-1 flex flex-col items-center justify-center">
-        {/* Pass Turn button at top of each player's half */}
+        {/* Pass Turn / Start button */}
         <button
           onClick={onPassTurn}
-          disabled={!isActive}
+          disabled={!enabled}
           className={`px-8 py-3 rounded-soft font-semibold text-sm transition-all touch-manipulation ${
-            isActive
+            enabled
               ? "bg-secondary text-black hover:opacity-90 active:scale-95"
               : "bg-bg-surface/50 text-text-muted/40 cursor-not-allowed"
           }`}>
-          Pass Turn
+          {canStart ? "Start" : "Pass Turn"}
         </button>
 
         {/* Timer display */}
@@ -267,7 +249,7 @@ function TimerHalf({ seconds, isActive, onPassTurn, flipped }) {
 
         {/* Active indicator */}
         <span className={`text-sm font-semibold ${isActive ? "text-secondary" : "text-text-muted/30"}`}>
-          {isActive ? "Your turn" : "Waiting"}
+          {isActive ? "Your turn" : canStart ? "Tap Start" : "Waiting"}
         </span>
       </div>
     </div>
@@ -551,6 +533,7 @@ export default function LifeCounter() {
           <TimerHalf
             seconds={p2Time}
             isActive={activePlayer === 2}
+            canStart={activePlayer === null}
             onPassTurn={() => passTurn(2)}
             flipped={true}
           />
@@ -582,6 +565,7 @@ export default function LifeCounter() {
           <TimerHalf
             seconds={p1Time}
             isActive={activePlayer === 1}
+            canStart={activePlayer === null}
             onPassTurn={() => passTurn(1)}
             flipped={false}
           />

@@ -352,9 +352,18 @@ async def record_sorcery_online_result(
                     "duplicate": True,
                     "match_id": existing_match_id,
                 }
-            raise RuntimeError(
-                "Pairing is closed but has no successfully recorded Sorcery Online match"
+            # Pairing was closed via Discord (not via a PSO callback), so
+            # there is no callback audit row.  Return a duplicate-style
+            # response so PSO stops retrying instead of looping on 500/503.
+            logger.info(
+                "SO pairing %s already closed via Discord — returning duplicate to stop retries",
+                pairing_id,
             )
+            return {
+                "recorded": False,
+                "duplicate": True,
+                "match_id": None,
+            }
 
         card = load_match_card_for_pairing(pairing_id, stored_type) or {}
         names = {

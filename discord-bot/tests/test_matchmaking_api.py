@@ -298,21 +298,21 @@ async def test_sorcery_online_result_is_idempotent_by_pairing(mock_bot):
 
 
 @pytest.mark.asyncio
-async def test_closed_pairing_without_recorded_callback_is_not_silently_accepted(mock_bot):
+async def test_closed_pairing_without_recorded_callback_returns_duplicate(mock_bot):
     pairing_id = save_pairing(1, 10, 20, "deck-a", "deck-b", "ranked")
     from repositories.elo_repo import mark_pairing_reported
     mark_pairing_reported(1, 10, 20, pairing_id=pairing_id)
 
-    with pytest.raises(RuntimeError, match="no successfully recorded"):
-        await record_sorcery_online_result(
-            mock_bot,
-            guild_id=1,
-            pairing_id=pairing_id,
-            queue_type="ranked",
-            reporter_id=10,
-            winner_id=10,
-            loser_id=20,
-        )
+    result = await record_sorcery_online_result(
+        mock_bot,
+        guild_id=1,
+        pairing_id=pairing_id,
+        queue_type="ranked",
+        reporter_id=10,
+        winner_id=10,
+        loser_id=20,
+    )
+    assert result == {"recorded": False, "duplicate": True, "match_id": None}
 
 
 @pytest.mark.asyncio

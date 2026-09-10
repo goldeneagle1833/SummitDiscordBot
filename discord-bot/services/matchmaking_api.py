@@ -250,12 +250,27 @@ async def start_matchmaking_api(bot):
                 **fields,
             )
         except (KeyError, TypeError, ValueError) as exc:
-            raise web.HTTPBadRequest(text=str(exc) or "Invalid result")
+            return web.json_response(
+                {"error": str(exc) or "Invalid result", "code": "VALIDATION_ERROR"},
+                status=400,
+            )
         except LookupError as exc:
-            raise web.HTTPNotFound(text=str(exc))
+            return web.json_response(
+                {"error": str(exc), "code": "PAIRING_NOT_FOUND"},
+                status=404,
+            )
+        except RuntimeError as exc:
+            logger.error("Could not record Sorcery Online result: %s", exc)
+            return web.json_response(
+                {"error": str(exc), "code": "RECORDING_FAILED"},
+                status=409,
+            )
         except Exception as exc:
             logger.error("Could not record Sorcery Online result: %s", exc, exc_info=True)
-            raise web.HTTPInternalServerError(text="Could not record match result")
+            return web.json_response(
+                {"error": "Could not record match result", "code": "INTERNAL_ERROR"},
+                status=500,
+            )
         return web.json_response(result)
 
     async def pso_match_notify(request):

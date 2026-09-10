@@ -68,6 +68,7 @@ import UniqueUsers from '@/pages/admin/UniqueUsers'
 import SessionAnalytics from '@/pages/admin/SessionAnalytics'
 import ExternalMatchesAdmin from '@/pages/admin/ExternalMatches'
 import OmensMatchesAdmin from '@/pages/admin/OmensMatches'
+import ChartDetail from '@/pages/admin/ChartDetail'
 
 // Error pages
 import ErrorPage from '@/pages/ErrorPage'
@@ -208,6 +209,7 @@ const router = createBrowserRouter([
       { path: '/admin/session-analytics', element: <AdminGuard><SessionAnalytics /></AdminGuard> },
       { path: '/admin/external-matches', element: <AdminGuard><ExternalMatchesAdmin /></AdminGuard> },
       { path: '/admin/omens-matches', element: <AdminGuard><OmensMatchesAdmin /></AdminGuard> },
+      { path: '/admin/chart/:chartType', element: <AdminGuard><ChartDetail /></AdminGuard> },
       // Error & 404
       { path: '/error', element: <ErrorPage /> },
       { path: '*', element: <NotFound /> },

@@ -732,6 +732,103 @@ def dashboard_stats():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@admin_bp.route("/admin/chart-stats-hourly", methods=["GET"])
+@require_admin
+def chart_stats_hourly():
+    """Get match stats at hourly granularity for short time windows."""
+    try:
+        hours = request.args.get("hours", 24, type=int)
+        hours = min(hours, 168)  # Cap at 7 days
+
+        conn = sqlite3.connect(str(MATCH_RECORDS_DB_PATH))
+        cur = conn.cursor()
+
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        existing_tables = {row[0] for row in cur.fetchall()}
+        has_archive = "match_records_archive" in existing_tables
+        has_web = "match_reports_web" in existing_tables
+
+        online_tables = ["match_records"]
+        if has_archive:
+            online_tables.append("match_records_archive")
+
+        cutoff = (datetime.utcnow() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+
+        # --- Games per hour (online) ---
+        online_union = " UNION ALL ".join(
+            f"SELECT strftime('%Y-%m-%d %H:00', timestamp) as bucket, COUNT(*) as games "
+            f"FROM {t} WHERE timestamp >= '{cutoff}' GROUP BY bucket"
+            for t in online_tables
+        )
+        cur.execute(f"SELECT bucket, SUM(games) FROM ({online_union}) GROUP BY bucket ORDER BY bucket")
+        bot_hourly = {row[0]: row[1] for row in cur.fetchall()}
+
+        # --- Games per hour (web/paper) ---
+        web_hourly = {}
+        if has_web:
+            cur.execute(
+                "SELECT strftime('%Y-%m-%d %H:00', timestamp) as bucket, COUNT(*) as games "
+                "FROM match_reports_web WHERE timestamp >= ? GROUP BY bucket ORDER BY bucket",
+                (cutoff,),
+            )
+            web_hourly = {row[0]: row[1] for row in cur.fetchall()}
+
+        # --- Unique players per hour ---
+        player_parts = []
+        for t in online_tables:
+            player_parts.append(
+                f"SELECT strftime('%Y-%m-%d %H:00', timestamp) as bucket, winner_id as pid "
+                f"FROM {t} WHERE timestamp >= '{cutoff}'"
+            )
+            player_parts.append(
+                f"SELECT strftime('%Y-%m-%d %H:00', timestamp) as bucket, losser_id as pid "
+                f"FROM {t} WHERE timestamp >= '{cutoff}'"
+            )
+        if has_web:
+            player_parts.append(
+                f"SELECT strftime('%Y-%m-%d %H:00', timestamp) as bucket, winner_id as pid "
+                f"FROM match_reports_web WHERE timestamp >= '{cutoff}'"
+            )
+            player_parts.append(
+                f"SELECT strftime('%Y-%m-%d %H:00', timestamp) as bucket, losser_id as pid "
+                f"FROM match_reports_web WHERE timestamp >= '{cutoff}'"
+            )
+        player_union = " UNION ".join(player_parts)
+        cur.execute(f"SELECT bucket, COUNT(DISTINCT pid) FROM ({player_union}) GROUP BY bucket ORDER BY bucket")
+        players_hourly = {row[0]: row[1] for row in cur.fetchall()}
+
+        conn.close()
+
+        # Build merged time series
+        all_buckets = sorted(set(list(bot_hourly.keys()) + list(web_hourly.keys()) + list(players_hourly.keys())))
+
+        games_over_time = []
+        players_over_time = []
+        for bucket in all_buckets:
+            bot_g = bot_hourly.get(bucket, 0)
+            web_g = web_hourly.get(bucket, 0)
+            games_over_time.append({
+                "bucket": bucket,
+                "bot": bot_g,
+                "web": web_g,
+                "total": bot_g + web_g,
+            })
+            players_over_time.append({
+                "bucket": bucket,
+                "combined": players_hourly.get(bucket, 0),
+            })
+
+        return jsonify({
+            "success": True,
+            "games_over_time": games_over_time,
+            "players_over_time": players_over_time,
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get hourly chart stats: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @admin_bp.route("/admin/omens-matches", methods=["GET"])
 @require_admin
 def omens_matches():

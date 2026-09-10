@@ -172,12 +172,12 @@ function DominancePanel({ dom }) {
   )
 }
 
-function ChartCard({ title, children }) {
+function ChartCard({ title, to, children }) {
   return (
-    <div className="bg-bg-raised border border-border rounded-lg p-4">
+    <Link to={to} className="bg-bg-raised border border-border rounded-lg p-4 hover:border-secondary/50 transition-colors cursor-pointer block">
       <h3 className="text-sm font-semibold mb-3">{title}</h3>
       {children}
-    </div>
+    </Link>
   )
 }
 
@@ -297,7 +297,7 @@ export default function DashboardSection() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <ChartCard title="Games Over Time">
+        <ChartCard title="Games Over Time" to="/admin/chart/games-over-time">
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={gamesData}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_STYLE.grid.stroke} />
@@ -311,7 +311,7 @@ export default function DashboardSection() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Unique Players Over Time">
+        <ChartCard title="Unique Players Over Time" to="/admin/chart/unique-players">
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={playersData}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_STYLE.grid.stroke} />
@@ -325,7 +325,7 @@ export default function DashboardSection() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <ChartCard title="New Player Acquisition">
+        <ChartCard title="New Player Acquisition" to="/admin/chart/new-players">
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={newPlayersData}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_STYLE.grid.stroke} />
@@ -337,7 +337,7 @@ export default function DashboardSection() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Avg Games per Player per Week">
+        <ChartCard title="Avg Games per Player per Week" to="/admin/chart/avg-games-per-player">
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={avgGppData}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_STYLE.grid.stroke} />

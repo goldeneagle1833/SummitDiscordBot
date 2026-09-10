@@ -226,6 +226,20 @@ function TimerHalf({ seconds, isActive, canStart, onPassTurn, flipped }) {
       className="flex-1 flex flex-col relative select-none"
       style={{ transform: flipped ? "rotate(180deg)" : undefined }}>
       <div className="flex-1 flex flex-col items-center justify-center">
+        {/* Timer display */}
+        <span
+          className={`leading-none pointer-events-none transition-colors ${
+            isActive ? "text-secondary" : "text-text-muted/50"
+          }`}
+          style={{ fontSize: "clamp(6rem, 28vw, 14rem)", fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}>
+          {formatTime(seconds)}
+        </span>
+
+        {/* Active indicator */}
+        <span className={`text-sm font-semibold mb-2 ${isActive ? "text-secondary" : "text-text-muted/30"}`}>
+          {isActive ? "Your turn" : canStart ? "Tap Start" : "Waiting"}
+        </span>
+
         {/* Pass Turn / Start button */}
         <button
           onClick={onPassTurn}
@@ -237,20 +251,6 @@ function TimerHalf({ seconds, isActive, canStart, onPassTurn, flipped }) {
           }`}>
           {canStart ? "Start" : "Pass Turn"}
         </button>
-
-        {/* Timer display */}
-        <span
-          className={`font-display leading-none pointer-events-none transition-colors ${
-            isActive ? "text-secondary" : "text-text-muted/50"
-          }`}
-          style={{ fontSize: "clamp(6rem, 28vw, 14rem)" }}>
-          {formatTime(seconds)}
-        </span>
-
-        {/* Active indicator */}
-        <span className={`text-sm font-semibold ${isActive ? "text-secondary" : "text-text-muted/30"}`}>
-          {isActive ? "Your turn" : canStart ? "Tap Start" : "Waiting"}
-        </span>
       </div>
     </div>
   );

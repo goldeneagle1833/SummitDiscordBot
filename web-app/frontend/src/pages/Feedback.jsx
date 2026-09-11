@@ -56,7 +56,7 @@ export default function Feedback() {
           </p>
           <button
             onClick={() => { setSubmitted(false); setTitle(''); setDescription(''); setType('general') }}
-            className="mt-4 px-4 py-2 bg-secondary text-white rounded hover:bg-secondary/80 transition-colors text-sm"
+            className="mt-4 px-4 py-2 bg-secondary text-black rounded hover:bg-secondary/80 transition-colors text-sm"
           >
             Submit Another
           </button>
@@ -142,7 +142,7 @@ export default function Feedback() {
         <button
           type="submit"
           disabled={submitting || !title.trim() || !description.trim()}
-          className="w-full py-2.5 bg-secondary text-white rounded font-medium hover:bg-secondary/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-full py-2.5 bg-secondary text-black rounded font-medium hover:bg-secondary/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {submitting ? 'Submitting...' : 'Submit Feedback'}
         </button>

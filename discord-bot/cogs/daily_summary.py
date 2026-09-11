@@ -318,13 +318,32 @@ class DailySummaryCog(commands.Cog):
             )
             stats["total_matches"] = cur.fetchone()[0]
 
-            # 1b. Casual, limited, rumble match counts
-            for match_type, key in [("testing", "casual_matches"), ("limited", "limited_matches"), ("rumble", "rumble_matches")]:
+            # 1b. Casual match count — count pairings (not just reported matches)
+            try:
                 cur.execute(
-                    "SELECT COUNT(*) FROM match_records WHERE timestamp LIKE ? AND match_type = ?",
-                    (date_prefix, match_type),
+                    "SELECT COUNT(*) FROM active_pairings WHERE created_at LIKE ? AND match_type = 'testing'",
+                    (date_prefix,),
                 )
-                stats[key] = cur.fetchone()[0]
+                stats["casual_matches"] = cur.fetchone()[0]
+            except sqlite3.OperationalError:
+                stats["casual_matches"] = 0
+
+            # 1c. Limited match count — stored in limited_match_records table
+            try:
+                cur.execute(
+                    "SELECT COUNT(*) FROM limited_match_records WHERE timestamp LIKE ?",
+                    (date_prefix,),
+                )
+                stats["limited_matches"] = cur.fetchone()[0]
+            except sqlite3.OperationalError:
+                stats["limited_matches"] = 0
+
+            # 1d. Rumble match count
+            cur.execute(
+                "SELECT COUNT(*) FROM match_records WHERE timestamp LIKE ? AND match_type = 'rumble'",
+                (date_prefix,),
+            )
+            stats["rumble_matches"] = cur.fetchone()[0]
 
             if stats["total_matches"] == 0 and stats["casual_matches"] == 0 and stats["limited_matches"] == 0 and stats["rumble_matches"] == 0:
                 return stats

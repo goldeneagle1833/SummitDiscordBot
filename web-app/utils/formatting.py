@@ -2,6 +2,7 @@
 
 import re
 import hashlib
+import unicodedata
 from datetime import datetime
 
 from webapp_config import EVENT_NAME_MAPPINGS
@@ -14,6 +15,17 @@ MONTH_NAMES = {
     "oct": 10, "october": 10, "nov": 11, "november": 11,
     "dec": 12, "december": 12,
 }
+
+
+def normalize_card_name(name: str) -> str:
+    """Normalize a card name to an ASCII slug for image/metadata lookups.
+
+    Decomposes Unicode diacritics (ï → i, à → a) so that cards like
+    "Courtesan Thaïs" and "Màzuj Ifrit" match their ASCII-slug filenames.
+    """
+    decomposed = unicodedata.normalize("NFKD", name)
+    ascii_form = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9_]", "", ascii_form.lower().replace(" ", "_"))
 
 
 def format_event_name(folder_name: str) -> str:

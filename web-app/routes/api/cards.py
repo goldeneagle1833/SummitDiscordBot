@@ -12,6 +12,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify, current_app, request
 
 from repositories.card_catalog import CardCatalogRepository
+from utils.formatting import normalize_card_name
 from webapp_config import MATCH_RECORDS_DB_PATH, CARD_IMAGES_DIR, ELO_DB_PATH, SEASON_FILTERS
 from utils.auth import is_admin
 
@@ -53,9 +54,7 @@ def _build_card_image_lookup():
 
 def _find_card_image(card_name, lookup):
     """Find matching image filename for a card name."""
-    normalized = card_name.lower().replace(" ", "_").replace("'", "").replace(",", "")
-    normalized = re.sub(r"[^a-z0-9_]", "", normalized)
-    return lookup.get(normalized)
+    return lookup.get(normalize_card_name(card_name))
 
 
 @cards_bp.route("/cards")

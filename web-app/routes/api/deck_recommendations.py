@@ -20,6 +20,7 @@ from repositories.deck_rec_repo import DeckRecRepository, _get_card_details
 from services.curiosa import CuriosaService
 from services.deck_similarity import SIMILARITY_THRESHOLD, aggregate_archetype, average_similarity, build_clusters, jaccard
 from utils.auth import is_admin, require_admin
+from utils.formatting import normalize_card_name
 from repositories.card_catalog import CardCatalogRepository
 from webapp_config import CARD_IMAGES_DIR
 
@@ -65,7 +66,7 @@ def _get_card_image_map() -> dict[str, str]:
 def _resolve_card_image(card_name: str) -> str | None:
     """Return image filename for a card name, or None if not found."""
     mapping = _get_card_image_map()
-    key = re.sub(r"[^a-z0-9_]", "", card_name.lower().replace(" ", "_"))
+    key = normalize_card_name(card_name)
     return mapping.get(key)
 
 
@@ -202,13 +203,13 @@ def staff_pick():
         # Resolve avatar image — strip non-alphanumeric for fuzzy match
         avatar_image = None
         if deck.avatar_name:
-            norm = re.sub(r'[^a-z0-9]', '', deck.avatar_name.lower())
+            norm = normalize_card_name(deck.avatar_name).replace("_", "")
             from webapp_config import AVATAR_IMAGES_DIR
             if AVATAR_IMAGES_DIR.exists():
                 for fname in os.listdir(AVATAR_IMAGES_DIR):
                     if not fname.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
                         continue
-                    fname_norm = re.sub(r'[^a-z0-9]', '', fname.rsplit('.', 1)[0].lower())
+                    fname_norm = normalize_card_name(fname.rsplit('.', 1)[0]).replace("_", "")
                     if norm in fname_norm or fname_norm.startswith(norm):
                         avatar_image = f"/avatar-images/{fname}"
                         break

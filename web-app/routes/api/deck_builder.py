@@ -19,6 +19,7 @@ from flask import Blueprint, jsonify, request, session
 from repositories.deck_builder_repo import DeckBuilderRepository
 from services.curiosa import CuriosaService
 from utils.auth import require_auth
+from utils.formatting import normalize_card_name
 from repositories.card_catalog import CardCatalogRepository
 from webapp_config import CARD_IMAGES_DIR
 
@@ -48,7 +49,7 @@ def _get_card_metadata() -> dict[str, dict]:
             name = card.get("name", "")
             if not name:
                 continue
-            key = re.sub(r"[^a-z0-9]", "", name.lower())
+            key = normalize_card_name(name).replace("_", "")
             guardian = card.get("guardian", {}) or {}
             sets_data = card.get("sets", []) or []
 
@@ -124,14 +125,14 @@ def _get_card_image_map() -> dict[str, str]:
 def _resolve_card_image(card_name: str) -> str | None:
     """Return image filename for a card name, or None."""
     mapping = _get_card_image_map()
-    key = re.sub(r"[^a-z0-9_]", "", card_name.lower().replace(" ", "_"))
+    key = normalize_card_name(card_name)
     return mapping.get(key)
 
 
 def _enrich_card(card: dict) -> dict:
     """Enrich a raw Curiosa card with metadata and image."""
     name = card.get("name", "")
-    meta_key = re.sub(r"[^a-z0-9]", "", name.lower())
+    meta_key = normalize_card_name(name).replace("_", "")
     metadata = _get_card_metadata().get(meta_key, {})
 
     enriched = {

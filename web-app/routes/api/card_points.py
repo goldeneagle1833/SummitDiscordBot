@@ -12,6 +12,7 @@ from repositories.card_catalog import CardCatalogRepository
 from repositories.card_points import CardPointsRepository
 from services.curiosa import CuriosaService
 from utils.auth import require_admin, require_card_points_admin
+from utils.formatting import normalize_card_name
 from webapp_config import CARD_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
@@ -134,9 +135,7 @@ def _build_card_image_lookup():
 
 def _find_card_image(card_name, lookup):
     """Find matching image filename for a card name."""
-    normalized = card_name.lower().replace(" ", "_").replace("'", "").replace(",", "")
-    normalized = re.sub(r"[^a-z0-9_]", "", normalized)
-    return lookup.get(normalized)
+    return lookup.get(normalize_card_name(card_name))
 
 
 @card_points_bp.route("/public", methods=["GET"])

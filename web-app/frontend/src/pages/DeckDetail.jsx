@@ -11,7 +11,7 @@ const TCGPLAYER_IMPACT_LINK = 'https://partner.tcgplayer.com/c/5746741/1780961/2
 const CARD_TYPE_ORDER = ['Minion', 'Magic', 'Artifact', 'Aura', 'Site', 'Other']
 
 function normalize(str) {
-  return str.toLowerCase().replace(/[^a-z0-9]/g, '')
+  return str.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
 function getAvatarImagePath(name, files) {

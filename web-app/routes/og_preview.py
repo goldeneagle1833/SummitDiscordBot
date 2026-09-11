@@ -17,7 +17,7 @@ from repositories.deck_rec_repo import DeckRecRepository
 from repositories.elo import EloRepository
 from repositories.card_catalog import CardCatalogRepository
 from services.player import PlayerService
-from utils.formatting import format_event_name
+from utils.formatting import format_event_name, normalize_card_name
 from webapp_config import AVATAR_IMAGES_DIR, MATCH_RECORDS_DB_PATH
 
 logger = logging.getLogger(__name__)
@@ -53,11 +53,11 @@ def _resolve_avatar_image_url(avatar_name: str) -> str | None:
     """Find the avatar image file and return its public URL."""
     if not avatar_name or not AVATAR_IMAGES_DIR.exists():
         return None
-    norm = re.sub(r'[^a-z0-9]', '', avatar_name.lower())
+    norm = normalize_card_name(avatar_name).replace("_", "")
     for fname in os.listdir(AVATAR_IMAGES_DIR):
         if not fname.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
             continue
-        fname_norm = re.sub(r'[^a-z0-9]', '', fname.rsplit('.', 1)[0].lower())
+        fname_norm = normalize_card_name(fname.rsplit('.', 1)[0]).replace("_", "")
         if norm in fname_norm or fname_norm.startswith(norm):
             return f"{SITE_URL}/avatar-images/{fname}"
     return None

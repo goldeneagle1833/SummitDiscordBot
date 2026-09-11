@@ -513,7 +513,10 @@ export default function Nav() {
       .catch(() => {})
   }, [user])
 
-  const activeNavLinks = ALL_NAV_OPTIONS.filter((opt) => navLabels.includes(opt.label))
+  // Ensure permanent links always appear even if missing from saved prefs
+  const activeNavLinks = ALL_NAV_OPTIONS.filter((opt) =>
+    navLabels.includes(opt.label) || PERMANENT_LINKS.includes(opt.label)
+  )
 
   const handleSavePrefs = (labels) => {
     setNavLabels(labels)

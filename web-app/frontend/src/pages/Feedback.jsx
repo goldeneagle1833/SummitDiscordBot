@@ -87,7 +87,7 @@ export default function Feedback() {
                 onClick={() => setType(ft.value)}
                 className={`px-3 py-1.5 text-sm rounded border transition-colors ${
                   type === ft.value
-                    ? 'bg-secondary text-white border-secondary'
+                    ? 'bg-secondary text-black border-secondary'
                     : 'bg-bg-elevated border-border text-text hover:border-secondary'
                 }`}
               >

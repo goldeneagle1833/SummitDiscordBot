@@ -238,14 +238,16 @@ class CuriosaService:
     ) -> dict:
         """Discover all player deck IDs from a sorcerytcg.com event URL.
 
-        Fetches the event player list, then batch-fetches playerSnapshot
-        for each player to extract their registered sourceDeck ID.
+        Fetches the event player list, scrapes the page for standings order,
+        then batch-fetches playerSnapshot for each player to extract their
+        registered sourceDeck ID.  Players are returned sorted by standing.
 
         Returns:
             {
                 "event_name": str,
                 "event_date": str | None,
-                "players": [{"name": str, "deck_id": str}, ...],
+                "top_cut_size": int,
+                "players": [{"name": str, "deck_id": str, "standing": int}, ...],
                 "errors": [str, ...],
             }
         """
@@ -262,6 +264,7 @@ class CuriosaService:
         event = self._fetch_event_trpc(event_id)
         event_name = event.get("title", "")
         event_date = (event.get("startsAt") or "")[:10] or None
+        top_cut_size = event.get("topcut") or 8
         players_data = event.get("players", [])
 
         # Filter to players that are not dropped (or have seats = played games)
@@ -274,14 +277,43 @@ class CuriosaService:
             return {
                 "event_name": event_name,
                 "event_date": event_date,
+                "top_cut_size": top_cut_size,
                 "players": [],
                 "errors": ["No active players found in this event"],
             }
 
+        # Step 2: Scrape the event page HTML for authoritative standings order
+        if on_progress:
+            on_progress("Fetching standings from event page...")
+        html_standings = self._fetch_page_standings(event_url)
+
+        # Compute Swiss scores as fallback for sorting
+        player_swiss = {}
+        for player in active_players:
+            user = player.get("user", {})
+            name = user.get("displayname") or user.get("username") or "Unknown"
+            seats = player.get("seats", [])
+            swiss_score = sum(
+                s.get("result", {}).get("score", 0) for s in seats
+                if s.get("round", {}).get("phase", {}).get("structure") == "Swiss"
+            )
+            player_swiss[player["id"]] = {"name": name, "swiss_score": swiss_score}
+
+        # Sort active players by standings (HTML source of truth, Swiss fallback)
+        fallback_rank = len(html_standings) + 1 if html_standings else 1
+        active_players.sort(
+            key=lambda p: (
+                html_standings.get(
+                    player_swiss[p["id"]]["name"], fallback_rank
+                ),
+                -player_swiss[p["id"]]["swiss_score"],
+            )
+        )
+
         if on_progress:
             on_progress(f"Found {len(active_players)} players, fetching deck snapshots...")
 
-        # Step 2: Batch-fetch playerSnapshot for all players
+        # Step 3: Batch-fetch playerSnapshot for all players
         player_deck_ids = []
         errors = []
         BATCH_SIZE = 10
@@ -298,6 +330,7 @@ class CuriosaService:
             for player, result in zip(batch, batch_results):
                 user = player.get("user", {})
                 name = user.get("displayname") or user.get("username") or "Unknown"
+                standing = html_standings.get(name, fallback_rank)
                 if result is None:
                     errors.append(f"No deck snapshot for {name}")
                     continue
@@ -308,14 +341,50 @@ class CuriosaService:
                 player_deck_ids.append({
                     "name": name,
                     "deck_id": source_deck["id"],
+                    "standing": standing,
                 })
 
         return {
             "event_name": event_name,
             "event_date": event_date,
+            "top_cut_size": top_cut_size,
             "players": player_deck_ids,
             "errors": errors,
         }
+
+    @staticmethod
+    def _fetch_page_standings(event_url: str) -> dict[str, int]:
+        """Scrape the event page HTML for Play Network standings order.
+
+        Returns a dict mapping display_name -> position (1-indexed).
+        Returns empty dict if parsing fails.
+        """
+        try:
+            resp = requests.get(
+                event_url, timeout=15, headers={"User-Agent": "Mozilla/5.0"}
+            )
+            if resp.status_code != 200:
+                logger.warning("Failed to fetch page standings: HTTP %s", resp.status_code)
+                return {}
+            entries = re.findall(
+                r'<span class="w-4 text-center font-title text-lg">(\d+)</span>.*?'
+                r'<span class="truncate font-title">(.*?)</span>',
+                resp.text,
+                re.DOTALL,
+            )
+            standings = {}
+            for pos_str, name in entries:
+                name = name.strip()
+                if name and name not in standings:
+                    standings[name] = int(pos_str)
+            if standings:
+                logger.info("Parsed %d standings from event page", len(standings))
+            else:
+                logger.warning("Parsed 0 standings from page HTML")
+            return standings
+        except Exception as exc:
+            logger.warning("Could not parse page standings: %s", exc)
+            return {}
 
     def _fetch_event_trpc(self, event_id: str) -> dict:
         """Fetch event data from sorcerytcg.com tRPC endpoint."""

@@ -441,7 +441,9 @@ def _run_event_import(job_id, title, event_url):
         if not title:
             title = discovery["event_name"] or "Imported Event"
 
-        deck_ids = [p["deck_id"] for p in discovery["players"]]
+        players = discovery["players"]  # already sorted by standing
+        deck_ids = [p["deck_id"] for p in players]
+        top_cut = discovery.get("top_cut_size", 8)
         on_progress(f"Found {len(deck_ids)} decks, fetching deck data...")
 
         # Step 2: Fetch full deck data using discovered IDs
@@ -472,14 +474,22 @@ def _run_event_import(job_id, title, event_url):
             })
             return
 
-        # Step 3: Create the event (all decks go to top8 file initially)
+        # Step 3: Re-sort fetched decks by standing order
+        # Build deck_id -> standing index from the discovery order
+        deck_id_order = {p["deck_id"]: idx for idx, p in enumerate(players)}
+        decks.sort(key=lambda d: deck_id_order.get(d.get("id", ""), 9999))
+
+        # Split into top cut and bulk
+        top8_decks = decks[:top_cut]
+        bulk_decks = decks[top_cut:] if len(decks) > top_cut else None
+
         on_progress("Creating event...")
         repo = EventRepository()
-        result = repo.create_event(title, decks, None)
+        result = repo.create_event(title, top8_decks, bulk_decks)
 
         if result.get("success"):
-            result["top8_added"] = len(decks)
-            result["bulk_added"] = 0
+            result["top8_added"] = len(top8_decks)
+            result["bulk_added"] = len(bulk_decks) if bulk_decks else 0
             result["event_name"] = discovery["event_name"]
             if discovery["event_date"]:
                 # Auto-set the event date from sorcerytcg.com

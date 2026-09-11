@@ -401,7 +401,7 @@ class FartRepository:
     _PRESERVE_ON_RESET = frozenset({
         "fart_game_commands",
         "fart_shop_items",
-        # First Curio ever → 40/40/20 lava/frost/Yourt; then 10% lava/frost + 5% Yourt forever
+        # Legacy one-time guaranteed-curio flag (no longer used for rolls)
         "uber_rare_curio_claimed",
         # One-shot stuck-Frostshart cleanup; must survive reset so bot restart
         # cannot wipe a legitimate 24h freeze after the season starts again.
@@ -426,7 +426,7 @@ class FartRepository:
         "gas_shields",
         "fart_traps",
         "frost_shart_freeze",     # Frostshart: shop + specials blocked for 24h (!fart ok)
-        "uber_rare_curio_season", # lavashart/frostshart once each per player per season
+        "uber_rare_curio_season", # leftover per-player uber-rare flags (no longer used)
         "yourt_rampage",          # 1-hour Yourt shop-chaos window + attack ticker
     })
 
@@ -442,9 +442,9 @@ class FartRepository:
         (fart_game_commands, fart_shop_items, uber_rare_curio_claimed,
         frostshart_legacy_repair).
         Uses dynamic discovery so daily / weekly / season / reign cooldowns,
-        item usage, gifts, donations, protections, per-player uber-rare
-        once-per-season flags, and any future trackers are all cleared.
-        The one-time global uber-rare Curio flag is intentionally kept.
+        item usage, gifts, donations, protections, leftover uber-rare season
+        rows, and any future trackers are all cleared.
+        The unused legacy uber_rare_curio_claimed row is intentionally kept.
         """
         conn = self._get_connection()
         rows = conn.execute(

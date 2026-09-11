@@ -1,4 +1,4 @@
-"""Tests for uber-rare Curio Shart (lavashart / frostshart) permanent odds."""
+"""Tests for uber-rare Curio Shart (frost / lava / Yourt) roll odds."""
 
 import asyncio
 import datetime
@@ -39,84 +39,32 @@ def fart_db(tmp_path, monkeypatch):
         os.remove("fart_scores.db")
 
 
-class TestUberRareCurioPermanent:
-    def test_not_claimed_initially(self, fart_db):
-        assert fart_db.is_uber_rare_guaranteed_claimed() is False
+class TestUberRareCurioOdds:
+    def test_frost_hits_on_1_through_10(self, fart_db):
+        for bucket in (1, 5, 10):
+            with patch("cogs.fun.randrange", return_value=bucket):
+                assert fart_db.roll_uber_rare_curio_variant(user_id=99) == "frostshart"
 
-    def test_first_curio_always_special(self, fart_db):
-        with patch("cogs.fun.randrange", return_value=1):  # 1-40 lavashart
-            variant = fart_db.roll_uber_rare_curio_variant(user_id=42)
-        assert variant == "lavashart"
-        assert fart_db.is_uber_rare_guaranteed_claimed() is True
+    def test_lava_hits_on_11_through_20(self, fart_db):
+        for bucket in (11, 15, 20):
+            with patch("cogs.fun.randrange", return_value=bucket):
+                assert fart_db.roll_uber_rare_curio_variant(user_id=7) == "lavashart"
 
-    def test_first_curio_can_be_frostshart(self, fart_db):
-        with patch("cogs.fun.randrange", return_value=41):  # 41-80 frostshart
-            variant = fart_db.roll_uber_rare_curio_variant(user_id=7)
-        assert variant == "frostshart"
-        assert fart_db.is_uber_rare_guaranteed_claimed() is True
+    def test_yourt_hits_on_21_through_25(self, fart_db):
+        for bucket in (21, 23, 25):
+            with patch("cogs.fun.randrange", return_value=bucket):
+                assert fart_db.roll_uber_rare_curio_variant(user_id=3) == "yourt"
 
-    def test_first_curio_40_40_20_boundaries(self, fart_db):
-        assert fart_db.pick_first_curio_variant(1) == "lavashart"
-        assert fart_db.pick_first_curio_variant(40) == "lavashart"
-        assert fart_db.pick_first_curio_variant(41) == "frostshart"
-        assert fart_db.pick_first_curio_variant(80) == "frostshart"
-        assert fart_db.pick_first_curio_variant(81) == "yourt"
-        assert fart_db.pick_first_curio_variant(100) == "yourt"
+    def test_miss_from_26(self, fart_db):
+        for bucket in (26, 50, 100):
+            with patch("cogs.fun.randrange", return_value=bucket):
+                assert fart_db.roll_uber_rare_curio_variant(user_id=1) is None
 
-    def test_after_claim_10_percent_miss(self, fart_db):
-        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
-        # claimed path: randrange(1, 101) → 16 means miss (>15)
-        with patch("cogs.fun.randrange", return_value=16):
-            assert fart_db.roll_uber_rare_curio_variant(user_id=99) is None
-
-    def test_after_claim_10_percent_hit(self, fart_db):
-        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
-        # claimed path: randrange(1,101)=5 → hit; then randrange(2)=1 → frostshart
-        with patch("cogs.fun.randrange", side_effect=[5, 1]):
-            assert fart_db.roll_uber_rare_curio_variant(user_id=99) == "frostshart"
-        # Flag stays set (still claimed)
-        assert fart_db.is_uber_rare_guaranteed_claimed() is True
-
-    def test_boundary_10_percent_hit(self, fart_db):
-        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
-        # Exactly 10 should still hit (miss only when > 10)
-        with patch("cogs.fun.randrange", side_effect=[10, 0]):
-            assert fart_db.roll_uber_rare_curio_variant(user_id=3) == "lavashart"
-
-    def test_mark_is_idempotent_singleton(self, fart_db):
-        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
-        fart_db.mark_uber_rare_guaranteed_claimed(2, "frostshart")
-        conn = sqlite3.connect("fart_scores.db")
-        rows = conn.execute(
-            "SELECT claimed_by_user_id, variant FROM uber_rare_curio_claimed"
-        ).fetchall()
-        conn.close()
-        assert len(rows) == 1
-        assert rows[0] == (1, "lavashart")
-
-    def test_flag_persists_when_other_tables_wiped(self, fart_db):
-        """Guaranteed flag must remain after a season-style wipe of other tables."""
-        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
-        assert fart_db.is_uber_rare_guaranteed_claimed() is True
-
-        conn = sqlite3.connect("fart_scores.db")
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS fart_scores ("
-            "user_id INTEGER PRIMARY KEY, user_display_name TEXT, "
-            "date_last_updated TEXT, score INTEGER)"
-        )
-        conn.execute(
-            "INSERT OR IGNORE INTO fart_scores VALUES (1, 'A', '2026-01-01', 10)"
-        )
-        conn.execute("DELETE FROM fart_scores")
-        # Intentionally do NOT delete uber_rare_curio_claimed (preserved on reset)
-        conn.commit()
-        conn.close()
-
-        assert fart_db.is_uber_rare_guaranteed_claimed() is True
-        # Still on 10% path — 100% never comes back
-        with patch("cogs.fun.randrange", return_value=16):
-            assert fart_db.roll_uber_rare_curio_variant(user_id=5) is None
+    def test_same_player_can_roll_the_same_variant_again(self, fart_db):
+        with patch("cogs.fun.randrange", return_value=1):
+            assert fart_db.roll_uber_rare_curio_variant(user_id=42) == "frostshart"
+        with patch("cogs.fun.randrange", return_value=1):
+            assert fart_db.roll_uber_rare_curio_variant(user_id=42) == "frostshart"
 
     def test_maybe_uber_rare_skips_non_curio(self, fart_db):
         prefix, embed, variant = fart_db.maybe_uber_rare_curio("unique", user_id=1)
@@ -462,79 +410,11 @@ class TestFrostshartLegacyRepair:
         assert second["cleared_freezes"] == 0
         assert fart_db.is_frost_frozen(2) is True
 
-    def test_same_player_cannot_roll_same_variant_twice(self, fart_db):
-        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
-        fart_db.mark_uber_rare_rolled_this_season(99, "lavashart")
-        # 10% hit + lavashart, but player already has lavashart this season
-        with patch("cogs.fun.randrange", side_effect=[5, 0]):
-            assert fart_db.roll_uber_rare_curio_variant(user_id=99) is None
-
-    def test_same_player_can_still_roll_the_other_variant(self, fart_db):
-        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
-        fart_db.mark_uber_rare_rolled_this_season(99, "lavashart")
-        # 10% hit + frostshart
-        with patch("cogs.fun.randrange", side_effect=[5, 1]):
-            assert fart_db.roll_uber_rare_curio_variant(user_id=99) == "frostshart"
-        assert fart_db.has_rolled_uber_rare_this_season(99, "frostshart") is True
-        assert fart_db.has_rolled_uber_rare_this_season(99, "lavashart") is True
-
-    def test_both_variants_blocked_for_player(self, fart_db):
-        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
-        fart_db.mark_uber_rare_rolled_this_season(7, "lavashart")
-        fart_db.mark_uber_rare_rolled_this_season(7, "frostshart")
-        with patch("cogs.fun.randrange", side_effect=[1, 0]):
-            assert fart_db.roll_uber_rare_curio_variant(user_id=7) is None
-        with patch("cogs.fun.randrange", side_effect=[1, 1]):
-            assert fart_db.roll_uber_rare_curio_variant(user_id=7) is None
-
-    def test_other_player_can_still_roll_same_variant(self, fart_db):
-        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
-        fart_db.mark_uber_rare_rolled_this_season(99, "frostshart")
-        with patch("cogs.fun.randrange", side_effect=[5, 1]):
-            assert fart_db.roll_uber_rare_curio_variant(user_id=2) == "frostshart"
-
-    def test_first_roll_records_season_flag(self, fart_db):
-        with patch("cogs.fun.randrange", return_value=1):
-            assert fart_db.roll_uber_rare_curio_variant(user_id=42) == "lavashart"
-        assert fart_db.has_rolled_uber_rare_this_season(42, "lavashart") is True
-        assert fart_db.has_rolled_uber_rare_this_season(42, "frostshart") is False
-
 
 class TestYourtCurioOdds:
-    def test_yourt_hits_on_11_through_15(self, fart_db):
-        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
-        for bucket in (11, 12, 13, 14, 15):
-            with patch("cogs.fun.randrange", return_value=bucket):
-                assert fart_db.roll_uber_rare_curio_variant(user_id=99) == "yourt"
-
-    def test_yourt_does_not_claim_guaranteed_flag(self, fart_db):
-        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
-        with patch("cogs.fun.randrange", return_value=12):
-            assert fart_db.roll_uber_rare_curio_variant(user_id=7) == "yourt"
-        conn = sqlite3.connect("fart_scores.db")
-        row = conn.execute(
-            "SELECT variant FROM uber_rare_curio_claimed WHERE id = 1"
-        ).fetchone()
-        conn.close()
-        assert row == ("lavashart",)
-
-    def test_first_curio_can_be_yourt_and_claims_flag(self, fart_db):
-        with patch("cogs.fun.randrange", return_value=81):
-            assert fart_db.roll_uber_rare_curio_variant(user_id=1) == "yourt"
-        assert fart_db.is_uber_rare_guaranteed_claimed() is True
-        conn = sqlite3.connect("fart_scores.db")
-        row = conn.execute(
-            "SELECT variant FROM uber_rare_curio_claimed WHERE id = 1"
-        ).fetchone()
-        conn.close()
-        assert row == ("yourt",)
-        # Yourt is not a once-per-season lava/frost collectible
-        assert fart_db.has_rolled_uber_rare_this_season(1, "yourt") is False
-
     def test_yourt_skipped_while_rampage_active(self, fart_db):
-        fart_db.mark_uber_rare_guaranteed_claimed(1, "lavashart")
         assert fart_db.start_yourt_rampage(channel_id=1, summoned_by_user_id=1) is True
-        with patch("cogs.fun.randrange", return_value=11):
+        with patch("cogs.fun.randrange", return_value=21):
             assert fart_db.roll_uber_rare_curio_variant(user_id=2) is None
 
     def test_yourt_highlight_is_green_and_drunken(self, fart_db):

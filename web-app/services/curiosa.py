@@ -264,7 +264,10 @@ class CuriosaService:
         event = self._fetch_event_trpc(event_id)
         event_name = event.get("title", "")
         event_date = (event.get("startsAt") or "")[:10] or None
-        top_cut_size = event.get("topcut") or 8
+        try:
+            top_cut_size = int(event.get("topcut") or 8)
+        except (TypeError, ValueError):
+            top_cut_size = 8
         players_data = event.get("players", [])
 
         # Filter to players that are not dropped (or have seats = played games)

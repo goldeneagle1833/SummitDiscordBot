@@ -10,6 +10,7 @@ import BlockedUsersSection from '@/components/admin/BlockedUsersSection'
 import CardPointsSection from '@/components/admin/CardPointsSection'
 import ReactionRolesSection from '@/components/admin/ReactionRolesSection'
 import AuditLogTable from '@/components/admin/AuditLogTable'
+import FeedbackKanban from '@/components/admin/FeedbackKanban'
 
 export default function AuditLog() {
   usePageTitle('Admin Audit Log')
@@ -20,6 +21,9 @@ export default function AuditLog() {
         <h1 className="text-2xl font-display text-secondary">Admin Audit Log</h1>
         <p className="text-sm text-text-muted">History of all administrative actions</p>
       </div>
+      <AdminCollapsible title="Feedback Board" subtitle="Community feedback submissions" defaultOpen>
+        <FeedbackKanban />
+      </AdminCollapsible>
       <AdminCollapsible title="Dashboard" subtitle="Community health at a glance" defaultOpen>
         <DashboardSection />
       </AdminCollapsible>

@@ -24,6 +24,7 @@ from cogs.dust import DustCog
 from cogs.reddit_bridge import RedditBridgeCog
 from cogs.magoo_monitor import MagooMonitorCog
 from cogs.store_notifications import StoreNotificationsCog
+from cogs.feedback_notifications import FeedbackNotificationsCog
 from cogs.card_catalog_sync import CardCatalogSyncCog, ensure_card_catalog_table
 from cogs.dynamic_voice import DynamicVoiceCog
 from cogs.content_monitor import ContentMonitorCog
@@ -172,6 +173,7 @@ async def setup_cogs():
     await bot.add_cog(SlashCommandsCog(bot))
     await bot.add_cog(PurchaseTrackingCog(bot))
     await bot.add_cog(StoreNotificationsCog(bot))  # Store order DMs + admin pings
+    await bot.add_cog(FeedbackNotificationsCog(bot))  # DM users when feedback resolved
     await bot.add_cog(StreamingCog(bot))  # Streaming detection for website banner
     await bot.add_cog(CommunityCog(bot))  # Community page management
     await bot.add_cog(ReactionRolesCog(bot))  # Reaction-based role assignment

@@ -56,6 +56,7 @@ import StoreSuccess from '@/pages/StoreSuccess'
 import StoreCancelled from '@/pages/StoreCancelled'
 import MyOrders from '@/pages/MyOrders'
 import Creator from '@/pages/Creator'
+import Feedback from '@/pages/Feedback'
 
 // Lazy-loaded pages
 const ExplorerStandings = lazy(() => import('@/pages/ExplorerStandings'))
@@ -193,6 +194,7 @@ const router = createBrowserRouter([
       { path: '/card-points', element: <CardPoints /> },
       { path: '/deck-builder', element: <DeckBuilder /> },
       { path: '/secret-fart-leaderboard', element: <FartLeaderboard /> },
+      { path: '/feedback', element: <Feedback /> },
       { path: '/login', element: <Login /> },
       // Creator
       { path: '/creator', element: <CreatorGuard><Creator /></CreatorGuard> },

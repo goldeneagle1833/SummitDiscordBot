@@ -19,10 +19,10 @@ const RANGE_FILTERS = [
   { label: '1 Hour', value: 1, mode: 'hourly' },
   { label: '12 Hours', value: 12, mode: 'hourly' },
   { label: '24 Hours', value: 24, mode: 'hourly' },
-  { label: '4 Weeks', value: 4, mode: 'weekly' },
-  { label: '12 Weeks', value: 12, mode: 'weekly' },
-  { label: '26 Weeks', value: 26, mode: 'weekly' },
-  { label: '52 Weeks', value: 52, mode: 'weekly' },
+  { label: '4 Weeks', value: 28, mode: 'daily' },
+  { label: '12 Weeks', value: 84, mode: 'daily' },
+  { label: '26 Weeks', value: 182, mode: 'daily' },
+  { label: '52 Weeks', value: 364, mode: 'daily' },
 ]
 
 const CHARTS = {
@@ -66,6 +66,13 @@ function hourLabel(bucket) {
   if (!bucket) return ''
   const d = new Date(bucket + 'Z')
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', hour12: true })
+}
+
+function dayLabel(bucket) {
+  if (!bucket) return ''
+  const [y, m, d] = bucket.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 function renderChart(chartType, data, source) {
@@ -152,8 +159,9 @@ export default function ChartDetail() {
 
   const [weeklyData, setWeeklyData] = useState(null)
   const [hourlyData, setHourlyData] = useState(null)
+  const [dailyData, setDailyData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [hourlyLoading, setHourlyLoading] = useState(false)
+  const [subLoading, setSubLoading] = useState(false)
   const [error, setError] = useState(null)
   const [activeFilter, setActiveFilter] = useState({ value: null, mode: 'weekly' })
   const [source, setSource] = useState('all')
@@ -168,11 +176,17 @@ export default function ChartDetail() {
   const handleFilterChange = useCallback((filter) => {
     setActiveFilter(filter)
     if (filter.mode === 'hourly' && chart?.supportsHourly) {
-      setHourlyLoading(true)
+      setSubLoading(true)
       get(`/api/admin/chart-stats-hourly?hours=${filter.value}`)
         .then(setHourlyData)
         .catch((e) => setError(e.message))
-        .finally(() => setHourlyLoading(false))
+        .finally(() => setSubLoading(false))
+    } else if (filter.mode === 'daily') {
+      setSubLoading(true)
+      get(`/api/admin/chart-stats-daily?days=${filter.value}`)
+        .then(setDailyData)
+        .catch((e) => setError(e.message))
+        .finally(() => setSubLoading(false))
     }
   }, [chart])
 
@@ -182,15 +196,20 @@ export default function ChartDetail() {
       const raw = hourlyData[chart.hourlyKey] || []
       return raw.map(d => ({ ...d, label: hourLabel(d.bucket) }))
     }
+    if (activeFilter.mode === 'daily') {
+      if (!dailyData?.success || !chart) return []
+      const key = chart.weeklyKey // daily endpoint uses same keys
+      const raw = dailyData[key] || []
+      return raw.map(d => ({ ...d, label: dayLabel(d.bucket) }))
+    }
     if (!weeklyData?.success || !chart) return []
     const raw = weeklyData[chart.weeklyKey] || []
     const withLabels = raw.map(d => ({ ...d, label: weekLabel(d.week) }))
     if (!activeFilter.value) return withLabels
     return withLabels.slice(-activeFilter.value)
-  }, [weeklyData, hourlyData, chart, activeFilter])
+  }, [weeklyData, hourlyData, dailyData, chart, activeFilter])
 
-  const isHourly = activeFilter.mode === 'hourly'
-  const granLabel = isHourly ? 'hour' : 'week'
+  const granLabel = activeFilter.mode === 'hourly' ? 'hour' : activeFilter.mode === 'daily' ? 'day' : 'week'
 
   if (!chart) {
     return (
@@ -207,7 +226,7 @@ export default function ChartDetail() {
   }
 
   const availableFilters = RANGE_FILTERS.filter(f =>
-    f.mode === 'weekly' || chart.supportsHourly
+    f.mode === 'weekly' || f.mode === 'daily' || chart.supportsHourly
   )
 
   return (
@@ -259,7 +278,7 @@ export default function ChartDetail() {
       </div>
 
       <div className="bg-bg-raised border border-border rounded-lg p-6">
-        {hourlyLoading ? (
+        {subLoading ? (
           <Spinner className="py-20" />
         ) : (
           <ResponsiveContainer width="100%" height={400}>
@@ -268,7 +287,7 @@ export default function ChartDetail() {
         )}
       </div>
 
-      {!hourlyLoading && chartData.length > 0 && (
+      {!subLoading && chartData.length > 0 && (
         <p className="text-xs text-text-muted">
           Showing {chartData.length} {granLabel}{chartData.length !== 1 ? 's' : ''} of data
         </p>

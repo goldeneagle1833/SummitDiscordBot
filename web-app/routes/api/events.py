@@ -107,6 +107,7 @@ def compare_events():
     """Return comparison data for multiple events."""
     folders_param = request.args.get("folders", "")
     folders = [f.strip() for f in folders_param.split(",") if f.strip()]
+    top8_only = request.args.get("top8_only", "").lower() in ("1", "true", "yes")
 
     if len(folders) < 2:
         return jsonify({"error": "At least 2 event folders required"}), 400
@@ -120,23 +121,31 @@ def compare_events():
             decks = repo.get_event_decks(folder)
             if decks is None:
                 continue
-            element_stats = repo.get_event_element_stats(folder)
-            raw_decks = repo._load_all_decks(folder) or []
 
-            # Count avatars from raw deck data
+            # Choose raw decks based on top8_only flag
+            if top8_only:
+                files = repo._find_json_files(folder)
+                raw_decks = []
+                if files and files["top8"] and files["top8"].exists():
+                    try:
+                        with open(files["top8"], "r", encoding="utf-8") as f:
+                            raw_decks = json.load(f)[:8]
+                    except Exception:
+                        pass
+                if not raw_decks:
+                    # Fallback: use all decks if no top8 file
+                    raw_decks = repo._load_all_decks(folder) or []
+            else:
+                raw_decks = repo._load_all_decks(folder) or []
+
+            element_stats = repo._compute_element_stats(raw_decks)
+
+            # Count avatars
             avatar_counts = {}
             for deck in raw_decks:
                 av_list = deck.get("avatar", [])
                 av_name = av_list[0].get("name", "Unknown") if av_list else "Unknown"
                 avatar_counts[av_name] = avatar_counts.get(av_name, 0) + 1
-
-            # Count card types from raw deck data
-            type_counts = {}
-            for deck in raw_decks:
-                for card in deck.get("spellbook", []):
-                    ctype = card.get("type", "Unknown")
-                    qty = card.get("quantity", 1)
-                    type_counts[ctype] = type_counts.get(ctype, 0) + qty
 
             # Count rarity distribution
             rarity_counts = {}
@@ -146,7 +155,27 @@ def compare_events():
                     qty = card.get("quantity", 1)
                     rarity_counts[rarity] = rarity_counts.get(rarity, 0) + qty
 
-            # Top cards across all decks
+            # Mono vs multi-element breakdown
+            elements_order = ["Fire", "Water", "Earth", "Air"]
+            mono_count = 0
+            multi_count = 0
+            element_combo_counts = {}
+            for deck in raw_decks:
+                el_qty = {e: 0 for e in elements_order}
+                for card in deck.get("spellbook", []):
+                    for el in card.get("elements", "None").split(", "):
+                        el = el.strip()
+                        if el in el_qty:
+                            el_qty[el] += card.get("quantity", 1)
+                present = sorted([e for e in elements_order if el_qty[e] > 0])
+                if len(present) <= 1:
+                    mono_count += 1
+                else:
+                    multi_count += 1
+                combo_key = "/".join(present) if present else "None"
+                element_combo_counts[combo_key] = element_combo_counts.get(combo_key, 0) + 1
+
+            # Top cards across decks
             card_counts = {}
             card_deck_presence = {}
             for deck in raw_decks:
@@ -174,11 +203,14 @@ def compare_events():
                 "name": format_event_name(folder),
                 "total_decks": len(decks["all_decks"]),
                 "top8_count": len(decks["top8_decks"]),
+                "deck_count_used": total_decks,
                 "element_stats": element_stats,
                 "avatar_counts": dict(sorted(avatar_counts.items(), key=lambda x: x[1], reverse=True)),
                 "unique_avatars": len(avatar_counts),
-                "type_counts": type_counts,
                 "rarity_counts": rarity_counts,
+                "mono_count": mono_count,
+                "multi_count": multi_count,
+                "element_combos": dict(sorted(element_combo_counts.items(), key=lambda x: x[1], reverse=True)),
                 "top_cards": top_cards,
             })
 

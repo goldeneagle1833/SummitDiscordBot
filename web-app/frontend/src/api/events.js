@@ -16,7 +16,11 @@ export const refreshEvent = (folder) => post(`/api/events/${folder}/refresh`)
 export const deleteEvent = (folder) => del(`/api/events/${folder}`)
 export const setFeaturedEvent = (folder) => put('/api/events/featured', { folder })
 export const getEventJobStatus = (jobId) => get(`/api/events/jobs/${jobId}`)
-export const compareEvents = (folders) => get(`/api/events/compare?folders=${folders.join(',')}`)
+export const compareEvents = (folders, { top8Only = false } = {}) => {
+  const params = new URLSearchParams({ folders: folders.join(',') })
+  if (top8Only) params.set('top8_only', '1')
+  return get(`/api/events/compare?${params}`)
+}
 
 /**
  * Poll a background event job until it completes or fails.

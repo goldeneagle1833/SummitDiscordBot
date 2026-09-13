@@ -153,6 +153,21 @@ def _record_pso_ranked(
     """Create a pending ranked confirmation for a PSO-reported match."""
     from services.match_confirmation import MatchConfirmationService
 
+    # Extract per-player deck URLs from the players array (mirrors bot logic
+    # in summit_result_reporting.py lines 366-377).
+    if players:
+        for p in players:
+            pid = str(
+                p.get("player_id") or p.get("discord_id")
+                or p.get("playerId") or p.get("discordId") or ""
+            )
+            url = p.get("deck_url") or p.get("deckUrl") or ""
+            if pid and url:
+                if pid == winner_id:
+                    winner_deck_url = winner_deck_url or url
+                elif pid == loser_id:
+                    loser_deck_url = loser_deck_url or url
+
     try:
         service = MatchConfirmationService()
         result = service.create_pso_match_report(

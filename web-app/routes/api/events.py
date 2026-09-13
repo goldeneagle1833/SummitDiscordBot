@@ -199,13 +199,13 @@ def compare_events():
                 reverse=True,
             )[:20]
 
-            # Winner's Meta: top 4 finishers from the top8 file
+            # Winner's Meta: top 8 finishers from the top8 file
             winners = []
             files = repo._find_json_files(folder)
             if files and files["top8"] and files["top8"].exists():
                 try:
                     with open(files["top8"], "r", encoding="utf-8") as f:
-                        top8_raw = json.load(f)[:4]
+                        top8_raw = json.load(f)[:8]
                     for i, deck in enumerate(top8_raw):
                         av_list = deck.get("avatar", [])
                         av_name = av_list[0].get("name", "Unknown") if av_list else "Unknown"

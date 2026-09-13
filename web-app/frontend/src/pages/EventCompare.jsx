@@ -435,7 +435,7 @@ function ConversionRateChart({ events }) {
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="Top 8 %" fill="#ffd700" radius={[0, 4, 4, 0]} />
-              <Bar dataKey="Field %" fill="#30363d" radius={[0, 4, 4, 0]} />
+              <Bar dataKey="Field %" fill="#8b949e" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -448,7 +448,7 @@ function ConversionRateChart({ events }) {
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="Top 8 %" fill="#ffd700" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Field %" fill="#30363d" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Field %" fill="#8b949e" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -487,7 +487,7 @@ function WinnersMetaChart({ events }) {
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
       <h2 className="font-display text-secondary text-lg mb-1">Winner&apos;s Meta</h2>
-      <p className="text-xs text-text-muted mb-4">Avatars and elements used by top 4 finishers across all compared events</p>
+      <p className="text-xs text-text-muted mb-4">Avatars and elements used by top 8 finishers across all compared events</p>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div>
           <h3 className="text-sm font-semibold text-text mb-3">Top Finisher Avatars</h3>
@@ -496,7 +496,7 @@ function WinnersMetaChart({ events }) {
               <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} allowDecimals={false} />
               <YAxis type="category" dataKey="name" tick={{ fill: '#d1d5db', fontSize: 11 }} width={120} />
               <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="count" name="Top 4 Appearances" radius={[0, 4, 4, 0]}>
+              <Bar dataKey="count" name="Top 8 Appearances" radius={[0, 4, 4, 0]}>
                 {topAvatars.map((_, i) => <Cell key={i} fill={EVENT_COLORS[i % EVENT_COLORS.length]} />)}
               </Bar>
             </BarChart>
@@ -509,7 +509,7 @@ function WinnersMetaChart({ events }) {
               <XAxis dataKey="element" tick={{ fill: '#9ca3af', fontSize: 11 }} />
               <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} allowDecimals={false} />
               <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="count" name="Top 4 Appearances" radius={[4, 4, 0, 0]}>
+              <Bar dataKey="count" name="Top 8 Appearances" radius={[4, 4, 0, 0]}>
                 {elementData.map((entry) => <Cell key={entry.element} fill={ELEMENT_COLORS[entry.element] || '#8b949e'} />)}
               </Bar>
             </BarChart>
@@ -522,10 +522,9 @@ function WinnersMetaChart({ events }) {
           <thead>
             <tr className="border-b border-border">
               <th className="text-left py-2 px-2 text-xs text-text-muted font-semibold">Event</th>
-              <th className="text-center py-2 px-2 text-xs text-text-muted font-semibold">1st</th>
-              <th className="text-center py-2 px-2 text-xs text-text-muted font-semibold">2nd</th>
-              <th className="text-center py-2 px-2 text-xs text-text-muted font-semibold">3rd</th>
-              <th className="text-center py-2 px-2 text-xs text-text-muted font-semibold">4th</th>
+              {[1,2,3,4,5,6,7,8].map((n) => (
+                <th key={n} className="text-center py-2 px-2 text-xs text-text-muted font-semibold">{n}{n===1?'st':n===2?'nd':n===3?'rd':'th'}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -534,7 +533,7 @@ function WinnersMetaChart({ events }) {
                 <td className="py-1.5 px-2 text-xs font-semibold" style={{ color: EVENT_COLORS[events.indexOf(ev) % EVENT_COLORS.length] }}>
                   {shortName(ev.name)}
                 </td>
-                {[0, 1, 2, 3].map((place) => {
+                {[0, 1, 2, 3, 4, 5, 6, 7].map((place) => {
                   const w = ev.winners?.[place]
                   return (
                     <td key={place} className="py-1.5 px-2 text-center text-xs">
@@ -574,18 +573,31 @@ function CardOverlapHeatmap({ events, cardOverlap }) {
     return 'bg-bg-elevated text-text-muted'
   }
 
+  // Compute the height needed for rotated column headers
+  const headerHeight = Math.max(80, Math.min(160, events.reduce((max, ev) => Math.max(max, ev.name.length), 0) * 5))
+
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
       <h2 className="font-display text-secondary text-lg mb-1">Card Overlap Heatmap</h2>
       <p className="text-xs text-text-muted mb-4">Jaccard similarity of card pools — higher % means more shared cards between events</p>
       <div className="overflow-x-auto">
-        <table className="text-sm">
+        <table className="text-sm border-separate border-spacing-1">
           <thead>
             <tr>
-              <th className="py-2 px-2"></th>
+              <th style={{ height: headerHeight }}></th>
               {events.map((ev, i) => (
-                <th key={ev.folder} className="py-2 px-2 text-xs font-semibold text-center max-w-[100px] truncate" style={{ color: EVENT_COLORS[i % EVENT_COLORS.length] }}>
-                  {shortName(ev.name)}
+                <th key={ev.folder} className="relative align-bottom px-1" style={{ height: headerHeight, minWidth: 64 }}>
+                  <div
+                    className="absolute bottom-0 left-1/2 origin-bottom-left text-xs font-semibold whitespace-nowrap"
+                    style={{
+                      color: EVENT_COLORS[i % EVENT_COLORS.length],
+                      transform: 'rotate(-45deg)',
+                      transformOrigin: 'bottom left',
+                      marginLeft: 4,
+                    }}
+                  >
+                    {ev.name}
+                  </div>
                 </th>
               ))}
             </tr>
@@ -593,13 +605,13 @@ function CardOverlapHeatmap({ events, cardOverlap }) {
           <tbody>
             {events.map((rowEv, ri) => (
               <tr key={rowEv.folder}>
-                <td className="py-1.5 px-2 text-xs font-semibold whitespace-nowrap" style={{ color: EVENT_COLORS[ri % EVENT_COLORS.length] }}>
-                  {shortName(rowEv.name)}
+                <td className="py-1.5 pr-3 text-xs font-semibold text-right whitespace-nowrap" style={{ color: EVENT_COLORS[ri % EVENT_COLORS.length] }}>
+                  {rowEv.name}
                 </td>
                 {events.map((colEv, ci) => {
                   if (ri === ci) {
                     return (
-                      <td key={colEv.folder} className="py-1.5 px-2 text-center">
+                      <td key={colEv.folder} className="py-1.5 px-1 text-center">
                         <span className="inline-block w-16 py-1 rounded text-xs bg-bg-elevated text-text-muted">—</span>
                       </td>
                     )
@@ -607,7 +619,7 @@ function CardOverlapHeatmap({ events, cardOverlap }) {
                   const o = overlapMap[`${rowEv.folder}|${colEv.folder}`]
                   const jaccard = o?.jaccard || 0
                   return (
-                    <td key={colEv.folder} className="py-1.5 px-2 text-center">
+                    <td key={colEv.folder} className="py-1.5 px-1 text-center">
                       <span className={`inline-block w-16 py-1 rounded text-xs font-semibold ${getColor(jaccard)}`} title={`${o?.shared_cards || 0} shared / ${o?.total_unique || 0} unique`}>
                         {jaccard}%
                       </span>

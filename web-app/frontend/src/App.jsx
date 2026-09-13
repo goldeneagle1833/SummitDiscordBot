@@ -21,6 +21,7 @@ import DeckSnapshot from '@/pages/DeckSnapshot'
 // Phase 4: Events & Decks
 import Events from '@/pages/Events'
 import EventDetail from '@/pages/EventDetail'
+import EventCompare from '@/pages/EventCompare'
 import Stats from '@/pages/Stats'
 import StatsEvent from '@/pages/StatsEvent'
 import DeckDetail from '@/pages/DeckDetail'
@@ -166,6 +167,7 @@ const router = createBrowserRouter([
       { path: '/deck-snapshot/:matchId/:playerId', element: <DeckSnapshot /> },
       // Phase 4: Events & Decks
       { path: '/top-8', element: <Events /> },
+      { path: '/top-8/compare', element: <EventCompare /> },
       { path: '/top-8/:folder', element: <EventDetail /> },
       { path: '/stats', element: <Stats /> },
       { path: '/stats/:folder', element: <StatsEvent /> },

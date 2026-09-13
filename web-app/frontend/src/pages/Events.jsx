@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { getEventsWithAdmin, getEvent, reorderEvents, updateEventMetadata, createEvent, importEventFromUrl, pollEventJob, setFeaturedEvent } from '@/api/events'
 import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
@@ -110,6 +110,26 @@ export default function Events() {
   const [createError, setCreateError] = useState(null)
   const [createResult, setCreateResult] = useState(null)
   const [createProgress, setCreateProgress] = useState(null)
+
+  // Compare mode
+  const [compareMode, setCompareMode] = useState(false)
+  const [compareSelection, setCompareSelection] = useState(new Set())
+  const navigate = useNavigate()
+
+  const toggleCompareEvent = useCallback((folder) => {
+    setCompareSelection((prev) => {
+      const next = new Set(prev)
+      if (next.has(folder)) next.delete(folder)
+      else if (next.size < 10) next.add(folder)
+      return next
+    })
+  }, [])
+
+  const handleCompare = useCallback(() => {
+    if (compareSelection.size >= 2) {
+      navigate(`/top-8/compare?events=${[...compareSelection].join(',')}`)
+    }
+  }, [compareSelection, navigate])
 
   useEffect(() => {
     getAvatarImageFiles()
@@ -510,6 +530,19 @@ export default function Events() {
             <span className="text-text-muted text-xs ml-auto self-end pb-1">
               {filtered.length} event{filtered.length !== 1 ? 's' : ''}
             </span>
+            <button
+              className={`text-xs px-3 py-1.5 rounded font-semibold self-end transition-colors ${
+                compareMode
+                  ? 'bg-secondary text-black'
+                  : 'bg-bg-raised border border-border text-text-muted hover:text-text hover:border-secondary/50'
+              }`}
+              onClick={() => {
+                setCompareMode((m) => !m)
+                if (compareMode) setCompareSelection(new Set())
+              }}
+            >
+              {compareMode ? 'Cancel Compare' : 'Compare Events'}
+            </button>
             {isAdmin && (
               <button
                 className="text-xs bg-primary text-black px-3 py-1.5 rounded font-semibold self-end"
@@ -536,23 +569,50 @@ export default function Events() {
                   {yearEvents.map((event) => {
                     const isSelected = selected?.folder === event.folder
                     const isLatest = event.folder === (featuredFolder || filtered[0]?.folder)
+                    const isCompareChecked = compareSelection.has(event.folder)
                     return (
-                      <div key={event.folder}>
+                      <div key={event.folder} className={compareMode ? 'flex items-stretch gap-0' : ''}>
+                        {compareMode && (
+                          <button
+                            onClick={() => toggleCompareEvent(event.folder)}
+                            className={`flex items-center justify-center w-10 shrink-0 rounded-l-lg border border-r-0 transition-colors ${
+                              isCompareChecked
+                                ? 'bg-secondary/20 border-secondary/40'
+                                : 'bg-bg-surface border-border hover:bg-bg-elevated/50'
+                            }`}
+                          >
+                            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                              isCompareChecked ? 'bg-secondary border-secondary' : 'border-border'
+                            }`}>
+                              {isCompareChecked && (
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-black">
+                                  <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                            </div>
+                          </button>
+                        )}
                         <button
                           onClick={() => {
+                            if (compareMode) {
+                              toggleCompareEvent(event.folder)
+                              return
+                            }
                             // On mobile: toggle accordion. On desktop: always select.
                             const isLg = window.matchMedia('(min-width: 1024px)').matches
                             setSelectedFolder(isSelected && !isLg ? null : event.folder)
                           }}
-                          className={`w-full text-left rounded-lg p-3 transition-all group ${
-                            isSelected
-                              ? 'bg-primary/10 border border-primary/40 rounded-t-lg rounded-b-none lg:rounded-lg'
-                              : 'bg-bg-surface border border-border hover:border-primary/30 hover:bg-bg-elevated/50'
+                          className={`w-full text-left p-3 transition-all group ${
+                            compareMode
+                              ? `rounded-r-lg border border-l-0 ${isCompareChecked ? 'bg-secondary/10 border-secondary/40' : 'bg-bg-surface border-border hover:bg-bg-elevated/50'}`
+                              : `rounded-lg ${isSelected
+                                ? 'bg-primary/10 border border-primary/40 rounded-t-lg rounded-b-none lg:rounded-lg'
+                                : 'bg-bg-surface border border-border hover:border-primary/30 hover:bg-bg-elevated/50'}`
                           }`}
                         >
                           <div className="flex items-center gap-3">
                             {/* Selection indicator */}
-                            <div className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-primary' : 'bg-border'}`} />
+                            {!compareMode && <div className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-primary' : 'bg-border'}`} />}
 
                             {/* Event info */}
                             <div className="flex-1 min-w-0">
@@ -886,6 +946,28 @@ export default function Events() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Compare floating bar */}
+      {compareMode && compareSelection.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-bg-surface border border-secondary/50 rounded-xl shadow-2xl px-5 py-3 flex items-center gap-4">
+          <span className="text-sm text-text">
+            <span className="font-semibold text-secondary">{compareSelection.size}</span> event{compareSelection.size !== 1 ? 's' : ''} selected
+          </span>
+          <button
+            onClick={handleCompare}
+            disabled={compareSelection.size < 2}
+            className="bg-secondary text-black px-4 py-2 rounded-lg font-semibold text-sm disabled:opacity-40 hover:bg-secondary/80 transition-colors"
+          >
+            Compare
+          </button>
+          <button
+            onClick={() => setCompareSelection(new Set())}
+            className="text-xs text-text-muted hover:text-accent-red transition-colors"
+          >
+            Clear
+          </button>
         </div>
       )}
     </div>

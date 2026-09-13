@@ -102,6 +102,102 @@ def get_event_detail(event_folder: str):
         return jsonify({"error": "Failed to load event data"}), 500
 
 
+@events_bp.route("/events/compare")
+def compare_events():
+    """Return comparison data for multiple events."""
+    folders_param = request.args.get("folders", "")
+    folders = [f.strip() for f in folders_param.split(",") if f.strip()]
+
+    if len(folders) < 2:
+        return jsonify({"error": "At least 2 event folders required"}), 400
+    if len(folders) > 10:
+        return jsonify({"error": "Maximum 10 events for comparison"}), 400
+
+    try:
+        repo = EventRepository()
+        results = []
+        for folder in folders:
+            decks = repo.get_event_decks(folder)
+            if decks is None:
+                continue
+            element_stats = repo.get_event_element_stats(folder)
+            raw_decks = repo._load_all_decks(folder) or []
+
+            # Count avatars from raw deck data
+            avatar_counts = {}
+            for deck in raw_decks:
+                av_list = deck.get("avatar", [])
+                av_name = av_list[0].get("name", "Unknown") if av_list else "Unknown"
+                avatar_counts[av_name] = avatar_counts.get(av_name, 0) + 1
+
+            # Count card types from raw deck data
+            type_counts = {}
+            for deck in raw_decks:
+                for card in deck.get("spellbook", []):
+                    ctype = card.get("type", "Unknown")
+                    qty = card.get("quantity", 1)
+                    type_counts[ctype] = type_counts.get(ctype, 0) + qty
+
+            # Count rarity distribution
+            rarity_counts = {}
+            for deck in raw_decks:
+                for card in deck.get("spellbook", []):
+                    rarity = card.get("rarity", "Unknown")
+                    qty = card.get("quantity", 1)
+                    rarity_counts[rarity] = rarity_counts.get(rarity, 0) + qty
+
+            # Top cards across all decks
+            card_counts = {}
+            card_deck_presence = {}
+            for deck in raw_decks:
+                seen_cards = set()
+                for card in deck.get("spellbook", []):
+                    name = card.get("name", "Unknown")
+                    qty = card.get("quantity", 1)
+                    card_counts[name] = card_counts.get(name, 0) + qty
+                    if name not in seen_cards:
+                        card_deck_presence[name] = card_deck_presence.get(name, 0) + 1
+                        seen_cards.add(name)
+
+            total_decks = len(raw_decks)
+            top_cards = sorted(
+                [
+                    {"name": n, "total_copies": c, "deck_percent": round(card_deck_presence.get(n, 0) / total_decks * 100, 1) if total_decks else 0}
+                    for n, c in card_counts.items()
+                ],
+                key=lambda x: x["deck_percent"],
+                reverse=True,
+            )[:20]
+
+            results.append({
+                "folder": folder,
+                "name": format_event_name(folder),
+                "total_decks": len(decks["all_decks"]),
+                "top8_count": len(decks["top8_decks"]),
+                "element_stats": element_stats,
+                "avatar_counts": dict(sorted(avatar_counts.items(), key=lambda x: x[1], reverse=True)),
+                "unique_avatars": len(avatar_counts),
+                "type_counts": type_counts,
+                "rarity_counts": rarity_counts,
+                "top_cards": top_cards,
+            })
+
+        if len(results) < 2:
+            return jsonify({"error": "Could not load enough events for comparison"}), 404
+
+        # Load metadata overrides for display names
+        meta = repo._load_metadata_overrides()
+        for r in results:
+            override = meta.get(r["folder"], {})
+            if override.get("name"):
+                r["name"] = override["name"]
+
+        return jsonify({"events": results})
+    except Exception as e:
+        logger.exception("Error comparing events: %s", e)
+        return jsonify({"error": "Failed to compare events"}), 500
+
+
 @events_bp.route("/events/<event_folder>/metadata", methods=["PUT"])
 @require_admin
 def update_event_metadata(event_folder):

@@ -89,7 +89,7 @@ function ElementComparisonChart({ events }) {
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
       <h2 className="font-display text-secondary text-lg mb-1">Dominant Element Distribution</h2>
       <p className="text-xs text-text-muted mb-4">Percentage of decks where each element is dominant (most cards)</p>
-      <ResponsiveContainer width="100%" height={320}>
+      <ResponsiveContainer width="100%" height={640}>
         <RadarChart data={data} cx="50%" cy="50%" outerRadius="70%">
           <PolarGrid stroke="#374151" />
           <PolarAngleAxis dataKey="element" tick={({ x, y, payload }) => {
@@ -124,7 +124,7 @@ function ElementPresenceChart({ events }) {
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
       <h2 className="font-display text-secondary text-lg mb-1">Element Presence</h2>
       <p className="text-xs text-text-muted mb-4">Percentage of decks containing at least one card of each element</p>
-      <ResponsiveContainer width="100%" height={320}>
+      <ResponsiveContainer width="100%" height={640}>
         <RadarChart data={data} cx="50%" cy="50%" outerRadius="70%">
           <PolarGrid stroke="#374151" />
           <PolarAngleAxis dataKey="element" tick={({ x, y, payload }) => {

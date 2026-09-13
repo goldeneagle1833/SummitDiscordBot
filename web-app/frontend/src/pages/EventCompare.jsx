@@ -259,6 +259,8 @@ function MonoMultiChart({ events }) {
 
 /* ---- Top Element Combinations ---- */
 function ElementCombosChart({ events }) {
+  const [highlighted, setHighlighted] = useState(null)
+
   // Collect all combos across events, pick top ones
   const allCombos = {}
   events.forEach((ev) => {
@@ -283,18 +285,81 @@ function ElementCombosChart({ events }) {
     return row
   })
 
+  // Scale row height based on event count so bars stay readable
+  const rowHeight = Math.max(40, events.length * 8 + 16)
+
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
       <h2 className="font-display text-secondary text-lg mb-1">Element Combinations</h2>
-      <p className="text-xs text-text-muted mb-4">Most common element pairings as percentage of decks</p>
-      <ResponsiveContainer width="100%" height={Math.max(250, topCombos.length * 35)}>
-        <BarChart data={data} layout="vertical" margin={{ left: 10, right: 10 }}>
+      <p className="text-xs text-text-muted mb-4">Most common element pairings as percentage of decks — click legend to highlight an event</p>
+      <ResponsiveContainer width="100%" height={Math.max(300, topCombos.length * rowHeight)}>
+        <BarChart data={data} layout="vertical" margin={{ left: 10, right: 10 }} barCategoryGap="20%">
           <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} unit="%" />
-          <YAxis type="category" dataKey="combo" tick={{ fill: '#d1d5db', fontSize: 11 }} width={100} />
+          <YAxis type="category" dataKey="combo" tick={{ fill: '#d1d5db', fontSize: 12 }} width={110} />
+          <Tooltip content={<CustomTooltip />} />
+          <Legend
+            wrapperStyle={{ fontSize: 12, cursor: 'pointer' }}
+            onClick={(e) => setHighlighted((prev) => prev === e.dataKey ? null : e.dataKey)}
+          />
+          {events.map((ev, i) => {
+            const isActive = !highlighted || highlighted === ev.name
+            return (
+              <Bar
+                key={ev.folder}
+                dataKey={ev.name}
+                fill={EVENT_COLORS[i % EVENT_COLORS.length]}
+                fillOpacity={isActive ? 1 : 0.15}
+                stroke={isActive ? EVENT_COLORS[i % EVENT_COLORS.length] : 'transparent'}
+                strokeWidth={isActive && highlighted ? 1.5 : 0}
+                radius={[0, 4, 4, 0]}
+              />
+            )
+          })}
+        </BarChart>
+      </ResponsiveContainer>
+      {highlighted && (
+        <button
+          onClick={() => setHighlighted(null)}
+          className="mt-2 text-xs text-text-muted hover:text-secondary transition-colors"
+        >
+          Clear highlight
+        </button>
+      )}
+    </div>
+  )
+}
+
+/* ---- Rarity Distribution ---- */
+function RarityChart({ events }) {
+  const RARITY_ORDER = ['Ordinary', 'Exceptional', 'Elite', 'Unique']
+  const RARITY_COLORS = {
+    Ordinary: '#8b949e',
+    Exceptional: '#58a6ff',
+    Elite: '#a78bfa',
+    Unique: '#ffd700',
+  }
+
+  const data = RARITY_ORDER.map((rarity) => {
+    const row = { rarity }
+    events.forEach((ev) => {
+      const total = Object.values(ev.rarity_counts || {}).reduce((s, v) => s + v, 0) || 1
+      row[ev.name] = Math.round(((ev.rarity_counts?.[rarity] || 0) / total) * 100)
+    })
+    return row
+  })
+
+  return (
+    <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
+      <h2 className="font-display text-secondary text-lg mb-1">Rarity Distribution</h2>
+      <p className="text-xs text-text-muted mb-4">Percentage of total cards at each rarity level</p>
+      <ResponsiveContainer width="100%" height={300}>
+        <BarChart data={data} margin={{ left: 0, right: 10 }}>
+          <XAxis dataKey="rarity" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+          <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} unit="%" />
           <Tooltip content={<CustomTooltip />} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           {events.map((ev, i) => (
-            <Bar key={ev.folder} dataKey={ev.name} fill={EVENT_COLORS[i % EVENT_COLORS.length]} radius={[0, 4, 4, 0]} />
+            <Bar key={ev.folder} dataKey={ev.name} fill={EVENT_COLORS[i % EVENT_COLORS.length]} radius={[4, 4, 0, 0]} />
           ))}
         </BarChart>
       </ResponsiveContainer>
@@ -302,51 +367,183 @@ function ElementCombosChart({ events }) {
   )
 }
 
-/* ---- Shared Top Cards ---- */
-function SharedCardsTable({ events }) {
-  const cardEvents = {}
+/* ---- Top 8 Conversion Rate ---- */
+function ConversionRateChart({ events }) {
+  // Show avatars that appear in top 8 and their conversion rate vs field representation
+  const allAvatars = new Set()
   events.forEach((ev) => {
-    for (const card of ev.top_cards || []) {
-      if (!cardEvents[card.name]) cardEvents[card.name] = []
-      cardEvents[card.name].push({ event: ev.name, deck_percent: card.deck_percent })
-    }
+    Object.keys(ev.top8_avatar_counts || {}).forEach((a) => allAvatars.add(a))
   })
-  const shared = Object.entries(cardEvents)
-    .filter(([, evts]) => evts.length >= 2)
-    .sort((a, b) => {
-      const avgA = a[1].reduce((s, e) => s + e.deck_percent, 0) / a[1].length
-      const avgB = b[1].reduce((s, e) => s + e.deck_percent, 0) / b[1].length
-      return avgB - avgA
-    })
-    .slice(0, 20)
 
-  if (shared.length === 0) return null
+  if (allAvatars.size === 0) return null
+
+  // Build per-avatar data: for each event, top8% vs field%
+  const avatarData = [...allAvatars].map((avatar) => {
+    let totalTop8Pct = 0
+    let totalFieldPct = 0
+    let eventCount = 0
+    events.forEach((ev) => {
+      const t8Count = ev.top8_avatar_counts?.[avatar] || 0
+      const allCount = ev.all_avatar_counts?.[avatar] || 0
+      const t8Total = Object.values(ev.top8_avatar_counts || {}).reduce((s, v) => s + v, 0) || 1
+      const allTotal = Object.values(ev.all_avatar_counts || {}).reduce((s, v) => s + v, 0) || 1
+      if (t8Count > 0 || allCount > 0) {
+        totalTop8Pct += (t8Count / t8Total) * 100
+        totalFieldPct += (allCount / allTotal) * 100
+        eventCount++
+      }
+    })
+    const avgTop8 = eventCount ? Math.round(totalTop8Pct / eventCount) : 0
+    const avgField = eventCount ? Math.round(totalFieldPct / eventCount) : 0
+    return { avatar, 'Top 8 %': avgTop8, 'Field %': avgField, diff: avgTop8 - avgField }
+  })
+    .filter((d) => d['Top 8 %'] > 0 || d['Field %'] > 0)
+    .sort((a, b) => b.diff - a.diff)
+    .slice(0, 12)
+
+  // Element conversion
+  const elements = ['Fire', 'Water', 'Earth', 'Air']
+  const elementData = elements.map((el) => {
+    let totalTop8Pct = 0
+    let totalFieldPct = 0
+    let eventCount = 0
+    events.forEach((ev) => {
+      const t8Count = ev.top8_element_counts?.[el] || 0
+      const allCount = ev.all_element_counts?.[el] || 0
+      const t8Total = Object.values(ev.top8_element_counts || {}).reduce((s, v) => s + v, 0) || 1
+      const allTotal = Object.values(ev.all_element_counts || {}).reduce((s, v) => s + v, 0) || 1
+      totalTop8Pct += (t8Count / t8Total) * 100
+      totalFieldPct += (allCount / allTotal) * 100
+      eventCount++
+    })
+    const avgTop8 = eventCount ? Math.round(totalTop8Pct / eventCount) : 0
+    const avgField = eventCount ? Math.round(totalFieldPct / eventCount) : 0
+    return { element: el, 'Top 8 %': avgTop8, 'Field %': avgField }
+  })
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
-      <h2 className="font-display text-secondary text-lg mb-1">Most Played Cards Across Events</h2>
-      <p className="text-xs text-text-muted mb-4">Cards appearing in multiple events&apos; top 20, ranked by average deck inclusion rate</p>
-      <div className="overflow-x-auto">
+      <h2 className="font-display text-secondary text-lg mb-1">Top 8 Conversion Rate</h2>
+      <p className="text-xs text-text-muted mb-4">Average representation in Top 8 vs the full field across events</p>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div>
+          <h3 className="text-sm font-semibold text-text mb-3">By Avatar</h3>
+          <ResponsiveContainer width="100%" height={Math.max(250, avatarData.length * 32)}>
+            <BarChart data={avatarData} layout="vertical" margin={{ left: 10, right: 10 }}>
+              <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} unit="%" />
+              <YAxis type="category" dataKey="avatar" tick={{ fill: '#d1d5db', fontSize: 11 }} width={120} />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="Top 8 %" fill="#ffd700" radius={[0, 4, 4, 0]} />
+              <Bar dataKey="Field %" fill="#30363d" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-text mb-3">By Element</h3>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={elementData} margin={{ left: 0, right: 10 }}>
+              <XAxis dataKey="element" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+              <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} unit="%" />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="Top 8 %" fill="#ffd700" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Field %" fill="#30363d" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ---- Winner's Meta (Top 4 Finishers) ---- */
+function WinnersMetaChart({ events }) {
+  const hasWinners = events.some((ev) => ev.winners?.length > 0)
+  if (!hasWinners) return null
+
+  // Count avatars across all top-4 finishers
+  const avatarWins = {}
+  const elementWins = {}
+  events.forEach((ev) => {
+    for (const w of ev.winners || []) {
+      avatarWins[w.avatar] = (avatarWins[w.avatar] || 0) + 1
+      if (w.elements?.[0]) {
+        elementWins[w.elements[0]] = (elementWins[w.elements[0]] || 0) + 1
+      }
+    }
+  })
+
+  const topAvatars = Object.entries(avatarWins)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+
+  const elements = ['Fire', 'Water', 'Earth', 'Air']
+  const elementData = elements.map((el) => ({
+    element: el,
+    count: elementWins[el] || 0,
+  }))
+
+  return (
+    <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
+      <h2 className="font-display text-secondary text-lg mb-1">Winner&apos;s Meta</h2>
+      <p className="text-xs text-text-muted mb-4">Avatars and elements used by top 4 finishers across all compared events</p>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div>
+          <h3 className="text-sm font-semibold text-text mb-3">Top Finisher Avatars</h3>
+          <ResponsiveContainer width="100%" height={Math.max(200, topAvatars.length * 32)}>
+            <BarChart data={topAvatars.map(([name, count]) => ({ name, count }))} layout="vertical" margin={{ left: 10, right: 10 }}>
+              <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} allowDecimals={false} />
+              <YAxis type="category" dataKey="name" tick={{ fill: '#d1d5db', fontSize: 11 }} width={120} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="count" name="Top 4 Appearances" radius={[0, 4, 4, 0]}>
+                {topAvatars.map((_, i) => <Cell key={i} fill={EVENT_COLORS[i % EVENT_COLORS.length]} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-text mb-3">Top Finisher Elements</h3>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={elementData} margin={{ left: 0, right: 10 }}>
+              <XAxis dataKey="element" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+              <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="count" name="Top 4 Appearances" radius={[4, 4, 0, 0]}>
+                {elementData.map((entry) => <Cell key={entry.element} fill={ELEMENT_COLORS[entry.element] || '#8b949e'} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+      {/* Detailed winner table */}
+      <div className="mt-4 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
-              <th className="text-left py-2 px-2 text-xs text-text-muted font-semibold">Card</th>
-              {events.map((ev, i) => (
-                <th key={ev.folder} className="text-right py-2 px-2 text-xs font-semibold" style={{ color: EVENT_COLORS[i % EVENT_COLORS.length] }}>
-                  {shortName(ev.name)}
-                </th>
-              ))}
+              <th className="text-left py-2 px-2 text-xs text-text-muted font-semibold">Event</th>
+              <th className="text-center py-2 px-2 text-xs text-text-muted font-semibold">1st</th>
+              <th className="text-center py-2 px-2 text-xs text-text-muted font-semibold">2nd</th>
+              <th className="text-center py-2 px-2 text-xs text-text-muted font-semibold">3rd</th>
+              <th className="text-center py-2 px-2 text-xs text-text-muted font-semibold">4th</th>
             </tr>
           </thead>
           <tbody>
-            {shared.map(([card, evts]) => (
-              <tr key={card} className="border-b border-border/50 hover:bg-white/5">
-                <td className="py-1.5 px-2 text-text">{card}</td>
-                {events.map((ev) => {
-                  const found = evts.find((e) => e.event === ev.name)
+            {events.filter((ev) => ev.winners?.length > 0).map((ev, i) => (
+              <tr key={ev.folder} className="border-b border-border/50">
+                <td className="py-1.5 px-2 text-xs font-semibold" style={{ color: EVENT_COLORS[events.indexOf(ev) % EVENT_COLORS.length] }}>
+                  {shortName(ev.name)}
+                </td>
+                {[0, 1, 2, 3].map((place) => {
+                  const w = ev.winners?.[place]
                   return (
-                    <td key={ev.folder} className="py-1.5 px-2 text-right tabular-nums">
-                      {found ? <span className="text-text">{found.deck_percent}%</span> : <span className="text-text-muted/40">-</span>}
+                    <td key={place} className="py-1.5 px-2 text-center text-xs">
+                      {w ? (
+                        <div>
+                          <span className="text-text">{w.avatar}</span>
+                          <span className="text-text-muted ml-1">({w.elements?.join('/') || '?'})</span>
+                        </div>
+                      ) : <span className="text-text-muted/40">-</span>}
                     </td>
                   )
                 })}
@@ -359,11 +556,294 @@ function SharedCardsTable({ events }) {
   )
 }
 
+/* ---- Card Overlap Heatmap ---- */
+function CardOverlapHeatmap({ events, cardOverlap }) {
+  if (!cardOverlap?.length) return null
+
+  // Build a matrix lookup
+  const overlapMap = {}
+  for (const o of cardOverlap) {
+    overlapMap[`${o.event_a}|${o.event_b}`] = o
+    overlapMap[`${o.event_b}|${o.event_a}`] = { ...o, name_a: o.name_b, name_b: o.name_a }
+  }
+
+  const getColor = (jaccard) => {
+    if (jaccard >= 70) return 'bg-green-900/60 text-green-300'
+    if (jaccard >= 50) return 'bg-blue-900/50 text-blue-300'
+    if (jaccard >= 30) return 'bg-yellow-900/40 text-yellow-300'
+    return 'bg-bg-elevated text-text-muted'
+  }
+
+  return (
+    <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
+      <h2 className="font-display text-secondary text-lg mb-1">Card Overlap Heatmap</h2>
+      <p className="text-xs text-text-muted mb-4">Jaccard similarity of card pools — higher % means more shared cards between events</p>
+      <div className="overflow-x-auto">
+        <table className="text-sm">
+          <thead>
+            <tr>
+              <th className="py-2 px-2"></th>
+              {events.map((ev, i) => (
+                <th key={ev.folder} className="py-2 px-2 text-xs font-semibold text-center max-w-[100px] truncate" style={{ color: EVENT_COLORS[i % EVENT_COLORS.length] }}>
+                  {shortName(ev.name)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {events.map((rowEv, ri) => (
+              <tr key={rowEv.folder}>
+                <td className="py-1.5 px-2 text-xs font-semibold whitespace-nowrap" style={{ color: EVENT_COLORS[ri % EVENT_COLORS.length] }}>
+                  {shortName(rowEv.name)}
+                </td>
+                {events.map((colEv, ci) => {
+                  if (ri === ci) {
+                    return (
+                      <td key={colEv.folder} className="py-1.5 px-2 text-center">
+                        <span className="inline-block w-16 py-1 rounded text-xs bg-bg-elevated text-text-muted">—</span>
+                      </td>
+                    )
+                  }
+                  const o = overlapMap[`${rowEv.folder}|${colEv.folder}`]
+                  const jaccard = o?.jaccard || 0
+                  return (
+                    <td key={colEv.folder} className="py-1.5 px-2 text-center">
+                      <span className={`inline-block w-16 py-1 rounded text-xs font-semibold ${getColor(jaccard)}`} title={`${o?.shared_cards || 0} shared / ${o?.total_unique || 0} unique`}>
+                        {jaccard}%
+                      </span>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-text-muted mt-3">
+        <span className="inline-block w-3 h-3 rounded bg-green-900/60 mr-1 align-middle"></span> &ge;70%
+        <span className="inline-block w-3 h-3 rounded bg-blue-900/50 mr-1 ml-3 align-middle"></span> &ge;50%
+        <span className="inline-block w-3 h-3 rounded bg-yellow-900/40 mr-1 ml-3 align-middle"></span> &ge;30%
+        <span className="inline-block w-3 h-3 rounded bg-bg-elevated mr-1 ml-3 align-middle"></span> &lt;30%
+      </p>
+    </div>
+  )
+}
+
+const RARITY_CLASSES = {
+  ordinary: 'bg-gray-500/20 text-gray-400',
+  exceptional: 'bg-blue-500/20 text-blue-400',
+  elite: 'bg-purple-500/20 text-purple-400',
+  unique: 'bg-yellow-500/20 text-yellow-400',
+}
+
+/* ---- Card Stats Table (all cards, with filters) ---- */
+function CardStatsTable({ events }) {
+  const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [elementFilter, setElementFilter] = useState('')
+  const [rarityFilter, setRarityFilter] = useState('')
+  const [sortCol, setSortCol] = useState('avg_deck_percent')
+  const [sortDir, setSortDir] = useState('desc')
+
+  // Merge card stats from all events into a unified list
+  const mergedCards = useMemo(() => {
+    const cardMap = {}
+    events.forEach((ev) => {
+      for (const card of ev.card_stats || []) {
+        if (!cardMap[card.name]) {
+          cardMap[card.name] = {
+            name: card.name,
+            type: card.type,
+            element: card.element,
+            rarity: card.rarity,
+            events: {},
+          }
+        }
+        cardMap[card.name].events[ev.folder] = {
+          count: card.count,
+          avg_played: card.avg_played,
+          deck_percent: parseFloat(card.deck_percent) || 0,
+        }
+      }
+    })
+
+    return Object.values(cardMap).map((card) => {
+      const evEntries = Object.values(card.events)
+      const totalCount = evEntries.reduce((s, e) => s + e.count, 0)
+      const avgDeckPct = evEntries.reduce((s, e) => s + e.deck_percent, 0) / evEntries.length
+      return {
+        ...card,
+        total_count: totalCount,
+        avg_deck_percent: Math.round(avgDeckPct * 10) / 10,
+        event_count: evEntries.length,
+      }
+    })
+  }, [events])
+
+  const types = useMemo(() => [...new Set(mergedCards.map((c) => c.type))].filter(Boolean).sort(), [mergedCards])
+  const elements = useMemo(() => [...new Set(mergedCards.map((c) => c.element))].filter(Boolean).sort(), [mergedCards])
+  const rarities = useMemo(() => [...new Set(mergedCards.map((c) => c.rarity))].filter(Boolean).sort(), [mergedCards])
+
+  const filtered = useMemo(() => {
+    let result = mergedCards
+    if (search) {
+      const q = search.toLowerCase()
+      result = result.filter((c) => c.name.toLowerCase().includes(q))
+    }
+    if (typeFilter) result = result.filter((c) => c.type === typeFilter)
+    if (elementFilter) result = result.filter((c) => c.element === elementFilter)
+    if (rarityFilter) result = result.filter((c) => c.rarity === rarityFilter)
+
+    if (sortCol) {
+      result = [...result].sort((a, b) => {
+        let av, bv
+        if (sortCol.startsWith('ev_')) {
+          const folder = sortCol.slice(3)
+          av = a.events[folder]?.deck_percent || 0
+          bv = b.events[folder]?.deck_percent || 0
+        } else if (sortCol === 'name' || sortCol === 'type' || sortCol === 'element' || sortCol === 'rarity') {
+          av = (a[sortCol] || '').toLowerCase()
+          bv = (b[sortCol] || '').toLowerCase()
+        } else {
+          av = a[sortCol] || 0
+          bv = b[sortCol] || 0
+        }
+        if (av < bv) return sortDir === 'asc' ? -1 : 1
+        if (av > bv) return sortDir === 'asc' ? 1 : -1
+        return 0
+      })
+    }
+    return result
+  }, [mergedCards, search, typeFilter, elementFilter, rarityFilter, sortCol, sortDir])
+
+  const handleSort = (col) => {
+    if (sortCol === col) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortCol(col)
+      setSortDir(col === 'name' || col === 'type' || col === 'element' || col === 'rarity' ? 'asc' : 'desc')
+    }
+  }
+
+  const sortIcon = (col) => {
+    if (sortCol !== col) return <span className="text-text-muted/40 ml-1">&#8693;</span>
+    return <span className="text-secondary ml-1">{sortDir === 'asc' ? '\u25B2' : '\u25BC'}</span>
+  }
+
+  if (mergedCards.length === 0) return null
+
+  return (
+    <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
+      <h2 className="font-display text-secondary text-lg mb-1">Card Stats Across Events</h2>
+      <p className="text-xs text-text-muted mb-4">All cards played across compared events, with per-event deck inclusion rates</p>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 mb-3">
+        <input
+          type="text"
+          placeholder="Search cards..."
+          className="flex-1 min-w-[200px] bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select
+          className="bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+        >
+          <option value="">All Types</option>
+          {types.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select
+          className="bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
+          value={elementFilter}
+          onChange={(e) => setElementFilter(e.target.value)}
+        >
+          <option value="">All Elements</option>
+          {elements.map((e) => <option key={e} value={e}>{e}</option>)}
+        </select>
+        <select
+          className="bg-bg-raised border border-border rounded-lg px-3 py-2 text-sm"
+          value={rarityFilter}
+          onChange={(e) => setRarityFilter(e.target.value)}
+        >
+          <option value="">All Rarities</option>
+          {rarities.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-white/10">
+              <th className="py-3 px-2 text-left font-semibold cursor-pointer select-none" onClick={() => handleSort('name')}>
+                Card{sortIcon('name')}
+              </th>
+              <th className="py-3 px-2 text-left font-semibold cursor-pointer select-none hidden md:table-cell" onClick={() => handleSort('type')}>
+                Type{sortIcon('type')}
+              </th>
+              <th className="py-3 px-2 text-left font-semibold cursor-pointer select-none hidden md:table-cell" onClick={() => handleSort('element')}>
+                Element{sortIcon('element')}
+              </th>
+              <th className="py-3 px-2 text-left font-semibold cursor-pointer select-none hidden sm:table-cell" onClick={() => handleSort('rarity')}>
+                Rarity{sortIcon('rarity')}
+              </th>
+              <th className="py-3 px-2 text-right font-semibold cursor-pointer select-none" onClick={() => handleSort('total_count')}>
+                Total{sortIcon('total_count')}
+              </th>
+              <th className="py-3 px-2 text-right font-semibold cursor-pointer select-none hidden sm:table-cell" onClick={() => handleSort('avg_deck_percent')}>
+                Avg %{sortIcon('avg_deck_percent')}
+              </th>
+              {events.map((ev, i) => (
+                <th key={ev.folder} className="py-3 px-2 text-right font-semibold text-xs cursor-pointer select-none hidden lg:table-cell" style={{ color: EVENT_COLORS[i % EVENT_COLORS.length] }} onClick={() => handleSort(`ev_${ev.folder}`)}>
+                  {shortName(ev.name)}{sortIcon(`ev_${ev.folder}`)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((card) => {
+              const rarityClass = RARITY_CLASSES[card.rarity?.toLowerCase()] || 'bg-gray-500/20 text-gray-400'
+              return (
+                <tr key={card.name} className="border-t border-border/30 hover:bg-white/5">
+                  <td className="py-2 px-2 text-text">{card.name}</td>
+                  <td className="py-2 px-2 text-text-muted hidden md:table-cell">{card.type}</td>
+                  <td className="py-2 px-2 text-text-muted hidden md:table-cell">{card.element}</td>
+                  <td className="py-2 px-2 hidden sm:table-cell">
+                    <span className={`text-xs px-2 py-0.5 rounded ${rarityClass}`}>{card.rarity}</span>
+                  </td>
+                  <td className="py-2 px-2 text-right tabular-nums">
+                    <span className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded font-semibold text-xs">{card.total_count}</span>
+                  </td>
+                  <td className="py-2 px-2 text-right tabular-nums font-semibold text-secondary hidden sm:table-cell">{card.avg_deck_percent}%</td>
+                  {events.map((ev) => {
+                    const evData = card.events[ev.folder]
+                    return (
+                      <td key={ev.folder} className="py-2 px-2 text-right tabular-nums hidden lg:table-cell">
+                        {evData ? <span className="text-text">{evData.deck_percent}%</span> : <span className="text-text-muted/40">-</span>}
+                      </td>
+                    )
+                  })}
+                </tr>
+              )
+            })}
+            {filtered.length === 0 && (
+              <tr><td colSpan={6 + events.length} className="py-6 text-center text-text-muted">No cards match your filters.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-text-muted mt-2">{filtered.length} cards shown</p>
+    </div>
+  )
+}
+
 /* ---- Main Page ---- */
 export default function EventCompare() {
   usePageTitle('Compare Events')
   const [searchParams] = useSearchParams()
   const [data, setData] = useState(null)
+  const [cardOverlap, setCardOverlap] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [top8Only, setTop8Only] = useState(false)
@@ -382,7 +862,10 @@ export default function EventCompare() {
     setLoading(true)
     setError(null)
     compareEvents(folders, { top8Only })
-      .then((d) => setData(d.events))
+      .then((d) => {
+        setData(d.events)
+        setCardOverlap(d.card_overlap || null)
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [folders, top8Only])
@@ -443,10 +926,14 @@ export default function EventCompare() {
       <ElementComparisonChart events={data} />
       <ElementPresenceChart events={data} />
       <AvatarComparisonChart events={data} />
+      <RarityChart events={data} />
       <DiversityChart events={data} />
       <MonoMultiChart events={data} />
+      <ConversionRateChart events={data} />
+      <WinnersMetaChart events={data} />
       <ElementCombosChart events={data} />
-      <SharedCardsTable events={data} />
+      <CardOverlapHeatmap events={data} cardOverlap={cardOverlap} />
+      <CardStatsTable events={data} />
     </div>
   )
 }

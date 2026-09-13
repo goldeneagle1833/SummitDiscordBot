@@ -175,28 +175,104 @@ def compare_events():
                 combo_key = "/".join(present) if present else "None"
                 element_combo_counts[combo_key] = element_combo_counts.get(combo_key, 0) + 1
 
-            # Top cards across decks
-            card_counts = {}
+            # Full card stats (type, element, rarity, count, avg, % decks)
+            card_stats = repo._compute_card_stats(raw_decks)
+
+            # Also build card_deck_presence for overlap computation
+            total_decks = len(raw_decks)
             card_deck_presence = {}
             for deck in raw_decks:
                 seen_cards = set()
                 for card in deck.get("spellbook", []):
                     name = card.get("name", "Unknown")
-                    qty = card.get("quantity", 1)
-                    card_counts[name] = card_counts.get(name, 0) + qty
                     if name not in seen_cards:
                         card_deck_presence[name] = card_deck_presence.get(name, 0) + 1
                         seen_cards.add(name)
 
-            total_decks = len(raw_decks)
+            # Keep top_cards for backwards compat (subset of card_stats)
             top_cards = sorted(
                 [
-                    {"name": n, "total_copies": c, "deck_percent": round(card_deck_presence.get(n, 0) / total_decks * 100, 1) if total_decks else 0}
-                    for n, c in card_counts.items()
+                    {"name": c["name"], "total_copies": c["count"], "deck_percent": float(c["deck_percent"])}
+                    for c in card_stats
                 ],
                 key=lambda x: x["deck_percent"],
                 reverse=True,
             )[:20]
+
+            # Winner's Meta: top 4 finishers from the top8 file
+            winners = []
+            files = repo._find_json_files(folder)
+            if files and files["top8"] and files["top8"].exists():
+                try:
+                    with open(files["top8"], "r", encoding="utf-8") as f:
+                        top8_raw = json.load(f)[:4]
+                    for i, deck in enumerate(top8_raw):
+                        av_list = deck.get("avatar", [])
+                        av_name = av_list[0].get("name", "Unknown") if av_list else "Unknown"
+                        deck_elements = []
+                        el_qty = {e: 0 for e in elements_order}
+                        for card in deck.get("spellbook", []):
+                            for el in card.get("elements", "None").split(", "):
+                                el = el.strip()
+                                if el in el_qty:
+                                    el_qty[el] += card.get("quantity", 1)
+                        deck_elements = sorted([e for e in elements_order if el_qty[e] > 0],
+                                               key=lambda e: el_qty[e], reverse=True)
+                        winners.append({
+                            "place": i + 1,
+                            "avatar": av_name,
+                            "elements": deck_elements,
+                            "player": deck.get("username", "Unknown"),
+                        })
+                except Exception:
+                    pass
+
+            # Top 8 Conversion Rate: avatar/element counts for top8 vs all
+            top8_avatar_counts = {}
+            top8_element_counts = {e: 0 for e in elements_order}
+            all_element_counts = {e: 0 for e in elements_order}
+            if files and files["top8"] and files["top8"].exists():
+                try:
+                    with open(files["top8"], "r", encoding="utf-8") as f:
+                        t8_raw = json.load(f)[:8]
+                    for deck in t8_raw:
+                        av_list = deck.get("avatar", [])
+                        av_name = av_list[0].get("name", "Unknown") if av_list else "Unknown"
+                        top8_avatar_counts[av_name] = top8_avatar_counts.get(av_name, 0) + 1
+                        el_qty = {e: 0 for e in elements_order}
+                        for card in deck.get("spellbook", []):
+                            for el in card.get("elements", "None").split(", "):
+                                el = el.strip()
+                                if el in el_qty:
+                                    el_qty[el] += card.get("quantity", 1)
+                        dominant = max(elements_order, key=lambda e: el_qty[e]) if any(el_qty[e] > 0 for e in elements_order) else None
+                        if dominant:
+                            top8_element_counts[dominant] = top8_element_counts.get(dominant, 0) + 1
+                except Exception:
+                    pass
+
+            # Dominant element counts for all decks
+            all_decks_for_elements = repo._load_all_decks(folder) or []
+            for deck in all_decks_for_elements:
+                el_qty = {e: 0 for e in elements_order}
+                for card in deck.get("spellbook", []):
+                    for el in card.get("elements", "None").split(", "):
+                        el = el.strip()
+                        if el in el_qty:
+                            el_qty[el] += card.get("quantity", 1)
+                dominant = max(elements_order, key=lambda e: el_qty[e]) if any(el_qty[e] > 0 for e in elements_order) else None
+                if dominant:
+                    all_element_counts[dominant] = all_element_counts.get(dominant, 0) + 1
+
+            # All-decks avatar counts (for conversion rate)
+            all_avatar_counts = {}
+            for deck in all_decks_for_elements:
+                av_list = deck.get("avatar", [])
+                av_name = av_list[0].get("name", "Unknown") if av_list else "Unknown"
+                all_avatar_counts[av_name] = all_avatar_counts.get(av_name, 0) + 1
+
+            # Card set for overlap computation (top card names)
+            card_set = set(card_deck_presence.keys())
 
             results.append({
                 "folder": folder,
@@ -212,6 +288,13 @@ def compare_events():
                 "multi_count": multi_count,
                 "element_combos": dict(sorted(element_combo_counts.items(), key=lambda x: x[1], reverse=True)),
                 "top_cards": top_cards,
+                "card_stats": card_stats,
+                "winners": winners,
+                "top8_avatar_counts": top8_avatar_counts,
+                "all_avatar_counts": all_avatar_counts,
+                "top8_element_counts": top8_element_counts,
+                "all_element_counts": all_element_counts,
+                "_card_set": card_set,  # internal, stripped before response
             })
 
         if len(results) < 2:
@@ -224,7 +307,32 @@ def compare_events():
             if override.get("name"):
                 r["name"] = override["name"]
 
-        return jsonify({"events": results})
+        # Compute card overlap (Jaccard similarity) between events
+        card_overlap = []
+        for i, a in enumerate(results):
+            for j, b in enumerate(results):
+                if j <= i:
+                    continue
+                set_a = a.get("_card_set", set())
+                set_b = b.get("_card_set", set())
+                union = len(set_a | set_b)
+                intersection = len(set_a & set_b)
+                jaccard = round(intersection / union * 100, 1) if union else 0
+                card_overlap.append({
+                    "event_a": a["folder"],
+                    "event_b": b["folder"],
+                    "name_a": a["name"],
+                    "name_b": b["name"],
+                    "shared_cards": intersection,
+                    "total_unique": union,
+                    "jaccard": jaccard,
+                })
+
+        # Strip internal fields
+        for r in results:
+            r.pop("_card_set", None)
+
+        return jsonify({"events": results, "card_overlap": card_overlap})
     except Exception as e:
         logger.exception("Error comparing events: %s", e)
         return jsonify({"error": "Failed to compare events"}), 500

@@ -75,6 +75,7 @@ function OverviewChart({ events }) {
 
 /* ---- Dominant Element Distribution — radar style like Element Presence ---- */
 function ElementComparisonChart({ events }) {
+  const [highlighted, setHighlighted] = useState(null)
   const elements = ['Fire', 'Water', 'Earth', 'Air']
   const data = elements.map((el) => {
     const row = { element: el }
@@ -88,7 +89,7 @@ function ElementComparisonChart({ events }) {
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
       <h2 className="font-display text-secondary text-lg mb-1">Dominant Element Distribution</h2>
-      <p className="text-xs text-text-muted mb-4">Percentage of decks where each element is dominant (most cards)</p>
+      <p className="text-xs text-text-muted mb-4">Percentage of decks where each element is dominant (most cards) — click legend to highlight an event</p>
       <ResponsiveContainer width="100%" height={640}>
         <RadarChart data={data} cx="50%" cy="50%" outerRadius="70%">
           <PolarGrid stroke="#374151" />
@@ -97,10 +98,16 @@ function ElementComparisonChart({ events }) {
             return <text x={x} y={y} textAnchor="middle" dominantBaseline="central" fill={color} fontSize={14} fontWeight={700}>{payload.value}</text>
           }} />
           <PolarRadiusAxis tick={{ fill: '#6b7280', fontSize: 10 }} domain={[0, 'auto']} />
-          {events.map((ev, i) => (
-            <Radar key={ev.folder} name={shortName(ev.name)} dataKey={ev.name} stroke={EVENT_COLORS[i % EVENT_COLORS.length]} fill={EVENT_COLORS[i % EVENT_COLORS.length]} fillOpacity={0.15} strokeWidth={2} />
-          ))}
-          <Legend wrapperStyle={{ fontSize: 12 }} />
+          {events.map((ev, i) => {
+            const isActive = !highlighted || highlighted === ev.name
+            return (
+              <Radar key={ev.folder} name={shortName(ev.name)} dataKey={ev.name} stroke={EVENT_COLORS[i % EVENT_COLORS.length]} fill={EVENT_COLORS[i % EVENT_COLORS.length]} fillOpacity={isActive ? 0.15 : 0.02} strokeOpacity={isActive ? 1 : 0.1} strokeWidth={isActive && highlighted ? 3 : 2} />
+            )
+          })}
+          <Legend
+            wrapperStyle={{ fontSize: 12, cursor: 'pointer' }}
+            onClick={(e) => setHighlighted((prev) => prev === e.dataKey ? null : e.dataKey)}
+          />
           <Tooltip content={<CustomTooltip />} />
         </RadarChart>
       </ResponsiveContainer>
@@ -110,6 +117,7 @@ function ElementComparisonChart({ events }) {
 
 /* ---- Element Presence comparison — same radar style ---- */
 function ElementPresenceChart({ events }) {
+  const [highlighted, setHighlighted] = useState(null)
   const elements = ['Fire', 'Water', 'Earth', 'Air']
   const data = elements.map((el) => {
     const row = { element: el }
@@ -123,7 +131,7 @@ function ElementPresenceChart({ events }) {
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
       <h2 className="font-display text-secondary text-lg mb-1">Element Presence</h2>
-      <p className="text-xs text-text-muted mb-4">Percentage of decks containing at least one card of each element</p>
+      <p className="text-xs text-text-muted mb-4">Percentage of decks containing at least one card of each element — click legend to highlight an event</p>
       <ResponsiveContainer width="100%" height={640}>
         <RadarChart data={data} cx="50%" cy="50%" outerRadius="70%">
           <PolarGrid stroke="#374151" />
@@ -132,10 +140,16 @@ function ElementPresenceChart({ events }) {
             return <text x={x} y={y} textAnchor="middle" dominantBaseline="central" fill={color} fontSize={14} fontWeight={700}>{payload.value}</text>
           }} />
           <PolarRadiusAxis tick={{ fill: '#6b7280', fontSize: 10 }} domain={[0, 'auto']} />
-          {events.map((ev, i) => (
-            <Radar key={ev.folder} name={shortName(ev.name)} dataKey={ev.name} stroke={EVENT_COLORS[i % EVENT_COLORS.length]} fill={EVENT_COLORS[i % EVENT_COLORS.length]} fillOpacity={0.15} strokeWidth={2} />
-          ))}
-          <Legend wrapperStyle={{ fontSize: 12 }} />
+          {events.map((ev, i) => {
+            const isActive = !highlighted || highlighted === ev.name
+            return (
+              <Radar key={ev.folder} name={shortName(ev.name)} dataKey={ev.name} stroke={EVENT_COLORS[i % EVENT_COLORS.length]} fill={EVENT_COLORS[i % EVENT_COLORS.length]} fillOpacity={isActive ? 0.15 : 0.02} strokeOpacity={isActive ? 1 : 0.1} strokeWidth={isActive && highlighted ? 3 : 2} />
+            )
+          })}
+          <Legend
+            wrapperStyle={{ fontSize: 12, cursor: 'pointer' }}
+            onClick={(e) => setHighlighted((prev) => prev === e.dataKey ? null : e.dataKey)}
+          />
           <Tooltip content={<CustomTooltip />} />
         </RadarChart>
       </ResponsiveContainer>

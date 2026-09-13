@@ -12,9 +12,18 @@ const ELEMENT_COLORS = {
   Air: '#38bdf8',
 }
 
+// Theme-matched palette: primary blue, gold, summit tones, muted complements
 const EVENT_COLORS = [
-  '#c084fc', '#fb923c', '#34d399', '#f472b6', '#facc15',
-  '#60a5fa', '#f87171', '#a78bfa', '#4ade80', '#fbbf24',
+  '#58a6ff', // primary blue
+  '#ffd700', // secondary gold
+  '#2a9c4a', // accent green
+  '#7aaed4', // summit light
+  '#c9a84c', // warm gold muted
+  '#79c0ff', // primary light
+  '#5b8db8', // summit
+  '#8b949e', // text muted
+  '#388bfd', // primary dark
+  '#3d6b8f', // summit dark
 ]
 
 function shortName(name) {

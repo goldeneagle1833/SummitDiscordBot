@@ -286,14 +286,14 @@ function ElementCombosChart({ events }) {
   })
 
   // Scale row height based on event count so bars stay readable
-  const rowHeight = Math.max(40, events.length * 8 + 16)
+  const rowHeight = Math.max(60, events.length * 16 + 24)
 
   return (
     <div className="bg-bg-surface border border-border rounded-lg p-5 mb-6">
       <h2 className="font-display text-secondary text-lg mb-1">Element Combinations</h2>
       <p className="text-xs text-text-muted mb-4">Most common element pairings as percentage of decks — click legend to highlight an event</p>
       <ResponsiveContainer width="100%" height={Math.max(300, topCombos.length * rowHeight)}>
-        <BarChart data={data} layout="vertical" margin={{ left: 10, right: 10 }} barCategoryGap="20%">
+        <BarChart data={data} layout="vertical" margin={{ left: 10, right: 10 }} barCategoryGap="10%">
           <XAxis type="number" tick={{ fill: '#9ca3af', fontSize: 11 }} unit="%" />
           <YAxis type="category" dataKey="combo" tick={{ fill: '#d1d5db', fontSize: 12 }} width={110} />
           <Tooltip content={<CustomTooltip />} />

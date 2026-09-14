@@ -21,6 +21,11 @@ from services.summit_result_reporting import record_sorcery_online_result
 logger = logging.getLogger("discord_bot")
 VOICE_URL = "https://discord.gg/zSvyvyAVT"
 
+# TTL cache for guild.fetch_member() results to avoid hitting Discord API
+# on every status poll.  Entries: {user_id: (member_or_None, expiry_time)}
+_MEMBER_CACHE_TTL = 300  # 5 minutes
+_member_cache: dict[int, tuple] = {}
+
 
 class WebsiteFollowup:
     def __init__(self):
@@ -55,12 +60,26 @@ async def _summit_member(bot, user_id):
     guild = bot.get_guild(config.GUILD_ID)
     if guild is None:
         raise web.HTTPServiceUnavailable(text="Summit guild is unavailable")
+    # Fast path: discord.py internal cache (instant)
     member = guild.get_member(user_id)
     if member is not None:
+        _member_cache[user_id] = (member, time.time() + _MEMBER_CACHE_TTL)
         return guild, member
+    # Check our TTL cache before hitting Discord API
+    now = time.time()
+    cached = _member_cache.get(user_id)
+    if cached is not None:
+        cached_member, expiry = cached
+        if now < expiry:
+            return guild, cached_member
+        del _member_cache[user_id]
+    # Slow path: Discord HTTP API (can take seconds)
     try:
-        return guild, await guild.fetch_member(user_id)
+        member = await guild.fetch_member(user_id)
+        _member_cache[user_id] = (member, time.time() + _MEMBER_CACHE_TTL)
+        return guild, member
     except discord.NotFound:
+        _member_cache[user_id] = (None, time.time() + _MEMBER_CACHE_TTL)
         return guild, None
 
 

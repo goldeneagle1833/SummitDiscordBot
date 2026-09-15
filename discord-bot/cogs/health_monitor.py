@@ -18,10 +18,44 @@ DOWN_TIMEOUT_S = 10            # 10 seconds = consider down
 CHECK_INTERVAL_SECONDS = 3600  # check every hour
 ALERT_COOLDOWN_SECONDS = 300   # don't re-alert for same issue within 5 minutes
 
-# Endpoints to monitor
+# Base URLs
 WEB_APP_URL = getattr(config, "WEB_APP_URL", "https://sorcererssummit.com")
 MATCHMAKING_API_HOST = "127.0.0.1"
 MATCHMAKING_API_PORT = 8765
+BOT_API_BASE = f"http://{MATCHMAKING_API_HOST}:{MATCHMAKING_API_PORT}"
+
+# All endpoints to monitor, grouped by service
+# (name, method, url, accept_statuses)
+# accept_statuses: set of HTTP status codes considered "healthy" (beyond 2xx)
+HEALTH_ENDPOINTS = [
+    # --- Web App (public) ---
+    ("Web App - Leaderboard", "GET", f"{WEB_APP_URL}/api/leaderboard", {200}),
+    ("Web App - Player Lookup", "GET", f"{WEB_APP_URL}/api/player/0", {200, 404}),
+    # --- Web App - PSO Relay (requires API key, expect 401/403) ---
+    ("PSO Relay - Status", "GET", f"{WEB_APP_URL}/api/matchmaking/users/0/status", {401, 403}),
+    # --- Bot Loopback API (direct) ---
+    ("Bot API - Status", "GET", f"{BOT_API_BASE}/users/0/status", {200}),
+]
+
+# Simplified list for hourly background alerts (just core services)
+ALERT_ENDPOINTS = [
+    ("Web App", "GET", f"{WEB_APP_URL}/api/leaderboard", {200}),
+    ("Bot Matchmaking API", "GET", f"{BOT_API_BASE}/users/0/status", {200}),
+]
+
+
+def _status_label(result):
+    """Return a status label and whether it's healthy."""
+    if result["error"]:
+        return "DOWN", False
+    if result["status"] and result["status"] >= 500:
+        return f"ERROR ({result['status']})", False
+    if result["response_ms"] and result["response_ms"] > SLOW_RESPONSE_MS:
+        return "SLOW", False
+    accepted = result.get("accept_statuses", set())
+    if result["status"] and (200 <= result["status"] < 300 or result["status"] in accepted):
+        return "OK", True
+    return f"HTTP {result['status']}", False
 
 
 class HealthMonitorCog(commands.Cog):
@@ -53,77 +87,67 @@ class HealthMonitorCog(commands.Cog):
         except Exception as e:
             logger.error("Failed to DM owner health alert: %s", e)
 
-    async def _check_endpoint(self, name: str, url: str) -> dict:
-        """Check a single endpoint. Returns {status, response_ms, error}."""
+    async def _check_endpoint(self, name: str, url: str, method: str = "GET",
+                               accept_statuses: set | None = None) -> dict:
+        """Check a single endpoint. Returns {name, method, url, status, response_ms, error, accept_statuses}."""
         try:
             async with aiohttp.ClientSession() as session:
                 start = time.monotonic()
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=DOWN_TIMEOUT_S)) as resp:
+                req_method = getattr(session, method.lower(), session.get)
+                async with req_method(url, timeout=aiohttp.ClientTimeout(total=DOWN_TIMEOUT_S)) as resp:
                     elapsed_ms = (time.monotonic() - start) * 1000
                     return {
                         "name": name,
+                        "method": method,
+                        "url": url,
                         "status": resp.status,
                         "response_ms": round(elapsed_ms),
                         "error": None,
+                        "accept_statuses": accept_statuses or set(),
                     }
         except asyncio.TimeoutError:
-            return {"name": name, "status": None, "response_ms": None, "error": "timeout"}
+            return {"name": name, "method": method, "url": url,
+                    "status": None, "response_ms": None, "error": "timeout",
+                    "accept_statuses": accept_statuses or set()}
         except aiohttp.ClientConnectorError:
-            return {"name": name, "status": None, "response_ms": None, "error": "connection_refused"}
+            return {"name": name, "method": method, "url": url,
+                    "status": None, "response_ms": None, "error": "connection_refused",
+                    "accept_statuses": accept_statuses or set()}
         except Exception as e:
-            return {"name": name, "status": None, "response_ms": None, "error": str(e)}
+            return {"name": name, "method": method, "url": url,
+                    "status": None, "response_ms": None, "error": str(e),
+                    "accept_statuses": accept_statuses or set()}
+
+    async def _run_checks(self, endpoints):
+        """Run health checks against a list of endpoint tuples."""
+        return await asyncio.gather(*(
+            self._check_endpoint(name, url, method, accept)
+            for name, method, url, accept in endpoints
+        ))
 
     @tasks.loop(seconds=CHECK_INTERVAL_SECONDS)
     async def health_check_loop(self):
-        checks = await asyncio.gather(
-            self._check_endpoint(
-                "Web App",
-                f"{WEB_APP_URL}/api/leaderboard/online",
-            ),
-            self._check_endpoint(
-                "Matchmaking API",
-                f"http://{MATCHMAKING_API_HOST}:{MATCHMAKING_API_PORT}/users/0/status",
-            ),
-        )
+        checks = await self._run_checks(ALERT_ENDPOINTS)
 
         for result in checks:
             service = result["name"]
+            label, healthy = _status_label(result)
 
-            if result["error"]:
+            if not healthy:
                 self._consecutive_failures[service] = self._consecutive_failures.get(service, 0) + 1
-                # Alert after 2 consecutive failures to avoid spurious alerts
-                if self._consecutive_failures[service] >= 2 and self._should_alert(service):
+                threshold = 3 if label == "SLOW" else 2
+                if self._consecutive_failures[service] >= threshold and self._should_alert(service):
+                    detail = (f"Error: `{result['error']}`" if result["error"]
+                              else f"HTTP {result['status']} | {result['response_ms']}ms")
                     await self._dm_owner(
-                        f"**{service} is DOWN**\n"
-                        f"Error: `{result['error']}`\n"
+                        f"**{service} is {label}**\n"
+                        f"{detail}\n"
                         f"Consecutive failures: {self._consecutive_failures[service]}"
                     )
                     self._record_alert(service)
-                logger.warning("Health check FAILED for %s: %s", service, result["error"])
-
-            elif result["status"] and result["status"] >= 500:
-                self._consecutive_failures[service] = self._consecutive_failures.get(service, 0) + 1
-                if self._consecutive_failures[service] >= 2 and self._should_alert(service):
-                    await self._dm_owner(
-                        f"**{service} returning errors**\n"
-                        f"HTTP {result['status']} | {result['response_ms']}ms"
-                    )
-                    self._record_alert(service)
-                logger.warning("Health check ERROR for %s: HTTP %s", service, result["status"])
-
-            elif result["response_ms"] and result["response_ms"] > SLOW_RESPONSE_MS:
-                self._consecutive_failures[service] = self._consecutive_failures.get(service, 0) + 1
-                if self._consecutive_failures[service] >= 3 and self._should_alert(service):
-                    await self._dm_owner(
-                        f"**{service} is SLOW**\n"
-                        f"Response time: {result['response_ms']}ms (threshold: {SLOW_RESPONSE_MS}ms)\n"
-                        f"Consecutive slow responses: {self._consecutive_failures[service]}"
-                    )
-                    self._record_alert(service)
-                logger.info("Health check SLOW for %s: %dms", service, result["response_ms"])
-
+                logger.warning("Health check %s for %s: %s", label, service,
+                               result["error"] or f"HTTP {result['status']}")
             else:
-                # Healthy — reset consecutive failures and log recovery if was failing
                 if self._consecutive_failures.get(service, 0) >= 2:
                     if self._should_alert(service):
                         await self._dm_owner(
@@ -135,49 +159,37 @@ class HealthMonitorCog(commands.Cog):
                 self._consecutive_failures[service] = 0
 
     async def _build_health_report(self) -> discord.Embed:
-        """Run all health checks and return an embed with the results."""
-        checks = await asyncio.gather(
-            self._check_endpoint(
-                "Web App",
-                f"{WEB_APP_URL}/api/leaderboard/online",
-            ),
-            self._check_endpoint(
-                "Matchmaking API",
-                f"http://{MATCHMAKING_API_HOST}:{MATCHMAKING_API_PORT}/users/0/status",
-            ),
-        )
+        """Run all health checks and return a detailed embed."""
+        checks = await self._run_checks(HEALTH_ENDPOINTS)
 
         all_healthy = True
         embed = discord.Embed(title="Summit Health Report", timestamp=discord.utils.utcnow())
 
         for result in checks:
+            label, healthy = _status_label(result)
+            if not healthy:
+                all_healthy = False
+
             if result["error"]:
-                status_icon = "DOWN"
                 value = f"Error: `{result['error']}`"
-                all_healthy = False
-            elif result["status"] and result["status"] >= 500:
-                status_icon = "ERROR"
-                value = f"HTTP {result['status']} | {result['response_ms']}ms"
-                all_healthy = False
-            elif result["response_ms"] and result["response_ms"] > SLOW_RESPONSE_MS:
-                status_icon = "SLOW"
-                value = f"{result['response_ms']}ms (threshold: {SLOW_RESPONSE_MS}ms)"
-                all_healthy = False
             else:
-                status_icon = "OK"
-                value = f"{result['response_ms']}ms | HTTP {result['status']}"
+                value = f"**{result['response_ms']}ms** | HTTP {result['status']}"
 
             consecutive = self._consecutive_failures.get(result["name"], 0)
             if consecutive > 0:
                 value += f"\nConsecutive failures: {consecutive}"
 
+            value += f"\n`{result['method']} {result['url']}`"
+
+            icon = {True: "\u2705", False: "\u274c"}[healthy]
             embed.add_field(
-                name=f"{result['name']}: {status_icon}",
+                name=f"{icon} {result['name']}: {label}",
                 value=value,
                 inline=False,
             )
 
         embed.color = discord.Color.green() if all_healthy else discord.Color.red()
+        embed.set_footer(text=f"Slow threshold: {SLOW_RESPONSE_MS}ms | Check interval: {CHECK_INTERVAL_SECONDS // 60}min")
         return embed
 
     @commands.command(name="health")

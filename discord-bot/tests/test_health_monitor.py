@@ -10,7 +10,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import discord
 
-from cogs.health_monitor import HealthMonitorCog, SLOW_RESPONSE_MS, ALERT_COOLDOWN_SECONDS
+from cogs.health_monitor import (
+    HealthMonitorCog, SLOW_RESPONSE_MS, ALERT_COOLDOWN_SECONDS, _status_label,
+)
 
 
 @pytest.fixture
@@ -126,9 +128,44 @@ def test_should_alert_respects_cooldown(cog):
 def test_consecutive_failures_reset_on_success(cog):
     """Consecutive failure counter resets properly."""
     cog._consecutive_failures["Web App"] = 5
-    # Simulate healthy check resetting
     cog._consecutive_failures["Web App"] = 0
     assert cog._consecutive_failures["Web App"] == 0
+
+
+def test_status_label_ok():
+    result = {"status": 200, "response_ms": 50, "error": None, "accept_statuses": set()}
+    label, healthy = _status_label(result)
+    assert label == "OK"
+    assert healthy is True
+
+
+def test_status_label_accepted_non_200():
+    """401/403 are healthy when in accept_statuses (e.g. auth-gated PSO relay)."""
+    result = {"status": 403, "response_ms": 20, "error": None, "accept_statuses": {401, 403}}
+    label, healthy = _status_label(result)
+    assert label == "OK"
+    assert healthy is True
+
+
+def test_status_label_down():
+    result = {"status": None, "response_ms": None, "error": "timeout", "accept_statuses": set()}
+    label, healthy = _status_label(result)
+    assert label == "DOWN"
+    assert healthy is False
+
+
+def test_status_label_slow():
+    result = {"status": 200, "response_ms": SLOW_RESPONSE_MS + 100, "error": None, "accept_statuses": set()}
+    label, healthy = _status_label(result)
+    assert label == "SLOW"
+    assert healthy is False
+
+
+def test_status_label_server_error():
+    result = {"status": 502, "response_ms": 100, "error": None, "accept_statuses": set()}
+    label, healthy = _status_label(result)
+    assert "ERROR" in label
+    assert healthy is False
 
 
 @pytest.mark.asyncio
@@ -137,8 +174,7 @@ async def test_recovery_alert_sent(cog):
     cog._consecutive_failures["Web App"] = 3
     cog._dm_owner = AsyncMock()
 
-    # Simulate a healthy result in the loop logic
-    result = {"name": "Web App", "status": 200, "response_ms": 50, "error": None}
+    result = {"name": "Web App", "status": 200, "response_ms": 50, "error": None, "accept_statuses": set()}
     service = result["name"]
 
     if cog._consecutive_failures.get(service, 0) >= 2:
@@ -193,12 +229,12 @@ async def test_health_command_non_owner_ignored(cog):
 @pytest.mark.asyncio
 async def test_build_health_report_all_healthy(cog):
     """Health report embed is green when all services healthy."""
-    cog._check_endpoint = AsyncMock(
-        side_effect=[
-            {"name": "Web App", "status": 200, "response_ms": 100, "error": None},
-            {"name": "Matchmaking API", "status": 200, "response_ms": 50, "error": None},
-        ]
-    )
+    cog._run_checks = AsyncMock(return_value=[
+        {"name": "Web App - Leaderboard", "method": "GET", "url": "http://test/api/leaderboard",
+         "status": 200, "response_ms": 100, "error": None, "accept_statuses": {200}},
+        {"name": "Bot API - Status", "method": "GET", "url": "http://test/users/0/status",
+         "status": 200, "response_ms": 50, "error": None, "accept_statuses": {200}},
+    ])
     embed = await cog._build_health_report()
     assert embed.color == discord.Color.green()
     assert len(embed.fields) == 2
@@ -209,12 +245,23 @@ async def test_build_health_report_all_healthy(cog):
 @pytest.mark.asyncio
 async def test_build_health_report_service_down(cog):
     """Health report embed is red when a service is down."""
-    cog._check_endpoint = AsyncMock(
-        side_effect=[
-            {"name": "Web App", "status": None, "response_ms": None, "error": "timeout"},
-            {"name": "Matchmaking API", "status": 200, "response_ms": 50, "error": None},
-        ]
-    )
+    cog._run_checks = AsyncMock(return_value=[
+        {"name": "Web App - Leaderboard", "method": "GET", "url": "http://test/api/leaderboard",
+         "status": None, "response_ms": None, "error": "timeout", "accept_statuses": {200}},
+        {"name": "Bot API - Status", "method": "GET", "url": "http://test/users/0/status",
+         "status": 200, "response_ms": 50, "error": None, "accept_statuses": {200}},
+    ])
     embed = await cog._build_health_report()
     assert embed.color == discord.Color.red()
     assert "DOWN" in embed.fields[0].name
+
+
+@pytest.mark.asyncio
+async def test_build_health_report_shows_urls(cog):
+    """Health report includes endpoint URLs for debugging."""
+    cog._run_checks = AsyncMock(return_value=[
+        {"name": "Web App - Leaderboard", "method": "GET", "url": "http://test/api/leaderboard",
+         "status": 200, "response_ms": 100, "error": None, "accept_statuses": {200}},
+    ])
+    embed = await cog._build_health_report()
+    assert "GET http://test/api/leaderboard" in embed.fields[0].value

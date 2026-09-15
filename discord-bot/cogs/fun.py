@@ -137,6 +137,57 @@ def parse_to_est_date(date_string):
     return None
 
 
+def is_same_est_calendar_day(date_string, est_date=None):
+    """True if date_string falls on the given EST calendar day (today by default)."""
+    if not date_string:
+        return False
+    last_date = parse_to_est_date(date_string)
+    if last_date is None:
+        return False
+    return last_date == (est_date or get_est_date())
+
+
+def format_time_until_est_midnight():
+    """Human wait until next midnight EST, e.g. '**3h 12m** (resets at midnight EST)'."""
+    now = get_est_now()
+    midnight = get_est_midnight()
+    time_until_next = midnight - now
+    hours = int(time_until_next.total_seconds() // 3600)
+    minutes = int((time_until_next.total_seconds() % 3600) // 60)
+    return f"**{hours}h {minutes}m** (resets at midnight EST)"
+
+
+BULLFART_COMMAND_NAME = "bullfart"
+BULLFART_BONUSES = {
+    "curio_shart": (50, "Curio Shart"),
+    "unique": (35, "Unique Fart"),
+    "elite": (25, "Elite Fart"),
+    "exceptional": (15, "Exceptional Fart"),
+    "ordinary": (10, "Ordinary Fart"),
+}
+
+# Dropdown values historically used "*_fart" suffixes; classify_fart_roll uses short types.
+PREDICTION_TYPE_ALIASES = {
+    "curio_shart": "curio_shart",
+    "unique_fart": "unique",
+    "unique": "unique",
+    "elite_fart": "elite",
+    "elite": "elite",
+    "exceptional_fart": "exceptional",
+    "exceptional": "exceptional",
+    "ordinary_fart": "ordinary",
+    "ordinary": "ordinary",
+}
+
+FART_TYPE_DISPLAY = {
+    "curio_shart": "Curio Shart! 💩💨💨💨💨",
+    "unique": "Unique Fart! 💨💨💨💨",
+    "elite": "Elite Fart! 💨💨💨",
+    "exceptional": "Exceptional Fart! 💨💨",
+    "ordinary": "Ordinary Fart! 💨",
+}
+
+
 def safe_parse_datetime(date_string):
     """
     Safely parse datetime strings that might have malformed ISO format.
@@ -541,6 +592,100 @@ class FunCog(commands.Cog):
             conn.commit()
         finally:
             conn.close()
+
+    def has_used_daily_fart_action(self, user_id):
+        """True if !fart / !fart_gift / !fartprediction already ran today (EST)."""
+        conn = sqlite3.connect("fart_scores.db")
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT date_last_updated FROM fart_scores WHERE user_id=?",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return False
+            return is_same_est_calendar_day(row[0])
+        finally:
+            conn.close()
+
+    def _ensure_command_usage_table(self, cur):
+        cur.execute(
+            """CREATE TABLE IF NOT EXISTS command_usage
+                   (user_id INTEGER,
+                    command_name TEXT,
+                    last_used TEXT,
+                    PRIMARY KEY (user_id, command_name))"""
+        )
+
+    def has_used_bullfart_today(self, user_id):
+        """True if !bullfart already ran today EST. Independent of the daily fart action."""
+        conn = sqlite3.connect("fart_scores.db")
+        try:
+            cur = conn.cursor()
+            self._ensure_command_usage_table(cur)
+            cur.execute(
+                "SELECT last_used FROM command_usage WHERE user_id=? AND command_name=?",
+                (user_id, BULLFART_COMMAND_NAME),
+            )
+            row = cur.fetchone()
+            if not row:
+                return False
+            return is_same_est_calendar_day(row[0])
+        finally:
+            conn.close()
+
+    def mark_bullfart_used(self, user_id, when=None):
+        when = when or datetime.datetime.now()
+        conn = sqlite3.connect("fart_scores.db")
+        try:
+            cur = conn.cursor()
+            self._ensure_command_usage_table(cur)
+            cur.execute(
+                "INSERT OR REPLACE INTO command_usage (user_id, command_name, last_used) VALUES (?, ?, ?)",
+                (user_id, BULLFART_COMMAND_NAME, when.isoformat()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_latest_fart_type(self, user_id):
+        """Most recent fart_history type for this user, or None."""
+        conn = sqlite3.connect("fart_scores.db")
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """SELECT fart_type FROM fart_history
+                   WHERE user_id=?
+                   ORDER BY timestamp DESC
+                   LIMIT 1""",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+        except sqlite3.Error:
+            return None
+        finally:
+            conn.close()
+
+    @staticmethod
+    def bullfart_bonus_for_type(fart_type):
+        """Return (points, display_name) for a bullfart bonus."""
+        if fart_type in BULLFART_BONUSES:
+            return BULLFART_BONUSES[fart_type]
+        return (10, fart_type or "Unknown")
+
+    @staticmethod
+    def resolve_prediction_type(value):
+        """Map dropdown values (including legacy '*_fart' ids) to classify_fart_roll types."""
+        return PREDICTION_TYPE_ALIASES.get(value, value)
+
+    @staticmethod
+    def score_fart_prediction(chosen_type, actual_type, roll):
+        """Return (points, was_correct) for a prediction vs the rolled type."""
+        if chosen_type == actual_type:
+            return roll * 2, True
+        return roll // 2, False
 
     async def update_fart_leader_role(self, ctx):
         guild = self.bot.get_guild(self.guild_id)
@@ -1392,10 +1537,10 @@ class FunCog(commands.Cog):
             inline=False,
         )
 
-        # Weekly Actions
+        # Separate daily bonus (does not consume !fart)
         embed.add_field(
-            name="📆 Weekly Actions",
-            value="`!bullfart` / `!bull_fart` - Bonus points based on last fart (once/week)",
+            name="📆 Separate Daily Bonus",
+            value="`!bullfart` / `!bull_fart` - Bonus points based on last fart (once/day, own 24h timer)",
             inline=False,
         )
 
@@ -1478,18 +1623,7 @@ class FunCog(commands.Cog):
                             timestamp TEXT NOT NULL
                            )""")
 
-                did_user_fart_today = False
-                cur.execute(
-                    "SELECT date_last_updated FROM fart_scores WHERE user_id=?",
-                    (ctx.author.id,),
-                )
-                row = cur.fetchone()
-                if row:
-                    parsed_datetime = safe_parse_datetime(row[0])
-                    if parsed_datetime:
-                        last_fart_date = parse_to_est_date(row[0])
-                        if last_fart_date == get_est_date():
-                            did_user_fart_today = True
+                did_user_fart_today = self.has_used_daily_fart_action(ctx.author.id)
             except sqlite3.Error as e:
                 logger.error(f"Database error while checking fart status: {e}")
                 await ctx.send(
@@ -1501,15 +1635,7 @@ class FunCog(commands.Cog):
                     conn.close()
 
             if did_user_fart_today:
-                # Calculate time until next fart (midnight EST)
-                now = get_est_now()
-                midnight = get_est_midnight()
-                time_until_next = midnight - now
-
-                hours = int(time_until_next.total_seconds() // 3600)
-                minutes = int((time_until_next.total_seconds() % 3600) // 60)
-
-                time_msg = f"You can fart again in **{hours}h {minutes}m** (resets at midnight EST)"
+                time_msg = f"You can fart again in {format_time_until_est_midnight()}"
                 await ctx.send(
                     f"{ctx.author.mention} {daily_usage_message}\n{time_msg}"
                 )
@@ -1661,46 +1787,18 @@ class FunCog(commands.Cog):
                 return
 
             # Check daily action on the gifter
-            did_user_fart_today = False
             try:
-                conn = sqlite3.connect("fart_scores.db")
-                cur = conn.cursor()
-                cur.execute("""CREATE TABLE IF NOT EXISTS fart_scores
-                           (user_id INTEGER PRIMARY KEY,
-                            user_display_name TEXT,
-                            date_last_updated TEXT,
-                            score INTEGER
-                           )""")
-                cur.execute(
-                    "SELECT date_last_updated FROM fart_scores WHERE user_id=?",
-                    (ctx.author.id,),
-                )
-                row = cur.fetchone()
-                if row and row[0]:
-                    parsed_datetime = safe_parse_datetime(row[0])
-                    if parsed_datetime:
-                        last_fart_date = parse_to_est_date(row[0])
-                        if last_fart_date == get_est_date():
-                            did_user_fart_today = True
+                did_user_fart_today = self.has_used_daily_fart_action(ctx.author.id)
             except sqlite3.Error as e:
                 logger.error(f"Database error while checking fart gift status: {e}")
                 await ctx.send(
                     "⚠️ There was an error checking your fart status. Please try again later."
                 )
                 return
-            finally:
-                if "conn" in locals():
-                    conn.close()
 
             if did_user_fart_today:
-                now = get_est_now()
-                midnight = get_est_midnight()
-                time_until_next = midnight - now
-                hours = int(time_until_next.total_seconds() // 3600)
-                minutes = int((time_until_next.total_seconds() % 3600) // 60)
                 time_msg = (
-                    f"You can use a daily action again in **{hours}h {minutes}m** "
-                    f"(resets at midnight EST)"
+                    f"You can use a daily action again in {format_time_until_est_midnight()}"
                 )
                 await ctx.send(
                     f"{ctx.author.mention} {daily_usage_message}\n{time_msg}"
@@ -1882,9 +1980,26 @@ class FunCog(commands.Cog):
             )
             return
 
+        try:
+            if self.has_used_daily_fart_action(ctx.author.id):
+                await ctx.send(
+                    f"{ctx.author.mention} {daily_usage_message}\n"
+                    f"You can predict again in {format_time_until_est_midnight()}"
+                )
+                return
+        except sqlite3.Error as e:
+            logger.error(f"Database error while checking fart prediction status: {e}")
+            await ctx.send(
+                "⚠️ There was an error checking your fart status. Please try again later."
+            )
+            return
+
         embed = discord.Embed(
             title="🔮 Fart Prediction Challenge",
-            description="Choose your prediction wisely! \n✅ **Correct = 2x points** \n❌ **Wrong = half points**",
+            description=(
+                "Pick a fart type from the **dropdown menu** below.\n"
+                "✅ **Correct = 2x points** \n❌ **Wrong = half points**"
+            ),
             color=discord.Color.purple(),
         )
         embed.add_field(
@@ -1898,113 +2013,49 @@ class FunCog(commands.Cog):
             ),
             inline=False,
         )
-        embed.set_footer(text="Use the dropdown menu below to make your prediction!")
+        embed.set_footer(text="Open the dropdown and tap a type — that submits your prediction.")
 
         view = FartPredictionView(self, ctx.author.id)
         await ctx.send(embed=embed, view=view)
 
     @commands.command(aliases=["bull_fart", "fart_bull", "fartbull"])
     async def bullfart(self, ctx):
-        """Use this command only once a week!"""
+        """Bonus points from your last fart. Once per day, separate from !fart."""
         if ctx.channel.id != self.fart_channel_id:
             await ctx.send(
                 f"{ctx.author.mention}, please use the fart commands in <#{self.fart_channel_id}>."
             )
             return
 
-        # Update the last used date in the database
-        now = datetime.datetime.now()
-        user_id = ctx.author.id
-        command_name = "bullfart"
-
-        # Connect to the database
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-
-        # Create a table to track command usage if it doesn't exist
-        cur.execute(
-            """CREATE TABLE IF NOT EXISTS command_usage
-                       (user_id INTEGER,
-                        command_name TEXT,
-                        last_used TEXT,
-                        PRIMARY KEY (user_id, command_name))"""
-        )
-
-        # Check if the user has used the command before
-        cur.execute(
-            "SELECT last_used FROM command_usage WHERE user_id=? AND command_name=?",
-            (user_id, command_name),
-        )
-        row = cur.fetchone()
-
-        if row:
-            parsed_datetime = safe_parse_datetime(row[0])
-            if parsed_datetime:
-                last_used_date = parsed_datetime.date()
-                next_available_date = last_used_date + datetime.timedelta(weeks=1)
-                # Check if a week has passed since the last use
-                if next_available_date > get_est_date():
-                    days_remaining = (next_available_date - get_est_date()).days
-                    await ctx.send(
-                        f"{ctx.author.mention}, you can only use this command once a week! You can use it again in **{days_remaining} day{'s' if days_remaining != 1 else ''}**."
-                    )
-                    conn.close()
-                    return
-
-        # Get the user's most recent fart from fart_history
-        cur.execute(
-            """SELECT fart_type FROM fart_history 
-               WHERE user_id=? 
-               ORDER BY timestamp DESC 
-               LIMIT 1""",
-            (user_id,),
-        )
-        roll_row = cur.fetchone()
-        print(f"Last roll row: {roll_row}")
-
-        if roll_row:
-            last_roll_type = roll_row[0]
-            print(f"User's last roll type: {last_roll_type}")
-
-            # Map fart_type to points and display name
-            fart_type_mapping = {
-                "curio_shart": (50, "Curio Shart"),
-                "unique": (35, "Unique Fart"),
-                "elite": (25, "Elite Fart"),
-                "exceptional": (15, "Exceptional Fart"),
-                "ordinary": (10, "Ordinary Fart"),
-            }
-
-            if last_roll_type in fart_type_mapping:
-                points_earned, display_name = fart_type_mapping[last_roll_type]
-            else:
-                # Fallback for unexpected values
-                points_earned = 10
-                display_name = last_roll_type
-
-            self.save_fart_score(
-                now, ctx.author.id, ctx.author.global_name, points_earned
-            )
+        try:
+            if self.has_used_bullfart_today(ctx.author.id):
+                await ctx.send(
+                    f"{ctx.author.mention}, you can only use `!bullfart` once per day "
+                    f"(separate from `!fart`)! Try again in {format_time_until_est_midnight()}."
+                )
+                return
+        except sqlite3.Error as e:
+            logger.error(f"Database error while checking bullfart cooldown: {e}")
             await ctx.send(
-                f"You earned a bonus {points_earned} points from using bullfart based on your last fart roll of {display_name}!"
+                "⚠️ There was an error checking your bullfart status. Please try again later."
             )
-        else:
-            # User hasn't rolled yet
+            return
+
+        last_roll_type = self.get_latest_fart_type(ctx.author.id)
+        if not last_roll_type:
             await ctx.send(
                 f"{ctx.author.mention}, you need to roll a fart first before using bullfart!"
             )
-            conn.close()
             return
 
-        # Update cooldown AFTER successful execution
-        cur.execute(
-            "INSERT OR REPLACE INTO command_usage (user_id, command_name, last_used) VALUES (?, ?, ?)",
-            (user_id, command_name, now.isoformat()),
+        points_earned, display_name = self.bullfart_bonus_for_type(last_roll_type)
+        display_name_safe = ctx.author.global_name or ctx.author.display_name
+        self.add_score_points(ctx.author.id, display_name_safe, points_earned)
+        self.mark_bullfart_used(ctx.author.id)
+
+        await ctx.send(
+            f"You earned a bonus {points_earned} points from using bullfart based on your last fart roll of {display_name}!"
         )
-
-        conn.commit()
-        conn.close()
-
         await self.update_fart_leader_role(ctx)
 
     @commands.command(aliases=["fart_lord", "lord_fart", "lordfart"])
@@ -2323,10 +2374,10 @@ class FunCog(commands.Cog):
 
 class FartPredictionView(discord.ui.View):
     def __init__(self, cog, user_id):
-        super().__init__(timeout=300)  # 5 minute timeout
+        super().__init__(timeout=900)  # 15 minutes — Discord component tokens last this long
         self.cog = cog
         self.user_id = user_id
-        self.prediction_made = False  # Track if prediction has already been processed
+        self.prediction_made = False
 
     async def interaction_check(self, interaction):
         if interaction.user.id != self.user_id:
@@ -2349,25 +2400,25 @@ class FartPredictionView(discord.ui.View):
             ),
             discord.SelectOption(
                 label="Unique Fart",
-                value="unique_fart",
+                value="unique",
                 emoji="🌟",
                 description="86-95 points • 10% chance • VERY RARE",
             ),
             discord.SelectOption(
                 label="Elite Fart",
-                value="elite_fart",
+                value="elite",
                 emoji="⚡",
                 description="66-85 points • 20% chance • RARE",
             ),
             discord.SelectOption(
                 label="Exceptional Fart",
-                value="exceptional_fart",
+                value="exceptional",
                 emoji="✨",
                 description="36-65 points • 30% chance • UNCOMMON",
             ),
             discord.SelectOption(
                 label="Ordinary Fart",
-                value="ordinary_fart",
+                value="ordinary",
                 emoji="💨",
                 description="1-35 points • 36% chance • COMMON",
             ),
@@ -2376,28 +2427,9 @@ class FartPredictionView(discord.ui.View):
     async def prediction_select(
         self, interaction: discord.Interaction, select: discord.ui.Select
     ):
-        selected_value = select.values[0]
-
-        # Map select values to fart messages
-        prediction_mapping = {
-            "curio_shart": "Curio Shart! 💩💨💨💨💨",
-            "unique_fart": "Unique Fart! 💨💨💨💨",
-            "elite_fart": "Elite Fart! 💨💨💨",
-            "exceptional_fart": "Exceptional Fart! 💨💨",
-            "ordinary_fart": "Ordinary Fart! 💨",
-        }
-
-        chosen_prediction = prediction_mapping[selected_value]
-        await self.handle_prediction(interaction, chosen_prediction)
-
-    @discord.ui.button(label="💨", style=discord.ButtonStyle.secondary)
-    async def ordinary_fart(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        await self.handle_prediction(interaction, "Ordinary Fart! 💨")
+        await self.handle_prediction(interaction, select.values[0])
 
     async def handle_prediction(self, interaction: discord.Interaction, prediction):
-        # Prevent duplicate predictions from double-clicks or multiple selections
         if self.prediction_made:
             await interaction.response.send_message(
                 "You've already made your prediction!", ephemeral=True
@@ -2405,47 +2437,39 @@ class FartPredictionView(discord.ui.View):
             return
 
         self.prediction_made = True
-        await interaction.response.defer()
-        await self.process_fart(interaction, prediction)
-
-        # Disable the select menu and edit the message
-        for item in self.children:
-            item.disabled = True
-        await interaction.edit_original_response(view=self)
+        try:
+            await interaction.response.defer()
+            await self.process_fart(interaction, prediction)
+            for item in self.children:
+                item.disabled = True
+            await interaction.edit_original_response(view=self)
+        except Exception as e:
+            self.prediction_made = False
+            logger.error(f"Error handling fart prediction: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(
+                    "💨 Something went wrong processing your prediction. "
+                    "Your daily action was not used — try `!fartprediction` again."
+                )
+            except Exception:
+                pass
 
     async def process_fart(
         self, interaction: discord.Interaction, chosen_prediction: str
     ):
         cog = self.cog
+        chosen_type = FunCog.resolve_prediction_type(chosen_prediction)
+        chosen_label = FART_TYPE_DISPLAY.get(chosen_type, chosen_prediction)
 
-        # Check if user already used daily action
-        did_user_fart_today = False
-        conn = sqlite3.connect("fart_scores.db")
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                "SELECT date_last_updated FROM fart_scores WHERE user_id=?",
-                (self.user_id,),
+        if cog.has_used_daily_fart_action(self.user_id):
+            await interaction.followup.send(
+                f"<@{self.user_id}>, {daily_usage_message}\n"
+                f"You can predict again in {format_time_until_est_midnight()}"
             )
-            row = cur.fetchone()
-            if row:
-                parsed_datetime = safe_parse_datetime(row[0])
-                if parsed_datetime:
-                    last_fart_date = parse_to_est_date(row[0])
-                    if last_fart_date == get_est_date():
-                        did_user_fart_today = True
-        except sqlite3.Error as e:
-            logger.error(f"Error checking daily action: {e}")
-        finally:
-            conn.close()
-
-        if did_user_fart_today:
-            await interaction.followup.send(f"<@{self.user_id}>, {daily_usage_message}")
             return
 
         roll = randrange(1, 101)
 
-        # Check for Mushroom Boost
         mushroom_boost_active = False
         try:
             conn = sqlite3.connect("fart_scores.db")
@@ -2457,13 +2481,9 @@ class FartPredictionView(discord.ui.View):
             charm_result = cur.fetchone()
 
             if charm_result:
-                # Mushroom boost is active - roll twice and take higher
                 mushroom_boost_active = True
                 roll2 = randrange(1, 101)
-                original_roll = roll
                 roll = max(roll, roll2)
-
-                # Remove the mushroom boost after use
                 cur.execute(
                     "DELETE FROM lucky_charms WHERE user_id = ?",
                     (self.user_id,),
@@ -2476,38 +2496,32 @@ class FartPredictionView(discord.ui.View):
             if "conn" in locals():
                 conn.close()
 
-        # Determine actual fart result
         fart_message, fart_type = cog.classify_fart_roll(roll)
         uber_prefix, uber_embed, uber_variant = cog.maybe_uber_rare_curio(
             fart_type, self.user_id
         )
-        effect_ctx = await cog.bot.get_context(interaction)
+        # Interaction has .channel / .guild, which uber-rare effects need.
         variant_effect_msg = await cog.apply_uber_rare_variant_effect(
-            effect_ctx, self.user_id, uber_variant
+            interaction, self.user_id, uber_variant
         )
 
         now = datetime.datetime.now()
-        points_earned = roll  # Points equal to roll value
-
-        # Check if prediction was correct
-        if chosen_prediction == fart_message:
-            points_earned *= 2
+        points_earned, was_correct = FunCog.score_fart_prediction(
+            chosen_type, fart_type, roll
+        )
+        if was_correct:
             result_message = "\n🎉 You predicted correctly! Your points are doubled!"
         else:
-            points_earned //= 2
             result_message = "\n😢 Wrong prediction! Your points are halved."
 
-        # Save the fart type to history
+        display_name = interaction.user.global_name or interaction.user.display_name
         try:
-            cog.save_fart_type(
-                self.user_id, interaction.user.global_name, fart_type, roll, now
-            )
+            cog.save_fart_type(self.user_id, display_name, fart_type, roll, now)
         except Exception as e:
             logger.error(f"Error saving fart type: {e}")
 
-        cog.save_fart_score(
-            now, self.user_id, interaction.user.global_name, points_earned
-        )
+        cog.add_score_points(self.user_id, display_name, points_earned)
+        cog.mark_daily_action_used(self.user_id, display_name, now)
 
         blurb = fart_roll_blurb(fart_message, fart_type, uber_variant)
         actual_result = blurb if blurb else "Uber-rare curio — see the highlight above."
@@ -2516,7 +2530,7 @@ class FartPredictionView(discord.ui.View):
         )
 
         await interaction.followup.send(
-            f"{uber_prefix}{variant_effect_msg}🔮 **Your Prediction:** {chosen_prediction}\n"
+            f"{uber_prefix}{variant_effect_msg}🔮 **Your Prediction:** {chosen_label}\n"
             f"💨 **Actual Result:** {mushroom_boost_msg}{actual_result}\n"
             f"{result_message} You earned **{points_earned}** points!",
             embed=uber_embed,

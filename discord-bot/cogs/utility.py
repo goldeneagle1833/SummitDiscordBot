@@ -153,7 +153,7 @@ class UtilityCog(commands.Cog):
                 "`!fart` - Roll for daily fart points\n"
                 "`!fart_gift @user` - Roll your daily fart for someone else (once/season per player)\n"
                 "`!fartprediction` - Predict fart type for 2x points\n"
-                "`!bullfart` - Get bonus points (weekly)\n\n"
+                "`!bullfart` - Get bonus points (once/day, separate from !fart)\n\n"
                 "Shop & Items:\n"
                 "`!fart_shop` - View available items\n"
                 "`!blue_shell` - Hit leader with 6d20/2 (20 pts, once/day)\n"

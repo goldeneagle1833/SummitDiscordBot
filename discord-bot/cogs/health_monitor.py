@@ -29,7 +29,7 @@ BOT_API_BASE = f"http://{MATCHMAKING_API_HOST}:{MATCHMAKING_API_PORT}"
 # accept_statuses: set of HTTP status codes considered "healthy" (beyond 2xx)
 HEALTH_ENDPOINTS = [
     # --- Web App (public) ---
-    ("Web App - Leaderboard", "GET", f"{WEB_APP_URL}/api/leaderboard", {200}),
+    ("Web App - Leaderboard Sources", "GET", f"{WEB_APP_URL}/api/leaderboard/sources", {200}),
     ("Web App - Player Lookup", "GET", f"{WEB_APP_URL}/api/player/0", {200, 404}),
     # --- Web App - PSO Relay (requires API key, expect 401/403) ---
     ("PSO Relay - Status", "GET", f"{WEB_APP_URL}/api/matchmaking/users/0/status", {401, 403}),
@@ -39,7 +39,7 @@ HEALTH_ENDPOINTS = [
 
 # Simplified list for hourly background alerts (just core services)
 ALERT_ENDPOINTS = [
-    ("Web App", "GET", f"{WEB_APP_URL}/api/leaderboard", {200}),
+    ("Web App", "GET", f"{WEB_APP_URL}/api/leaderboard/sources", {200}),
     ("Bot Matchmaking API", "GET", f"{BOT_API_BASE}/users/0/status", {200}),
 ]
 

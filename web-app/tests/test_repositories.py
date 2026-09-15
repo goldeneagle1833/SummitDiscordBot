@@ -413,7 +413,7 @@ class TestFartRepositoryReset:
             "INSERT INTO fart_history (user_id, username, fart_type, roll, timestamp) "
             "VALUES (1, 'Alice', 'ordinary', 10, '2026-08-01T00:00:00')"
         )
-        # !bullfart weekly + shop daily/weekly items
+        # !bullfart daily (separate from !fart) + shop daily/weekly items
         conn.execute(
             "INSERT INTO command_usage VALUES (1, 'bullfart', '2026-08-01T00:00:00')"
         )

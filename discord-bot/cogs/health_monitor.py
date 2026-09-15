@@ -19,7 +19,7 @@ CHECK_INTERVAL_SECONDS = 3600  # check every hour
 ALERT_COOLDOWN_SECONDS = 300   # don't re-alert for same issue within 5 minutes
 
 # Endpoints to monitor
-WEB_APP_URL = config.WEB_APP_URL
+WEB_APP_URL = getattr(config, "WEB_APP_URL", "https://sorcererssummit.com")
 MATCHMAKING_API_HOST = "127.0.0.1"
 MATCHMAKING_API_PORT = 8765
 

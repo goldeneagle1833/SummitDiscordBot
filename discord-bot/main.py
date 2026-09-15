@@ -28,6 +28,7 @@ from cogs.feedback_notifications import FeedbackNotificationsCog
 from cogs.card_catalog_sync import CardCatalogSyncCog, ensure_card_catalog_table
 from cogs.dynamic_voice import DynamicVoiceCog
 from cogs.content_monitor import ContentMonitorCog
+from cogs.health_monitor import HealthMonitorCog
 from cogs.lfg.persistent_confirm import (
     PersistentConfirmButton,
     PersistentDisputeButton,
@@ -187,6 +188,7 @@ async def setup_cogs():
     await bot.add_cog(CardCatalogSyncCog(bot))  # Daily card catalog sync from Sorcery TCG API
     await bot.add_cog(DynamicVoiceCog(bot))  # Auto-create temporary voice rooms
     await bot.add_cog(ContentMonitorCog(bot))  # Auto-create promo banners from sorcery-content links
+    await bot.add_cog(HealthMonitorCog(bot))  # Periodic API health checks, DMs owner on degradation
 
 
 async def main():

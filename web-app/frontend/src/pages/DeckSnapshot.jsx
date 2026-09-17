@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import Spinner from '@/components/ui/Spinner'
 import CardImagePopup from '@/components/deck/CardImagePopup'
 import DeckVisualizer from '@/components/deck/DeckVisualizer'
+import TryDeckButton from '@/components/deck/TryDeckButton'
 import { get } from '@/api/client'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -30,6 +31,14 @@ function buildTcgPlayerUrl(cards) {
     'https://www.tcgplayer.com/massentry?productline=Sorcery+Contested+Realm&c=' +
     encodeURIComponent(cardList)
   return TCGPLAYER_IMPACT_LINK + '?u=' + encodeURIComponent(massEntryUrl)
+}
+
+// Snapshots store the Curiosa deck id they were scraped from. Decks captured
+// from Sorcery Online or DraftSorcery have no id, and there's no URL to hand
+// Sorcery Online for those, so they get no launch button.
+function getCuriosaDeckId(deck) {
+  const id = (deck?.id || '').trim()
+  return /^[a-z0-9]{8,}$/i.test(id) ? id : null
 }
 
 function collectAllCards(deck) {
@@ -126,6 +135,7 @@ export default function DeckSnapshot() {
   const date = data.date ? new Date(data.date).toLocaleDateString() : ''
   const allCards = collectAllCards(deck)
   const tcgUrl = buildTcgPlayerUrl(allCards)
+  const curiosaDeckId = getCuriosaDeckId(deck)
   const spellbookGroups = groupByType(spellbook)
 
   return (
@@ -145,7 +155,8 @@ export default function DeckSnapshot() {
               {date && <span className="text-text-muted"> on {date}</span>}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-start gap-2">
+            {curiosaDeckId && <TryDeckButton deckId={curiosaDeckId} />}
             {tcgUrl && (
               <a
                 href={tcgUrl}

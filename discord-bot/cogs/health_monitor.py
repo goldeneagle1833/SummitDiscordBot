@@ -15,8 +15,8 @@ logger = logging.getLogger("discord_bot")
 # Thresholds
 SLOW_RESPONSE_MS = 2000       # 2 seconds = slow
 DOWN_TIMEOUT_S = 10            # 10 seconds = consider down
-CHECK_INTERVAL_SECONDS = 3600  # check every hour
-ALERT_COOLDOWN_SECONDS = 300   # don't re-alert for same issue within 5 minutes
+CHECK_INTERVAL_SECONDS = 300   # check every 5 minutes (outage alert within ~10 minutes)
+ALERT_COOLDOWN_SECONDS = 3600  # while still failing, re-alert at most hourly
 
 # Base URLs
 WEB_APP_URL = getattr(config, "WEB_APP_URL", "https://sorcererssummit.com")
@@ -29,6 +29,8 @@ BOT_API_BASE = f"http://{MATCHMAKING_API_HOST}:{MATCHMAKING_API_PORT}"
 # accept_statuses: set of HTTP status codes considered "healthy" (beyond 2xx)
 HEALTH_ENDPOINTS = [
     # --- Web App (public) ---
+    # /api/health checks DBs, disk, memory, bot API, and recent 5xx rate/latency
+    ("Web App - Health", "GET", f"{WEB_APP_URL}/api/health", {200}),
     ("Web App - Leaderboard Sources", "GET", f"{WEB_APP_URL}/api/leaderboard/sources", {200}),
     ("Web App - Player Lookup", "GET", f"{WEB_APP_URL}/api/player/0", {200, 404}),
     # --- Web App - PSO Relay (requires API key, expect 401/403) ---
@@ -39,7 +41,7 @@ HEALTH_ENDPOINTS = [
 
 # Simplified list for hourly background alerts (just core services)
 ALERT_ENDPOINTS = [
-    ("Web App", "GET", f"{WEB_APP_URL}/api/leaderboard/sources", {200}),
+    ("Web App", "GET", f"{WEB_APP_URL}/api/health", {200}),
     ("Bot Matchmaking API", "GET", f"{BOT_API_BASE}/users/0/status", {200}),
 ]
 
@@ -48,10 +50,14 @@ def _status_label(result):
     """Return a status label and whether it's healthy."""
     if result["error"]:
         return "DOWN", False
+    if result.get("health_status") == "down":
+        return "DOWN (checks failing)", False
     if result["status"] and result["status"] >= 500:
         return f"ERROR ({result['status']})", False
     if result["response_ms"] and result["response_ms"] > SLOW_RESPONSE_MS:
         return "SLOW", False
+    if result.get("health_status") == "degraded":
+        return "DEGRADED", False
     accepted = result.get("accept_statuses", set())
     if result["status"] and (200 <= result["status"] < 300 or result["status"] in accepted):
         return "OK", True
@@ -63,6 +69,7 @@ class HealthMonitorCog(commands.Cog):
         self.bot = bot
         self._last_alerts: dict[str, float] = {}  # service_name -> last alert timestamp
         self._consecutive_failures: dict[str, int] = {}  # track consecutive failures
+        self._alerted_down: set[str] = set()  # services we've sent a failure DM for
         self.health_check_loop.start()
 
     def cog_unload(self):
@@ -96,7 +103,7 @@ class HealthMonitorCog(commands.Cog):
                 req_method = getattr(session, method.lower(), session.get)
                 async with req_method(url, timeout=aiohttp.ClientTimeout(total=DOWN_TIMEOUT_S)) as resp:
                     elapsed_ms = (time.monotonic() - start) * 1000
-                    return {
+                    result = {
                         "name": name,
                         "method": method,
                         "url": url,
@@ -105,6 +112,15 @@ class HealthMonitorCog(commands.Cog):
                         "error": None,
                         "accept_statuses": accept_statuses or set(),
                     }
+                    if url.endswith("/api/health"):
+                        # Web app reports ok/degraded/down plus which checks fail
+                        try:
+                            body = await resp.json(content_type=None)
+                            result["health_status"] = body.get("status")
+                            result["failing"] = body.get("failing", [])
+                        except (aiohttp.ContentTypeError, ValueError, AttributeError):
+                            pass
+                    return result
         except asyncio.TimeoutError:
             return {"name": name, "method": method, "url": url,
                     "status": None, "response_ms": None, "error": "timeout",
@@ -139,22 +155,26 @@ class HealthMonitorCog(commands.Cog):
                 if self._consecutive_failures[service] >= threshold and self._should_alert(service):
                     detail = (f"Error: `{result['error']}`" if result["error"]
                               else f"HTTP {result['status']} | {result['response_ms']}ms")
+                    if result.get("failing"):
+                        detail += f"\nFailing checks: {', '.join(result['failing'])}"
                     await self._dm_owner(
                         f"**{service} is {label}**\n"
                         f"{detail}\n"
                         f"Consecutive failures: {self._consecutive_failures[service]}"
                     )
                     self._record_alert(service)
+                    self._alerted_down.add(service)
                 logger.warning("Health check %s for %s: %s", label, service,
                                result["error"] or f"HTTP {result['status']}")
             else:
-                if self._consecutive_failures.get(service, 0) >= 2:
-                    if self._should_alert(service):
-                        await self._dm_owner(
-                            f"**{service} has RECOVERED**\n"
-                            f"Response time: {result['response_ms']}ms | HTTP {result['status']}"
-                        )
-                        self._record_alert(service)
+                if service in self._alerted_down:
+                    # Always report recovery, even inside the re-alert cooldown
+                    await self._dm_owner(
+                        f"**{service} has RECOVERED**\n"
+                        f"Response time: {result['response_ms']}ms | HTTP {result['status']}"
+                    )
+                    self._alerted_down.discard(service)
+                    self._last_alerts.pop(service, None)
                     logger.info("Health check RECOVERED for %s", service)
                 self._consecutive_failures[service] = 0
 
@@ -174,6 +194,8 @@ class HealthMonitorCog(commands.Cog):
                 value = f"Error: `{result['error']}`"
             else:
                 value = f"**{result['response_ms']}ms** | HTTP {result['status']}"
+            if result.get("failing"):
+                value += f"\nFailing checks: {', '.join(result['failing'])}"
 
             consecutive = self._consecutive_failures.get(result["name"], 0)
             if consecutive > 0:

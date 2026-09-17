@@ -746,6 +746,13 @@ export default function Nav() {
               >
                 Admin Log
               </Link>
+              <Link
+                to="/admin/monitoring"
+                className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
+                onClick={close}
+              >
+                Monitoring
+              </Link>
             </div>
           )}
 

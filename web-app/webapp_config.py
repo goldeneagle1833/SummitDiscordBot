@@ -31,6 +31,7 @@ EXPLORER_DB_PATH = Path(os.environ.get("EXPLORER_DB_PATH", BASE_DIR / "explorer.
 RUMBLE_DB_PATH = Path(os.environ.get("RUMBLE_DB_PATH", BASE_DIR / "rumble.db"))
 DECK_BUILDER_DB_PATH = Path(os.environ.get("DECK_BUILDER_DB_PATH", BASE_DIR / "deck_builder.db"))
 FEEDBACK_DB_PATH = Path(os.environ.get("FEEDBACK_DB_PATH", BASE_DIR / "feedback.db"))
+MONITORING_DB_PATH = Path(os.environ.get("MONITORING_DB_PATH", BASE_DIR / "monitoring.db"))
 
 # Upload directories
 STATIC_DIR = BASE_DIR / "static"

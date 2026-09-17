@@ -46,3 +46,6 @@ export const addReactionRoleMapping = (messageId, emoji, roleId, roleName, emoji
   post('/api/reaction-roles/mappings', { message_id: messageId, emoji, role_id: roleId, role_name: roleName, emoji_id: emojiId })
 export const deleteReactionRoleMapping = (mappingId) =>
   del(`/api/reaction-roles/mappings/${mappingId}`)
+
+// Monitoring dashboard (requests, outbound services, resources, errors)
+export const getMonitoring = (hours = 24) => get(`/api/admin/monitoring?hours=${hours}`)

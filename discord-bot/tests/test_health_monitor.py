@@ -265,3 +265,58 @@ async def test_build_health_report_shows_urls(cog):
     ])
     embed = await cog._build_health_report()
     assert "GET http://test/api/leaderboard" in embed.fields[0].value
+
+
+def test_status_label_degraded_health_body():
+    """/api/health returning 200 with status=degraded is not healthy."""
+    result = {"status": 200, "response_ms": 50, "error": None, "accept_statuses": {200},
+              "health_status": "degraded", "failing": ["bot_api"]}
+    label, healthy = _status_label(result)
+    assert label == "DEGRADED"
+    assert healthy is False
+
+
+def test_status_label_down_health_body():
+    result = {"status": 503, "response_ms": 50, "error": None, "accept_statuses": {200},
+              "health_status": "down", "failing": ["db:elo"]}
+    label, healthy = _status_label(result)
+    assert label.startswith("DOWN")
+    assert healthy is False
+
+
+@pytest.mark.asyncio
+async def test_loop_alerts_with_failing_checks_then_recovers_inside_cooldown(cog):
+    """Failure DM lists failing checks; recovery DM is sent even within the re-alert cooldown."""
+    cog._dm_owner = AsyncMock()
+    degraded = {"name": "Web App", "method": "GET", "url": "http://test/api/health",
+                "status": 200, "response_ms": 40, "error": None, "accept_statuses": {200},
+                "health_status": "degraded", "failing": ["disk", "bot_api"]}
+    healthy = {**degraded, "health_status": "ok", "failing": []}
+
+    cog._run_checks = AsyncMock(return_value=[degraded])
+    await cog.health_check_loop.coro(cog)
+    cog._dm_owner.assert_not_called()  # first failure is below threshold
+    await cog.health_check_loop.coro(cog)
+    cog._dm_owner.assert_called_once()
+    msg = cog._dm_owner.call_args[0][0]
+    assert "DEGRADED" in msg
+    assert "disk, bot_api" in msg
+
+    cog._run_checks = AsyncMock(return_value=[healthy])
+    await cog.health_check_loop.coro(cog)
+    assert cog._dm_owner.call_count == 2
+    assert "RECOVERED" in cog._dm_owner.call_args[0][0]
+    assert cog._consecutive_failures["Web App"] == 0
+
+
+@pytest.mark.asyncio
+async def test_no_recovery_dm_when_never_alerted(cog):
+    """A single blip below the alert threshold doesn't produce a recovery DM."""
+    cog._dm_owner = AsyncMock()
+    base = {"name": "Web App", "method": "GET", "url": "http://test/api/health",
+            "response_ms": 40, "accept_statuses": {200}}
+    cog._run_checks = AsyncMock(return_value=[{**base, "status": None, "error": "timeout"}])
+    await cog.health_check_loop.coro(cog)
+    cog._run_checks = AsyncMock(return_value=[{**base, "status": 200, "error": None}])
+    await cog.health_check_loop.coro(cog)
+    cog._dm_owner.assert_not_called()

@@ -23,6 +23,9 @@ from repositories.user_profiles import UserProfileRepository
 
 logger = logging.getLogger(__name__)
 
+# Outbound OAuth calls run inside a sync gunicorn worker; never let them hang it
+OAUTH_TIMEOUT_S = 15
+
 auth_bp = Blueprint("auth", __name__)
 
 # Allowed hosts for post-login redirects (prevent open redirect)
@@ -130,7 +133,7 @@ def discord_callback():
     }
 
     try:
-        token_response = requests.post(token_url, data=token_data)
+        token_response = requests.post(token_url, data=token_data, timeout=OAUTH_TIMEOUT_S)
         token_response.raise_for_status()
         tokens = token_response.json()
     except requests.RequestException as e:
@@ -147,7 +150,7 @@ def discord_callback():
     headers = {"Authorization": f"Bearer {access_token}"}
 
     try:
-        user_response = requests.get(user_url, headers=headers)
+        user_response = requests.get(user_url, headers=headers, timeout=OAUTH_TIMEOUT_S)
         user_response.raise_for_status()
         user_data = user_response.json()
     except requests.RequestException as e:
@@ -160,7 +163,7 @@ def discord_callback():
     if DISCORD_GUILD_ID and CREATOR_ROLE_ID:
         try:
             guild_url = f"https://discord.com/api/users/@me/guilds/{DISCORD_GUILD_ID}/member"
-            member_response = requests.get(guild_url, headers=headers)
+            member_response = requests.get(guild_url, headers=headers, timeout=OAUTH_TIMEOUT_S)
             if member_response.status_code == 200:
                 member_data = member_response.json()
                 member_roles = member_data.get("roles", [])
@@ -265,7 +268,7 @@ def google_callback():
     }
 
     try:
-        token_response = requests.post(token_url, data=token_data)
+        token_response = requests.post(token_url, data=token_data, timeout=OAUTH_TIMEOUT_S)
         token_response.raise_for_status()
         tokens = token_response.json()
     except requests.RequestException as e:
@@ -282,7 +285,7 @@ def google_callback():
     headers = {"Authorization": f"Bearer {access_token}"}
 
     try:
-        user_response = requests.get(user_url, headers=headers)
+        user_response = requests.get(user_url, headers=headers, timeout=OAUTH_TIMEOUT_S)
         user_response.raise_for_status()
         user_data = user_response.json()
     except requests.RequestException as e:

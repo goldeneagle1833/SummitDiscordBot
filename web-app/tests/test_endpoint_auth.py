@@ -16,6 +16,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.misc.status",
     "api.misc.recent_event",
     "api.misc.database_status",
+    "api.monitoring.health",  # uptime checks; returns pass/fail only, no details
 
     # -- Auth flows (must be public) --
     "api.misc.me",

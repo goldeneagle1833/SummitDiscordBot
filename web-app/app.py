@@ -23,6 +23,7 @@ if _bot_path not in sys.path:
 
 from utils.version import APP_VERSION
 from utils.auth import get_current_user, is_admin, is_curio_editor
+from utils.monitoring import init_monitoring
 from routes import register_blueprints
 from migrations.create_match_reports_web import create_match_reports_web_table
 from migrations.add_season_id_to_match_reports_web import migrate as migrate_season_id
@@ -101,6 +102,9 @@ def create_app() -> Flask:
         create_card_catalog_table()
     except Exception as e:
         logger.error(f"Failed to ensure card_catalog table: {e}")
+
+    # Request timing, outbound API timing and resource sampling
+    init_monitoring(app)
 
     # Register all blueprints
     register_blueprints(app)

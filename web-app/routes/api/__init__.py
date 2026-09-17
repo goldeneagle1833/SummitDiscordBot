@@ -32,6 +32,7 @@ from routes.api.card_points import card_points_bp
 from routes.api.reaction_roles import reaction_roles_bp
 from routes.api.matchmaking import matchmaking_bp
 from routes.api.feedback import feedback_bp
+from routes.api.monitoring import monitoring_bp
 
 api_bp.register_blueprint(leaderboard_bp)
 api_bp.register_blueprint(matches_bp)
@@ -60,3 +61,4 @@ api_bp.register_blueprint(card_points_bp, url_prefix="/card-points")
 api_bp.register_blueprint(reaction_roles_bp, url_prefix="/reaction-roles")
 api_bp.register_blueprint(matchmaking_bp, url_prefix="/matchmaking")
 api_bp.register_blueprint(feedback_bp, url_prefix="/feedback")
+api_bp.register_blueprint(monitoring_bp)

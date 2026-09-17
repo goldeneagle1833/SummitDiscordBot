@@ -160,6 +160,44 @@ def _invalidate_cluster_cache():
     global _cluster_cache, _cluster_cache_time
     _cluster_cache = None
     _cluster_cache_time = 0
+    _invalidate_win_rate_cache()
+
+
+# ---------------------------------------------------------------------------
+# Cluster win rates — cached per seed
+# ---------------------------------------------------------------------------
+
+_win_rate_cache: dict[str, dict] = {}
+_win_rate_cache_time = 0.0
+_WIN_RATE_CACHE_TTL = 300  # 5 minutes
+
+
+def _get_cluster_win_rate(repo, seed) -> dict:
+    """Return cached win/loss counts for a seed's cluster.
+
+    Computing this walks every row of match_records and match_records_archive,
+    so without a cache every deck detail view re-scanned the whole match
+    history. The whole cache expires together on a TTL rather than per entry —
+    the underlying scan reads the same two tables for every seed.
+    """
+    global _win_rate_cache, _win_rate_cache_time
+    now = time.monotonic()
+    if now - _win_rate_cache_time >= _WIN_RATE_CACHE_TTL:
+        _win_rate_cache = {}
+        _win_rate_cache_time = now
+
+    win_data = _win_rate_cache.get(seed.deck_id)
+    if win_data is None:
+        win_data = repo.compute_cluster_win_rate(seed)
+        _win_rate_cache[seed.deck_id] = win_data
+    return win_data
+
+
+def _invalidate_win_rate_cache():
+    """Drop cached win rates so the next request recomputes them."""
+    global _win_rate_cache, _win_rate_cache_time
+    _win_rate_cache = {}
+    _win_rate_cache_time = 0.0
 
 
 def _get_newest_admin_deck(repo):
@@ -443,7 +481,7 @@ def get_recommendations(deck_id: str):
         members = [d for d in community if jaccard(seed.card_names, d.card_names) >= SIMILARITY_THRESHOLD]
         tiers = aggregate_archetype(members)
         avg_sim = average_similarity(seed, members)
-        win_data = repo.compute_cluster_win_rate(seed)
+        win_data = _get_cluster_win_rate(repo, seed)
 
         # Find similar tournament seed decks (>= 60% Jaccard similarity)
         SIMILAR_SEED_THRESHOLD = 0.6

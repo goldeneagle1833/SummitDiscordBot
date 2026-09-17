@@ -9,6 +9,7 @@ with dynamic OG meta tags, regular users get the React SPA index.html.
 import logging
 import re
 import os
+import time
 
 from flask import Blueprint, request, send_from_directory
 
@@ -47,6 +48,49 @@ def _is_bot() -> bool:
 def _serve_spa():
     """Serve the React SPA index.html for regular (non-bot) users."""
     return send_from_directory(os.path.abspath(_SPA_DIR), "index.html")
+
+
+# ---------------------------------------------------------------------------
+# Deck-rec seed summaries — cached, and only the fields the OG tags need
+# ---------------------------------------------------------------------------
+
+_DECK_SUMMARY_TTL = 300  # 5 minutes
+_deck_summaries: dict[str, dict] | None = None
+_deck_summaries_time = 0.0
+
+
+def _get_deck_summaries() -> dict[str, dict]:
+    """Return {deck_id: {deck_name, avatar_name, player_name, event_name, primer}}.
+
+    Building OG tags needs a deck's name and avatar, nothing more. Loading the
+    full corpus — every community deck with its card lists — to read five
+    strings cost hundreds of MB on every crawler hit, so only the seed decks
+    are read and only these fields are retained.
+    """
+    global _deck_summaries, _deck_summaries_time
+    now = time.monotonic()
+    if _deck_summaries is not None and (now - _deck_summaries_time) < _DECK_SUMMARY_TTL:
+        return _deck_summaries
+
+    try:
+        summaries = {
+            deck.deck_id: {
+                "deck_name": deck.deck_name,
+                "avatar_name": deck.avatar_name,
+                "player_name": deck.player_name,
+                "event_name": deck.event_name,
+                "primer": deck.primer,
+            }
+            for deck in DeckRecRepository().load_seed_decks()
+            if deck.deck_id
+        }
+    except Exception:
+        logger.exception("Failed to load deck summaries for OG preview")
+        return _deck_summaries or {}
+
+    _deck_summaries = summaries
+    _deck_summaries_time = now
+    return summaries
 
 
 def _resolve_avatar_image_url(avatar_name: str) -> str | None:
@@ -169,28 +213,26 @@ def og_deck_detail(deck_id: str):
         return _serve_spa()
 
     try:
-        repo = DeckRecRepository()
-        all_decks = repo.load_all_decks()
-        seed = next((d for d in all_decks if d.deck_id == deck_id and d.is_seed), None)
+        seed = _get_deck_summaries().get(deck_id)
 
         if seed:
-            title = seed.deck_name or "Deck Recommendation"
+            title = seed["deck_name"] or "Deck Recommendation"
             parts = []
-            if seed.avatar_name:
-                parts.append(seed.avatar_name)
-            if seed.player_name:
-                parts.append(f"by {seed.player_name}")
-            if seed.event_name:
-                parts.append(f"from {seed.event_name}")
+            if seed["avatar_name"]:
+                parts.append(seed["avatar_name"])
+            if seed["player_name"]:
+                parts.append(f"by {seed['player_name']}")
+            if seed["event_name"]:
+                parts.append(f"from {seed['event_name']}")
 
-            if seed.primer:
-                description = seed.primer
+            if seed["primer"]:
+                description = seed["primer"]
             elif parts:
                 description = " | ".join(parts)
             else:
                 description = "Sorcery: Contested Realm deck recommendation"
 
-            image = _resolve_avatar_image_url(seed.avatar_name)
+            image = _resolve_avatar_image_url(seed["avatar_name"])
         else:
             title = "Deck Recommendation"
             description = "Sorcery: Contested Realm deck recommendation"

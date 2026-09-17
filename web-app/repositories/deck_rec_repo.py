@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import sqlite3
+import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,16 +37,22 @@ def _extract_elements(spellbook: list) -> frozenset:
     return frozenset(elements)
 
 
-def _count_quantities(spellbook: list) -> dict[str, int]:
-    """Return a {normalized_card_name: copy_count} dict from a spellbook list."""
+def _index_spellbook(spellbook: list) -> tuple[frozenset, dict[str, int]]:
+    """Return (card_names, card_quantities) built from a single pass.
+
+    Card names are interned, so the whole deck corpus shares one string object
+    per distinct card instead of allocating a fresh one for every deck that
+    plays it. The frozenset members are the same objects as the dict keys —
+    building the two separately stored every card name twice.
+    """
     counts: Counter = Counter()
     for card in spellbook:
         if not isinstance(card, dict):
             continue
         name = card.get("name", "")
         if name:
-            counts[name.strip().lower()] += 1
-    return dict(counts)
+            counts[sys.intern(name.strip().lower())] += 1
+    return frozenset(counts), dict(counts)
 
 
 def _count_quantities_display(spellbook: list) -> dict[str, int]:
@@ -254,16 +261,11 @@ class DeckRecRepository:
 
             spellbook = raw.get("spellbook", [])
             atlas = raw.get("atlas", [])
-            card_names = frozenset(
-                c["name"].strip().lower()
-                for c in spellbook
-                if isinstance(c, dict) and c.get("name")
-            )
+            card_names, card_quantities = _index_spellbook(spellbook)
             if not card_names:
                 return None
 
             sideboard = raw.get("sideboard", [])
-            card_quantities = _count_quantities(spellbook)
             return DeckRecord(
                 deck_id=deck_id,
                 deck_name=raw.get("name", "Unnamed Deck") or "Unnamed Deck",
@@ -310,8 +312,7 @@ class DeckRecRepository:
             cur = conn.cursor()
 
             for table in ("match_records_archive", "match_records"):
-                rows = self._fetch_match_rows(cur, table)
-                for row in rows:
+                for row in self._fetch_match_rows(cur, table):
                     for side in ("winner", "losser"):
                         deck = self._parse_match_deck(row, side)
                         if deck:
@@ -324,8 +325,12 @@ class DeckRecRepository:
         logger.info("Loaded %d community deck records from match DB", len(decks))
         return decks
 
-    def _fetch_match_rows(self, cur: sqlite3.Cursor, table: str) -> list:
-        """Fetch rows with deck data from the given table."""
+    def _fetch_match_rows(self, cur: sqlite3.Cursor, table: str):
+        """Yield rows with deck data from the given table.
+
+        Streams rather than fetchall()s for the same reason as the win-rate
+        scan — every row carries two ~19 KB deck JSON blobs.
+        """
         try:
             cur.execute(f"""
                 SELECT
@@ -340,10 +345,10 @@ class DeckRecRepository:
                     (json_deck_data_winner IS NOT NULL AND json_deck_data_winner NOT IN ('', '{{}}'))
                     OR (json_deck_data_loser IS NOT NULL AND json_deck_data_loser NOT IN ('', '{{}}'))
             """)
-            return cur.fetchall()
         except sqlite3.OperationalError:
             # Table or column may not exist
-            return []
+            return
+        yield from cur
 
     def _parse_match_deck(self, row: sqlite3.Row, side: str) -> DeckRecord | None:
         """Parse winner or loser deck from a match record row."""
@@ -361,11 +366,7 @@ class DeckRecRepository:
 
             deck_data = json.loads(deck_json_str)
             spellbook = deck_data.get("spellbook", [])
-            card_names = frozenset(
-                c["name"].strip().lower()
-                for c in spellbook
-                if isinstance(c, dict) and c.get("name")
-            )
+            card_names, card_quantities = _index_spellbook(spellbook)
             if not card_names:
                 return None
 
@@ -384,7 +385,7 @@ class DeckRecRepository:
                 curiosa_url=curiosa_url or f"{self.CURIOSA_BASE}{deck_id}",
                 elements=_extract_elements(spellbook),
                 event_year=None,
-                card_quantities=_count_quantities(spellbook),
+                card_quantities=card_quantities,
             )
         except Exception as e:
             logger.debug("Skipping malformed match deck (%s): %s", side, e)
@@ -457,11 +458,7 @@ class DeckRecRepository:
 
             spellbook = deck_data.get("spellbook", [])
             atlas = deck_data.get("atlas", [])
-            card_names = frozenset(
-                c["name"].strip().lower()
-                for c in spellbook
-                if isinstance(c, dict) and c.get("name")
-            )
+            card_names, card_quantities = _index_spellbook(spellbook)
 
             if not card_names:
                 logger.warning("Admin deck %s has no card data — will show but without recommendations", deck_id)
@@ -485,7 +482,7 @@ class DeckRecRepository:
                 elements=_extract_elements(spellbook),
                 event_year=None,
                 is_admin_rec=True,
-                card_quantities=_count_quantities(spellbook),
+                card_quantities=card_quantities,
                 card_quantities_display=_count_quantities_display(spellbook),
                 card_details=_get_card_details(spellbook, atlas),
                 primer=row["primer"] or "",
@@ -605,6 +602,10 @@ class DeckRecRepository:
         For each row in match_records and match_records_archive, the winner and
         loser deck JSON is parsed and its Jaccard similarity against the seed is
         computed. Rows at or above threshold contribute a win or loss.
+
+        The cursor is iterated row by row rather than fetchall()'d — the deck
+        JSON blobs run ~19 KB each, so materialising every row at once held
+        hundreds of MB for the duration of the scan.
         """
         if not self._db_path.exists():
             return {"wins": 0, "losses": 0, "win_rate": None}
@@ -625,7 +626,7 @@ class DeckRecRepository:
                         WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner NOT IN ('', '{{}}'))
                            OR (json_deck_data_loser  IS NOT NULL AND json_deck_data_loser  NOT IN ('', '{{}}'))
                     """)
-                    for json_w, json_l in cur.fetchall():
+                    for json_w, json_l in cur:
                         if json_w and json_w not in ("", "{}"):
                             w_cards = self._parse_spellbook_names(json_w)
                             if w_cards and self._jaccard(w_cards, seed_cards) >= threshold:
@@ -653,7 +654,7 @@ class DeckRecRepository:
             data = json.loads(json_str)
             spellbook = data.get("spellbook", [])
             return frozenset(
-                c["name"].strip().lower()
+                sys.intern(c["name"].strip().lower())
                 for c in spellbook
                 if isinstance(c, dict) and c.get("name")
             )

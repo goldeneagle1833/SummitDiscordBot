@@ -2,8 +2,22 @@
 
 from unittest.mock import patch, MagicMock
 
+import pytest
+
+import routes.og_preview as og_preview
+
 BOT_UA = "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)"
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+
+@pytest.fixture(autouse=True)
+def _clear_deck_summary_cache():
+    """Deck summaries are cached at module level — reset between tests."""
+    og_preview._deck_summaries = None
+    og_preview._deck_summaries_time = 0.0
+    yield
+    og_preview._deck_summaries = None
+    og_preview._deck_summaries_time = 0.0
 
 
 class TestOGPreviewBotDetection:
@@ -111,7 +125,7 @@ class TestOGPreviewRoutes:
 
         mock_repo = MagicMock()
         mock_repo_cls.return_value = mock_repo
-        mock_repo.load_all_decks.return_value = [mock_seed]
+        mock_repo.load_seed_decks.return_value = [mock_seed]
 
         resp = client.get("/deck-rec/abc123", headers={"User-Agent": BOT_UA})
         assert resp.status_code == 200
@@ -133,7 +147,7 @@ class TestOGPreviewRoutes:
 
         mock_repo = MagicMock()
         mock_repo_cls.return_value = mock_repo
-        mock_repo.load_all_decks.return_value = [mock_seed]
+        mock_repo.load_seed_decks.return_value = [mock_seed]
 
         resp = client.get("/deck-rec/xyz789", headers={"User-Agent": BOT_UA})
         html = resp.data.decode()
@@ -144,7 +158,7 @@ class TestOGPreviewRoutes:
         """Unknown deck ID still returns valid OG HTML."""
         mock_repo = MagicMock()
         mock_repo_cls.return_value = mock_repo
-        mock_repo.load_all_decks.return_value = []
+        mock_repo.load_seed_decks.return_value = []
 
         resp = client.get("/deck-rec/unknown", headers={"User-Agent": BOT_UA})
         assert resp.status_code == 200

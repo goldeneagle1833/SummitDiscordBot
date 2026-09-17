@@ -20,6 +20,12 @@ class FakeResponse:
         return self._payload
 
 
+OK_TABLE = pso.DeckTable(
+    game_url="https://playsorceryonline.com/?m=ok",
+    invite_url="https://playsorceryonline.com/?m=invite",
+)
+
+
 def raise_unavailable(*_args, **_kwargs):
     raise pso.TableUnavailable("Sorcery Online said no")
 
@@ -57,34 +63,77 @@ def seed_deck(monkeypatch):
     return FakeSeed
 
 
-class TestProvisionSoloTable:
-    def test_sends_single_player_with_deck_url(self, configured, monkeypatch):
+class TestProvisionDeckTable:
+    def test_seats_the_visitor_with_the_deck_and_leaves_a_seat_open(self, configured, monkeypatch):
         captured = {}
 
         def fake_post(url, json=None, headers=None, timeout=None):
             captured["url"] = url
             captured["json"] = json
             captured["headers"] = headers
+            open_seat_id = json["players"][1]["discordUserId"]
             return FakeResponse(payload={
                 "players": [
-                    {"discordUserId": "7", "gameUrl": "https://playsorceryonline.com/?m=seat"}
+                    {"discordUserId": "7", "gameUrl": "https://playsorceryonline.com/?m=seat"},
+                    {"discordUserId": open_seat_id, "gameUrl": "https://playsorceryonline.com/?m=open"},
                 ]
             })
 
         monkeypatch.setattr(pso.requests, "post", fake_post)
 
-        game_url = pso.provision_solo_table(
+        table = pso.provision_deck_table(
             "https://curiosa.io/decks/abc123", display_name="Alice", player_id="7"
         )
 
-        assert game_url == "https://playsorceryonline.com/?m=seat"
+        assert table.game_url == "https://playsorceryonline.com/?m=seat"
+        assert table.invite_url == "https://playsorceryonline.com/?m=open"
         assert captured["url"] == pso.DEFAULT_ENDPOINT
         assert captured["headers"]["X-API-Key"] == "shared-test-key"
+
+        # Sorcery Online rejects anything shorter than two players.
         players = captured["json"]["players"]
-        assert len(players) == 1
+        assert len(players) == 2
         assert players[0]["deckUrl"] == "https://curiosa.io/decks/abc123"
         assert players[0]["discordUserId"] == "7"
         assert players[0]["displayName"] == "Alice"
+        assert players[1]["deckUrl"] is None
+        assert players[1]["displayName"] == pso.OPEN_SEAT_NAME
+        assert players[1]["discordUserId"] != players[0]["discordUserId"]
+
+    def test_visitor_gets_their_own_seat_whatever_the_order(self, configured, monkeypatch):
+        """The visitor's link is matched by id, not by position in the response."""
+        def fake_post(url, json=None, headers=None, timeout=None):
+            open_seat_id = json["players"][1]["discordUserId"]
+            return FakeResponse(payload={
+                "players": [
+                    {"discordUserId": open_seat_id, "gameUrl": "https://playsorceryonline.com/?m=open"},
+                    {"discordUserId": "7", "gameUrl": "https://playsorceryonline.com/?m=mine"},
+                ]
+            })
+
+        monkeypatch.setattr(pso.requests, "post", fake_post)
+
+        table = pso.provision_deck_table(
+            "https://curiosa.io/decks/abc123", display_name="Alice", player_id="7"
+        )
+
+        assert table.game_url == "https://playsorceryonline.com/?m=mine"
+        assert table.invite_url == "https://playsorceryonline.com/?m=open"
+
+    def test_missing_invite_link_is_not_fatal(self, configured, monkeypatch):
+        monkeypatch.setattr(
+            pso.requests, "post",
+            lambda url, json=None, headers=None, timeout=None: FakeResponse(payload={
+                "players": [{"discordUserId": "7", "gameUrl": "https://playsorceryonline.com/?m=mine"}]
+            }),
+        )
+
+        table = pso.provision_deck_table(
+            "https://curiosa.io/decks/abc", display_name="Alice", player_id="7"
+        )
+
+        assert table.game_url == "https://playsorceryonline.com/?m=mine"
+        assert table.invite_url is None
 
     def test_anonymous_visitor_gets_a_generated_seat_id(self, configured, monkeypatch):
         captured = {}
@@ -92,12 +141,15 @@ class TestProvisionSoloTable:
         def fake_post(url, json=None, headers=None, timeout=None):
             captured["json"] = json
             return FakeResponse(payload={
-                "players": [{"gameUrl": "https://playsorceryonline.com/?m=x"}]
+                "players": [
+                    {"discordUserId": json["players"][0]["discordUserId"],
+                     "gameUrl": "https://playsorceryonline.com/?m=x"},
+                ]
             })
 
         monkeypatch.setattr(pso.requests, "post", fake_post)
 
-        pso.provision_solo_table(
+        pso.provision_deck_table(
             "https://curiosa.io/decks/abc123", display_name="Summit Player"
         )
 
@@ -107,7 +159,7 @@ class TestProvisionSoloTable:
         monkeypatch.setattr(webapp_config, "DRAFT_SORCERY_API_KEY", "")
         assert not pso.is_configured()
         with pytest.raises(pso.TableUnavailable):
-            pso.provision_solo_table("https://curiosa.io/decks/abc", display_name="x")
+            pso.provision_deck_table("https://curiosa.io/decks/abc", display_name="x")
 
     def test_error_status_raises(self, configured, monkeypatch):
         monkeypatch.setattr(
@@ -115,7 +167,7 @@ class TestProvisionSoloTable:
             lambda *a, **k: FakeResponse(status_code=400, text="two players required"),
         )
         with pytest.raises(pso.TableUnavailable):
-            pso.provision_solo_table("https://curiosa.io/decks/abc", display_name="x")
+            pso.provision_deck_table("https://curiosa.io/decks/abc", display_name="x")
 
     def test_network_failure_raises(self, configured, monkeypatch):
         def boom(*a, **k):
@@ -123,15 +175,17 @@ class TestProvisionSoloTable:
 
         monkeypatch.setattr(pso.requests, "post", boom)
         with pytest.raises(pso.TableUnavailable):
-            pso.provision_solo_table("https://curiosa.io/decks/abc", display_name="x")
+            pso.provision_deck_table("https://curiosa.io/decks/abc", display_name="x")
 
-    def test_response_without_seat_link_raises(self, configured, monkeypatch):
+    def test_response_without_the_visitors_seat_raises(self, configured, monkeypatch):
         monkeypatch.setattr(
             pso.requests, "post",
-            lambda *a, **k: FakeResponse(payload={"players": [{"discordUserId": "7"}]}),
+            lambda *a, **k: FakeResponse(payload={
+                "players": [{"discordUserId": "someone-else", "gameUrl": "https://x/?m=1"}]
+            }),
         )
         with pytest.raises(pso.TableUnavailable):
-            pso.provision_solo_table("https://curiosa.io/decks/abc", display_name="x")
+            pso.provision_deck_table("https://curiosa.io/decks/abc", display_name="x")
 
 
 class TestThrottle:
@@ -149,14 +203,16 @@ class TestThrottle:
 class TestPsoTableRoute:
     def test_returns_game_url(self, client, configured, seed_deck, monkeypatch):
         monkeypatch.setattr(
-            deck_rec_routes, "provision_solo_table",
-            lambda deck_url, **kw: "https://playsorceryonline.com/?m=ok",
+            deck_rec_routes, "provision_deck_table",
+            lambda deck_url, **kw: OK_TABLE,
         )
 
         resp = client.post(f"/api/deck-rec/{seed_deck.deck_id}/pso-table")
 
         assert resp.status_code == 200
-        assert resp.get_json()["game_url"] == "https://playsorceryonline.com/?m=ok"
+        body = resp.get_json()
+        assert body["game_url"] == "https://playsorceryonline.com/?m=ok"
+        assert body["invite_url"] == "https://playsorceryonline.com/?m=invite"
 
     def test_passes_the_decks_curiosa_url_through(self, client, configured, seed_deck, monkeypatch):
         captured = {}
@@ -164,9 +220,9 @@ class TestPsoTableRoute:
         def fake_provision(deck_url, **kwargs):
             captured["deck_url"] = deck_url
             captured.update(kwargs)
-            return "https://playsorceryonline.com/?m=ok"
+            return OK_TABLE
 
-        monkeypatch.setattr(deck_rec_routes, "provision_solo_table", fake_provision)
+        monkeypatch.setattr(deck_rec_routes, "provision_deck_table", fake_provision)
 
         client.post(f"/api/deck-rec/{seed_deck.deck_id}/pso-table")
 
@@ -177,9 +233,9 @@ class TestPsoTableRoute:
 
         def fake_provision(deck_url, **kwargs):
             captured.update(kwargs)
-            return "https://playsorceryonline.com/?m=ok"
+            return OK_TABLE
 
-        monkeypatch.setattr(deck_rec_routes, "provision_solo_table", fake_provision)
+        monkeypatch.setattr(deck_rec_routes, "provision_deck_table", fake_provision)
         with client.session_transaction() as sess:
             sess["user_id"] = 123456789012345678
             sess["username"] = "Bruce"
@@ -194,9 +250,9 @@ class TestPsoTableRoute:
 
         def fake_provision(deck_url, **kwargs):
             captured.update(kwargs)
-            return "https://playsorceryonline.com/?m=ok"
+            return OK_TABLE
 
-        monkeypatch.setattr(deck_rec_routes, "provision_solo_table", fake_provision)
+        monkeypatch.setattr(deck_rec_routes, "provision_deck_table", fake_provision)
         with client.session_transaction() as sess:
             sess["user_id"] = "google_998877"
             sess["username"] = "Googler"
@@ -224,25 +280,25 @@ class TestPsoTableRoute:
         assert resp.status_code == 404
 
     def test_provisioning_failure_returns_502(self, client, configured, seed_deck, monkeypatch):
-        monkeypatch.setattr(deck_rec_routes, "provision_solo_table", raise_unavailable)
+        monkeypatch.setattr(deck_rec_routes, "provision_deck_table", raise_unavailable)
         resp = client.post(f"/api/deck-rec/{seed_deck.deck_id}/pso-table")
         assert resp.status_code == 502
         assert "Sorcery Online" in resp.get_json()["error"]
 
     def test_failure_does_not_consume_the_cooldown(self, client, configured, seed_deck, monkeypatch):
-        monkeypatch.setattr(deck_rec_routes, "provision_solo_table", raise_unavailable)
+        monkeypatch.setattr(deck_rec_routes, "provision_deck_table", raise_unavailable)
         assert client.post(f"/api/deck-rec/{seed_deck.deck_id}/pso-table").status_code == 502
 
         monkeypatch.setattr(
-            deck_rec_routes, "provision_solo_table",
-            lambda *a, **k: "https://playsorceryonline.com/?m=ok",
+            deck_rec_routes, "provision_deck_table",
+            lambda *a, **k: OK_TABLE,
         )
         assert client.post(f"/api/deck-rec/{seed_deck.deck_id}/pso-table").status_code == 200
 
     def test_rapid_second_request_is_throttled(self, client, configured, seed_deck, monkeypatch):
         monkeypatch.setattr(
-            deck_rec_routes, "provision_solo_table",
-            lambda *a, **k: "https://playsorceryonline.com/?m=ok",
+            deck_rec_routes, "provision_deck_table",
+            lambda *a, **k: OK_TABLE,
         )
         assert client.post(f"/api/deck-rec/{seed_deck.deck_id}/pso-table").status_code == 200
         resp = client.post(f"/api/deck-rec/{seed_deck.deck_id}/pso-table")

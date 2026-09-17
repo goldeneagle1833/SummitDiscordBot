@@ -24,7 +24,7 @@ from services.sorcery_online_table import (
     TableUnavailable,
     claim_slot,
     is_configured,
-    provision_solo_table,
+    provision_deck_table,
     release_slot,
 )
 from utils.auth import is_admin, require_admin
@@ -571,8 +571,9 @@ def _resolve_deck_url(deck_id: str) -> tuple[str | None, str]:
 def create_pso_table(deck_id: str):
     """Provision a Sorcery Online table with this deck already loaded.
 
-    Same provisioning the LFG queue uses when it pairs two players, but with
-    only the visitor's seat filled so they can try the deck straight away.
+    Same provisioning the LFG queue uses when it pairs two players, except the
+    second seat is left open — the visitor gets the deck, and `invite_url` is
+    the link an opponent can join on.
     """
     if not _DECK_ID_RE.match(deck_id or ""):
         return jsonify({"error": "Invalid deck id"}), 400
@@ -600,7 +601,7 @@ def create_pso_table(deck_id: str):
     user_id = str(session.get("user_id") or "")
     display_name = session.get("username") or "Summit Player"
     try:
-        game_url = provision_solo_table(
+        table = provision_deck_table(
             deck_url,
             display_name=display_name,
             player_id=user_id if user_id.isdigit() else None,
@@ -614,7 +615,11 @@ def create_pso_table(deck_id: str):
         return jsonify({"error": "Could not open a Sorcery Online table."}), 502
 
     logger.info("Opened Sorcery Online table for deck %s (%s)", deck_id, deck_name)
-    return jsonify({"game_url": game_url, "deck_name": deck_name})
+    return jsonify({
+        "game_url": table.game_url,
+        "invite_url": table.invite_url,
+        "deck_name": deck_name,
+    })
 
 
 @deck_rec_bp.route("/admin/add-deck", methods=["POST"])

@@ -1,10 +1,13 @@
-"""Single-seat Sorcery Online table provisioning for "Try this Deck".
+"""Sorcery Online table provisioning for "Try this Deck".
 
 The Discord bot provisions a preloaded table for both players when the LFG
 queue makes a pairing (see ``discord-bot/services/sorcery_online_matchmaking.py``).
-This module asks Sorcery Online for the same thing with only one seat filled:
-the visitor gets a table with the deck already loaded and can invite whoever
-they like from there.
+This module asks for the same thing, except only the visitor's seat carries a
+deck — the second seat is left open for whoever they invite.
+
+Sorcery Online validates ``players`` as "at least 2 elements", so a genuine
+one-seat request is rejected outright; the open seat is how a solo launch is
+expressed.
 """
 
 import logging
@@ -12,6 +15,7 @@ import os
 import threading
 import time
 import uuid
+from typing import NamedTuple
 
 import requests
 
@@ -24,6 +28,7 @@ DEFAULT_ENDPOINT = "https://playsorceryonline.com/api/internal/summit-matchmakin
 # read budget is generous while a dead host still fails fast.
 REQUEST_TIMEOUT_S = (3, 15)
 QUEUE_TYPE = "testing"
+OPEN_SEAT_NAME = "Open Seat"
 
 # Per-visitor cooldown. In-process only (each Gunicorn worker keeps its own
 # table), which is enough to stop a held-down button from hammering a partner
@@ -32,6 +37,13 @@ COOLDOWN_SECONDS = 10
 _MAX_TRACKED_CLIENTS = 5000
 _recent_requests: dict[str, float] = {}
 _recent_lock = threading.Lock()
+
+
+class DeckTable(NamedTuple):
+    """The two seat links Sorcery Online hands back for a provisioned table."""
+
+    game_url: str
+    invite_url: str | None
 
 
 class TableUnavailable(Exception):
@@ -73,8 +85,11 @@ def release_slot(client_key: str) -> None:
         _recent_requests.pop(client_key, None)
 
 
-def provision_solo_table(deck_url: str, *, display_name: str, player_id: str | None = None) -> str:
-    """Return a Sorcery Online table URL with ``deck_url`` preloaded.
+def provision_deck_table(deck_url: str, *, display_name: str, player_id: str | None = None) -> DeckTable:
+    """Return the seat links for a table with ``deck_url`` preloaded.
+
+    The visitor's seat carries the deck; the second seat is an empty "Open
+    Seat" whose link can be passed to an opponent, who brings their own deck.
 
     Raises TableUnavailable when the integration is unconfigured or Sorcery
     Online declines; the response body is logged so failures are diagnosable.
@@ -85,6 +100,7 @@ def provision_solo_table(deck_url: str, *, display_name: str, player_id: str | N
         raise TableUnavailable("Sorcery Online provisioning is not configured")
 
     seat_id = str(player_id) if player_id else f"web-{uuid.uuid4().hex[:16]}"
+    open_seat_id = f"web-open-{uuid.uuid4().hex[:16]}"
     payload = {
         "guildId": str(webapp_config.DISCORD_GUILD_ID),
         "pairingId": f"trydeck-{uuid.uuid4().hex[:16]}",
@@ -94,7 +110,12 @@ def provision_solo_table(deck_url: str, *, display_name: str, player_id: str | N
                 "discordUserId": seat_id,
                 "displayName": display_name[:60] or "Summit Player",
                 "deckUrl": deck_url,
-            }
+            },
+            {
+                "discordUserId": open_seat_id,
+                "displayName": OPEN_SEAT_NAME,
+                "deckUrl": None,
+            },
         ],
     }
 
@@ -122,13 +143,18 @@ def provision_solo_table(deck_url: str, *, display_name: str, player_id: str | N
         logger.warning("Sorcery Online table response was not JSON: %s", response.text[:500])
         raise TableUnavailable("Sorcery Online returned an unexpected response.")
 
-    game_url = next(
-        (p.get("gameUrl") for p in players if isinstance(p, dict) and p.get("gameUrl")),
-        None,
-    )
+    seats = {
+        str(p.get("discordUserId")): p["gameUrl"]
+        for p in players
+        if isinstance(p, dict) and p.get("gameUrl")
+    }
+    game_url = seats.pop(seat_id, None)
     if not game_url:
         logger.warning(
-            "Sorcery Online table response had no seat link: %s", response.text[:500]
+            "Sorcery Online table response had no seat link for the visitor: %s",
+            response.text[:500],
         )
         raise TableUnavailable("Sorcery Online did not return a table link.")
-    return game_url
+    # Whatever is left is the open seat — handy as an invite, but the table
+    # still works without it, so a missing one isn't worth failing over.
+    return DeckTable(game_url=game_url, invite_url=seats.pop(open_seat_id, None))

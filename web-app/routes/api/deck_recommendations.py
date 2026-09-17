@@ -1,8 +1,9 @@
 """API routes for Sorcery Deck Rec.
 
 Endpoints:
-  GET /api/deck-rec/decks                        — list all archetype seeds
-  GET /api/deck-rec/<deck_id>/recommendations    — archetype aggregation for a seed
+  GET  /api/deck-rec/decks                        — list all archetype seeds
+  GET  /api/deck-rec/<deck_id>/recommendations    — archetype aggregation for a seed
+  POST /api/deck-rec/<deck_id>/pso-table          — open a Sorcery Online table with the deck
 """
 
 import json
@@ -19,6 +20,13 @@ from flask import Blueprint, jsonify, request, session
 from repositories.deck_rec_repo import DeckRecRepository, _get_card_details
 from services.curiosa import CuriosaService
 from services.deck_similarity import SIMILARITY_THRESHOLD, aggregate_archetype, average_similarity, build_clusters, jaccard
+from services.sorcery_online_table import (
+    TableUnavailable,
+    claim_slot,
+    is_configured,
+    provision_solo_table,
+    release_slot,
+)
 from utils.auth import is_admin, require_admin
 from utils.formatting import normalize_card_name
 from repositories.card_catalog import CardCatalogRepository
@@ -519,6 +527,94 @@ def get_recommendations(deck_id: str):
     except Exception as e:
         logger.exception("Error in get_recommendations for %s: %s", deck_id, e)
         return jsonify({"error": "Failed to compute recommendations"}), 500
+
+
+# ---------------------------------------------------------------------------
+# "Try this Deck" — open a Sorcery Online table with the deck preloaded
+# ---------------------------------------------------------------------------
+
+_DECK_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
+
+
+def _client_key() -> str:
+    """Identify the caller for throttling — session first, then client IP."""
+    user_id = session.get("user_id")
+    if user_id:
+        return f"user:{user_id}"
+    ip = (
+        request.headers.get("CF-Connecting-IP")
+        or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or request.remote_addr
+        or "unknown"
+    )
+    return f"ip:{ip}"
+
+
+def _resolve_deck_url(deck_id: str) -> tuple[str | None, str]:
+    """Return (curiosa_url, deck_name) for a deck-rec deck, or (None, "") if unusable.
+
+    Seeds carry their own Curiosa URL. Decks linked from the event pages aren't
+    seeds, so they get the canonical Curiosa URL for their id — the same
+    fallback `get_deck_info` uses.
+    """
+    _repo, seeds, _community, _clusters = _load_and_cluster()
+    seed = next((d for d in seeds if d.deck_id == deck_id), None)
+
+    if seed is not None:
+        if seed.deck_id in DeckRecRepository().get_hidden_deck_ids() and not is_admin():
+            return None, ""
+        return seed.curiosa_url or f"https://sorcerytcg.com/decks/{deck_id}", seed.deck_name or ""
+    return f"https://sorcerytcg.com/decks/{deck_id}", ""
+
+
+@deck_rec_bp.route("/<deck_id>/pso-table", methods=["POST"])
+def create_pso_table(deck_id: str):
+    """Provision a Sorcery Online table with this deck already loaded.
+
+    Same provisioning the LFG queue uses when it pairs two players, but with
+    only the visitor's seat filled so they can try the deck straight away.
+    """
+    if not _DECK_ID_RE.match(deck_id or ""):
+        return jsonify({"error": "Invalid deck id"}), 400
+    if not is_configured():
+        return jsonify({"error": "Sorcery Online is not connected right now."}), 503
+
+    try:
+        deck_url, deck_name = _resolve_deck_url(deck_id)
+    except Exception as e:
+        logger.exception("Error resolving deck %s for Sorcery Online: %s", deck_id, e)
+        return jsonify({"error": "Failed to load that deck"}), 500
+    if not deck_url:
+        return jsonify({"error": "Deck not found"}), 404
+
+    client_key = _client_key()
+    wait_seconds = claim_slot(client_key)
+    if wait_seconds:
+        return jsonify({
+            "error": "Give it a few seconds before opening another table.",
+            "retry_after": wait_seconds,
+        }), 429
+
+    # Only Discord sessions carry an id Sorcery Online recognises; Google
+    # logins (prefixed "google_") and anonymous visitors get a generated seat id.
+    user_id = str(session.get("user_id") or "")
+    display_name = session.get("username") or "Summit Player"
+    try:
+        game_url = provision_solo_table(
+            deck_url,
+            display_name=display_name,
+            player_id=user_id if user_id.isdigit() else None,
+        )
+    except TableUnavailable as e:
+        release_slot(client_key)
+        return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        release_slot(client_key)
+        logger.exception("Unexpected Sorcery Online failure for %s: %s", deck_id, e)
+        return jsonify({"error": "Could not open a Sorcery Online table."}), 502
+
+    logger.info("Opened Sorcery Online table for deck %s (%s)", deck_id, deck_name)
+    return jsonify({"game_url": game_url, "deck_name": deck_name})
 
 
 @deck_rec_bp.route("/admin/add-deck", methods=["POST"])

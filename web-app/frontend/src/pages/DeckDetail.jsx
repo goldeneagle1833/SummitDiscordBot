@@ -5,6 +5,7 @@ import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
 import CardImagePopup from '@/components/deck/CardImagePopup'
 import DeckVisualizer from '@/components/deck/DeckVisualizer'
+import TryDeckButton from '@/components/deck/TryDeckButton'
 import usePageTitle from '@/hooks/usePageTitle'
 
 const TCGPLAYER_IMPACT_LINK = 'https://partner.tcgplayer.com/c/5746741/1780961/21018'
@@ -287,18 +288,21 @@ export default function DeckDetail() {
               </a>
             )}
           </div>
-          {tcgUrl && (
-            <a
-              href={tcgUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-2 rounded transition-colors whitespace-nowrap"
-              onClick={() => navigator.sendBeacon?.('/api/analytics/banner-click',
-                new Blob([JSON.stringify({ banner_type: 'tcgplayer_buy' })], { type: 'application/json' }))}
-            >
-              Buy on TCGPlayer ↗
-            </a>
-          )}
+          <div className="flex flex-wrap items-start gap-2">
+            <TryDeckButton deckId={seed.deck_id} />
+            {tcgUrl && (
+              <a
+                href={tcgUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-2 rounded transition-colors whitespace-nowrap"
+                onClick={() => navigator.sendBeacon?.('/api/analytics/banner-click',
+                  new Blob([JSON.stringify({ banner_type: 'tcgplayer_buy' })], { type: 'application/json' }))}
+              >
+                Buy on TCGPlayer ↗
+              </a>
+            )}
+          </div>
         </div>
         {seed.primer && (
           <div className="mt-3 text-sm text-text-muted italic border-t border-border pt-3">{seed.primer}</div>

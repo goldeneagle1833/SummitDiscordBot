@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import AvatarImageAdmin from '@/components/ui/AvatarImageAdmin'
+import TryDeckButton from '@/components/deck/TryDeckButton'
 import { getDeckRecList, adminAddDeck, adminUpdateDeck, adminRemoveDeck, adminHideDeck, adminUnhideDeck } from '@/api/decks'
 import { getAvatarImageFiles } from '@/api/cards'
 import { getAvatarImageSettings } from '@/api/admin'
@@ -102,8 +103,11 @@ function DeckCard({ deck, imageFiles, imageSettings, isAdmin, onEdit, onRemove, 
         {starsStr && <div className="text-sm text-yellow-400 mb-1 drop-shadow">{starsStr}</div>}
         <ElementIcons elements={deck.elements} />
         {deck.primer && <div className="text-xs text-text-primary/80 mt-1 line-clamp-2 italic">{deck.primer}</div>}
-        <div className="text-xs text-text-primary/70 mt-auto pt-2">
-          Community: <span className="text-text-primary font-medium">{clusterLabel}</span>
+        <div className="flex items-end justify-between gap-2 mt-auto pt-2">
+          <div className="text-xs text-text-primary/70">
+            Community: <span className="text-text-primary font-medium">{clusterLabel}</span>
+          </div>
+          <TryDeckButton deckId={deck.deck_id} size="sm" />
         </div>
         {isAdmin && (
           <div className="flex justify-end gap-2 mt-2 flex-wrap" onClick={(e) => e.stopPropagation()}>

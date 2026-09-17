@@ -8,6 +8,10 @@ export const getDeckInfo = (deckId) =>
 export const getDeckRecommendations = (deckId) =>
   get(`/api/deck-rec/${encodeURIComponent(deckId)}/recommendations`)
 
+// Opens a Sorcery Online table with this deck preloaded — returns { game_url }
+export const createPsoTable = (deckId) =>
+  post(`/api/deck-rec/${encodeURIComponent(deckId)}/pso-table`, {})
+
 // Admin deck management
 export const adminAddDeck = (body) => post('/api/deck-rec/admin/add-deck', body)
 export const adminUpdateDeck = (deckId, body) =>

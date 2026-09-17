@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 store_bp = Blueprint("store", __name__)
 
+# Orders above this total can't be marked shipped without a tracking number
+TRACKING_REQUIRED_OVER_CENTS = 5000
+
 
 def _repo() -> StoreRepository:
     return StoreRepository()
@@ -166,10 +169,17 @@ def admin_ship_order(order_id: int):
     data = request.get_json(silent=True) or {}
     tracking = (data.get("tracking_number") or "").strip() or None
     carrier = (data.get("tracking_carrier") or "").strip() or None
-    if not tracking:
-        return jsonify({"error": "tracking_number is required"}), 400
 
     repo = _repo()
+    order = repo.get_order(order_id)
+    if order and not tracking and order["total_cents"] > TRACKING_REQUIRED_OVER_CENTS:
+        return jsonify({
+            "error": f"Tracking is required for orders over "
+                     f"${TRACKING_REQUIRED_OVER_CENTS / 100:.0f}"
+        }), 400
+    if not tracking:
+        carrier = None
+
     if not repo.mark_shipped(order_id, tracking, carrier):
         return jsonify({"error": "Order not found or not in 'paid' status"}), 409
 
@@ -190,14 +200,30 @@ def admin_set_order_status(order_id: int):
     data = request.get_json(silent=True) or {}
     status = data.get("status")
     repo = _repo()
-    try:
-        if not repo.set_status(order_id, status):
-            return jsonify({"error": "Order not found"}), 404
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
 
     if status == "cancelled":
-        repo.restock_order_items(order_id)
+        order = repo.get_order(order_id)
+        if not order:
+            return jsonify({"error": "Order not found"}), 404
+        try:
+            cancelled = StoreCheckoutService(repo).cancel_order(order)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 409
+        except Exception:
+            logger.exception(f"Could not close Stripe session for order {order_id}")
+            return jsonify({
+                "error": "Could not close the Stripe checkout session; order not cancelled"
+            }), 502
+        if not cancelled:
+            return jsonify({
+                "error": "Only unpaid or paid (unshipped) orders can be cancelled"
+            }), 409
+    else:
+        try:
+            if not repo.set_status(order_id, status):
+                return jsonify({"error": "Order not found"}), 404
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
 
     actor_id, actor_name = _actor()
     repo.log_action(actor_id, actor_name, "set_order_status",
@@ -438,13 +464,15 @@ def stripe_webhook():
     try:
         result = service.handle_event(event)
     except Exception:
-        logger.exception(
-            f"Unhandled error processing Stripe event {event.get('type', '?')}"
-        )
-        return jsonify({"error": "internal error processing event"}), 200
+        logger.exception(f"Unhandled error processing Stripe event {event['type']}")
+        # Non-2xx makes Stripe retry with backoff. Handlers are idempotent
+        # (mark_paid / cancel_order only transition once), so a retry after
+        # a transient failure (e.g. database locked) finishes the job instead
+        # of leaving a charged order stuck in pending_payment.
+        return jsonify({"error": "internal error processing event"}), 500
 
-    # Always 200 for verified events so Stripe stops retrying ones we
-    # deliberately ignored; mishandled orders are logged + audited.
+    # 200 for events we handled or deliberately ignored so Stripe stops
+    # retrying them; flagged orders are logged + audited.
     return jsonify(result), 200
 
 

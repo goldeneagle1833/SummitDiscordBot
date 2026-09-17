@@ -239,7 +239,11 @@ const QUEUE_FILTERS = [
   { key: '', label: 'All' },
 ]
 
+// Keep in sync with TRACKING_REQUIRED_OVER_CENTS in routes/api/store.py
+const TRACKING_REQUIRED_OVER_CENTS = 5000
+
 function OrderRow({ order, onChanged }) {
+  const trackingRequired = order.total_cents > TRACKING_REQUIRED_OVER_CENTS
   const [expanded, setExpanded] = useState(false)
   const [detail, setDetail] = useState(null)
   const [tracking, setTracking] = useState('')
@@ -313,7 +317,12 @@ function OrderRow({ order, onChanged }) {
           {order.status === 'paid' && (
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <input className={`${inputCls} flex-1 min-w-40`} placeholder="Tracking number (optional)" value={tracking} onChange={(e) => setTracking(e.target.value)} />
+                <input
+                  className={`${inputCls} flex-1 min-w-40`}
+                  placeholder={trackingRequired ? 'Tracking number (required)' : 'Tracking number (optional)'}
+                  value={tracking}
+                  onChange={(e) => setTracking(e.target.value)}
+                />
                 {tracking.trim() && (
                   <select className={inputCls} value={carrier} onChange={(e) => setCarrier(e.target.value)}>
                     <option>USPS</option>
@@ -324,14 +333,18 @@ function OrderRow({ order, onChanged }) {
                 )}
                 <button
                   onClick={ship}
-                  disabled={busy}
+                  disabled={busy || (trackingRequired && !tracking.trim())}
                   className="bg-accent-green hover:opacity-90 text-white font-medium px-4 py-2 rounded disabled:opacity-50"
                 >
                   Mark shipped
                 </button>
               </div>
               {!tracking.trim() && (
-                <p className="text-xs text-text-muted mt-1">Tracking is only required for orders over $50.</p>
+                <p className="text-xs text-text-muted mt-1">
+                  {trackingRequired
+                    ? 'This order is over $50, so it needs a tracking number.'
+                    : 'Tracking is only required for orders over $50.'}
+                </p>
               )}
             </div>
           )}

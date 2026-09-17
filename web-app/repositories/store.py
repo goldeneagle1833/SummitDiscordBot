@@ -23,6 +23,9 @@ ORDER_STATUSES = (
     "refunded",
 )
 
+# Orders whose items haven't left the building, so cancelling returns stock
+CANCELLABLE_STATUSES = ("pending_payment", "paid")
+
 
 class StoreRepository:
     """Data access for the token-card store."""
@@ -414,7 +417,7 @@ class StoreRepository:
             )
             return cur.rowcount > 0
 
-    def mark_shipped(self, order_id: int, tracking_number: str,
+    def mark_shipped(self, order_id: int, tracking_number: str | None,
                      tracking_carrier: str | None = None) -> bool:
         now = self._now()
         with self._connect() as conn:
@@ -437,19 +440,43 @@ class StoreRepository:
             )
             return cur.rowcount > 0
 
-    def restock_order_items(self, order_id: int) -> None:
-        """Return stock for a cancelled/expired order."""
+    def cancel_order(self, order_id: int,
+                     from_statuses: tuple[str, ...] = CANCELLABLE_STATUSES) -> bool:
+        """Cancel an order and return its stock, exactly once.
+
+        The status transition and the restock happen in one transaction, and
+        only when the order is currently in one of `from_statuses`. A repeat
+        cancel (double click, admin cancel racing the Stripe expiry webhook)
+        is a no-op returning False, so stock is never returned twice.
+        """
+        now = self._now()
+        placeholders = ",".join("?" for _ in from_statuses)
         with self._connect() as conn:
-            items = conn.execute(
-                "SELECT product_id, quantity FROM order_items WHERE order_id = ?",
-                (order_id,),
-            ).fetchall()
-            for item in items:
-                conn.execute(
-                    """UPDATE products SET stock_quantity = stock_quantity + ?,
-                       updated_at = ? WHERE id = ?""",
-                    (item["quantity"], self._now(), item["product_id"]),
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                cur = conn.execute(
+                    f"""UPDATE orders SET status = 'cancelled', updated_at = ?
+                        WHERE id = ? AND status IN ({placeholders})""",
+                    (now, order_id, *from_statuses),
                 )
+                if cur.rowcount == 0:
+                    conn.rollback()
+                    return False
+                items = conn.execute(
+                    "SELECT product_id, quantity FROM order_items WHERE order_id = ?",
+                    (order_id,),
+                ).fetchall()
+                for item in items:
+                    conn.execute(
+                        """UPDATE products SET stock_quantity = stock_quantity + ?,
+                           updated_at = ? WHERE id = ?""",
+                        (item["quantity"], now, item["product_id"]),
+                    )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return True
 
     # ------------------------------------------------------------------
     # Audit

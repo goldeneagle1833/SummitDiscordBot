@@ -172,8 +172,7 @@ class StoreCheckoutService:
             checkout_session = stripe.checkout.Session.create(**session_params)
         except stripe.StripeError:
             # Stripe rejected the session: release the reserved stock.
-            self.repo.set_status(order["id"], "cancelled")
-            self.repo.restock_order_items(order["id"])
+            self.repo.cancel_order(order["id"], from_statuses=("pending_payment",))
             logger.exception(
                 f"Stripe session creation failed for order {order['order_number']}"
             )
@@ -188,6 +187,38 @@ class StoreCheckoutService:
             "order_number": order["order_number"],
             "checkout_url": checkout_session.url,
         }
+
+    # ------------------------------------------------------------------
+    # Admin cancel
+    # ------------------------------------------------------------------
+
+    def cancel_order(self, order: dict) -> bool:
+        """Cancel an order and return its stock.
+
+        For unpaid orders the Stripe Checkout Session is expired first, so
+        the buyer can't pay for an order that no longer exists. Returns False
+        if the order was not in a cancellable status (nothing changed).
+        Raises ValueError if the buyer completed payment in the meantime.
+        """
+        if order["status"] == "pending_payment":
+            self._expire_checkout_session(order)
+        return self.repo.cancel_order(order["id"])
+
+    def _expire_checkout_session(self, order: dict) -> None:
+        if order.get("payment_provider") != "stripe" or not order.get("payment_ref"):
+            return  # Session was never created, nothing to close
+        try:
+            stripe.checkout.Session.expire(order["payment_ref"])
+        except stripe.StripeError:
+            # Expire only works on open sessions; find out why it wasn't.
+            status = stripe.checkout.Session.retrieve(order["payment_ref"]).status
+            if status == "complete":
+                raise ValueError(
+                    "The buyer just completed payment for this order. "
+                    "Refresh the order queue before cancelling."
+                )
+            if status != "expired":
+                raise
 
     # ------------------------------------------------------------------
     # Webhook
@@ -275,26 +306,23 @@ class StoreCheckoutService:
             )
             return {"handled": False, "reason": "amount mismatch"}
 
+        # Save the shipping address collected by Stripe Checkout BEFORE the
+        # paid transition: if anything below fails, the webhook returns 500
+        # and Stripe retries, but a retry skips everything after mark_paid.
+        shipping = session_obj.get("shipping_details") or session_obj.get("shipping") or {}
+        if shipping.get("address"):
+            addr = shipping["address"]
+            self.repo.update_shipping_address(order["id"], {
+                "name": shipping.get("name", ""),
+                "line1": addr.get("line1", ""),
+                "line2": addr.get("line2", ""),
+                "city": addr.get("city", ""),
+                "state": addr.get("state", ""),
+                "postal": addr.get("postal_code", ""),
+                "country": addr.get("country", "US"),
+            })
+
         if self.repo.mark_paid(order["id"]):
-            # Save shipping address collected by Stripe Checkout
-            shipping = session_obj.get("shipping_details") or session_obj.get("shipping") or {}
-            logger.info(
-                f"Shipping data for {order['order_number']}: "
-                f"keys={list(session_obj.keys())} "
-                f"shipping_details={session_obj.get('shipping_details')} "
-                f"shipping={session_obj.get('shipping')}"
-            )
-            if shipping.get("address"):
-                addr = shipping["address"]
-                self.repo.update_shipping_address(order["id"], {
-                    "name": shipping.get("name", ""),
-                    "line1": addr.get("line1", ""),
-                    "line2": addr.get("line2", ""),
-                    "city": addr.get("city", ""),
-                    "state": addr.get("state", ""),
-                    "postal": addr.get("postal_code", ""),
-                    "country": addr.get("country", "US"),
-                })
             self.repo.log_action(
                 "stripe-webhook", "system", "order_paid",
                 f"order={order['order_number']} amount={amount}",
@@ -311,16 +339,40 @@ class StoreCheckoutService:
                 )
             return {"handled": True, "order_number": order["order_number"]}
 
-        # Already paid: webhook retry/duplicate. Fine.
-        return {"handled": True, "reason": "already paid (duplicate event)"}
+        status = self.repo.get_order(order["id"])["status"]
+        if status in ("paid", "shipped", "delivered"):
+            # Already paid: webhook retry/duplicate. Fine.
+            return {"handled": True, "reason": "already paid (duplicate event)"}
+
+        # The buyer was charged for an order that is no longer pending
+        # (cancelled by an admin, or refunded). Its stock has already been
+        # released, so a human has to refund or restore it.
+        charged = f"{(amount or 0) / 100:.2f} {currency}"
+        self.repo.log_action(
+            "stripe-webhook", "system", "paid_after_cancel",
+            f"order={order['order_number']} status={status} "
+            f"amount={amount} session={session_obj['id']}",
+        )
+        self.repo.enqueue_notification(
+            order["id"], "discord_admin", "store-admins",
+            f"Payment received for {status} order {order['order_number']}",
+            f"**{order['username']}** ({order['user_id']}) was charged {charged} "
+            f"for an order that is **{status}**. Its stock was already released.\n"
+            f"Refund the payment in Stripe, or restore the order manually.",
+        )
+        logger.error(
+            f"PAYMENT FOR {status.upper()} ORDER {order['order_number']}: "
+            f"charged {charged}, session {session_obj['id']} - needs manual action"
+        )
+        return {"handled": False, "reason": f"payment received for {status} order"}
 
     def _handle_expired(self, session_obj) -> dict:
         order = self._order_from_session(session_obj)
-        if order is None or order["status"] != "pending_payment":
+        if order is None or not self.repo.cancel_order(
+            order["id"], from_statuses=("pending_payment",)
+        ):
             return {"handled": False, "reason": "no pending order to expire"}
 
-        self.repo.set_status(order["id"], "cancelled")
-        self.repo.restock_order_items(order["id"])
         self.repo.log_action(
             "stripe-webhook", "system", "checkout_expired",
             f"order={order['order_number']} restocked",

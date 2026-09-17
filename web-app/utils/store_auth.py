@@ -4,8 +4,7 @@ Deliberately does NOT inherit from the global ADMINS list: only Discord IDs
 listed in the STORE_ADMIN_IDS environment variable may manage products,
 view/ship orders, or download store database backups.
 
-Localhost and API-key access are still honored to match the dev workflow
-used by the rest of the admin routes.
+API-key access is still honored for server-side maintenance scripts.
 """
 
 import logging
@@ -14,7 +13,7 @@ from functools import wraps
 
 from flask import jsonify, request, session
 
-from webapp_config import VALID_API_KEYS
+from utils.auth import _api_key_valid, _extract_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -27,25 +26,17 @@ def is_store_admin() -> bool:
     """Check if the current user may access the store admin section.
 
     Access granted if:
-    - Request is from localhost (dev workflow)
     - Request has a valid API key
     - Session user's ID is in STORE_ADMIN_IDS
 
     NOTE: global admins (ADMINS) are intentionally NOT included.
-    """
-    remote_addr = request.remote_addr or ""
-    host = request.host or ""
-    if (
-        remote_addr in ("127.0.0.1", "::1", "localhost")
-        or host.startswith("localhost")
-        or host.startswith("127.0.0.1")
-    ):
-        return True
 
-    provided_key = request.headers.get("X-API-Key") or request.headers.get("Authorization")
-    if provided_key and provided_key.startswith("Bearer "):
-        provided_key = provided_key[7:]
-    if provided_key and provided_key in VALID_API_KEYS:
+    NOTE: there is no localhost shortcut. `request.host` comes from the
+    client's Host header (proxied through nginx), so `Host: localhost` would
+    grant store admin to anyone, and behind the gunicorn unix socket
+    `remote_addr` is not a meaningful client IP. See utils.auth.is_admin.
+    """
+    if _api_key_valid(_extract_api_key()):
         return True
 
     user_id = session.get("user_id")

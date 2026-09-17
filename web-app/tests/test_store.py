@@ -173,14 +173,62 @@ class TestStoreRepositoryOrders:
         with pytest.raises(ValueError, match="Unknown status"):
             repo.set_status(order["id"], "bogus_status")
 
-    def test_restock_order_items(self, tmp_path):
+    def test_cancel_order_restocks(self, tmp_path):
         repo = _repo(tmp_path)
         pid = _seed_product(repo, stock_quantity=10)
         order = _seed_order(repo, product_id=pid,
                             items=[{"product_id": pid, "quantity": 4}])
         assert repo.get_product(pid)["stock_quantity"] == 6
-        repo.restock_order_items(order["id"])
+        assert repo.cancel_order(order["id"]) is True
+        assert repo.get_order(order["id"])["status"] == "cancelled"
         assert repo.get_product(pid)["stock_quantity"] == 10
+
+    def test_cancel_order_twice_restocks_once(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, stock_quantity=10)
+        order = _seed_order(repo, product_id=pid,
+                            items=[{"product_id": pid, "quantity": 4}])
+        assert repo.cancel_order(order["id"]) is True
+        assert repo.cancel_order(order["id"]) is False
+        assert repo.get_product(pid)["stock_quantity"] == 10
+
+    def test_cancel_paid_order_restocks(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, stock_quantity=10)
+        order = _seed_order(repo, product_id=pid,
+                            items=[{"product_id": pid, "quantity": 2}])
+        repo.mark_paid(order["id"])
+        assert repo.cancel_order(order["id"]) is True
+        assert repo.get_product(pid)["stock_quantity"] == 10
+
+    def test_cancel_shipped_order_refused(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, stock_quantity=10)
+        order = _seed_order(repo, product_id=pid)
+        repo.mark_paid(order["id"])
+        repo.mark_shipped(order["id"], "TRACK")
+        assert repo.cancel_order(order["id"]) is False
+        assert repo.get_order(order["id"])["status"] == "shipped"
+        assert repo.get_product(pid)["stock_quantity"] == 9
+
+    def test_cancel_order_respects_from_statuses(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, stock_quantity=10)
+        order = _seed_order(repo, product_id=pid)
+        repo.mark_paid(order["id"])
+        assert repo.cancel_order(order["id"], from_statuses=("pending_payment",)) is False
+        assert repo.get_order(order["id"])["status"] == "paid"
+        assert repo.get_product(pid)["stock_quantity"] == 9
+
+    def test_mark_shipped_without_tracking(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo)
+        order = _seed_order(repo, product_id=pid)
+        repo.mark_paid(order["id"])
+        assert repo.mark_shipped(order["id"], None) is True
+        o = repo.get_order(order["id"])
+        assert o["status"] == "shipped"
+        assert o["tracking_number"] is None
 
     def test_list_orders_by_user(self, tmp_path):
         repo = _repo(tmp_path)
@@ -479,6 +527,145 @@ class TestStoreCheckoutService:
         result = svc.handle_event(event)
         assert result["handled"] is False
 
+    # ── Paid / cancel races ──────────────────────────────────
+
+    @staticmethod
+    def _completed_event(repo, order, session_id):
+        return {
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": session_id,
+                    "payment_status": "paid",
+                    "amount_total": repo.get_order(order["id"])["total_cents"],
+                    "currency": "usd",
+                    "metadata": {"order_id": str(order["id"])},
+                }
+            },
+        }
+
+    def test_handle_event_completed_duplicate(self, tmp_path):
+        repo = _repo(tmp_path)
+        order = _seed_order(repo)
+        repo.attach_payment(order["id"], "stripe", "cs_dup")
+        svc = self._service(repo)
+        event = self._completed_event(repo, order, "cs_dup")
+        with patch("services.store_notifications.StoreNotificationService"):
+            svc.handle_event(event)
+            result = svc.handle_event(event)
+        assert result["handled"] is True
+        assert "duplicate" in result["reason"]
+        assert repo.fetch_pending_notifications(("discord_admin",)) == []
+
+    def test_handle_event_completed_for_cancelled_order_alerts_admin(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, stock_quantity=10)
+        order = _seed_order(repo, product_id=pid)
+        repo.attach_payment(order["id"], "stripe", "cs_late")
+        repo.cancel_order(order["id"])
+        assert repo.get_product(pid)["stock_quantity"] == 10
+
+        svc = self._service(repo)
+        result = svc.handle_event(self._completed_event(repo, order, "cs_late"))
+
+        assert result["handled"] is False
+        assert "cancelled" in result["reason"]
+        # Not silently resurrected, and stock not touched
+        assert repo.get_order(order["id"])["status"] == "cancelled"
+        assert repo.get_product(pid)["stock_quantity"] == 10
+        assert any(a["action"] == "paid_after_cancel" for a in repo.list_audit())
+        alerts = repo.fetch_pending_notifications(("discord_admin",))
+        assert len(alerts) == 1
+        assert order["order_number"] in alerts[0]["subject"]
+
+    def test_handle_event_expired_after_admin_cancel_no_double_restock(self, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, stock_quantity=10)
+        order = _seed_order(repo, product_id=pid,
+                            items=[{"product_id": pid, "quantity": 3}])
+        repo.attach_payment(order["id"], "stripe", "cs_race")
+        repo.cancel_order(order["id"])
+
+        svc = self._service(repo)
+        result = svc.handle_event({
+            "type": "checkout.session.expired",
+            "data": {"object": {"id": "cs_race",
+                                "metadata": {"order_id": str(order["id"])}}},
+        })
+        assert result["handled"] is False
+        assert repo.get_product(pid)["stock_quantity"] == 10
+
+    @patch("services.store_checkout.stripe")
+    def test_cancel_pending_order_expires_stripe_session(self, mock_stripe, tmp_path):
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, stock_quantity=10)
+        order = _seed_order(repo, product_id=pid)
+        repo.attach_payment(order["id"], "stripe", "cs_open")
+
+        svc = self._service(repo)
+        assert svc.cancel_order(repo.get_order(order["id"])) is True
+        mock_stripe.checkout.Session.expire.assert_called_once_with("cs_open")
+        assert repo.get_order(order["id"])["status"] == "cancelled"
+        assert repo.get_product(pid)["stock_quantity"] == 10
+
+    @patch("services.store_checkout.stripe")
+    def test_cancel_pending_order_buyer_already_paid(self, mock_stripe, tmp_path):
+        mock_stripe.StripeError = Exception
+        mock_stripe.checkout.Session.expire.side_effect = Exception("not open")
+        mock_stripe.checkout.Session.retrieve.return_value = MagicMock(status="complete")
+
+        repo = _repo(tmp_path)
+        pid = _seed_product(repo, stock_quantity=10)
+        order = _seed_order(repo, product_id=pid)
+        repo.attach_payment(order["id"], "stripe", "cs_paid")
+
+        svc = self._service(repo)
+        with pytest.raises(ValueError, match="completed payment"):
+            svc.cancel_order(repo.get_order(order["id"]))
+        # Left for the incoming paid webhook
+        assert repo.get_order(order["id"])["status"] == "pending_payment"
+        assert repo.get_product(pid)["stock_quantity"] == 9
+
+    @patch("services.store_checkout.stripe")
+    def test_cancel_pending_order_session_already_expired(self, mock_stripe, tmp_path):
+        mock_stripe.StripeError = Exception
+        mock_stripe.checkout.Session.expire.side_effect = Exception("not open")
+        mock_stripe.checkout.Session.retrieve.return_value = MagicMock(status="expired")
+
+        repo = _repo(tmp_path)
+        order = _seed_order(repo)
+        repo.attach_payment(order["id"], "stripe", "cs_gone")
+
+        svc = self._service(repo)
+        assert svc.cancel_order(repo.get_order(order["id"])) is True
+        assert repo.get_order(order["id"])["status"] == "cancelled"
+
+    @patch("services.store_checkout.stripe")
+    def test_cancel_pending_order_stripe_unreachable(self, mock_stripe, tmp_path):
+        mock_stripe.StripeError = Exception
+        mock_stripe.checkout.Session.expire.side_effect = Exception("network")
+        mock_stripe.checkout.Session.retrieve.return_value = MagicMock(status="open")
+
+        repo = _repo(tmp_path)
+        order = _seed_order(repo)
+        repo.attach_payment(order["id"], "stripe", "cs_open")
+
+        svc = self._service(repo)
+        with pytest.raises(Exception, match="network"):
+            svc.cancel_order(repo.get_order(order["id"]))
+        assert repo.get_order(order["id"])["status"] == "pending_payment"
+
+    @patch("services.store_checkout.stripe")
+    def test_cancel_paid_order_does_not_call_stripe(self, mock_stripe, tmp_path):
+        repo = _repo(tmp_path)
+        order = _seed_order(repo)
+        repo.attach_payment(order["id"], "stripe", "cs_done")
+        repo.mark_paid(order["id"])
+
+        svc = self._service(repo)
+        assert svc.cancel_order(repo.get_order(order["id"])) is True
+        mock_stripe.checkout.Session.expire.assert_not_called()
+
 
 # ══════════════════════════════════════════════════════════════
 # API Route Tests
@@ -530,8 +717,39 @@ class TestStorePublicRoutes:
 
 class TestStoreAdminRoutes:
     def test_admin_requires_auth(self, client, store_repo):
-        with patch("utils.store_auth.is_store_admin", return_value=False):
-            resp = client.get("/api/store/admin/products")
+        resp = client.get("/api/store/admin/products",
+                          base_url="https://sorcererssummit.com")
+        assert resp.status_code == 403
+
+    def test_admin_host_localhost_does_not_grant_access(self, client, store_repo):
+        # Host is client-controlled and proxied through nginx unchanged
+        for host in ("localhost", "localhost:5000", "127.0.0.1"):
+            resp = client.get("/api/store/admin/orders",
+                              headers={"Host": host})
+            assert resp.status_code == 403, host
+
+    def test_admin_loopback_remote_addr_does_not_grant_access(self, client, store_repo):
+        resp = client.get("/api/store/admin/backup",
+                          base_url="https://sorcererssummit.com",
+                          environ_base={"REMOTE_ADDR": "127.0.0.1"})
+        assert resp.status_code == 403
+
+    def test_admin_non_store_admin_session_denied(self, client, store_repo):
+        with patch("utils.store_auth.STORE_ADMIN_IDS", ["store_admin_1"]):
+            with client.session_transaction() as sess:
+                sess["user_id"] = "admin_user_1"  # global admin, not store admin
+            resp = client.get("/api/store/admin/orders")
+        assert resp.status_code == 403
+
+    def test_admin_api_key_grants_access(self, client, store_repo):
+        resp = client.get("/api/store/admin/orders",
+                          base_url="https://sorcererssummit.com",
+                          headers={"X-API-Key": "test-api-key-123"})
+        assert resp.status_code == 200
+
+    def test_admin_bad_api_key_denied(self, client, store_repo):
+        resp = client.get("/api/store/admin/orders",
+                          headers={"X-API-Key": "wrong-key"})
         assert resp.status_code == 403
 
     def test_admin_create_product(self, store_admin_session, store_repo):
@@ -578,13 +796,43 @@ class TestStoreAdminRoutes:
         assert resp.status_code == 200
         assert store_repo.get_order(order["id"])["status"] == "shipped"
 
-    def test_admin_ship_requires_tracking(self, store_admin_session, store_repo):
-        pid = _seed_product(store_repo, stock_quantity=10)
-        order = _seed_order(store_repo, product_id=pid)
+    def test_admin_ship_over_50_requires_tracking(self, store_admin_session, store_repo):
+        pid = _seed_product(store_repo, stock_quantity=10, price_cents=5000)
+        order = _seed_order(store_repo, product_id=pid)  # 50.00 + 5.99 shipping
         store_repo.mark_paid(order["id"])
         resp = store_admin_session.post(
             f"/api/store/admin/orders/{order['id']}/ship", json={})
         assert resp.status_code == 400
+        assert "Tracking is required" in resp.get_json()["error"]
+        assert store_repo.get_order(order["id"])["status"] == "paid"
+
+    def test_admin_ship_exactly_50_tracking_optional(self, store_admin_session, store_repo):
+        pid = _seed_product(store_repo, stock_quantity=10, price_cents=5000)
+        order = _seed_order(store_repo, product_id=pid, shipping_cents=0)
+        store_repo.mark_paid(order["id"])
+        with patch("services.store_notifications.StoreNotificationService"):
+            resp = store_admin_session.post(
+                f"/api/store/admin/orders/{order['id']}/ship", json={})
+        assert resp.status_code == 200
+
+    def test_admin_ship_under_50_without_tracking(self, store_admin_session, store_repo):
+        pid = _seed_product(store_repo, stock_quantity=10)
+        order = _seed_order(store_repo, product_id=pid)  # 9.99 + 5.99 shipping
+        store_repo.mark_paid(order["id"])
+        with patch("services.store_notifications.StoreNotificationService"):
+            resp = store_admin_session.post(
+                f"/api/store/admin/orders/{order['id']}/ship",
+                json={"tracking_number": "  ", "tracking_carrier": "USPS"})
+        assert resp.status_code == 200
+        o = store_repo.get_order(order["id"])
+        assert o["status"] == "shipped"
+        assert o["tracking_number"] is None
+        assert o["tracking_carrier"] is None
+
+    def test_admin_ship_unknown_order(self, store_admin_session, store_repo):
+        resp = store_admin_session.post(
+            "/api/store/admin/orders/9999/ship", json={"tracking_number": "T"})
+        assert resp.status_code == 409
 
     def test_admin_cancel_restocks(self, store_admin_session, store_repo):
         pid = _seed_product(store_repo, stock_quantity=10)
@@ -597,6 +845,72 @@ class TestStoreAdminRoutes:
             json={"status": "cancelled"})
         assert resp.status_code == 200
         assert store_repo.get_product(pid)["stock_quantity"] == 10
+
+    def test_admin_cancel_twice_restocks_once(self, store_admin_session, store_repo):
+        pid = _seed_product(store_repo, stock_quantity=10)
+        order = _seed_order(store_repo, product_id=pid,
+                            items=[{"product_id": pid, "quantity": 3}])
+        url = f"/api/store/admin/orders/{order['id']}/status"
+        assert store_admin_session.post(url, json={"status": "cancelled"}).status_code == 200
+        assert store_admin_session.post(url, json={"status": "cancelled"}).status_code == 409
+        assert store_repo.get_product(pid)["stock_quantity"] == 10
+
+    def test_admin_cancel_shipped_order_refused(self, store_admin_session, store_repo):
+        pid = _seed_product(store_repo, stock_quantity=10)
+        order = _seed_order(store_repo, product_id=pid)
+        store_repo.mark_paid(order["id"])
+        store_repo.mark_shipped(order["id"], "TRACK")
+        resp = store_admin_session.post(
+            f"/api/store/admin/orders/{order['id']}/status",
+            json={"status": "cancelled"})
+        assert resp.status_code == 409
+        assert store_repo.get_order(order["id"])["status"] == "shipped"
+        assert store_repo.get_product(pid)["stock_quantity"] == 9
+
+    def test_admin_cancel_unknown_order(self, store_admin_session, store_repo):
+        resp = store_admin_session.post(
+            "/api/store/admin/orders/9999/status", json={"status": "cancelled"})
+        assert resp.status_code == 404
+
+    @patch("services.store_checkout.stripe")
+    def test_admin_cancel_pending_expires_session(self, mock_stripe, store_admin_session, store_repo):
+        order = _seed_order(store_repo)
+        store_repo.attach_payment(order["id"], "stripe", "cs_admin")
+        resp = store_admin_session.post(
+            f"/api/store/admin/orders/{order['id']}/status",
+            json={"status": "cancelled"})
+        assert resp.status_code == 200
+        mock_stripe.checkout.Session.expire.assert_called_once_with("cs_admin")
+
+    @patch("services.store_checkout.stripe")
+    def test_admin_cancel_pending_but_buyer_paid(self, mock_stripe, store_admin_session, store_repo):
+        mock_stripe.StripeError = Exception
+        mock_stripe.checkout.Session.expire.side_effect = Exception("not open")
+        mock_stripe.checkout.Session.retrieve.return_value = MagicMock(status="complete")
+        pid = _seed_product(store_repo, stock_quantity=10)
+        order = _seed_order(store_repo, product_id=pid)
+        store_repo.attach_payment(order["id"], "stripe", "cs_paid")
+
+        resp = store_admin_session.post(
+            f"/api/store/admin/orders/{order['id']}/status",
+            json={"status": "cancelled"})
+        assert resp.status_code == 409
+        assert store_repo.get_order(order["id"])["status"] == "pending_payment"
+        assert store_repo.get_product(pid)["stock_quantity"] == 9
+
+    @patch("services.store_checkout.stripe")
+    def test_admin_cancel_pending_stripe_down(self, mock_stripe, store_admin_session, store_repo):
+        mock_stripe.StripeError = Exception
+        mock_stripe.checkout.Session.expire.side_effect = Exception("network")
+        mock_stripe.checkout.Session.retrieve.side_effect = Exception("network")
+        order = _seed_order(store_repo)
+        store_repo.attach_payment(order["id"], "stripe", "cs_x")
+
+        resp = store_admin_session.post(
+            f"/api/store/admin/orders/{order['id']}/status",
+            json={"status": "cancelled"})
+        assert resp.status_code == 502
+        assert store_repo.get_order(order["id"])["status"] == "pending_payment"
 
     def test_admin_export_orders_csv(self, store_admin_session, store_repo):
         pid = _seed_product(store_repo, stock_quantity=10)
@@ -695,3 +1009,47 @@ class TestStoreWebhookRoute:
                                headers={"Stripe-Signature": "valid"})
         assert resp.status_code == 200
         assert resp.get_json()["handled"] is True
+
+    def test_webhook_processing_error_returns_500_for_retry(self, client, store_repo):
+        with patch("routes.api.store.StoreCheckoutService") as MockSvc:
+            instance = MockSvc.return_value
+            instance.is_configured.return_value = True
+            instance.construct_event.return_value = {"type": "checkout.session.completed"}
+            instance.handle_event.side_effect = sqlite3.OperationalError("database is locked")
+
+            resp = client.post("/api/store/webhooks/stripe",
+                               data=b"payload",
+                               headers={"Stripe-Signature": "valid"})
+        assert resp.status_code == 500
+
+    def test_webhook_retry_after_failure_marks_paid(self, client, store_repo):
+        """A transient failure followed by Stripe's retry ends with a paid order."""
+        from services.store_checkout import StoreCheckoutService
+
+        order = _seed_order(store_repo)
+        store_repo.attach_payment(order["id"], "stripe", "cs_retry")
+        event = TestStoreCheckoutService._completed_event(store_repo, order, "cs_retry")
+        real = StoreCheckoutService(store_repo)
+        calls = []
+
+        def flaky_handle(evt):
+            calls.append(evt)
+            if len(calls) == 1:
+                raise sqlite3.OperationalError("database is locked")
+            return real.handle_event(evt)
+
+        with patch("routes.api.store.StoreCheckoutService") as MockSvc, \
+                patch("services.store_notifications.StoreNotificationService"):
+            instance = MockSvc.return_value
+            instance.is_configured.return_value = True
+            instance.construct_event.return_value = event
+            instance.handle_event.side_effect = flaky_handle
+            first = client.post("/api/store/webhooks/stripe", data=b"p",
+                                headers={"Stripe-Signature": "v"})
+            assert store_repo.get_order(order["id"])["status"] == "pending_payment"
+            second = client.post("/api/store/webhooks/stripe", data=b"p",
+                                 headers={"Stripe-Signature": "v"})
+        assert first.status_code == 500
+        assert second.status_code == 200
+        assert second.get_json()["handled"] is True
+        assert store_repo.get_order(order["id"])["status"] == "paid"

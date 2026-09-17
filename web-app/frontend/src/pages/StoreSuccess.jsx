@@ -1,5 +1,7 @@
+import { useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
+import { clearCart } from '@/hooks/useStoreCart'
 
 function CheckoutProgress({ step }) {
   const steps = ['Review', 'Payment', 'Confirmed']
@@ -45,6 +47,11 @@ export default function StoreSuccess() {
   usePageTitle('Order confirmed')
   const [params] = useSearchParams()
   const orderNumber = params.get('order')
+
+  // Stripe only redirects here after payment, so the cart has been bought
+  useEffect(() => {
+    clearCart()
+  }, [])
 
   return (
     <div className="max-w-lg mx-auto text-center py-12">

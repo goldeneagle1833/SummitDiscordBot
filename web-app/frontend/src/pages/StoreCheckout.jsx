@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Link, useLocation, Navigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
-import { getCheckoutPrefill, createCheckout, formatMoney } from '@/api/store'
+import { getProducts, getCheckoutPrefill, createCheckout, formatMoney } from '@/api/store'
+import { loadCart, saveCart, reconcileCart } from '@/hooks/useStoreCart'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -47,10 +48,9 @@ function CheckoutProgress({ step }) {
 
 export default function StoreCheckout() {
   usePageTitle('Checkout')
-  const { user } = useAuth()
-  const location = useLocation()
-  const items = location.state?.items || []
+  const { user, loading: authLoading } = useAuth()
 
+  const [items, setItems] = useState([])
   const [email, setEmail] = useState('')
   const [freeShipping, setFreeShipping] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -60,18 +60,43 @@ export default function StoreCheckout() {
   const isGoogleUser = user?.auth_provider && user.auth_provider !== 'discord'
 
   useEffect(() => {
-    getCheckoutPrefill()
-      .then((pre) => {
-        if (pre.email) setEmail(pre.email)
-        if (pre.free_shipping) setFreeShipping(true)
-      })
-      .catch(() => {})
+    if (!user) return
+    // Build the order from the saved cart and current product data, so a
+    // refresh keeps the cart and prices/stock/limits are never stale.
+    Promise.all([
+      getProducts().then((data) => {
+        const products = data.products || []
+        const cart = reconcileCart(loadCart(), products)
+        saveCart(cart)
+        setItems(
+          products
+            .filter((p) => cart[p.id])
+            .map((p) => ({
+              product_id: p.id,
+              quantity: cart[p.id],
+              name: p.name,
+              price_cents: p.price_cents,
+            })),
+        )
+      }),
+      getCheckoutPrefill()
+        .then((pre) => {
+          if (pre.email) setEmail(pre.email)
+          if (pre.free_shipping) setFreeShipping(true)
+        })
+        .catch(() => {}),
+    ])
+      .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [])
+  }, [user])
 
+  if (authLoading) return <Spinner className="py-20" />
   if (!user) return <Navigate to={`/login?next=${encodeURIComponent('/store')}`} replace />
-  if (items.length === 0) return <Navigate to="/store" replace />
   if (loading) return <Spinner className="py-20" />
+  if (error && items.length === 0) {
+    return <p className="text-center text-accent-red py-8">{error}</p>
+  }
+  if (items.length === 0) return <Navigate to="/store" replace />
 
   const subtotal = items.reduce((s, i) => s + i.price_cents * i.quantity, 0)
 

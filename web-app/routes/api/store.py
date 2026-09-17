@@ -40,7 +40,19 @@ def _actor():
 
 @store_bp.route("/store/products", methods=["GET"])
 def list_products():
-    products = _repo().list_products(include_inactive=False)
+    repo = _repo()
+    products = repo.list_products(include_inactive=False)
+
+    # Logged-in buyers also get what's left of each monthly limit, so the
+    # storefront can cap quantities instead of failing at checkout.
+    user_id = session.get("user_id")
+    if user_id:
+        counts = repo.user_monthly_product_counts(str(user_id))
+        for p in products:
+            cap = p["max_per_user_monthly"]
+            if cap is not None:
+                p["remaining_this_month"] = max(0, cap - counts.get(p["id"], 0))
+
     return jsonify({"products": products})
 
 
@@ -408,6 +420,46 @@ def my_orders():
         result.append(entry)
 
     return jsonify({"orders": result})
+
+
+@store_bp.route("/store/orders/<order_number>/cancel", methods=["POST"])
+@require_auth
+def cancel_my_order(order_number: str):
+    """Buyer backs out of an unpaid checkout (called from the Stripe cancel page).
+
+    Releases the reserved stock and the buyer's monthly allowance right away
+    instead of waiting up to an hour for the Stripe session to expire.
+    Idempotent: cancelling an already-cancelled order succeeds.
+    """
+    user_id = str(session.get("user_id", 0))
+    repo = _repo()
+    order = repo.get_order_by_number(order_number)
+    if not order or str(order["user_id"]) != user_id:
+        return jsonify({"error": "Order not found"}), 404
+
+    if order["status"] == "cancelled":
+        return jsonify({"success": True, "status": "cancelled"})
+    if order["status"] != "pending_payment":
+        return jsonify({"error": "This order has already been paid"}), 409
+
+    try:
+        cancelled = StoreCheckoutService(repo).cancel_order(order)
+    except ValueError:
+        # Stripe says the buyer completed payment after all
+        return jsonify({"error": "This order has already been paid"}), 409
+    except Exception:
+        logger.exception(f"Buyer cancel could not close Stripe session for {order_number}")
+        return jsonify({"error": "Could not cancel the checkout, please try again"}), 502
+
+    if not cancelled:
+        # Status changed underneath us (expiry webhook or payment)
+        status = repo.get_order(order["id"])["status"]
+        if status != "cancelled":
+            return jsonify({"error": "This order has already been paid"}), 409
+    else:
+        repo.log_action(user_id, session.get("username", "unknown"),
+                        "buyer_cancel_order", f"order={order_number}")
+    return jsonify({"success": True, "status": "cancelled"})
 
 
 @store_bp.route("/store/orders/user/<user_id>", methods=["GET"])

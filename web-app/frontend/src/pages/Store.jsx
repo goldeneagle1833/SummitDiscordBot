@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { getProducts, formatMoney } from '@/api/store'
+import useStoreCart, { maxQuantity, reconcileCart } from '@/hooks/useStoreCart'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -18,9 +19,9 @@ function LoginPromptModal({ onClose }) {
     <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60" onClick={onClose}>
       <div className="bg-bg-surface border border-border rounded-lg w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="p-6 text-center">
-          <h3 className="text-lg font-display text-secondary mb-2">Welcome to the Store</h3>
+          <h3 className="text-lg font-display text-secondary mb-2">Sign in to check out</h3>
           <p className="text-sm text-text-muted mb-5">
-            Sign in to add items to your cart and check out, or browse as a guest.
+            Your cart is saved and will be waiting when you get back.
           </p>
           <div className="space-y-3 mb-4">
             <a
@@ -40,7 +41,7 @@ function LoginPromptModal({ onClose }) {
             onClick={onClose}
             className="text-sm text-text-muted hover:text-text transition-colors"
           >
-            Continue as guest
+            Keep browsing
           </button>
         </div>
       </div>
@@ -50,21 +51,22 @@ function LoginPromptModal({ onClose }) {
 
 export default function Store() {
   usePageTitle('Store')
-  const { user, loading: authLoading } = useAuth()
+  const { user } = useAuth()
   const navigate = useNavigate()
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [cart, setCart] = useState({}) // { [productId]: quantity }
+  const [cart, setCart] = useStoreCart() // { [productId]: quantity }
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
 
   useEffect(() => {
-    if (!authLoading && !user) setShowLoginPrompt(true)
-  }, [authLoading, user])
-
-  useEffect(() => {
     getProducts()
-      .then((data) => setProducts(data.products || []))
+      .then((data) => {
+        const list = data.products || []
+        setProducts(list)
+        // A saved cart may reference sold-out, hidden, or over-limit items
+        setCart((c) => reconcileCart(c, list))
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [])
@@ -83,18 +85,7 @@ export default function Store() {
   const subtotal = cartItems.reduce((sum, p) => sum + p.price_cents * cart[p.id], 0)
   const totalQty = cartItems.reduce((n, p) => n + cart[p.id], 0)
 
-  const goToCheckout = () => {
-    navigate('/store/checkout', {
-      state: {
-        items: cartItems.map((p) => ({
-          product_id: p.id,
-          quantity: cart[p.id],
-          name: p.name,
-          price_cents: p.price_cents,
-        })),
-      },
-    })
-  }
+  const goToCheckout = () => navigate('/store/checkout')
 
   if (loading) return <Spinner className="py-20" />
   if (error) return <p className="text-center text-accent-red py-8">{error}</p>
@@ -118,7 +109,9 @@ export default function Store() {
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {products.map((p) => {
             const qty = cart[p.id] || 0
+            const max = maxQuantity(p)
             const soldOut = p.stock_quantity === 0
+            const limitReached = !soldOut && p.remaining_this_month === 0
             const lowStock = !soldOut && p.stock_quantity <= 5
             return (
               <div
@@ -157,10 +150,14 @@ export default function Store() {
                       <span className="text-xs font-medium bg-accent-red/20 text-accent-red px-2.5 py-1 rounded-full">
                         Sold out
                       </span>
+                    ) : limitReached ? (
+                      <span className="text-xs font-medium bg-bg-elevated text-text-muted px-2.5 py-1 rounded-full">
+                        Monthly limit reached
+                      </span>
                     ) : (
                       <div className="flex items-center rounded-lg border border-border overflow-hidden">
                         <button
-                          onClick={() => setQty(p.id, qty - 1, p.stock_quantity)}
+                          onClick={() => setQty(p.id, qty - 1, max)}
                           disabled={qty === 0}
                           className="w-9 h-9 flex items-center justify-center bg-bg-elevated hover:bg-bg-raised text-text-muted hover:text-text transition-colors disabled:opacity-30 disabled:hover:bg-bg-elevated"
                           aria-label={`Remove one ${p.name}`}
@@ -171,8 +168,8 @@ export default function Store() {
                           {qty}
                         </span>
                         <button
-                          onClick={() => setQty(p.id, qty + 1, p.stock_quantity)}
-                          disabled={qty >= p.stock_quantity}
+                          onClick={() => setQty(p.id, qty + 1, max)}
+                          disabled={qty >= max}
                           className="w-9 h-9 flex items-center justify-center bg-bg-elevated hover:bg-bg-raised text-text-muted hover:text-text transition-colors disabled:opacity-30 disabled:hover:bg-bg-elevated"
                           aria-label={`Add one ${p.name}`}
                         >
@@ -181,6 +178,14 @@ export default function Store() {
                       </div>
                     )}
                   </div>
+                  {p.max_per_user_monthly != null && (
+                    <p className="text-xs text-text-muted mt-2">
+                      Limit {p.max_per_user_monthly} per month
+                      {p.remaining_this_month != null && !limitReached &&
+                        p.remaining_this_month < p.max_per_user_monthly &&
+                        ` · ${p.remaining_this_month} left for you`}
+                    </p>
+                  )}
                   {lowStock && (
                     <p className="text-xs text-yellow-500 font-medium mt-2">
                       Only {p.stock_quantity} left

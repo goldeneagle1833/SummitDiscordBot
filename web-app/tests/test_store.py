@@ -220,6 +220,14 @@ class TestStoreRepositoryOrders:
         assert repo.get_order(order["id"])["status"] == "paid"
         assert repo.get_product(pid)["stock_quantity"] == 9
 
+    def test_get_order_by_number(self, tmp_path):
+        repo = _repo(tmp_path)
+        order = _seed_order(repo)
+        found = repo.get_order_by_number(order["order_number"])
+        assert found["id"] == order["id"]
+        assert len(found["items"]) == 1
+        assert repo.get_order_by_number("SUM-NOPE") is None
+
     def test_mark_shipped_without_tracking(self, tmp_path):
         repo = _repo(tmp_path)
         pid = _seed_product(repo)
@@ -714,6 +722,41 @@ class TestStorePublicRoutes:
         assert len(products) == 1
         assert products[0]["sku"] == "ACTIVE"
 
+    def test_list_products_remaining_for_logged_in_buyer(self, buyer_session, store_repo):
+        capped = _seed_product(store_repo, sku="CAP", max_per_user_monthly=3)
+        _seed_product(store_repo, sku="OPEN")
+        _seed_order(store_repo, product_id=capped, user_id="buyer_1",
+                    items=[{"product_id": capped, "quantity": 2}])
+        _seed_order(store_repo, product_id=capped, user_id="someone_else",
+                    items=[{"product_id": capped, "quantity": 1}])
+
+        products = {p["sku"]: p for p in
+                    buyer_session.get("/api/store/products").get_json()["products"]}
+        assert products["CAP"]["remaining_this_month"] == 1
+        assert "remaining_this_month" not in products["OPEN"]
+
+    def test_list_products_remaining_ignores_cancelled_orders(self, buyer_session, store_repo):
+        capped = _seed_product(store_repo, sku="CAP", max_per_user_monthly=2)
+        order = _seed_order(store_repo, product_id=capped, user_id="buyer_1",
+                            items=[{"product_id": capped, "quantity": 2}])
+        store_repo.cancel_order(order["id"])
+        products = buyer_session.get("/api/store/products").get_json()["products"]
+        assert products[0]["remaining_this_month"] == 2
+
+    def test_list_products_remaining_never_negative(self, buyer_session, store_repo):
+        capped = _seed_product(store_repo, sku="CAP", max_per_user_monthly=5)
+        _seed_order(store_repo, product_id=capped, user_id="buyer_1",
+                    items=[{"product_id": capped, "quantity": 5}])
+        store_repo.update_product(capped, max_per_user_monthly=2)  # admin lowered it
+        products = buyer_session.get("/api/store/products").get_json()["products"]
+        assert products[0]["remaining_this_month"] == 0
+
+    def test_list_products_anonymous_has_no_remaining(self, client, store_repo):
+        _seed_product(store_repo, sku="CAP", max_per_user_monthly=3)
+        products = client.get("/api/store/products").get_json()["products"]
+        assert products[0]["max_per_user_monthly"] == 3
+        assert "remaining_this_month" not in products[0]
+
 
 class TestStoreAdminRoutes:
     def test_admin_requires_auth(self, client, store_repo):
@@ -985,6 +1028,94 @@ class TestStoreBuyerRoutes:
         assert "user_id" not in order
         assert "ship_line1" not in order
         assert "payment_ref" not in order
+
+
+class TestStoreBuyerCancel:
+    @staticmethod
+    def _url(order):
+        return f"/api/store/orders/{order['order_number']}/cancel"
+
+    def test_requires_login(self, client, store_repo):
+        order = _seed_order(store_repo, user_id="buyer_1")
+        assert client.post(self._url(order)).status_code == 401
+
+    def test_cancel_own_pending_order(self, buyer_session, store_repo):
+        pid = _seed_product(store_repo, stock_quantity=10, max_per_user_monthly=3)
+        order = _seed_order(store_repo, product_id=pid, user_id="buyer_1",
+                            items=[{"product_id": pid, "quantity": 3}])
+
+        resp = buyer_session.post(self._url(order))
+        assert resp.status_code == 200
+        assert store_repo.get_order(order["id"])["status"] == "cancelled"
+        assert store_repo.get_product(pid)["stock_quantity"] == 10
+        # Monthly allowance is back straight away
+        products = buyer_session.get("/api/store/products").get_json()["products"]
+        assert products[0]["remaining_this_month"] == 3
+        assert any(a["action"] == "buyer_cancel_order" for a in store_repo.list_audit())
+
+    def test_cannot_cancel_someone_elses_order(self, buyer_session, store_repo):
+        pid = _seed_product(store_repo, stock_quantity=10)
+        order = _seed_order(store_repo, product_id=pid, user_id="other_user")
+        assert buyer_session.post(self._url(order)).status_code == 404
+        assert store_repo.get_order(order["id"])["status"] == "pending_payment"
+        assert store_repo.get_product(pid)["stock_quantity"] == 9
+
+    def test_api_key_without_session_cannot_cancel(self, client, store_repo):
+        order = _seed_order(store_repo, user_id="buyer_1")
+        resp = client.post(self._url(order), headers={"X-API-Key": "test-api-key-123"})
+        assert resp.status_code == 404
+
+    def test_unknown_order(self, buyer_session, store_repo):
+        resp = buyer_session.post("/api/store/orders/SUM-20260101-NOPE00/cancel")
+        assert resp.status_code == 404
+
+    def test_already_cancelled_is_idempotent(self, buyer_session, store_repo):
+        pid = _seed_product(store_repo, stock_quantity=10)
+        order = _seed_order(store_repo, product_id=pid, user_id="buyer_1")
+        assert buyer_session.post(self._url(order)).status_code == 200
+        resp = buyer_session.post(self._url(order))
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "cancelled"
+        assert store_repo.get_product(pid)["stock_quantity"] == 10
+
+    def test_paid_order_cannot_be_cancelled(self, buyer_session, store_repo):
+        pid = _seed_product(store_repo, stock_quantity=10)
+        order = _seed_order(store_repo, product_id=pid, user_id="buyer_1")
+        store_repo.mark_paid(order["id"])
+        assert buyer_session.post(self._url(order)).status_code == 409
+        assert store_repo.get_order(order["id"])["status"] == "paid"
+        assert store_repo.get_product(pid)["stock_quantity"] == 9
+
+    @patch("services.store_checkout.stripe")
+    def test_expires_stripe_session(self, mock_stripe, buyer_session, store_repo):
+        order = _seed_order(store_repo, user_id="buyer_1")
+        store_repo.attach_payment(order["id"], "stripe", "cs_buyer")
+        assert buyer_session.post(self._url(order)).status_code == 200
+        mock_stripe.checkout.Session.expire.assert_called_once_with("cs_buyer")
+
+    @patch("services.store_checkout.stripe")
+    def test_payment_completed_on_stripe(self, mock_stripe, buyer_session, store_repo):
+        mock_stripe.StripeError = Exception
+        mock_stripe.checkout.Session.expire.side_effect = Exception("not open")
+        mock_stripe.checkout.Session.retrieve.return_value = MagicMock(status="complete")
+        pid = _seed_product(store_repo, stock_quantity=10)
+        order = _seed_order(store_repo, product_id=pid, user_id="buyer_1")
+        store_repo.attach_payment(order["id"], "stripe", "cs_paid")
+
+        assert buyer_session.post(self._url(order)).status_code == 409
+        assert store_repo.get_order(order["id"])["status"] == "pending_payment"
+        assert store_repo.get_product(pid)["stock_quantity"] == 9
+
+    @patch("services.store_checkout.stripe")
+    def test_stripe_unreachable(self, mock_stripe, buyer_session, store_repo):
+        mock_stripe.StripeError = Exception
+        mock_stripe.checkout.Session.expire.side_effect = Exception("network")
+        mock_stripe.checkout.Session.retrieve.side_effect = Exception("network")
+        order = _seed_order(store_repo, user_id="buyer_1")
+        store_repo.attach_payment(order["id"], "stripe", "cs_x")
+
+        assert buyer_session.post(self._url(order)).status_code == 502
+        assert store_repo.get_order(order["id"])["status"] == "pending_payment"
 
 
 class TestStoreWebhookRoute:

@@ -344,6 +344,13 @@ class StoreRepository:
             ]
             return order
 
+    def get_order_by_number(self, order_number: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM orders WHERE order_number = ?", (order_number,)
+            ).fetchone()
+        return self.get_order(row["id"]) if row else None
+
     def get_order_by_payment_ref(self, provider: str, payment_ref: str) -> dict | None:
         with self._connect() as conn:
             row = conn.execute(

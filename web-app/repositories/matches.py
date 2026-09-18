@@ -709,6 +709,45 @@ class MatchRepository:
             "timestamp": row[7],
         }
 
+    def insert_match(self, data: dict) -> int:
+        """Record a played match and return its row id.
+
+        Used for games the site settles itself - bracket results - so they sit
+        in match history beside everything else the ladder counts. Only columns
+        the table actually has are written, because match_records has grown
+        over time and older databases carry fewer of them.
+        """
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(match_records)")
+        available = {row[1] for row in cur.fetchall()}
+
+        row = {"did_win": 1, **data}
+        columns = [c for c in row if c in available]
+        if not columns:
+            conn.close()
+            raise ValueError("match_records has none of the expected columns")
+
+        placeholders = ", ".join("?" for _ in columns)
+        cur.execute(
+            f"INSERT INTO match_records ({', '.join(columns)}) VALUES ({placeholders})",
+            [row[c] for c in columns],
+        )
+        row_id = cur.lastrowid
+        conn.commit()
+        conn.close()
+        return row_id
+
+    def delete_match_row(self, row_id: int) -> bool:
+        """Remove a match by row id. Bracket rows carry no match_id."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM match_records WHERE rowid = ?", (row_id,))
+        deleted = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return deleted
+
     def delete_match(self, match_id: int) -> bool:
         """Delete a match record by rowid. Returns True if deleted."""
         conn = self._get_connection()

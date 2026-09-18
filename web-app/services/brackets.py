@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 from repositories.brackets import BracketRepository
 from repositories.elo import EloRepository
+from repositories.matches import MatchRepository
 from services.bracket_builder import (
     advance_winner,
     bracket_size_for,
@@ -45,11 +46,19 @@ def slugify(name: str) -> str:
 
 
 class BracketService:
-    def __init__(self, repo=None, leaderboard_service=None, curiosa_service=None, elo_repo=None):
+    def __init__(
+        self,
+        repo=None,
+        leaderboard_service=None,
+        curiosa_service=None,
+        elo_repo=None,
+        match_repo=None,
+    ):
         self._repo = repo or BracketRepository()
         self._leaderboard_override = leaderboard_service
         self._curiosa_override = curiosa_service
         self._elo_repo_override = elo_repo
+        self._match_repo_override = match_repo
 
     @property
     def _leaderboard(self):
@@ -59,6 +68,11 @@ class BracketService:
     @property
     def _curiosa(self):
         return self._curiosa_override or CuriosaService()
+
+    @property
+    def _match_repo(self):
+        """The online match log. Built on demand so its path resolves late."""
+        return self._match_repo_override or MatchRepository()
 
     @property
     def _elo_repo(self):
@@ -714,6 +728,131 @@ class BracketService:
             raise BracketError("Bracket not found")
         return self._repo.delete_deck(bracket["bracket_id"], int(seed))
 
+    # -- Finishes -------------------------------------------------
+
+    # A placement is the position a single-elimination finish is worth: losing
+    # the final is 2nd, the semis 3rd, the quarters 5th, and so on.
+    FINISH_LABELS = ((1, "Champion"), (2, "Finalist"), (4, "Top 4"), (8, "Top 8"))
+
+    @staticmethod
+    def finish_label(placement: int | None) -> str | None:
+        """What a placement is called. Anything deeper simply made the cut."""
+        if not placement:
+            return None
+        for limit, label in BracketService.FINISH_LABELS:
+            if placement <= limit:
+                return label
+        return "Top cut"
+
+    def placements(self, bracket_id: int) -> dict:
+        """{seed: placement} for everyone whose run has ended.
+
+        Players still alive have no placement yet, so they are left out.
+        """
+        matches = self._repo.get_matches(bracket_id)
+        rounds = [m["round"] for m in matches if m["state"] != "empty"]
+        if not rounds:
+            return {}
+        last_round = max(rounds)
+
+        placements = {}
+        for match in matches:
+            if match["state"] != "complete" or match["winner_seed"] is None:
+                continue
+            for slot in (1, 2):
+                seed = match[f"p{slot}_seed"]
+                if seed is None or seed == match["winner_seed"]:
+                    continue
+                # Knocked out in round r of an R-round bracket.
+                placements[seed] = 2 ** (last_round - match["round"]) + 1
+
+            if match["round"] == last_round:
+                placements[match["winner_seed"]] = 1
+
+        return placements
+
+    def get_player_marks(self) -> dict:
+        """Postseason honours per player, for showing beside their name.
+
+        Only finished brackets count - a run that is still going has not been
+        placed yet.
+        """
+        marks = {}
+        for bracket in self._repo.list_brackets(published_only=True):
+            if bracket["status"] != "complete":
+                continue
+
+            placements = self.placements(bracket["bracket_id"])
+            for entrant in self._repo.get_entrants(bracket["bracket_id"]):
+                user_id = str(entrant.get("user_id") or "")
+                placement = placements.get(entrant["seed"])
+                if not user_id or not placement:
+                    continue
+
+                entry = marks.setdefault(user_id, {"wins": 0, "best": None, "entries": []})
+                if placement == 1:
+                    entry["wins"] += 1
+                if entry["best"] is None or placement < entry["best"]:
+                    entry["best"] = placement
+                entry["entries"].append(
+                    {
+                        "slug": bracket["slug"],
+                        "name": bracket["name"],
+                        "placement": placement,
+                        "label": self.finish_label(placement),
+                    }
+                )
+
+        for entry in marks.values():
+            entry["best_label"] = self.finish_label(entry["best"])
+        return marks
+
+    def get_player_postseason(self, user_id) -> list[dict]:
+        """Every bracket this player has been in, newest first."""
+        user_id = str(user_id)
+        out = []
+
+        for bracket in self._repo.list_brackets(published_only=True):
+            entrants = self._repo.get_entrants(bracket["bracket_id"])
+            entrant = next(
+                (e for e in entrants if str(e.get("user_id") or "") == user_id), None
+            )
+            if not entrant:
+                continue
+
+            placement = self.placements(bracket["bracket_id"]).get(entrant["seed"])
+            matches = self._repo.get_matches(bracket["bracket_id"])
+            wins = len(
+                [m for m in matches if m["state"] == "complete" and str(m["winner_user_id"] or "") == user_id]
+            )
+            losses = len(
+                [
+                    m
+                    for m in matches
+                    if m["state"] == "complete"
+                    and m["winner_user_id"]
+                    and str(m["winner_user_id"]) != user_id
+                    and user_id in (str(m["p1_user_id"] or ""), str(m["p2_user_id"] or ""))
+                ]
+            )
+
+            out.append(
+                {
+                    "slug": bracket["slug"],
+                    "name": bracket["name"],
+                    "status": bracket["status"],
+                    "entrants": bracket["entrant_count"],
+                    "seed": entrant["seed"],
+                    "placement": placement,
+                    "label": self.finish_label(placement) or "Still in",
+                    "wins": wins,
+                    "losses": losses,
+                    "played_at": bracket["published_at"] or bracket["created_at"],
+                }
+            )
+
+        return out
+
     # -- Sorcery Online tables ------------------------------------
 
     def open_table(self, slug: str, match_no: int, user_id: str) -> dict:
@@ -870,6 +1009,7 @@ class BracketService:
         )
 
         self._apply_elo(bracket, match)
+        self._record_match(bracket, match)
 
         parent = advance_winner(match, matches)
         if parent:
@@ -899,6 +1039,7 @@ class BracketService:
 
     def _reverse_elo(self, bracket: dict, match: dict):
         try:
+            self._withdraw_match(bracket, match)
             self._reverse_elo_inner(bracket, match)
         except Exception as e:
             logger.error(
@@ -997,6 +1138,73 @@ class BracketService:
             bracket["bracket_id"],
             match["match_no"],
             {"elo_applied_at": None, "winner_elo_change": None, "loser_elo_change": None},
+        )
+
+    MATCH_SOURCE = "Bracket"
+
+    def _record_match(self, bracket: dict, match: dict):
+        """Log a settled bracket game as a played match.
+
+        Without this a postseason win moves a player's rating while leaving no
+        trace in their history, so the change looks like it came from nowhere.
+        The decks are the ones submitted to the bracket.
+        """
+        try:
+            if match.get("match_record_id"):
+                return
+
+            stored = self._repo.get_match(bracket["bracket_id"], match["match_no"])
+            winner_id = str(stored["winner_user_id"] or "")
+            if not winner_id:
+                return
+            on_p1 = winner_id == str(stored["p1_user_id"] or "")
+            loser_id = str((stored["p2_user_id"] if on_p1 else stored["p1_user_id"]) or "")
+            if not loser_id:
+                return
+
+            decks = {d["seed"]: d for d in self._repo.get_decks(bracket["bracket_id"])}
+            winner_deck = decks.get(stored["p1_seed"] if on_p1 else stored["p2_seed"]) or {}
+            loser_deck = decks.get(stored["p2_seed"] if on_p1 else stored["p1_seed"]) or {}
+
+            elo_repo = self._elo_repo
+            row_id = self._match_repo.insert_match(
+                {
+                    "reporter_id": stored.get("resolved_by"),
+                    "winner_id": winner_id,
+                    "winner_display_name": stored["p1_name"] if on_p1 else stored["p2_name"],
+                    "losser_id": loser_id,
+                    "losser_display_name": stored["p2_name"] if on_p1 else stored["p1_name"],
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "match_comment": f"{bracket['name']} - {stored['round_title']}",
+                    "curiosa_url_winner": winner_deck.get("deck_url"),
+                    "curiosa_url_loser": loser_deck.get("deck_url"),
+                    "json_deck_data_winner": winner_deck.get("deck_json"),
+                    "json_deck_data_loser": loser_deck.get("deck_json"),
+                    "winner_elo_change": stored.get("winner_elo_change"),
+                    "loser_elo_change": stored.get("loser_elo_change"),
+                    "winner_lifetime_elo_after": elo_repo.get_user_elo(winner_id),
+                    "loser_lifetime_elo_after": elo_repo.get_user_elo(loser_id),
+                    "source": self.MATCH_SOURCE,
+                    "match_type": "ranked",
+                }
+            )
+            self._repo.update_match(
+                bracket["bracket_id"], match["match_no"], {"match_record_id": row_id}
+            )
+        except Exception as e:
+            logger.error(
+                "Bracket %s match %s: could not log the match, result still stands: %s",
+                bracket.get("slug"), match.get("match_no"), e,
+            )
+
+    def _withdraw_match(self, bracket: dict, match: dict):
+        """Take the logged match back when its result is undone."""
+        row_id = match.get("match_record_id")
+        if not row_id:
+            return
+        self._match_repo.delete_match_row(row_id)
+        self._repo.update_match(
+            bracket["bracket_id"], match["match_no"], {"match_record_id": None}
         )
 
     def _clear_from(self, bracket: dict, match_no: int):

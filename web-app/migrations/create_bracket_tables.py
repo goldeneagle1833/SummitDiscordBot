@@ -99,6 +99,7 @@ def create_bracket_tables(db_path=None):
             elo_applied_at TEXT,
             winner_elo_change INTEGER,
             loser_elo_change INTEGER,
+            match_record_id INTEGER,
             PRIMARY KEY (bracket_id, match_no)
         )
     """)
@@ -159,7 +160,7 @@ def create_bracket_tables(db_path=None):
         if column not in existing:
             cursor.execute(f"ALTER TABLE bracket_matches ADD COLUMN {column} TEXT")
 
-    for column in ("winner_elo_change", "loser_elo_change"):
+    for column in ("winner_elo_change", "loser_elo_change", "match_record_id"):
         if column not in existing:
             cursor.execute(f"ALTER TABLE bracket_matches ADD COLUMN {column} INTEGER")
 

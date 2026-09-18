@@ -118,17 +118,32 @@ def match_db(tmp_path):
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE match_records (
+            match_id TEXT,
+            reporter_id TEXT,
             winner_id TEXT,
             winner_display_name TEXT,
             winner_elo_change REAL,
             losser_id TEXT,
             losser_display_name TEXT,
             loser_elo_change REAL,
+            did_win INTEGER,
             match_time INTEGER,
             timestamp TEXT,
+            first_player TEXT,
+            match_comment TEXT,
             old_json_deck TEXT,
             winner_json TEXT,
             loser_json TEXT,
+            curiosa_url TEXT,
+            curiosa_url_winner TEXT,
+            curiosa_url_loser TEXT,
+            json_deck_data TEXT,
+            json_deck_data_winner TEXT,
+            json_deck_data_loser TEXT,
+            winner_went_first TEXT,
+            loser_went_first TEXT,
+            winner_lifetime_elo_after INTEGER,
+            loser_lifetime_elo_after INTEGER,
             source TEXT DEFAULT 'Discord',
             match_type TEXT DEFAULT 'ranked'
         )

@@ -21,6 +21,7 @@ import EditDeckModal from '@/components/player/EditDeckModal'
 import AdminControls from '@/components/player/AdminControls'
 import EloHistory from '@/components/player/EloHistory'
 import PlayerSeasons from '@/components/player/PlayerSeasons'
+import PostseasonSection from '@/components/player/PostseasonSection'
 import PrivacySettingsModal from '@/components/player/PrivacySettingsModal'
 import BlockListModal from '@/components/player/BlockListModal'
 import { useAuth } from '@/context/AuthContext'
@@ -174,6 +175,7 @@ const [editDeck, setEditDeck] = useState(null)
 
       <PlayerHeader
         data={data}
+        playerId={playerId}
         eloText={eloText}
         rankText={rankText}
         eloSource={eloSource}
@@ -227,6 +229,8 @@ const [editDeck, setEditDeck] = useState(null)
           <p className="text-sm">Some sections of this profile are private.</p>
         </div>
       )}
+
+      <PostseasonSection playerId={playerId} />
 
       <OverallStats
         data={data}

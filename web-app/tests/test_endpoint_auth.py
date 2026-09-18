@@ -104,6 +104,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # -- Brackets (public read-only; reporting/confirming require auth) --
     "api.brackets.list_brackets",
     "api.brackets.get_bracket",
+    "api.brackets.get_bracket_marks",
+    "api.brackets.get_player_postseason",
     "api.brackets.get_bracket_decks",  # visibility is applied per deck inside
     "api.brackets.get_bracket_deck",
 

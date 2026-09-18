@@ -88,12 +88,21 @@ def ladder(elo_db):
 
 
 @pytest.fixture()
-def service(repo, curiosa, ladder):
+def match_log(match_db):
+    """The online match log a bracket result is written into."""
+    from repositories.matches import MatchRepository
+
+    return MatchRepository(db_path=match_db)
+
+
+@pytest.fixture()
+def service(repo, curiosa, ladder, match_log):
     return BracketService(
         repo=repo,
         leaderboard_service=FakeLeaderboard(),
         curiosa_service=curiosa,
         elo_repo=ladder,
+        match_repo=match_log,
     )
 
 
@@ -1153,6 +1162,228 @@ class TestBracketElo:
 
         assert self._elos(elo_db, "u1")[0][0] == 1500
         assert repo.get_match(bracket_id, match["match_no"])["elo_applied_at"] is None
+
+
+class TestBracketMatchRecords:
+    """A settled bracket game is a played match, and shows up as one."""
+
+    def _rows(self, match_db, user_id=None):
+        import sqlite3
+
+        conn = sqlite3.connect(str(match_db))
+        conn.row_factory = sqlite3.Row
+        sql = "SELECT rowid, * FROM match_records WHERE source = 'Bracket'"
+        params = ()
+        if user_id:
+            sql += " AND (winner_id = ? OR losser_id = ?)"
+            params = (user_id, user_id)
+        rows = [dict(r) for r in conn.execute(sql, params)]
+        conn.close()
+        return rows
+
+    def test_settling_a_match_logs_it(self, service, repo, match_db):
+        slug, bracket_id = published(service, repo, 4, name="Log Cup")
+        match = repo.get_matches(bracket_id)[0]
+
+        service.report_result(slug, match["match_no"], "u1", "u1")
+        service.confirm_result(slug, match["match_no"], "u4", agree=True)
+
+        rows = self._rows(match_db)
+        assert len(rows) == 1
+        assert rows[0]["winner_id"] == "u1"
+        assert rows[0]["losser_id"] == "u4"
+        assert rows[0]["match_type"] == "ranked"
+        assert "Log Cup" in rows[0]["match_comment"]
+
+    def test_the_logged_match_carries_the_rating_change(self, service, repo, match_db):
+        slug, bracket_id = published(service, repo, 4, name="Log Cup")
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        row = self._rows(match_db)[0]
+        assert (row["winner_elo_change"], row["loser_elo_change"]) == (16, -16)
+        assert row["winner_lifetime_elo_after"] == 1516
+
+    def test_the_logged_match_carries_both_decks(self, service, repo, match_db):
+        slug, bracket_id = published(service, repo, 4, name="Log Cup")
+        service.submit_deck(slug, "https://curiosa.io/decks/one", actor_id="u1")
+        service.submit_deck(slug, "https://curiosa.io/decks/four", actor_id="u4")
+        match = repo.get_matches(bracket_id)[0]
+
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        row = self._rows(match_db)[0]
+        assert row["curiosa_url_winner"].endswith("/one")
+        assert row["curiosa_url_loser"].endswith("/four")
+        assert "Dead Cant Swim" in row["json_deck_data_winner"]
+
+    def test_it_counts_toward_the_players_record(self, service, repo, match_log):
+        slug, bracket_id = published(service, repo, 4, name="Log Cup")
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        assert match_log.get_wins_count("u1") == 1
+        assert match_log.get_losses_count("u4") == 1
+
+    def test_undoing_a_result_takes_the_match_back(self, service, repo, match_db):
+        slug, bracket_id = published(service, repo, 4, name="Log Cup")
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        service.reset_match(slug, match["match_no"])
+
+        assert self._rows(match_db) == []
+        assert repo.get_match(bracket_id, match["match_no"])["match_record_id"] is None
+
+    def test_correcting_a_result_leaves_one_match_the_right_way_round(
+        self, service, repo, match_db
+    ):
+        slug, bracket_id = published(service, repo, 4, name="Log Cup")
+        match = repo.get_matches(bracket_id)[0]
+
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+        service.set_result(slug, match["match_no"], "u4", admin_id="a")
+
+        rows = self._rows(match_db)
+        assert len(rows) == 1
+        assert rows[0]["winner_id"] == "u4"
+
+    def test_a_bye_is_not_a_played_match(self, service, repo, match_db):
+        published(service, repo, 3, name="Bye Cup")
+        assert self._rows(match_db) == []
+
+    def test_each_result_is_logged_once(self, service, repo, match_db):
+        slug, bracket_id = published(service, repo, 4, name="Log Cup")
+        match = repo.get_matches(bracket_id)[0]
+
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        assert len(self._rows(match_db)) == 1
+
+
+class TestFinishes:
+    """How far each entrant got, and what that finish is called."""
+
+    def _play_out(self, service, repo, slug, bracket_id, winner_by_seed=True):
+        """Settle every match; the better seed wins unless told otherwise."""
+        for _ in range(64):
+            detail = service.get_bracket_detail(slug)
+            live = [
+                m
+                for r in detail["rounds"]
+                for m in r["matches"]
+                if m["playable"] and m["state"] in ("pending", "reported")
+            ]
+            if not live:
+                return
+            m = live[0]
+            better = m["p1_user_id"] if m["p1_seed"] < m["p2_seed"] else m["p2_user_id"]
+            worse = m["p2_user_id"] if m["p1_seed"] < m["p2_seed"] else m["p1_user_id"]
+            service.set_result(slug, m["match_no"], better if winner_by_seed else worse, admin_id="a")
+
+    def test_labels_by_placement(self):
+        assert BracketService.finish_label(1) == "Champion"
+        assert BracketService.finish_label(2) == "Finalist"
+        assert BracketService.finish_label(3) == "Top 4"
+        assert BracketService.finish_label(5) == "Top 8"
+        assert BracketService.finish_label(9) == "Top cut"
+        assert BracketService.finish_label(None) is None
+
+    def test_an_eight_player_bracket_places_everyone(self, service, repo):
+        slug, bracket_id = published(service, repo, 8, name="Finish Cup")
+        self._play_out(service, repo, slug, bracket_id)
+
+        placements = service.placements(bracket_id)
+        assert placements[1] == 1        # seed 1 wins it
+        assert placements[2] == 2        # loses the final
+        assert sorted([placements[3], placements[4]]) == [3, 3]
+        assert sorted(placements[s] for s in (5, 6, 7, 8)) == [5, 5, 5, 5]
+
+    def test_a_player_still_in_has_no_placement_yet(self, service, repo):
+        slug, bracket_id = published(service, repo, 8, name="Finish Cup")
+        first = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, first["match_no"], "u1", admin_id="a")
+
+        placements = service.placements(bracket_id)
+        assert 8 in placements      # knocked out
+        assert 1 not in placements  # still going
+
+    def test_byes_do_not_place_anyone(self, service, repo):
+        slug, bracket_id = published(service, repo, 5, name="Bye Finish")
+        assert service.placements(bracket_id) == {}
+
+
+class TestPlayerMarks:
+    def _finished(self, service, repo, name="Marks Cup", size=8):
+        slug, bracket_id = published(service, repo, size, name=name)
+        for _ in range(64):
+            detail = service.get_bracket_detail(slug)
+            live = [
+                m for r in detail["rounds"] for m in r["matches"]
+                if m["playable"] and m["state"] == "pending"
+            ]
+            if not live:
+                break
+            m = live[0]
+            better = m["p1_user_id"] if m["p1_seed"] < m["p2_seed"] else m["p2_user_id"]
+            service.set_result(slug, m["match_no"], better, admin_id="a")
+        return slug, bracket_id
+
+    def test_marks_summarise_a_finished_bracket(self, service, repo):
+        self._finished(service, repo)
+        marks = service.get_player_marks()
+
+        assert marks["u1"]["wins"] == 1
+        assert marks["u1"]["best_label"] == "Champion"
+        assert marks["u2"]["best_label"] == "Finalist"
+        assert marks["u3"]["best_label"] == "Top 4"
+        assert marks["u5"]["best_label"] == "Top 8"
+
+    def test_a_bracket_still_running_earns_no_marks(self, service, repo):
+        slug, bracket_id = published(service, repo, 8, name="Live Cup")
+        first = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, first["match_no"], "u1", admin_id="a")
+
+        assert service.get_player_marks() == {}
+
+    def test_wins_stack_and_the_best_finish_is_kept(self, service, repo):
+        self._finished(service, repo, name="Cup One")
+        self._finished(service, repo, name="Cup Two")
+
+        marks = service.get_player_marks()
+        assert marks["u1"]["wins"] == 2
+        assert len(marks["u1"]["entries"]) == 2
+        # Two finalist finishes still read as one finalist.
+        assert marks["u2"]["wins"] == 0
+        assert marks["u2"]["best_label"] == "Finalist"
+
+
+class TestPlayerPostseason:
+    def test_it_lists_the_brackets_a_player_was_in(self, service, repo):
+        slug, bracket_id = published(service, repo, 8, name="History Cup")
+        first = repo.get_matches(bracket_id)[0]  # seed 1 v seed 8
+        service.set_result(slug, first["match_no"], "u1", admin_id="a")
+
+        entries = service.get_player_postseason("u1")
+        assert len(entries) == 1
+        assert entries[0]["name"] == "History Cup"
+        assert entries[0]["seed"] == 1
+        assert entries[0]["wins"] == 1
+        assert entries[0]["label"] == "Still in"
+
+    def test_a_knocked_out_player_shows_their_finish(self, service, repo):
+        slug, bracket_id = published(service, repo, 8, name="History Cup")
+        first = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, first["match_no"], "u1", admin_id="a")
+
+        entry = service.get_player_postseason("u8")[0]
+        assert entry["label"] == "Top 8"
+        assert (entry["wins"], entry["losses"]) == (0, 1)
+
+    def test_someone_who_never_entered_has_nothing(self, service, repo):
+        published(service, repo, 8, name="History Cup")
+        assert service.get_player_postseason("u99") == []
 
 
 # -- API ----------------------------------------------------------

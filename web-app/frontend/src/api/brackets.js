@@ -4,6 +4,9 @@ import { get, post, put, patch, del } from './client'
 export const listBrackets = () => get('/api/brackets')
 export const getBracket = (slug) => get(`/api/brackets/${slug}`)
 
+export const getBracketMarks = () => get('/api/brackets/marks')
+export const getPlayerPostseason = (userId) =>
+  get(`/api/brackets/player/${encodeURIComponent(userId)}`)
 export const getBracketDecks = (slug) => get(`/api/brackets/${slug}/decks`)
 export const getBracketDeck = (slug, seed) => get(`/api/brackets/${slug}/decks/${seed}`)
 

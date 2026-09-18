@@ -49,6 +49,28 @@ def get_bracket(slug):
     return jsonify({"success": True, **detail}), 200
 
 
+@brackets_bp.route("/brackets/marks", methods=["GET"])
+def get_bracket_marks():
+    """Postseason honours keyed by user_id, drawn beside player names."""
+    try:
+        return jsonify({"success": True, "marks": service.get_player_marks()}), 200
+    except Exception as e:
+        logger.error("Failed to load bracket marks: %s", e, exc_info=True)
+        # A leaderboard should still render without its decorations.
+        return jsonify({"success": True, "marks": {}}), 200
+
+
+@brackets_bp.route("/brackets/player/<path:user_id>", methods=["GET"])
+def get_player_postseason(user_id):
+    try:
+        return jsonify(
+            {"success": True, "brackets": service.get_player_postseason(user_id)}
+        ), 200
+    except Exception as e:
+        logger.error("Failed to load postseason for %s: %s", user_id, e, exc_info=True)
+        return jsonify({"success": True, "brackets": []}), 200
+
+
 # -- Player actions -----------------------------------------------
 
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithRouter } from '@/test/test-utils'
 import BracketTree from '../BracketTree'
@@ -42,13 +42,6 @@ describe('BracketTree', () => {
       <BracketTree rounds={rounds([match({ p2_seed: null, p2_name: null, playable: false })])} />,
     )
     expect(screen.getByText('Waiting')).toBeInTheDocument()
-  })
-
-  it('marks a bye', () => {
-    renderWithRouter(
-      <BracketTree rounds={rounds([match({ state: 'bye', p2_name: null, p2_seed: null })])} />,
-    )
-    expect(screen.getByText('Bye')).toBeInTheDocument()
   })
 
   it('strikes through the loser of a finished match', () => {
@@ -118,6 +111,61 @@ describe('BracketTree', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: 'Reset' }))
     expect(onAdminAction).toHaveBeenCalledWith('reset', expect.any(Object))
+  })
+
+  it('tags a player who advanced on a bye', () => {
+    renderWithRouter(
+      <BracketTree
+        rounds={rounds([match({ p1_from_bye: true, p2_name: null, p2_seed: null })])}
+      />,
+    )
+    expect(screen.getByText('bye')).toBeInTheDocument()
+    expect(screen.getByText('bye')).toHaveAttribute(
+      'title',
+      'Advanced on a first-round bye',
+    )
+  })
+
+  it('swaps two players when one name is dropped on another', () => {
+    const onSwap = vi.fn()
+    renderWithRouter(<BracketTree rounds={rounds([match()])} onSwap={onSwap} />)
+
+    const store = {}
+    const dataTransfer = {
+      setData: (_, value) => {
+        store.value = value
+      },
+      getData: () => store.value,
+    }
+
+    fireEvent.dragStart(screen.getByText('One'), { dataTransfer })
+    fireEvent.drop(screen.getByText('Eight'), { dataTransfer })
+
+    expect(onSwap).toHaveBeenCalledWith(1, 8)
+  })
+
+  it('ignores a name dropped on itself', () => {
+    const onSwap = vi.fn()
+    renderWithRouter(<BracketTree rounds={rounds([match()])} onSwap={onSwap} />)
+
+    const store = {}
+    const dataTransfer = {
+      setData: (_, value) => {
+        store.value = value
+      },
+      getData: () => store.value,
+    }
+
+    fireEvent.dragStart(screen.getByText('One'), { dataTransfer })
+    fireEvent.drop(screen.getByText('One'), { dataTransfer })
+
+    expect(onSwap).not.toHaveBeenCalled()
+  })
+
+  it('does not make names draggable without a swap handler', () => {
+    renderWithRouter(<BracketTree rounds={rounds([match()])} />)
+    // Names stay profile links when the tree is not being arranged.
+    expect(screen.getByText('One').closest('a')).toHaveAttribute('href', '/player/u1')
   })
 
   it('lays rounds out left to right', () => {

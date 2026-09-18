@@ -271,21 +271,34 @@ class BracketService:
         bracket = self._repo.get_bracket(slug=slug)
 
         matches = self._repo.get_matches(bracket["bracket_id"])
-        rounds = {}
-        for match in matches:
-            if match["state"] == "empty":
-                continue
-            bucket = rounds.setdefault(
-                match["round"],
-                {"round": match["round"], "title": match["round_title"], "matches": []},
-            )
-            bucket["matches"].append({**match, "playable": _is_playable(match)})
 
         return {
             "bracket": bracket,
             "entrants": self._repo.get_entrants(bracket["bracket_id"]),
-            "rounds": [rounds[key] for key in sorted(rounds)],
+            "rounds": rounds_for_display(matches),
             "champion": champion(matches) if matches else None,
+        }
+
+    def preview(self, bracket_id: int) -> dict:
+        """The tree a draft would produce, without writing anything.
+
+        Lets the admin drag the seeding around and watch the first round change
+        before committing to it.
+        """
+        bracket = self._repo.get_bracket(bracket_id=bracket_id)
+        if not bracket:
+            raise BracketError("Bracket not found")
+
+        entrants = self._repo.get_entrants(bracket_id)
+        if len(entrants) < 2:
+            return {"entrants": entrants, "rounds": [], "bracket_size": 0, "byes": 0}
+
+        matches = build_matches(entrants)
+        return {
+            "entrants": entrants,
+            "rounds": rounds_for_display(matches),
+            "bracket_size": bracket_size_for(len(entrants)),
+            "byes": len([m for m in matches if m["state"] == "bye"]),
         }
 
     def get_player_open_matches(self, user_id: str) -> list[dict]:
@@ -530,3 +543,36 @@ class BracketService:
 def _is_playable(match: dict) -> bool:
     """Both seats filled by real players, so the match can actually happen."""
     return bool(match.get("p1_seed")) and bool(match.get("p2_seed"))
+
+
+def rounds_for_display(matches: list[dict]) -> list[dict]:
+    """Group matches into rounds for the bracket view.
+
+    Byes are not drawn. A player with a first-round bye has no match to show -
+    they simply appear in round two, tagged as having had one. So a 24-player
+    field reads as eight first-round pairs, with the top eight seeds waiting in
+    round two, rather than sixteen cards half of which are placeholders.
+    """
+    from_bye = {}
+    for match in matches:
+        if match["state"] == "bye" and match.get("next_match_no"):
+            from_bye[(match["next_match_no"], match["next_slot"])] = True
+
+    rounds = {}
+    for match in matches:
+        if match["state"] in ("empty", "bye"):
+            continue
+        bucket = rounds.setdefault(
+            match["round"],
+            {"round": match["round"], "title": match["round_title"], "matches": []},
+        )
+        bucket["matches"].append(
+            {
+                **match,
+                "playable": _is_playable(match),
+                "p1_from_bye": from_bye.get((match["match_no"], 1), False),
+                "p2_from_bye": from_bye.get((match["match_no"], 2), False),
+            }
+        )
+
+    return [rounds[key] for key in sorted(rounds) if rounds[key]["matches"]]

@@ -12,7 +12,7 @@ from services.bracket_builder import (
     round_title,
     seed_order,
 )
-from services.brackets import BracketError, BracketService, slugify
+from services.brackets import BracketError, BracketService, rounds_for_display, slugify
 from tests.conftest import seed_elo_data, seed_matches
 
 
@@ -278,6 +278,74 @@ class TestPublishing:
         assert service.get_bracket_detail("cup", include_drafts=True) is not None
         assert service.list_brackets() == []
         assert len(service.list_brackets(include_drafts=True)) == 1
+
+
+class TestDisplayRounds:
+    """Byes are bookkeeping, not matches, so they are not drawn."""
+
+    def test_a_24_player_field_opens_with_eight_pairs(self):
+        rounds = rounds_for_display(build_matches(make_entrants(24)))
+        assert [len(r["matches"]) for r in rounds] == [8, 8, 4, 2, 1]
+
+    def test_bye_players_appear_in_round_two_tagged(self):
+        rounds = rounds_for_display(build_matches(make_entrants(24)))
+        second = rounds[1]["matches"]
+        waiting = [m["p1_name"] for m in second if m["p1_from_bye"]]
+        # The top eight seeds sat out round one.
+        assert sorted(waiting, key=lambda n: int(n[1:])) == [f"P{i}" for i in range(1, 9)]
+        assert all(m["p2_from_bye"] is False for m in second)
+
+    def test_no_bye_cards_are_returned(self):
+        for count in (3, 5, 13, 24):
+            rounds = rounds_for_display(build_matches(make_entrants(count)))
+            states = [m["state"] for r in rounds for m in r["matches"]]
+            assert "bye" not in states
+            assert "empty" not in states
+
+    def test_a_full_field_is_unaffected(self):
+        rounds = rounds_for_display(build_matches(make_entrants(8)))
+        assert [len(r["matches"]) for r in rounds] == [4, 2, 1]
+        assert all(not m["p1_from_bye"] for r in rounds for m in r["matches"])
+
+    def test_rounds_with_nothing_to_draw_are_dropped(self):
+        """A 3-player field has one real first-round match, not two."""
+        rounds = rounds_for_display(build_matches(make_entrants(3)))
+        assert [len(r["matches"]) for r in rounds] == [1, 1]
+        assert rounds[0]["matches"][0]["p1_name"] == "P2"
+
+
+class TestPreview:
+    def test_preview_shows_the_tree_without_saving(self, service, repo):
+        created = service.create_bracket(name="Preview Cup", size=24, source="overall")
+        service.set_entrants(created["bracket_id"], make_entrants(24))
+
+        preview = service.preview(created["bracket_id"])
+
+        assert preview["bracket_size"] == 32
+        assert preview["byes"] == 8
+        assert [len(r["matches"]) for r in preview["rounds"]] == [8, 8, 4, 2, 1]
+        # Nothing was persisted: the bracket is still an unpublished draft.
+        assert repo.get_matches(created["bracket_id"]) == []
+        assert repo.get_bracket(bracket_id=created["bracket_id"])["status"] == "draft"
+
+    def test_preview_follows_the_seeding_order(self, service):
+        created = service.create_bracket(name="Preview Cup", size=8, source="overall")
+        first = service.preview(created["bracket_id"])["rounds"][0]["matches"][0]
+        assert (first["p1_name"], first["p2_name"]) == ("P1", "P8")
+
+        service.move_entrant(created["bracket_id"], 8, 1)
+        moved = service.preview(created["bracket_id"])["rounds"][0]["matches"][0]
+        assert (moved["p1_name"], moved["p2_name"]) == ("P8", "P7")
+
+    def test_preview_of_an_empty_draft(self, service):
+        created = service.create_bracket(name="Empty", size=8, source="manual")
+        assert service.preview(created["bracket_id"]) == {
+            "entrants": [], "rounds": [], "bracket_size": 0, "byes": 0,
+        }
+
+    def test_preview_of_a_missing_bracket(self, service):
+        with pytest.raises(BracketError):
+            service.preview(9999)
 
 
 # -- Reporting ----------------------------------------------------
@@ -610,6 +678,20 @@ class TestBracketApi:
             f"/api/admin/brackets/{slug}/matches/1/reset"
         ).status_code == 200
         assert admin_session.get(f"/api/brackets/{slug}").get_json()["champion"] is None
+
+    def test_preview_endpoint_is_admin_only(self, admin_session, app):
+        created = admin_session.post(
+            "/api/admin/brackets", json={"name": "Preview", "size": 2, "source": "overall"}
+        ).get_json()
+
+        anonymous = app.test_client()
+        assert anonymous.get(
+            f"/api/admin/brackets/{created['slug']}/preview"
+        ).status_code in (401, 403)
+
+        preview = admin_session.get(f"/api/admin/brackets/{created['slug']}/preview").get_json()
+        assert preview["bracket_size"] == 2
+        assert preview["rounds"][0]["title"] == "Finals"
 
     def test_delete(self, admin_session):
         slug = self._create_and_publish(admin_session)

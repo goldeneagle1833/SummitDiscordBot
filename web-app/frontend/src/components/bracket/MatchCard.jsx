@@ -1,9 +1,22 @@
 import { Link } from 'react-router-dom'
 
-function Side({ seed, name, userId, isWinner, isLoser, reported }) {
+function Side({
+  seed,
+  name,
+  userId,
+  isWinner,
+  isLoser,
+  reported,
+  fromBye,
+  linkTo = true,
+  dragHandlers,
+}) {
   if (!name) {
     return (
-      <div className="flex items-center gap-2 px-3 py-1.5 text-sm text-text-muted italic">
+      <div
+        className="flex items-center gap-2 px-3 py-1.5 text-sm text-text-muted italic"
+        {...(dragHandlers?.dropOnly || {})}
+      >
         <span className="w-6 shrink-0 text-xs">—</span>
         <span>Waiting</span>
       </div>
@@ -14,15 +27,23 @@ function Side({ seed, name, userId, isWinner, isLoser, reported }) {
     <div
       className={`flex items-center gap-2 px-3 py-1.5 text-sm ${
         isWinner ? 'font-semibold text-text-primary' : ''
-      } ${isLoser ? 'text-text-muted line-through decoration-1' : ''}`}
+      } ${isLoser ? 'text-text-muted line-through decoration-1' : ''} ${
+        dragHandlers ? 'cursor-grab active:cursor-grabbing hover:bg-bg-elevated' : ''
+      }`}
+      {...(dragHandlers?.props || {})}
     >
       <span className="w-6 shrink-0 text-xs text-text-muted">{seed}</span>
-      {userId ? (
+      {userId && linkTo ? (
         <Link to={`/player/${userId}`} className="truncate hover:text-primary transition-colors">
           {name}
         </Link>
       ) : (
         <span className="truncate">{name}</span>
+      )}
+      {fromBye && (
+        <span className="text-[10px] uppercase tracking-wide text-text-muted" title="Advanced on a first-round bye">
+          bye
+        </span>
       )}
       {reported && <span className="ml-auto text-xs text-amber-400">reported</span>}
       {isWinner && !reported && <span className="ml-auto text-xs text-accent-green">W</span>}
@@ -33,14 +54,39 @@ function Side({ seed, name, userId, isWinner, isLoser, reported }) {
 /**
  * One slot in the tree. Shows both seats, who won, and - for the two players
  * involved - the buttons to settle it.
+ *
+ * With `onSwap` the two names become draggable: dropping one on another swaps
+ * their seeds, which is how the admin arranges a draft before publishing.
  */
-export default function MatchCard({ match, onReport, onConfirm, onAdminAction, isAdmin }) {
+export default function MatchCard({ match, onReport, onConfirm, onAdminAction, isAdmin, onSwap }) {
   const complete = match.state === 'complete' || match.state === 'bye'
   const reportedWinner = match.state === 'reported' ? match.reported_winner_id : null
-  const winnerId = match.winner_user_id || reportedWinner
 
   const p1Wins = complete && String(match.winner_seed) === String(match.p1_seed)
   const p2Wins = complete && String(match.winner_seed) === String(match.p2_seed)
+
+  const dragFor = (seed) => {
+    if (!onSwap || !seed) return null
+    return {
+      props: {
+        draggable: true,
+        onDragStart: (e) => {
+          e.dataTransfer.setData('text/plain', String(seed))
+          e.dataTransfer.effectAllowed = 'move'
+        },
+        onDragOver: (e) => {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+        },
+        onDrop: (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          const from = Number(e.dataTransfer.getData('text/plain'))
+          if (from && from !== seed) onSwap(from, seed)
+        },
+      },
+    }
+  }
 
   return (
     <div
@@ -57,6 +103,9 @@ export default function MatchCard({ match, onReport, onConfirm, onAdminAction, i
         isWinner={p1Wins}
         isLoser={complete && !p1Wins && !!match.p2_name}
         reported={reportedWinner && String(reportedWinner) === String(match.p1_user_id)}
+        fromBye={match.p1_from_bye}
+        linkTo={!onSwap}
+        dragHandlers={dragFor(match.p1_seed)}
       />
       <div className="border-t border-border" />
       <Side
@@ -66,11 +115,10 @@ export default function MatchCard({ match, onReport, onConfirm, onAdminAction, i
         isWinner={p2Wins}
         isLoser={complete && !p2Wins && !!match.p1_name}
         reported={reportedWinner && String(reportedWinner) === String(match.p2_user_id)}
+        fromBye={match.p2_from_bye}
+        linkTo={!onSwap}
+        dragHandlers={dragFor(match.p2_seed)}
       />
-
-      {match.state === 'bye' && (
-        <p className="px-3 py-1 text-xs text-text-muted bg-bg-raised">Bye</p>
-      )}
 
       {match.viewer_can_report && (
         <button

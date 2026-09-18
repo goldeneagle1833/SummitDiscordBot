@@ -4,7 +4,7 @@ import MatchCard from './MatchCard'
  * The rounds laid out left to right. Each round has half the matches of the
  * one before, so spacing doubles to keep every match beside its feeders.
  */
-export default function BracketTree({ rounds, onReport, onConfirm, onAdminAction, isAdmin }) {
+export default function BracketTree({ rounds, onReport, onConfirm, onAdminAction, isAdmin, onSwap }) {
   if (!rounds?.length) {
     return <p className="text-text-muted text-center py-8">This bracket has no matches yet.</p>
   }
@@ -29,6 +29,7 @@ export default function BracketTree({ rounds, onReport, onConfirm, onAdminAction
                   onConfirm={onConfirm}
                   onAdminAction={onAdminAction}
                   isAdmin={isAdmin}
+                  onSwap={onSwap}
                 />
               ))}
             </div>

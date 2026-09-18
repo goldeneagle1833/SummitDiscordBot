@@ -162,6 +162,21 @@ def admin_get_bracket(slug):
     return jsonify({"success": True, **detail}), 200
 
 
+@brackets_bp.route("/admin/brackets/<slug>/preview", methods=["GET"])
+@require_admin
+def admin_preview_bracket(slug):
+    """The tree this draft's current seeding would produce, unsaved."""
+    bracket, error = _resolve(slug)
+    if error:
+        return error
+
+    try:
+        result = service.preview(bracket["bracket_id"])
+    except BracketError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    return jsonify({"success": True, **result}), 200
+
+
 @brackets_bp.route("/admin/brackets/<slug>", methods=["PATCH"])
 @require_admin
 def admin_update_bracket(slug):

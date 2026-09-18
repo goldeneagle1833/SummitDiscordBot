@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithRouter } from '@/test/test-utils'
 import BracketsAdmin from '../BracketsAdmin'
@@ -13,6 +13,7 @@ import {
   adminShuffleSeeds,
   adminMoveEntrant,
   adminPublishBracket,
+  adminPreviewBracket,
 } from '@/api/brackets'
 
 vi.mock('@/api/brackets', () => ({
@@ -25,6 +26,7 @@ vi.mock('@/api/brackets', () => ({
   adminShuffleSeeds: vi.fn(),
   adminMoveEntrant: vi.fn(),
   adminPublishBracket: vi.fn(),
+  adminPreviewBracket: vi.fn(),
   adminUnpublishBracket: vi.fn(),
   adminDeleteBracket: vi.fn(),
 }))
@@ -63,6 +65,49 @@ describe('BracketsAdmin', () => {
     adminMoveEntrant.mockResolvedValue({ entrant_count: 3 })
     adminSetEntrants.mockResolvedValue({ entrant_count: 2 })
     adminPublishBracket.mockResolvedValue({ entrant_count: 3, byes: 1 })
+    adminPreviewBracket.mockResolvedValue({
+      bracket_size: 4,
+      byes: 1,
+      entrants: [],
+      rounds: [
+        {
+          round: 1,
+          title: 'Semifinals',
+          matches: [
+            {
+              match_no: 2,
+              round_title: 'Semifinals',
+              state: 'pending',
+              playable: true,
+              p1_seed: 2,
+              p1_name: 'Two',
+              p2_seed: 3,
+              p2_name: 'Three',
+              p1_from_bye: false,
+              p2_from_bye: false,
+            },
+          ],
+        },
+        {
+          round: 2,
+          title: 'Finals',
+          matches: [
+            {
+              match_no: 3,
+              round_title: 'Finals',
+              state: 'pending',
+              playable: false,
+              p1_seed: 1,
+              p1_name: 'One',
+              p2_seed: null,
+              p2_name: null,
+              p1_from_bye: true,
+              p2_from_bye: false,
+            },
+          ],
+        },
+      ],
+    })
   })
 
   it('creates a draft with a chosen starting count', async () => {
@@ -163,6 +208,66 @@ describe('BracketsAdmin', () => {
       expect.arrayContaining([expect.objectContaining({ display_name: 'One' })]),
     )
     expect(adminSetEntrants.mock.calls[0][1]).toHaveLength(2)
+  })
+
+  it('previews the bracket the current seeding would produce', async () => {
+    renderWithRouter(<BracketsAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: /edit seeds/i }))
+
+    expect(await screen.findByText('Preview')).toBeInTheDocument()
+    expect(
+      screen.getByText(/3 players in a 4-slot bracket/),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/top seed gets a first-round bye and starts in round 2/),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Semifinals' })).toBeInTheDocument()
+    // The bye player is shown in round two, tagged, with no first-round card.
+    expect(screen.getByText('bye')).toBeInTheDocument()
+  })
+
+  it('reorders by dragging a name onto a seed', async () => {
+    renderWithRouter(<BracketsAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: /edit seeds/i }))
+
+    const rows = await screen.findAllByRole('listitem')
+    const store = {}
+    const dataTransfer = {
+      setData: (_, value) => {
+        store.value = value
+      },
+      getData: () => store.value,
+      effectAllowed: '',
+    }
+
+    fireEvent.dragStart(rows[2], { dataTransfer })
+    fireEvent.dragOver(rows[0], { dataTransfer })
+    fireEvent.drop(rows[0], { dataTransfer })
+
+    await waitFor(() => expect(adminMoveEntrant).toHaveBeenCalledWith('season-7', 3, 1))
+  })
+
+  it('swaps two players dropped on each other in the preview', async () => {
+    renderWithRouter(<BracketsAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: /edit seeds/i }))
+    const previewPanel = (await screen.findByText('Preview')).closest('div')
+
+    const store = {}
+    const dataTransfer = {
+      setData: (_, value) => {
+        store.value = value
+      },
+      getData: () => store.value,
+    }
+
+    // Names appear in both the seed list and the preview; drag the preview ones.
+    fireEvent.dragStart(within(previewPanel).getByText('Two'), { dataTransfer })
+    fireEvent.drop(within(previewPanel).getByText('Three'), { dataTransfer })
+
+    await waitFor(() => expect(adminSetEntrants).toHaveBeenCalled())
+    const sent = adminSetEntrants.mock.calls[0][1]
+    // Seeds 2 and 3 traded places; seed 1 stayed put.
+    expect(sent.map((e) => e.display_name)).toEqual(['One', 'Three', 'Two'])
   })
 
   it('cannot move the top seed any higher', async () => {

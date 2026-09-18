@@ -14,6 +14,7 @@ export const confirmBracketMatch = (slug, matchNo, agree) =>
 // Admin
 export const adminListBrackets = () => get('/api/admin/brackets')
 export const adminGetBracket = (slug) => get(`/api/admin/brackets/${slug}`)
+export const adminPreviewBracket = (slug) => get(`/api/admin/brackets/${slug}/preview`)
 export const adminGetSeedPool = (source) =>
   get(`/api/admin/brackets/seed-pool?source=${encodeURIComponent(source)}`)
 export const adminSyncTickets = () => post('/api/admin/brackets/sync-tickets', {})

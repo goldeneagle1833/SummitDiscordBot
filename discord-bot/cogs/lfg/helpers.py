@@ -28,12 +28,30 @@ def scrub_urls(text: str) -> str:
     return _URL_PATTERN.sub("[link removed]", text)
 
 
-def correction_tip() -> str:
-    """The one place that tells players how to fix a wrongly reported result."""
+def correction_tip(match_id=None) -> str:
+    """The one place that tells players how to fix a wrongly reported result.
+
+    Pass ``match_id`` wherever the match is already recorded so the command
+    can be copied as-is; before that there is no id yet to name.
+    """
+    command = f"!correct_match {match_id}" if match_id else "!correct_match <match id>"
     return (
-        f"🛠️ **Wrong result reported?** Run `!correct_match <match id>` in "
+        f"🛠️ **Wrong result reported?** Run `{command}` in "
         f"<#{MATCH_CORRECTION_CHANNEL_ID}> — the other player confirms the fix "
         f"and ELO is recalculated."
+    )
+
+
+def outstanding_match_tip() -> str:
+    """Tip for a message about a match that is already recorded.
+
+    "Report Last Match" only ever hands back buttons for a pairing that is
+    still active, so it cannot reopen the match this message is about - it is
+    there for a different match the player has yet to report.
+    """
+    return (
+        f"💡 **Another match still unreported?** Click "
+        f"**📋 Report Last Match** in <#{config.LFG_CHANNEL_ID}> for its buttons."
     )
 
 

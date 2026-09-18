@@ -20,6 +20,7 @@ from cogs.lfg.pairing_messages import (
     match_type_presentation,
     send_pairing_messages,
 )
+from services.summit_result_reporting import _notify_sorcery_online_match_recorded
 
 
 def _player(user_id, name, deck_url=None, dm_ok=True, interaction=None):
@@ -62,6 +63,37 @@ def test_correction_tip_names_the_command_and_channel():
     tip = correction_tip()
     assert "!correct_match <match id>" in tip
     assert f"<#{MATCH_CORRECTION_CHANNEL_ID}>" in tip
+
+
+def test_correction_tip_fills_in_a_known_match_id():
+    tip = correction_tip(2241)
+    assert "!correct_match 2241" in tip
+    assert "<match id>" not in tip
+
+
+@pytest.mark.asyncio
+async def test_a_result_recorded_outside_discord_carries_both_tips():
+    bot = MagicMock()
+    user = MagicMock()
+    user.send = AsyncMock()
+    bot.fetch_user = AsyncMock(return_value=user)
+
+    await _notify_sorcery_online_match_recorded(
+        bot,
+        match_id=2241,
+        match_type="ranked",
+        winner_id=10,
+        winner_name="t1ny",
+        loser_id=20,
+        loser_name="Bruce",
+    )
+
+    assert user.send.await_count == 2
+    for call in user.send.await_args_list:
+        text = call.args[0]
+        assert "**Match ID: #2241**" in text
+        assert "📋 Report Last Match" in text
+        assert "!correct_match 2241" in text
 
 
 @pytest.mark.asyncio

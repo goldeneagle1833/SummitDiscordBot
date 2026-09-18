@@ -433,7 +433,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 logger.warning(f"Could not edit match card messages for pairing {pairing_id}: {e}")
 
     # ── notify reporter ──
-    correct_match_tip = f"\n\n{correction_tip()}"
+    correct_match_tip = f"\n\n{correction_tip(match_id)}"
     if data.get("notify_reporter", True):
         try:
             reporter = await bot.fetch_user(data["reporter_id"])

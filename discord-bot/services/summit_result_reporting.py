@@ -6,6 +6,7 @@ import json
 import logging
 import sqlite3
 
+from cogs.lfg.helpers import correction_tip, outstanding_match_tip, scrub_urls
 from cogs.lfg.persistent_confirm import (
     _execute_match_confirmation,
     load_match_card_for_pairing,
@@ -222,16 +223,19 @@ async def _notify_sorcery_online_match_recorded(
         "testing": "Casual",
     }
     label = labels.get(match_type, str(match_type).capitalize())
+    # Nobody clicked a button to produce this result, so both tips matter here:
+    # the id to correct it with, and where to find buttons for another match.
+    tips = f"\n\n{outstanding_match_tip()}\n{correction_tip(match_id)}"
     messages = (
         (
             winner_id,
             f"✅ **{label} Match Recorded** — You defeated **{loser_name}** on "
-            f"Sorcery Online. **Match ID: #{match_id}**",
+            f"Sorcery Online. **Match ID: #{match_id}**{tips}",
         ),
         (
             loser_id,
             f"✅ **{label} Match Recorded** — **{winner_name}** defeated you on "
-            f"Sorcery Online. **Match ID: #{match_id}**",
+            f"Sorcery Online. **Match ID: #{match_id}**{tips}",
         ),
     )
 
@@ -253,7 +257,7 @@ async def _notify_sorcery_online_match_recorded(
         fallback_channel = bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
         if fallback_channel:
             try:
-                await fallback_channel.send(f"<@{user_id}> {message}")
+                await fallback_channel.send(scrub_urls(f"<@{user_id}> {message}"))
             except Exception as exc:
                 logger.error(
                     "Could not send Sorcery Online match result fallback for %s: %s",

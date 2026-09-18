@@ -8,6 +8,7 @@ export default function BracketTree({
   rounds,
   onReport,
   onConfirm,
+  onOpenTable,
   onAdminAction,
   isAdmin,
   onSwap,
@@ -43,6 +44,7 @@ export default function BracketTree({
                     match={match}
                     onReport={onReport}
                     onConfirm={onConfirm}
+                    onOpenTable={onOpenTable}
                     onAdminAction={onAdminAction}
                     isAdmin={isAdmin}
                     onSwap={onSwap}

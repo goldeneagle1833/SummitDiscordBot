@@ -12,6 +12,14 @@ import { avatarUrl } from '@/utils/avatar'
 
 const INPUT = 'w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm'
 
+/** When the list was captured. Decks are stored as submitted, not read live. */
+function snapshotDate(value) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+}
+
 /**
  * Who can see this deck, in words the owner will not misread.
  *
@@ -257,16 +265,24 @@ export default function DeckPanel({ slug, roster, isAdmin = false, onChanged }) 
 
               {isOpen && (
                 <div className="mt-3 pt-3 border-t border-border">
-                  {player.deck_url && (
-                    <a
-                      href={player.deck_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-secondary hover:underline"
-                    >
-                      Open on Curiosa
-                    </a>
-                  )}
+                  <p className="text-xs text-text-muted mb-2">
+                    {snapshotDate(player.submitted_at)
+                      ? `Snapshot taken ${snapshotDate(player.submitted_at)} — later edits to the deck do not change this.`
+                      : 'Captured as submitted.'}
+                    {player.deck_url && (
+                      <>
+                        {' '}
+                        <a
+                          href={player.deck_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-secondary hover:underline"
+                        >
+                          Open the live deck on Curiosa
+                        </a>
+                      </>
+                    )}
+                  </p>
                   <DeckDetail key={player.seed} slug={slug} seed={player.seed} />
                 </div>
               )}

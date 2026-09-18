@@ -12,8 +12,10 @@ import random
 import re
 import time
 from datetime import datetime
+from urllib.parse import urlparse
 
 from repositories.brackets import BracketRepository
+from repositories.elo import EloRepository
 from services.bracket_builder import (
     advance_winner,
     bracket_size_for,
@@ -23,6 +25,8 @@ from services.bracket_builder import (
 )
 from services.curiosa import CuriosaService
 from services.leaderboard import LeaderboardService
+from services.paper_elo import calculate_elo
+from services.sorcery_online_table import TableUnavailable, provision_match_table
 from services.ticket_holders import ticket_holder_ids
 from utils.card_images import attach_images
 
@@ -41,10 +45,11 @@ def slugify(name: str) -> str:
 
 
 class BracketService:
-    def __init__(self, repo=None, leaderboard_service=None, curiosa_service=None):
+    def __init__(self, repo=None, leaderboard_service=None, curiosa_service=None, elo_repo=None):
         self._repo = repo or BracketRepository()
         self._leaderboard_override = leaderboard_service
         self._curiosa_override = curiosa_service
+        self._elo_repo_override = elo_repo
 
     @property
     def _leaderboard(self):
@@ -54,6 +59,11 @@ class BracketService:
     @property
     def _curiosa(self):
         return self._curiosa_override or CuriosaService()
+
+    @property
+    def _elo_repo(self):
+        """The bot ladder. Built on demand so its path resolves at call time."""
+        return self._elo_repo_override or EloRepository()
 
     # -- Seed pool ------------------------------------------------
 
@@ -268,7 +278,13 @@ class BracketService:
             )
         return brackets
 
-    def get_bracket_detail(self, slug: str, include_drafts: bool = False) -> dict | None:
+    def get_bracket_detail(
+        self,
+        slug: str,
+        include_drafts: bool = False,
+        viewer_id=None,
+        is_admin: bool = False,
+    ) -> dict | None:
         bracket = self._repo.get_bracket(slug=slug)
         if not bracket:
             return None
@@ -279,13 +295,74 @@ class BracketService:
         bracket = self._repo.get_bracket(slug=slug)
 
         matches = self._repo.get_matches(bracket["bracket_id"])
+        entrants = self._repo.get_entrants(bracket["bracket_id"])
+        rounds = rounds_for_display(matches)
+
+        viewer_id = str(viewer_id) if viewer_id else None
+        seeds_with_decks = {d["seed"] for d in self._repo.get_decks(bracket["bracket_id"])}
+        finished = bracket["status"] == "complete"
+
+        for round_data in rounds:
+            for match in round_data["matches"]:
+                self._annotate_for_viewer(
+                    match,
+                    viewer_id=viewer_id,
+                    is_admin=is_admin,
+                    seeds_with_decks=seeds_with_decks,
+                    finished=finished,
+                )
 
         return {
             "bracket": bracket,
-            "entrants": self._repo.get_entrants(bracket["bracket_id"]),
-            "rounds": rounds_for_display(matches),
+            "entrants": entrants,
+            "rounds": rounds,
             "champion": champion(matches) if matches else None,
         }
+
+    def _annotate_for_viewer(self, match, *, viewer_id, is_admin, seeds_with_decks, finished):
+        """Attach what this viewer may do with, and see of, a match."""
+        is_player = viewer_id is not None and viewer_id in (
+            str(match.get("p1_user_id") or ""),
+            str(match.get("p2_user_id") or ""),
+        )
+        settled = match["state"] in ("complete", "bye")
+
+        match["viewer_is_player"] = is_player
+        match["viewer_can_report"] = (
+            is_player and match["state"] == "pending" and match["playable"]
+        )
+        match["viewer_can_confirm"] = (
+            is_player
+            and match["state"] == "reported"
+            and str(match.get("reported_by") or "") != viewer_id
+        )
+
+        # A table seat is the viewer's own; nobody else is handed either link.
+        seat = None
+        if is_player and match.get("table_provisioned_at"):
+            on_p1 = viewer_id == str(match.get("p1_user_id") or "")
+            seat = match["table_p1_url"] if on_p1 else match["table_p2_url"]
+        match["viewer_table_url"] = seat
+        match["has_table"] = bool(match.get("table_provisioned_at")) if is_player else False
+
+        missing = [
+            match[f"p{slot}_name"]
+            for slot in (1, 2)
+            if match.get(f"p{slot}_seed") not in seeds_with_decks
+        ]
+        match["decks_missing"] = missing if is_player else []
+        match["viewer_can_open_table"] = bool(
+            is_player and match["playable"] and not settled and not missing
+        )
+
+        # Replays follow the decks: public once the bracket is done.
+        match["replay_url"] = (
+            match.get("replay_url") if (finished or is_admin or is_player) else None
+        )
+        match["replay_public"] = bool(match.get("replay_url")) and finished
+
+        for key in ("table_p1_url", "table_p2_url"):
+            match.pop(key, None)
 
     def preview(self, bracket_id: int) -> dict:
         """The tree a draft would produce, without writing anything.
@@ -398,6 +475,7 @@ class BracketService:
             raise BracketError("The winner has to be one of the two players")
 
         if match["state"] == "complete":
+            self._reverse_elo(bracket, match)
             self._clear_from(bracket, match_no)
 
         self._complete(bracket, match_no, winner_user_id, resolved_by=admin_id)
@@ -406,6 +484,7 @@ class BracketService:
     def reset_match(self, slug: str, match_no: int) -> dict:
         """Admin: wipe a result and everything it decided downstream."""
         bracket, match = self._require_live_match(slug, match_no)
+        self._reverse_elo(bracket, match)
         self._clear_from(bracket, match_no)
         self._repo.update_match(
             bracket["bracket_id"],
@@ -628,6 +707,111 @@ class BracketService:
             raise BracketError("Bracket not found")
         return self._repo.delete_deck(bracket["bracket_id"], int(seed))
 
+    # -- Sorcery Online tables ------------------------------------
+
+    def open_table(self, slug: str, match_no: int, user_id: str) -> dict:
+        """Open (or re-open) the Sorcery Online table for a pairing.
+
+        Both decks are preloaded, so both players must have submitted one. The
+        table is provisioned once and each player is handed only their own seat.
+        """
+        bracket, match = self._require_live_match(slug, match_no)
+        user_id = str(user_id)
+
+        if user_id not in (str(match["p1_user_id"] or ""), str(match["p2_user_id"] or "")):
+            raise BracketError("Only the two players in this match can open the table")
+        if match["state"] in ("complete", "bye"):
+            raise BracketError("This match is already settled")
+
+        on_p1 = user_id == str(match["p1_user_id"] or "")
+
+        # Already provisioned: hand back this player's seat rather than asking
+        # Sorcery Online for a second table.
+        if match["table_provisioned_at"]:
+            seat = match["table_p1_url"] if on_p1 else match["table_p2_url"]
+            if seat:
+                return {"game_url": seat, "reused": True}
+
+        decks = {d["seed"]: d for d in self._repo.get_decks(bracket["bracket_id"])}
+        missing = [
+            match[f"p{slot}_name"] for slot in (1, 2) if match[f"p{slot}_seed"] not in decks
+        ]
+        if missing:
+            raise BracketError(
+                f"{' and '.join(missing)} still need to submit a decklist before the table opens"
+            )
+
+        players = [
+            {
+                "user_id": match[f"p{slot}_user_id"],
+                "display_name": match[f"p{slot}_name"],
+                "deck_url": decks[match[f"p{slot}_seed"]]["deck_url"],
+            }
+            for slot in (1, 2)
+        ]
+        if not all(p["user_id"] for p in players):
+            raise BracketError("Both players need a site account to open a table")
+
+        try:
+            seats = provision_match_table(
+                f"bracket-{bracket['bracket_id']}-m{match_no}", players
+            )
+        except TableUnavailable as e:
+            raise BracketError(str(e)) from e
+
+        self._repo.update_match(
+            bracket["bracket_id"],
+            match_no,
+            {
+                "table_provisioned_at": datetime.now().isoformat(),
+                "table_p1_url": seats.get(str(match["p1_user_id"])),
+                "table_p2_url": seats.get(str(match["p2_user_id"])),
+            },
+        )
+
+        return {
+            "game_url": seats.get(str(user_id)),
+            "reused": False,
+        }
+
+    # -- Replays --------------------------------------------------
+
+    REPLAY_HOSTS = ("playsorceryonline.com",)
+
+    def set_replay(self, slug: str, match_no: int, replay_url: str, admin_id: str) -> dict:
+        """Attach a Sorcery Online replay to a match. Public when the bracket ends."""
+        bracket, match = self._require_live_match(slug, match_no)
+
+        replay_url = (replay_url or "").strip()
+        if not replay_url:
+            raise BracketError("A replay link is required")
+
+        host = (urlparse(replay_url).hostname or "").lower().removeprefix("www.")
+        if host not in self.REPLAY_HOSTS:
+            raise BracketError("Replay links have to be Sorcery Online links")
+
+        self._repo.update_match(
+            bracket["bracket_id"],
+            match_no,
+            {
+                "replay_url": replay_url,
+                "replay_added_by": str(admin_id),
+                "replay_added_at": datetime.now().isoformat(),
+            },
+        )
+        return {"replay_url": replay_url, "public": bracket["status"] == "complete"}
+
+    def clear_replay(self, slug: str, match_no: int) -> bool:
+        bracket, match = self._require_live_match(slug, match_no)
+        if not match["replay_url"]:
+            return False
+        self._repo.update_match(
+            bracket["bracket_id"],
+            match_no,
+            {"replay_url": None, "replay_added_by": None, "replay_added_at": None},
+        )
+        return True
+
     # -- Internals ------------------------------------------------
 
     def _require_live_match(self, slug: str, match_no: int):
@@ -678,6 +862,8 @@ class BracketService:
             },
         )
 
+        self._apply_elo(bracket, match)
+
         parent = advance_winner(match, matches)
         if parent:
             self._repo.update_match(
@@ -693,6 +879,119 @@ class BracketService:
             # No next match means that was the final.
             self._repo.set_status(bracket_id, "complete")
 
+    K_FACTOR = 32
+
+    def _apply_elo(self, bracket: dict, match: dict):
+        try:
+            self._apply_elo_inner(bracket, match)
+        except Exception as e:
+            logger.error(
+                "Bracket %s match %s: rating failed, result still stands: %s",
+                bracket.get("slug"), match.get("match_no"), e,
+            )
+
+    def _reverse_elo(self, bracket: dict, match: dict):
+        try:
+            self._reverse_elo_inner(bracket, match)
+        except Exception as e:
+            logger.error(
+                "Bracket %s match %s: rating reversal failed: %s",
+                bracket.get("slug"), match.get("match_no"), e,
+            )
+
+    def _apply_elo_inner(self, bracket: dict, match: dict):
+        """Move both players' online lifetime ELO for a decided bracket match.
+
+        Postseason games count as ranked, but only against lifetime ELO - the
+        event ladder is left alone. Byes never get here, and entrants without a
+        site account cannot be rated.
+        """
+        if match.get("elo_applied_at"):
+            return
+
+        winner_id = str(match["winner_user_id"] or "")
+        loser_id = str(
+            match["p2_user_id"] if winner_id == str(match["p1_user_id"] or "") else match["p1_user_id"]
+            or ""
+        )
+        if not winner_id or not loser_id or winner_id == loser_id:
+            return
+
+        elo_repo = self._elo_repo
+        try:
+            winner_elo = elo_repo.get_user_elo(winner_id)
+            loser_elo = elo_repo.get_user_elo(loser_id)
+        except Exception as e:
+            logger.warning("Bracket ELO lookup failed: %s", e)
+            return
+        if winner_elo is None or loser_elo is None:
+            logger.info(
+                "Bracket %s match %s: no ladder rating for one of the players, ELO skipped",
+                bracket["slug"], match["match_no"],
+            )
+            return
+
+        winner_new = calculate_elo(winner_elo, loser_elo, True, k=self.K_FACTOR)
+        loser_new = calculate_elo(loser_elo, winner_elo, False, k=self.K_FACTOR)
+
+        winner_name = (
+            match["p1_name"] if winner_id == str(match["p1_user_id"] or "") else match["p2_name"]
+        )
+        loser_name = (
+            match["p2_name"] if winner_id == str(match["p1_user_id"] or "") else match["p1_name"]
+        )
+
+        try:
+            elo_repo.upsert_user_elo(winner_id, winner_name, winner_new)
+            elo_repo.upsert_user_elo(loser_id, loser_name, loser_new)
+        except Exception as e:
+            logger.error("Bracket ELO update failed: %s", e)
+            return
+
+        self._repo.update_match(
+            bracket["bracket_id"],
+            match["match_no"],
+            {
+                "elo_applied_at": datetime.now().isoformat(),
+                "winner_elo_change": winner_new - winner_elo,
+                "loser_elo_change": loser_new - loser_elo,
+            },
+        )
+
+    def _reverse_elo_inner(self, bracket: dict, match: dict):
+        """Give back what a result took, when it is reset or corrected.
+
+        The deltas are stored per match, so undoing restores exactly the points
+        that were moved even if other games have happened since.
+        """
+        if not match.get("elo_applied_at"):
+            return
+
+        winner_id = str(match["winner_user_id"] or "")
+        if not winner_id:
+            return
+        on_p1 = winner_id == str(match["p1_user_id"] or "")
+        loser_id = str((match["p2_user_id"] if on_p1 else match["p1_user_id"]) or "")
+
+        elo_repo = self._elo_repo
+        for user_id, change, name in (
+            (winner_id, match.get("winner_elo_change") or 0, match["p1_name"] if on_p1 else match["p2_name"]),
+            (loser_id, match.get("loser_elo_change") or 0, match["p2_name"] if on_p1 else match["p1_name"]),
+        ):
+            try:
+                current = elo_repo.get_user_elo(user_id)
+                if current is None or not change:
+                    continue
+                elo_repo.upsert_user_elo(user_id, name, current - change)
+            except Exception as e:
+                logger.error("Bracket ELO reversal failed for %s: %s", user_id, e)
+
+        self._repo.update_match(
+            bracket["bracket_id"],
+            match["match_no"],
+            {"elo_applied_at": None, "winner_elo_change": None, "loser_elo_change": None},
+        )
+
     def _clear_from(self, bracket: dict, match_no: int):
         """Remove a winner from every later round they were carried into."""
         bracket_id = bracket["bracket_id"]
@@ -702,6 +1001,10 @@ class BracketService:
         while match and match["next_match_no"]:
             slot = match["next_slot"]
             parent = matches[match["next_match_no"]]
+            # The parent's own result is being wiped, so its rating change goes
+            # back too - otherwise a reset leaves points behind for a game that
+            # no longer exists.
+            self._reverse_elo(bracket, parent)
             self._repo.update_match(
                 bracket_id,
                 parent["match_no"],

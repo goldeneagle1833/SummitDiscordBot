@@ -41,30 +41,11 @@ def list_brackets():
 
 @brackets_bp.route("/brackets/<slug>", methods=["GET"])
 def get_bracket(slug):
-    detail = service.get_bracket_detail(slug)
+    detail = service.get_bracket_detail(
+        slug, viewer_id=_current_user_id(), is_admin=is_admin()
+    )
     if not detail:
         return jsonify({"success": False, "error": "Bracket not found"}), 404
-
-    # Tell the viewer what, if anything, this match needs from them.
-    user_id = _current_user_id()
-    if user_id:
-        for round_data in detail["rounds"]:
-            for match in round_data["matches"]:
-                match["viewer_is_player"] = user_id in (
-                    str(match.get("p1_user_id") or ""),
-                    str(match.get("p2_user_id") or ""),
-                )
-                match["viewer_can_report"] = (
-                    match["viewer_is_player"]
-                    and match["state"] == "pending"
-                    and match["playable"]
-                )
-                match["viewer_can_confirm"] = (
-                    match["viewer_is_player"]
-                    and match["state"] == "reported"
-                    and str(match.get("reported_by") or "") != user_id
-                )
-
     return jsonify({"success": True, **detail}), 200
 
 
@@ -138,6 +119,17 @@ def submit_bracket_deck(slug):
     return jsonify({"success": True, **result}), 200
 
 
+@brackets_bp.route("/brackets/<slug>/matches/<int:match_no>/table", methods=["POST"])
+@require_auth
+def open_match_table(slug, match_no):
+    """Open the Sorcery Online table for this pairing, both decks preloaded."""
+    try:
+        result = service.open_table(slug, match_no, _current_user_id())
+    except BracketError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    return jsonify({"success": True, **result}), 200
+
+
 # -- Admin --------------------------------------------------------
 
 
@@ -188,7 +180,9 @@ def admin_create_bracket():
 @brackets_bp.route("/admin/brackets/<slug>", methods=["GET"])
 @require_admin
 def admin_get_bracket(slug):
-    detail = service.get_bracket_detail(slug, include_drafts=True)
+    detail = service.get_bracket_detail(
+        slug, include_drafts=True, viewer_id=_current_user_id(), is_admin=True
+    )
     if not detail:
         return jsonify({"success": False, "error": "Bracket not found"}), 404
     return jsonify({"success": True, **detail}), 200
@@ -350,6 +344,31 @@ def admin_delete_deck(slug, seed):
         return jsonify({"success": False, "error": str(e)}), 404
     if not removed:
         return jsonify({"success": False, "error": "No deck to remove"}), 404
+    return jsonify({"success": True}), 200
+
+
+@brackets_bp.route("/admin/brackets/<slug>/matches/<int:match_no>/replay", methods=["POST"])
+@require_admin
+def admin_set_replay(slug, match_no):
+    data = request.get_json() or {}
+    try:
+        result = service.set_replay(
+            slug, match_no, data.get("replay_url"), _current_user_id()
+        )
+    except BracketError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    return jsonify({"success": True, **result}), 200
+
+
+@brackets_bp.route("/admin/brackets/<slug>/matches/<int:match_no>/replay", methods=["DELETE"])
+@require_admin
+def admin_clear_replay(slug, match_no):
+    try:
+        removed = service.clear_replay(slug, match_no)
+    except BracketError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    if not removed:
+        return jsonify({"success": False, "error": "No replay to remove"}), 404
     return jsonify({"success": True}), 200
 
 

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 function Side({
@@ -9,6 +10,7 @@ function Side({
   isLoser,
   reported,
   fromBye,
+  eloChange,
   linkTo = true,
   dragHandlers,
 }) {
@@ -75,7 +77,17 @@ function Side({
         </span>
       )}
       {reported && <span className="ml-auto text-xs text-amber-400">reported</span>}
-      {isWinner && !reported && <span className="ml-auto text-xs text-accent-green">W</span>}
+      {eloChange != null && !reported && (
+        <span
+          className={`ml-auto text-[11px] ${eloChange > 0 ? 'text-accent-green' : 'text-accent-red'}`}
+          title="Lifetime ELO from this match"
+        >
+          {eloChange > 0 ? `+${eloChange}` : eloChange}
+        </span>
+      )}
+      {isWinner && !reported && eloChange == null && (
+        <span className="ml-auto text-xs text-accent-green">W</span>
+      )}
     </div>
   )
 }
@@ -91,17 +103,24 @@ export default function MatchCard({
   match,
   onReport,
   onConfirm,
+  onOpenTable,
   onAdminAction,
   isAdmin,
   onSwap,
   avatars = {},
 }) {
+  const [replayInput, setReplayInput] = useState(null)
   const complete = match.state === 'complete' || match.state === 'bye'
   const reportedWinner = match.state === 'reported' ? match.reported_winner_id : null
   const needsViewer = match.viewer_can_report || match.viewer_can_confirm
 
   const p1Wins = complete && String(match.winner_seed) === String(match.p1_seed)
   const p2Wins = complete && String(match.winner_seed) === String(match.p2_seed)
+
+  // Ranked lifetime ELO, shown on the seat it moved.
+  const rated = match.elo_applied_at != null
+  const p1Elo = rated ? (p1Wins ? match.winner_elo_change : match.loser_elo_change) : null
+  const p2Elo = rated ? (p2Wins ? match.winner_elo_change : match.loser_elo_change) : null
 
   const dragFor = (seed) => {
     if (!onSwap || !seed) return null
@@ -145,6 +164,7 @@ export default function MatchCard({
         isLoser={complete && !p1Wins && !!match.p2_name}
         reported={reportedWinner && String(reportedWinner) === String(match.p1_user_id)}
         fromBye={match.p1_from_bye}
+        eloChange={p1Elo}
         linkTo={!onSwap}
         dragHandlers={dragFor(match.p1_seed)}
       />
@@ -158,6 +178,7 @@ export default function MatchCard({
         isLoser={complete && !p2Wins && !!match.p1_name}
         reported={reportedWinner && String(reportedWinner) === String(match.p2_user_id)}
         fromBye={match.p2_from_bye}
+        eloChange={p2Elo}
         linkTo={!onSwap}
         dragHandlers={dragFor(match.p2_seed)}
       />
@@ -194,6 +215,47 @@ export default function MatchCard({
         </p>
       )}
 
+      {/* Sorcery Online table — only ever shown to the two players */}
+      {match.viewer_table_url && (
+        <a
+          href={match.viewer_table_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block px-3 py-1.5 text-xs font-medium text-center bg-primary/15 text-primary hover:bg-primary/25 transition-colors border-t border-border"
+        >
+          Join your table
+        </a>
+      )}
+
+      {!match.viewer_table_url && match.viewer_can_open_table && (
+        <button
+          onClick={() => onOpenTable?.(match)}
+          className="w-full px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors border-t border-border"
+        >
+          Open table on Sorcery Online
+        </button>
+      )}
+
+      {match.viewer_is_player && !match.viewer_table_url && match.decks_missing?.length > 0 && (
+        <p className="px-3 py-1 text-[11px] text-text-muted bg-bg-raised border-t border-border">
+          Table opens once {match.decks_missing.join(' and ')} submit a decklist
+        </p>
+      )}
+
+      {match.replay_url && (
+        <a
+          href={match.replay_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block px-3 py-1.5 text-xs text-center text-secondary hover:underline border-t border-border"
+        >
+          Watch replay
+          {!match.replay_public && (
+            <span className="text-text-muted"> · hidden until the bracket ends</span>
+          )}
+        </a>
+      )}
+
       {isAdmin && onAdminAction && match.playable && (
         <div className="flex border-t border-border text-xs">
           {!complete && (
@@ -222,7 +284,52 @@ export default function MatchCard({
               Reset
             </button>
           )}
+          <button
+            onClick={() => setReplayInput(replayInput === null ? (match.replay_url || '') : null)}
+            className="flex-1 px-1 py-1 text-text-muted hover:text-text-primary border-l border-border"
+          >
+            {match.replay_url ? 'Edit replay' : 'Replay'}
+          </button>
         </div>
+      )}
+
+      {isAdmin && replayInput !== null && (
+        <form
+          className="px-2 py-2 border-t border-border space-y-1"
+          onSubmit={(e) => {
+            e.preventDefault()
+            onAdminAction('replay', match, replayInput.trim())
+            setReplayInput(null)
+          }}
+        >
+          <input
+            value={replayInput}
+            onChange={(e) => setReplayInput(e.target.value)}
+            placeholder="Sorcery Online replay link"
+            aria-label={`Replay link for match ${match.match_no}`}
+            className="w-full bg-bg-raised border border-border rounded px-2 py-1 text-xs"
+          />
+          <div className="flex gap-1">
+            <button
+              type="submit"
+              className="flex-1 px-1 py-1 text-xs rounded bg-secondary text-black font-medium"
+            >
+              Save
+            </button>
+            {match.replay_url && (
+              <button
+                type="button"
+                onClick={() => {
+                  onAdminAction('clear-replay', match)
+                  setReplayInput(null)
+                }}
+                className="px-2 py-1 text-xs text-accent-red"
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        </form>
       )}
     </div>
   )

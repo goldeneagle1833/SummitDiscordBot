@@ -5,8 +5,11 @@ import {
   getBracketDecks,
   reportBracketMatch,
   confirmBracketMatch,
+  openBracketMatchTable,
   adminSetMatchResult,
   adminResetMatch,
+  adminSetMatchReplay,
+  adminClearMatchReplay,
 } from '@/api/brackets'
 import BracketTree from '@/components/bracket/BracketTree'
 import DeckPanel from '@/components/bracket/DeckPanel'
@@ -111,12 +114,27 @@ export default function Bracket() {
     }
   }
 
-  async function handleAdminAction(action, match, winnerUserId) {
+  async function handleOpenTable(match) {
+    setNotice('Opening a table on Sorcery Online…')
+    try {
+      await openBracketMatchTable(slug, match.match_no)
+      setNotice('Table ready — use "Join your table" on your match.')
+      load()
+    } catch (e) {
+      setNotice(e.message)
+    }
+  }
+
+  async function handleAdminAction(action, match, value) {
     try {
       if (action === 'result') {
-        await adminSetMatchResult(slug, match.match_no, winnerUserId)
+        await adminSetMatchResult(slug, match.match_no, value)
       } else if (action === 'reset') {
         await adminResetMatch(slug, match.match_no)
+      } else if (action === 'replay') {
+        await adminSetMatchReplay(slug, match.match_no, value)
+      } else if (action === 'clear-replay') {
+        await adminClearMatchReplay(slug, match.match_no)
       }
       load()
     } catch (e) {
@@ -219,6 +237,7 @@ export default function Bracket() {
         rounds={rounds}
         onReport={setReporting}
         onConfirm={handleConfirm}
+        onOpenTable={handleOpenTable}
         onAdminAction={isAdmin ? handleAdminAction : null}
         isAdmin={isAdmin}
         avatars={avatars}

@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+import services.brackets as brackets_module
 import utils.card_images as card_images
 from repositories.brackets import BracketRepository
 from services.bracket_builder import (
@@ -76,9 +77,23 @@ def curiosa():
 
 
 @pytest.fixture()
-def service(repo, curiosa):
+def ladder(elo_db):
+    """The bot ladder a bracket result moves."""
+    from repositories.elo import EloRepository
+
+    seed_elo_data(elo_db, [
+        {"user_id": f"u{i}", "name": f"P{i}", "online_elo": 1500} for i in range(1, 25)
+    ])
+    return EloRepository(db_path=elo_db)
+
+
+@pytest.fixture()
+def service(repo, curiosa, ladder):
     return BracketService(
-        repo=repo, leaderboard_service=FakeLeaderboard(), curiosa_service=curiosa
+        repo=repo,
+        leaderboard_service=FakeLeaderboard(),
+        curiosa_service=curiosa,
+        elo_repo=ladder,
     )
 
 
@@ -594,6 +609,44 @@ class TestDecklists:
         with pytest.raises(BracketError, match="deck link is required"):
             service.submit_deck(slug, "   ", actor_id="u1")
 
+    def test_submitting_snapshots_the_list(self, service, repo, curiosa):
+        """The deck is captured as it was submitted, not read live later."""
+        slug, _ = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        # The player edits their Curiosa deck after submitting.
+        curiosa.deck = {
+            "name": "Rebuilt Overnight",
+            "avatar": [{"name": "Witch"}],
+            "spellbook": [{"name": "Something Else", "quantity": 1}],
+        }
+
+        stored = service.get_deck(slug, 1, viewer_id="u1")["deck"]
+        assert stored["name"] == "Dead Cant Swim"
+        assert stored["spellbook"][0]["name"] == "Daperyll Vampire"
+
+    def test_resubmitting_takes_a_fresh_snapshot(self, service, repo, curiosa):
+        slug, _ = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        curiosa.deck = {
+            "name": "Rebuilt Overnight",
+            "avatar": [{"name": "Witch"}],
+            "spellbook": [{"name": "Something Else", "quantity": 1}],
+        }
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        assert service.get_deck(slug, 1, viewer_id="u1")["deck"]["name"] == "Rebuilt Overnight"
+
+    def test_the_snapshot_is_stamped_with_when_it_was_taken(self, service, repo):
+        slug, _ = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        player = next(
+            p for p in service.get_deck_roster(slug, viewer_id="u1")["players"] if p["seed"] == 1
+        )
+        assert player["submitted_at"]
+
     def test_a_live_players_deck_is_hidden_from_everyone_else(self, service, repo):
         slug, _ = self._publish(service, repo)
         service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
@@ -780,6 +833,328 @@ class TestDecklists:
         assert service.get_deck_roster("draft-cup", is_admin=True) is not None
 
 
+class TestSorceryOnlineTables:
+    """Opening a preloaded table for a pairing."""
+
+    def _ready_match(self, service, repo, monkeypatch, calls=None):
+        """A published 4-player bracket where seeds 1 and 4 both have decks."""
+        slug, bracket_id = published(service, repo, 4, name="Table Cup")
+        service.submit_deck(slug, "https://curiosa.io/decks/one", actor_id="u1")
+        service.submit_deck(slug, "https://curiosa.io/decks/four", actor_id="u4")
+
+        def fake_provision(pairing_id, players):
+            if calls is not None:
+                calls.append({"pairing_id": pairing_id, "players": players})
+            return {str(p["user_id"]): f"https://playsorceryonline.com/play?m=seat-{p['user_id']}"
+                    for p in players}
+
+        monkeypatch.setattr(brackets_module, "provision_match_table", fake_provision)
+        match = repo.get_matches(bracket_id)[0]  # seed 1 v seed 4
+        return slug, bracket_id, match
+
+    def test_opening_a_table_preloads_both_decks(self, service, repo, monkeypatch):
+        calls = []
+        slug, _, match = self._ready_match(service, repo, monkeypatch, calls)
+
+        result = service.open_table(slug, match["match_no"], "u1")
+
+        assert result["game_url"].endswith("seat-u1")
+        assert result["reused"] is False
+        sent = calls[0]["players"]
+        assert [p["user_id"] for p in sent] == ["u1", "u4"]
+        assert [p["deck_url"] for p in sent] == [
+            "https://curiosa.io/decks/one",
+            "https://curiosa.io/decks/four",
+        ]
+
+    def test_each_player_gets_their_own_seat_at_one_table(self, service, repo, monkeypatch):
+        calls = []
+        slug, _, match = self._ready_match(service, repo, monkeypatch, calls)
+
+        first = service.open_table(slug, match["match_no"], "u1")
+        second = service.open_table(slug, match["match_no"], "u4")
+
+        assert first["game_url"] != second["game_url"]
+        assert second["game_url"].endswith("seat-u4")
+        assert second["reused"] is True
+        # One table, not two.
+        assert len(calls) == 1
+
+    def test_a_missing_decklist_blocks_the_table(self, service, repo, monkeypatch):
+        slug, bracket_id = published(service, repo, 4, name="Table Cup")
+        service.submit_deck(slug, "https://curiosa.io/decks/one", actor_id="u1")
+        monkeypatch.setattr(
+            brackets_module, "provision_match_table",
+            lambda *a, **k: pytest.fail("should not reach Sorcery Online"),
+        )
+
+        match = repo.get_matches(bracket_id)[0]
+        with pytest.raises(BracketError, match="P4 still need"):
+            service.open_table(slug, match["match_no"], "u1")
+
+    def test_only_the_two_players_can_open_it(self, service, repo, monkeypatch):
+        slug, _, match = self._ready_match(service, repo, monkeypatch)
+        with pytest.raises(BracketError, match="Only the two players"):
+            service.open_table(slug, match["match_no"], "u2")
+
+    def test_a_settled_match_has_no_table(self, service, repo, monkeypatch):
+        slug, _, match = self._ready_match(service, repo, monkeypatch)
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        with pytest.raises(BracketError, match="already settled"):
+            service.open_table(slug, match["match_no"], "u1")
+
+    def test_sorcery_online_being_down_reads_clearly(self, service, repo, monkeypatch):
+        slug, _, match = self._ready_match(service, repo, monkeypatch)
+
+        def refuse(pairing_id, players):
+            raise brackets_module.TableUnavailable("Could not reach Sorcery Online.")
+
+        monkeypatch.setattr(brackets_module, "provision_match_table", refuse)
+        with pytest.raises(BracketError, match="Could not reach Sorcery Online"):
+            service.open_table(slug, match["match_no"], "u1")
+
+    def test_a_seat_link_is_only_shown_to_its_own_player(self, service, repo, monkeypatch):
+        slug, _, match = self._ready_match(service, repo, monkeypatch)
+        service.open_table(slug, match["match_no"], "u1")
+
+        def first_match(viewer):
+            detail = service.get_bracket_detail(slug, viewer_id=viewer)
+            return detail["rounds"][0]["matches"][0]
+
+        assert first_match("u1")["viewer_table_url"].endswith("seat-u1")
+        assert first_match("u4")["viewer_table_url"].endswith("seat-u4")
+
+        # Nobody else gets a link - not a bystander, not even an admin.
+        assert first_match("u2")["viewer_table_url"] is None
+        bystander = first_match("u2")
+        assert "table_p1_url" not in bystander and "table_p2_url" not in bystander
+
+    def test_the_button_is_offered_only_when_both_decks_are_in(self, service, repo, monkeypatch):
+        slug, bracket_id = published(service, repo, 4, name="Table Cup")
+        service.submit_deck(slug, "https://curiosa.io/decks/one", actor_id="u1")
+
+        match = service.get_bracket_detail(slug, viewer_id="u1")["rounds"][0]["matches"][0]
+        assert match["viewer_can_open_table"] is False
+        assert match["decks_missing"] == ["P4"]
+
+        service.submit_deck(slug, "https://curiosa.io/decks/four", actor_id="u4")
+        match = service.get_bracket_detail(slug, viewer_id="u1")["rounds"][0]["matches"][0]
+        assert match["viewer_can_open_table"] is True
+        assert match["decks_missing"] == []
+
+
+class TestReplayLinks:
+    def _played_match(self, service, repo):
+        slug, bracket_id = published(service, repo, 4, name="Replay Cup")
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="admin_1")
+        return slug, bracket_id, match
+
+    def test_an_admin_attaches_a_replay(self, service, repo):
+        slug, bracket_id, match = self._played_match(service, repo)
+
+        result = service.set_replay(
+            slug, match["match_no"], "https://playsorceryonline.com/replay/abc", "admin_1"
+        )
+
+        assert result["replay_url"].endswith("/replay/abc")
+        stored = repo.get_match(bracket_id, match["match_no"])
+        assert stored["replay_added_by"] == "admin_1"
+        assert stored["replay_added_at"]
+
+    def test_only_sorcery_online_links_are_accepted(self, service, repo):
+        slug, _, match = self._played_match(service, repo)
+        with pytest.raises(BracketError, match="have to be Sorcery Online links"):
+            service.set_replay(slug, match["match_no"], "https://youtube.com/watch?v=x", "admin_1")
+
+    def test_an_empty_link_is_rejected(self, service, repo):
+        slug, _, match = self._played_match(service, repo)
+        with pytest.raises(BracketError, match="replay link is required"):
+            service.set_replay(slug, match["match_no"], "  ", "admin_1")
+
+    def test_a_replay_stays_private_until_the_bracket_ends(self, service, repo):
+        slug, _, match = self._played_match(service, repo)
+        service.set_replay(
+            slug, match["match_no"], "https://playsorceryonline.com/replay/abc", "admin_1"
+        )
+
+        def first_match(**viewer):
+            return service.get_bracket_detail(slug, **viewer)["rounds"][0]["matches"][0]
+
+        # A passer-by sees nothing while the bracket is still running.
+        assert first_match(viewer_id="nobody")["replay_url"] is None
+        # The players in it, and admins, can see it.
+        assert first_match(viewer_id="u1")["replay_url"].endswith("/replay/abc")
+        assert first_match(viewer_id="x", is_admin=True)["replay_url"].endswith("/replay/abc")
+        assert first_match(viewer_id="u1")["replay_public"] is False
+
+    def test_it_opens_up_when_the_bracket_finishes(self, service, repo):
+        slug, bracket_id = published(service, repo, 2, name="Replay Final")
+        final = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, final["match_no"], "u1", admin_id="admin_1")
+        service.set_replay(
+            slug, final["match_no"], "https://playsorceryonline.com/replay/final", "admin_1"
+        )
+
+        seen = service.get_bracket_detail(slug, viewer_id="nobody")["rounds"][0]["matches"][0]
+        assert seen["replay_url"].endswith("/replay/final")
+        assert seen["replay_public"] is True
+
+    def test_an_admin_can_remove_a_replay(self, service, repo):
+        slug, bracket_id, match = self._played_match(service, repo)
+        service.set_replay(
+            slug, match["match_no"], "https://playsorceryonline.com/replay/abc", "admin_1"
+        )
+
+        assert service.clear_replay(slug, match["match_no"]) is True
+        assert repo.get_match(bracket_id, match["match_no"])["replay_url"] is None
+        assert service.clear_replay(slug, match["match_no"]) is False
+
+
+class TestBracketElo:
+    """Postseason games count as ranked, against lifetime ELO only."""
+
+    def _elos(self, elo_db, *user_ids):
+        import sqlite3
+
+        conn = sqlite3.connect(str(elo_db))
+        out = []
+        for user_id in user_ids:
+            row = conn.execute(
+                "SELECT online_elo, online_event_elo FROM overall_standings WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            out.append(row)
+        conn.close()
+        return out
+
+    def test_a_confirmed_result_moves_lifetime_elo(self, service, repo, elo_db):
+        slug, bracket_id = published(service, repo, 4)
+        match = repo.get_matches(bracket_id)[0]  # seed 1 v seed 4
+
+        service.report_result(slug, match["match_no"], "u1", "u1")
+        service.confirm_result(slug, match["match_no"], "u4", agree=True)
+
+        (winner, loser) = self._elos(elo_db, "u1", "u4")
+        # Even ratings and K=32 is a 16 point swing.
+        assert winner[0] == 1516
+        assert loser[0] == 1484
+
+    def test_the_event_ladder_is_left_alone(self, service, repo, elo_db):
+        slug, bracket_id = published(service, repo, 4)
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        (winner, loser) = self._elos(elo_db, "u1", "u4")
+        assert (winner[1], loser[1]) == (1500, 1500)
+
+    def test_the_change_is_recorded_on_the_match(self, service, repo):
+        slug, bracket_id = published(service, repo, 4)
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        stored = repo.get_match(bracket_id, match["match_no"])
+        assert stored["elo_applied_at"]
+        assert (stored["winner_elo_change"], stored["loser_elo_change"]) == (16, -16)
+
+    def test_a_bye_moves_nothing(self, service, repo, elo_db):
+        slug, bracket_id = published(service, repo, 3)  # seed 1 gets a bye
+        bye = next(m for m in repo.get_matches(bracket_id) if m["state"] == "bye")
+
+        assert bye["elo_applied_at"] is None
+        assert self._elos(elo_db, "u1")[0][0] == 1500
+
+    def test_resetting_gives_the_points_back(self, service, repo, elo_db):
+        slug, bracket_id = published(service, repo, 4)
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        service.reset_match(slug, match["match_no"])
+
+        (winner, loser) = self._elos(elo_db, "u1", "u4")
+        assert (winner[0], loser[0]) == (1500, 1500)
+        assert repo.get_match(bracket_id, match["match_no"])["elo_applied_at"] is None
+
+    def test_correcting_a_result_swings_it_the_other_way(self, service, repo, elo_db):
+        slug, bracket_id = published(service, repo, 4)
+        match = repo.get_matches(bracket_id)[0]
+
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+        service.set_result(slug, match["match_no"], "u4", admin_id="a")
+
+        (one, four) = self._elos(elo_db, "u1", "u4")
+        # The first result is undone before the second is applied.
+        assert (one[0], four[0]) == (1484, 1516)
+
+    def test_a_result_is_only_counted_once(self, service, repo, elo_db):
+        slug, bracket_id = published(service, repo, 4)
+        match = repo.get_matches(bracket_id)[0]
+
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+        # Re-applying the same winner must not stack another swing.
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        assert self._elos(elo_db, "u1")[0][0] == 1516
+
+    def test_resetting_an_early_round_undoes_the_later_ones(self, service, repo, elo_db):
+        slug, bracket_id = published(service, repo, 4)
+        first, second = repo.get_matches(bracket_id)[0], repo.get_matches(bracket_id)[1]
+
+        service.set_result(slug, first["match_no"], "u1", admin_id="a")
+        service.set_result(slug, second["match_no"], "u2", admin_id="a")
+        final = repo.get_match(bracket_id, first["next_match_no"])
+        service.set_result(slug, final["match_no"], "u1", admin_id="a")
+
+        # u1 won twice.
+        assert self._elos(elo_db, "u1")[0][0] > 1516
+
+        service.reset_match(slug, first["match_no"])
+
+        # Both of u1's wins are gone: the reset one and the final it fed.
+        assert self._elos(elo_db, "u1")[0][0] == 1500
+
+    def test_an_auto_confirmed_result_counts_too(self, service, repo, elo_db):
+        slug, bracket_id = published(service, repo, 4)
+        match = repo.get_matches(bracket_id)[0]
+
+        service.report_result(slug, match["match_no"], "u1", "u1")
+        repo.update_match(bracket_id, match["match_no"], {"expires_at": int(time.time()) - 1})
+        service.auto_confirm_expired()
+
+        assert self._elos(elo_db, "u1")[0][0] == 1516
+
+    def test_a_guest_entrant_is_not_rated(self, service, repo, elo_db):
+        created = service.create_bracket(name="Guest Elo", size=2, source="overall")
+        service.set_entrants(created["bracket_id"], [
+            {"user_id": "u1", "display_name": "P1"},
+            {"display_name": "Guest B"},
+        ])
+        service.publish(created["bracket_id"])
+        match = repo.get_matches(created["bracket_id"])[0]
+
+        service.set_result("guest-elo", match["match_no"], "u1", admin_id="a")
+
+        # Nothing to rate the guest against, so nobody moves.
+        assert self._elos(elo_db, "u1")[0][0] == 1500
+        assert repo.get_match(created["bracket_id"], match["match_no"])["elo_applied_at"] is None
+
+    def test_a_player_off_the_ladder_is_skipped(self, service, repo, elo_db):
+        import sqlite3
+
+        conn = sqlite3.connect(str(elo_db))
+        conn.execute("DELETE FROM overall_standings WHERE user_id = 'u4'")
+        conn.commit()
+        conn.close()
+
+        slug, bracket_id = published(service, repo, 4)
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        assert self._elos(elo_db, "u1")[0][0] == 1500
+        assert repo.get_match(bracket_id, match["match_no"])["elo_applied_at"] is None
+
+
 # -- API ----------------------------------------------------------
 
 
@@ -955,6 +1330,98 @@ class TestBracketApi:
         preview = admin_session.get(f"/api/admin/brackets/{created['slug']}/preview").get_json()
         assert preview["bracket_size"] == 2
         assert preview["rounds"][0]["title"] == "Finals"
+
+    def test_opening_a_table_requires_login(self, admin_session, app):
+        slug = self._create_and_publish(admin_session)
+        anonymous = app.test_client()
+        assert anonymous.post(
+            f"/api/brackets/{slug}/matches/1/table"
+        ).status_code in (401, 403)
+
+    def test_replay_endpoints_require_admin(self, admin_session, app):
+        slug = self._create_and_publish(admin_session)
+        anonymous = app.test_client()
+        assert anonymous.post(
+            f"/api/admin/brackets/{slug}/matches/1/replay",
+            json={"replay_url": "https://playsorceryonline.com/replay/a"},
+        ).status_code in (401, 403)
+
+    def test_admin_attaches_and_removes_a_replay(self, admin_session):
+        slug = self._create_and_publish(admin_session)
+        admin_session.post(
+            f"/api/admin/brackets/{slug}/matches/1/result", json={"winner_user_id": "p_one"}
+        )
+
+        resp = admin_session.post(
+            f"/api/admin/brackets/{slug}/matches/1/replay",
+            json={"replay_url": "https://playsorceryonline.com/replay/abc"},
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["public"] is True  # a 2-player bracket is now complete
+
+        detail = admin_session.get(f"/api/brackets/{slug}").get_json()
+        assert detail["rounds"][0]["matches"][0]["replay_url"].endswith("/replay/abc")
+
+        assert admin_session.delete(
+            f"/api/admin/brackets/{slug}/matches/1/replay"
+        ).status_code == 200
+        assert admin_session.delete(
+            f"/api/admin/brackets/{slug}/matches/1/replay"
+        ).status_code == 404
+
+    def test_a_replay_link_from_elsewhere_is_refused(self, admin_session):
+        slug = self._create_and_publish(admin_session)
+        resp = admin_session.post(
+            f"/api/admin/brackets/{slug}/matches/1/replay",
+            json={"replay_url": "https://example.com/not-a-replay"},
+        )
+        assert resp.status_code == 400
+
+    def test_a_pso_report_for_a_bracket_table_is_acknowledged(self, admin_session, app):
+        """PSO echoes our pairing id; the bracket is the record, so do not fail it."""
+        slug = self._create_and_publish(admin_session)
+        bracket = admin_session.get(f"/api/admin/brackets/{slug}").get_json()
+        bracket_id = bracket["bracket"]["bracket_id"]
+
+        reporter = app.test_client()
+        resp = reporter.post(
+            "/api/report-external-match",
+            headers={"X-API-Key": "test-api-key-123"},
+            json={
+                "winner_id": "p_one",
+                "loser_id": "p_two",
+                "winner_deck_url": "https://curiosa.io/decks/a",
+                "loser_deck_url": "https://curiosa.io/decks/b",
+                "source": "PSO Ranked",
+                "pairing_id": f"bracket-{bracket_id}-m1",
+            },
+        )
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["pipeline"] == "bracket"
+        assert body["bracket_slug"] == slug
+
+    def test_a_bracket_report_naming_the_wrong_players_is_refused(self, admin_session, app):
+        slug = self._create_and_publish(admin_session)
+        bracket_id = admin_session.get(f"/api/admin/brackets/{slug}").get_json()["bracket"][
+            "bracket_id"
+        ]
+
+        reporter = app.test_client()
+        resp = reporter.post(
+            "/api/report-external-match",
+            headers={"X-API-Key": "test-api-key-123"},
+            json={
+                "winner_id": "someone",
+                "loser_id": "else",
+                "winner_deck_url": "https://curiosa.io/decks/a",
+                "loser_deck_url": "https://curiosa.io/decks/b",
+                "source": "PSO Ranked",
+                "pairing_id": f"bracket-{bracket_id}-m1",
+            },
+        )
+        assert resp.status_code == 400
 
     def test_delete(self, admin_session):
         slug = self._create_and_publish(admin_session)

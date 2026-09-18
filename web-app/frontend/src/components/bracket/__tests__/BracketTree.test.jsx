@@ -199,6 +199,147 @@ describe('BracketTree', () => {
     expect(screen.getByText('1/2 done')).toBeInTheDocument()
   })
 
+  it('offers the table only to a player whose decks are both in', async () => {
+    const onOpenTable = vi.fn()
+    renderWithRouter(
+      <BracketTree
+        rounds={rounds([match({ viewer_is_player: true, viewer_can_open_table: true, decks_missing: [] })])}
+        onOpenTable={onOpenTable}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /open table on sorcery online/i }))
+    expect(onOpenTable).toHaveBeenCalledWith(expect.objectContaining({ match_no: 1 }))
+  })
+
+  it('explains when a decklist is holding the table up', () => {
+    renderWithRouter(
+      <BracketTree
+        rounds={rounds([
+          match({ viewer_is_player: true, viewer_can_open_table: false, decks_missing: ['Eight'] }),
+        ])}
+      />,
+    )
+    expect(screen.getByText(/Table opens once Eight submit a decklist/)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /open table on sorcery online/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows a player their own seat link once the table exists', () => {
+    renderWithRouter(
+      <BracketTree
+        rounds={rounds([
+          match({
+            viewer_is_player: true,
+            viewer_table_url: 'https://playsorceryonline.com/play?m=seat-1',
+          }),
+        ])}
+      />,
+    )
+    expect(screen.getByText('Join your table')).toHaveAttribute(
+      'href',
+      'https://playsorceryonline.com/play?m=seat-1',
+    )
+  })
+
+  it('offers nothing table-shaped to a bystander', () => {
+    renderWithRouter(<BracketTree rounds={rounds([match()])} />)
+    expect(screen.queryByText('Join your table')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /open table on sorcery online/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('links a replay, flagging one that is not public yet', () => {
+    const { rerender } = renderWithRouter(
+      <BracketTree
+        rounds={rounds([
+          match({ replay_url: 'https://playsorceryonline.com/replay/a', replay_public: false }),
+        ])}
+      />,
+    )
+    expect(screen.getByText(/hidden until the bracket ends/)).toBeInTheDocument()
+
+    rerender(
+      <BracketTree
+        rounds={rounds([
+          match({ replay_url: 'https://playsorceryonline.com/replay/a', replay_public: true }),
+        ])}
+      />,
+    )
+    expect(screen.queryByText(/hidden until the bracket ends/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Watch replay/).closest('a')).toHaveAttribute(
+      'href',
+      'https://playsorceryonline.com/replay/a',
+    )
+  })
+
+  it('lets an admin attach a replay', async () => {
+    const onAdminAction = vi.fn()
+    renderWithRouter(
+      <BracketTree rounds={rounds([match()])} isAdmin onAdminAction={onAdminAction} />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Replay' }))
+    await userEvent.type(
+      screen.getByLabelText('Replay link for match 1'),
+      'https://playsorceryonline.com/replay/x',
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(onAdminAction).toHaveBeenCalledWith(
+      'replay',
+      expect.any(Object),
+      'https://playsorceryonline.com/replay/x',
+    )
+  })
+
+  it('lets an admin remove a replay', async () => {
+    const onAdminAction = vi.fn()
+    renderWithRouter(
+      <BracketTree
+        rounds={rounds([match({ replay_url: 'https://playsorceryonline.com/replay/a' })])}
+        isAdmin
+        onAdminAction={onAdminAction}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Edit replay' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
+
+    expect(onAdminAction).toHaveBeenCalledWith('clear-replay', expect.any(Object))
+  })
+
+  it('shows the lifetime elo each player took from a rated match', () => {
+    renderWithRouter(
+      <BracketTree
+        rounds={rounds([
+          match({
+            state: 'complete',
+            winner_seed: 1,
+            winner_user_id: 'u1',
+            elo_applied_at: '2026-09-18T12:00:00',
+            winner_elo_change: 16,
+            loser_elo_change: -16,
+          }),
+        ])}
+      />,
+    )
+    expect(screen.getByText('+16')).toBeInTheDocument()
+    expect(screen.getByText('-16')).toBeInTheDocument()
+  })
+
+  it('shows a plain W when a match was not rated', () => {
+    renderWithRouter(
+      <BracketTree
+        rounds={rounds([match({ state: 'complete', winner_seed: 1, winner_user_id: 'u1' })])}
+      />,
+    )
+    expect(screen.getByText('W')).toBeInTheDocument()
+    expect(screen.queryByText(/^[+-]\d+$/)).not.toBeInTheDocument()
+  })
+
   it('lays rounds out left to right', () => {
     renderWithRouter(
       <BracketTree

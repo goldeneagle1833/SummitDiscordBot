@@ -90,6 +90,15 @@ def create_bracket_tables(db_path=None):
             expires_at INTEGER,
             resolved_by TEXT,
             resolved_at TEXT,
+            table_provisioned_at TEXT,
+            table_p1_url TEXT,
+            table_p2_url TEXT,
+            replay_url TEXT,
+            replay_added_by TEXT,
+            replay_added_at TEXT,
+            elo_applied_at TEXT,
+            winner_elo_change INTEGER,
+            loser_elo_change INTEGER,
             PRIMARY KEY (bracket_id, match_no)
         )
     """)
@@ -134,6 +143,25 @@ def create_bracket_tables(db_path=None):
             synced_at TEXT NOT NULL
         )
     """)
+
+    # Brackets published before Sorcery Online tables and replays existed.
+    cursor.execute("PRAGMA table_info(bracket_matches)")
+    existing = {row[1] for row in cursor.fetchall()}
+    for column in (
+        "table_provisioned_at",
+        "table_p1_url",
+        "table_p2_url",
+        "replay_url",
+        "replay_added_by",
+        "replay_added_at",
+        "elo_applied_at",
+    ):
+        if column not in existing:
+            cursor.execute(f"ALTER TABLE bracket_matches ADD COLUMN {column} TEXT")
+
+    for column in ("winner_elo_change", "loser_elo_change"):
+        if column not in existing:
+            cursor.execute(f"ALTER TABLE bracket_matches ADD COLUMN {column} INTEGER")
 
     conn.commit()
     conn.close()

@@ -28,6 +28,8 @@ DEFAULT_ENDPOINT = "https://playsorceryonline.com/api/internal/summit-matchmakin
 # read budget is generous while a dead host still fails fast.
 REQUEST_TIMEOUT_S = (3, 15)
 QUEUE_TYPE = "testing"
+# Bracket games are ranked; the "Try this Deck" launcher stays casual.
+BRACKET_QUEUE_TYPE = "ranked"
 OPEN_SEAT_NAME = "Open Seat"
 
 # Per-visitor cooldown. In-process only (each Gunicorn worker keeps its own
@@ -158,3 +160,77 @@ def provision_deck_table(deck_url: str, *, display_name: str, player_id: str | N
     # Whatever is left is the open seat — handy as an invite, but the table
     # still works without it, so a missing one isn't worth failing over.
     return DeckTable(game_url=game_url, invite_url=seats.pop(open_seat_id, None))
+
+
+def provision_match_table(pairing_id: str, players: list[dict]) -> dict:
+    """Open a table for two named players, each with their own deck preloaded.
+
+    ``players`` is two dicts of ``{user_id, display_name, deck_url}``. Returns
+    ``{user_id: seat_url}`` - one link per player, and each is that player's
+    seat, so handing a player the wrong link would sit them in the wrong chair.
+
+    Raises TableUnavailable when the integration is unconfigured or Sorcery
+    Online declines; the response body is logged so failures are diagnosable.
+    """
+    api_key = (webapp_config.DRAFT_SORCERY_API_KEY or "").strip()
+    url = endpoint()
+    if not api_key or not url:
+        raise TableUnavailable("Sorcery Online provisioning is not configured")
+    if len(players) != 2:
+        raise TableUnavailable("A table needs exactly two players")
+
+    payload = {
+        "guildId": str(webapp_config.DISCORD_GUILD_ID),
+        "pairingId": str(pairing_id)[:64],
+        "queueType": BRACKET_QUEUE_TYPE,
+        "players": [
+            {
+                "discordUserId": str(player["user_id"]),
+                "displayName": (player.get("display_name") or "Summit Player")[:60],
+                "deckUrl": player.get("deck_url") or None,
+            }
+            for player in players
+        ],
+    }
+
+    try:
+        response = requests.post(
+            url,
+            json=payload,
+            headers={"X-API-Key": api_key},
+            timeout=REQUEST_TIMEOUT_S,
+        )
+    except requests.RequestException as exc:
+        logger.warning("Sorcery Online table request failed: %r", exc)
+        raise TableUnavailable("Could not reach Sorcery Online. Try again in a moment.")
+
+    if response.status_code != 200:
+        logger.warning(
+            "Sorcery Online table request returned %s: %s",
+            response.status_code, response.text[:500],
+        )
+        raise TableUnavailable("Sorcery Online could not open a table for this match.")
+
+    try:
+        returned = (response.json() or {}).get("players") or []
+    except ValueError:
+        logger.warning("Sorcery Online table response was not JSON: %s", response.text[:500])
+        raise TableUnavailable("Sorcery Online returned an unexpected response.")
+
+    # Seats come back per player and not necessarily in the order we sent them,
+    # so match them by id rather than position.
+    seats = {
+        str(p.get("discordUserId")): p["gameUrl"]
+        for p in returned
+        if isinstance(p, dict) and p.get("gameUrl")
+    }
+
+    missing = [str(p["user_id"]) for p in players if str(p["user_id"]) not in seats]
+    if missing:
+        logger.warning(
+            "Sorcery Online table response was missing seats for %s: %s",
+            missing, response.text[:500],
+        )
+        raise TableUnavailable("Sorcery Online did not return a seat for both players.")
+
+    return {str(p["user_id"]): seats[str(p["user_id"])] for p in players}

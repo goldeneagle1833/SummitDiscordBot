@@ -15,6 +15,8 @@ export const confirmBracketMatch = (slug, matchNo, agree) =>
   post(`/api/brackets/${slug}/matches/${matchNo}/confirm`, { agree })
 export const submitBracketDeck = (slug, deckUrl) =>
   post(`/api/brackets/${slug}/deck`, { deck_url: deckUrl })
+export const openBracketMatchTable = (slug, matchNo) =>
+  post(`/api/brackets/${slug}/matches/${matchNo}/table`, {})
 
 // Admin
 export const adminListBrackets = () => get('/api/admin/brackets')
@@ -36,6 +38,10 @@ export const adminSetMatchResult = (slug, matchNo, winnerUserId) =>
   post(`/api/admin/brackets/${slug}/matches/${matchNo}/result`, { winner_user_id: winnerUserId })
 export const adminResetMatch = (slug, matchNo) =>
   post(`/api/admin/brackets/${slug}/matches/${matchNo}/reset`, {})
+export const adminSetMatchReplay = (slug, matchNo, replayUrl) =>
+  post(`/api/admin/brackets/${slug}/matches/${matchNo}/replay`, { replay_url: replayUrl })
+export const adminClearMatchReplay = (slug, matchNo) =>
+  del(`/api/admin/brackets/${slug}/matches/${matchNo}/replay`)
 export const adminSubmitBracketDeck = (slug, seed, deckUrl) =>
   post(`/api/admin/brackets/${slug}/decks`, { seed, deck_url: deckUrl })
 export const adminDeleteBracketDeck = (slug, seed) =>

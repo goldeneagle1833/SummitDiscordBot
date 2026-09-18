@@ -51,6 +51,7 @@ function roster(overrides = {}) {
         visibility: 'public',
         deck_url: 'https://curiosa.io/decks/abc',
         avatar_name: 'Necromancer',
+        submitted_at: '2026-09-18T10:00:00',
         can_submit: false,
       },
       {
@@ -129,10 +130,20 @@ describe('DeckPanel', () => {
 
     await waitFor(() => expect(getBracketDeck).toHaveBeenCalledWith('cup', 2))
     expect(await screen.findByTestId('deck-visualizer')).toHaveTextContent('2 cards')
-    expect(screen.getByText('Open on Curiosa')).toHaveAttribute(
+    expect(screen.getByText('Open the live deck on Curiosa')).toHaveAttribute(
       'href',
       'https://curiosa.io/decks/abc',
     )
+  })
+
+  it('says the deck is a snapshot, not a live view', async () => {
+    renderWithRouter(<DeckPanel slug="cup" roster={roster()} onChanged={vi.fn()} />)
+    const row = screen.getByText('Knocked Out').closest('li')
+    await userEvent.click(within(row).getByText('View deck'))
+
+    expect(
+      await screen.findByText(/later edits to the deck do not change this/),
+    ).toBeInTheDocument()
   })
 
   it('marks players with nothing submitted', () => {

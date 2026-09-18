@@ -101,6 +101,10 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.avatars.list_all_avatars",
     "api.avatars.get_elo_bracket_matrix",
 
+    # -- Brackets (public read-only; reporting/confirming require auth) --
+    "api.brackets.list_brackets",
+    "api.brackets.get_bracket",
+
     # -- Events / tournaments (public read-only) --
     "api.events.list_top8_events",
     "api.events.get_event_detail",

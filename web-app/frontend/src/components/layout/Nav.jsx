@@ -20,6 +20,7 @@ const ALL_NAV_OPTIONS = [
   { to: '/elements', label: 'Element Winrates' },
   { to: '/explorer', label: 'Community Series' },
   { to: '/top-8', label: 'Top 8 Decks' },
+  { to: '/brackets', label: 'Brackets' },
   { to: '/fun-stats', label: 'Fun Stats' },
   { to: '/rumble', label: 'Rumble' },
   { to: '/elo', label: 'ELO Leaderboards' },
@@ -747,6 +748,13 @@ export default function Nav() {
                 Admin Log
               </Link>
               <Link
+                to="/admin/brackets"
+                className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
+                onClick={close}
+              >
+                Brackets
+              </Link>
+              <Link
                 to="/admin/monitoring"
                 className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
                 onClick={close}
@@ -766,6 +774,7 @@ export default function Nav() {
           {/* Event Info */}
           <SidebarHeading label="Event Info" />
           <SidebarLink to="/top-8" label="Top 8 Decks" location={location} onClick={close} />
+          <SidebarLink to="/brackets" label="Brackets" location={location} onClick={close} />
           <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
           <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} />
           <SidebarLink to="/card-points" label="Omens" location={location} onClick={close} />

@@ -20,6 +20,8 @@ import DeckSnapshot from '@/pages/DeckSnapshot'
 
 // Phase 4: Events & Decks
 import Events from '@/pages/Events'
+import Brackets from '@/pages/Brackets'
+import Bracket from '@/pages/Bracket'
 import EventDetail from '@/pages/EventDetail'
 import EventCompare from '@/pages/EventCompare'
 import Stats from '@/pages/Stats'
@@ -72,6 +74,7 @@ import ExternalMatchesAdmin from '@/pages/admin/ExternalMatches'
 import OmensMatchesAdmin from '@/pages/admin/OmensMatches'
 import ChartDetail from '@/pages/admin/ChartDetail'
 import Monitoring from '@/pages/admin/Monitoring'
+import BracketsAdmin from '@/pages/admin/BracketsAdmin'
 
 // Error pages
 import ErrorPage from '@/pages/ErrorPage'
@@ -167,6 +170,8 @@ const router = createBrowserRouter([
       { path: '/player/:playerId/avatar/:avatarName', element: <PlayerAvatar /> },
       { path: '/deck-snapshot/:matchId/:playerId', element: <DeckSnapshot /> },
       // Phase 4: Events & Decks
+      { path: '/brackets', element: <Brackets /> },
+      { path: '/brackets/:slug', element: <Bracket /> },
       { path: '/top-8', element: <Events /> },
       { path: '/top-8/compare', element: <EventCompare /> },
       { path: '/top-8/:folder', element: <EventDetail /> },
@@ -216,6 +221,7 @@ const router = createBrowserRouter([
       { path: '/admin/omens-matches', element: <AdminGuard><OmensMatchesAdmin /></AdminGuard> },
       { path: '/admin/chart/:chartType', element: <AdminGuard><ChartDetail /></AdminGuard> },
       { path: '/admin/monitoring', element: <AdminGuard><Monitoring /></AdminGuard> },
+      { path: '/admin/brackets', element: <AdminGuard><BracketsAdmin /></AdminGuard> },
       // Error & 404
       { path: '/error', element: <ErrorPage /> },
       { path: '*', element: <NotFound /> },

@@ -35,6 +35,7 @@ from migrations.create_external_matches_table import create_external_matches_tab
 from migrations.create_deck_builder_tables import create_deck_builder_tables
 from migrations.create_card_points_tables import create_card_points_tables
 from migrations.create_card_catalog_table import create_card_catalog_table
+from migrations.create_bracket_tables import create_bracket_tables
 
 # Configure logging
 logging.basicConfig(
@@ -102,6 +103,11 @@ def create_app() -> Flask:
         create_card_catalog_table()
     except Exception as e:
         logger.error(f"Failed to ensure card_catalog table: {e}")
+
+    try:
+        create_bracket_tables()
+    except Exception as e:
+        logger.error(f"Failed to ensure bracket tables: {e}")
 
     # Request timing, outbound API timing and resource sampling
     init_monitoring(app)

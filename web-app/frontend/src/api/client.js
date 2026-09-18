@@ -29,4 +29,5 @@ async function request(method, url, body) {
 export const get = (url) => request('GET', url)
 export const post = (url, body) => request('POST', url, body)
 export const put = (url, body) => request('PUT', url, body)
+export const patch = (url, body) => request('PATCH', url, body)
 export const del = (url) => request('DELETE', url)

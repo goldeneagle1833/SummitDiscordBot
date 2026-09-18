@@ -94,6 +94,17 @@ GOOGLE_REDIRECT_URI = os.environ.get(
     "GOOGLE_REDIRECT_URI", "http://localhost:5000/auth/google/callback"
 )
 
+# Discord bot token, shared from discord-bot/.env. Used to sync the ticket-holder
+# roster so the bracket seed pool matches the bot's leaderboard message.
+DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", os.environ.get("TOKEN", ""))
+
+# Roles that mark a player as a Summit ticket holder (same roles the bot uses)
+TICKET_HOLDER_ROLE_IDS = {
+    r.strip()
+    for r in os.environ.get("TICKET_HOLDER_ROLE_IDS", "").split(",")
+    if r.strip() and r.strip() != "0"
+}
+
 # Admin Discord IDs - full access to all features in production
 # Set via ADMIN_IDS env var as comma-separated list
 ADMINS = [id.strip() for id in os.environ.get("ADMIN_IDS", "").split(",") if id.strip()]

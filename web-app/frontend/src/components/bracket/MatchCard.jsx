@@ -1,0 +1,139 @@
+import { Link } from 'react-router-dom'
+
+function Side({ seed, name, userId, isWinner, isLoser, reported }) {
+  if (!name) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1.5 text-sm text-text-muted italic">
+        <span className="w-6 shrink-0 text-xs">—</span>
+        <span>Waiting</span>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={`flex items-center gap-2 px-3 py-1.5 text-sm ${
+        isWinner ? 'font-semibold text-text-primary' : ''
+      } ${isLoser ? 'text-text-muted line-through decoration-1' : ''}`}
+    >
+      <span className="w-6 shrink-0 text-xs text-text-muted">{seed}</span>
+      {userId ? (
+        <Link to={`/player/${userId}`} className="truncate hover:text-primary transition-colors">
+          {name}
+        </Link>
+      ) : (
+        <span className="truncate">{name}</span>
+      )}
+      {reported && <span className="ml-auto text-xs text-amber-400">reported</span>}
+      {isWinner && !reported && <span className="ml-auto text-xs text-accent-green">W</span>}
+    </div>
+  )
+}
+
+/**
+ * One slot in the tree. Shows both seats, who won, and - for the two players
+ * involved - the buttons to settle it.
+ */
+export default function MatchCard({ match, onReport, onConfirm, onAdminAction, isAdmin }) {
+  const complete = match.state === 'complete' || match.state === 'bye'
+  const reportedWinner = match.state === 'reported' ? match.reported_winner_id : null
+  const winnerId = match.winner_user_id || reportedWinner
+
+  const p1Wins = complete && String(match.winner_seed) === String(match.p1_seed)
+  const p2Wins = complete && String(match.winner_seed) === String(match.p2_seed)
+
+  return (
+    <div
+      className={`bg-bg-surface border rounded-soft overflow-hidden w-56 ${
+        match.viewer_can_report || match.viewer_can_confirm
+          ? 'border-secondary'
+          : 'border-border'
+      }`}
+    >
+      <Side
+        seed={match.p1_seed}
+        name={match.p1_name}
+        userId={match.p1_user_id}
+        isWinner={p1Wins}
+        isLoser={complete && !p1Wins && !!match.p2_name}
+        reported={reportedWinner && String(reportedWinner) === String(match.p1_user_id)}
+      />
+      <div className="border-t border-border" />
+      <Side
+        seed={match.p2_seed}
+        name={match.p2_name}
+        userId={match.p2_user_id}
+        isWinner={p2Wins}
+        isLoser={complete && !p2Wins && !!match.p1_name}
+        reported={reportedWinner && String(reportedWinner) === String(match.p2_user_id)}
+      />
+
+      {match.state === 'bye' && (
+        <p className="px-3 py-1 text-xs text-text-muted bg-bg-raised">Bye</p>
+      )}
+
+      {match.viewer_can_report && (
+        <button
+          onClick={() => onReport(match)}
+          className="w-full px-3 py-1.5 text-xs font-medium bg-secondary text-black hover:bg-secondary-dark transition-colors"
+        >
+          Report result
+        </button>
+      )}
+
+      {match.viewer_can_confirm && (
+        <div className="flex border-t border-border">
+          <button
+            onClick={() => onConfirm(match, true)}
+            className="flex-1 px-2 py-1.5 text-xs font-medium text-accent-green hover:bg-accent-green/10 transition-colors"
+          >
+            Confirm
+          </button>
+          <button
+            onClick={() => onConfirm(match, false)}
+            className="flex-1 px-2 py-1.5 text-xs font-medium text-accent-red hover:bg-accent-red/10 transition-colors border-l border-border"
+          >
+            Dispute
+          </button>
+        </div>
+      )}
+
+      {match.state === 'reported' && !match.viewer_can_confirm && (
+        <p className="px-3 py-1 text-xs text-amber-400 bg-bg-raised">
+          Awaiting confirmation
+        </p>
+      )}
+
+      {isAdmin && onAdminAction && match.playable && (
+        <div className="flex border-t border-border text-xs">
+          {!complete && (
+            <>
+              <button
+                onClick={() => onAdminAction('result', match, match.p1_user_id)}
+                className="flex-1 px-1 py-1 text-text-muted hover:text-text-primary"
+                title={`Give the win to ${match.p1_name}`}
+              >
+                ▲ win
+              </button>
+              <button
+                onClick={() => onAdminAction('result', match, match.p2_user_id)}
+                className="flex-1 px-1 py-1 text-text-muted hover:text-text-primary border-l border-border"
+                title={`Give the win to ${match.p2_name}`}
+              >
+                ▼ win
+              </button>
+            </>
+          )}
+          {complete && (
+            <button
+              onClick={() => onAdminAction('reset', match)}
+              className="flex-1 px-1 py-1 text-accent-red hover:bg-accent-red/10"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

@@ -15,22 +15,37 @@ from webapp_config import CARD_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
 
-# Printing suffixes on the filenames, longest first so "-bt-s-r" is not
-# mistaken for "-bt-s".
-_PRINTING_SUFFIXES = (
-    "-bt-s-r",
-    "-scg-f",
-    "-bt-s",
-    "-bt-f",
-    "-op-s",
-    "-tc-f",
-    "-b-s",
-    "-b-f",
-    "-d-s",
-    "-d-f",
-)
-
 _card_image_map: dict | None = None
+
+
+def _key(value: str) -> str:
+    """A lookup key that survives however a name writes its separators.
+
+    Filenames join words with underscores, while card names use spaces,
+    hyphens and apostrophes - "East-West Dragon" is stored as
+    ``east_west_dragon``. Treating every separator the same on both sides is
+    what makes the two meet.
+    """
+    spaced = str(value or "").replace("_", " ").replace("-", " ")
+    return normalize_card_name(spaced)
+
+
+def _split_filename(base: str):
+    """Split "<set>-<card name>-<printing>" into (name key, printing tokens).
+
+    Printing markers are short trailing segments - ``-b-s``, ``-bt-s-r``,
+    ``-dk-s``, ``-op-f`` - and new ones keep appearing, so they are recognised
+    by shape rather than from a list. Stripping stops while two segments
+    remain, so a card named in three letters keeps its name.
+    """
+    parts = base.split("-")
+    printing = []
+    while len(parts) > 2 and len(parts[-1]) <= 3:
+        printing.insert(0, parts.pop())
+
+    if len(parts) < 2:
+        return "", printing
+    return _key("-".join(parts[1:])), printing
 
 
 def get_card_image_map() -> dict:
@@ -47,15 +62,12 @@ def get_card_image_map() -> dict:
 
         for fname in png_files + webp_files:
             base = re.sub(r"\.(png|jpg|jpeg|webp)$", "", fname, flags=re.IGNORECASE).lower()
-            for suffix in _PRINTING_SUFFIXES:
-                if base.endswith(suffix):
-                    base = base[: -len(suffix)]
-                    break
-            # Filenames are "<set number>-<card name>"; drop the number.
-            card_name_normalized = base.split("-", 1)[1] if "-" in base else base
+            card_name_normalized, printing = _split_filename(base)
+            if not card_name_normalized:
+                continue
 
-            # Prefer the standard printing when a card has several.
-            is_standard = "-b-s" in fname.lower() or "-bt-s" in fname.lower()
+            # Prefer the standard printing over foils and variants.
+            is_standard = printing and printing[-1] == "s"
             if card_name_normalized not in mapping or is_standard:
                 mapping[card_name_normalized] = fname
 
@@ -67,7 +79,7 @@ def resolve_card_image(card_name: str) -> str | None:
     """The image filename for a card, or None when we do not have one."""
     if not card_name:
         return None
-    return get_card_image_map().get(normalize_card_name(card_name))
+    return get_card_image_map().get(_key(card_name))
 
 
 def attach_images(cards, name_key: str = "name") -> list:

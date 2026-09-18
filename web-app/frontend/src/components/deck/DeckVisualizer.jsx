@@ -465,8 +465,7 @@ export default function DeckVisualizer({ cards, spellbook, atlas, sideboard }) {
 
   const allCards = [...mainCards, ...sideboardCards]
   const withImages = mainCards.filter((c) => c.image)
-  const sideboardWithImages = sideboardCards.filter((c) => c.image)
-  const groups = useMemo(() => buildGroups(withImages, groupBy), [withImages, groupBy])
+  const groups = useMemo(() => buildGroups(mainCards, groupBy), [mainCards, groupBy])
 
   if (!withImages.length) {
     return (
@@ -515,6 +514,24 @@ export default function DeckVisualizer({ cards, spellbook, atlas, sideboard }) {
               {groupCards.map((card, i) => {
                 const qty = card.quantity || card.qty || 1
                 const stackCount = Math.min(qty, 4)
+
+                if (!card.image) {
+                  return (
+                    <div key={`${card.name}-${i}`}>
+                      <div
+                        className="w-full rounded border border-dashed border-border bg-bg-raised flex items-center justify-center text-center p-2"
+                        style={{ aspectRatio: '5 / 7' }}
+                        title="No card image on the site yet"
+                      >
+                        <span className="text-[11px] text-text-muted leading-tight">
+                          {card.name}
+                          {qty > 1 && <span className="block text-text-muted/70">x{qty}</span>}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                }
+
                 return (
                   <div key={`${card.name}-${i}`}>
                     <div className="relative" style={{ paddingTop: `${((stackCount - 1) * GAP_WIDTH_PCT).toFixed(2)}%` }}>
@@ -565,13 +582,13 @@ export default function DeckVisualizer({ cards, spellbook, atlas, sideboard }) {
       })}
 
       {/* Collection / Sideboard */}
-      {sideboardWithImages.length > 0 && (
+      {sideboardCards.length > 0 && (
         <div>
           <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
-            Collection ({sideboardWithImages.reduce((sum, c) => sum + (c.quantity || c.qty || 1), 0)})
+            Collection ({sideboardCards.reduce((sum, c) => sum + (c.quantity || c.qty || 1), 0)})
           </h4>
           <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-2">
-            {sideboardWithImages.map((card, i) => {
+            {sideboardCards.map((card, i) => {
               const qty = card.quantity || card.qty || 1
               const stackCount = Math.min(qty, 4)
               return (

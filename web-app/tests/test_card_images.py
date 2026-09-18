@@ -10,6 +10,14 @@ FILENAMES = [
     "bet-daperyll_vampire-b-f.png",
     "bet-daperyll_vampire-b-s.png",
     "alp-abundance-bt-s-r.png",
+    # Names whose separators differ between the card and the file.
+    "bet-east_west_dragon-b-s.webp",
+    "alp-cave_in-b-s.webp",
+    "alp-wills_o_the_wisp-b-s.webp",
+    # Printings beyond the common ones.
+    "pro-spellslinger-dk-s.webp",
+    "pro-relentless_crowd-k-s.webp",
+    "alp-ice-b-s.webp",
     "notes.txt",
 ]
 
@@ -35,6 +43,28 @@ class TestResolveCardImage:
 
     def test_strips_the_longest_printing_suffix(self, images):
         assert card_images.resolve_card_image("Abundance") == "alp-abundance-bt-s-r.png"
+
+    def test_hyphenated_names_find_their_file(self, images):
+        """Cards hyphenate where filenames use underscores."""
+        assert card_images.resolve_card_image("East-West Dragon") == (
+            "bet-east_west_dragon-b-s.webp"
+        )
+        assert card_images.resolve_card_image("Cave-In") == "alp-cave_in-b-s.webp"
+
+    def test_apostrophes_do_not_break_the_lookup(self, images):
+        assert card_images.resolve_card_image("Wills-o'-the-Wisp") == (
+            "alp-wills_o_the_wisp-b-s.webp"
+        )
+
+    def test_unusual_printing_markers_are_still_stripped(self, images):
+        # Promotional printings use -dk-s and -k-s rather than -b-s.
+        assert card_images.resolve_card_image("Spellslinger") == "pro-spellslinger-dk-s.webp"
+        assert card_images.resolve_card_image("Relentless Crowd") == (
+            "pro-relentless_crowd-k-s.webp"
+        )
+
+    def test_a_short_card_name_is_not_mistaken_for_a_printing(self, images):
+        assert card_images.resolve_card_image("Ice") == "alp-ice-b-s.webp"
 
     def test_unknown_cards_resolve_to_nothing(self, images):
         assert card_images.resolve_card_image("Not A Real Card") is None

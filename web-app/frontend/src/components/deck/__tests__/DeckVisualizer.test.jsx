@@ -26,6 +26,31 @@ function panelFor(title) {
   return screen.getByText(title).closest('div').parentElement
 }
 
+describe('DeckVisualizer card grid', () => {
+  it('shows a card we have no image for, so the counts match the stats', () => {
+    render(
+      <DeckVisualizer
+        spellbook={[
+          spell('Bolt', 'Ordinary', { type: 'Minion' }),
+          // No image resolved for this one.
+          { name: 'Apply Alkahest', rarity: 'Ordinary', type: 'Minion', quantity: 2 },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText(/minions \(3\)/i)).toBeInTheDocument()
+    expect(screen.getByText('Apply Alkahest')).toBeInTheDocument()
+    expect(screen.getByText('x2')).toBeInTheDocument()
+  })
+
+  it('still renders the art for cards that have it', () => {
+    const { container } = render(<DeckVisualizer spellbook={[spell('Bolt', 'Ordinary')]} />)
+    expect(
+      [...container.querySelectorAll('img')].some((i) => i.src.includes('/card-images/Bolt.png')),
+    ).toBe(true)
+  })
+})
+
 describe('DeckVisualizer rarity breakdown', () => {
   it('counts spellbook rarity on its own', () => {
     render(

@@ -5,6 +5,7 @@ import logging
 import os
 import tempfile
 import threading
+import time
 import uuid
 
 from flask import Blueprint, jsonify, request
@@ -727,6 +728,16 @@ def _run_event_import(job_id, title, event_url):
             result["top8_added"] = len(top8_decks)
             result["bulk_added"] = len(bulk_decks) if bulk_decks else 0
             result["event_name"] = discovery["event_name"]
+            # Pairings came back with the discovery call, so store them too
+            if discovery.get("match_history"):
+                repo.save_match_history(title, {
+                    "event_id": discovery.get("event_id", ""),
+                    "event_url": event_url,
+                    "event_title": discovery["event_name"],
+                    "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "players": discovery["match_history"],
+                })
+                result["match_history_players"] = len(discovery["match_history"])
             if discovery["event_date"]:
                 # Auto-set the event date from sorcerytcg.com
                 repo.update_event_metadata(
@@ -779,6 +790,96 @@ def import_event_from_url():
     thread = threading.Thread(
         target=_run_event_import,
         args=(job_id, title, event_url),
+        daemon=True,
+    )
+    thread.start()
+
+    return jsonify({"success": True, "job_id": job_id}), 202
+
+
+@events_bp.route("/events/<event_folder>/match-history")
+def get_event_match_history(event_folder: str):
+    """Return round-by-round pairings for an event, keyed by deck ID."""
+    try:
+        repo = EventRepository()
+        history = repo.get_event_match_history(event_folder)
+        if history is None:
+            return jsonify({"available": False, "by_deck_id": {}, "by_username": {}})
+        return jsonify({"available": True, **history})
+    except Exception as e:
+        logger.exception("Error loading match history for %s: %s", event_folder, e)
+        return jsonify({"error": "Failed to load match history"}), 500
+
+
+def _run_match_history_import(job_id, event_folder, event_url):
+    """Background worker for importing pairings from a sorcerytcg.com URL."""
+    try:
+        from services.curiosa import CuriosaService
+
+        def on_progress(msg):
+            _write_job(job_id, {"status": "processing", "progress": msg})
+
+        history = CuriosaService().fetch_event_match_history(
+            event_url, on_progress=on_progress
+        )
+        if not history.get("players"):
+            _write_job(job_id, {
+                "status": "failed",
+                "result": {
+                    "success": False,
+                    "error": "No match history found for this event.",
+                },
+            })
+            return
+
+        result = EventRepository().save_match_history(event_folder, history)
+        if result.get("success") and history.get("errors"):
+            result["warnings"] = history["errors"]
+
+        _write_job(job_id, {
+            "status": "completed" if result.get("success") else "failed",
+            "result": result,
+        })
+
+    except Exception as e:
+        logger.exception("Background match history import failed: %s", e)
+        _write_job(job_id, {
+            "status": "failed",
+            "result": {"success": False, "error": f"Internal error: {e}"},
+        })
+
+
+@events_bp.route("/events/<event_folder>/match-history", methods=["POST"])
+@require_admin
+def import_event_match_history(event_folder: str):
+    """Import pairings for an event from its sorcerytcg.com event URL.
+
+    Falls back to the URL stored by a previous import when none is supplied,
+    so re-syncing an event needs no input.  Returns a job_id to poll.
+    """
+    repo = EventRepository()
+    if repo.get_event_decks(event_folder) is None:
+        return jsonify({"success": False, "error": "Event not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    event_url = (data.get("event_url") or "").strip()
+    if not event_url:
+        existing = repo.get_event_match_history(event_folder) or {}
+        event_url = existing.get("event_url", "")
+
+    from services.curiosa import CuriosaService
+    if not event_url or not CuriosaService.get_event_id_from_url(event_url):
+        return jsonify({
+            "success": False,
+            "error": "A sorcerytcg.com event URL is required.",
+        }), 400
+
+    job_id = str(uuid.uuid4())
+    _write_job(job_id, {"status": "processing", "progress": "Starting import..."})
+
+    thread = threading.Thread(
+        target=_run_match_history_import,
+        args=(job_id, event_folder, event_url),
         daemon=True,
     )
     thread.start()

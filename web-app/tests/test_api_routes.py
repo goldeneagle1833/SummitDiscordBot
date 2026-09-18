@@ -1,5 +1,6 @@
 """Tests for API route endpoints."""
 
+import json
 import sqlite3
 import pytest
 from tests.conftest import seed_elo_data, seed_matches
@@ -181,3 +182,108 @@ class TestAdminRoutes:
         data = resp.get_json()
         assert "elo" in data
         assert "match_records" in data
+
+
+@pytest.fixture()
+def event_dir(tmp_path, monkeypatch):
+    """Point the event repository at a temporary folder holding one event."""
+    import repositories.events as events_module
+
+    events_dir = tmp_path / "events"
+    (events_dir / "Test Event").mkdir(parents=True)
+    with open(events_dir / "Test Event" / "Test Eventtop8.json", "w",
+              encoding="utf-8") as f:
+        json.dump([{"id": "deck-1", "username": "winner",
+                    "avatar": [{"name": "Druid"}], "spellbook": []}], f)
+    monkeypatch.setattr(events_module, "TOP_8_DIR", events_dir)
+    return events_dir
+
+
+def _save_history(events_dir, url="https://sorcerytcg.com/events/abc123"):
+    from repositories.events import EventRepository
+    EventRepository(events_dir=events_dir).save_match_history("Test Event", {
+        "event_url": url,
+        "fetched_at": "2026-09-12T18:00:00",
+        "players": [{
+            "display_name": "Christian V",
+            "username": "winner",
+            "deck_id": "deck-1",
+            "profile_image": "",
+            "wins": 1,
+            "losses": 0,
+            "draws": 0,
+            "matches": [{
+                "round": 1,
+                "phase": "Swiss",
+                "result": "Win",
+                "is_bye": False,
+                "opponent": {"display_name": "Gideon M", "deck_id": "deck-2",
+                             "profile_image": ""},
+            }],
+        }],
+    })
+
+
+class TestEventMatchHistoryRoutes:
+    def test_reports_unavailable_before_any_import(self, client, event_dir):
+        resp = client.get("/api/events/Test Event/match-history")
+        assert resp.status_code == 200
+        assert resp.get_json() == {
+            "available": False, "by_deck_id": {}, "by_username": {}
+        }
+
+    def test_returns_history_keyed_by_deck(self, client, event_dir):
+        _save_history(event_dir)
+        resp = client.get("/api/events/Test Event/match-history")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["available"] is True
+        assert data["event_url"] == "https://sorcerytcg.com/events/abc123"
+        entry = data["by_deck_id"]["deck-1"]
+        assert entry["avatar"] == "Druid"
+        assert entry["matches"][0]["opponent"]["display_name"] == "Gideon M"
+
+    def test_import_requires_admin(self, client, event_dir):
+        resp = client.post("/api/events/Test Event/match-history",
+                           json={"event_url": "https://sorcerytcg.com/events/abc123"})
+        assert resp.status_code in (401, 403)
+
+    def test_import_rejects_unknown_event(self, admin_session, event_dir):
+        resp = admin_session.post(
+            "/api/events/Nope/match-history",
+            json={"event_url": "https://sorcerytcg.com/events/abc123"})
+        assert resp.status_code == 404
+
+    def test_import_rejects_a_non_event_url(self, admin_session, event_dir):
+        resp = admin_session.post("/api/events/Test Event/match-history",
+                                  json={"event_url": "https://example.com/nope"})
+        assert resp.status_code == 400
+
+    def test_import_reuses_the_url_from_a_previous_import(
+        self, admin_session, event_dir, monkeypatch
+    ):
+        _save_history(event_dir, "https://sorcerytcg.com/events/stored123")
+        started = {}
+
+        import routes.api.events as events_routes
+
+        class FakeThread:
+            def __init__(self, target, args, daemon):
+                started["args"] = args
+
+            def start(self):
+                started["started"] = True
+
+        monkeypatch.setattr(events_routes.threading, "Thread", FakeThread)
+
+        resp = admin_session.post("/api/events/Test Event/match-history", json={})
+        assert resp.status_code == 202
+        assert resp.get_json()["success"] is True
+        assert started["started"] is True
+        # (job_id, event_folder, event_url)
+        assert started["args"][2] == "https://sorcerytcg.com/events/stored123"
+
+    def test_import_without_any_url_is_rejected(self, admin_session, event_dir):
+        resp = admin_session.post("/api/events/Test Event/match-history", json={})
+        assert resp.status_code == 400
+

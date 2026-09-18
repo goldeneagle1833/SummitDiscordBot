@@ -207,3 +207,95 @@ class TestPlayerService:
         stats = service.get_player_stats("zero")
         assert stats["win_rate"] == 0
         assert stats["total_matches"] == 0
+
+
+class TestMatchHistoryBuilding:
+    """CuriosaService._build_match_history turns tRPC seats into match rows."""
+
+    @staticmethod
+    def _player(reg_id, name, seats, username=None, image=None):
+        return {
+            "id": reg_id,
+            "user": {
+                "displayname": name,
+                "username": username or name.lower(),
+                "feature": {"meta": {"image": image or ""}},
+            },
+            "seats": seats,
+        }
+
+    @staticmethod
+    def _seat(number, structure, result, opponents):
+        return {
+            "round": {"number": number, "phase": {"structure": structure}},
+            "pairing": {"seats": opponents},
+            "result": result,
+        }
+
+    def test_orders_rounds_newest_first_and_resolves_opponents(self):
+        from services.curiosa import CuriosaService
+
+        a_vs_b = [{"registrationId": "a"}, {"registrationId": "b"}]
+        players = [
+            self._player("a", "Christian V", [
+                self._seat(1, "Swiss", {"isBye": False, "result": "Loss"}, a_vs_b),
+                self._seat(2, "SingleElimination",
+                           {"isBye": False, "result": "Win"}, a_vs_b),
+            ]),
+            self._player("b", "Gideon M", [
+                self._seat(1, "Swiss", {"isBye": False, "result": "Win"}, a_vs_b),
+                self._seat(2, "SingleElimination",
+                           {"isBye": False, "result": "Loss"}, a_vs_b),
+            ]),
+        ]
+
+        history = CuriosaService._build_match_history(
+            players, {"a": "deck-a", "b": "deck-b"}, {"Christian V": 1, "Gideon M": 2}, 99
+        )
+
+        assert [e["display_name"] for e in history] == ["Christian V", "Gideon M"]
+        first = history[0]
+        assert first["deck_id"] == "deck-a"
+        assert (first["wins"], first["losses"], first["draws"]) == (1, 1, 0)
+        assert [m["round"] for m in first["matches"]] == [2, 1]
+        assert first["matches"][0]["opponent"]["display_name"] == "Gideon M"
+        assert first["matches"][0]["opponent"]["deck_id"] == "deck-b"
+        assert first["matches"][0]["phase"] == "SingleElimination"
+
+    def test_bye_has_no_opponent(self):
+        from services.curiosa import CuriosaService
+
+        players = [self._player("a", "Tyler M", [
+            self._seat(1, "Swiss", {"isBye": True, "result": "Win"},
+                       [{"registrationId": "a"}]),
+        ])]
+
+        history = CuriosaService._build_match_history(players, {}, {}, 1)
+        match = history[0]["matches"][0]
+        assert match["is_bye"] is True
+        assert match["opponent"] is None
+        assert history[0]["wins"] == 1
+
+    def test_opponent_falls_back_to_the_user_embedded_in_the_pairing(self):
+        """Dropped players are absent from the event player list."""
+        from services.curiosa import CuriosaService
+
+        players = [self._player("a", "Christian V", [
+            self._seat(1, "Swiss", {"isBye": False, "result": "Win"}, [
+                {"registrationId": "a"},
+                {
+                    "registrationId": "ghost",
+                    "registration": {"user": {"displayname": "Marc"}},
+                },
+            ]),
+        ])]
+
+        history = CuriosaService._build_match_history(players, {}, {}, 1)
+        assert history[0]["matches"][0]["opponent"]["display_name"] == "Marc"
+
+    def test_players_who_never_played_are_omitted(self):
+        from services.curiosa import CuriosaService
+
+        players = [self._player("a", "Registered Only", [])]
+        assert CuriosaService._build_match_history(players, {}, {}, 1) == []
+

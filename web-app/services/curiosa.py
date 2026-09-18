@@ -246,8 +246,10 @@ class CuriosaService:
             {
                 "event_name": str,
                 "event_date": str | None,
+                "event_id": str,
                 "top_cut_size": int,
                 "players": [{"name": str, "deck_id": str, "standing": int}, ...],
+                "match_history": [<see _build_match_history>, ...],
                 "errors": [str, ...],
             }
         """
@@ -280,8 +282,10 @@ class CuriosaService:
             return {
                 "event_name": event_name,
                 "event_date": event_date,
+                "event_id": event_id,
                 "top_cut_size": top_cut_size,
                 "players": [],
+                "match_history": [],
                 "errors": ["No active players found in this event"],
             }
 
@@ -318,6 +322,7 @@ class CuriosaService:
 
         # Step 3: Batch-fetch playerSnapshot for all players
         player_deck_ids = []
+        deck_by_registration = {}
         errors = []
         BATCH_SIZE = 10
 
@@ -341,18 +346,125 @@ class CuriosaService:
                 if not source_deck or not source_deck.get("id"):
                     errors.append(f"No source deck found for {name}")
                     continue
+                deck_by_registration[player["id"]] = source_deck["id"]
                 player_deck_ids.append({
                     "name": name,
                     "deck_id": source_deck["id"],
                     "standing": standing,
                 })
 
+        match_history = self._build_match_history(
+            active_players, deck_by_registration, html_standings, fallback_rank
+        )
+
         return {
             "event_name": event_name,
             "event_date": event_date,
+            "event_id": event_id,
             "top_cut_size": top_cut_size,
             "players": player_deck_ids,
+            "match_history": match_history,
             "errors": errors,
+        }
+
+    @staticmethod
+    def _build_match_history(
+        players: list[dict],
+        deck_by_registration: dict[str, str],
+        html_standings: dict[str, int],
+        fallback_rank: int,
+    ) -> list[dict]:
+        """Build a round-by-round match list for every player in the event.
+
+        Each entry describes one player and their matches in descending round
+        order (most recent first), with the opponent resolved from the pairing.
+        """
+        by_registration = {p["id"]: p for p in players if p.get("id")}
+
+        def describe(registration_id, embedded_user=None):
+            user = by_registration.get(registration_id, {}).get("user") or embedded_user or {}
+            return {
+                "registration_id": registration_id or "",
+                "display_name": (
+                    user.get("displayname") or user.get("username") or "Unknown"
+                ),
+                "username": user.get("username", ""),
+                "deck_id": deck_by_registration.get(registration_id, ""),
+                "profile_image": (
+                    (user.get("feature") or {}).get("meta") or {}
+                ).get("image", ""),
+            }
+
+        history = []
+        for player in players:
+            registration_id = player.get("id")
+            if not registration_id:
+                continue
+
+            matches = []
+            wins = losses = draws = 0
+            for seat in player.get("seats", []):
+                round_info = seat.get("round") or {}
+                result_info = seat.get("result") or {}
+                outcome = result_info.get("result")
+
+                opponent = None
+                for other in (seat.get("pairing") or {}).get("seats", []):
+                    if other.get("registrationId") == registration_id:
+                        continue
+                    # Dropped players are absent from the player list, so fall
+                    # back to the copy of the user embedded in the pairing.
+                    opponent = describe(
+                        other.get("registrationId"),
+                        (other.get("registration") or {}).get("user"),
+                    )
+                    break
+
+                if outcome == "Win":
+                    wins += 1
+                elif outcome == "Loss":
+                    losses += 1
+                elif outcome == "Draw":
+                    draws += 1
+
+                matches.append({
+                    "round": round_info.get("number"),
+                    "phase": (round_info.get("phase") or {}).get("structure", ""),
+                    "result": outcome,
+                    "is_bye": bool(result_info.get("isBye")),
+                    "opponent": opponent,
+                })
+
+            if not matches:
+                continue
+
+            matches.sort(key=lambda m: m["round"] or 0, reverse=True)
+            entry = describe(registration_id)
+            entry.update({
+                "standing": html_standings.get(entry["display_name"], fallback_rank),
+                "wins": wins,
+                "losses": losses,
+                "draws": draws,
+                "matches": matches,
+            })
+            history.append(entry)
+
+        history.sort(key=lambda e: e["standing"])
+        return history
+
+    def fetch_event_match_history(self, event_url: str, on_progress=None) -> dict:
+        """Fetch the round-by-round pairings for a sorcerytcg.com event.
+
+        Returns a payload suitable for EventRepository.save_match_history().
+        """
+        discovery = self.fetch_event_deck_ids(event_url, on_progress=on_progress)
+        return {
+            "event_id": discovery.get("event_id", ""),
+            "event_url": event_url,
+            "event_title": discovery.get("event_name", ""),
+            "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "players": discovery.get("match_history", []),
+            "errors": discovery.get("errors", []),
         }
 
     @staticmethod

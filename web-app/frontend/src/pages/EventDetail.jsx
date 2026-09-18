@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { getEvent, updateEventMetadata, updateEventDecks, refreshEvent, deleteEvent, pollEventJob } from '@/api/events'
+import { getEvent, updateEventMetadata, updateEventDecks, refreshEvent, deleteEvent, pollEventJob, getEventMatchHistory, importMatchHistory } from '@/api/events'
+import { getAvatarImageFiles } from '@/api/cards'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -109,11 +110,98 @@ function ComparisonChart({ title, subtitle, top8Data, allData, top8Total, allTot
   )
 }
 
+const RESULT_CLASSES = {
+  Win: 'bg-green-500/20 text-green-400 border-green-500/30',
+  Loss: 'bg-accent-red/20 text-accent-red border-accent-red/30',
+  Draw: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+}
+
+function getAvatarImagePath(name, files) {
+  if (!name || !files?.length) return null
+  const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const n = norm(name)
+  for (const f of files) {
+    if (norm(f.replace(/\.\w+$/, '')) === n) return f
+  }
+  for (const f of files) {
+    if (norm(f.replace(/\.\w+$/, '')).includes(n)) return f
+  }
+  for (const f of files) {
+    if (n.includes(norm(f.replace(/\.\w+$/, '')))) return f
+  }
+  return null
+}
+
+/* ---- Match History Accordion ---- */
+function MatchHistory({ entry, imageFiles }) {
+  if (!entry?.matches?.length) {
+    return <p className="text-xs text-text-muted py-3">No rounds recorded for this player.</p>
+  }
+
+  return (
+    <ol className="divide-y divide-border/30">
+      {entry.matches.map((match, i) => {
+        const opp = match.opponent
+        const imgFile = getAvatarImagePath(opp?.avatar, imageFiles)
+        const imgSrc = imgFile ? `/avatar-images/${imgFile}` : opp?.profile_image || null
+        const isTopCut = match.phase === 'SingleElimination'
+        return (
+          <li key={match.round ?? i} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+            <div className="w-24 flex-shrink-0">
+              <span className="text-xs font-semibold text-text-primary">Round {match.round}</span>
+              {isTopCut && <span className="block text-[10px] text-yellow-400">Top Cut</span>}
+            </div>
+
+            <div className="h-9 w-9 flex-shrink-0 rounded-full overflow-hidden">
+              {imgSrc && !match.is_bye && (
+                <img
+                  src={imgSrc}
+                  alt={opp?.avatar || ''}
+                  className="h-full w-full object-cover bg-bg-elevated"
+                  onError={(e) => { e.target.style.display = 'none' }}
+                />
+              )}
+            </div>
+
+            <div className="flex-1 min-w-[140px]">
+              <p className="text-sm text-text-primary">
+                {match.is_bye ? 'Bye' : `Opponent: ${opp?.display_name || 'Unknown'}`}
+              </p>
+              {opp?.avatar && <p className="text-xs text-text-muted">{opp.avatar}</p>}
+            </div>
+
+            {opp?.deck_id && (
+              <Link
+                to={`/deck-rec/${opp.deck_id}`}
+                className="text-secondary border border-secondary rounded px-2 py-0.5 text-[11px] hover:bg-secondary hover:text-black transition-colors"
+              >
+                Deck List
+              </Link>
+            )}
+
+            <span
+              className={`w-14 text-center text-[11px] font-semibold rounded border px-2 py-0.5 ${
+                RESULT_CLASSES[match.result] || 'bg-white/10 text-text-muted border-border'
+              }`}
+            >
+              {match.result || '—'}
+            </span>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
 /* ---- Deck Table ---- */
-function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder }) {
+function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHistory, imageFiles }) {
   const [dragIdx, setDragIdx] = useState(null)
+  const [expanded, setExpanded] = useState(null)
 
   if (!decks?.length) return null
+
+  const historyFor = (deck) => matchHistory?.by_deck_id?.[deck.deck_id] || null
+  const hasHistory = decks.some(historyFor)
 
   const handleDragStart = (idx) => setDragIdx(idx)
   const handleDragOver = (e) => e.preventDefault()
@@ -141,32 +229,68 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder }) {
         <tbody>
           {decks.map((deck, idx) => {
             const placeClass = tableType === 'top8' && idx < 3 ? PLACE_CLASSES[idx] : ''
+            const entry = historyFor(deck)
+            const isOpen = expanded === idx
+            const colSpan = 4 + (isAdmin ? 1 : 0)
             return (
-              <tr
-                key={idx}
-                className="border-t border-border/30 hover:bg-white/5"
-                draggable={isAdmin}
-                onDragStart={() => handleDragStart(idx)}
-                onDragOver={handleDragOver}
-                onDrop={() => handleDrop(idx)}
-              >
-                {isAdmin && (
-                  <td className="py-3 px-4 cursor-grab text-text-muted text-center select-none">⠁⠁</td>
+              <Fragment key={idx}>
+                <tr
+                  className="border-t border-border/30 hover:bg-white/5"
+                  draggable={isAdmin}
+                  onDragStart={() => handleDragStart(idx)}
+                  onDragOver={handleDragOver}
+                  onDrop={() => handleDrop(idx)}
+                >
+                  {isAdmin && (
+                    <td className="py-3 px-4 cursor-grab text-text-muted text-center select-none">⠁⠁</td>
+                  )}
+                  <td className="py-3 px-4">
+                    {entry ? (
+                      <button
+                        className="text-left hover:text-secondary"
+                        onClick={() => setExpanded(isOpen ? null : idx)}
+                        aria-expanded={isOpen}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <span className={`text-[10px] text-text-muted transition-transform ${isOpen ? 'rotate-90' : ''}`}>▶</span>
+                          {deck.player}
+                        </span>
+                        <span className="block pl-4 text-[11px] text-text-muted">
+                          {entry.wins}-{entry.losses}
+                          {entry.draws ? `-${entry.draws}` : ''}
+                          {' · '}
+                          {entry.matches.length} round{entry.matches.length !== 1 ? 's' : ''}
+                        </span>
+                      </button>
+                    ) : (
+                      deck.player
+                    )}
+                  </td>
+                  <td className="py-3 px-4">{deck.avatar}</td>
+                  <td className="py-3 px-4">{deck.deck_name}</td>
+                  <td className="py-3 px-4">
+                    {deck.deck_id ? (
+                      <Link
+                        to={`/deck-rec/${deck.deck_id}`}
+                        className="text-secondary border border-secondary rounded px-3 py-1 text-xs hover:bg-secondary hover:text-black transition-colors"
+                      >
+                        Deck List
+                      </Link>
+                    ) : null}
+                  </td>
+                </tr>
+                {isOpen && entry && (
+                  <tr className="border-t border-border/30 bg-bg-raised/40">
+                    <td colSpan={colSpan} className="p-0">
+                      {/* Pinned to the left so the panel stays readable while
+                          the table itself scrolls sideways on narrow screens. */}
+                      <div className="sticky left-0 w-[calc(100vw-2rem)] px-4 pb-3 md:w-auto">
+                        <MatchHistory entry={entry} imageFiles={imageFiles} />
+                      </div>
+                    </td>
+                  </tr>
                 )}
-                <td className="py-3 px-4">{deck.player}</td>
-                <td className="py-3 px-4">{deck.avatar}</td>
-                <td className="py-3 px-4">{deck.deck_name}</td>
-                <td className="py-3 px-4">
-                  {deck.deck_id ? (
-                    <Link
-                      to={`/deck-rec/${deck.deck_id}`}
-                      className="text-secondary border border-secondary rounded px-3 py-1 text-xs hover:bg-secondary hover:text-black transition-colors"
-                    >
-                      Deck List
-                    </Link>
-                  ) : null}
-                </td>
-              </tr>
+              </Fragment>
             )
           })}
         </tbody>
@@ -386,6 +510,13 @@ export default function EventDetail() {
   const [refreshResult, setRefreshResult] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [matchHistory, setMatchHistory] = useState(null)
+  const [imageFiles, setImageFiles] = useState([])
+  const [historyModal, setHistoryModal] = useState(false)
+  const [historyUrl, setHistoryUrl] = useState('')
+  const [historySaving, setHistorySaving] = useState(false)
+  const [historyProgress, setHistoryProgress] = useState(null)
+  const [historyError, setHistoryError] = useState(null)
 
   usePageTitle(data?.event_name || 'Event Detail')
 
@@ -396,6 +527,21 @@ export default function EventDetail() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [folder])
+
+  // Pairings are a separate, larger payload — load them alongside the page
+  // so the accordions appear without blocking the deck tables.
+  useEffect(() => {
+    setMatchHistory(null)
+    getEventMatchHistory(folder)
+      .then((res) => setMatchHistory(res?.available ? res : null))
+      .catch(() => setMatchHistory(null))
+  }, [folder])
+
+  useEffect(() => {
+    getAvatarImageFiles()
+      .then((files) => setImageFiles(files || []))
+      .catch(() => {})
+  }, [])
 
   const handleReorder = useCallback((tableType, newOrder) => {
     const key = tableType === 'top8' ? 'top8_decks' : 'all_decks'
@@ -493,6 +639,34 @@ export default function EventDetail() {
     finally { setRefreshing(false) }
   }, [folder])
 
+  const handleImportHistory = useCallback(async () => {
+    setHistorySaving(true)
+    setHistoryError(null)
+    setHistoryProgress(null)
+    try {
+      const submitResult = await importMatchHistory(folder, historyUrl.trim())
+      if (!submitResult.success || !submitResult.job_id) {
+        setHistoryError(submitResult.error || 'Failed to start import')
+        return
+      }
+      const result = await pollEventJob(submitResult.job_id, {
+        onProgress: setHistoryProgress,
+      })
+      if (result.success) {
+        const fresh = await getEventMatchHistory(folder)
+        setMatchHistory(fresh?.available ? fresh : null)
+        setHistoryModal(false)
+      } else {
+        setHistoryError(result.error || 'Failed to import match history')
+      }
+    } catch (err) {
+      setHistoryError(err.message || 'Failed to import match history')
+    } finally {
+      setHistorySaving(false)
+      setHistoryProgress(null)
+    }
+  }, [folder, historyUrl])
+
   const handleDelete = useCallback(async () => {
     setDeleting(true)
     try {
@@ -551,6 +725,16 @@ export default function EventDetail() {
               disabled={refreshing}
             >
               {refreshing ? 'Refreshing...' : 'Refresh from Curiosa'}
+            </button>
+            <button
+              className="text-xs bg-bg-raised text-text-muted px-3 py-1.5 rounded border border-border hover:text-text"
+              onClick={() => {
+                setHistoryUrl(matchHistory?.event_url || '')
+                setHistoryError(null)
+                setHistoryModal(true)
+              }}
+            >
+              {matchHistory ? 'Re-sync Match History' : 'Import Match History'}
             </button>
             <button
               className="text-xs bg-accent-red/20 text-accent-red px-3 py-1.5 rounded border border-accent-red/30 hover:bg-accent-red/30 disabled:opacity-50"
@@ -706,6 +890,8 @@ export default function EventDetail() {
                 tableType="top8"
                 eventFolder={folder}
                 onReorder={handleReorder}
+                matchHistory={matchHistory}
+                imageFiles={imageFiles}
               />
             </div>
           )}
@@ -755,6 +941,8 @@ export default function EventDetail() {
                 tableType="all"
                 eventFolder={folder}
                 onReorder={handleReorder}
+                matchHistory={matchHistory}
+                imageFiles={imageFiles}
               />
             </div>
           )}
@@ -833,6 +1021,48 @@ export default function EventDetail() {
                 {deckSaving ? 'Saving...' : deckModal.mode === 'replace' ? 'Replace Decks' : 'Add Decks'}
               </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Match History Import Modal */}
+      {historyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => !historySaving && setHistoryModal(false)}>
+          <div className="bg-bg-surface border border-border rounded-lg p-6 w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-display text-secondary mb-1">Import Match History</h3>
+            <p className="text-xs text-text-muted mb-4">
+              Pulls every player's round-by-round pairings from the Play Network event page.
+              Existing match history for this event is replaced.
+            </p>
+
+            <label className="text-xs text-text-muted block mb-1">Sorcery TCG Event URL</label>
+            <input
+              type="text"
+              className="w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm mb-4"
+              placeholder="https://sorcerytcg.com/events/..."
+              value={historyUrl}
+              onChange={(e) => setHistoryUrl(e.target.value)}
+            />
+
+            {historyProgress && <p className="text-xs text-text-muted mb-3">{historyProgress}</p>}
+            {historyError && <p className="text-accent-red text-xs mb-3">{historyError}</p>}
+
+            <div className="flex justify-end gap-2">
+              <button
+                className="text-xs px-3 py-1.5 rounded border border-border text-text-muted hover:text-text"
+                onClick={() => setHistoryModal(false)}
+                disabled={historySaving}
+              >
+                Cancel
+              </button>
+              <button
+                className="text-xs bg-secondary text-black px-3 py-1.5 rounded font-semibold disabled:opacity-50"
+                onClick={handleImportHistory}
+                disabled={historySaving || !historyUrl.trim()}
+              >
+                {historySaving ? 'Importing...' : 'Import'}
+              </button>
             </div>
           </div>
         </div>

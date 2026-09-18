@@ -13,6 +13,9 @@ export const updateEventDecks = (folder, { table, mode, urls }) =>
 export const importEventFromUrl = ({ title, event_url }) =>
   post('/api/events/import-from-url', { title, event_url })
 export const refreshEvent = (folder) => post(`/api/events/${folder}/refresh`)
+export const getEventMatchHistory = (folder) => get(`/api/events/${folder}/match-history`)
+export const importMatchHistory = (folder, eventUrl) =>
+  post(`/api/events/${folder}/match-history`, { event_url: eventUrl })
 export const deleteEvent = (folder) => del(`/api/events/${folder}`)
 export const setFeaturedEvent = (folder) => put('/api/events/featured', { folder })
 export const getEventJobStatus = (jobId) => get(`/api/events/jobs/${jobId}`)

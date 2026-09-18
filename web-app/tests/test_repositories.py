@@ -1,10 +1,12 @@
 """Tests for repository data access layer."""
 
+import json
 import sqlite3
 import pytest
 from tests.conftest import seed_elo_data, seed_matches
 
 from repositories.elo import EloRepository
+from repositories.events import EventRepository
 from repositories.matches import MatchRepository
 from repositories.user_profiles import UserProfileRepository
 
@@ -667,4 +669,135 @@ class TestFartRepositoryReset:
         result = repo.evil_start()
         assert captured == {"a": -250, "b": 250}
         assert result["players"][0]["score"] == 123
+
+
+def _make_event(tmp_path, decks):
+    """Create an event folder on disk holding the given top 8 deck data."""
+    events_dir = tmp_path / "events"
+    (events_dir / "Test Event").mkdir(parents=True)
+    with open(events_dir / "Test Event" / "Test Eventtop8.json", "w",
+              encoding="utf-8") as f:
+        json.dump(decks, f)
+    return events_dir
+
+
+HISTORY = {
+    "event_url": "https://sorcerytcg.com/events/abc123",
+    "fetched_at": "2026-09-12T18:00:00",
+    "players": [
+        {
+            "registration_id": "r1",
+            "display_name": "Christian V",
+            "username": "paladin_of_io",
+            "deck_id": "deck-1",
+            "profile_image": "https://cdn/imposter.png",
+            "standing": 1,
+            "wins": 2,
+            "losses": 0,
+            "draws": 0,
+            "matches": [
+                {
+                    "round": 2,
+                    "phase": "SingleElimination",
+                    "result": "Win",
+                    "is_bye": False,
+                    "opponent": {
+                        "registration_id": "r2",
+                        "display_name": "Gideon M",
+                        "username": "abcdefg",
+                        "deck_id": "deck-2",
+                        "profile_image": "https://cdn/battlemage.png",
+                    },
+                },
+                {
+                    "round": 1,
+                    "phase": "Swiss",
+                    "result": "Win",
+                    "is_bye": True,
+                    "opponent": None,
+                },
+            ],
+        },
+        {
+            "registration_id": "r3",
+            "display_name": "No Deck",
+            "username": "nodeck",
+            "deck_id": "",
+            "profile_image": "",
+            "standing": 3,
+            "wins": 0,
+            "losses": 1,
+            "draws": 0,
+            "matches": [
+                {"round": 1, "phase": "Swiss", "result": "Loss",
+                 "is_bye": False, "opponent": None},
+            ],
+        },
+    ],
+}
+
+
+class TestEventMatchHistory:
+    def test_save_and_read_back_keyed_by_deck(self, tmp_path):
+        events_dir = _make_event(tmp_path, [
+            {"id": "deck-1", "username": "paladin_of_io",
+             "avatar": [{"name": "Druid"}]},
+            {"id": "deck-2", "username": "abcdefg",
+             "avatar": [{"name": "Battlemage"}]},
+        ])
+        repo = EventRepository(events_dir=events_dir)
+
+        assert repo.save_match_history("Test Event", HISTORY)["success"] is True
+
+        history = repo.get_event_match_history("Test Event")
+        assert history["event_url"] == "https://sorcerytcg.com/events/abc123"
+
+        entry = history["by_deck_id"]["deck-1"]
+        assert entry["display_name"] == "Christian V"
+        assert (entry["wins"], entry["losses"]) == (2, 0)
+        # Avatars come from the decks we already store for the event
+        assert entry["avatar"] == "Druid"
+        assert entry["matches"][0]["opponent"]["avatar"] == "Battlemage"
+        assert entry["matches"][0]["opponent"]["deck_id"] == "deck-2"
+        # Rounds stay in the order they were saved (most recent first)
+        assert [m["round"] for m in entry["matches"]] == [2, 1]
+        assert entry["matches"][1]["is_bye"] is True
+        assert entry["matches"][1]["opponent"] is None
+
+    def test_username_lookup_points_at_the_deck(self, tmp_path):
+        events_dir = _make_event(tmp_path, [{"id": "deck-1", "avatar": []}])
+        repo = EventRepository(events_dir=events_dir)
+        repo.save_match_history("Test Event", HISTORY)
+
+        history = repo.get_event_match_history("Test Event")
+        assert history["by_username"]["paladin_of_io"] == "deck-1"
+
+    def test_players_without_a_deck_are_skipped(self, tmp_path):
+        events_dir = _make_event(tmp_path, [{"id": "deck-1", "avatar": []}])
+        repo = EventRepository(events_dir=events_dir)
+        repo.save_match_history("Test Event", HISTORY)
+
+        history = repo.get_event_match_history("Test Event")
+        assert list(history["by_deck_id"]) == ["deck-1"]
+        assert "nodeck" not in history["by_username"]
+
+    def test_avatar_is_blank_when_the_deck_is_not_stored(self, tmp_path):
+        events_dir = _make_event(tmp_path, [{"id": "deck-1", "avatar": []}])
+        repo = EventRepository(events_dir=events_dir)
+        repo.save_match_history("Test Event", HISTORY)
+
+        entry = repo.get_event_match_history("Test Event")["by_deck_id"]["deck-1"]
+        assert entry["matches"][0]["opponent"]["avatar"] == ""
+        assert entry["matches"][0]["opponent"]["display_name"] == "Gideon M"
+
+    def test_missing_history_returns_none(self, tmp_path):
+        events_dir = _make_event(tmp_path, [{"id": "deck-1", "avatar": []}])
+        repo = EventRepository(events_dir=events_dir)
+        assert repo.get_event_match_history("Test Event") is None
+
+    def test_save_rejects_unknown_event(self, tmp_path):
+        events_dir = _make_event(tmp_path, [{"id": "deck-1", "avatar": []}])
+        repo = EventRepository(events_dir=events_dir)
+        result = repo.save_match_history("No Such Event", HISTORY)
+        assert result["success"] is False
 

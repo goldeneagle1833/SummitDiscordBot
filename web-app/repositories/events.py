@@ -773,6 +773,121 @@ class EventRepository:
         result.sort(key=lambda x: x["count"], reverse=True)
         return result
 
+    # ── Match history (Play Network pairings) ─────────────────────────────
+
+    MATCH_HISTORY_FILE = "_match_history.json"
+
+    def save_match_history(self, event_folder: str, history: dict) -> dict:
+        """Persist round-by-round pairings for an event.
+
+        Args:
+            event_folder: The event folder name.
+            history: Payload from CuriosaService.fetch_event_match_history().
+
+        Returns:
+            dict with "success" bool and optional "error" string.
+        """
+        event_path = self._validate_event_folder(event_folder)
+        if event_path is None or not event_path.exists():
+            return {"success": False, "error": "Event not found"}
+
+        try:
+            with open(
+                event_path / self.MATCH_HISTORY_FILE, "w", encoding="utf-8"
+            ) as f:
+                json.dump(history, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Failed to write match history for {event_folder}: {e}")
+            return {"success": False, "error": "Failed to save match history"}
+
+        return {"success": True, "players": len(history.get("players", []))}
+
+    def _load_match_history(self, event_folder: str) -> dict | None:
+        """Load the raw match history file for an event, or None."""
+        event_path = self._validate_event_folder(event_folder)
+        if event_path is None:
+            return None
+
+        history_path = event_path / self.MATCH_HISTORY_FILE
+        if not history_path.exists():
+            return None
+
+        try:
+            with open(history_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else None
+        except Exception as e:
+            logger.error(f"Failed to read match history for {event_folder}: {e}")
+            return None
+
+    def get_event_match_history(self, event_folder: str) -> dict | None:
+        """Get match history for an event, keyed by the deck ID each player ran.
+
+        Opponents are enriched with the avatar of the deck they registered so
+        the UI can show what each match was played against.
+
+        Returns None when no history has been imported for this event.
+        """
+        history = self._load_match_history(event_folder)
+        if not history:
+            return None
+
+        decks = self._load_all_decks(event_folder) or []
+        deck_avatars = {}
+        for deck in decks:
+            deck_id = deck.get("id", "")
+            if deck_id:
+                deck_avatars[deck_id] = (
+                    (deck.get("avatar") or [{}])[0].get("name") or ""
+                )
+
+        def describe(person: dict | None) -> dict | None:
+            """Trim a stored player/opponent down to what the UI renders."""
+            if not person:
+                return None
+            deck_id = person.get("deck_id", "")
+            return {
+                "display_name": person.get("display_name", "Unknown"),
+                "deck_id": deck_id,
+                "avatar": deck_avatars.get(deck_id, ""),
+                "profile_image": person.get("profile_image", ""),
+            }
+
+        by_deck_id = {}
+        by_username = {}
+        for player in history.get("players", []):
+            deck_id = player.get("deck_id", "")
+            if not deck_id:
+                # Without a deck there is no row on the page to attach to.
+                continue
+            entry = describe(player)
+            entry.update({
+                "wins": player.get("wins", 0),
+                "losses": player.get("losses", 0),
+                "draws": player.get("draws", 0),
+                "matches": [
+                    {
+                        "round": match.get("round"),
+                        "phase": match.get("phase", ""),
+                        "result": match.get("result"),
+                        "is_bye": bool(match.get("is_bye")),
+                        "opponent": describe(match.get("opponent")),
+                    }
+                    for match in player.get("matches", [])
+                ],
+            })
+            by_deck_id[deck_id] = entry
+            username = (player.get("username") or "").lower()
+            if username and username not in by_username:
+                by_username[username] = deck_id
+
+        return {
+            "event_url": history.get("event_url", ""),
+            "fetched_at": history.get("fetched_at", ""),
+            "by_deck_id": by_deck_id,
+            "by_username": by_username,
+        }
+
     def get_event_stats(self, event_folder: str) -> dict:
         """Get statistics data for a specific event."""
         event_path = self._validate_event_folder(event_folder)

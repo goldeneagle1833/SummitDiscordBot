@@ -104,6 +104,7 @@ KNOWN_PUBLIC_ENDPOINTS = {
     # -- Events / tournaments (public read-only) --
     "api.events.list_top8_events",
     "api.events.get_event_detail",
+    "api.events.get_event_match_history",
     "api.events.compare_events",
 
     # -- Curios (auth checked internally per-method) --

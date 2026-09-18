@@ -271,11 +271,18 @@ class BracketService:
     def list_brackets(self, include_drafts: bool = False) -> list[dict]:
         brackets = self._repo.list_brackets(published_only=not include_drafts)
         for bracket in brackets:
-            matches = self._repo.get_matches(bracket["bracket_id"])
-            bracket["champion"] = champion(matches) if matches else None
-            bracket["open_matches"] = len(
-                [m for m in matches if m["state"] == "pending" and _is_playable(m)]
-            )
+            bracket["champion"] = None
+            bracket["open_matches"] = 0
+            try:
+                matches = self._repo.get_matches(bracket["bracket_id"])
+                bracket["champion"] = champion(matches) if matches else None
+                bracket["open_matches"] = len(
+                    [m for m in matches if m["state"] == "pending" and _is_playable(m)]
+                )
+            except Exception as e:
+                logger.error(
+                    "Could not summarise bracket %s: %s", bracket.get("slug"), e, exc_info=True
+                )
         return brackets
 
     def get_bracket_detail(

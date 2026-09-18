@@ -35,7 +35,7 @@ def list_brackets():
     try:
         return jsonify({"success": True, "brackets": service.list_brackets()}), 200
     except Exception as e:
-        logger.error(f"Failed to list brackets: {e}")
+        logger.error("Failed to list brackets: %s", e, exc_info=True)
         return jsonify({"success": False, "error": "Could not load brackets"}), 500
 
 

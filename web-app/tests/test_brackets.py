@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+import utils.card_images as card_images
 from repositories.brackets import BracketRepository
 from services.bracket_builder import (
     bracket_size_for,
@@ -695,6 +696,30 @@ class TestDecklists:
 
         service.delete_bracket(bracket_id)
         assert repo.get_decks(bracket_id) == []
+
+    def test_card_images_come_from_the_sites_own_set(self, service, repo, tmp_path, monkeypatch):
+        """Curiosa hands back CDN urls; /card-images can only serve local files."""
+        (tmp_path / "bet-daperyll_vampire-b-s.png").write_bytes(b"")
+        monkeypatch.setattr(card_images, "CARD_IMAGES_DIR", tmp_path)
+        card_images.reset_cache()
+
+        slug, _ = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        deck = service.get_deck(slug, 1, viewer_id="u1", is_admin=True)["deck"]
+        assert deck["spellbook"][0]["image"] == "bet-daperyll_vampire-b-s.png"
+        card_images.reset_cache()
+
+    def test_cards_with_no_local_image_are_left_blank(self, service, repo, tmp_path, monkeypatch):
+        monkeypatch.setattr(card_images, "CARD_IMAGES_DIR", tmp_path)
+        card_images.reset_cache()
+
+        slug, _ = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        deck = service.get_deck(slug, 1, viewer_id="u1", is_admin=True)["deck"]
+        assert deck["spellbook"][0]["image"] is None
+        card_images.reset_cache()
 
     def test_a_missing_deck_reads_clearly(self, service, repo):
         slug, _ = self._publish(service, repo)

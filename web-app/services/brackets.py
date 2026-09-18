@@ -24,6 +24,7 @@ from services.bracket_builder import (
 from services.curiosa import CuriosaService
 from services.leaderboard import LeaderboardService
 from services.ticket_holders import ticket_holder_ids
+from utils.card_images import attach_images
 
 logger = logging.getLogger(__name__)
 
@@ -598,6 +599,11 @@ class BracketService:
             deck = json.loads(stored["deck_json"] or "{}")
         except (TypeError, ValueError):
             deck = {}
+
+        # Curiosa stores absolute CDN urls, which /card-images cannot serve.
+        # Resolve every card against the site's own image set instead.
+        for section in ("avatar", "spellbook", "atlas", "sideboard"):
+            attach_images(deck.get(section))
 
         return {"player": player, "deck": deck}
 

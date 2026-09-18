@@ -22,6 +22,11 @@ from flask import Blueprint, jsonify, request, session
 
 from repositories.deck_rec_repo import DeckRecRepository, DeckRecord, MatchOutcomeIndex, _get_card_details
 from services.curiosa import CuriosaService
+from utils.card_images import (
+    attach_images,
+    reset_cache as reset_card_image_cache,
+    resolve_card_image,
+)
 from services.deck_similarity import (
     aggregate_archetype,
     build_card_index,
@@ -39,59 +44,19 @@ from services.sorcery_online_table import (
 from utils.auth import is_admin, require_admin
 from utils.formatting import normalize_card_name
 from repositories.card_catalog import CardCatalogRepository
-from webapp_config import CARD_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
 
 deck_rec_bp = Blueprint("deck_rec", __name__)
 
 # ---------------------------------------------------------------------------
-# Card image lookup — built once, cached at module level
+# Card image lookup — shared with every other deck view on the site
 # ---------------------------------------------------------------------------
-
-_card_image_map: dict[str, str] | None = None
-
-
-def _get_card_image_map() -> dict[str, str]:
-    """Return a {normalized_card_name: filename} dict built from CARD_IMAGES_DIR."""
-    global _card_image_map
-    if _card_image_map is not None:
-        return _card_image_map
-
-    mapping: dict[str, str] = {}
-    if CARD_IMAGES_DIR.exists():
-        all_files = sorted(os.listdir(CARD_IMAGES_DIR))
-        png_files = [f for f in all_files if f.lower().endswith((".png", ".jpg", ".jpeg"))]
-        webp_files = [f for f in all_files if f.lower().endswith(".webp")]
-        for fname in png_files + webp_files:
-            base = re.sub(r"\.(png|jpg|jpeg|webp)$", "", fname, flags=re.IGNORECASE).lower()
-            for suffix in ["-b-s", "-b-f", "-bt-s", "-bt-f", "-scg-f", "-bt-s-r", "-d-s", "-d-f", "-op-s", "-tc-f"]:
-                if base.endswith(suffix):
-                    base = base[:-len(suffix)]
-                    break
-            if "-" in base:
-                card_name_normalized = base.split("-", 1)[1]
-            else:
-                card_name_normalized = base
-            is_standard = "-b-s" in fname.lower() or "-bt-s" in fname.lower()
-            if card_name_normalized not in mapping or is_standard:
-                mapping[card_name_normalized] = fname
-    _card_image_map = mapping
-    return mapping
-
-
-def _resolve_card_image(card_name: str) -> str | None:
-    """Return image filename for a card name, or None if not found."""
-    mapping = _get_card_image_map()
-    key = normalize_card_name(card_name)
-    return mapping.get(key)
 
 
 def _attach_images(cards: list[dict]) -> list[dict]:
     """Add 'image' field to each card dict."""
-    for card in cards:
-        card["image"] = _resolve_card_image(card["card_name"])
-    return cards
+    return attach_images(cards, name_key="card_name")
 
 
 # ---------------------------------------------------------------------------
@@ -480,7 +445,7 @@ def get_deck_info(deck_id: str):
                 "qty": c["qty"],
                 "type": c["type"],
                 "threshold": c["threshold"],
-                "image": _resolve_card_image(c["name"]),
+                "image": resolve_card_image(c["name"]),
             })
             for c in detail_source
         ]
@@ -490,7 +455,7 @@ def get_deck_info(deck_id: str):
                 "qty": c["qty"],
                 "type": c["type"],
                 "threshold": c["threshold"],
-                "image": _resolve_card_image(c["name"]),
+                "image": resolve_card_image(c["name"]),
             })
             for c in sideboard_source
         ]
@@ -541,7 +506,7 @@ def _fetch_curiosa_deck_info(deck_id: str):
                 "qty": c["qty"],
                 "type": c["type"],
                 "threshold": c["threshold"],
-                "image": _resolve_card_image(c["name"]),
+                "image": resolve_card_image(c["name"]),
             })
             for c in detail_source
         ]
@@ -551,7 +516,7 @@ def _fetch_curiosa_deck_info(deck_id: str):
                 "qty": c["qty"],
                 "type": c["type"],
                 "threshold": c["threshold"],
-                "image": _resolve_card_image(c["name"]),
+                "image": resolve_card_image(c["name"]),
             })
             for c in sideboard_source
         ]
@@ -647,7 +612,7 @@ def get_recommendations(deck_id: str):
                 "qty": c["qty"],
                 "type": c["type"],
                 "threshold": c["threshold"],
-                "image": _resolve_card_image(c["name"]),
+                "image": resolve_card_image(c["name"]),
             })
             for c in detail_source
         ]
@@ -816,8 +781,7 @@ def admin_add_deck():
         )
 
         # Invalidate caches so new deck renders correctly
-        global _card_image_map
-        _card_image_map = None
+        reset_card_image_cache()
         _invalidate_cluster_cache()
 
         return jsonify({

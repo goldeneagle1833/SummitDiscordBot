@@ -741,9 +741,12 @@ class TestEventMatchHistory:
     def test_save_and_read_back_keyed_by_deck(self, tmp_path):
         events_dir = _make_event(tmp_path, [
             {"id": "deck-1", "username": "paladin_of_io",
-             "avatar": [{"name": "Druid"}]},
+             "avatar": [{"name": "Druid"}],
+             "spellbook": [{"elements": "Fire", "quantity": 4}]},
             {"id": "deck-2", "username": "abcdefg",
-             "avatar": [{"name": "Battlemage"}]},
+             "avatar": [{"name": "Battlemage"}],
+             "spellbook": [{"elements": "Water", "quantity": 3},
+                           {"elements": "Air", "quantity": 2}]},
         ])
         repo = EventRepository(events_dir=events_dir)
 
@@ -757,7 +760,9 @@ class TestEventMatchHistory:
         assert (entry["wins"], entry["losses"]) == (2, 0)
         # Avatars come from the decks we already store for the event
         assert entry["avatar"] == "Druid"
+        assert entry["elements"] == ["Fire"]
         assert entry["matches"][0]["opponent"]["avatar"] == "Battlemage"
+        assert entry["matches"][0]["opponent"]["elements"] == ["Water", "Air"]
         assert entry["matches"][0]["opponent"]["deck_id"] == "deck-2"
         # Rounds stay in the order they were saved (most recent first)
         assert [m["round"] for m in entry["matches"]] == [2, 1]
@@ -788,6 +793,7 @@ class TestEventMatchHistory:
 
         entry = repo.get_event_match_history("Test Event")["by_deck_id"]["deck-1"]
         assert entry["matches"][0]["opponent"]["avatar"] == ""
+        assert entry["matches"][0]["opponent"]["elements"] == []
         assert entry["matches"][0]["opponent"]["display_name"] == "Gideon M"
 
     def test_missing_history_returns_none(self, tmp_path):

@@ -528,6 +528,7 @@ class EventRepository:
                             ),
                             "deck_name": deck.get("name", "Unnamed Deck"),
                             "deck_id": deck_id,
+                            "elements": self._get_deck_elements(deck),
                         }
                         all_decks.append(deck_entry)
                         if deck_id:
@@ -834,12 +835,14 @@ class EventRepository:
 
         decks = self._load_all_decks(event_folder) or []
         deck_avatars = {}
+        deck_elements = {}
         for deck in decks:
             deck_id = deck.get("id", "")
             if deck_id:
                 deck_avatars[deck_id] = (
                     (deck.get("avatar") or [{}])[0].get("name") or ""
                 )
+                deck_elements[deck_id] = self._get_deck_elements(deck)
 
         def describe(person: dict | None) -> dict | None:
             """Trim a stored player/opponent down to what the UI renders."""
@@ -850,6 +853,7 @@ class EventRepository:
                 "display_name": person.get("display_name", "Unknown"),
                 "deck_id": deck_id,
                 "avatar": deck_avatars.get(deck_id, ""),
+                "elements": deck_elements.get(deck_id, []),
                 "profile_image": person.get("profile_image", ""),
             }
 

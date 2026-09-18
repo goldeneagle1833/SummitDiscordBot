@@ -110,6 +110,27 @@ function ComparisonChart({ title, subtitle, top8Data, allData, top8Total, allTot
   )
 }
 
+const ELEMENT_IMG = '/static/images/elements/'
+const ELEMENT_FILE = {
+  Earth: 'earth.png',
+  Fire: 'fire.png',
+  Water: 'water.png',
+  Air: 'wind.png',
+}
+
+function ElementIcons({ elements }) {
+  if (!elements?.length) return '-'
+  return (
+    <span className="flex gap-0.5">
+      {elements.map((el) => {
+        const file = ELEMENT_FILE[el]
+        if (!file) return <span key={el} className="text-xs">{el}</span>
+        return <img key={el} src={`${ELEMENT_IMG}${file}`} alt={el} title={el} className="w-5 h-5" />
+      })}
+    </span>
+  )
+}
+
 const RESULT_CLASSES = {
   Win: 'bg-green-500/20 text-green-400 border-green-500/30',
   Loss: 'bg-accent-red/20 text-accent-red border-accent-red/30',
@@ -167,7 +188,12 @@ function MatchHistory({ entry, imageFiles }) {
               <p className="text-sm text-text-primary">
                 {match.is_bye ? 'Bye' : `Opponent: ${opp?.display_name || 'Unknown'}`}
               </p>
-              {opp?.avatar && <p className="text-xs text-text-muted">{opp.avatar}</p>}
+              {(opp?.avatar || opp?.elements?.length > 0) && (
+                <span className="flex items-center gap-1.5">
+                  {opp.avatar && <span className="text-xs text-text-muted">{opp.avatar}</span>}
+                  {opp.elements?.length > 0 && <ElementIcons elements={opp.elements} />}
+                </span>
+              )}
             </div>
 
             {opp?.deck_id && (
@@ -222,6 +248,7 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHis
             {isAdmin && <th className="py-3 px-4 text-left w-10"></th>}
             <th className="py-3 px-4 text-left font-semibold">Player</th>
             <th className="py-3 px-4 text-left font-semibold">Avatar</th>
+            <th className="py-3 px-4 text-left font-semibold w-24">Elements</th>
             <th className="py-3 px-4 text-left font-semibold">Deck</th>
             <th className="py-3 px-4 text-left font-semibold w-36">Deck List</th>
           </tr>
@@ -231,7 +258,7 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHis
             const placeClass = tableType === 'top8' && idx < 3 ? PLACE_CLASSES[idx] : ''
             const entry = historyFor(deck)
             const isOpen = expanded === idx
-            const colSpan = 4 + (isAdmin ? 1 : 0)
+            const colSpan = 5 + (isAdmin ? 1 : 0)
             return (
               <Fragment key={idx}>
                 <tr
@@ -267,6 +294,7 @@ function DeckTable({ decks, isAdmin, tableType, eventFolder, onReorder, matchHis
                     )}
                   </td>
                   <td className="py-3 px-4">{deck.avatar}</td>
+                  <td className="py-3 px-4"><ElementIcons elements={deck.elements} /></td>
                   <td className="py-3 px-4">{deck.deck_name}</td>
                   <td className="py-3 px-4">
                     {deck.deck_id ? (

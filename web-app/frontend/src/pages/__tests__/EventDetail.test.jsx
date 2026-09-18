@@ -23,8 +23,8 @@ const EVENT = {
   event_folder: 'Test Event',
   description: '',
   top8_decks: [
-    { player: 'paladin_of_io', avatar: 'Druid', deck_name: 'Seeing Red', deck_id: 'deck-1' },
-    { player: 'nohistory', avatar: 'Battlemage', deck_name: 'Other', deck_id: 'deck-9' },
+    { player: 'paladin_of_io', avatar: 'Druid', deck_name: 'Seeing Red', deck_id: 'deck-1', elements: ['Fire'] },
+    { player: 'nohistory', avatar: 'Battlemage', deck_name: 'Other', deck_id: 'deck-9', elements: [] },
   ],
   all_decks: [],
   card_data: [],
@@ -45,6 +45,7 @@ const HISTORY = {
       deck_id: 'deck-1',
       avatar: 'Druid',
       profile_image: '',
+      elements: ['Fire'],
       wins: 2,
       losses: 0,
       draws: 0,
@@ -58,6 +59,7 @@ const HISTORY = {
             display_name: 'Gideon M',
             deck_id: 'deck-2',
             avatar: 'Battlemage',
+            elements: ['Water', 'Air'],
             profile_image: '',
           },
         },
@@ -95,6 +97,18 @@ describe('EventDetail match history', () => {
     expect(screen.getByText('Opponent: Gideon M')).toBeInTheDocument()
     expect(screen.getByText('Top Cut')).toBeInTheDocument()
     expect(screen.getByText('Bye')).toBeInTheDocument()
+  })
+
+  it('shows element icons for the deck and for each opponent', async () => {
+    mockApi()
+    renderWithRouter(<EventDetail />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /paladin_of_io/ }))
+
+    // One for the deck row, one for the opponent's deck
+    expect(screen.getAllByAltText('Fire')).toHaveLength(1)
+    expect(screen.getByAltText('Water')).toBeInTheDocument()
+    expect(screen.getByAltText('Air')).toBeInTheDocument()
   })
 
   it('links each opponent to their deck rec page', async () => {

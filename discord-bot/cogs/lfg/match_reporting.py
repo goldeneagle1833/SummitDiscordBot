@@ -5,7 +5,14 @@ import logging
 
 import config
 from cogs.lfg.state import pending_match_reports, processed_matches
-from cogs.lfg.helpers import scrub_urls, send_milestone_announcement, generate_ladder_challenge_announcement
+from cogs.lfg.helpers import (
+    correction_tip,
+    deck_text_if_private,
+    match_type_presentation,
+    scrub_urls,
+    send_milestone_announcement,
+    generate_ladder_challenge_announcement,
+)
 from utils.database import (
     record_match,
     complete_ladder_challenge,
@@ -706,14 +713,14 @@ class MatchTypeSelectionView(discord.ui.View):
             match_type=match_type,
         )
 
-        # Build match type label for message
-        match_type_emoji = "⚔️" if match_type == "ranked" else "⭐"
-        match_type_label = "Ranked" if match_type == "ranked" else "Casual"
+        match_type_emoji, match_type_label = match_type_presentation(match_type)
 
         # Send the "Did you go first?" question via followup (since we deferred)
+        deck_text = deck_text_if_private(interaction, self.reporter_deck_text)
         try:
             await interaction.followup.send(
-                f"{match_type_emoji} **{match_type_label} Match** - You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\n**Did you go first?**",
+                f"{match_type_emoji} **{match_type_label} Match** - You've been matched with "
+                f"{self.opponent_user.mention}!{deck_text}\n\n**Did you go first?**",
                 view=went_first_view,
             )
         except discord.NotFound as e:
@@ -732,8 +739,12 @@ class MatchTypeSelectionView(discord.ui.View):
                                     member, read_messages=True, send_messages=True
                                 )
 
+                    # No deck line here: this channel is public.
                     await dm_channel.send(
-                        f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match** - You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\n**Did you go first?**",
+                        scrub_urls(
+                            f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match** - "
+                            f"You've been matched with {self.opponent_user.mention}!\n\n**Did you go first?**"
+                        ),
                         view=went_first_view,
                     )
                 except Exception as channel_error:
@@ -846,21 +857,15 @@ class WentFirstView(discord.ui.View):
             opponent_run_id=self.opponent_run_id,
         )
 
-        # Build match type label for message
-        if self.match_type == "limited":
-            match_type_emoji = "🎲"
-            match_type_label = "Limited"
-        elif self.match_type == "ranked":
-            match_type_emoji = "⚔️"
-            match_type_label = "Ranked"
-        else:
-            match_type_emoji = "⭐"
-            match_type_label = "Casual"
+        match_type_emoji, match_type_label = match_type_presentation(self.match_type)
 
         # Send the report buttons via followup (since we deferred)
+        deck_text = deck_text_if_private(interaction, self.reporter_deck_text)
         try:
             await interaction.followup.send(
-                f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\nReport the match result below:",
+                f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with "
+                f"{self.opponent_user.mention}!{deck_text}\n\n"
+                f"Report the match result below:\n\n{correction_tip()}",
                 view=view_reporter,
             )
         except discord.NotFound as e:
@@ -879,8 +884,13 @@ class WentFirstView(discord.ui.View):
                                     member, read_messages=True, send_messages=True
                                 )
 
+                    # No deck line here: this channel is public.
                     await dm_channel.send(
-                        f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match Found!** You've been matched with {self.opponent_user.mention} (**{self.player2_global}**)!{self.reporter_deck_text}\n\nReport the match result below:",
+                        scrub_urls(
+                            f"{interaction.user.mention} {match_type_emoji} **{match_type_label} Match Found!** "
+                            f"You've been matched with {self.opponent_user.mention}!\n\n"
+                            f"Report the match result below:\n\n{correction_tip()}"
+                        ),
                         view=view_reporter,
                     )
                 except Exception as channel_error:

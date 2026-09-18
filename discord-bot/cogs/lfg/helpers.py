@@ -16,10 +16,49 @@ openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
 # URL pattern for scrubbing URLs from public fallback channel messages
 _URL_PATTERN = re.compile(r"https?://\S+")
 
+# Channel where a player asks for a mis-reported result to be fixed.  The live
+# config file predates this setting, so fall back to the Summit server channel.
+MATCH_CORRECTION_CHANNEL_ID = getattr(
+    config, "MATCH_CORRECTION_CHANNEL_ID", 1456299008023728302
+)
+
 
 def scrub_urls(text: str) -> str:
     """Remove URLs from a message to avoid leaking deck links in public channels."""
     return _URL_PATTERN.sub("[link removed]", text)
+
+
+def correction_tip() -> str:
+    """The one place that tells players how to fix a wrongly reported result."""
+    return (
+        f"🛠️ **Wrong result reported?** Run `!correct_match <match id>` in "
+        f"<#{MATCH_CORRECTION_CHANNEL_ID}> — the other player confirms the fix "
+        f"and ELO is recalculated."
+    )
+
+
+_MATCH_TYPE_PRESENTATION = {
+    "limited": ("🎲", "Limited"),
+    "ranked": ("⚔️", "Ranked"),
+    "rumble": ("💥", "Rumble"),
+    "points": ("📊", "Rumble (Omens)"),
+}
+_CASUAL_PRESENTATION = ("⭐", "Casual")
+
+
+def match_type_presentation(match_type):
+    """Return the (emoji, label) pair every message for this match type uses."""
+    return _MATCH_TYPE_PRESENTATION.get(match_type or "ranked", _CASUAL_PRESENTATION)
+
+
+def deck_text_if_private(interaction, deck_text: str) -> str:
+    """Keep a deck line only where it stays private, i.e. in a bot DM.
+
+    A match card normally lives in the player's DMs, but for players who
+    block DMs it lives in the public fallback channel instead - and a reply
+    there is visible to everyone, so the deck list has to be left out.
+    """
+    return deck_text if interaction.guild is None else ""
 
 
 def generate_milestone_message(count: int) -> str:

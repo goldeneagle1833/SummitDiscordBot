@@ -15,6 +15,7 @@ import sqlite3
 import config
 from cogs.lfg.state import pending_match_reports, processed_matches, processed_matches_lock
 from cogs.lfg.helpers import (
+    correction_tip,
     scrub_urls,
     send_milestone_announcement,
     generate_ladder_challenge_announcement,
@@ -432,10 +433,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
                 logger.warning(f"Could not edit match card messages for pairing {pairing_id}: {e}")
 
     # ── notify reporter ──
-    correct_match_tip = (
-        "\n\n**Tip:** If the result was reported incorrectly, use `!correct_match` "
-        "in <#1456299008023728302> on the Summit server to request a correction."
-    )
+    correct_match_tip = f"\n\n{correction_tip()}"
     if data.get("notify_reporter", True):
         try:
             reporter = await bot.fetch_user(data["reporter_id"])

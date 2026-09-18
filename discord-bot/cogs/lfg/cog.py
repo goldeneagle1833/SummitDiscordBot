@@ -20,9 +20,9 @@ from cogs.lfg.state import (
     LADDER_CHALLENGE_MAX_JOINERS,
     matching_web_users,
 )
-from cogs.lfg.helpers import scrub_urls, send_milestone_announcement
+from cogs.lfg.helpers import send_milestone_announcement
 from cogs.lfg.match_reporting import LFGReportButtons, _apply_ladder_elo, LimitedReportView
-from cogs.lfg.persistent_confirm import create_match_card_view, update_match_card_message_ref
+from cogs.lfg.persistent_confirm import create_match_card_view
 from cogs.lfg.challenge import ChallengeInitView, ChallengerDeckModal
 from cogs.lfg.ladder import (
     LadderChallengeJoinButton,
@@ -35,10 +35,13 @@ from cogs.lfg.queue import (
     ActiveQueueButtons,
     DeckURLModal,
     JoinQueueButtons,
-    PrivateSeatLinkButton,
-    PrivateSeatLinkView,
-    match_delivery_extras,
     provision_match_and_publish_results,
+)
+from cogs.lfg.pairing_messages import (
+    PairingPlayer,
+    announce_pairing,
+    ladder_stakes_note,
+    send_pairing_messages,
 )
 from cogs.lfg.queue_definitions import enabled_queue_definitions
 from utils.database import (
@@ -1292,24 +1295,6 @@ class LFGCog(commands.Cog):
                 other_player
             )
 
-            reporter_deck_text = (
-                f"\n**Your Deck:** {reporter_deck_url}" if reporter_deck_url else ""
-            )
-            (
-                reporter_game_url,
-                other_game_url,
-                reporter_game_text,
-                other_game_text,
-                voice_text,
-            ) = match_delivery_extras(
-                provisioned_links,
-                reporter_id,
-                other_id,
-            )
-
-            match_type_emoji = "⚔️" if match_type == "ranked" else "⭐"
-            match_type_label = "Ranked" if match_type == "ranked" else "Casual"
-
             match_card_view = create_match_card_view(
                 bot=self.bot,
                 pairing_id=pairing_id,
@@ -1325,100 +1310,31 @@ class LFGCog(commands.Cog):
                 match_type=match_type,
             )
 
-            try:
-                dm_msg = await reporter_user.send(
-                    f"{match_type_emoji} **{match_type_label} Match Found!** You've been matched with {other_user.mention} (**{other_global}**)!{reporter_deck_text}\n\n"
-                    f"Use the button below to report the result when your match is done."
-                    f"{reporter_game_text}{voice_text}",
-                    view=match_card_view,
-                )
-                try:
-                    update_match_card_message_ref(match_card_view.card_id, dm_msg.id, dm_msg.channel.id)
-                except Exception:
-                    logger.warning("Could not save match card message ref for card %s", match_card_view.card_id)
-            except discord.Forbidden:
-                try:
-                    dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
-                    if dm_channel:
-                        guild_obj = self.bot.get_guild(config.GUILD_ID)
-                        if guild_obj:
-                            member = guild_obj.get_member(reporter_user.id)
-                            if member:
-                                await dm_channel.set_permissions(
-                                    member,
-                                    read_messages=True,
-                                    send_messages=True,
-                                )
-
-                        fallback_message = scrub_urls(
-                                f"{reporter_user.mention} {match_type_emoji} **{match_type_label} Match Found!**\n\nYou've been matched with {other_user.mention} (**{other_global}**)!\n\n"
-                                f"Use the button below to report the result when your match is done."
-                            ) + voice_text
-                        if reporter_game_url:
-                            match_card_view.add_item(PrivateSeatLinkButton(reporter_id, reporter_game_url))
-                        fb_msg = await dm_channel.send(
-                            fallback_message,
-                            view=match_card_view,
-                        )
-                        try:
-                            update_match_card_message_ref(match_card_view.card_id, fb_msg.id, fb_msg.channel.id)
-                        except Exception:
-                            logger.warning("Could not save match card message ref for card %s", match_card_view.card_id)
-                except Exception as e:
-                    logger.error(f"Failed to handle DM failure for reporter: {e}")
-
-            other_own_deck_text = (
-                f"\n**Your Deck:** {other_deck_url}" if other_deck_url else ""
+            delivery = await send_pairing_messages(
+                self.bot,
+                reporter=PairingPlayer(
+                    reporter_id, reporter_global, reporter_user, reporter_deck_url
+                ),
+                other=PairingPlayer(
+                    other_id, other_global, other_user, other_deck_url
+                ),
+                match_card_view=match_card_view,
+                match_type=match_type,
+                provisioned_links=provisioned_links,
             )
-            try:
-                await other_user.send(
-                    f"🎮 **Match Found!** You've been matched with {reporter_user.mention} (**{reporter_global}**)!{other_own_deck_text}\n\n"
-                    f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome."
-                    f"{other_game_text}{voice_text}"
-                )
-            except discord.Forbidden:
-                try:
-                    dm_channel = self.bot.get_channel(config.DM_DISABLED_CHANNEL_ID)
-                    if dm_channel:
-                        guild_obj = self.bot.get_guild(config.GUILD_ID)
-                        if guild_obj:
-                            member = guild_obj.get_member(other_user.id)
-                            if member:
-                                await dm_channel.set_permissions(
-                                    member,
-                                    read_messages=True,
-                                    send_messages=True,
-                                )
 
-                        fallback_message = scrub_urls(
-                                f"{other_user.mention} 🎮 **Match Found!**\n\nYou've been matched with {reporter_user.mention} (**{reporter_global}**)!\n\n"
-                                f"**{reporter_global}** has the match report buttons. When they report the result, you'll receive a confirmation to verify the outcome."
-                            ) + voice_text
-                        if other_game_url:
-                            await dm_channel.send(
-                                fallback_message,
-                                view=PrivateSeatLinkView(other_id, other_game_url),
-                            )
-                        else:
-                            await dm_channel.send(fallback_message)
-                except Exception as e:
-                    logger.error(
-                        f"Failed to handle DM failure for other player: {e}"
-                    )
+            await announce_pairing(
+                lfg_channel,
+                player_a=ctx.author,
+                player_b=matched_user,
+                match_type=match_type,
+                note=ladder_stakes_note(ladder_info["challenger_id"], matched_user_id),
+            )
 
-            # Announce match in LFG channel
-            if lfg_channel:
-                elo_diff_display = abs(
-                    get_user_event_elo(ladder_info["challenger_id"])
-                    - get_user_event_elo(matched_user_id)
-                )
-                if elo_diff_display >= 100:
-                    ladder_note = " 🏆 **Ladder Challenge!** Top 16 player - Special stakes (2x/0.5x ELO)!"
-                else:
-                    ladder_note = " 🏆 **Ladder Challenge!** Top 16 player (normal stakes - ELO diff < 100)"
-
-                await lfg_channel.send(
-                    f"{match_type_emoji} **{match_type_label} Match Found!** {ctx.author.mention} matched with {matched_user.mention}!{ladder_note}"
+            if delivery.fell_back_for(user_id):
+                logger.info(
+                    f"Ladder challenger {user_id} was reached through the "
+                    f"DM-disabled channel instead of DMs"
                 )
 
             await self.update_lfg_status()

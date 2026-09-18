@@ -146,6 +146,7 @@ class BracketRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute("DELETE FROM bracket_matches WHERE bracket_id = ?", (bracket_id,))
+        cur.execute("DELETE FROM bracket_decks WHERE bracket_id = ?", (bracket_id,))
         cur.execute("DELETE FROM bracket_entrants WHERE bracket_id = ?", (bracket_id,))
         cur.execute("DELETE FROM brackets WHERE bracket_id = ?", (bracket_id,))
         deleted = cur.rowcount > 0
@@ -183,15 +184,112 @@ class BracketRepository:
         conn.close()
 
     def get_entrants(self, bracket_id: int) -> list[dict]:
+        """Entrants in seed order, with their profile picture when we have one."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+
+        cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='user_profiles'"
+        )
+        has_profiles = cur.fetchone() is not None
+
+        if has_profiles:
+            # A player can have both a Discord and a Google profile; prefer Discord.
+            cur.execute(
+                """
+                SELECT e.*,
+                       (SELECT p.avatar FROM user_profiles p
+                         WHERE p.user_id = e.user_id
+                         ORDER BY CASE WHEN p.provider = 'discord' THEN 0 ELSE 1 END
+                         LIMIT 1) AS avatar,
+                       (SELECT p.provider FROM user_profiles p
+                         WHERE p.user_id = e.user_id
+                         ORDER BY CASE WHEN p.provider = 'discord' THEN 0 ELSE 1 END
+                         LIMIT 1) AS provider
+                FROM bracket_entrants e
+                WHERE e.bracket_id = ?
+                ORDER BY e.seed
+                """,
+                (bracket_id,),
+            )
+        else:
+            cur.execute(
+                "SELECT * FROM bracket_entrants WHERE bracket_id = ? ORDER BY seed",
+                (bracket_id,),
+            )
+
+        rows = cur.fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    # -- Decks ----------------------------------------------------
+
+    def upsert_deck(self, bracket_id: int, seed: int, data: dict):
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT * FROM bracket_entrants WHERE bracket_id = ? ORDER BY seed",
+            """
+            INSERT INTO bracket_decks (
+                bracket_id, seed, user_id, deck_url, deck_name,
+                avatar_name, deck_json, submitted_by, submitted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(bracket_id, seed) DO UPDATE SET
+                user_id = excluded.user_id,
+                deck_url = excluded.deck_url,
+                deck_name = excluded.deck_name,
+                avatar_name = excluded.avatar_name,
+                deck_json = excluded.deck_json,
+                submitted_by = excluded.submitted_by,
+                submitted_at = excluded.submitted_at
+            """,
+            (
+                bracket_id,
+                seed,
+                data.get("user_id"),
+                data.get("deck_url"),
+                data.get("deck_name"),
+                data.get("avatar_name"),
+                data.get("deck_json"),
+                data.get("submitted_by"),
+                datetime.now().isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+    def get_decks(self, bracket_id: int) -> list[dict]:
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM bracket_decks WHERE bracket_id = ? ORDER BY seed",
             (bracket_id,),
         )
         rows = cur.fetchall()
         conn.close()
         return [dict(r) for r in rows]
+
+    def get_deck(self, bracket_id: int, seed: int) -> dict | None:
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM bracket_decks WHERE bracket_id = ? AND seed = ?",
+            (bracket_id, seed),
+        )
+        row = cur.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def delete_deck(self, bracket_id: int, seed: int) -> bool:
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM bracket_decks WHERE bracket_id = ? AND seed = ?",
+            (bracket_id, seed),
+        )
+        deleted = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return deleted
 
     # -- Matches --------------------------------------------------
 

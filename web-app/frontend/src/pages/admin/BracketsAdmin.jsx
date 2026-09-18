@@ -13,9 +13,12 @@ import {
   adminUnpublishBracket,
   adminDeleteBracket,
   adminPreviewBracket,
+  getBracketDecks,
 } from '@/api/brackets'
 import { searchUsers } from '@/api/admin'
 import BracketTree from '@/components/bracket/BracketTree'
+import DeckPanel from '@/components/bracket/DeckPanel'
+import { avatarMap } from '@/utils/avatar'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -382,7 +385,11 @@ function SeedEditor({ slug, entrants, preview, onChanged }) {
             <p className="text-xs text-text-muted">Add at least 2 players to see the bracket.</p>
           )}
           {preview?.rounds?.length > 0 && (
-            <BracketTree rounds={preview.rounds} onSwap={swap} />
+            <BracketTree
+              rounds={preview.rounds}
+              onSwap={swap}
+              avatars={avatarMap(entrants, 64)}
+            />
           )}
         </div>
       </div>
@@ -394,6 +401,8 @@ function BracketRow({ bracket, onChanged }) {
   const [open, setOpen] = useState(false)
   const [detail, setDetail] = useState(null)
   const [preview, setPreview] = useState(null)
+  const [decksOpen, setDecksOpen] = useState(false)
+  const [decks, setDecks] = useState(null)
   const [error, setError] = useState(null)
 
   const loadDetail = useCallback(async () => {
@@ -412,6 +421,15 @@ function BracketRow({ bracket, onChanged }) {
   useEffect(() => {
     if (open && !detail) loadDetail()
   }, [open, detail, loadDetail])
+
+  const loadDecks = useCallback(
+    () => getBracketDecks(bracket.slug).then(setDecks).catch(() => setDecks(null)),
+    [bracket.slug],
+  )
+
+  useEffect(() => {
+    if (decksOpen && !decks) loadDecks()
+  }, [decksOpen, decks, loadDecks])
 
   async function act(action) {
     setError(null)
@@ -438,6 +456,7 @@ function BracketRow({ bracket, onChanged }) {
           <p className="text-xs text-text-muted">
             {isDraft ? 'Draft — not visible to players' : `Published as /brackets/${bracket.slug}`}
             {bracket.champion ? ` · won by ${bracket.champion.display_name}` : ''}
+            {decks ? ` · ${decks.submitted}/${decks.players.length} decks in` : ''}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -468,12 +487,19 @@ function BracketRow({ bracket, onChanged }) {
               </button>
             </>
           )}
-          {isDraft && (
+          {isDraft ? (
             <button
               onClick={() => setOpen((v) => !v)}
               className="px-3 py-1 rounded border border-border text-xs"
             >
               {open ? 'Close' : 'Edit seeds'}
+            </button>
+          ) : (
+            <button
+              onClick={() => setDecksOpen((v) => !v)}
+              className="px-3 py-1 rounded border border-border text-xs"
+            >
+              {decksOpen ? 'Close decks' : 'Decks'}
             </button>
           )}
           <button
@@ -490,6 +516,20 @@ function BracketRow({ bracket, onChanged }) {
       </div>
 
       {error && <p className="px-4 pb-3 text-sm text-accent-red">{error}</p>}
+
+      {decksOpen && (
+        <div className="px-4 pb-4 border-t border-border pt-4">
+          {!decks && <Spinner />}
+          {decks && (
+            <DeckPanel
+              slug={bracket.slug}
+              roster={decks}
+              isAdmin
+              onChanged={loadDecks}
+            />
+          )}
+        </div>
+      )}
 
       {open && (
         <div className="px-4 pb-4 border-t border-border pt-4">

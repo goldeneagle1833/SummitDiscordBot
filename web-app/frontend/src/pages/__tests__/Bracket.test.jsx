@@ -3,10 +3,20 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithRouter } from '@/test/test-utils'
 import Bracket from '../Bracket'
-import { getBracket, reportBracketMatch, confirmBracketMatch } from '@/api/brackets'
+import {
+  getBracket,
+  getBracketDecks,
+  reportBracketMatch,
+  confirmBracketMatch,
+} from '@/api/brackets'
 
 vi.mock('@/api/brackets', () => ({
   getBracket: vi.fn(),
+  getBracketDecks: vi.fn(),
+  getBracketDeck: vi.fn(),
+  submitBracketDeck: vi.fn(),
+  adminSubmitBracketDeck: vi.fn(),
+  adminDeleteBracketDeck: vi.fn(),
   reportBracketMatch: vi.fn(),
   confirmBracketMatch: vi.fn(),
   adminSetMatchResult: vi.fn(),
@@ -70,6 +80,31 @@ describe('Bracket page', () => {
     vi.clearAllMocks()
     mockUser.value = { user_id: 'u1', is_admin: false }
     getBracket.mockResolvedValue(bracketData())
+    getBracketDecks.mockResolvedValue({
+      bracket: { slug: 'season-7', name: 'Season 7 Postseason', status: 'published' },
+      submitted: 1,
+      missing: 1,
+      players: [
+        {
+          seed: 1,
+          user_id: 'u1',
+          display_name: 'One',
+          eliminated: false,
+          has_deck: true,
+          deck_visible: false,
+          can_submit: true,
+        },
+        {
+          seed: 2,
+          user_id: 'u2',
+          display_name: 'Two',
+          eliminated: false,
+          has_deck: false,
+          deck_visible: false,
+          can_submit: false,
+        },
+      ],
+    })
     reportBracketMatch.mockResolvedValue({ success: true, awaiting: 'Two' })
     confirmBracketMatch.mockResolvedValue({ success: true, state: 'complete' })
   })
@@ -184,7 +219,33 @@ describe('Bracket page', () => {
     )
     renderWithRouter(<Bracket />)
     expect(await screen.findByText('Winner')).toBeInTheDocument()
-    expect(screen.getByText(/\(seed 1\)/)).toBeInTheDocument()
+    expect(screen.getByText('Seed 1')).toBeInTheDocument()
+  })
+
+  it('lists the decklists under the bracket', async () => {
+    renderWithRouter(<Bracket />)
+    expect(await screen.findByText('Decklists')).toBeInTheDocument()
+    expect(screen.getByText(/1 of 2 submitted/)).toBeInTheDocument()
+  })
+
+  it('shows the champion with their profile picture', async () => {
+    getBracket.mockResolvedValue(
+      bracketData({
+        bracket: { slug: 'season-7', name: 'Season 7 Postseason', status: 'complete' },
+        entrants: [
+          { seed: 1, display_name: 'One', user_id: 'u1', avatar: 'hash1', provider: 'discord' },
+          { seed: 2, display_name: 'Two', user_id: 'u2' },
+        ],
+        champion: { display_name: 'One', seed: 1, user_id: 'u1' },
+      }),
+    )
+    const { container } = renderWithRouter(<Bracket />)
+
+    expect(await screen.findByText('Winner')).toBeInTheDocument()
+    const avatar = [...container.querySelectorAll('img')].find((img) =>
+      img.src.includes('/avatars/u1/hash1.png'),
+    )
+    expect(avatar).toBeTruthy()
   })
 
   it('asks a logged-out visitor to log in', async () => {

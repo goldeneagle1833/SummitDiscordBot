@@ -6,6 +6,7 @@ other confirms, and the winner moves on. The confirmation window mirrors the
 site's existing 48-hour match confirmation flow.
 """
 
+import json
 import logging
 import random
 import re
@@ -20,6 +21,7 @@ from services.bracket_builder import (
     champion,
     winner_name,
 )
+from services.curiosa import CuriosaService
 from services.leaderboard import LeaderboardService
 from services.ticket_holders import ticket_holder_ids
 
@@ -38,14 +40,19 @@ def slugify(name: str) -> str:
 
 
 class BracketService:
-    def __init__(self, repo=None, leaderboard_service=None):
+    def __init__(self, repo=None, leaderboard_service=None, curiosa_service=None):
         self._repo = repo or BracketRepository()
         self._leaderboard_override = leaderboard_service
+        self._curiosa_override = curiosa_service
 
     @property
     def _leaderboard(self):
         """Built on demand so database paths resolve at call time."""
         return self._leaderboard_override or LeaderboardService()
+
+    @property
+    def _curiosa(self):
+        return self._curiosa_override or CuriosaService()
 
     # -- Seed pool ------------------------------------------------
 
@@ -438,6 +445,167 @@ class BracketService:
                     e,
                 )
         return confirmed
+
+    # -- Decklists ------------------------------------------------
+
+    def eliminated_seeds(self, bracket_id: int) -> set:
+        """Seeds that have lost a match, so their deck is safe to show."""
+        eliminated = set()
+        for match in self._repo.get_matches(bracket_id):
+            if match["state"] != "complete" or match["winner_seed"] is None:
+                continue
+            for slot in (1, 2):
+                seed = match[f"p{slot}_seed"]
+                if seed is not None and seed != match["winner_seed"]:
+                    eliminated.add(seed)
+        return eliminated
+
+    def submit_deck(
+        self,
+        slug: str,
+        deck_url: str,
+        actor_id: str,
+        seed: int | None = None,
+        is_admin: bool = False,
+    ) -> dict:
+        """Attach a decklist to an entrant.
+
+        A player may only submit their own; an admin submits for any seat by
+        passing the seed.
+        """
+        bracket = self._repo.get_bracket(slug=slug)
+        if not bracket:
+            raise BracketError("Bracket not found")
+        if bracket["status"] == "draft":
+            raise BracketError("Decks can be submitted once the bracket is published")
+
+        entrants = self._repo.get_entrants(bracket["bracket_id"])
+        if is_admin and seed is not None:
+            entrant = next((e for e in entrants if e["seed"] == int(seed)), None)
+        else:
+            entrant = next(
+                (e for e in entrants if str(e.get("user_id") or "") == str(actor_id)), None
+            )
+        if not entrant:
+            raise BracketError("You are not in this bracket")
+
+        deck_url = (deck_url or "").strip()
+        if not deck_url:
+            raise BracketError("A deck link is required")
+
+        raw = self._curiosa.fetch_deck_data(deck_url)
+        try:
+            deck = json.loads(raw)
+        except (TypeError, ValueError):
+            deck = {}
+        if not deck:
+            raise BracketError("Could not read that deck - check the link is a public deck")
+
+        avatar_list = deck.get("avatar") or []
+        avatar_name = avatar_list[0].get("name") if avatar_list else None
+
+        self._repo.upsert_deck(
+            bracket["bracket_id"],
+            entrant["seed"],
+            {
+                "user_id": entrant.get("user_id"),
+                "deck_url": deck_url,
+                "deck_name": deck.get("name"),
+                "avatar_name": avatar_name,
+                "deck_json": json.dumps(deck),
+                "submitted_by": str(actor_id),
+            },
+        )
+
+        return {
+            "seed": entrant["seed"],
+            "display_name": entrant["display_name"],
+            "deck_name": deck.get("name"),
+            "avatar_name": avatar_name,
+        }
+
+    def get_deck_roster(self, slug: str, viewer_id=None, is_admin: bool = False) -> dict | None:
+        """Every entrant, whether they have submitted, and who can see it.
+
+        A deck stays hidden until its owner is knocked out or the bracket is
+        over - other than to the player themselves and to admins.
+        """
+        bracket = self._repo.get_bracket(slug=slug)
+        if not bracket:
+            return None
+        if bracket["status"] == "draft" and not is_admin:
+            return None
+
+        entrants = self._repo.get_entrants(bracket["bracket_id"])
+        decks = {d["seed"]: d for d in self._repo.get_decks(bracket["bracket_id"])}
+        eliminated = self.eliminated_seeds(bracket["bracket_id"])
+        finished = bracket["status"] == "complete"
+        viewer_id = str(viewer_id) if viewer_id else None
+
+        players = []
+        for entrant in entrants:
+            deck = decks.get(entrant["seed"])
+            is_out = entrant["seed"] in eliminated
+            is_owner = viewer_id is not None and str(entrant.get("user_id") or "") == viewer_id
+            visible = bool(deck) and (is_admin or is_owner or is_out or finished)
+
+            players.append(
+                {
+                    "seed": entrant["seed"],
+                    "user_id": entrant.get("user_id"),
+                    "display_name": entrant["display_name"],
+                    "avatar": entrant.get("avatar"),
+                    "provider": entrant.get("provider"),
+                    "eliminated": is_out,
+                    "has_deck": bool(deck),
+                    "deck_visible": visible,
+                    "deck_url": deck["deck_url"] if (deck and visible) else None,
+                    "deck_name": deck["deck_name"] if (deck and visible) else None,
+                    "avatar_name": deck["avatar_name"] if (deck and visible) else None,
+                    "submitted_at": deck["submitted_at"] if deck else None,
+                    "can_submit": is_owner and bracket["status"] == "published",
+                }
+            )
+
+        return {
+            "bracket": {
+                "slug": bracket["slug"],
+                "name": bracket["name"],
+                "status": bracket["status"],
+            },
+            "players": players,
+            "submitted": len([p for p in players if p["has_deck"]]),
+            "missing": len([p for p in players if not p["has_deck"]]),
+        }
+
+    def get_deck(self, slug: str, seed: int, viewer_id=None, is_admin: bool = False) -> dict:
+        """One entrant's decklist, if the viewer is allowed to see it."""
+        roster = self.get_deck_roster(slug, viewer_id=viewer_id, is_admin=is_admin)
+        if roster is None:
+            raise BracketError("Bracket not found")
+
+        player = next((p for p in roster["players"] if p["seed"] == int(seed)), None)
+        if not player:
+            raise BracketError("Not in this bracket")
+        if not player["has_deck"]:
+            raise BracketError("No deck submitted")
+        if not player["deck_visible"]:
+            raise BracketError("This deck stays hidden until the player is knocked out")
+
+        bracket = self._repo.get_bracket(slug=slug)
+        stored = self._repo.get_deck(bracket["bracket_id"], int(seed))
+        try:
+            deck = json.loads(stored["deck_json"] or "{}")
+        except (TypeError, ValueError):
+            deck = {}
+
+        return {"player": player, "deck": deck}
+
+    def delete_deck(self, slug: str, seed: int) -> bool:
+        bracket = self._repo.get_bracket(slug=slug)
+        if not bracket:
+            raise BracketError("Bracket not found")
+        return self._repo.delete_deck(bracket["bracket_id"], int(seed))
 
     # -- Internals ------------------------------------------------
 

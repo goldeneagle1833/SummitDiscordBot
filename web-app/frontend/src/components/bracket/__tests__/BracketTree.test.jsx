@@ -50,7 +50,8 @@ describe('BracketTree', () => {
         rounds={rounds([match({ state: 'complete', winner_seed: 1, winner_user_id: 'u1' })])}
       />,
     )
-    expect(screen.getByText('Eight').closest('div').className).toContain('line-through')
+    // The loser's name is struck through; the winner's row is highlighted.
+    expect(screen.getByText('Eight').className).toContain('line-through')
     expect(screen.getByText('One').closest('div').className).toContain('font-semibold')
   })
 
@@ -166,6 +167,36 @@ describe('BracketTree', () => {
     renderWithRouter(<BracketTree rounds={rounds([match()])} />)
     // Names stay profile links when the tree is not being arranged.
     expect(screen.getByText('One').closest('a')).toHaveAttribute('href', '/player/u1')
+  })
+
+  it('shows each player profile picture', () => {
+    const { container } = renderWithRouter(
+      <BracketTree
+        rounds={rounds([match()])}
+        avatars={{ u1: 'https://cdn.example/u1.png' }}
+      />,
+    )
+    const images = [...container.querySelectorAll('img')]
+    expect(images).toHaveLength(1)
+    expect(images[0]).toHaveAttribute('src', 'https://cdn.example/u1.png')
+  })
+
+  it('counts how far a round has got', () => {
+    renderWithRouter(
+      <BracketTree
+        rounds={[
+          {
+            round: 1,
+            title: 'Semifinals',
+            matches: [
+              match({ state: 'complete', winner_seed: 1 }),
+              match({ match_no: 2 }),
+            ],
+          },
+        ]}
+      />,
+    )
+    expect(screen.getByText('1/2 done')).toBeInTheDocument()
   })
 
   it('lays rounds out left to right', () => {

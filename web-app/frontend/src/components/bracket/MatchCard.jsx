@@ -4,6 +4,7 @@ function Side({
   seed,
   name,
   userId,
+  avatar,
   isWinner,
   isLoser,
   reported,
@@ -14,34 +15,62 @@ function Side({
   if (!name) {
     return (
       <div
-        className="flex items-center gap-2 px-3 py-1.5 text-sm text-text-muted italic"
+        className="flex items-center gap-2 px-2.5 py-2 text-sm text-text-muted italic"
         {...(dragHandlers?.dropOnly || {})}
       >
-        <span className="w-6 shrink-0 text-xs">—</span>
-        <span>Waiting</span>
+        <span className="w-5 h-5 shrink-0 rounded-full border border-dashed border-border" />
+        <span className="text-xs">Waiting</span>
       </div>
     )
   }
 
   return (
     <div
-      className={`flex items-center gap-2 px-3 py-1.5 text-sm ${
-        isWinner ? 'font-semibold text-text-primary' : ''
-      } ${isLoser ? 'text-text-muted line-through decoration-1' : ''} ${
+      className={`flex items-center gap-2 px-2.5 py-2 text-sm transition-colors ${
+        isWinner ? 'bg-accent-green/5 font-semibold text-text-primary' : ''
+      } ${isLoser ? 'text-text-muted' : ''} ${
         dragHandlers ? 'cursor-grab active:cursor-grabbing hover:bg-bg-elevated' : ''
       }`}
       {...(dragHandlers?.props || {})}
     >
-      <span className="w-6 shrink-0 text-xs text-text-muted">{seed}</span>
+      {avatar ? (
+        <img
+          src={avatar}
+          alt=""
+          loading="lazy"
+          className={`w-5 h-5 shrink-0 rounded-full object-cover ${isLoser ? 'grayscale opacity-60' : ''}`}
+          onError={(e) => {
+            e.target.style.visibility = 'hidden'
+          }}
+        />
+      ) : (
+        <span className="w-5 h-5 shrink-0 rounded-full bg-bg-elevated" />
+      )}
+
+      <span
+        className={`w-5 shrink-0 text-[10px] text-center rounded bg-bg-raised text-text-muted ${
+          isWinner ? 'text-text-primary' : ''
+        }`}
+      >
+        {seed}
+      </span>
+
       {userId && linkTo ? (
-        <Link to={`/player/${userId}`} className="truncate hover:text-primary transition-colors">
+        <Link
+          to={`/player/${userId}`}
+          className={`truncate hover:text-primary transition-colors ${isLoser ? 'line-through decoration-1' : ''}`}
+        >
           {name}
         </Link>
       ) : (
-        <span className="truncate">{name}</span>
+        <span className={`truncate ${isLoser ? 'line-through decoration-1' : ''}`}>{name}</span>
       )}
+
       {fromBye && (
-        <span className="text-[10px] uppercase tracking-wide text-text-muted" title="Advanced on a first-round bye">
+        <span
+          className="text-[10px] uppercase tracking-wide text-text-muted"
+          title="Advanced on a first-round bye"
+        >
           bye
         </span>
       )}
@@ -58,9 +87,18 @@ function Side({
  * With `onSwap` the two names become draggable: dropping one on another swaps
  * their seeds, which is how the admin arranges a draft before publishing.
  */
-export default function MatchCard({ match, onReport, onConfirm, onAdminAction, isAdmin, onSwap }) {
+export default function MatchCard({
+  match,
+  onReport,
+  onConfirm,
+  onAdminAction,
+  isAdmin,
+  onSwap,
+  avatars = {},
+}) {
   const complete = match.state === 'complete' || match.state === 'bye'
   const reportedWinner = match.state === 'reported' ? match.reported_winner_id : null
+  const needsViewer = match.viewer_can_report || match.viewer_can_confirm
 
   const p1Wins = complete && String(match.winner_seed) === String(match.p1_seed)
   const p2Wins = complete && String(match.winner_seed) === String(match.p2_seed)
@@ -90,16 +128,19 @@ export default function MatchCard({ match, onReport, onConfirm, onAdminAction, i
 
   return (
     <div
-      className={`bg-bg-surface border rounded-soft overflow-hidden w-56 ${
-        match.viewer_can_report || match.viewer_can_confirm
-          ? 'border-secondary'
-          : 'border-border'
+      className={`bg-bg-surface border rounded-soft overflow-hidden w-60 transition-shadow ${
+        needsViewer
+          ? 'border-secondary shadow-[0_0_0_1px_rgba(212,175,55,0.35)]'
+          : match.playable && !complete
+            ? 'border-border hover:border-text-muted'
+            : 'border-border'
       }`}
     >
       <Side
         seed={match.p1_seed}
         name={match.p1_name}
         userId={match.p1_user_id}
+        avatar={avatars[String(match.p1_user_id)]}
         isWinner={p1Wins}
         isLoser={complete && !p1Wins && !!match.p2_name}
         reported={reportedWinner && String(reportedWinner) === String(match.p1_user_id)}
@@ -112,6 +153,7 @@ export default function MatchCard({ match, onReport, onConfirm, onAdminAction, i
         seed={match.p2_seed}
         name={match.p2_name}
         userId={match.p2_user_id}
+        avatar={avatars[String(match.p2_user_id)]}
         isWinner={p2Wins}
         isLoser={complete && !p2Wins && !!match.p1_name}
         reported={reportedWinner && String(reportedWinner) === String(match.p2_user_id)}

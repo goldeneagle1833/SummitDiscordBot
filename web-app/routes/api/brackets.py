@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify, request, session
 from repositories.brackets import BracketRepository
 from services.brackets import BracketError, BracketService
 from services.ticket_holders import TicketHolderError, is_configured, sync_roster
-from utils.auth import require_admin, require_auth
+from utils.auth import is_admin, require_admin, require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +101,38 @@ def confirm_match(slug, match_no):
 
     try:
         result = service.confirm_result(slug, match_no, _current_user_id(), bool(agree))
+    except BracketError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    return jsonify({"success": True, **result}), 200
+
+
+@brackets_bp.route("/brackets/<slug>/decks", methods=["GET"])
+def get_bracket_decks(slug):
+    """Who has submitted a deck, and the ones the viewer is allowed to see."""
+    roster = service.get_deck_roster(slug, viewer_id=_current_user_id(), is_admin=is_admin())
+    if roster is None:
+        return jsonify({"success": False, "error": "Bracket not found"}), 404
+    return jsonify({"success": True, **roster}), 200
+
+
+@brackets_bp.route("/brackets/<slug>/decks/<int:seed>", methods=["GET"])
+def get_bracket_deck(slug, seed):
+    try:
+        result = service.get_deck(
+            slug, seed, viewer_id=_current_user_id(), is_admin=is_admin()
+        )
+    except BracketError as e:
+        return jsonify({"success": False, "error": str(e)}), 403
+    return jsonify({"success": True, **result}), 200
+
+
+@brackets_bp.route("/brackets/<slug>/deck", methods=["POST"])
+@require_auth
+def submit_bracket_deck(slug):
+    """A player attaches their own decklist."""
+    data = request.get_json() or {}
+    try:
+        result = service.submit_deck(slug, data.get("deck_url"), _current_user_id())
     except BracketError as e:
         return jsonify({"success": False, "error": str(e)}), 400
     return jsonify({"success": True, **result}), 200
@@ -287,6 +319,38 @@ def admin_reset_match(slug, match_no):
     except BracketError as e:
         return jsonify({"success": False, "error": str(e)}), 400
     return jsonify({"success": True, **result}), 200
+
+
+@brackets_bp.route("/admin/brackets/<slug>/decks", methods=["POST"])
+@require_admin
+def admin_submit_deck(slug):
+    """Add a decklist on a player's behalf."""
+    data = request.get_json() or {}
+    seed = data.get("seed")
+    if seed is None:
+        return jsonify({"success": False, "error": "seed is required"}), 400
+
+    try:
+        result = service.submit_deck(
+            slug, data.get("deck_url"), _current_user_id(), seed=int(seed), is_admin=True
+        )
+    except BracketError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "Invalid seed"}), 400
+    return jsonify({"success": True, **result}), 200
+
+
+@brackets_bp.route("/admin/brackets/<slug>/decks/<int:seed>", methods=["DELETE"])
+@require_admin
+def admin_delete_deck(slug, seed):
+    try:
+        removed = service.delete_deck(slug, seed)
+    except BracketError as e:
+        return jsonify({"success": False, "error": str(e)}), 404
+    if not removed:
+        return jsonify({"success": False, "error": "No deck to remove"}), 404
+    return jsonify({"success": True}), 200
 
 
 @brackets_bp.route("/admin/brackets/<slug>", methods=["DELETE"])

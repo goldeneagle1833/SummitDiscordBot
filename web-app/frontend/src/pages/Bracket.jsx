@@ -2,15 +2,18 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   getBracket,
+  getBracketDecks,
   reportBracketMatch,
   confirmBracketMatch,
   adminSetMatchResult,
   adminResetMatch,
 } from '@/api/brackets'
 import BracketTree from '@/components/bracket/BracketTree'
+import DeckPanel from '@/components/bracket/DeckPanel'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useAuth } from '@/context/AuthContext'
+import { avatarMap, avatarUrl } from '@/utils/avatar'
 
 function ReportModal({ match, slug, onClose, onDone }) {
   const [busy, setBusy] = useState(false)
@@ -72,20 +75,27 @@ export default function Bracket() {
   const { user } = useAuth()
   const isAdmin = Boolean(user?.is_admin)
   const [data, setData] = useState(null)
+  const [decks, setDecks] = useState(null)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
   const [reporting, setReporting] = useState(null)
 
   usePageTitle(data?.bracket?.name || 'Bracket')
 
+  const loadDecks = useCallback(
+    () => getBracketDecks(slug).then(setDecks).catch(() => setDecks(null)),
+    [slug],
+  )
+
   const load = useCallback(() => {
     getBracket(slug)
       .then((res) => {
         setData(res)
         setError(null)
+        return loadDecks()
       })
       .catch((e) => setError(e.status === 404 ? 'Bracket not found.' : 'Could not load this bracket.'))
-  }, [slug])
+  }, [slug, loadDecks])
 
   useEffect(() => {
     load()
@@ -131,6 +141,16 @@ export default function Bracket() {
     .flatMap((r) => r.matches)
     .filter((m) => m.viewer_can_report || m.viewer_can_confirm)
 
+  const avatars = avatarMap(entrants, 64)
+  const championEntrant = champion
+    ? entrants.find((e) => String(e.user_id || '') === String(champion.user_id || ''))
+    : null
+  const allMatches = rounds.flatMap((r) => r.matches)
+  const played = allMatches.filter((m) => m.state === 'complete').length
+  const liveRound = rounds.find((r) =>
+    r.matches.some((m) => m.playable && m.state !== 'complete'),
+  )
+
   return (
     <div className="max-w-full px-4 py-6 space-y-5">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
@@ -139,7 +159,12 @@ export default function Bracket() {
           <p className="text-sm text-text-muted">
             {entrants.length} players
             {bracket.elo_event_name ? ` · seeded from ${bracket.elo_event_name}` : ''}
-            {bracket.status === 'complete' ? ' · finished' : ''}
+            {bracket.status === 'complete'
+              ? ' · finished'
+              : liveRound
+                ? ` · ${liveRound.title} in progress`
+                : ''}
+            {` · ${played}/${allMatches.length} matches played`}
           </p>
         </div>
         <Link to="/brackets" className="text-sm text-secondary hover:underline">
@@ -148,12 +173,29 @@ export default function Bracket() {
       </div>
 
       {champion && (
-        <div className="bg-bg-surface border border-amber-400/40 rounded-lg px-5 py-3">
-          <p className="text-xs uppercase tracking-wider text-text-muted">Winner</p>
-          <p className="text-lg font-semibold text-amber-400">
-            {champion.display_name}
-            <span className="text-text-muted text-sm font-normal"> (seed {champion.seed})</span>
-          </p>
+        <div className="bg-gradient-to-r from-amber-400/10 to-transparent border border-amber-400/40 rounded-lg px-5 py-4 flex items-center gap-4">
+          {avatarUrl(championEntrant, 128) ? (
+            <img
+              src={avatarUrl(championEntrant, 128)}
+              alt=""
+              className="w-14 h-14 rounded-full object-cover ring-2 ring-amber-400/60"
+            />
+          ) : (
+            <span className="w-14 h-14 rounded-full bg-bg-elevated ring-2 ring-amber-400/60" />
+          )}
+          <div>
+            <p className="text-xs uppercase tracking-wider text-text-muted">Winner</p>
+            <p className="text-xl font-semibold text-amber-400">
+              {champion.user_id ? (
+                <Link to={`/player/${champion.user_id}`} className="hover:underline">
+                  {champion.display_name}
+                </Link>
+              ) : (
+                champion.display_name
+              )}
+            </p>
+            <p className="text-sm text-text-muted">Seed {champion.seed}</p>
+          </div>
         </div>
       )}
 
@@ -179,7 +221,10 @@ export default function Bracket() {
         onConfirm={handleConfirm}
         onAdminAction={isAdmin ? handleAdminAction : null}
         isAdmin={isAdmin}
+        avatars={avatars}
       />
+
+      <DeckPanel slug={slug} roster={decks} isAdmin={isAdmin} onChanged={loadDecks} />
 
       {reporting && (
         <ReportModal

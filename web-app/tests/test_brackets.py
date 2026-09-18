@@ -1,5 +1,6 @@
 """Tests for bracket seeding, publishing, and player-reported results."""
 
+import json
 import time
 
 import pytest
@@ -47,9 +48,37 @@ class FakeLeaderboard:
         return self._players
 
 
+class FakeCuriosa:
+    """Returns a deck without calling out to Curiosa."""
+
+    def __init__(self, deck=None):
+        self.deck = (
+            deck
+            if deck is not None
+            else {
+                "id": "abc123",
+                "name": "Dead Cant Swim",
+                "avatar": [{"name": "Necromancer", "identifier": "necromancer"}],
+                "spellbook": [{"name": "Daperyll Vampire", "quantity": 3}],
+            }
+        )
+        self.calls = []
+
+    def fetch_deck_data(self, url):
+        self.calls.append(url)
+        return json.dumps(self.deck)
+
+
 @pytest.fixture()
-def service(repo):
-    return BracketService(repo=repo, leaderboard_service=FakeLeaderboard())
+def curiosa():
+    return FakeCuriosa()
+
+
+@pytest.fixture()
+def service(repo, curiosa):
+    return BracketService(
+        repo=repo, leaderboard_service=FakeLeaderboard(), curiosa_service=curiosa
+    )
 
 
 def published(service, repo, count=8, name="Test Cup"):
@@ -515,6 +544,167 @@ class TestAdminOverrides:
         assert cleared["winner_user_id"] is None
         assert cleared[f"p{first['next_slot']}_user_id"] is None
         assert repo.get_bracket(bracket_id=bracket_id)["status"] == "published"
+
+
+class TestDecklists:
+    def _publish(self, service, repo, count=4):
+        return published(service, repo, count, name="Deck Cup")
+
+    def test_a_player_submits_their_own_deck(self, service, repo, curiosa):
+        slug, bracket_id = self._publish(service, repo)
+
+        result = service.submit_deck(slug, "https://curiosa.io/decks/abc123", actor_id="u2")
+
+        assert result["seed"] == 2
+        assert result["avatar_name"] == "Necromancer"
+        assert curiosa.calls == ["https://curiosa.io/decks/abc123"]
+        assert repo.get_deck(bracket_id, 2)["deck_name"] == "Dead Cant Swim"
+
+    def test_resubmitting_replaces_the_deck(self, service, repo):
+        slug, bracket_id = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/one", actor_id="u2")
+        service.submit_deck(slug, "https://curiosa.io/decks/two", actor_id="u2")
+
+        assert len(repo.get_decks(bracket_id)) == 1
+        assert repo.get_deck(bracket_id, 2)["deck_url"].endswith("two")
+
+    def test_someone_outside_the_bracket_cannot_submit(self, service, repo):
+        slug, _ = self._publish(service, repo)
+        with pytest.raises(BracketError, match="not in this bracket"):
+            service.submit_deck(slug, "https://curiosa.io/decks/x", actor_id="stranger")
+
+    def test_a_draft_takes_no_decks(self, service):
+        service.create_bracket(name="Draft Cup", size=4, source="overall")
+        with pytest.raises(BracketError, match="once the bracket is published"):
+            service.submit_deck("draft-cup", "https://curiosa.io/decks/x", actor_id="u1")
+
+    def test_an_unreadable_link_is_rejected(self, repo):
+        service = BracketService(
+            repo=repo,
+            leaderboard_service=FakeLeaderboard(),
+            curiosa_service=FakeCuriosa(deck={}),
+        )
+        slug, _ = published(service, repo, 4, name="Deck Cup")
+        with pytest.raises(BracketError, match="Could not read that deck"):
+            service.submit_deck(slug, "https://example.com/not-a-deck", actor_id="u1")
+
+    def test_an_empty_link_is_rejected(self, service, repo):
+        slug, _ = self._publish(service, repo)
+        with pytest.raises(BracketError, match="deck link is required"):
+            service.submit_deck(slug, "   ", actor_id="u1")
+
+    def test_a_live_players_deck_is_hidden_from_everyone_else(self, service, repo):
+        slug, _ = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        roster = service.get_deck_roster(slug, viewer_id="u3")
+        seed_one = next(p for p in roster["players"] if p["seed"] == 1)
+        assert seed_one["has_deck"] is True
+        assert seed_one["deck_visible"] is False
+        assert seed_one["deck_url"] is None
+
+        with pytest.raises(BracketError, match="stays hidden"):
+            service.get_deck(slug, 1, viewer_id="u3")
+
+    def test_a_player_can_always_see_their_own(self, service, repo):
+        slug, _ = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        own = service.get_deck(slug, 1, viewer_id="u1")
+        assert own["deck"]["name"] == "Dead Cant Swim"
+
+    def test_an_admin_can_always_see(self, service, repo):
+        slug, _ = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+        assert service.get_deck(slug, 1, viewer_id="someone", is_admin=True)["deck"]["name"]
+
+    def test_the_deck_opens_up_once_the_player_is_knocked_out(self, service, repo):
+        slug, bracket_id = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u4")
+
+        first = repo.get_matches(bracket_id)[0]  # seed 1 v seed 4
+        service.set_result(slug, first["match_no"], "u1", admin_id="a")
+
+        roster = service.get_deck_roster(slug, viewer_id="u3")
+        loser = next(p for p in roster["players"] if p["seed"] == 4)
+        assert loser["eliminated"] is True
+        assert loser["deck_visible"] is True
+        assert service.get_deck(slug, 4, viewer_id="u3")["deck"]["name"] == "Dead Cant Swim"
+
+    def test_the_winners_deck_opens_up_when_the_bracket_ends(self, service, repo):
+        slug, bracket_id = self._publish(service, repo, count=2)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        assert service.get_deck_roster(slug, viewer_id="u9")["players"][0]["deck_visible"] is False
+
+        final = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, final["match_no"], "u1", admin_id="a")
+
+        champ = service.get_deck_roster(slug, viewer_id="u9")["players"][0]
+        assert champ["deck_visible"] is True
+
+    def test_roster_counts_who_still_owes_a_deck(self, service, repo):
+        slug, _ = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        roster = service.get_deck_roster(slug, is_admin=True)
+        assert (roster["submitted"], roster["missing"]) == (1, 3)
+        assert [p["seed"] for p in roster["players"] if not p["has_deck"]] == [2, 3, 4]
+
+    def test_only_the_owner_is_offered_the_submit_form(self, service, repo):
+        slug, _ = self._publish(service, repo)
+        roster = service.get_deck_roster(slug, viewer_id="u2")
+        assert [p["seed"] for p in roster["players"] if p["can_submit"]] == [2]
+
+    def test_an_admin_submits_for_a_player(self, service, repo):
+        slug, bracket_id = self._publish(service, repo)
+
+        result = service.submit_deck(
+            slug, "https://curiosa.io/decks/abc", actor_id="admin_1", seed=3, is_admin=True
+        )
+
+        assert result["display_name"] == "P3"
+        stored = repo.get_deck(bracket_id, 3)
+        assert stored["submitted_by"] == "admin_1"
+        assert stored["user_id"] == "u3"
+
+    def test_an_admin_can_add_a_deck_for_a_guest_entrant(self, service, repo):
+        created = service.create_bracket(name="Guest Cup", size=2, source="overall")
+        service.set_entrants(created["bracket_id"], [
+            {"display_name": "Guest A"},
+            {"display_name": "Guest B"},
+        ])
+        service.publish(created["bracket_id"])
+
+        result = service.submit_deck(
+            "guest-cup", "https://curiosa.io/decks/abc", actor_id="admin_1", seed=1, is_admin=True
+        )
+        assert result["display_name"] == "Guest A"
+
+    def test_admin_removes_a_deck(self, service, repo):
+        slug, bracket_id = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        assert service.delete_deck(slug, 1) is True
+        assert repo.get_deck(bracket_id, 1) is None
+        assert service.delete_deck(slug, 1) is False
+
+    def test_deleting_a_bracket_takes_its_decks(self, service, repo):
+        slug, bracket_id = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        service.delete_bracket(bracket_id)
+        assert repo.get_decks(bracket_id) == []
+
+    def test_a_missing_deck_reads_clearly(self, service, repo):
+        slug, _ = self._publish(service, repo)
+        with pytest.raises(BracketError, match="No deck submitted"):
+            service.get_deck(slug, 1, viewer_id="u1")
+
+    def test_drafts_hide_the_roster_from_the_public(self, service):
+        service.create_bracket(name="Draft Cup", size=4, source="overall")
+        assert service.get_deck_roster("draft-cup") is None
+        assert service.get_deck_roster("draft-cup", is_admin=True) is not None
 
 
 # -- API ----------------------------------------------------------

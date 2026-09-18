@@ -103,6 +103,28 @@ def create_bracket_tables(db_path=None):
         ON bracket_matches(p1_user_id, p2_user_id)
     """)
 
+    # Decklists submitted for a bracket. Hidden until the player is knocked
+    # out (or the bracket finishes), so nobody can scout a live opponent.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bracket_decks (
+            bracket_id INTEGER NOT NULL,
+            seed INTEGER NOT NULL,
+            user_id TEXT,
+            deck_url TEXT,
+            deck_name TEXT,
+            avatar_name TEXT,
+            deck_json TEXT,
+            submitted_by TEXT,
+            submitted_at TEXT NOT NULL,
+            PRIMARY KEY (bracket_id, seed)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_bracket_decks_user
+        ON bracket_decks(bracket_id, user_id)
+    """)
+
     # Cached ticket-holder roster, synced from Discord so the seed pool can be
     # filtered the same way the bot's leaderboard message filters it.
     cursor.execute("""

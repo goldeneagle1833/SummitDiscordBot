@@ -12,14 +12,23 @@ import os
 import random
 import re
 import sqlite3
+import threading
 import time
+from array import array
 from datetime import date
+from typing import NamedTuple
 
 from flask import Blueprint, jsonify, request, session
 
-from repositories.deck_rec_repo import DeckRecRepository, _get_card_details
+from repositories.deck_rec_repo import DeckRecRepository, DeckRecord, MatchOutcomeIndex, _get_card_details
 from services.curiosa import CuriosaService
-from services.deck_similarity import SIMILARITY_THRESHOLD, aggregate_archetype, average_similarity, build_clusters, jaccard
+from services.deck_similarity import (
+    aggregate_archetype,
+    build_card_index,
+    build_clusters,
+    jaccard,
+    similar_members,
+)
 from services.sorcery_online_table import (
     TableUnavailable,
     claim_slot,
@@ -129,75 +138,184 @@ def _enrich_card(card_dict: dict) -> dict:
     return card_dict
 
 
-_cluster_cache = None
-_cluster_cache_time = 0
-_CLUSTER_CACHE_TTL = 300  # 5 minutes
+# ---------------------------------------------------------------------------
+# Deck corpus caches
+# ---------------------------------------------------------------------------
+#
+# Two separate caches, because the two things pages ask for cost wildly
+# different amounts:
+#
+#   seeds  — tournament + admin decks only, read from JSON files and a small
+#            table. Under a second. Enough to render a deck page.
+#   corpus — the above plus every community deck in the match archive, and the
+#            clustering that ranks the listing. Tens of thousands of decks.
+#
+# Endpoints that only need to look a deck up by id take the cheap one. The
+# expensive one is refreshed on a background thread while the previous snapshot
+# keeps being served, so no visitor waits behind a rebuild.
+
+_SEED_CACHE_TTL = 300      # 5 minutes
+_CORPUS_CACHE_TTL = 900    # 15 minutes
+
+_seed_cache: tuple[DeckRecRepository, list[DeckRecord]] | None = None
+_seed_cache_time = 0.0
+_seed_lock = threading.Lock()
 
 
-def _load_and_cluster():
-    """Load all decks and build clusters. Returns (repo, seeds, community, clusters).
+class DeckCorpus(NamedTuple):
+    """One immutable snapshot of every deck plus the indexes built over it."""
 
-    Results are cached for 5 minutes to avoid reloading 17k+ decks on every request.
+    repo: DeckRecRepository
+    seeds: list[DeckRecord]
+    community: list[DeckRecord]
+    clusters: dict[str, list[DeckRecord]]
+    community_index: dict[str, array]
+    community_lengths: array
+    outcomes: MatchOutcomeIndex
+
+
+_corpus_cache: DeckCorpus | None = None
+_corpus_cache_time = 0.0
+_corpus_lock = threading.Lock()
+_corpus_refreshing = False
+
+
+def _load_seeds() -> tuple[DeckRecRepository, list[DeckRecord]]:
+    """Return (repo, seed decks) — tournament and admin decks only.
+
+    Skips the match archive and the clustering entirely, so endpoints that just
+    need to find one deck by id do not pay for the whole corpus.
     """
-    global _cluster_cache, _cluster_cache_time
-    now = time.monotonic()
-    if _cluster_cache is not None and (now - _cluster_cache_time) < _CLUSTER_CACHE_TTL:
-        return _cluster_cache
+    global _seed_cache, _seed_cache_time
+    cached = _seed_cache
+    if cached is not None and (time.monotonic() - _seed_cache_time) < _SEED_CACHE_TTL:
+        return cached
 
+    with _seed_lock:
+        # Another thread may have rebuilt it while we waited for the lock.
+        cached = _seed_cache
+        if cached is not None and (time.monotonic() - _seed_cache_time) < _SEED_CACHE_TTL:
+            return cached
+        repo = DeckRecRepository()
+        result = (repo, repo.load_seed_decks())
+        _seed_cache = result
+        _seed_cache_time = time.monotonic()
+        return result
+
+
+def _build_corpus() -> DeckCorpus:
+    """Load every deck and build the clustering and lookup indexes."""
+    started = time.monotonic()
     repo = DeckRecRepository()
-    all_decks = repo.load_all_decks()
+    all_decks, outcomes = repo.load_corpus()
     seeds = [d for d in all_decks if d.is_seed]
     community = [d for d in all_decks if not d.is_seed]
     clusters = build_clusters(seeds, community)
-    result = (repo, seeds, community, clusters)
-    _cluster_cache = result
-    _cluster_cache_time = now
-    return result
+    community_index, community_lengths = build_card_index(community)
+    logger.info(
+        "Built deck corpus: %d seeds, %d community decks in %.1fs",
+        len(seeds),
+        len(community),
+        time.monotonic() - started,
+    )
+    return DeckCorpus(repo, seeds, community, clusters, community_index, community_lengths, outcomes)
+
+
+def _refresh_corpus_async() -> None:
+    """Rebuild the corpus on a background thread, if one is not already running."""
+    global _corpus_refreshing
+    with _corpus_lock:
+        if _corpus_refreshing:
+            return
+        _corpus_refreshing = True
+
+    def run() -> None:
+        global _corpus_cache, _corpus_cache_time, _corpus_refreshing
+        try:
+            _corpus_cache = _build_corpus()
+        except Exception:
+            logger.exception("Background deck corpus refresh failed; serving the previous snapshot")
+        finally:
+            # Either way, wait a full TTL before trying again rather than
+            # rebuilding on every request while the data source is unhappy.
+            _corpus_cache_time = time.monotonic()
+            _corpus_refreshing = False
+
+    threading.Thread(target=run, name="deck-rec-corpus-refresh", daemon=True).start()
+
+
+def _load_and_cluster() -> DeckCorpus:
+    """Return the current deck corpus snapshot.
+
+    A stale snapshot is returned immediately and refreshed in the background.
+    Only the very first call (or one right after an invalidation) blocks, and
+    concurrent callers share that single build instead of each starting one.
+    """
+    global _corpus_cache, _corpus_cache_time
+
+    snapshot = _corpus_cache
+    if snapshot is not None:
+        if (time.monotonic() - _corpus_cache_time) >= _CORPUS_CACHE_TTL:
+            _refresh_corpus_async()
+        return snapshot
+
+    with _corpus_lock:
+        if _corpus_cache is not None:
+            return _corpus_cache
+        _corpus_cache = _build_corpus()
+        _corpus_cache_time = time.monotonic()
+        return _corpus_cache
+
+
+def warm_deck_caches() -> None:
+    """Build the corpus ahead of the first request, on a background thread."""
+    threading.Thread(target=_load_and_cluster, name="deck-rec-corpus-warmup", daemon=True).start()
 
 
 def _invalidate_cluster_cache():
-    """Clear the deck/cluster cache so the next request reloads fresh data."""
-    global _cluster_cache, _cluster_cache_time
-    _cluster_cache = None
-    _cluster_cache_time = 0
-    _invalidate_win_rate_cache()
+    """Clear the deck caches so the next request reloads fresh data."""
+    global _corpus_cache, _corpus_cache_time, _seed_cache, _seed_cache_time
+    _corpus_cache = None
+    _corpus_cache_time = 0.0
+    _seed_cache = None
+    _seed_cache_time = 0.0
 
 
 # ---------------------------------------------------------------------------
-# Cluster win rates — cached per seed
+# Live Curiosa lookups
 # ---------------------------------------------------------------------------
+#
+# Staff picks are re-fetched from Curiosa so edits show up without re-adding the
+# deck, but a single page view hits both /info and /recommendations. Without a
+# cache that is two uncached external calls — each rate-limited, each with a
+# 30 second ceiling — for identical data.
 
-_win_rate_cache: dict[str, dict] = {}
-_win_rate_cache_time = 0.0
-_WIN_RATE_CACHE_TTL = 300  # 5 minutes
+_LIVE_DECK_TTL = 300  # 5 minutes
+_live_deck_cache: dict[str, tuple[float, dict | None]] = {}
+_live_deck_lock = threading.Lock()
 
 
-def _get_cluster_win_rate(repo, seed) -> dict:
-    """Return cached win/loss counts for a seed's cluster.
-
-    Computing this walks every row of match_records and match_records_archive,
-    so without a cache every deck detail view re-scanned the whole match
-    history. The whole cache expires together on a TTL rather than per entry —
-    the underlying scan reads the same two tables for every seed.
-    """
-    global _win_rate_cache, _win_rate_cache_time
+def _fetch_live_deck(curiosa_url: str) -> dict | None:
+    """Return freshly fetched Curiosa deck data, cached briefly. None on failure."""
     now = time.monotonic()
-    if now - _win_rate_cache_time >= _WIN_RATE_CACHE_TTL:
-        _win_rate_cache = {}
-        _win_rate_cache_time = now
+    with _live_deck_lock:
+        entry = _live_deck_cache.get(curiosa_url)
+        if entry is not None and (now - entry[0]) < _LIVE_DECK_TTL:
+            return entry[1]
 
-    win_data = _win_rate_cache.get(seed.deck_id)
-    if win_data is None:
-        win_data = repo.compute_cluster_win_rate(seed)
-        _win_rate_cache[seed.deck_id] = win_data
-    return win_data
+    data = None
+    try:
+        fresh_json = CuriosaService().fetch_deck_data(curiosa_url)
+        if fresh_json and fresh_json not in ("{}", ""):
+            data = json.loads(fresh_json)
+    except Exception as e:
+        logger.warning("Could not fetch live Curiosa data for %s: %s", curiosa_url, e)
 
-
-def _invalidate_win_rate_cache():
-    """Drop cached win rates so the next request recomputes them."""
-    global _win_rate_cache, _win_rate_cache_time
-    _win_rate_cache = {}
-    _win_rate_cache_time = 0.0
+    with _live_deck_lock:
+        # Negative results are cached too, so an unreachable Curiosa costs one
+        # slow call per deck per TTL rather than one on every page view.
+        _live_deck_cache[curiosa_url] = (time.monotonic(), data)
+    return data
 
 
 def _get_newest_admin_deck(repo):
@@ -282,11 +400,11 @@ def staff_pick():
 def get_decks():
     """Return all top-8 archetype seed decks with cluster size preview."""
     try:
-        _repo, seeds, _community, clusters = _load_and_cluster()
+        corpus = _load_and_cluster()
+        seeds, clusters = corpus.seeds, corpus.clusters
 
         # Filter out hidden decks (admins can opt-in to see them)
-        repo = DeckRecRepository()
-        hidden_ids = repo.get_hidden_deck_ids()
+        hidden_ids = corpus.repo.get_hidden_deck_ids()
         show_hidden = request.args.get("show_hidden") == "1" and is_admin()
 
         deck_list = []
@@ -332,7 +450,7 @@ def get_deck_info(deck_id: str):
     (e.g. event decks linked from the top-8 page).
     """
     try:
-        _repo, seeds, _community, _clusters = _load_and_cluster()
+        _repo, seeds = _load_seeds()
         seed = next((d for d in seeds if d.deck_id == deck_id), None)
 
         # Fallback: fetch from Curiosa for non-seed decks (event page links)
@@ -343,21 +461,17 @@ def get_deck_info(deck_id: str):
         detail_source = seed.card_details
         sideboard_source = seed.sideboard_details
         if (seed.is_admin_rec or not detail_source) and seed.curiosa_url:
-            try:
-                fresh_json = CuriosaService().fetch_deck_data(seed.curiosa_url)
-                if fresh_json and fresh_json not in ("{}", ""):
-                    fresh_data = json.loads(fresh_json)
-                    live_details = _get_card_details(
-                        fresh_data.get("spellbook", []),
-                        fresh_data.get("atlas", []),
-                    )
-                    if live_details:
-                        detail_source = live_details
-                    live_sideboard = _get_card_details(fresh_data.get("sideboard", []))
-                    if live_sideboard:
-                        sideboard_source = live_sideboard
-            except Exception as e:
-                logger.warning("Could not fetch live Curiosa data for %s: %s", seed.deck_id, e)
+            fresh_data = _fetch_live_deck(seed.curiosa_url)
+            if fresh_data:
+                live_details = _get_card_details(
+                    fresh_data.get("spellbook", []),
+                    fresh_data.get("atlas", []),
+                )
+                if live_details:
+                    detail_source = live_details
+                live_sideboard = _get_card_details(fresh_data.get("sideboard", []))
+                if live_sideboard:
+                    sideboard_source = live_sideboard
 
         seed_cards = [{"name": c["name"], "qty": c["qty"]} for c in detail_source]
         seed_spellbook = [
@@ -405,11 +519,10 @@ def _fetch_curiosa_deck_info(deck_id: str):
     """Fetch deck info directly from Curiosa API for non-seed decks."""
     curiosa_url = f"https://sorcerytcg.com/decks/{deck_id}"
     try:
-        fresh_json = CuriosaService().fetch_deck_data(curiosa_url)
-        if not fresh_json or fresh_json in ("{}", ""):
+        fresh_data = _fetch_live_deck(curiosa_url)
+        if not fresh_data:
             return jsonify({"error": f"Deck '{deck_id}' not found on Curiosa"}), 404
 
-        fresh_data = json.loads(fresh_json)
         deck_name = fresh_data.get("name", "Unnamed Deck")
         username = fresh_data.get("username", "Unknown")
         avatar_list = fresh_data.get("avatar", [])
@@ -467,7 +580,8 @@ def _fetch_curiosa_deck_info(deck_id: str):
 def get_recommendations(deck_id: str):
     """Return aggregated archetype recommendation for a top-8 seed deck."""
     try:
-        repo, seeds, community, _clusters = _load_and_cluster()
+        corpus = _load_and_cluster()
+        seeds = corpus.seeds
 
         # Find the seed
         seed = next((s for s in seeds if s.deck_id == deck_id), None)
@@ -478,10 +592,17 @@ def get_recommendations(deck_id: str):
         # Use inclusive matching so admin picks and tournament seeds are treated
         # identically — show all community decks above the threshold, not just
         # those whose single best-match seed happens to be this one.
-        members = [d for d in community if jaccard(seed.card_names, d.card_names) >= SIMILARITY_THRESHOLD]
+        scored_members = similar_members(
+            seed, corpus.community, corpus.community_index, corpus.community_lengths
+        )
+        members = [deck for deck, _score in scored_members]
         tiers = aggregate_archetype(members)
-        avg_sim = average_similarity(seed, members)
-        win_data = _get_cluster_win_rate(repo, seed)
+        avg_sim = (
+            round(sum(score for _deck, score in scored_members) / len(scored_members), 4)
+            if scored_members
+            else 0.0
+        )
+        win_data = corpus.repo.compute_cluster_win_rate(seed, corpus.outcomes)
 
         # Find similar tournament seed decks (>= 60% Jaccard similarity)
         SIMILAR_SEED_THRESHOLD = 0.6
@@ -504,18 +625,14 @@ def get_recommendations(deck_id: str):
         # For admin/staff decks (or any seed missing card details), fetch live from Curiosa
         detail_source = seed.card_details
         if (seed.is_admin_rec or not detail_source) and seed.curiosa_url:
-            try:
-                fresh_json = CuriosaService().fetch_deck_data(seed.curiosa_url)
-                if fresh_json and fresh_json not in ("{}", ""):
-                    fresh_data = json.loads(fresh_json)
-                    live_details = _get_card_details(
-                        fresh_data.get("spellbook", []),
-                        fresh_data.get("atlas", []),
-                    )
-                    if live_details:
-                        detail_source = live_details
-            except Exception as e:
-                logger.warning("Could not fetch live Curiosa data for %s: %s", seed.deck_id, e)
+            fresh_data = _fetch_live_deck(seed.curiosa_url)
+            if fresh_data:
+                live_details = _get_card_details(
+                    fresh_data.get("spellbook", []),
+                    fresh_data.get("atlas", []),
+                )
+                if live_details:
+                    detail_source = live_details
 
         # seed_cards: flat list for TCGPlayer buy link (spellbook + atlas)
         seed_cards = [
@@ -595,11 +712,11 @@ def _resolve_deck_url(deck_id: str) -> tuple[str | None, str]:
     seeds, so they get the canonical Curiosa URL for their id — the same
     fallback `get_deck_info` uses.
     """
-    _repo, seeds, _community, _clusters = _load_and_cluster()
+    repo, seeds = _load_seeds()
     seed = next((d for d in seeds if d.deck_id == deck_id), None)
 
     if seed is not None:
-        if seed.deck_id in DeckRecRepository().get_hidden_deck_ids() and not is_admin():
+        if seed.deck_id in repo.get_hidden_deck_ids() and not is_admin():
             return None, ""
         return seed.curiosa_url or f"https://sorcerytcg.com/decks/{deck_id}", seed.deck_name or ""
     return f"https://sorcerytcg.com/decks/{deck_id}", ""

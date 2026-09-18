@@ -53,6 +53,22 @@ def worker_abort(worker):
     worker.log.critical("\n".join(lines))
 
 
+def post_worker_init(worker):
+    """Warm caches that are far too expensive to build on a request.
+
+    Clustering the match archive against every tournament seed takes seconds.
+    Building it here means the first visitor to the deck rec pages gets a warm
+    snapshot rather than waiting for the build; it runs on a background thread
+    so the worker starts serving immediately.
+    """
+    try:
+        from routes.api.deck_recommendations import warm_deck_caches
+
+        warm_deck_caches()
+    except Exception as e:
+        worker.log.warning("Could not warm deck rec caches: %s", e)
+
+
 def worker_exit(server, worker):
     """Persist in-memory request metrics before the worker process goes away."""
     try:

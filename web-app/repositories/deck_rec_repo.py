@@ -9,6 +9,7 @@ import logging
 import re
 import sqlite3
 import sys
+from array import array
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -127,6 +128,36 @@ class DeckRecord:
     stars: int | None = None  # 1–3 star rating
 
 
+@dataclass
+class MatchOutcomeIndex:
+    """Every match row side in the archive, indexed for similarity lookups.
+
+    Win rates are counted per row side, so the same deck played in twenty
+    matches contributes twenty results — unlike the deck corpus, which
+    deduplicates by deck_id.
+
+    The card sets are stored transposed (card name -> row positions) rather than
+    as one frozenset per row, and the positions live in int arrays rather than
+    Python lists: at 34k row sides that is ~7 MB instead of ~15 MB, against a
+    corpus that is ~65 MB in total. The keys are the interned card names the
+    corpus already holds, so they cost nothing extra.
+    """
+
+    index: dict[str, array] = field(default_factory=dict)
+    lengths: array = field(default_factory=lambda: array("i"))
+    is_win: bytearray = field(default_factory=bytearray)
+
+    def add(self, card_names: frozenset, is_win: bool) -> None:
+        position = len(self.lengths)
+        self.lengths.append(len(card_names))
+        self.is_win.append(1 if is_win else 0)
+        for name in card_names:
+            postings = self.index.get(name)
+            if postings is None:
+                postings = self.index[name] = array("i")
+            postings.append(position)
+
+
 class DeckRecRepository:
     """Loads and merges deck data from tournament JSON files and match records DB."""
 
@@ -172,6 +203,15 @@ class DeckRecRepository:
         Priority order: tournament seeds > admin recs > community match decks.
         Returns deduplicated list of DeckRecord objects.
         """
+        return self.load_corpus()[0]
+
+    def load_corpus(self) -> tuple[list[DeckRecord], MatchOutcomeIndex]:
+        """Load the full deck corpus plus the match win/loss index in one pass.
+
+        Priority order: tournament seeds > admin recs > community match decks.
+        Returns a deduplicated deck list and the outcome index for every match
+        row side, so callers that need win rates don't re-read the archive.
+        """
         seen_ids: dict[str, DeckRecord] = {}
 
         # 1. Tournament files — highest quality, become seeds
@@ -194,11 +234,12 @@ class DeckRecRepository:
                 seen_ids[deck.deck_id] = deck
 
         # 3. Match records — community decks, lower priority
-        for deck in self._load_match_decks():
+        match_decks, outcomes = self._load_match_decks()
+        for deck in match_decks:
             if deck.deck_id and deck.deck_id not in seen_ids:
                 seen_ids[deck.deck_id] = deck
 
-        return list(seen_ids.values())
+        return list(seen_ids.values()), outcomes
 
     # ------------------------------------------------------------------ #
     # Tournament file loading                                              #
@@ -298,13 +339,20 @@ class DeckRecRepository:
         "losser": ("json_deck_data_loser",  "curiosa_url_loser",  "losser_display_name"),
     }
 
-    def _load_match_decks(self) -> list[DeckRecord]:
-        """Query match_records and match_records_archive for community decks."""
-        decks = []
+    def _load_match_decks(self) -> tuple[list[DeckRecord], MatchOutcomeIndex]:
+        """Query match_records and match_records_archive for community decks.
+
+        Returns both the deck corpus and the win/loss index for those same rows.
+        They come from one pass because each deck blob is several kilobytes of
+        JSON and the archive holds tens of thousands of them — parsing it twice
+        was the single most expensive thing a recommendations request did.
+        """
+        decks: list[DeckRecord] = []
+        outcomes = MatchOutcomeIndex()
 
         if not self._db_path.exists():
             logger.warning("match_records.db not found: %s", self._db_path)
-            return decks
+            return decks, outcomes
 
         try:
             conn = sqlite3.connect(str(self._db_path))
@@ -314,7 +362,28 @@ class DeckRecRepository:
             for table in ("match_records_archive", "match_records"):
                 for row in self._fetch_match_rows(cur, table):
                     for side in ("winner", "losser"):
-                        deck = self._parse_match_deck(row, side)
+                        json_col, _url_col, _name_col = self._MATCH_SIDE_COLS[side]
+                        raw = row[json_col] if json_col in row.keys() else None
+                        if not raw or raw in ("", "{}"):
+                            continue
+                        try:
+                            deck_data = json.loads(raw)
+                        except Exception:
+                            continue
+
+                        card_names, card_quantities = _index_spellbook(
+                            deck_data.get("spellbook", [])
+                        )
+                        if not card_names:
+                            continue
+
+                        # Every row side counts towards the win rate, including
+                        # decks with no Curiosa link that never become records.
+                        outcomes.add(card_names, is_win=(side == "winner"))
+
+                        deck = self._build_match_deck(
+                            row, side, deck_data, card_names, card_quantities
+                        )
                         if deck:
                             decks.append(deck)
 
@@ -322,8 +391,12 @@ class DeckRecRepository:
         except Exception as e:
             logger.error("Failed to load match decks: %s", e)
 
-        logger.info("Loaded %d community deck records from match DB", len(decks))
-        return decks
+        logger.info(
+            "Loaded %d community deck records and %d match results from match DB",
+            len(decks),
+            len(outcomes.lengths),
+        )
+        return decks, outcomes
 
     def _fetch_match_rows(self, cur: sqlite3.Cursor, table: str):
         """Yield rows with deck data from the given table.
@@ -350,26 +423,24 @@ class DeckRecRepository:
             return
         yield from cur
 
-    def _parse_match_deck(self, row: sqlite3.Row, side: str) -> DeckRecord | None:
-        """Parse winner or loser deck from a match record row."""
+    def _build_match_deck(
+        self,
+        row: sqlite3.Row,
+        side: str,
+        deck_data: dict,
+        card_names: frozenset,
+        card_quantities: dict[str, int],
+    ) -> DeckRecord | None:
+        """Build a community DeckRecord from an already-parsed match row side."""
         try:
-            json_col, url_col, name_col = self._MATCH_SIDE_COLS[side]
-
-            deck_json_str = row[json_col] if json_col in row.keys() else None
-            if not deck_json_str or deck_json_str in ("", "{}"):
-                return None
+            _json_col, url_col, name_col = self._MATCH_SIDE_COLS[side]
 
             curiosa_url = (row[url_col] if url_col in row.keys() else None) or ""
             deck_id = self._extract_deck_id(curiosa_url)
             if not deck_id:
                 return None
 
-            deck_data = json.loads(deck_json_str)
             spellbook = deck_data.get("spellbook", [])
-            card_names, card_quantities = _index_spellbook(spellbook)
-            if not card_names:
-                return None
-
             avatar_name = (deck_data.get("avatar") or [{}])[0].get("name", "Unknown")
             player_name = (row[name_col] if name_col in row.keys() else None) or "Unknown"
 
@@ -596,75 +667,47 @@ class DeckRecRepository:
             logger.error("Failed to get hidden deck ids: %s", e)
             return set()
 
-    def compute_cluster_win_rate(self, seed, threshold: float = 0.3) -> dict:
-        """Scan every match row and count wins/losses for decks similar to seed.
+    def compute_cluster_win_rate(
+        self,
+        seed,
+        outcomes: MatchOutcomeIndex | None = None,
+        threshold: float = 0.3,
+    ) -> dict:
+        """Count wins/losses across match rows played with decks similar to seed.
 
-        For each row in match_records and match_records_archive, the winner and
-        loser deck JSON is parsed and its Jaccard similarity against the seed is
-        computed. Rows at or above threshold contribute a win or loss.
+        Every winner and loser side in match_records and match_records_archive
+        whose Jaccard similarity to the seed reaches threshold contributes a win
+        or a loss.
 
-        The cursor is iterated row by row rather than fetchall()'d — the deck
-        JSON blobs run ~19 KB each, so materialising every row at once held
-        hundreds of MB for the duration of the scan.
+        Pass the `outcomes` index from load_corpus() to answer from memory.
+        Without it the archive is read and parsed from scratch, streaming row by
+        row — the deck JSON blobs run ~19 KB each, so materialising the whole
+        table at once would hold hundreds of MB for the length of the scan.
         """
-        if not self._db_path.exists():
-            return {"wins": 0, "losses": 0, "win_rate": None}
+        from services.deck_similarity import score_against_index
 
-        seed_cards = seed.card_names
+        if outcomes is None:
+            if not self._db_path.exists():
+                return {"wins": 0, "losses": 0, "win_rate": None}
+            try:
+                _decks, outcomes = self._load_match_decks()
+            except Exception as e:
+                logger.error("Failed to compute cluster win rate: %s", e)
+                return {"wins": 0, "losses": 0, "win_rate": None}
+
         wins = 0
         losses = 0
-
-        try:
-            conn = sqlite3.connect(str(self._db_path))
-            cur = conn.cursor()
-
-            for table in ("match_records_archive", "match_records"):
-                try:
-                    cur.execute(f"""
-                        SELECT json_deck_data_winner, json_deck_data_loser
-                        FROM {table}
-                        WHERE (json_deck_data_winner IS NOT NULL AND json_deck_data_winner NOT IN ('', '{{}}'))
-                           OR (json_deck_data_loser  IS NOT NULL AND json_deck_data_loser  NOT IN ('', '{{}}'))
-                    """)
-                    for json_w, json_l in cur:
-                        if json_w and json_w not in ("", "{}"):
-                            w_cards = self._parse_spellbook_names(json_w)
-                            if w_cards and self._jaccard(w_cards, seed_cards) >= threshold:
-                                wins += 1
-                        if json_l and json_l not in ("", "{}"):
-                            l_cards = self._parse_spellbook_names(json_l)
-                            if l_cards and self._jaccard(l_cards, seed_cards) >= threshold:
-                                losses += 1
-                except sqlite3.OperationalError:
-                    pass
-
-            conn.close()
-        except Exception as e:
-            logger.error("Failed to compute cluster win rate: %s", e)
-            return {"wins": 0, "losses": 0, "win_rate": None}
+        is_win = outcomes.is_win
+        for position, score in score_against_index(seed.card_names, outcomes.index, outcomes.lengths):
+            if score >= threshold:
+                if is_win[position]:
+                    wins += 1
+                else:
+                    losses += 1
 
         total = wins + losses
         win_rate = round(wins / total, 4) if total > 0 else None
         return {"wins": wins, "losses": losses, "win_rate": win_rate}
-
-    @staticmethod
-    def _parse_spellbook_names(json_str: str) -> frozenset:
-        """Parse deck JSON and return frozenset of lowercase card names."""
-        try:
-            data = json.loads(json_str)
-            spellbook = data.get("spellbook", [])
-            return frozenset(
-                sys.intern(c["name"].strip().lower())
-                for c in spellbook
-                if isinstance(c, dict) and c.get("name")
-            )
-        except Exception:
-            return frozenset()
-
-    @staticmethod
-    def _jaccard(a: frozenset, b: frozenset) -> float:
-        union = len(a | b)
-        return len(a & b) / union if union else 0.0
 
     def _extract_deck_id(self, url: str) -> str:
         """Extract Curiosa deck ID from a URL like https://curiosa.io/decks/abc123."""

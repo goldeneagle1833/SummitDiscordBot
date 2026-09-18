@@ -51,15 +51,17 @@ def seed_deck(monkeypatch):
         deck_name = "Test Troll Magic"
         curiosa_url = "https://curiosa.io/decks/cmtestdeck00000001"
 
-    monkeypatch.setattr(
-        deck_rec_routes, "_load_and_cluster", lambda: (None, [FakeSeed()], [], {})
-    )
-
     class FakeRepo:
         def get_hidden_deck_ids(self):
             return set()
 
     monkeypatch.setattr(deck_rec_routes, "DeckRecRepository", FakeRepo)
+    # Resolve the repo lazily so tests can swap DeckRecRepository afterwards.
+    monkeypatch.setattr(
+        deck_rec_routes,
+        "_load_seeds",
+        lambda: (deck_rec_routes.DeckRecRepository(), [FakeSeed()]),
+    )
     return FakeSeed
 
 

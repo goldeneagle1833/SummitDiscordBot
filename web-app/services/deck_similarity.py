@@ -5,7 +5,10 @@ and aggregates card frequency statistics across each cluster.
 """
 
 import logging
+from array import array
 from collections import Counter
+from itertools import chain
+from typing import Iterator
 
 from repositories.deck_rec_repo import DeckRecord
 
@@ -23,11 +26,70 @@ def jaccard(set_a: frozenset, set_b: frozenset) -> float:
     """Compute Jaccard similarity between two card sets.
 
     Returns |A ∩ B| / |A ∪ B|, or 0.0 if the union is empty.
+
+    Derived from the intersection alone — |A ∪ B| == |A| + |B| - |A ∩ B| — so
+    only one set has to be materialised instead of two.
     """
-    union = len(set_a | set_b)
+    shared = len(set_a & set_b)
+    union = len(set_a) + len(set_b) - shared
     if union == 0:
         return 0.0
-    return len(set_a & set_b) / union
+    return shared / union
+
+
+# ------------------------------------------------------------------ #
+# Inverted card index                                                 #
+# ------------------------------------------------------------------ #
+#
+# Scoring one deck against every deck in a corpus is the hot path behind both
+# clustering and the per-archetype recommendation query. Done pairwise it costs
+# len(corpus) set intersections; at production scale (~800 seeds, ~17k community
+# decks) that is over 13 million of them and takes the better part of a minute.
+#
+# An inverted card name -> position index turns it into a single pass over the
+# querying deck's ~50 cards: the Counter tallies how many cards each corpus deck
+# shares, which is exactly the intersection size, and corpus decks sharing no
+# card are never visited at all. Results are identical, an order of magnitude
+# cheaper.
+
+
+def build_card_index(decks: list[DeckRecord]) -> tuple[dict[str, array], array]:
+    """Return (card_name -> positions in `decks`, card count per deck).
+
+    Positions go in int arrays rather than lists: the corpus runs to 17k decks
+    of ~50 cards each, and that is a few MB of difference for a fraction of a
+    millisecond per query. The keys are the interned card names the decks
+    already hold, so the index adds no strings of its own.
+    """
+    index: dict[str, array] = {}
+    lengths = array("i")
+    for position, deck in enumerate(decks):
+        lengths.append(len(deck.card_names))
+        for card_name in deck.card_names:
+            postings = index.get(card_name)
+            if postings is None:
+                postings = index[card_name] = array("i")
+            postings.append(position)
+    return index, lengths
+
+
+def score_against_index(
+    card_names: frozenset,
+    index: dict[str, array],
+    lengths: array,
+) -> Iterator[tuple[int, float]]:
+    """Yield (position, jaccard) for every indexed deck sharing at least one card.
+
+    Decks sharing nothing score 0.0 and are simply not yielded.
+    """
+    size = len(card_names)
+    if not size:
+        return
+    shared_counts = Counter(chain.from_iterable(index.get(name, ()) for name in card_names))
+    for position, shared in shared_counts.items():
+        union = size + lengths[position] - shared
+        if union:
+            yield position, shared / union
 
 
 # ------------------------------------------------------------------ #
@@ -58,18 +120,21 @@ def build_clusters(
     if not seeds:
         return clusters
 
+    seed_index, seed_lengths = build_card_index(seeds)
+
     for deck in community:
-        best_seed: DeckRecord | None = None
+        best_position = len(seeds)
         best_score = 0.0
 
-        for seed in seeds:
-            score = jaccard(deck.card_names, seed.card_names)
-            if score > best_score:
-                best_seed = seed
+        for position, score in score_against_index(deck.card_names, seed_index, seed_lengths):
+            # Ties go to the earlier seed, so a deck's archetype doesn't depend
+            # on the order the index happened to visit equally good matches in.
+            if score > best_score or (score == best_score and 0 <= position < best_position):
+                best_position = position
                 best_score = score
 
-        if best_seed is not None and best_score >= threshold:
-            clusters[best_seed.deck_id].append(deck)
+        if best_position < len(seeds) and best_score >= threshold:
+            clusters[seeds[best_position].deck_id].append(deck)
 
     total_assigned = sum(len(v) for v in clusters.values())
     logger.info(
@@ -160,9 +225,10 @@ def aggregate_archetype(members: list[DeckRecord]) -> dict:
             }
         )
 
-    # Sort each tier descending by inclusion rate
+    # Sort each tier descending by inclusion rate, ties alphabetical so the
+    # card order on a deck page stays put between rebuilds.
     for tier_list in tiers.values():
-        tier_list.sort(key=lambda x: x["inclusion_rate"], reverse=True)
+        tier_list.sort(key=lambda x: (-x["inclusion_rate"], x["card_name"]))
 
     return tiers
 
@@ -170,6 +236,25 @@ def aggregate_archetype(members: list[DeckRecord]) -> dict:
 # ------------------------------------------------------------------ #
 # Convenience helpers                                                 #
 # ------------------------------------------------------------------ #
+
+
+def similar_members(
+    seed: DeckRecord,
+    community: list[DeckRecord],
+    index: dict[str, list[int]],
+    lengths: list[int],
+    threshold: float = SIMILARITY_THRESHOLD,
+) -> list[tuple[DeckRecord, float]]:
+    """Return (deck, score) for every community deck at or above threshold to seed.
+
+    Inclusive matching — a deck can qualify for several archetypes, unlike
+    build_clusters() which assigns each deck to its single best seed.
+    """
+    return [
+        (community[position], score)
+        for position, score in score_against_index(seed.card_names, index, lengths)
+        if score >= threshold
+    ]
 
 
 def average_similarity(seed: DeckRecord, members: list[DeckRecord]) -> float:

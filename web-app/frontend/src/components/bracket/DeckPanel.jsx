@@ -12,13 +12,43 @@ import { avatarUrl } from '@/utils/avatar'
 
 const INPUT = 'w-full bg-bg-raised border border-border rounded px-3 py-2 text-sm'
 
+/**
+ * Who can see this deck, in words the owner will not misread.
+ *
+ * "Revealed" on your own row looks like the whole server can see it, so each
+ * case says plainly who is looking.
+ */
 function StatusTag({ player }) {
   if (!player.has_deck) {
     return <span className="text-xs text-text-muted">No deck yet</span>
   }
-  if (player.deck_visible) {
-    return <span className="text-xs text-accent-green">Deck revealed</span>
+
+  if (player.visibility === 'public') {
+    return <span className="text-xs text-accent-green">Revealed to everyone</span>
   }
+
+  if (player.visibility === 'owner') {
+    return (
+      <span
+        className="text-xs text-amber-400"
+        title="Only you can see this. It opens to everyone when you are knocked out."
+      >
+        Only you can see this
+      </span>
+    )
+  }
+
+  if (player.visibility === 'admin') {
+    return (
+      <span
+        className="text-xs text-text-muted"
+        title="Hidden from players until they are knocked out; admins can always look"
+      >
+        Hidden · admin view
+      </span>
+    )
+  }
+
   return (
     <span className="text-xs text-text-muted" title="Revealed once they are knocked out">
       Submitted · hidden
@@ -133,8 +163,8 @@ export default function DeckPanel({ slug, roster, isAdmin = false, onChanged }) 
         <div className="px-5 py-3 border-b border-border bg-secondary/5">
           <p className="text-sm mb-2">
             {mine.has_deck
-              ? 'Your deck is saved. It stays hidden until you are knocked out.'
-              : 'Submit your decklist. Nobody else sees it until you are knocked out.'}
+              ? 'Your deck is saved. Only you can see it until you are knocked out.'
+              : 'Submit your decklist. Only you can see it until you are knocked out.'}
           </p>
           <SubmitForm slug={slug} onDone={onChanged} />
         </div>

@@ -644,6 +644,54 @@ class TestDecklists:
         champ = service.get_deck_roster(slug, viewer_id="u9")["players"][0]
         assert champ["deck_visible"] is True
 
+    def test_the_owner_is_told_only_they_can_see_it(self, service, repo):
+        """A player reading "revealed" on their own row would panic."""
+        slug, _ = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        own = next(
+            p for p in service.get_deck_roster(slug, viewer_id="u1")["players"] if p["seed"] == 1
+        )
+        assert own["visibility"] == "owner"
+        assert own["deck_visible"] is True
+
+    def test_others_see_it_as_hidden(self, service, repo):
+        slug, _ = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        theirs = next(
+            p for p in service.get_deck_roster(slug, viewer_id="u3")["players"] if p["seed"] == 1
+        )
+        assert theirs["visibility"] == "hidden"
+
+    def test_an_admin_sees_it_flagged_as_an_admin_view(self, service, repo):
+        slug, _ = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")
+
+        seen = next(
+            p
+            for p in service.get_deck_roster(slug, viewer_id="admin_1", is_admin=True)["players"]
+            if p["seed"] == 1
+        )
+        assert seen["visibility"] == "admin"
+
+    def test_knocked_out_reads_as_public_even_to_the_owner(self, service, repo):
+        slug, bracket_id = self._publish(service, repo)
+        service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u4")
+
+        first = repo.get_matches(bracket_id)[0]  # seed 1 v seed 4
+        service.set_result(slug, first["match_no"], "u1", admin_id="a")
+
+        own = next(
+            p for p in service.get_deck_roster(slug, viewer_id="u4")["players"] if p["seed"] == 4
+        )
+        assert own["visibility"] == "public"
+
+    def test_players_with_no_deck_have_no_visibility(self, service, repo):
+        slug, _ = self._publish(service, repo)
+        roster = service.get_deck_roster(slug, viewer_id="u1")
+        assert {p["visibility"] for p in roster["players"] if not p["has_deck"]} == {"none"}
+
     def test_roster_counts_who_still_owes_a_deck(self, service, repo):
         slug, _ = self._publish(service, repo)
         service.submit_deck(slug, "https://curiosa.io/decks/abc", actor_id="u1")

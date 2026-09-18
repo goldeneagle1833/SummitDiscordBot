@@ -550,6 +550,20 @@ class BracketService:
             is_owner = viewer_id is not None and str(entrant.get("user_id") or "") == viewer_id
             visible = bool(deck) and (is_admin or is_owner or is_out or finished)
 
+            # Say *why* a deck can be seen, not just that it can. A player
+            # looking at their own row would otherwise read "revealed" and
+            # think the whole server could see it.
+            if not deck:
+                visibility = "none"
+            elif is_out or finished:
+                visibility = "public"
+            elif is_owner:
+                visibility = "owner"
+            elif is_admin:
+                visibility = "admin"
+            else:
+                visibility = "hidden"
+
             players.append(
                 {
                     "seed": entrant["seed"],
@@ -560,6 +574,7 @@ class BracketService:
                     "eliminated": is_out,
                     "has_deck": bool(deck),
                     "deck_visible": visible,
+                    "visibility": visibility,
                     "deck_url": deck["deck_url"] if (deck and visible) else None,
                     "deck_name": deck["deck_name"] if (deck and visible) else None,
                     "avatar_name": deck["avatar_name"] if (deck and visible) else None,

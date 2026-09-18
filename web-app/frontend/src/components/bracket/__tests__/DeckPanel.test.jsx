@@ -36,6 +36,7 @@ function roster(overrides = {}) {
         eliminated: false,
         has_deck: true,
         deck_visible: false,
+        visibility: 'hidden',
         deck_url: null,
         avatar_name: null,
         can_submit: false,
@@ -47,6 +48,7 @@ function roster(overrides = {}) {
         eliminated: true,
         has_deck: true,
         deck_visible: true,
+        visibility: 'public',
         deck_url: 'https://curiosa.io/decks/abc',
         avatar_name: 'Necromancer',
         can_submit: false,
@@ -89,10 +91,39 @@ describe('DeckPanel', () => {
     expect(within(row).queryByText('View deck')).not.toBeInTheDocument()
   })
 
+  it('tells the owner that only they can see their own deck', () => {
+    const mine = roster()
+    mine.players[0].visibility = 'owner'
+    mine.players[0].deck_visible = true
+    mine.players[0].can_submit = true
+    renderWithRouter(<DeckPanel slug="cup" roster={mine} onChanged={vi.fn()} />)
+
+    const row = screen.getByText('Still In').closest('li')
+    // "Revealed" here would read as if the whole server could see it.
+    expect(within(row).getByText('Only you can see this')).toBeInTheDocument()
+    expect(within(row).queryByText('Revealed to everyone')).not.toBeInTheDocument()
+  })
+
+  it('marks a knocked-out deck as revealed to everyone', () => {
+    renderWithRouter(<DeckPanel slug="cup" roster={roster()} onChanged={vi.fn()} />)
+    const row = screen.getByText('Knocked Out').closest('li')
+    expect(within(row).getByText('Revealed to everyone')).toBeInTheDocument()
+  })
+
+  it('flags an admin peek as an admin view', () => {
+    const asAdmin = roster()
+    asAdmin.players[0].visibility = 'admin'
+    asAdmin.players[0].deck_visible = true
+    renderWithRouter(<DeckPanel slug="cup" roster={asAdmin} isAdmin onChanged={vi.fn()} />)
+
+    const row = screen.getByText('Still In').closest('li')
+    expect(within(row).getByText(/Hidden · admin view/)).toBeInTheDocument()
+  })
+
   it('reveals the deck of a knocked-out player', async () => {
     renderWithRouter(<DeckPanel slug="cup" roster={roster()} onChanged={vi.fn()} />)
     const row = screen.getByText('Knocked Out').closest('li')
-    expect(within(row).getByText('Deck revealed')).toBeInTheDocument()
+    expect(within(row).getByText('Revealed to everyone')).toBeInTheDocument()
 
     await userEvent.click(within(row).getByText('View deck'))
 
@@ -116,7 +147,7 @@ describe('DeckPanel', () => {
     mine.players[2].can_submit = true
     renderWithRouter(<DeckPanel slug="cup" roster={mine} onChanged={onChanged} />)
 
-    expect(screen.getByText(/Nobody else sees it until you are knocked out/)).toBeInTheDocument()
+    expect(screen.getByText(/Only you can see it until you are knocked out/)).toBeInTheDocument()
     await userEvent.type(screen.getByLabelText('Your deck link'), 'https://curiosa.io/decks/mine')
     await userEvent.click(screen.getByRole('button', { name: /save deck/i }))
 

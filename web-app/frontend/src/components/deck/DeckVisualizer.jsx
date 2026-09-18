@@ -183,6 +183,27 @@ const RARITY_COLORS = {
   Unknown: '#6b7280',
 }
 
+/* ---- Rarity donut ---- */
+function RarityDonut({ title, segments }) {
+  if (!segments?.length) return null
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="text-xs space-y-0.5">
+        <div className="text-text-muted font-semibold uppercase tracking-wider mb-1">{title}</div>
+        {segments.map((s) => (
+          <div key={s.label} className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+            <span className="text-text-muted">{s.label}</span>
+            <span className="text-text-primary font-medium">{s.count}</span>
+          </div>
+        ))}
+      </div>
+      <DonutChart segments={segments} />
+    </div>
+  )
+}
+
 /* ---- Deck Stats ---- */
 function DeckStatsBar({ cards, spellbookCards }) {
   const stats = useMemo(() => {
@@ -270,21 +291,29 @@ function DeckStatsBar({ cards, spellbookCards }) {
     const avgDefence = minionStatCount > 0 ? (totalDefence / minionStatCount).toFixed(1) : null
     const avgPower = powerCount > 0 ? (totalPower / powerCount).toFixed(1) : null
 
-    // Rarity distribution
-    const rarityCounts = {}
-    cards.forEach((card) => {
-      const qty = card.quantity || card.qty || 1
-      const rarity = card.rarity || 'Unknown'
-      rarityCounts[rarity] = (rarityCounts[rarity] || 0) + qty
-    })
-    const raritySegments = ['Ordinary', 'Exceptional', 'Elite', 'Unique']
-      .filter((r) => rarityCounts[r])
-      .map((r) => ({
-        label: r,
-        count: rarityCounts[r],
-        pct: (rarityCounts[r] / totalCards) * 100,
-        color: RARITY_COLORS[r],
-      }))
+    // Rarity distribution, kept separate for the spellbook and the atlas.
+    // A deck's uniques are usually split between the two - courts in the
+    // atlas, an Heirloom in the spellbook - and one combined donut hides that.
+    const rarityBreakdown = (list) => {
+      const counts = {}
+      let total = 0
+      list.forEach((card) => {
+        const qty = card.quantity || card.qty || 1
+        const rarity = card.rarity || 'Unknown'
+        counts[rarity] = (counts[rarity] || 0) + qty
+        total += qty
+      })
+      return ['Ordinary', 'Exceptional', 'Elite', 'Unique']
+        .filter((r) => counts[r])
+        .map((r) => ({
+          label: r,
+          count: counts[r],
+          pct: total > 0 ? (counts[r] / total) * 100 : 0,
+          color: RARITY_COLORS[r],
+        }))
+    }
+    const spellRaritySegments = rarityBreakdown(cards.filter((c) => !isSite(c)))
+    const siteRaritySegments = rarityBreakdown(cards.filter((c) => isSite(c)))
 
     // Mana curve distribution — spellbook only, excluding sites
     const curve = {}
@@ -308,7 +337,7 @@ function DeckStatsBar({ cards, spellbookCards }) {
 
     return {
       totalCards, avgMana, minions, spells, sites,
-      typeSegments, elementSegments, raritySegments,
+      typeSegments, elementSegments, spellRaritySegments, siteRaritySegments,
       avgAttack, avgDefence, avgPower,
       curveEntries, maxCurve,
     }
@@ -395,22 +424,9 @@ function DeckStatsBar({ cards, spellbookCards }) {
             </div>
           )}
 
-          {/* Rarity Distribution */}
-          {stats.raritySegments.length > 0 && (
-            <div className="flex items-center gap-3">
-              <div className="text-xs space-y-0.5">
-                <div className="text-text-muted font-semibold uppercase tracking-wider mb-1">Rarity</div>
-                {stats.raritySegments.map((s) => (
-                  <div key={s.label} className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
-                    <span className="text-text-muted">{s.label}</span>
-                    <span className="text-text-primary font-medium">{s.count}</span>
-                  </div>
-                ))}
-              </div>
-              <DonutChart segments={stats.raritySegments} />
-            </div>
-          )}
+          {/* Rarity, split by board */}
+          <RarityDonut title="Spellbook rarity" segments={stats.spellRaritySegments} />
+          <RarityDonut title="Atlas rarity" segments={stats.siteRaritySegments} />
         </div>
       </div>
     </div>

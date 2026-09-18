@@ -173,6 +173,37 @@ describe('EventDetail avatar win rates', () => {
     expect(screen.getByText('Geomancer')).toBeInTheDocument()
   })
 
+  it('reorders when a different sort is picked', async () => {
+    mockApi()
+    renderWithRouter(<EventDetail />)
+
+    await screen.findByText('Avatar Match Win %')
+    const order = () =>
+      screen.getAllByRole('link', { name: /MW%/ })
+        .map((a) => a.getAttribute('href').replace('/avatar/', ''))
+
+    // Battlemage played one more match than Druid but wins far less
+    expect(order()).toEqual(['Druid', 'Battlemage'])
+
+    await userEvent.selectOptions(screen.getByLabelText('Sort by:'), 'matches')
+    expect(order()).toEqual(['Battlemage', 'Druid'])
+
+    await userEvent.selectOptions(screen.getByLabelText('Sort by:'), 'wins')
+    expect(order()).toEqual(['Druid', 'Battlemage'])
+  })
+
+  it('keeps the same avatars in the grid whichever sort is used', async () => {
+    mockApi()
+    renderWithRouter(<EventDetail />)
+
+    await screen.findByText('Avatar Match Win %')
+    await userEvent.selectOptions(screen.getByLabelText('Sort by:'), 'matches')
+
+    // The single-pilot avatar stays behind the toggle regardless of sort
+    expect(screen.queryByText('Geomancer')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Show 1 more/ })).toBeInTheDocument()
+  })
+
   it('links each avatar to its own page', async () => {
     mockApi()
     renderWithRouter(<EventDetail />)

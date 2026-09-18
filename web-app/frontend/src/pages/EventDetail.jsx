@@ -110,6 +110,30 @@ function ComparisonChart({ title, subtitle, top8Data, allData, top8Total, allTot
   )
 }
 
+// Each avatar sort carries its own tiebreakers, so equal leaders stay stable.
+const AVATAR_SORTS = {
+  win_rate: {
+    label: 'Match Win %',
+    compare: (a, b) => b.win_rate - a.win_rate || b.matches - a.matches || a.name.localeCompare(b.name),
+  },
+  wins: {
+    label: 'Total Wins',
+    compare: (a, b) => b.wins - a.wins || b.win_rate - a.win_rate || a.name.localeCompare(b.name),
+  },
+  matches: {
+    label: 'Matches Played',
+    compare: (a, b) => b.matches - a.matches || b.win_rate - a.win_rate || a.name.localeCompare(b.name),
+  },
+  players: {
+    label: 'Pilots',
+    compare: (a, b) => b.players - a.players || b.matches - a.matches || a.name.localeCompare(b.name),
+  },
+  name: {
+    label: 'Name (A-Z)',
+    compare: (a, b) => a.name.localeCompare(b.name),
+  },
+}
+
 function getWinRateColor(winRate) {
   const pct = Math.max(0, Math.min(100, winRate))
   if (pct <= 50) {
@@ -232,30 +256,53 @@ function MatchHistory({ entry, imageFiles }) {
 /* ---- Avatar Match Win % ---- */
 function AvatarWinRates({ stats, imageFiles }) {
   const [showAll, setShowAll] = useState(false)
-
-  if (!stats?.length) return null
+  const [sortBy, setSortBy] = useState('win_rate')
 
   // One pilot going 5-1 is not evidence an avatar is strong, and that is the
   // exact question this section gets asked. Keep single-pilot and tiny-sample
-  // avatars out of the ranking — one click away rather than dropped.
+  // avatars out of the ranking — one click away rather than dropped. The
+  // cut-off does not follow the sort, so the grid holds the same avatars
+  // however they are ordered.
   const MIN_MATCHES = 5
   const MIN_PLAYERS = 2
-  const qualified = stats.filter(
-    (a) => a.matches >= MIN_MATCHES && a.players >= MIN_PLAYERS
-  )
-  const shown = showAll || !qualified.length ? stats : qualified
+
+  const shown = useMemo(() => {
+    if (!stats?.length) return []
+    const qualified = stats.filter(
+      (a) => a.matches >= MIN_MATCHES && a.players >= MIN_PLAYERS
+    )
+    const visible = showAll || !qualified.length ? stats : qualified
+    const { compare } = AVATAR_SORTS[sortBy] || AVATAR_SORTS.win_rate
+    return [...visible].sort(compare)
+  }, [stats, showAll, sortBy])
+
+  if (!stats?.length) return null
+
   const hidden = stats.length - shown.length
 
   return (
     <section>
-      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
         <h2 className="text-lg font-semibold text-text-primary border-b-2 border-border pb-1">
           Avatar Match Win %
         </h2>
-        <p className="text-xs text-text-muted">
-          Every round played at this event — byes excluded
-        </p>
+        <div className="flex items-center gap-2">
+          <label htmlFor="avatar-sort" className="text-sm text-text-muted">Sort by:</label>
+          <select
+            id="avatar-sort"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="bg-bg-surface border border-border rounded px-2 py-1 text-sm"
+          >
+            {Object.entries(AVATAR_SORTS).map(([value, { label }]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </div>
       </div>
+      <p className="text-xs text-text-muted mb-3">
+        Every round played at this event — byes excluded
+      </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
         {shown.map((avatar, i) => {

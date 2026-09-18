@@ -845,7 +845,8 @@ class TestDecklists:
 class TestSorceryOnlineTables:
     """Opening a preloaded table for a pairing."""
 
-    def _ready_match(self, service, repo, monkeypatch, calls=None):
+    def _ready_match(self, service, repo, monkeypatch, calls=None,
+                     replay_url="https://playsorceryonline.com/replay/table-1"):
         """A published 4-player bracket where seeds 1 and 4 both have decks."""
         slug, bracket_id = published(service, repo, 4, name="Table Cup")
         service.submit_deck(slug, "https://curiosa.io/decks/one", actor_id="u1")
@@ -854,8 +855,13 @@ class TestSorceryOnlineTables:
         def fake_provision(pairing_id, players):
             if calls is not None:
                 calls.append({"pairing_id": pairing_id, "players": players})
-            return {str(p["user_id"]): f"https://playsorceryonline.com/play?m=seat-{p['user_id']}"
-                    for p in players}
+            return {
+                "seats": {
+                    str(p["user_id"]): f"https://playsorceryonline.com/play?m=seat-{p['user_id']}"
+                    for p in players
+                },
+                "replay_url": replay_url,
+            }
 
         monkeypatch.setattr(brackets_module, "provision_match_table", fake_provision)
         match = repo.get_matches(bracket_id)[0]  # seed 1 v seed 4
@@ -938,6 +944,53 @@ class TestSorceryOnlineTables:
         assert first_match("u2")["viewer_table_url"] is None
         bystander = first_match("u2")
         assert "table_p1_url" not in bystander and "table_p2_url" not in bystander
+
+    def test_opening_a_table_keeps_its_replay_url(self, service, repo, monkeypatch):
+        """Sorcery Online hands the replay link back with the table."""
+        slug, bracket_id, match = self._ready_match(service, repo, monkeypatch)
+
+        service.open_table(slug, match["match_no"], "u1")
+
+        stored = repo.get_match(bracket_id, match["match_no"])
+        assert stored["replay_url"] == "https://playsorceryonline.com/replay/table-1"
+        assert stored["replay_added_by"] == "sorcery-online"
+
+    def test_a_table_without_a_replay_url_is_fine(self, service, repo, monkeypatch):
+        slug, bracket_id, match = self._ready_match(service, repo, monkeypatch, replay_url=None)
+
+        service.open_table(slug, match["match_no"], "u1")
+
+        assert repo.get_match(bracket_id, match["match_no"])["replay_url"] is None
+
+    def test_a_replay_an_admin_filed_is_not_overwritten(self, service, repo, monkeypatch):
+        slug, bracket_id, match = self._ready_match(service, repo, monkeypatch)
+        service.set_replay(
+            slug, match["match_no"], "https://playsorceryonline.com/replay/mine", "admin_1"
+        )
+
+        service.open_table(slug, match["match_no"], "u1")
+
+        stored = repo.get_match(bracket_id, match["match_no"])
+        assert stored["replay_url"].endswith("/replay/mine")
+        assert stored["replay_added_by"] == "admin_1"
+
+    def test_the_captured_replay_is_held_until_the_game_is_played(self, service, repo, monkeypatch):
+        """The link exists from the moment the table opens, but there is
+        nothing to watch until the match has been played."""
+        slug, bracket_id, match = self._ready_match(service, repo, monkeypatch)
+        service.open_table(slug, match["match_no"], "u1")
+
+        def first_match(**viewer):
+            return service.get_bracket_detail(slug, **viewer)["rounds"][0]["matches"][0]
+
+        assert first_match(viewer_id="u1")["replay_url"] is None
+        assert first_match(viewer_id="x", is_admin=True)["replay_url"].endswith("/replay/table-1")
+
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        # Played now: the two players can watch it, onlookers wait for the end.
+        assert first_match(viewer_id="u1")["replay_url"].endswith("/replay/table-1")
+        assert first_match(viewer_id="nobody")["replay_url"] is None
 
     def test_the_button_is_offered_only_when_both_decks_are_in(self, service, repo, monkeypatch):
         slug, bracket_id = published(service, repo, 4, name="Table Cup")

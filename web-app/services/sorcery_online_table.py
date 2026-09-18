@@ -166,8 +166,12 @@ def provision_match_table(pairing_id: str, players: list[dict]) -> dict:
     """Open a table for two named players, each with their own deck preloaded.
 
     ``players`` is two dicts of ``{user_id, display_name, deck_url}``. Returns
-    ``{user_id: seat_url}`` - one link per player, and each is that player's
-    seat, so handing a player the wrong link would sit them in the wrong chair.
+    ``{"seats": {user_id: seat_url}, "replay_url": str | None}``. Each seat url
+    is that player's own, so handing a player the wrong link would sit them in
+    the wrong chair.
+
+    The replay url is stable and comes back with the table, but Sorcery Online
+    only serves it once a game has actually been saved.
 
     Raises TableUnavailable when the integration is unconfigured or Sorcery
     Online declines; the response body is logged so failures are diagnosable.
@@ -212,7 +216,8 @@ def provision_match_table(pairing_id: str, players: list[dict]) -> dict:
         raise TableUnavailable("Sorcery Online could not open a table for this match.")
 
     try:
-        returned = (response.json() or {}).get("players") or []
+        body = response.json() or {}
+        returned = body.get("players") or []
     except ValueError:
         logger.warning("Sorcery Online table response was not JSON: %s", response.text[:500])
         raise TableUnavailable("Sorcery Online returned an unexpected response.")
@@ -233,4 +238,8 @@ def provision_match_table(pairing_id: str, players: list[dict]) -> dict:
         )
         raise TableUnavailable("Sorcery Online did not return a seat for both players.")
 
-    return {str(p["user_id"]): seats[str(p["user_id"])] for p in players}
+    replay_url = body.get("replayUrl") or body.get("replay_url")
+    return {
+        "seats": {str(p["user_id"]): seats[str(p["user_id"])] for p in players},
+        "replay_url": str(replay_url).strip() if replay_url else None,
+    }

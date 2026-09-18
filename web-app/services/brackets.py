@@ -376,9 +376,12 @@ class BracketService:
             is_player and match["playable"] and not settled and not missing
         )
 
-        # Replays follow the decks: public once the bracket is done.
+        # Replays follow the decks: public once the bracket is done. The link
+        # is kept the moment a table opens, but Sorcery Online has nothing to
+        # serve until a game is saved, so it is only offered on a played match.
+        visible_to = finished or is_admin or is_player
         match["replay_url"] = (
-            match.get("replay_url") if (finished or is_admin or is_player) else None
+            match.get("replay_url") if visible_to and (settled or is_admin) else None
         )
         match["replay_public"] = bool(match.get("replay_url")) and finished
 
@@ -899,21 +902,30 @@ class BracketService:
             raise BracketError("Both players need a site account to open a table")
 
         try:
-            seats = provision_match_table(
+            table = provision_match_table(
                 f"bracket-{bracket['bracket_id']}-m{match_no}", players
             )
         except TableUnavailable as e:
             raise BracketError(str(e)) from e
 
-        self._repo.update_match(
-            bracket["bracket_id"],
-            match_no,
-            {
-                "table_provisioned_at": datetime.now().isoformat(),
-                "table_p1_url": seats.get(str(match["p1_user_id"])),
-                "table_p2_url": seats.get(str(match["p2_user_id"])),
-            },
-        )
+        seats = table.get("seats") or {}
+        fields = {
+            "table_provisioned_at": datetime.now().isoformat(),
+            "table_p1_url": seats.get(str(match["p1_user_id"])),
+            "table_p2_url": seats.get(str(match["p2_user_id"])),
+        }
+
+        # Sorcery Online hands back the replay url with the table. It only
+        # serves a recording once a game has been saved, but the link itself is
+        # stable, so keep it now and let the usual rule decide when to show it.
+        # An admin who has already filed one keeps theirs.
+        replay_url = table.get("replay_url")
+        if replay_url and not match.get("replay_url"):
+            fields["replay_url"] = replay_url
+            fields["replay_added_by"] = "sorcery-online"
+            fields["replay_added_at"] = datetime.now().isoformat()
+
+        self._repo.update_match(bracket["bracket_id"], match_no, fields)
 
         return {
             "game_url": seats.get(str(user_id)),

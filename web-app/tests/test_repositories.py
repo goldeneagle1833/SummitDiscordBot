@@ -807,3 +807,80 @@ class TestEventMatchHistory:
         result = repo.save_match_history("No Such Event", HISTORY)
         assert result["success"] is False
 
+
+class TestAvatarWinRates:
+    """EventRepository._compute_avatar_stats ranks avatars by match win %."""
+
+    @staticmethod
+    def _entry(avatar, results, byes=0):
+        matches = [
+            {"result": r, "is_bye": False} for r in results
+        ] + [{"result": "Win", "is_bye": True} for _ in range(byes)]
+        return {"avatar": avatar, "matches": matches}
+
+    def test_ranks_by_win_rate(self):
+        stats = EventRepository._compute_avatar_stats([
+            self._entry("Druid", ["Win", "Win", "Loss"]),
+            self._entry("Battlemage", ["Loss", "Loss", "Win"]),
+        ])
+        assert [s["name"] for s in stats] == ["Druid", "Battlemage"]
+        assert stats[0]["win_rate"] == 66.7
+        assert stats[1]["win_rate"] == 33.3
+
+    def test_byes_do_not_count(self):
+        stats = EventRepository._compute_avatar_stats([
+            self._entry("Druid", ["Win", "Loss"], byes=2),
+        ])
+        assert stats[0]["matches"] == 2
+        assert stats[0]["wins"] == 1
+        assert stats[0]["win_rate"] == 50.0
+
+    def test_a_mirror_scores_both_sides(self):
+        stats = EventRepository._compute_avatar_stats([
+            self._entry("Druid", ["Win"]),
+            self._entry("Druid", ["Loss"]),
+        ])
+        assert len(stats) == 1
+        assert (stats[0]["wins"], stats[0]["losses"]) == (1, 1)
+        assert stats[0]["players"] == 2
+        assert stats[0]["win_rate"] == 50.0
+
+    def test_draws_count_as_matches_played(self):
+        stats = EventRepository._compute_avatar_stats([
+            self._entry("Druid", ["Win", "Draw"]),
+        ])
+        assert stats[0]["draws"] == 1
+        assert stats[0]["matches"] == 2
+        assert stats[0]["win_rate"] == 50.0
+
+    def test_ties_break_on_sample_size(self):
+        stats = EventRepository._compute_avatar_stats([
+            self._entry("Battlemage", ["Win", "Loss"]),
+            self._entry("Druid", ["Win", "Loss"]),
+            self._entry("Druid", ["Win", "Loss"]),
+        ])
+        # Same 50%, but Druid played twice as many matches
+        assert [s["name"] for s in stats] == ["Druid", "Battlemage"]
+
+    def test_players_with_no_avatar_or_no_matches_are_skipped(self):
+        stats = EventRepository._compute_avatar_stats([
+            self._entry("", ["Win"]),
+            self._entry("Druid", []),
+            self._entry("Druid", [], byes=1),
+        ])
+        assert stats == []
+
+    def test_exposed_through_get_event_match_history(self, tmp_path):
+        events_dir = _make_event(tmp_path, [
+            {"id": "deck-1", "avatar": [{"name": "Druid"}], "spellbook": []},
+        ])
+        repo = EventRepository(events_dir=events_dir)
+        repo.save_match_history("Test Event", HISTORY)
+
+        stats = repo.get_event_match_history("Test Event")["avatar_stats"]
+        # The stored player went 1-0 in real matches plus one bye
+        assert stats == [{
+            "name": "Druid", "wins": 1, "losses": 0, "draws": 0,
+            "players": 1, "matches": 1, "win_rate": 100.0,
+        }]
+

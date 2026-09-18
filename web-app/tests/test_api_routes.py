@@ -229,7 +229,8 @@ class TestEventMatchHistoryRoutes:
         resp = client.get("/api/events/Test Event/match-history")
         assert resp.status_code == 200
         assert resp.get_json() == {
-            "available": False, "by_deck_id": {}, "by_username": {}
+            "available": False, "by_deck_id": {}, "by_username": {},
+            "avatar_stats": [],
         }
 
     def test_returns_history_keyed_by_deck(self, client, event_dir):

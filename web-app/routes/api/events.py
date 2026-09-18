@@ -804,7 +804,10 @@ def get_event_match_history(event_folder: str):
         repo = EventRepository()
         history = repo.get_event_match_history(event_folder)
         if history is None:
-            return jsonify({"available": False, "by_deck_id": {}, "by_username": {}})
+            return jsonify({
+                "available": False, "by_deck_id": {}, "by_username": {},
+                "avatar_stats": [],
+            })
         return jsonify({"available": True, **history})
     except Exception as e:
         logger.exception("Error loading match history for %s: %s", event_folder, e)

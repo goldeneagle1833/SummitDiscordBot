@@ -890,7 +890,48 @@ class EventRepository:
             "fetched_at": history.get("fetched_at", ""),
             "by_deck_id": by_deck_id,
             "by_username": by_username,
+            "avatar_stats": self._compute_avatar_stats(by_deck_id.values()),
         }
+
+    @staticmethod
+    def _compute_avatar_stats(entries) -> list[dict]:
+        """Rank avatars by match win % across every round of an event.
+
+        Each player contributes their own result to their own avatar, so a
+        mirror match scores one win and one loss for that avatar.  Byes are
+        skipped — they inflate whoever happened to draw one.
+        """
+        stats = {}
+        for entry in entries:
+            avatar = entry.get("avatar")
+            if not avatar:
+                continue
+            row = stats.setdefault(avatar, {
+                "name": avatar, "wins": 0, "losses": 0, "draws": 0, "players": 0,
+            })
+            row["players"] += 1
+            for match in entry.get("matches", []):
+                if match.get("is_bye"):
+                    continue
+                result = match.get("result")
+                if result == "Win":
+                    row["wins"] += 1
+                elif result == "Loss":
+                    row["losses"] += 1
+                elif result == "Draw":
+                    row["draws"] += 1
+
+        ranked = []
+        for row in stats.values():
+            played = row["wins"] + row["losses"] + row["draws"]
+            if not played:
+                continue
+            row["matches"] = played
+            row["win_rate"] = round(row["wins"] / played * 100, 1)
+            ranked.append(row)
+
+        ranked.sort(key=lambda r: (-r["win_rate"], -r["matches"], r["name"]))
+        return ranked
 
     def get_event_stats(self, event_folder: str) -> dict:
         """Get statistics data for a specific event."""

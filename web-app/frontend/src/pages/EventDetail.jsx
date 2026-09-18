@@ -110,6 +110,16 @@ function ComparisonChart({ title, subtitle, top8Data, allData, top8Total, allTot
   )
 }
 
+function getWinRateColor(winRate) {
+  const pct = Math.max(0, Math.min(100, winRate))
+  if (pct <= 50) {
+    const ratio = pct / 50
+    return `rgb(${Math.round(231 + 24 * ratio)}, ${Math.round(76 + 179 * ratio)}, ${Math.round(60 + 195 * ratio)})`
+  }
+  const ratio = (pct - 50) / 50
+  return `rgb(${Math.round(255 - 209 * ratio)}, ${Math.round(255 - 51 * ratio)}, ${Math.round(255 - 142 * ratio)})`
+}
+
 const ELEMENT_IMG = '/static/images/elements/'
 const ELEMENT_FILE = {
   Earth: 'earth.png',
@@ -216,6 +226,95 @@ function MatchHistory({ entry, imageFiles }) {
         )
       })}
     </ol>
+  )
+}
+
+/* ---- Avatar Match Win % ---- */
+function AvatarWinRates({ stats, imageFiles }) {
+  const [showAll, setShowAll] = useState(false)
+
+  if (!stats?.length) return null
+
+  // One pilot going 5-1 is not evidence an avatar is strong, and that is the
+  // exact question this section gets asked. Keep single-pilot and tiny-sample
+  // avatars out of the ranking — one click away rather than dropped.
+  const MIN_MATCHES = 5
+  const MIN_PLAYERS = 2
+  const qualified = stats.filter(
+    (a) => a.matches >= MIN_MATCHES && a.players >= MIN_PLAYERS
+  )
+  const shown = showAll || !qualified.length ? stats : qualified
+  const hidden = stats.length - shown.length
+
+  return (
+    <section>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+        <h2 className="text-lg font-semibold text-text-primary border-b-2 border-border pb-1">
+          Avatar Match Win %
+        </h2>
+        <p className="text-xs text-text-muted">
+          Every round played at this event — byes excluded
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        {shown.map((avatar, i) => {
+          const imgFile = getAvatarImagePath(avatar.name, imageFiles)
+          const imgSrc = imgFile ? `/avatar-images/${imgFile}` : null
+          return (
+            <Link
+              key={avatar.name}
+              to={`/avatar/${encodeURIComponent(avatar.name)}`}
+              className="relative bg-bg-surface border border-border rounded-soft overflow-hidden hover:border-primary/50 transition-colors"
+              style={{ minHeight: '140px' }}
+            >
+              {imgSrc && (
+                <>
+                  <div
+                    className="absolute inset-0 bg-cover"
+                    style={{ backgroundImage: `url('${imgSrc}')`, backgroundPosition: '50% 25%', opacity: 0.5 }}
+                  />
+                  <div className="absolute inset-0 bg-black/20" />
+                </>
+              )}
+              <div
+                className="relative p-3 flex flex-col h-full justify-between"
+                style={{ textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}
+              >
+                <div>
+                  <div className="text-xs text-text-muted font-medium">#{i + 1}:</div>
+                  <h3 className="font-bold leading-tight" style={{ fontSize: '1.25rem' }}>{avatar.name}</h3>
+                </div>
+                <div className="mt-2">
+                  <div className="text-xs font-medium">
+                    MW%:{' '}
+                    <span className="text-base font-bold" style={{ color: getWinRateColor(avatar.win_rate) }}>
+                      {avatar.win_rate}%
+                    </span>
+                  </div>
+                  <div className="text-xs text-text-muted mt-0.5">
+                    {avatar.wins}-{avatar.losses}
+                    {avatar.draws ? `-${avatar.draws}` : ''} in {avatar.matches} match{avatar.matches !== 1 ? 'es' : ''}
+                  </div>
+                  <div className="text-xs text-text-muted">
+                    {avatar.players} player{avatar.players !== 1 ? 's' : ''}
+                  </div>
+                </div>
+              </div>
+            </Link>
+          )
+        })}
+      </div>
+
+      {hidden > 0 && (
+        <button
+          className="mt-3 text-xs text-secondary hover:underline"
+          onClick={() => setShowAll(true)}
+        >
+          Show {hidden} more with under {MIN_PLAYERS} pilots or {MIN_MATCHES} matches
+        </button>
+      )}
+    </section>
   )
 }
 
@@ -925,6 +1024,9 @@ export default function EventDetail() {
           )}
         </section>
       )}
+
+      {/* Avatar Match Win % */}
+      <AvatarWinRates stats={matchHistory?.avatar_stats} imageFiles={imageFiles} />
 
       {/* All Participants */}
       {(all_decks?.length > 0 || is_admin) && (

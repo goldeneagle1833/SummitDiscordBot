@@ -2,6 +2,7 @@
 
 import logging
 import os
+from urllib.parse import urlencode
 
 import requests
 from flask import Blueprint, jsonify, request
@@ -21,6 +22,7 @@ def matchmaking_api_key(view):
 
 
 BOT_UNAVAILABLE = {"membership": "unavailable", "queues": [], "result": None}
+VOICE_UNAVAILABLE = {"status": "unavailable", "channel": None, "players": []}
 
 
 def relay_to_bot(method, path, payload=None, unavailable_body=None, timeout=None):
@@ -96,3 +98,19 @@ def report_result(guild_id, pairing_id):
         f"/matches/{guild_id}/{pairing_id}/results",
         request.get_json(silent=True) or {},
     )
+
+
+@matchmaking_bp.get("/voice")
+@matchmaking_api_key
+def voice():
+    """Voice channel (if any) that the given Discord users are talking in.
+
+    `?user_ids=111,222` or repeated `?user_ids=111&user_ids=222`.
+    """
+    user_ids = ",".join(value for value in request.args.getlist("user_ids") if value)
+    body, status = relay_to_bot(
+        "GET",
+        f"/voice?{urlencode({'user_ids': user_ids})}",
+        unavailable_body=VOICE_UNAVAILABLE,
+    )
+    return jsonify(body), status

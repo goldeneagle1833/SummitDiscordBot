@@ -16,6 +16,7 @@ from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pendin
 from repositories.limited_repo import get_active_arena_run
 from services.card_points_service import validate_deck_points
 from services.summit_result_reporting import record_sorcery_online_result
+from services.voice_presence import parse_user_ids, voice_session
 
 
 logger = logging.getLogger("discord_bot")
@@ -292,6 +293,17 @@ async def start_matchmaking_api(bot):
             )
         return web.json_response(result)
 
+    async def voice(request):
+        """Which voice channel are these players in, and who is listening?"""
+        try:
+            user_ids = parse_user_ids(request.query.get("user_ids", ""))
+        except ValueError as exc:
+            raise web.HTTPBadRequest(text=str(exc))
+        payload = await voice_session(bot, user_ids)
+        if payload is None:
+            raise web.HTTPServiceUnavailable(text="Summit bot is starting")
+        return web.json_response(payload)
+
     async def pso_match_notify(request):
         """Send a Discord DM to the loser with confirm/dispute buttons for a PSO ranked match."""
         from cogs.lfg.persistent_confirm import PersistentPSOMatchView
@@ -366,6 +378,7 @@ async def start_matchmaking_api(bot):
         "/matches/{guild_id}/{pairing_id}/results",
         report_result,
     )
+    app.router.add_get("/voice", voice)
     app.router.add_post("/pso-match-notify", pso_match_notify)
     runner = web.AppRunner(app)
     try:

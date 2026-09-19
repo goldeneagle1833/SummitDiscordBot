@@ -21,6 +21,12 @@ class MatchRepository:
     def _get_connection(self) -> sqlite3.Connection:
         return sqlite3.connect(self._db_path)
 
+    # Postseason bracket games count toward lifetime ELO and a player's overall
+    # record, but they are not season games: a bracket played today must not
+    # add wins, losses or players to the season standings.
+    NON_SEASON_SOURCES = ("Bracket",)
+    _NOT_SEASON = " AND (source IS NULL OR source NOT IN ('Bracket')) "
+
     def _ensure_columns(self):
         """Add source and match_type columns if they don't exist yet."""
         conn = self._get_connection()
@@ -304,7 +310,8 @@ class MatchRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT COUNT(*) FROM match_records WHERE winner_id = ? AND timestamp >= ?",
+            "SELECT COUNT(*) FROM match_records WHERE winner_id = ? AND timestamp >= ?"
+            + self._NOT_SEASON,
             (user_id, event_start),
         )
         count = cur.fetchone()[0]
@@ -316,7 +323,8 @@ class MatchRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT COUNT(*) FROM match_records WHERE losser_id = ? AND timestamp >= ?",
+            "SELECT COUNT(*) FROM match_records WHERE losser_id = ? AND timestamp >= ?"
+            + self._NOT_SEASON,
             (user_id, event_start),
         )
         count = cur.fetchone()[0]
@@ -328,17 +336,17 @@ class MatchRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            """
+            f"""
             SELECT user_id, SUM(wins), SUM(losses)
             FROM (
                 SELECT winner_id AS user_id, COUNT(*) AS wins, 0 AS losses
                 FROM match_records
-                WHERE timestamp >= ? AND winner_id IS NOT NULL
+                WHERE timestamp >= ? AND winner_id IS NOT NULL {self._NOT_SEASON}
                 GROUP BY winner_id
                 UNION ALL
                 SELECT losser_id AS user_id, 0 AS wins, COUNT(*) AS losses
                 FROM match_records
-                WHERE timestamp >= ? AND losser_id IS NOT NULL
+                WHERE timestamp >= ? AND losser_id IS NOT NULL {self._NOT_SEASON}
                 GROUP BY losser_id
             )
             GROUP BY user_id
@@ -357,11 +365,13 @@ class MatchRepository:
         conn = self._get_connection()
         cur = conn.cursor()
         cur.execute(
-            """
+            f"""
             SELECT DISTINCT user_id FROM (
-                SELECT winner_id as user_id FROM match_records WHERE timestamp >= ?
+                SELECT winner_id as user_id FROM match_records
+                 WHERE timestamp >= ? {self._NOT_SEASON}
                 UNION
-                SELECT losser_id as user_id FROM match_records WHERE timestamp >= ?
+                SELECT losser_id as user_id FROM match_records
+                 WHERE timestamp >= ? {self._NOT_SEASON}
             )
         """,
             (event_start, event_start),

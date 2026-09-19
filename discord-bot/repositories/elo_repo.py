@@ -13,8 +13,15 @@ logger = logging.getLogger("discord_bot")
 NON_ELO_MATCH_TYPES = ("testing", "rumble", "points")
 NON_ELO_MATCH_TYPES_SQL = ", ".join(f"'{t}'" for t in NON_ELO_MATCH_TYPES)
 
+# Sources that are rated but are not season games. Postseason bracket matches
+# move lifetime ELO only, so they must not count toward event standings,
+# participation or game counts.
+NON_SEASON_SOURCES = ("Bracket",)
+NON_SEASON_SOURCES_SQL = ", ".join(f"'{s}'" for s in NON_SEASON_SOURCES)
+
 ELO_COUNTING_MATCH_FILTER = f"""
     (match_type IS NULL OR match_type NOT IN ({NON_ELO_MATCH_TYPES_SQL}))
+    AND (source IS NULL OR source NOT IN ({NON_SEASON_SOURCES_SQL}))
     AND (
         winner_elo_change IS NULL
         OR loser_elo_change IS NULL

@@ -1439,6 +1439,72 @@ class TestPlayerPostseason:
         assert service.get_player_postseason("u99") == []
 
 
+class TestBracketGamesAreNotSeasonGames:
+    """A bracket is postseason: lifetime only, never the season standings."""
+
+    SEASON_START = "2020-01-01 00:00:00"
+
+    def _settle_one(self, service, repo):
+        slug, bracket_id = published(service, repo, 4, name="Season Guard Cup")
+        match = repo.get_matches(bracket_id)[0]  # seed 1 v seed 4
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+        return slug, bracket_id
+
+    def test_it_does_not_add_wins_to_the_season_record(self, service, repo, match_log):
+        self._settle_one(service, repo)
+
+        records = match_log.get_season_records(self.SEASON_START)
+        assert "u1" not in records
+        assert "u4" not in records
+
+    def test_it_does_not_add_a_player_to_the_season(self, service, repo, match_log):
+        self._settle_one(service, repo)
+        assert "u1" not in [str(p) for p in match_log.get_season_players(self.SEASON_START)]
+
+    def test_it_does_not_move_a_players_season_counts(self, service, repo, match_log):
+        self._settle_one(service, repo)
+
+        assert match_log.get_season_wins_count("u1", self.SEASON_START) == 0
+        assert match_log.get_season_losses_count("u4", self.SEASON_START) == 0
+
+    def test_it_still_counts_toward_the_lifetime_record(self, service, repo, match_log):
+        self._settle_one(service, repo)
+
+        assert match_log.get_wins_count("u1") == 1
+        assert match_log.get_losses_count("u4") == 1
+
+    def test_ordinary_games_still_count_for_the_season(self, service, repo, match_log, match_db):
+        """The guard must only skip bracket games."""
+        from tests.conftest import seed_matches
+
+        seed_matches(match_db, [
+            {
+                "winner_id": "u1", "winner_name": "P1",
+                "loser_id": "u4", "loser_name": "P4",
+                "timestamp": "2026-01-02 12:00:00",
+            }
+        ])
+        self._settle_one(service, repo)
+
+        records = match_log.get_season_records(self.SEASON_START)
+        assert records["u1"]["wins"] == 1   # the ordinary game, not the bracket one
+        assert records["u4"]["losses"] == 1
+
+    def test_the_event_ladder_number_is_untouched(self, service, repo, elo_db):
+        import sqlite3
+
+        self._settle_one(service, repo)
+        conn = sqlite3.connect(str(elo_db))
+        rows = dict(
+            conn.execute(
+                "SELECT user_id, online_event_elo FROM overall_standings "
+                "WHERE user_id IN ('u1', 'u4')"
+            )
+        )
+        conn.close()
+        assert rows == {"u1": 1500, "u4": 1500}
+
+
 # -- API ----------------------------------------------------------
 
 

@@ -737,6 +737,18 @@ export default function Nav() {
             </div>
           )}
 
+          {/* Explorer admin link (global admins see it via the admin block too) */}
+          {user?.is_explorer_admin && !user?.is_admin && (
+            <div className="border-b border-border">
+              <SidebarLink
+                to="/admin/explorer-applications"
+                label="Explorer Applications"
+                location={location}
+                onClick={close}
+              />
+            </div>
+          )}
+
           {/* Admin link */}
           {user?.is_admin && (
             <div className="border-b border-border">
@@ -761,6 +773,20 @@ export default function Nav() {
               >
                 Monitoring
               </Link>
+              <Link
+                to="/admin/users"
+                className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
+                onClick={close}
+              >
+                Users
+              </Link>
+              <Link
+                to="/admin/explorer-applications"
+                className="block px-4 py-3 text-accent-red hover:bg-accent-red/10 transition-colors font-medium"
+                onClick={close}
+              >
+                Explorer Applications
+              </Link>
             </div>
           )}
 
@@ -777,6 +803,7 @@ export default function Nav() {
           <SidebarLink to="/brackets" label="Brackets" location={location} onClick={close} />
           <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
           <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} />
+          <SidebarLink to="/explorer/apply" label="Host an Explorer Event" location={location} onClick={close} />
           <SidebarLink to="/card-points" label="Omens" location={location} onClick={close} />
 
           {/* Summit Stats */}

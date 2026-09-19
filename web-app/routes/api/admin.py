@@ -1,6 +1,7 @@
 """Admin API routes for player and match management."""
 
 import logging
+import re
 import sqlite3
 import sys
 from datetime import datetime, timedelta
@@ -12,6 +13,7 @@ from services.admin import AdminService
 from repositories.audit import AuditRepository
 from repositories.avatar_image_settings import AvatarImageSettingsRepository
 from repositories.creator_access import CreatorAccessRepository
+from repositories.elo import EloRepository
 from repositories.external_matches import ExternalMatchRepository
 from repositories.user_profiles import UserProfileRepository
 from utils.auth import require_admin
@@ -1539,3 +1541,153 @@ def all_blocked_users():
     ]
 
     return jsonify({"success": True, "entries": entries, "total": total}), 200
+
+
+# ---------------------------------------------------------------------------
+# User profile management (admin "add user by Discord name" page)
+# ---------------------------------------------------------------------------
+
+# Discord snowflakes are currently 17-19 digits; allow a little room either way.
+DISCORD_ID_PATTERN = re.compile(r"^\d{15,25}$")
+
+MAX_DISPLAY_NAME_LENGTH = 100
+
+
+@admin_bp.route("/admin/user-profiles", methods=["GET"])
+@require_admin
+def list_user_profiles():
+    """List website user profiles, optionally filtered by name or ID (admin only)."""
+    query = request.args.get("q", "").strip()
+    limit = request.args.get("limit", 50, type=int)
+    offset = request.args.get("offset", 0, type=int)
+    limit = min(max(1, limit), 200)
+    offset = max(0, offset)
+
+    repo = UserProfileRepository()
+    profiles, total = repo.list_profiles(query or None, limit=limit, offset=offset)
+    return jsonify({"success": True, "profiles": profiles, "total": total}), 200
+
+
+@admin_bp.route("/admin/user-profiles/candidates", methods=["GET"])
+@require_admin
+def user_profile_candidates():
+    """Find known Discord players without a website profile (admin only).
+
+    The web app has no bot token, so a Discord name cannot be resolved to an ID
+    through Discord. Instead we search the players the bot has already recorded
+    (match history and ELO standings) and surface the ones that still have no
+    user_profiles row, so an admin can add them without typing a snowflake.
+    """
+    query = request.args.get("q", "").strip()
+    if len(query) < 2:
+        return jsonify({"success": False, "error": "Query must be at least 2 characters"}), 400
+
+    limit = request.args.get("limit", 10, type=int)
+    limit = min(max(1, limit), 50)
+
+    profile_repo = UserProfileRepository()
+    candidates = {
+        c["user_id"]: {
+            "user_id": c["user_id"],
+            "display_name": c["display_name"],
+            "last_seen": c.get("last_seen"),
+            "source": "match history",
+        }
+        for c in profile_repo.find_unprofiled_players(query, limit=limit)
+    }
+
+    # ELO standings live in a separate database, so filter those separately.
+    elo_matches = EloRepository().search_players_by_name(query, limit=limit)
+    elo_ids = [m["user_id"] for m in elo_matches if m["user_id"] not in candidates]
+    already_profiled = profile_repo.filter_existing_user_ids(elo_ids)
+    for match in elo_matches:
+        uid = match["user_id"]
+        if uid in candidates or uid in already_profiled:
+            continue
+        candidates[uid] = {
+            "user_id": uid,
+            "display_name": match["display_name"],
+            "last_seen": None,
+            "source": "ELO standings",
+        }
+
+    return jsonify({"success": True, "candidates": list(candidates.values())[:limit]}), 200
+
+
+@admin_bp.route("/admin/user-profiles", methods=["POST"])
+@require_admin
+def add_user_profile():
+    """Create a website profile for a Discord user who has not logged in (admin only)."""
+    data = request.get_json(silent=True) or {}
+
+    display_name = str(data.get("display_name") or "").strip()
+    user_id = str(data.get("user_id") or "").strip()
+    avatar = str(data.get("avatar") or "").strip() or None
+
+    if not display_name:
+        return jsonify({"success": False, "error": "display_name is required"}), 400
+    if len(display_name) > MAX_DISPLAY_NAME_LENGTH:
+        return jsonify({
+            "success": False,
+            "error": f"display_name must be {MAX_DISPLAY_NAME_LENGTH} characters or fewer",
+        }), 400
+    if not DISCORD_ID_PATTERN.match(user_id):
+        return jsonify({
+            "success": False,
+            "error": "user_id must be a numeric Discord ID (15-25 digits)",
+        }), 400
+
+    repo = UserProfileRepository()
+    admin_id, admin_name = _get_admin_info()
+    created = repo.create_manual_profile(
+        user_id, display_name, provider="discord", avatar=avatar, added_by=admin_name
+    )
+    if not created:
+        existing = repo.get_by_user_id(user_id, provider="discord")
+        return jsonify({
+            "success": False,
+            "error": f"A profile already exists for {user_id}"
+                     f" ({existing.get('display_name') if existing else 'unknown'})",
+        }), 409
+
+    audit = AuditRepository()
+    audit.log_action(
+        admin_id, admin_name, "add_user_profile",
+        target_id=user_id,
+        target_name=display_name,
+        new_state={"display_name": display_name, "provider": "discord"},
+        details=f"Created website profile for {display_name} ({user_id})",
+    )
+
+    profile = repo.get_by_user_id(user_id, provider="discord")
+    return jsonify({"success": True, "profile": profile}), 201
+
+
+@admin_bp.route("/admin/user-profiles/<path:user_id>", methods=["DELETE"])
+@require_admin
+def delete_user_profile(user_id):
+    """Remove a manually added profile that has never been logged into (admin only)."""
+    repo = UserProfileRepository()
+    existing = repo.get_by_user_id(str(user_id), provider="discord")
+    if not existing:
+        return jsonify({"success": False, "error": "Profile not found"}), 404
+
+    deleted = repo.delete_manual_profile(str(user_id), provider="discord")
+    if not deleted:
+        return jsonify({
+            "success": False,
+            "error": "This profile belongs to a real login and cannot be removed here."
+                     " Use Delete Account instead.",
+        }), 400
+
+    admin_id, admin_name = _get_admin_info()
+    audit = AuditRepository()
+    audit.log_action(
+        admin_id, admin_name, "remove_user_profile",
+        target_id=str(user_id),
+        target_name=existing.get("display_name"),
+        previous_state={"display_name": existing.get("display_name")},
+        details=f"Removed manually added profile for {existing.get('display_name')} ({user_id})",
+    )
+
+    return jsonify({"success": True}), 200

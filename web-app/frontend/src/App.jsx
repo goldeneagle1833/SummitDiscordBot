@@ -6,6 +6,7 @@ import Footer from '@/components/layout/Footer'
 import AdminGuard from '@/components/layout/AdminGuard'
 import StoreAdminGuard from '@/components/layout/StoreAdminGuard'
 import CreatorGuard from '@/components/layout/CreatorGuard'
+import ExplorerAdminGuard from '@/components/layout/ExplorerAdminGuard'
 import Spinner from '@/components/ui/Spinner'
 
 // Phase 3: Core data pages
@@ -75,6 +76,9 @@ import OmensMatchesAdmin from '@/pages/admin/OmensMatches'
 import ChartDetail from '@/pages/admin/ChartDetail'
 import Monitoring from '@/pages/admin/Monitoring'
 import BracketsAdmin from '@/pages/admin/BracketsAdmin'
+import UserProfiles from '@/pages/admin/UserProfiles'
+import ExplorerApplications from '@/pages/admin/ExplorerApplications'
+import ExplorerApply from '@/pages/ExplorerApply'
 
 // Error pages
 import ErrorPage from '@/pages/ErrorPage'
@@ -197,6 +201,7 @@ const router = createBrowserRouter([
       { path: '/community', element: <Community /> },
       { path: '/life-counter', element: <LifeCounter /> },
       { path: '/explorer', element: <LazyPage><ExplorerStandings /></LazyPage> },
+      { path: '/explorer/apply', element: <ExplorerApply /> },
       { path: '/fun-stats', element: <FunStats /> },
       { path: '/rumble', element: <Rumble /> },
       { path: '/card-points', element: <CardPoints /> },
@@ -222,6 +227,8 @@ const router = createBrowserRouter([
       { path: '/admin/chart/:chartType', element: <AdminGuard><ChartDetail /></AdminGuard> },
       { path: '/admin/monitoring', element: <AdminGuard><Monitoring /></AdminGuard> },
       { path: '/admin/brackets', element: <AdminGuard><BracketsAdmin /></AdminGuard> },
+      { path: '/admin/users', element: <AdminGuard><UserProfiles /></AdminGuard> },
+      { path: '/admin/explorer-applications', element: <ExplorerAdminGuard><LazyPage><ExplorerApplications /></LazyPage></ExplorerAdminGuard> },
       // Error & 404
       { path: '/error', element: <ErrorPage /> },
       { path: '*', element: <NotFound /> },

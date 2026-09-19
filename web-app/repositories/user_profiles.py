@@ -67,6 +67,8 @@ class UserProfileRepository:
             'profile_public_sections': 'TEXT',
             'nav_preferences': 'TEXT',
             'profile_reset_at': 'TEXT',
+            'manually_added_by': 'TEXT',
+            'manually_added_at': 'TEXT',
         }
 
         # Add missing columns
@@ -551,3 +553,209 @@ class UserProfileRepository:
         updated = cur.rowcount > 0
         conn.close()
         return updated
+
+    # ------------------------------------------------------------------
+    # Manually added profiles (admin "add user by Discord name")
+    # ------------------------------------------------------------------
+
+    def create_manual_profile(
+        self,
+        user_id: str,
+        display_name: str,
+        provider: str = "discord",
+        avatar: str | None = None,
+        added_by: str | None = None,
+    ) -> bool:
+        """Create a profile for someone who has never logged in.
+
+        Used by the admin "add user" page so a known Discord player is
+        searchable and linkable before their first login. Never overwrites an
+        existing profile: returns False if one already exists for this
+        (user_id, provider) pair.
+
+        Args:
+            user_id: Discord snowflake (or 'google_<id>') for the new profile
+            display_name: Name to show for the user
+            provider: 'discord' or 'google'
+            avatar: Optional avatar hash/URL
+            added_by: Name of the admin creating the profile
+
+        Returns:
+            bool: True if a row was created, False if one already existed.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO user_profiles (
+                user_id, provider, display_name, avatar,
+                first_login_at, last_login_at,
+                manually_added_by, manually_added_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (user_id, provider) DO NOTHING
+            """,
+            (str(user_id), provider, display_name, avatar, now, now, added_by, now),
+        )
+        conn.commit()
+        created = cur.rowcount > 0
+        conn.close()
+        return created
+
+    def delete_manual_profile(self, user_id: str, provider: str = "discord") -> bool:
+        """Delete a manually added profile that has never been logged into.
+
+        Profiles belonging to real logins are left untouched — account
+        deletion goes through AdminService.delete_account instead.
+
+        Returns:
+            bool: True if a row was deleted.
+        """
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            DELETE FROM user_profiles
+            WHERE user_id = ?
+              AND provider = ?
+              AND manually_added_at IS NOT NULL
+              AND last_login_at <= manually_added_at
+            """,
+            (str(user_id), provider),
+        )
+        conn.commit()
+        deleted = cur.rowcount > 0
+        conn.close()
+        return deleted
+
+    def list_profiles(
+        self, query: str | None = None, limit: int = 50, offset: int = 0
+    ) -> tuple[list[dict], int]:
+        """List user profiles, newest first, optionally filtered by name or ID.
+
+        Returns:
+            tuple: (profiles, total_matching_count). Each profile carries
+            ``manually_added`` and ``has_logged_in`` flags so the admin UI can
+            tell placeholder profiles apart from real accounts.
+        """
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        where = ""
+        params: list = []
+        if query:
+            pattern = f"%{self._escape_like(query)}%"
+            where = (
+                " WHERE LOWER(display_name) LIKE LOWER(?) ESCAPE '\\'"
+                " OR LOWER(custom_display_name) LIKE LOWER(?) ESCAPE '\\'"
+                " OR user_id LIKE ? ESCAPE '\\'"
+            )
+            params = [pattern, pattern, pattern]
+
+        total = cur.execute(
+            f"SELECT COUNT(*) FROM user_profiles{where}", params
+        ).fetchone()[0]
+
+        cur.execute(
+            f"""
+            SELECT user_id, provider, display_name, custom_display_name, avatar,
+                   first_login_at, last_login_at, manually_added_by, manually_added_at
+            FROM user_profiles{where}
+            ORDER BY COALESCE(manually_added_at, first_login_at) DESC
+            LIMIT ? OFFSET ?
+            """,
+            [*params, limit, offset],
+        )
+
+        profiles = []
+        for row in cur.fetchall():
+            profile = dict(row)
+            manually_added = profile.get("manually_added_at") is not None
+            profile["manually_added"] = manually_added
+            profile["has_logged_in"] = (
+                not manually_added
+                or (profile.get("last_login_at") or "") > profile["manually_added_at"]
+            )
+            profiles.append(profile)
+
+        conn.close()
+        return profiles, total
+
+    def find_unprofiled_players(self, query: str, limit: int = 10) -> list[dict]:
+        """Find players seen in match history who have no user_profiles row.
+
+        These are the people an admin can usefully add a profile for: the bot
+        already knows their Discord ID and name, but they have never logged
+        into the website.
+
+        Returns:
+            list[dict]: [{"user_id": str, "display_name": str, "last_seen": str}]
+        """
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        existing_tables = {
+            row[0]
+            for row in cur.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+                " AND name IN ('match_records', 'match_records_archive')"
+            ).fetchall()
+        }
+
+        union_parts = []
+        for table in ("match_records", "match_records_archive"):
+            if table in existing_tables:
+                union_parts.append(
+                    f"SELECT winner_id AS user_id, winner_display_name AS display_name,"
+                    f" timestamp FROM {table}"
+                )
+                union_parts.append(
+                    f"SELECT losser_id AS user_id, losser_display_name AS display_name,"
+                    f" timestamp FROM {table}"
+                )
+
+        if not union_parts:
+            conn.close()
+            return []
+
+        escaped = self._escape_like(query)
+        union_sql = " UNION ALL ".join(union_parts)
+        cur.execute(
+            f"""
+            SELECT CAST(user_id AS TEXT) AS user_id,
+                   display_name,
+                   MAX(timestamp) AS last_seen
+            FROM ({union_sql})
+            WHERE user_id IS NOT NULL
+              AND display_name IS NOT NULL
+              AND LOWER(display_name) LIKE LOWER(?) ESCAPE '\\'
+              AND CAST(user_id AS TEXT) NOT IN (SELECT user_id FROM user_profiles)
+            GROUP BY CAST(user_id AS TEXT)
+            ORDER BY
+                CASE WHEN LOWER(display_name) = LOWER(?) THEN 0 ELSE 1 END,
+                CASE WHEN LOWER(display_name) LIKE LOWER(?) ESCAPE '\\' THEN 0 ELSE 1 END,
+                display_name ASC
+            LIMIT ?
+            """,
+            (f"%{escaped}%", query, f"{escaped}%", limit),
+        )
+        results = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        return results
+
+    def filter_existing_user_ids(self, user_ids: list[str]) -> set[str]:
+        """Return the subset of user_ids that already have a profile row."""
+        if not user_ids:
+            return set()
+        conn = self._get_connection()
+        cur = conn.cursor()
+        placeholders = ",".join("?" for _ in user_ids)
+        rows = cur.execute(
+            f"SELECT user_id FROM user_profiles WHERE user_id IN ({placeholders})",
+            [str(uid) for uid in user_ids],
+        ).fetchall()
+        conn.close()
+        return {str(row[0]) for row in rows}

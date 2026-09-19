@@ -16,6 +16,7 @@ os.environ["FART_SCORES_DB_PATH"] = str(Path(_tmp_dir) / "fart_scores.db")
 os.environ["COMMUNITY_DB_PATH"] = str(Path(_tmp_dir) / "community.db")
 os.environ["ANALYTICS_DB_PATH"] = str(Path(_tmp_dir) / "analytics.db")
 os.environ["MONITORING_DB_PATH"] = str(Path(_tmp_dir) / "monitoring.db")
+os.environ["EXPLORER_DB_PATH"] = str(Path(_tmp_dir) / "explorer.db")
 os.environ["SECRET_KEY"] = "test-secret-key-for-pytest"
 os.environ["API_KEYS"] = "test-api-key-123"
 os.environ["ADMIN_IDS"] = "admin_user_1"
@@ -39,12 +40,15 @@ def _patch_db_paths(elo_db, match_db, tmp_path):
     import repositories.match_confirmation
     import repositories.audit
     import repositories.blocked_users_repo
+    import repositories.explorer
+    import migrations.create_explorer_tables
 
     webapp_config.ELO_DB_PATH = elo_db
     webapp_config.MATCH_RECORDS_DB_PATH = match_db
     webapp_config.FART_SCORES_DB_PATH = tmp_path / "fart_scores.db"
     webapp_config.COMMUNITY_DB_PATH = tmp_path / "community.db"
     webapp_config.ANALYTICS_DB_PATH = tmp_path / "analytics.db"
+    webapp_config.EXPLORER_DB_PATH = tmp_path / "explorer.db"
 
     # Patch the module-level bindings that repos captured via `from webapp_config import ...`
     repositories.elo.ELO_DB_PATH = elo_db
@@ -54,6 +58,10 @@ def _patch_db_paths(elo_db, match_db, tmp_path):
     repositories.match_confirmation.MATCH_RECORDS_DB_PATH = match_db
     repositories.audit.MATCH_RECORDS_DB_PATH = match_db
     repositories.blocked_users_repo.MATCH_RECORDS_DB_PATH = match_db
+    # Explorer code reads this at module level; repoint it so tests never
+    # touch the real explorer.db.
+    repositories.explorer.EXPLORER_DB_PATH = webapp_config.EXPLORER_DB_PATH
+    migrations.create_explorer_tables.EXPLORER_DB_PATH = webapp_config.EXPLORER_DB_PATH
 
     # Patch auth module-level bindings
     import utils.auth
@@ -241,6 +249,18 @@ def admin_session(client):
     with client.session_transaction() as sess:
         sess["user_id"] = "admin_user_1"
         sess["username"] = "AdminUser"
+    return client
+
+
+@pytest.fixture()
+def explorer_admin_session(client, app):
+    """A non-global-admin user listed in the explorer_admins table."""
+    from repositories.explorer import ExplorerRepository
+    ExplorerRepository().add_explorer_admin("explorer_admin_1", "ExplorerAdmin")
+    with client.session_transaction() as sess:
+        sess["user_id"] = "explorer_admin_1"
+        sess["username"] = "ExplorerAdmin"
+        sess["auth_provider"] = "discord"
     return client
 
 

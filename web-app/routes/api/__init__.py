@@ -25,6 +25,7 @@ from routes.api.analytics import analytics_bp
 from routes.api.deck_recommendations import deck_rec_bp
 from routes.api.creator import creator_bp
 from routes.api.explorer import explorer_bp
+from routes.api.explorer_applications import explorer_applications_bp
 from routes.api.rumble import rumble_bp
 from routes.api.deck_builder import deck_builder_bp
 from routes.api.store import store_bp
@@ -55,6 +56,9 @@ api_bp.register_blueprint(analytics_bp)
 api_bp.register_blueprint(deck_rec_bp, url_prefix="/deck-rec")
 api_bp.register_blueprint(creator_bp, url_prefix="/creator")
 api_bp.register_blueprint(explorer_bp, url_prefix="/explorer")
+api_bp.register_blueprint(
+    explorer_applications_bp, url_prefix="/explorer/applications"
+)
 api_bp.register_blueprint(rumble_bp)
 api_bp.register_blueprint(deck_builder_bp, url_prefix="/deck-builder")
 api_bp.register_blueprint(store_bp)

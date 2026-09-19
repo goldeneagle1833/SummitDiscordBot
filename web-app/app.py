@@ -30,6 +30,9 @@ from migrations.add_season_id_to_match_reports_web import migrate as migrate_sea
 from migrations.add_lifetime_elo_after import migrate as migrate_lifetime_elo_after
 from migrations.create_analytics_tables import create_analytics_tables
 from migrations.create_explorer_tables import create_explorer_tables
+from migrations.create_explorer_application_tables import (
+    create_explorer_application_tables,
+)
 from migrations.create_rumble_tables import create_rumble_tables
 from migrations.create_external_matches_table import create_external_matches_table
 from migrations.create_deck_builder_tables import create_deck_builder_tables
@@ -78,6 +81,11 @@ def create_app() -> Flask:
         create_explorer_tables()
     except Exception as e:
         logger.error(f"Failed to ensure explorer tables: {e}")
+
+    try:
+        create_explorer_application_tables()
+    except Exception as e:
+        logger.error(f"Failed to ensure explorer application tables: {e}")
 
     try:
         create_rumble_tables()

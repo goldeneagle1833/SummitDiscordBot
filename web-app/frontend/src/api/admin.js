@@ -22,6 +22,19 @@ export const removeCreatorAccess = (userId) =>
 export const searchUsers = (q) =>
   get(`/api/admin/search-users?q=${encodeURIComponent(q)}`)
 
+// User profiles (admin "add user by Discord name" page)
+export const getUserProfiles = (q = '', limit = 50, offset = 0) =>
+  get(`/api/admin/user-profiles?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`)
+
+export const getUserProfileCandidates = (q) =>
+  get(`/api/admin/user-profiles/candidates?q=${encodeURIComponent(q)}`)
+
+export const addUserProfile = (userId, displayName, avatar) =>
+  post('/api/admin/user-profiles', { user_id: userId, display_name: displayName, avatar })
+
+export const deleteUserProfile = (userId) =>
+  del(`/api/admin/user-profiles/${encodeURIComponent(userId)}`)
+
 // Avatar image display settings
 export const getAvatarImageSettings = () => get('/api/admin/avatar-image-settings')
 

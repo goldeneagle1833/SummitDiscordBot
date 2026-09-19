@@ -12,8 +12,10 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "leaflet": "^1.9.4",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "react-leaflet": "^5.0.0",
     "react-router-dom": "^6.30.3",
     "recharts": "^3.8.1"
   },

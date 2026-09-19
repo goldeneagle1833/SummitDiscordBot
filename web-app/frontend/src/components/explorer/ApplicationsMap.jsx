@@ -24,7 +24,11 @@ export default function ApplicationsMap({ applications, onSelect }) {
   )
 
   return (
-    <div className="h-80 rounded-lg overflow-hidden border border-border">
+    // `isolate` gives the map its own stacking context. Leaflet puts z-index
+    // 400-1000 on its panes and controls, and .leaflet-container creates no
+    // stacking context of its own, so without this those values compete at the
+    // page root and paint the map over dialogs.
+    <div className="h-80 rounded-lg overflow-hidden border border-border isolate">
       <MapContainer
         center={DEFAULT_CENTER}
         zoom={DEFAULT_ZOOM}

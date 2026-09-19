@@ -244,6 +244,38 @@ class TestUserProfileRepository:
         assert len(results) == 1
         assert results[0]["display_name"] == "AliceWonder"
 
+    def _with_custom_name(self, match_db, user_id, handle, custom):
+        repo = UserProfileRepository(db_path=match_db)
+        repo.upsert_profile(user_id=user_id, display_name=handle, provider="discord")
+        conn = sqlite3.connect(str(match_db))
+        conn.execute(
+            "UPDATE user_profiles SET custom_display_name = ? WHERE user_id = ?",
+            (custom, user_id),
+        )
+        conn.commit()
+        conn.close()
+        return repo
+
+    def test_search_returns_the_name_a_player_chose(self, match_db):
+        """Admin pickers seed brackets from this; the handle is not their name."""
+        repo = self._with_custom_name(match_db, "1", "gwendabear", "Gwendolyn")
+
+        results = repo.search_users("gwenda")
+        assert [r["display_name"] for r in results] == ["Gwendolyn"]
+
+    def test_search_finds_a_player_by_the_name_they_chose(self, match_db):
+        repo = self._with_custom_name(match_db, "1", "gwendabear", "Gwendolyn")
+
+        results = repo.search_users("Gwendolyn")
+        assert [r["user_id"] for r in results] == ["1"]
+
+    def test_search_still_returns_the_handle_when_nothing_was_chosen(self, match_db):
+        repo = UserProfileRepository(db_path=match_db)
+        repo.upsert_profile(user_id="2", display_name="BobBuilder", provider="discord")
+
+        results = repo.search_users("BobB")
+        assert [r["display_name"] for r in results] == ["BobBuilder"]
+
 
 # ── FartRepository ───────────────────────────────────────────
 

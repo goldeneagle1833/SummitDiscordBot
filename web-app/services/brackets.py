@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from repositories.brackets import BracketRepository
 from repositories.elo import EloRepository
 from repositories.matches import MatchRepository
+from repositories.user_profiles import UserProfileRepository
 from services.bracket_builder import (
     advance_winner,
     bracket_size_for,
@@ -53,12 +54,14 @@ class BracketService:
         curiosa_service=None,
         elo_repo=None,
         match_repo=None,
+        profile_repo=None,
     ):
         self._repo = repo or BracketRepository()
         self._leaderboard_override = leaderboard_service
         self._curiosa_override = curiosa_service
         self._elo_repo_override = elo_repo
         self._match_repo_override = match_repo
+        self._profile_repo_override = profile_repo
 
     @property
     def _leaderboard(self):
@@ -78,6 +81,11 @@ class BracketService:
     def _elo_repo(self):
         """The bot ladder. Built on demand so its path resolves at call time."""
         return self._elo_repo_override or EloRepository()
+
+    @property
+    def _profile_repo(self):
+        """Site profiles, for the names players have chosen for themselves."""
+        return self._profile_repo_override or UserProfileRepository()
 
     # -- Seed pool ------------------------------------------------
 
@@ -290,6 +298,8 @@ class BracketService:
             try:
                 matches = self._repo.get_matches(bracket["bracket_id"])
                 bracket["champion"] = champion(matches) if matches else None
+                if bracket["champion"]:
+                    self._use_site_names([], [], bracket["champion"])
                 bracket["open_matches"] = len(
                     [m for m in matches if m["state"] == "pending" and _is_playable(m)]
                 )
@@ -298,6 +308,60 @@ class BracketService:
                     "Could not summarise bracket %s: %s", bracket.get("slug"), e, exc_info=True
                 )
         return brackets
+
+    def _site_names(self, user_ids) -> dict:
+        """What the rest of the site calls these players, by id.
+
+        A bracket records the name a player was seeded under, but a name is
+        not a result: someone who has set a display name since should be
+        called by it here too, rather than by whatever handle the admin
+        search happened to return. A name the player chose themselves wins,
+        as it does on their profile; otherwise the ladder's name, as the
+        leaderboard shows it.
+        """
+        ids = [str(u) for u in user_ids if u]
+        if not ids:
+            return {}
+
+        names = {}
+        try:
+            names.update(self._elo_repo.get_display_names(ids))
+        except Exception as e:
+            logger.warning("Bracket name lookup failed, keeping seeded names: %s", e)
+        try:
+            names.update(self._profile_repo.get_custom_display_names(ids))
+        except Exception as e:
+            logger.warning("Bracket chosen-name lookup failed: %s", e)
+        return names
+
+    def _use_site_names(self, entrants, rounds, champion_row=None):
+        ids = [e.get("user_id") for e in entrants]
+        ids += [
+            match.get(f"p{slot}_user_id")
+            for round_data in rounds
+            for match in round_data["matches"]
+            for slot in (1, 2)
+        ]
+        if champion_row:
+            ids.append(champion_row.get("user_id"))
+
+        names = self._site_names(ids)
+        if not names:
+            return
+
+        def rename(row, id_key, name_key):
+            current = names.get(str(row.get(id_key) or ""))
+            if current:
+                row[name_key] = current
+
+        for entrant in entrants:
+            rename(entrant, "user_id", "display_name")
+        for round_data in rounds:
+            for match in round_data["matches"]:
+                rename(match, "p1_user_id", "p1_name")
+                rename(match, "p2_user_id", "p2_name")
+        if champion_row:
+            rename(champion_row, "user_id", "display_name")
 
     def get_bracket_detail(
         self,
@@ -333,11 +397,14 @@ class BracketService:
                     finished=finished,
                 )
 
+        champion_row = champion(matches) if matches else None
+        self._use_site_names(entrants, rounds, champion_row)
+
         return {
             "bracket": bracket,
             "entrants": entrants,
             "rounds": rounds,
-            "champion": champion(matches) if matches else None,
+            "champion": champion_row,
         }
 
     def _annotate_for_viewer(self, match, *, viewer_id, is_admin, seeds_with_decks, finished):
@@ -403,9 +470,11 @@ class BracketService:
             return {"entrants": entrants, "rounds": [], "bracket_size": 0, "byes": 0}
 
         matches = build_matches(entrants)
+        rounds = rounds_for_display(matches)
+        self._use_site_names(entrants, rounds)
         return {
             "entrants": entrants,
-            "rounds": rounds_for_display(matches),
+            "rounds": rounds,
             "bracket_size": bracket_size_for(len(entrants)),
             "byes": len([m for m in matches if m["state"] == "bye"]),
         }
@@ -686,6 +755,8 @@ class BracketService:
                 }
             )
 
+        self._use_site_names(players, [])
+
         return {
             "bracket": {
                 "slug": bracket["slug"],
@@ -890,10 +961,12 @@ class BracketService:
                 f"{' and '.join(missing)} still need to submit a decklist before the table opens"
             )
 
+        names = self._site_names([match[f"p{slot}_user_id"] for slot in (1, 2)])
         players = [
             {
                 "user_id": match[f"p{slot}_user_id"],
-                "display_name": match[f"p{slot}_name"],
+                "display_name": names.get(str(match[f"p{slot}_user_id"] or ""))
+                or match[f"p{slot}_name"],
                 "deck_url": decks[match[f"p{slot}_seed"]]["deck_url"],
             }
             for slot in (1, 2)
@@ -1094,16 +1167,12 @@ class BracketService:
         winner_new = calculate_elo(winner_elo, loser_elo, True, k=self.K_FACTOR)
         loser_new = calculate_elo(loser_elo, winner_elo, False, k=self.K_FACTOR)
 
-        winner_name = (
-            match["p1_name"] if winner_id == str(match["p1_user_id"] or "") else match["p2_name"]
-        )
-        loser_name = (
-            match["p2_name"] if winner_id == str(match["p1_user_id"] or "") else match["p1_name"]
-        )
-
         try:
-            elo_repo.upsert_user_elo(winner_id, winner_name, winner_new)
-            elo_repo.upsert_user_elo(loser_id, loser_name, loser_new)
+            # Rating only. The names on a bracket were recorded when it was
+            # seeded, so writing them back would rename a player who has
+            # since chosen a different one.
+            elo_repo.set_user_elo(winner_id, winner_new)
+            elo_repo.set_user_elo(loser_id, loser_new)
         except Exception as e:
             logger.error("Bracket ELO update failed: %s", e)
             return
@@ -1134,15 +1203,15 @@ class BracketService:
         loser_id = str((match["p2_user_id"] if on_p1 else match["p1_user_id"]) or "")
 
         elo_repo = self._elo_repo
-        for user_id, change, name in (
-            (winner_id, match.get("winner_elo_change") or 0, match["p1_name"] if on_p1 else match["p2_name"]),
-            (loser_id, match.get("loser_elo_change") or 0, match["p2_name"] if on_p1 else match["p1_name"]),
+        for user_id, change in (
+            (winner_id, match.get("winner_elo_change") or 0),
+            (loser_id, match.get("loser_elo_change") or 0),
         ):
             try:
                 current = elo_repo.get_user_elo(user_id)
                 if current is None or not change:
                     continue
-                elo_repo.upsert_user_elo(user_id, name, current - change)
+                elo_repo.set_user_elo(user_id, current - change)
             except Exception as e:
                 logger.error("Bracket ELO reversal failed for %s: %s", user_id, e)
 
@@ -1179,13 +1248,18 @@ class BracketService:
             loser_deck = decks.get(stored["p2_seed"] if on_p1 else stored["p1_seed"]) or {}
 
             elo_repo = self._elo_repo
+            # Under the name the player goes by now, not the one the bracket
+            # was seeded with.
+            names = self._site_names([winner_id, loser_id])
             row_id = self._match_repo.insert_match(
                 {
                     "reporter_id": stored.get("resolved_by"),
                     "winner_id": winner_id,
-                    "winner_display_name": stored["p1_name"] if on_p1 else stored["p2_name"],
+                    "winner_display_name": names.get(winner_id)
+                    or (stored["p1_name"] if on_p1 else stored["p2_name"]),
                     "losser_id": loser_id,
-                    "losser_display_name": stored["p2_name"] if on_p1 else stored["p1_name"],
+                    "losser_display_name": names.get(loser_id)
+                    or (stored["p2_name"] if on_p1 else stored["p1_name"]),
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "match_comment": f"{bracket['name']} - {stored['round_title']}",
                     "curiosa_url_winner": winner_deck.get("deck_url"),

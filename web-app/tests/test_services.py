@@ -118,6 +118,68 @@ class TestLeaderboardService:
         assert band_1300["count"] == 2
 
 
+class TestLeaderboardNames:
+    """A name a player set on the site is the name the leaderboard shows.
+
+    The bot writes a player's Discord name into the standings every time it
+    rates a game, so a chosen name stored there would be undone by their next
+    match. The leaderboard applies the choice as it reads.
+    """
+
+    def _service(self, standings, chosen):
+        elo_repo = MagicMock()
+        elo_repo.get_all_standings.return_value = standings
+        elo_repo.get_event_standings.return_value = standings
+        elo_repo.get_active_event.return_value = {
+            "event_id": 7, "event_name": "Season 7", "start_date": "2025-01-01",
+        }
+        match_repo = MagicMock()
+        match_repo.get_wins_count.return_value = 3
+        match_repo.get_losses_count.return_value = 1
+        match_repo.get_season_records.return_value = {
+            s["user_id"]: {"wins": 3, "losses": 1} for s in standings
+        }
+        profile_repo = MagicMock()
+        profile_repo.get_all_custom_display_names.return_value = chosen
+        return LeaderboardService(
+            elo_repo=elo_repo, match_repo=match_repo, profile_repo=profile_repo
+        )
+
+    STANDINGS = [
+        {"user_id": "1", "display_name": "gwendabear", "elo": 1800,
+         "paper_elo": 1500, "online_elo": 1800, "primary_mode": "Online",
+         "event_elo": 1640},
+        {"user_id": "2", "display_name": "BobBuilder", "elo": 1700,
+         "paper_elo": 1500, "online_elo": 1700, "primary_mode": "Online",
+         "event_elo": 1600},
+    ]
+
+    def test_the_lifetime_board_uses_it(self):
+        service = self._service(self.STANDINGS, {"1": "Gwendolyn"})
+        assert [p["name"] for p in service.get_leaderboard()] == ["Gwendolyn", "BobBuilder"]
+
+    def test_the_season_board_uses_it(self):
+        service = self._service(self.STANDINGS, {"1": "Gwendolyn"})
+        names = [p["name"] for p in service.get_event_leaderboard()["leaderboard"]]
+        assert names == ["Gwendolyn", "BobBuilder"]
+
+    def test_a_player_who_chose_nothing_keeps_the_ladders_name(self):
+        service = self._service(self.STANDINGS, {})
+        assert [p["name"] for p in service.get_leaderboard()] == ["gwendabear", "BobBuilder"]
+
+    def test_the_names_are_read_once_per_request(self):
+        service = self._service(self.STANDINGS, {"1": "Gwendolyn"})
+        service.get_leaderboard()
+        service.get_leaderboard()
+        assert service._profile_repo.get_all_custom_display_names.call_count == 1
+
+    def test_an_unreadable_profile_table_does_not_break_the_board(self):
+        service = self._service(self.STANDINGS, {})
+        service._profile_repo.get_all_custom_display_names.side_effect = RuntimeError("gone")
+
+        assert [p["name"] for p in service.get_leaderboard()] == ["gwendabear", "BobBuilder"]
+
+
 # ── MatchService ─────────────────────────────────────────────
 
 

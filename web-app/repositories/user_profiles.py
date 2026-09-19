@@ -240,21 +240,37 @@ class UserProfileRepository:
 
         cur.execute(
             """
-            SELECT user_id, display_name, avatar, provider
+            SELECT user_id,
+                   -- A player who has chosen a display name is known by it
+                   -- everywhere else on the site, so return that, not the
+                   -- handle they signed up with.
+                   COALESCE(NULLIF(custom_display_name, ''), display_name) AS display_name,
+                   avatar, provider
             FROM user_profiles
             WHERE LOWER(display_name) LIKE LOWER(?) ESCAPE '\\'
+               OR LOWER(custom_display_name) LIKE LOWER(?) ESCAPE '\\'
                OR LOWER(given_name) LIKE LOWER(?) ESCAPE '\\'
                OR LOWER(family_name) LIKE LOWER(?) ESCAPE '\\'
             ORDER BY
-                -- Prioritize exact display_name matches
-                CASE WHEN LOWER(display_name) = LOWER(?) THEN 0 ELSE 1 END,
+                -- Prioritize exact name matches
+                CASE WHEN LOWER(COALESCE(NULLIF(custom_display_name, ''), display_name))
+                          = LOWER(?) THEN 0 ELSE 1 END,
                 -- Then prefix matches
-                CASE WHEN LOWER(display_name) LIKE LOWER(?) ESCAPE '\\' THEN 0 ELSE 1 END,
+                CASE WHEN LOWER(COALESCE(NULLIF(custom_display_name, ''), display_name))
+                          LIKE LOWER(?) ESCAPE '\\' THEN 0 ELSE 1 END,
                 -- Then alphabetically
-                display_name ASC
+                COALESCE(NULLIF(custom_display_name, ''), display_name) ASC
             LIMIT ?
             """,
-            (search_pattern, search_pattern, search_pattern, query, prefix_pattern, limit),
+            (
+                search_pattern,
+                search_pattern,
+                search_pattern,
+                search_pattern,
+                query,
+                prefix_pattern,
+                limit,
+            ),
         )
 
         profiles = [dict(row) for row in cur.fetchall()]
@@ -387,6 +403,72 @@ class UserProfileRepository:
         row = cur.fetchone()
         conn.close()
         return row[0] if row and row[0] else None
+
+    def get_all_custom_display_names(self) -> dict:
+        """Every chosen display name, keyed by id.
+
+        Google accounts are stored with a `google_` prefix that the bot's
+        tables do not use, so each name is also filed under the bare id.
+        """
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT user_id, custom_display_name FROM user_profiles"
+                " WHERE custom_display_name IS NOT NULL AND custom_display_name != ''"
+            )
+            rows = cur.fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+        conn.close()
+
+        names = {}
+        for user_id, name in rows:
+            user_id = str(user_id)
+            names[user_id] = name
+            if user_id.startswith("google_"):
+                names.setdefault(user_id[7:], name)
+        return names
+
+    def get_custom_display_names(self, user_ids) -> dict:
+        """The chosen names for a set of players, keyed by the id asked for.
+
+        Google accounts are keyed with a `google_` prefix here but appear
+        without it in the bot's tables, so a caller holding a bare id still
+        gets an answer.
+        """
+        wanted = {}
+        for user_id in user_ids or []:
+            if not user_id:
+                continue
+            asked = str(user_id)
+            wanted.setdefault(asked, asked)
+            wanted.setdefault(f"google_{asked}", asked)
+
+        if not wanted:
+            return {}
+
+        conn = self._get_connection()
+        cur = conn.cursor()
+        keys = list(wanted)
+        names = {}
+        for start in range(0, len(keys), 500):
+            chunk = keys[start:start + 500]
+            placeholders = ",".join("?" * len(chunk))
+            try:
+                cur.execute(
+                    "SELECT user_id, custom_display_name FROM user_profiles"
+                    f" WHERE user_id IN ({placeholders})",
+                    chunk,
+                )
+            except sqlite3.OperationalError:
+                break
+            for user_id, name in cur.fetchall():
+                if name:
+                    names[wanted[str(user_id)]] = name
+
+        conn.close()
+        return names
 
     # --- Profile visibility settings ---
 

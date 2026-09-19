@@ -1505,6 +1505,172 @@ class TestBracketGamesAreNotSeasonGames:
         assert rows == {"u1": 1500, "u4": 1500}
 
 
+class TestPlayersKeepTheirName:
+    """A seeding records a name; it must not become the name of record.
+
+    Players are seeded under whatever name the admin search returned, which
+    for a Discord login is the handle they signed up with. If they have since
+    set a display name, that is what the leaderboard and their profile show,
+    and the bracket has to agree - and it must never write its own copy back
+    over the ladder.
+    """
+
+    def test_the_bracket_shows_the_name_the_site_shows(self, service, repo, ladder):
+        slug, _ = published(service, repo, 4)
+        ladder.rename_player("u1", "Gwendolyn")
+
+        detail = service.get_bracket_detail(slug)
+
+        seed_one = next(e for e in detail["entrants"] if e["seed"] == 1)
+        assert seed_one["display_name"] == "Gwendolyn"
+
+    def test_a_pairing_shows_the_name_the_site_shows(self, service, repo, ladder):
+        slug, _ = published(service, repo, 4)
+        ladder.rename_player("u1", "Gwendolyn")
+
+        detail = service.get_bracket_detail(slug)
+        names = [
+            match[f"p{slot}_name"]
+            for round_data in detail["rounds"]
+            for match in round_data["matches"]
+            for slot in (1, 2)
+        ]
+        assert "Gwendolyn" in names
+        assert "P1" not in names
+
+    def test_the_champion_is_announced_under_it_too(self, service, repo, ladder):
+        slug, bracket_id = published(service, repo, 2)
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+        ladder.rename_player("u1", "Gwendolyn")
+
+        assert service.get_bracket_detail(slug)["champion"]["display_name"] == "Gwendolyn"
+        listed = next(b for b in service.list_brackets() if b["slug"] == slug)
+        assert listed["champion"]["display_name"] == "Gwendolyn"
+
+    def test_the_deck_roster_uses_it(self, service, repo, ladder):
+        slug, _ = published(service, repo, 4)
+        ladder.rename_player("u2", "Gwendolyn")
+
+        roster = service.get_deck_roster(slug, is_admin=True)
+        assert "Gwendolyn" in [p["display_name"] for p in roster["players"]]
+
+    def test_the_draft_preview_uses_it(self, service, repo, ladder):
+        created = service.create_bracket(name="Preview Cup", size=4, source="overall")
+        ladder.rename_player("u1", "Gwendolyn")
+
+        preview = service.preview(created["bracket_id"])
+        assert preview["entrants"][0]["display_name"] == "Gwendolyn"
+
+    def test_settling_a_match_does_not_rename_anyone(self, service, repo, ladder):
+        """The bug this guards: a result used to write the seeded name back."""
+        slug, bracket_id = published(service, repo, 4)
+        ladder.rename_player("u1", "Gwendolyn")
+        ladder.rename_player("u4", "Count Tolstoy")
+
+        match = repo.get_matches(bracket_id)[0]  # seed 1 v seed 4
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        names = ladder.get_display_names(["u1", "u4"])
+        assert names == {"u1": "Gwendolyn", "u4": "Count Tolstoy"}
+
+    def test_undoing_a_result_does_not_rename_anyone_either(self, service, repo, ladder):
+        slug, bracket_id = published(service, repo, 4)
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+        ladder.rename_player("u1", "Gwendolyn")
+
+        service.reset_match(slug, match["match_no"])
+
+        assert ladder.get_display_names(["u1"]) == {"u1": "Gwendolyn"}
+
+    def test_the_rating_still_moves(self, service, repo, ladder):
+        slug, bracket_id = published(service, repo, 4)
+        ladder.rename_player("u1", "Gwendolyn")
+
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        assert ladder.get_user_elo("u1") == 1516
+        assert ladder.get_user_elo("u4") == 1484
+
+    def test_the_logged_match_uses_the_current_name(self, service, repo, ladder, match_db):
+        import sqlite3
+
+        slug, bracket_id = published(service, repo, 4)
+        ladder.rename_player("u1", "Gwendolyn")
+
+        match = repo.get_matches(bracket_id)[0]
+        service.set_result(slug, match["match_no"], "u1", admin_id="a")
+
+        conn = sqlite3.connect(str(match_db))
+        row = conn.execute(
+            "SELECT winner_display_name, losser_display_name FROM match_records"
+        ).fetchone()
+        conn.close()
+        assert row == ("Gwendolyn", "P4")
+
+    def test_a_name_the_player_chose_beats_the_ladders(self, service, repo, ladder, match_db):
+        """The profile honours a chosen display name; so does the bracket."""
+        from repositories.user_profiles import UserProfileRepository
+        import sqlite3
+
+        profiles = UserProfileRepository(db_path=match_db)
+        profiles.upsert_profile(user_id="u1", display_name="gwendabear", provider="discord")
+        conn = sqlite3.connect(str(match_db))
+        conn.execute(
+            "UPDATE user_profiles SET custom_display_name = 'Gwendolyn' WHERE user_id = 'u1'"
+        )
+        conn.commit()
+        conn.close()
+        service._profile_repo_override = profiles
+
+        slug, _ = published(service, repo, 4)
+        detail = service.get_bracket_detail(slug)
+
+        assert detail["entrants"][0]["display_name"] == "Gwendolyn"
+
+    def test_a_google_account_is_found_by_its_bare_id(self, service, repo, match_db):
+        """Profiles key Google users with a prefix the bot's tables do not."""
+        from repositories.user_profiles import UserProfileRepository
+        import sqlite3
+
+        profiles = UserProfileRepository(db_path=match_db)
+        profiles.upsert_profile(user_id="google_u2", display_name="u2@mail", provider="google")
+        conn = sqlite3.connect(str(match_db))
+        conn.execute(
+            "UPDATE user_profiles SET custom_display_name = 'Count Tolstoy'"
+            " WHERE user_id = 'google_u2'"
+        )
+        conn.commit()
+        conn.close()
+
+        assert profiles.get_custom_display_names(["u2"]) == {"u2": "Count Tolstoy"}
+
+    def test_a_player_with_no_ladder_entry_keeps_their_seeded_name(self, service, repo):
+        """An entrant added by hand may not be on the ladder at all."""
+        created = service.create_bracket(name="Guest Cup", size=2, source="overall")
+        service.set_entrants(created["bracket_id"], [
+            {"user_id": "u1", "display_name": "P1"},
+            {"user_id": "guest", "display_name": "A Guest"},
+        ])
+        service.publish(created["bracket_id"])
+
+        detail = service.get_bracket_detail(created["slug"])
+        assert [e["display_name"] for e in detail["entrants"]] == ["P1", "A Guest"]
+
+    def test_a_broken_name_lookup_leaves_the_bracket_readable(self, service, repo):
+        slug, _ = published(service, repo, 4)
+
+        class Broken:
+            def get_display_names(self, user_ids):
+                raise RuntimeError("elo.db is away")
+
+        service._elo_repo_override = Broken()
+        detail = service.get_bracket_detail(slug)
+        assert detail["entrants"][0]["display_name"] == "P1"
+
+
 # -- API ----------------------------------------------------------
 
 

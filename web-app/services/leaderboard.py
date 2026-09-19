@@ -2,6 +2,7 @@
 
 from repositories.elo import EloRepository
 from repositories.matches import MatchRepository
+from repositories.user_profiles import UserProfileRepository
 
 
 class LeaderboardService:
@@ -11,9 +12,27 @@ class LeaderboardService:
         self,
         elo_repo: EloRepository | None = None,
         match_repo: MatchRepository | None = None,
+        profile_repo: UserProfileRepository | None = None,
     ):
         self._elo_repo = elo_repo or EloRepository()
         self._match_repo = match_repo or MatchRepository()
+        self._profile_repo = profile_repo or UserProfileRepository()
+        self._chosen = None
+
+    def _name(self, user_id, standing_name):
+        """The name to show for a player.
+
+        A name set on the site cannot simply be written into the standings and
+        left there: the bot rewrites a player's name from Discord every time it
+        rates a game, so the choice would be undone by their next match. The
+        site applies it when it reads instead.
+        """
+        if self._chosen is None:
+            try:
+                self._chosen = self._profile_repo.get_all_custom_display_names()
+            except Exception:
+                self._chosen = {}
+        return self._chosen.get(str(user_id)) or standing_name
 
     def get_leaderboard(self) -> list[dict]:
         """Get unified leaderboard from overall_standings with dual ELO support."""
@@ -26,7 +45,7 @@ class LeaderboardService:
             leaderboard_data.append(
                 {
                     "id": str(user_id),
-                    "name": standing["display_name"],
+                    "name": self._name(user_id, standing["display_name"]),
                     "elo": standing["elo"],
                     "paper_elo": standing.get("paper_elo", 1500),
                     "online_elo": standing.get("online_elo", 1500),
@@ -58,7 +77,7 @@ class LeaderboardService:
                 leaderboard_data.append(
                     {
                         "id": str(user_id),
-                        "name": standing["display_name"],
+                        "name": self._name(user_id, standing["display_name"]),
                         "event_elo": standing["event_elo"],
                         "wins": record["wins"],
                         "losses": record["losses"],
@@ -95,7 +114,7 @@ class LeaderboardService:
                 event_data.append(
                     {
                         "id": str(user_id),
-                        "name": standing["display_name"],
+                        "name": self._name(user_id, standing["display_name"]),
                         "event_elo": standing["event_elo"],
                         "season_wins": record["wins"],
                         "season_losses": record["losses"],
@@ -123,7 +142,7 @@ class LeaderboardService:
             elo = self._elo_repo.get_user_elo(stat["user_id"]) or 1500
             leaderboard_data.append({
                 "id": stat["user_id"],
-                "name": stat["display_name"],
+                "name": self._name(stat["user_id"], stat["display_name"]),
                 "elo": elo,
                 "wins": stat["wins"],
                 "losses": stat["losses"],
@@ -142,7 +161,7 @@ class LeaderboardService:
             leaderboard_data.append(
                 {
                     "id": str(user_id),
-                    "name": standing["display_name"],
+                    "name": self._name(user_id, standing["display_name"]),
                     "paper_elo": standing["paper_elo"],
                     "paper_event_elo": standing["paper_event_elo"],
                     "wins": wins,
@@ -171,7 +190,7 @@ class LeaderboardService:
                 leaderboard_data.append(
                     {
                         "id": str(user_id),
-                        "name": standing["display_name"],
+                        "name": self._name(user_id, standing["display_name"]),
                         "event_elo": standing["paper_event_elo"],
                     }
                 )
@@ -206,7 +225,7 @@ class LeaderboardService:
             leaderboard_data.append(
                 {
                     "id": str(user_id),
-                    "name": standing["display_name"],
+                    "name": self._name(user_id, standing["display_name"]),
                     "elo": standing["elo"],
                     "wins": wins,
                     "losses": losses,

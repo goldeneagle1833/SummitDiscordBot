@@ -132,6 +132,59 @@ class EloRepository:
         conn.close()
         return row[0] if row else None
 
+    def get_display_names(self, user_ids) -> dict:
+        """Current display names for a set of players, keyed by id.
+
+        Callers that already hold a name (a bracket seeding, an old match row)
+        use this to show what the rest of the site shows, since a player can
+        rename themselves after the fact.
+        """
+        ids = [str(u) for u in user_ids if u]
+        if not ids:
+            return {}
+
+        conn = self._get_connection()
+        cur = conn.cursor()
+        names = {}
+        # Overall last: where a player is in both, the online ladder's name is
+        # the one the leaderboard shows.
+        for table in ("paper_standings", "overall_standings"):
+            for start in range(0, len(ids), 500):
+                chunk = ids[start:start + 500]
+                placeholders = ",".join("?" * len(chunk))
+                try:
+                    cur.execute(
+                        f"SELECT user_id, user_display_name FROM {table}"
+                        f" WHERE CAST(user_id AS TEXT) IN ({placeholders})",
+                        chunk,
+                    )
+                except sqlite3.OperationalError:
+                    break
+                for user_id, name in cur.fetchall():
+                    if name:
+                        names[str(user_id)] = name
+
+        conn.close()
+        return names
+
+    def set_user_elo(self, user_id: int | str, new_elo: int) -> bool:
+        """Move an existing player's lifetime ELO, leaving their name alone.
+
+        `upsert_user_elo` rewrites the display name too, which is right when
+        the caller is the bot reporting a game under the player's current
+        name, and wrong when it is working from a name recorded earlier.
+        """
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE overall_standings SET online_elo = ? WHERE user_id = ?",
+            (new_elo, user_id),
+        )
+        changed = cur.rowcount > 0
+        conn.commit()
+        conn.close()
+        return changed
+
     def upsert_user_elo(self, user_id: int, display_name: str, new_elo: int):
         """Insert or update a user's lifetime ELO in overall_standings."""
         conn = self._get_connection()

@@ -2,7 +2,11 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import usePageTitle from '@/hooks/usePageTitle'
 import { useAuth } from '@/context/AuthContext'
-import { submitApplication, getMyApplication } from '@/api/explorerApplications'
+import {
+  submitApplication,
+  getMyApplication,
+  updateMyApplication,
+} from '@/api/explorerApplications'
 
 const NAVIGATOR_INFO_URL = 'https://jamesboo.com/explorer-series-2027-application'
 
@@ -51,6 +55,9 @@ export default function ExplorerApply() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const [submitted, setSubmitted] = useState(false)
+  const [saved, setSaved] = useState(false)
+  // Once the Council decides, the answers become the record of that decision.
+  const EDITABLE = ['pending', 'pre_approved']
 
   const [form, setForm] = useState({
     first_name: '',
@@ -87,23 +94,49 @@ export default function ExplorerApply() {
   }, [user])
 
   useEffect(() => {
-    if (user?.username) {
+    // Only a Discord login tells us their real handle; Google users type it.
+    if (user?.username && user?.auth_provider === 'discord') {
       setForm((f) => (f.discord_handle ? f : { ...f, discord_handle: user.username }))
     }
   }, [user])
+
+  // Load their existing answers in so they can correct them.
+  useEffect(() => {
+    if (!existing) return
+    setForm((f) => {
+      const filled = { ...f }
+      Object.keys(f).forEach((key) => {
+        const value = existing[key]
+        if (value === null || value === undefined) return
+        filled[key] = key === 'read_navigator_role' ? Boolean(value) : value
+      })
+      return filled
+    })
+  }, [existing])
 
   const update = (name) => (e) => {
     const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value
     setForm((f) => ({ ...f, [name]: value }))
   }
 
+  const editing = Boolean(existing) && EDITABLE.includes(existing.status)
+  const decided = Boolean(existing) && !EDITABLE.includes(existing.status)
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSubmitting(true)
     setError(null)
+    setSaved(false)
     try {
-      await submitApplication(form)
-      setSubmitted(true)
+      if (editing) {
+        const data = await updateMyApplication(form)
+        setExisting(data.application)
+        setSaved(true)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      } else {
+        await submitApplication(form)
+        setSubmitted(true)
+      }
     } catch (err) {
       setError(err.message || 'Something went wrong submitting your application.')
     }
@@ -138,21 +171,7 @@ export default function ExplorerApply() {
     )
   }
 
-  if (user.auth_provider && user.auth_provider !== 'discord') {
-    return (
-      <div className="max-w-content mx-auto px-4 py-8 space-y-4">
-        <h1 className="text-2xl font-display text-text-primary">
-          Apply to Host an Explorer Event
-        </h1>
-        <p className="text-sm text-text-muted">
-          You&apos;re signed in with Google. Explorer Series applications need a Discord
-          login so the council can contact you — please log out and sign back in with Discord.
-        </p>
-      </div>
-    )
-  }
-
-  if (submitted || existing) {
+  if (submitted || decided) {
     const status = existing?.status || 'pending'
     return (
       <div className="max-w-content mx-auto px-4 py-8 space-y-4">
@@ -161,7 +180,7 @@ export default function ExplorerApply() {
         </h1>
         <div className="bg-bg-surface border border-border rounded-lg p-6 space-y-2">
           <p className="text-text-primary font-medium">
-            {submitted ? 'Thanks — your application is in.' : 'You have already applied.'}
+            {submitted ? 'Thanks — your application is in.' : 'Your application has been reviewed.'}
           </p>
           <p className="text-sm text-text-muted">
             Status: <span className="text-text-primary">{STATUS_LABELS[status] || status}</span>
@@ -179,9 +198,19 @@ export default function ExplorerApply() {
             </a>{' '}
             and ask for help in our #questions channel.
           </p>
-          <Link to="/explorer" className="inline-block text-sm text-primary hover:underline">
-            Back to the Community Series
-          </Link>
+          <div className="flex flex-wrap items-center gap-4 pt-1">
+            {submitted && (
+              <button
+                onClick={() => { setSubmitted(false); setSaved(false) }}
+                className="text-sm text-primary hover:underline"
+              >
+                Edit your application
+              </button>
+            )}
+            <Link to="/explorer" className="text-sm text-primary hover:underline">
+              Back to the Community Series
+            </Link>
+          </div>
         </div>
       </div>
     )
@@ -195,7 +224,7 @@ export default function ExplorerApply() {
         </h1>
         <p className="text-sm text-text-muted mt-1 max-w-3xl">
           The Sorcery Explorer Series is a player-run annual circuit. Hosts (&ldquo;Navigators&rdquo;)
-          run an event at their local game store. Before applying, please read the{' '}
+          run an event at their local game store. {editing ? 'For reference, see' : 'Before applying, please read'} the{' '}
           <a
             href={NAVIGATOR_INFO_URL}
             target="_blank"
@@ -207,6 +236,27 @@ export default function ExplorerApply() {
           .
         </p>
       </div>
+
+      {editing && (
+        <div className="mb-6 bg-bg-surface border border-border rounded-lg p-4 space-y-1">
+          <p className="text-sm text-text-primary font-medium">
+            You have already applied — status:{' '}
+            {STATUS_LABELS[existing.status] || existing.status}
+          </p>
+          <p className="text-xs text-text-muted">
+            You can change your answers below until the Council makes a decision.
+          </p>
+        </div>
+      )}
+
+      {saved && (
+        <div
+          role="status"
+          className="mb-6 text-sm rounded p-3 border bg-accent-green/10 border-accent-green/30 text-accent-green"
+        >
+          Your application has been updated.
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <section className="bg-bg-surface border border-border rounded-lg p-4 space-y-4">
@@ -376,7 +426,9 @@ export default function ExplorerApply() {
           disabled={submitting}
           className="px-5 py-2 text-sm bg-secondary text-black font-medium rounded hover:bg-secondary/80 disabled:opacity-40 transition-colors"
         >
-          {submitting ? 'Submitting…' : 'Submit Application'}
+          {submitting
+            ? (editing ? 'Saving…' : 'Submitting…')
+            : (editing ? 'Update Application' : 'Submit Application')}
         </button>
       </form>
     </div>

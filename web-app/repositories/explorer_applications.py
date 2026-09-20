@@ -250,3 +250,22 @@ class ExplorerApplicationRepository:
             cur = conn.execute(sql, params)
             conn.commit()
             return cur.rowcount > 0
+
+    def update_application(self, application_id: int, fields: dict) -> bool:
+        """Update an applicant's own answers. Ignores anything not an
+        applicant-supplied field, so status and provenance can't be edited."""
+        updates = [name for name in APPLICATION_FIELDS if name in fields]
+        if not updates:
+            return False
+
+        assignments = ", ".join(f"{name} = ?" for name in updates)
+        values = [fields[name] for name in updates]
+        with self._conn() as conn:
+            cur = conn.execute(
+                f"""UPDATE explorer_applications
+                    SET {assignments}, updated_at = datetime('now')
+                    WHERE id = ?""",
+                [*values, application_id],
+            )
+            conn.commit()
+            return cur.rowcount > 0

@@ -1,10 +1,13 @@
-import { get, post, del } from './client'
+import { get, post, put, del } from './client'
 
 // Public (logged-in applicant)
 export const submitApplication = (payload) =>
   post('/api/explorer/applications', payload)
 
 export const getMyApplication = () => get('/api/explorer/applications/mine')
+
+export const updateMyApplication = (payload) =>
+  put('/api/explorer/applications/mine', payload)
 
 // Explorer admin review
 export const getApplications = (status) =>
@@ -28,5 +31,8 @@ export const deleteApplication = (id) => del(`/api/explorer/applications/${id}`)
 
 export const regeocodeApplication = (id) =>
   post(`/api/explorer/applications/${id}/geocode`)
+
+export const refreshLgsAttendance = (id) =>
+  post(`/api/explorer/applications/${id}/lgs-attendance`)
 
 export const EXPORT_CSV_URL = '/api/explorer/applications/export.csv'

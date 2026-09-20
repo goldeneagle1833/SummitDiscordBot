@@ -10,12 +10,15 @@ import {
   addCandidate,
   deleteApplication,
   regeocodeApplication,
+  refreshLgsAttendance,
   EXPORT_CSV_URL,
 } from '@/api/explorerApplications'
 
 // Leaflet pulls in a sizeable bundle and needs a real DOM, so keep it out of
 // the main chunk.
 const ApplicationsMap = lazy(() => import('@/components/explorer/ApplicationsMap'))
+import EventsMapToggle from '@/components/explorer/EventsMapToggle'
+import LgsAttendance from '@/components/explorer/LgsAttendance'
 
 const STATUS_OPTIONS = [
   { value: 'pending', label: 'Pending' },
@@ -242,6 +245,12 @@ function ApplicationDetail({ applicationId, currentUserId, onClose, onChanged })
                 <DetailRow label="Other TOs to contact" value={application.referral} />
                 <DetailRow label="Submitted" value={application.submitted_at} />
               </dl>
+
+              <LgsAttendance
+                application={application}
+                refreshing={busy}
+                onRefresh={() => run(() => refreshLgsAttendance(application.id))}
+              />
 
               <section className="space-y-3">
                 <h3 className="text-sm font-semibold text-text-primary">Your scores</h3>
@@ -480,6 +489,8 @@ export default function ExplorerApplications() {
           {error}
         </div>
       )}
+
+      <EventsMapToggle />
 
       <Suspense fallback={<div className="h-80 rounded-lg border border-border bg-bg-raised" />}>
         <ApplicationsMap

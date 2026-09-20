@@ -169,6 +169,7 @@ def save_event():
             source_url=url,
         )
         repo.save_results(event["id"], event_data["results"])
+        _geocode_event_in_background(event["id"], event_data.get("venue_name"))
 
         return jsonify({
             "success": True,
@@ -376,3 +377,120 @@ def remove_admin(discord_user_id):
     except Exception as e:
         logger.error(f"Error removing explorer admin: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+def _geocode_event_in_background(event_id, venue_name):
+    """Place a newly imported event on the map without holding up the import.
+
+    Nominatim is rate limited and the app runs on a couple of sync workers, so
+    this never runs inline. A venue we cannot place is simply absent from the
+    map until an admin retries it.
+    """
+    import threading
+
+    if not (venue_name or "").strip():
+        return
+
+    def run():
+        try:
+            from services.geocoding import geocode_location
+            coords = geocode_location(venue_name, None, None)
+            if coords:
+                ExplorerRepository().set_event_coordinates(event_id, *coords)
+        except Exception:
+            logger.exception("Background geocoding failed for event %s", event_id)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+# ── Settings & events map ─────────────────────────────────────────────────────
+
+EVENTS_MAP_SETTING = "events_map_enabled"
+
+# Booleans live in a TEXT column, so normalise on the way in and out.
+_TRUE = "1"
+_FALSE = "0"
+
+
+def _events_map_enabled(repo) -> bool:
+    # Off until an admin turns it on, so the map never appears half-geocoded.
+    return repo.get_setting(EVENTS_MAP_SETTING, _FALSE) == _TRUE
+
+
+@explorer_bp.route("/settings")
+def get_settings():
+    """Public Explorer settings that the Community Series page reads."""
+    try:
+        repo = ExplorerRepository()
+        return jsonify({"events_map_enabled": _events_map_enabled(repo)})
+    except Exception as e:
+        logger.error(f"Error reading explorer settings: {e}", exc_info=True)
+        # A settings failure should never take the leaderboard down with it.
+        return jsonify({"events_map_enabled": False})
+
+
+@explorer_bp.route("/settings", methods=["POST"])
+@require_explorer_admin
+def update_settings():
+    """Toggle the public events map. Explorer admin only."""
+    data = request.get_json(silent=True) or {}
+    if "events_map_enabled" not in data:
+        return jsonify({"error": "events_map_enabled is required"}), 400
+
+    repo = ExplorerRepository()
+    repo.set_setting(
+        EVENTS_MAP_SETTING, _TRUE if data["events_map_enabled"] else _FALSE
+    )
+    return jsonify({"events_map_enabled": _events_map_enabled(repo)})
+
+
+@explorer_bp.route("/events-map")
+def events_map():
+    """Geocoded events for the Community Series map. Public.
+
+    Returns an empty list when the map is switched off, so the page never
+    shows events an admin has chosen to hide.
+    """
+    season_id = request.args.get("season_id", type=int)
+    try:
+        repo = ExplorerRepository()
+        if not _events_map_enabled(repo):
+            return jsonify({"enabled": False, "events": []})
+        return jsonify({
+            "enabled": True,
+            "events": repo.get_events_with_coordinates(season_id),
+        })
+    except Exception as e:
+        logger.error(f"Error building events map: {e}", exc_info=True)
+        return jsonify({"enabled": False, "events": []})
+
+
+@explorer_bp.route("/events/unmapped")
+@require_explorer_admin
+def unmapped_events():
+    """Events with no coordinates yet. Explorer admin only."""
+    repo = ExplorerRepository()
+    return jsonify({"events": repo.get_events_missing_coordinates()})
+
+
+@explorer_bp.route("/events/<int:event_id>/geocode", methods=["POST"])
+@require_explorer_admin
+def geocode_event(event_id):
+    """Place one event on the map from its venue name. Explorer admin only."""
+    from services.geocoding import geocode_location
+
+    repo = ExplorerRepository()
+    event = repo.get_event(event_id)
+    if not event:
+        return jsonify({"error": "Event not found"}), 404
+
+    venue = (event.get("venue_name") or "").strip()
+    if not venue:
+        return jsonify({"error": "This event has no venue name to look up"}), 400
+
+    coords = geocode_location(venue, None, None)
+    if not coords:
+        return jsonify({"error": f"Could not find '{venue}' on the map"}), 404
+
+    repo.set_event_coordinates(event_id, *coords)
+    return jsonify({"success": True, "latitude": coords[0], "longitude": coords[1]})

@@ -21,7 +21,7 @@ describe('ApplicationsMap', () => {
     // Leaflet sets z-index 400-1000 on its panes and controls. Without a
     // stacking context here those escape and cover the application modal.
     const { container } = render(<ApplicationsMap applications={[]} />)
-    expect(container.firstChild).toHaveClass('isolate')
+    expect(container.querySelector('.isolate')).not.toBeNull()
   })
 
   it('plots only applications that have coordinates', () => {

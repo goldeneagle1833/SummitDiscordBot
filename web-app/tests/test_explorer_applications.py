@@ -72,14 +72,15 @@ class TestSubmitApplication:
         res = client.post("/api/explorer/applications", json=valid_application())
         assert res.status_code in (401, 403)
 
-    def test_google_login_is_rejected(self, client):
+    def test_google_login_is_accepted(self, client):
+        # Requiring Discord turned away organisers who don't use it; see
+        # test_explorer_map_and_edit.py for the fuller Google coverage.
         with client.session_transaction() as sess:
             sess["user_id"] = "google_12345"
             sess["username"] = "Googler"
             sess["auth_provider"] = "google"
         res = client.post("/api/explorer/applications", json=valid_application())
-        assert res.status_code == 403
-        assert "Discord" in res.get_json()["error"]
+        assert res.status_code == 201
 
     @pytest.mark.parametrize(
         "field", ["first_name", "last_name", "email", "city", "state", "lgs_name"]

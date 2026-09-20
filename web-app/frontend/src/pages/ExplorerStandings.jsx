@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import Spinner from '@/components/ui/Spinner'
 import {
@@ -7,7 +8,11 @@ import {
   fetchLeaderboard,
   deleteEvent,
   deleteSeason,
+  fetchEventsMap,
 } from '@/api/explorer'
+
+// Leaflet is a sizeable bundle and needs a real DOM, so keep it lazy.
+const EventsMap = lazy(() => import('@/components/explorer/EventsMap'))
 import AddSeasonModal from '@/components/explorer/AddSeasonModal'
 import AddEventModal from '@/components/explorer/AddEventModal'
 import ExplorerAdminPanel from '@/components/explorer/ExplorerAdminPanel'
@@ -160,6 +165,7 @@ export default function ExplorerStandings() {
   const [sortDir, setSortDir] = useState('asc')
   const [showDistribution, setShowDistribution] = useState(false)
   const [showVenueAttendance, setShowVenueAttendance] = useState(false)
+  const [mapEvents, setMapEvents] = useState([])
 
   const loadSeasons = () => {
     fetchSeasons()
@@ -183,6 +189,21 @@ export default function ExplorerStandings() {
       .then(setLeaderboard)
       .catch((e) => setError(e.message))
       .finally(() => setLbLoading(false))
+  }, [selectedSeasonId])
+
+  // The map is opt-in: admins turn it on once enough events are placed, and
+  // the endpoint returns nothing while it is off.
+  useEffect(() => {
+    if (!selectedSeasonId) return
+    let cancelled = false
+    fetchEventsMap(selectedSeasonId)
+      .then((data) => {
+        if (!cancelled) setMapEvents(data.enabled ? (data.events || []) : [])
+      })
+      .catch(() => {
+        if (!cancelled) setMapEvents([])
+      })
+    return () => { cancelled = true }
   }, [selectedSeasonId])
 
   const togglePlayer = (uid) => {
@@ -392,6 +413,19 @@ export default function ExplorerStandings() {
               </div>
             )}
           </div>
+
+          {mapEvents.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-sm font-semibold text-text-primary mb-2">
+                Where the Series has played
+              </h2>
+              <Suspense
+                fallback={<div className="h-96 rounded-lg border border-border bg-bg-surface" />}
+              >
+                <EventsMap events={mapEvents} />
+              </Suspense>
+            </div>
+          )}
 
           {/* Points legend */}
           {leaderboard?.points_config && (

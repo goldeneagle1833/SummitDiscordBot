@@ -52,3 +52,17 @@ export const mergePlayers = (aliasUserId, canonicalUserId, aliasDisplayName, can
 
 export const deleteAlias = (aliasId) =>
   del(`/api/explorer/players/aliases/${aliasId}`)
+
+// Events map + public settings
+export const fetchExplorerSettings = () => get('/api/explorer/settings')
+
+export const updateExplorerSettings = (eventsMapEnabled) =>
+  post('/api/explorer/settings', { events_map_enabled: eventsMapEnabled })
+
+export const fetchEventsMap = (seasonId) =>
+  get(`/api/explorer/events-map${seasonId ? `?season_id=${seasonId}` : ''}`)
+
+export const fetchUnmappedEvents = () => get('/api/explorer/events/unmapped')
+
+export const geocodeEvent = (eventId) =>
+  post(`/api/explorer/events/${eventId}/geocode`)

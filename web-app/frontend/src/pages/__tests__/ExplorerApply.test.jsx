@@ -4,11 +4,16 @@ import { screen, renderWithRouter, userEvent, waitFor } from '@/test/test-utils'
 vi.mock('@/api/explorerApplications', () => ({
   submitApplication: vi.fn(),
   getMyApplication: vi.fn(),
+  updateMyApplication: vi.fn(),
 }))
 
 vi.mock('@/context/AuthContext', () => ({ useAuth: vi.fn() }))
 
-import { submitApplication, getMyApplication } from '@/api/explorerApplications'
+import {
+  submitApplication,
+  getMyApplication,
+  updateMyApplication,
+} from '@/api/explorerApplications'
 import { useAuth } from '@/context/AuthContext'
 import ExplorerApply from '../ExplorerApply'
 
@@ -30,6 +35,7 @@ describe('ExplorerApply page', () => {
     useAuth.mockReturnValue({ user: discordUser, loading: false })
     getMyApplication.mockResolvedValue({ application: null })
     submitApplication.mockResolvedValue({ application_id: 1 })
+    updateMyApplication.mockResolvedValue({ application: { id: 1, status: 'pending' } })
   })
 
   it('asks anonymous visitors to log in with Discord', async () => {
@@ -41,13 +47,23 @@ describe('ExplorerApply page', () => {
     expect(screen.queryByRole('button', { name: /Submit Application/ })).toBeNull()
   })
 
-  it('tells Google users to switch to Discord', async () => {
+  it('lets Google users apply too', async () => {
     useAuth.mockReturnValue({
-      user: { id: 'google_1', username: 'G', auth_provider: 'google' },
+      user: { id: 'google_1', username: 'Some Googler', auth_provider: 'google' },
       loading: false,
     })
     renderWithRouter(<ExplorerApply />)
-    expect(await screen.findByText(/signed in with Google/)).toBeInTheDocument()
+    expect(await screen.findByLabelText(/First name/)).toBeInTheDocument()
+  })
+
+  it('does not guess a Discord handle for a Google user', async () => {
+    useAuth.mockReturnValue({
+      user: { id: 'google_1', username: 'Some Googler', auth_provider: 'google' },
+      loading: false,
+    })
+    renderWithRouter(<ExplorerApply />)
+    // Their Google display name is not their Discord handle, so leave it blank.
+    expect(await screen.findByLabelText(/Discord handle/)).toHaveValue('')
   })
 
   it('prefills the Discord handle from the session', async () => {
@@ -79,13 +95,50 @@ describe('ExplorerApply page', () => {
     expect(await screen.findByText(/your application is in/)).toBeInTheDocument()
   })
 
-  it('shows the existing status instead of the form when already applied', async () => {
+  it('reopens the answers for editing when an application is still open', async () => {
     getMyApplication.mockResolvedValue({
-      application: { id: 1, status: 'pre_approved' },
+      application: { id: 1, status: 'pre_approved', first_name: 'Ruben', city: 'Mechanicsville' },
     })
     renderWithRouter(<ExplorerApply />)
+
     expect(await screen.findByText(/You have already applied/)).toBeInTheDocument()
-    expect(screen.getByText('Pre-approved')).toBeInTheDocument()
+    // Prefilled from what they sent, not a blank form.
+    expect(screen.getByLabelText(/First name/)).toHaveValue('Ruben')
+    expect(screen.getByLabelText(/City or town/)).toHaveValue('Mechanicsville')
+    expect(screen.getByRole('button', { name: /Update Application/ })).toBeInTheDocument()
+  })
+
+  it('saves an edit through the update endpoint', async () => {
+    getMyApplication.mockResolvedValue({
+      application: {
+        id: 1, status: 'pending', first_name: 'Ruben', last_name: 'Sanchez',
+        email: 'r@example.com', city: 'Mechanicsville', state: 'Virginia',
+        lgs_name: 'Waterloo Games', read_navigator_role: true,
+      },
+    })
+    const user = userEvent.setup()
+    renderWithRouter(<ExplorerApply />)
+
+    const city = await screen.findByLabelText(/City or town/)
+    // Wait for the prefill to land before editing, or it overwrites the change.
+    await waitFor(() => expect(city).toHaveValue('Mechanicsville'))
+    await user.clear(city)
+    await user.type(city, 'Richmond')
+    await user.click(screen.getByRole('button', { name: /Update Application/ }))
+
+    await waitFor(() => expect(updateMyApplication).toHaveBeenCalled())
+    expect(updateMyApplication.mock.calls[0][0].city).toBe('Richmond')
+    expect(submitApplication).not.toHaveBeenCalled()
+    expect(await screen.findByText(/application has been updated/)).toBeInTheDocument()
+  })
+
+  it('locks a decided application to a read-only notice', async () => {
+    getMyApplication.mockResolvedValue({
+      application: { id: 1, status: 'approved', first_name: 'Ruben' },
+    })
+    renderWithRouter(<ExplorerApply />)
+
+    expect(await screen.findByText(/has been reviewed/)).toBeInTheDocument()
     expect(screen.queryByLabelText(/First name/)).toBeNull()
   })
 

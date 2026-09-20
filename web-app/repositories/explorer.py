@@ -247,3 +247,70 @@ class ExplorerRepository:
                    ORDER BY display_name COLLATE NOCASE ASC"""
             ).fetchall()
         return [dict(r) for r in rows]
+
+    # ── Settings ──────────────────────────────────────────────────────────────
+
+    def get_setting(self, key: str, default: str | None = None) -> str | None:
+        with self._conn() as conn:
+            try:
+                row = conn.execute(
+                    "SELECT value FROM explorer_settings WHERE key = ?", (key,)
+                ).fetchone()
+            except sqlite3.OperationalError:
+                return default  # table not created yet
+        return row["value"] if row else default
+
+    def set_setting(self, key: str, value: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO explorer_settings (key, value, updated_at)
+                   VALUES (?, ?, datetime('now'))
+                   ON CONFLICT (key) DO UPDATE SET
+                       value = excluded.value,
+                       updated_at = excluded.updated_at""",
+                (key, value),
+            )
+            conn.commit()
+
+    # ── Event coordinates (Community Series map) ──────────────────────────────
+
+    def set_event_coordinates(
+        self, event_id: int, latitude: float | None, longitude: float | None
+    ) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """UPDATE explorer_events
+                   SET latitude = ?, longitude = ?, geocoded_at = datetime('now')
+                   WHERE id = ?""",
+                (latitude, longitude, event_id),
+            )
+            conn.commit()
+        return cur.rowcount > 0
+
+    def get_events_with_coordinates(self, season_id: int | None = None) -> list[dict]:
+        """Events that have been geocoded, for the public map."""
+        sql = """SELECT id, season_id, event_name, event_date, venue_name,
+                        total_players, play_format, source_url, latitude, longitude
+                 FROM explorer_events
+                 WHERE latitude IS NOT NULL AND longitude IS NOT NULL"""
+        params: list = []
+        if season_id is not None:
+            sql += " AND season_id = ?"
+            params.append(season_id)
+        sql += " ORDER BY event_date ASC, id ASC"
+        with self._conn() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_events_missing_coordinates(self, limit: int = 50) -> list[dict]:
+        """Geocoded-but-not-yet events, so admins can see what is off the map."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT id, season_id, event_name, venue_name
+                   FROM explorer_events
+                   WHERE latitude IS NULL OR longitude IS NULL
+                   ORDER BY id DESC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]

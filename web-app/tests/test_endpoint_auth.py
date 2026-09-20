@@ -185,6 +185,8 @@ KNOWN_PUBLIC_ENDPOINTS = {
     "api.explorer.get_seasons",
     "api.explorer.get_season_events",
     "api.explorer.get_leaderboard",
+    "api.explorer.get_settings",
+    "api.explorer.events_map",
 
     # -- Rumble (public read-only) --
     "api.rumble.get_rumble",

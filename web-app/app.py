@@ -33,6 +33,7 @@ from migrations.create_explorer_tables import create_explorer_tables
 from migrations.create_explorer_application_tables import (
     create_explorer_application_tables,
 )
+from migrations.create_explorer_map_support import create_explorer_map_support
 from migrations.create_rumble_tables import create_rumble_tables
 from migrations.create_external_matches_table import create_external_matches_table
 from migrations.create_deck_builder_tables import create_deck_builder_tables
@@ -86,6 +87,11 @@ def create_app() -> Flask:
         create_explorer_application_tables()
     except Exception as e:
         logger.error(f"Failed to ensure explorer application tables: {e}")
+
+    try:
+        create_explorer_map_support()
+    except Exception as e:
+        logger.error(f"Failed to ensure explorer map support: {e}")
 
     try:
         create_rumble_tables()

@@ -22,6 +22,7 @@ from services.geocoding import geocode_location
 from services.explorer_notifications import (
     notify_new_application_in_background,
 )
+from services.lgs_attendance import lookup_attendance_in_background
 from utils.auth import require_auth, require_explorer_admin
 
 logger = logging.getLogger(__name__)
@@ -90,11 +91,6 @@ def submit_application():
     user_id, username = _current_user()
     if not user_id:
         return jsonify({"success": False, "error": "You must be logged in to apply"}), 401
-    if session.get("auth_provider") != "discord":
-        return jsonify({
-            "success": False,
-            "error": "Explorer applications require a Discord login",
-        }), 403
 
     data = request.get_json(silent=True) or {}
     fields = _collect_fields(data)
@@ -120,12 +116,14 @@ def submit_application():
                      " admin if you need to change it.",
         }), 409
 
-    fields.setdefault("discord_handle", username or "")
+    if session.get("auth_provider") == "discord":
+        fields.setdefault("discord_handle", username or "")
     application_id = repo.create_application(user_id, fields, source="application")
 
     _geocode_in_background(
         application_id, fields.get("city"), fields.get("state"), fields.get("country")
     )
+    lookup_attendance_in_background(application_id, fields.get("lgs_url"))
     notify_new_application_in_background({**fields, "id": application_id})
 
     return jsonify({"success": True, "application_id": application_id}), 201
@@ -141,6 +139,57 @@ def my_application():
 
     application = ExplorerApplicationRepository().get_by_discord_user(user_id)
     return jsonify({"success": True, "application": application}), 200
+
+
+# Once the Council has decided, the answers are the record of that decision.
+EDITABLE_STATUSES = ("pending", "pre_approved")
+
+
+@explorer_applications_bp.route("/mine", methods=["PUT"])
+@require_auth
+def update_my_application():
+    """Let an applicant correct their own application before it's decided."""
+    user_id, _ = _current_user()
+    if not user_id:
+        return jsonify({"success": False, "error": "You must be logged in"}), 401
+
+    repo = ExplorerApplicationRepository()
+    existing = repo.get_by_discord_user(user_id)
+    if not existing:
+        return jsonify({"success": False, "error": "You have not applied yet"}), 404
+
+    if existing["status"] not in EDITABLE_STATUSES:
+        return jsonify({
+            "success": False,
+            "error": "This application has already been decided and can no longer be edited.",
+        }), 409
+
+    data = request.get_json(silent=True) or {}
+    fields = _collect_fields(data)
+
+    missing = [name for name in REQUIRED_FIELDS if name in fields and not fields[name]]
+    if missing:
+        return jsonify({
+            "success": False,
+            "error": f"These cannot be blank: {', '.join(missing)}",
+        }), 400
+
+    repo.update_application(existing["id"], fields)
+
+    # Re-place the pin if they moved.
+    moved = any(
+        name in fields and fields[name] != (existing.get(name) or "")
+        for name in ("city", "state", "country")
+    )
+    if moved:
+        _geocode_in_background(
+            existing["id"],
+            fields.get("city", existing.get("city")),
+            fields.get("state", existing.get("state")),
+            fields.get("country", existing.get("country")),
+        )
+
+    return jsonify({"success": True, "application": repo.get_application(existing["id"])}), 200
 
 
 # ── Explorer admin review ─────────────────────────────────────────────────────
@@ -310,11 +359,34 @@ def regeocode(application_id):
     return jsonify({"success": True, "latitude": coords[0], "longitude": coords[1]}), 200
 
 
+@explorer_applications_bp.route("/<int:application_id>/lgs-attendance", methods=["POST"])
+@require_explorer_admin
+def refresh_lgs_attendance(application_id):
+    """Re-check the applicant's store on sorcerytcg.com. Runs inline so the
+    admin sees the result straight away."""
+    from services.lgs_attendance import lookup_attendance
+
+    repo = ExplorerApplicationRepository()
+    application = repo.get_application(application_id)
+    if not application:
+        return jsonify({"success": False, "error": "Application not found"}), 404
+
+    summary = lookup_attendance(application_id, application.get("lgs_url"))
+    if summary is None:
+        return jsonify({
+            "success": False,
+            "error": "This applicant did not give a sorcerytcg.com store link.",
+        }), 400
+
+    return jsonify({"success": True, "application": repo.get_application(application_id)}), 200
+
+
 CSV_COLUMNS = (
     "id", "status", "source", "first_name", "last_name", "discord_handle", "email",
     "city", "state", "country", "lgs_name", "lgs_url", "lgs_confirmed",
     "expected_attendance", "proposed_dates", "events_run_count", "avg_headcount",
     "events_run", "motivation", "reference_contact", "anything_else", "referral",
+    "lgs_store_name", "lgs_median_players", "lgs_event_count",
     "vote_count", "avg_enthusiasm", "avg_track_record", "avg_local_activity",
     "average_score", "submitted_at",
 )

@@ -118,6 +118,25 @@ def create_explorer_application_tables(db_path=None):
         ON explorer_application_comments (application_id)
     """)
 
+    # Local game store attendance, looked up from the applicant's sorcerytcg.com
+    # store link. Added after the table shipped, so ensure them here.
+    lgs_columns = {
+        "lgs_store_name": "TEXT",
+        "lgs_median_players": "INTEGER",
+        "lgs_event_count": "INTEGER",
+        "lgs_history": "TEXT",
+        "lgs_checked_at": "TEXT",
+        "lgs_lookup_error": "TEXT",
+    }
+    cursor.execute("PRAGMA table_info(explorer_applications)")
+    existing = {row[1] for row in cursor.fetchall()}
+    for column, column_type in lgs_columns.items():
+        if column not in existing:
+            cursor.execute(
+                f"ALTER TABLE explorer_applications ADD COLUMN {column} {column_type}"
+            )
+            logger.info("Added %s to explorer_applications", column)
+
     conn.commit()
     conn.close()
     logger.info("Explorer application tables ensured at %s", path)

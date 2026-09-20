@@ -369,6 +369,74 @@ async def start_matchmaking_api(bot):
             logger.warning(f"PSO notify: cannot DM user {loser_discord_id} (DMs disabled)")
             return web.json_response({"sent": False, "reason": "dms_disabled"})
 
+    async def explorer_application_notify(request):
+        """DM Explorer admins that a new host application has come in."""
+        try:
+            payload = await request.json()
+        except ValueError:
+            raise web.HTTPBadRequest(text="Request body must be JSON")
+
+        recipient_ids = payload.get("admin_discord_ids") or []
+        if not isinstance(recipient_ids, list) or not recipient_ids:
+            raise web.HTTPBadRequest(text="admin_discord_ids must be a non-empty list")
+
+        applicant_name = payload.get("applicant_name") or "Someone"
+        discord_handle = payload.get("discord_handle") or ""
+        location = payload.get("location") or ""
+        lgs_name = payload.get("lgs_name") or ""
+        review_url = payload.get("review_url") or ""
+
+        embed = discord.Embed(
+            title="New Explorer Series Application",
+            description=f"**{applicant_name}** applied to host an Explorer Series event.",
+            color=discord.Color.green(),
+        )
+        if discord_handle:
+            embed.add_field(name="Discord", value=discord_handle, inline=True)
+        if location:
+            embed.add_field(name="Location", value=location, inline=True)
+        if lgs_name:
+            embed.add_field(name="Local Game Store", value=lgs_name, inline=False)
+        if review_url:
+            embed.add_field(name="Review it", value=review_url, inline=False)
+
+        results = []
+        for raw_id in recipient_ids:
+            try:
+                admin_id = int(raw_id)
+            except (TypeError, ValueError):
+                # Google OAuth admins have non-snowflake ids and cannot be DMed.
+                results.append({"user_id": str(raw_id), "sent": False,
+                                "reason": "not_discord_id"})
+                continue
+
+            try:
+                user = await bot.fetch_user(admin_id)
+            except discord.NotFound:
+                logger.warning("Explorer notify: no Discord user %s", admin_id)
+                results.append({"user_id": str(raw_id), "sent": False,
+                                "reason": "user_not_found"})
+                continue
+
+            try:
+                await user.send(embed=embed)
+                results.append({"user_id": str(raw_id), "sent": True})
+            except discord.Forbidden:
+                logger.warning("Explorer notify: cannot DM %s (DMs disabled)", admin_id)
+                results.append({"user_id": str(raw_id), "sent": False,
+                                "reason": "dms_disabled"})
+            except discord.HTTPException as exc:
+                logger.warning("Explorer notify: DM to %s failed: %s", admin_id, exc)
+                results.append({"user_id": str(raw_id), "sent": False,
+                                "reason": "http_error"})
+
+        sent = sum(1 for r in results if r["sent"])
+        logger.info(
+            "Explorer notify: DMed %s of %s admins about %s's application",
+            sent, len(results), applicant_name,
+        )
+        return web.json_response({"sent": sent, "results": results})
+
     app = web.Application(middlewares=[_authentication], client_max_size=16 * 1024)
     app.router.add_get("/users/{user_id}/status", status)
     app.router.add_post("/users/{user_id}/queues", join)
@@ -380,6 +448,9 @@ async def start_matchmaking_api(bot):
     )
     app.router.add_get("/voice", voice)
     app.router.add_post("/pso-match-notify", pso_match_notify)
+    app.router.add_post(
+        "/explorer-application-notify", explorer_application_notify
+    )
     runner = web.AppRunner(app)
     try:
         await runner.setup()

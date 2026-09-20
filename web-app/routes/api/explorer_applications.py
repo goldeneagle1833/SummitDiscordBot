@@ -19,6 +19,9 @@ from repositories.explorer_applications import (
     ExplorerApplicationRepository,
 )
 from services.geocoding import geocode_location
+from services.explorer_notifications import (
+    notify_new_application_in_background,
+)
 from utils.auth import require_auth, require_explorer_admin
 
 logger = logging.getLogger(__name__)
@@ -123,6 +126,7 @@ def submit_application():
     _geocode_in_background(
         application_id, fields.get("city"), fields.get("state"), fields.get("country")
     )
+    notify_new_application_in_background({**fields, "id": application_id})
 
     return jsonify({"success": True, "application_id": application_id}), 201
 

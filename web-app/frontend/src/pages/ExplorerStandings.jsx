@@ -375,19 +375,22 @@ export default function ExplorerStandings() {
                 <Linkify text={seasons.find((s) => s.id === selectedSeasonId).description} />
               </p>
             )}
-            {/* Sits under the series description, which ends with the
-                exploresorcery.com link, so the two read as a pair. */}
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <Link
-                to="/explorer/apply"
-                className="px-4 py-2 text-sm bg-secondary text-black font-medium rounded hover:bg-secondary/80 transition-colors"
-              >
-                Apply to Host Your Own Explorer Event
-              </Link>
-              <span className="text-xs text-text-muted">
-                Run an Explorer Series event at your local game store.
-              </span>
-            </div>
+            {/* Explorer admins only for now. Sits under the series
+                description, which ends with the exploresorcery.com link, so
+                the two read as a pair once it opens to everyone. */}
+            {isExplorerAdmin && (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <Link
+                  to="/explorer/apply"
+                  className="px-4 py-2 text-sm bg-secondary text-black font-medium rounded hover:bg-secondary/80 transition-colors"
+                >
+                  Apply to Host Your Own Explorer Event
+                </Link>
+                <span className="text-xs text-text-muted">
+                  Run an Explorer Series event at your local game store.
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Points legend */}

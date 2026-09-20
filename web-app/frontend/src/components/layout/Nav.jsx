@@ -803,7 +803,9 @@ export default function Nav() {
           <SidebarLink to="/brackets" label="Brackets" location={location} onClick={close} />
           <SidebarLink to="/deck-rec" label="Sorcery Deck Rec" location={location} onClick={close} />
           <SidebarLink to="/explorer" label="Community Series" location={location} onClick={close} />
-          <SidebarLink to="/explorer/apply" label="Host an Explorer Event" location={location} onClick={close} />
+          {(user?.is_explorer_admin || user?.is_admin) && (
+            <SidebarLink to="/explorer/apply" label="Host an Explorer Event" location={location} onClick={close} />
+          )}
           <SidebarLink to="/card-points" label="Omens" location={location} onClick={close} />
 
           {/* Summit Stats */}

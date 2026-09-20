@@ -4,7 +4,9 @@ import usePageTitle from '@/hooks/usePageTitle'
 import { useAuth } from '@/context/AuthContext'
 import { submitApplication, getMyApplication } from '@/api/explorerApplications'
 
-const NAVIGATOR_INFO_URL = 'https://exploresorcery.com/'
+const NAVIGATOR_INFO_URL = 'https://jamesboo.com/explorer-series-2027-application'
+
+const EXPLORER_DISCORD_INVITE = 'https://discord.gg/GrxsArdzr'
 
 const ATTENDANCE_OPTIONS = [
   'Fewer than 8',
@@ -165,8 +167,17 @@ export default function ExplorerApply() {
             Status: <span className="text-text-primary">{STATUS_LABELS[status] || status}</span>
           </p>
           <p className="text-sm text-text-muted">
-            The Explorer Series council reviews applications in batches. If you need to change
-            anything, reach out to an Explorer admin on Discord.
+            The Explorer Series Council reviews applications in batches and will get back to
+            you in late November. If you need to change anything, join the{' '}
+            <a
+              href={EXPLORER_DISCORD_INVITE}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline"
+            >
+              Explorer Series Discord server
+            </a>{' '}
+            and ask for help in our #questions channel.
           </p>
           <Link to="/explorer" className="inline-block text-sm text-primary hover:underline">
             Back to the Community Series

@@ -9,7 +9,6 @@ import logging
 import os
 import threading
 
-import webapp_config
 from repositories.explorer import ExplorerRepository
 
 logger = logging.getLogger(__name__)
@@ -28,26 +27,24 @@ def review_url() -> str:
 
 
 def recipient_ids() -> list[str]:
-    """Discord IDs to notify: everyone who can review applications.
+    """Discord IDs to notify: the Explorer admins, and only them.
 
-    Mirrors is_explorer_admin() on the server — the explorer_admins table plus
-    global site admins, who are a superset. Deduplicated, order preserved so
-    the Council comes first.
+    Deliberately narrower than is_explorer_admin(), which also lets global site
+    admins into the review board. Notifications go to the Council who actually
+    review applications, so an empty explorer_admins table means nobody is
+    DMed — add members through Manage Admins on the Community Series page.
     """
     ids: list[str] = []
     seen: set[str] = set()
 
     try:
-        for admin in ExplorerRepository().get_explorer_admins():
-            admin_id = str(admin.get("discord_user_id") or "").strip()
-            if admin_id and admin_id not in seen:
-                seen.add(admin_id)
-                ids.append(admin_id)
+        admins = ExplorerRepository().get_explorer_admins()
     except Exception:
         logger.exception("Could not read the Explorer admin list for notifications")
+        return ids
 
-    for admin_id in webapp_config.ADMINS:
-        admin_id = str(admin_id).strip()
+    for admin in admins:
+        admin_id = str(admin.get("discord_user_id") or "").strip()
         if admin_id and admin_id not in seen:
             seen.add(admin_id)
             ids.append(admin_id)
@@ -86,7 +83,7 @@ def notify_new_application(application: dict) -> dict | None:
     recipients = recipient_ids()
     if not recipients:
         logger.warning(
-            "New Explorer application, but no Explorer admins or site admins to notify"
+            "New Explorer application, but there are no Explorer admins to notify"
         )
         return None
 

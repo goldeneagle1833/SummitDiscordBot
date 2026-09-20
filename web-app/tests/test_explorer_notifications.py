@@ -4,7 +4,6 @@ from unittest.mock import patch
 
 import pytest
 
-import webapp_config
 from repositories.explorer import ExplorerRepository
 from services import explorer_notifications
 
@@ -40,26 +39,32 @@ def valid_application(**overrides):
 
 
 class TestRecipients:
-    def test_includes_explorer_admins_and_global_admins(self, app):
+    def test_notifies_the_explorer_admins(self, app):
         ExplorerRepository().add_explorer_admin("111111111111111111", "Council")
-        assert explorer_notifications.recipient_ids() == [
-            "111111111111111111",  # Council first
-            "admin_user_1",        # global admin from webapp_config.ADMINS
+        ExplorerRepository().add_explorer_admin("222222222222222222", "Council Two")
+        assert sorted(explorer_notifications.recipient_ids()) == [
+            "111111111111111111",
+            "222222222222222222",
         ]
 
-    def test_deduplicates_someone_who_is_both(self, app):
+    def test_excludes_global_admins_who_are_not_explorer_admins(self, app):
+        ExplorerRepository().add_explorer_admin("111111111111111111", "Council")
+        # admin_user_1 is a global admin in webapp_config.ADMINS and can open
+        # the review board, but is not on the Council and is not DMed.
+        assert "admin_user_1" not in explorer_notifications.recipient_ids()
+
+    def test_includes_a_global_admin_who_is_also_an_explorer_admin(self, app):
         ExplorerRepository().add_explorer_admin("admin_user_1", "Bruce")
         assert explorer_notifications.recipient_ids() == ["admin_user_1"]
 
-    def test_falls_back_to_global_admins_when_the_council_is_empty(self, app):
-        assert explorer_notifications.recipient_ids() == ["admin_user_1"]
+    def test_nobody_to_notify_when_the_council_is_empty(self, app):
+        assert explorer_notifications.recipient_ids() == []
 
     def test_survives_an_unreadable_explorer_admin_table(self, app):
         with patch.object(
             ExplorerRepository, "get_explorer_admins", side_effect=OSError("locked")
         ):
-            # Global admins still get told, rather than nobody hearing about it.
-            assert explorer_notifications.recipient_ids() == ["admin_user_1"]
+            assert explorer_notifications.recipient_ids() == []
 
 
 class TestPayload:
@@ -101,13 +106,14 @@ class TestNotify:
         assert payload["applicant_name"] == "Ruben Sanchez"
         assert "111111111111111111" in payload["admin_discord_ids"]
 
-    def test_skips_the_call_when_there_is_nobody_to_tell(self, app, monkeypatch):
-        monkeypatch.setattr(webapp_config, "ADMINS", [])
+    def test_skips_the_call_when_there_is_nobody_to_tell(self, app):
+        # No Explorer admins configured, so the bot is never bothered.
         with patch("routes.api.matchmaking.relay_to_bot") as relay:
             assert explorer_notifications.notify_new_application(valid_application()) is None
         relay.assert_not_called()
 
     def test_a_down_bot_does_not_raise(self, app):
+        ExplorerRepository().add_explorer_admin("111111111111111111", "Council")
         with patch(
             "routes.api.matchmaking.relay_to_bot",
             return_value=({"sent": 0, "reason": "bot_unavailable"}, 503),
@@ -116,6 +122,7 @@ class TestNotify:
         assert result["reason"] == "bot_unavailable"
 
     def test_an_exploding_relay_does_not_raise(self, app):
+        ExplorerRepository().add_explorer_admin("111111111111111111", "Council")
         with patch(
             "routes.api.matchmaking.relay_to_bot", side_effect=RuntimeError("boom")
         ):

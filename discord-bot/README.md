@@ -51,7 +51,6 @@ summit-bot/
 - Fart scoring system
 - Daily fart/attack mechanics
 - Leader role management
-- OpenAI integration for responses
 - Commands: `!fart`, `!fartrank`, `!fartleaderboard`, `!fart_shop`
 
 #### `cogs/utility.py`
@@ -87,14 +86,13 @@ summit-bot/
 1. **Install Dependencies**
 
    ```bash
-   pip install discord.py python-dotenv openai requests
+   pip install discord.py python-dotenv requests
    ```
 
 2. **Create `.env` File**
 
    ```
    TOKEN=your_discord_bot_token
-   OPENAI_API_KEY=your_openai_api_key
    ```
 
 3. **Update Configuration**
@@ -165,4 +163,3 @@ To create a new cog:
 - All cogs use the same logger instance
 - Database connections are opened and closed within each function
 - The LFG queue is stored in memory (resets on bot restart)
-- OpenAI integration requires a valid API key in `.env`

@@ -8,49 +8,12 @@ from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands, tasks
-from openai import OpenAI
 
 import config
 
 logger = logging.getLogger("discord_bot")
 
 EST = ZoneInfo("America/New_York")
-
-openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
-
-DAILY_SUMMARY_PROMPT = (
-    "You are a Discord bot writing a daily recap for Sorcery: Contested Realm, a competitive card game. "
-    "You will receive raw stats as labeled lines. Your job is to rewrite EACH stat with personality and flair, "
-    "plus write a short commentary intro (2-3 sentences, under 80 words).\n\n"
-    "IMPORTANT: Vary your style every day. Rotate between these voices at random: "
-    "Epic fantasy narrator, hype sports broadcaster, dry comedic observer, poetic bard, trash-talking arena announcer. "
-    "Pick ONE style per day. Do not mix styles.\n\n"
-    "OUTPUT FORMAT — follow this EXACTLY:\n"
-    "COMMENTARY: [Your 2-3 sentence intro paragraph here]\n"
-    "MATCHES_PLAYED: [Flavored version of ranked matches, must include the actual number]\n"
-    "CASUAL_MATCHES: [Flavored version of casual matches, must include the actual number]\n"
-    "LIMITED_MATCHES: [Flavored version of limited matches, must include the actual number]\n"
-    "RUMBLE_MATCHES: [Flavored version of rumble matches, must include the actual number]\n"
-    "UNIQUE_PLAYERS: [Flavored version, must include the actual number]\n"
-    "MOST_ACTIVE: [Flavored version, must include the player name and match count]\n"
-    "TOP_GAINER: [Flavored version, must include the player name and ELO change]\n"
-    "BIGGEST_LOSER: [Flavored version, must include the player name and ELO change]\n"
-    "BIGGEST_UPSET: [Flavored version, must include both player names and ELO change]\n"
-    "RIVALRY: [Flavored version, must include both player names and the record]\n"
-    "HIGHEST_RATED: [Flavored version, must include both player names and combined ELO]\n"
-    "IRONMAN: [Flavored version, must include the total hours — this is the combined gameplay time across ALL players today, not a single player]\n"
-    "DECK_VARIETY: [Flavored version, must include player name and deck count]\n"
-    "HOT_STREAKS: [Flavored version, must include player names and streak counts]\n"
-    "STREAK_BROKEN: [Flavored version, must include player names and streak count]\n"
-    "AVG_DURATION: [Flavored version, must include the duration in minutes]\n\n"
-    "RULES:\n"
-    "- Only include labels that appear in the input. Skip labels for stats not provided.\n"
-    "- Each line must start with the label followed by a colon.\n"
-    "- Keep each field SHORT (under 100 characters). The commentary can be longer.\n"
-    "- NO emojis anywhere.\n"
-    "- You MUST include the actual numbers/names from the input — add flair around them, don't replace them.\n"
-    "- If no matches were played, only output COMMENTARY with a short 'quiet day' message."
-)
 
 
 def _truncate(text: str, max_len: int) -> str:
@@ -126,56 +89,46 @@ class DailySummaryCog(commands.Cog):
         )
         embed.set_footer(text="Summit Bot • Matches tracked since midnight EST")
 
-        # GPT-flavored stats
-        stats_text = self._format_stats_for_gpt(stats)
-        gpt = await asyncio.to_thread(self._generate_commentary, stats_text)
-        if gpt is None:
-            gpt = {}
-
         all_zero = stats["total_matches"] == 0 and stats["casual_matches"] == 0 and stats["limited_matches"] == 0 and stats["rumble_matches"] == 0
         if all_zero:
-            embed.description = gpt.get("COMMENTARY", "No matches were played today.")
+            embed.description = "No matches were played today."
             logger.info("Zero-match day — posting quiet-day summary.")
             await channel.send(embed=embed)
             return
 
-        # Commentary intro
-        if gpt.get("COMMENTARY"):
-            embed.description = _truncate(gpt["COMMENTARY"], 200)
-
-        # Core stats — GPT-flavored values with raw fallbacks
+        # Core stats
         if stats["total_matches"]:
             embed.add_field(
                 name="⚔️ Ranked Matches",
-                value=_truncate(gpt.get("MATCHES_PLAYED", str(stats["total_matches"])), 200),
+                value=_truncate(str(stats["total_matches"]), 200),
                 inline=True,
             )
 
         if stats["casual_matches"]:
             embed.add_field(
                 name="🎲 Casual Matches",
-                value=_truncate(gpt.get("CASUAL_MATCHES", str(stats["casual_matches"])), 200),
+                value=_truncate(str(stats["casual_matches"]), 200),
                 inline=True,
             )
 
         if stats["limited_matches"]:
             embed.add_field(
                 name="📦 Limited Matches",
-                value=_truncate(gpt.get("LIMITED_MATCHES", str(stats["limited_matches"])), 200),
+                value=_truncate(str(stats["limited_matches"]), 200),
                 inline=True,
             )
 
         if stats["rumble_matches"]:
             embed.add_field(
                 name="💥 Rumble Matches",
-                value=_truncate(gpt.get("RUMBLE_MATCHES", str(stats["rumble_matches"])), 200),
+                value=_truncate(str(stats["rumble_matches"]), 200),
                 inline=True,
             )
 
         if stats.get("unique_players"):
             embed.add_field(
                 name="🎮 Unique Players",
-                value=_truncate(gpt.get("UNIQUE_PLAYERS", str(stats["unique_players"])), 200),
+                value=_truncate(str(stats["unique_players"]), 200),
                 inline=True,
             )
 
@@ -183,7 +136,7 @@ class DailySummaryCog(commands.Cog):
             user_id, name, count = stats["most_active"]
             embed.add_field(
                 name="👑 Most Active Player",
-                value=_truncate(gpt.get("MOST_ACTIVE", f"<@{user_id}> ({count} matches)"), 200),
+                value=_truncate(f"<@{user_id}> ({count} matches)", 200),
                 inline=False,
             )
 
@@ -191,7 +144,7 @@ class DailySummaryCog(commands.Cog):
             user_id, name, change = stats["top_gainer"]
             embed.add_field(
                 name="📈 Top ELO Gainer",
-                value=_truncate(gpt.get("TOP_GAINER", f"<@{user_id}> (+{change} ELO)"), 200),
+                value=_truncate(f"<@{user_id}> (+{change} ELO)", 200),
                 inline=True,
             )
 
@@ -199,7 +152,7 @@ class DailySummaryCog(commands.Cog):
             user_id, name, change = stats["biggest_loser"]
             embed.add_field(
                 name="📉 Biggest ELO Drop",
-                value=_truncate(gpt.get("BIGGEST_LOSER", f"<@{user_id}> ({change} ELO)"), 200),
+                value=_truncate(f"<@{user_id}> ({change} ELO)", 200),
                 inline=True,
             )
 
@@ -208,7 +161,7 @@ class DailySummaryCog(commands.Cog):
             winner_id, winner_name, loser_id, loser_name, change = stats["biggest_upset"]
             embed.add_field(
                 name="🎯 Biggest Upset",
-                value=_truncate(gpt.get("BIGGEST_UPSET", f"<@{winner_id}> beat <@{loser_id}> (+{change} ELO)"), 200),
+                value=_truncate(f"<@{winner_id}> beat <@{loser_id}> (+{change} ELO)", 200),
                 inline=False,
             )
 
@@ -217,7 +170,7 @@ class DailySummaryCog(commands.Cog):
             embed.add_field(
                 name="⚔️ Rivalry of the Day",
                 value=_truncate(
-                    gpt.get("RIVALRY", f"<@{p1_id}> vs <@{p2_id}> — {p1w}-{p2w} ({total} games)"), 200
+                    f"<@{p1_id}> vs <@{p2_id}> — {p1w}-{p2w} ({total} games)", 200
                 ),
                 inline=False,
             )
@@ -227,7 +180,7 @@ class DailySummaryCog(commands.Cog):
             embed.add_field(
                 name="🏆 Highest Rated Match",
                 value=_truncate(
-                    gpt.get("HIGHEST_RATED", f"<@{w_id}> ({w_elo}) vs <@{l_id}> ({l_elo})"), 200
+                    f"<@{w_id}> ({w_elo}) vs <@{l_id}> ({l_elo})", 200
                 ),
                 inline=False,
             )
@@ -237,7 +190,7 @@ class DailySummaryCog(commands.Cog):
             embed.add_field(
                 name="🦾 Total Sorcery",
                 value=_truncate(
-                    gpt.get("IRONMAN", f"{total_hours} hours of Sorcery have been played today"), 200
+                    f"{total_hours} hours of Sorcery have been played today", 200
                 ),
                 inline=True,
             )
@@ -247,37 +200,37 @@ class DailySummaryCog(commands.Cog):
             embed.add_field(
                 name="🎴 Deck Variety",
                 value=_truncate(
-                    gpt.get("DECK_VARIETY", f"<@{user_id}> played {count} different decks"), 200
+                    f"<@{user_id}> played {count} different decks", 200
                 ),
                 inline=True,
             )
 
         if stats.get("hot_streaks"):
-            fallback_lines = []
+            lines_out = []
             for user_id, name, streak in stats["hot_streaks"][:5]:
-                fallback_lines.append(f"<@{user_id}> is on a {streak}-win streak")
+                lines_out.append(f"<@{user_id}> is on a {streak}-win streak")
             if len(stats["hot_streaks"]) > 5:
-                fallback_lines.append(f"and {len(stats['hot_streaks']) - 5} more...")
+                lines_out.append(f"and {len(stats['hot_streaks']) - 5} more...")
             embed.add_field(
                 name="🔥 Hot Streaks",
-                value=_truncate(gpt.get("HOT_STREAKS", "\n".join(fallback_lines)), 200),
+                value=_truncate("\n".join(lines_out), 200),
                 inline=False,
             )
 
         if stats.get("broken_streaks"):
-            fallback_lines = []
+            lines_out = []
             for entry in stats["broken_streaks"][:5]:
-                fallback_lines.append(f"<@{entry['player_id']}>'s {entry['streak']}-win streak was ended by <@{entry['broken_by_id']}>")
+                lines_out.append(f"<@{entry['player_id']}>'s {entry['streak']}-win streak was ended by <@{entry['broken_by_id']}>")
             embed.add_field(
                 name="💔 Streak Broken",
-                value=_truncate(gpt.get("STREAK_BROKEN", "\n".join(fallback_lines)), 200),
+                value=_truncate("\n".join(lines_out), 200),
                 inline=False,
             )
 
         if stats.get("avg_duration") is not None:
             embed.add_field(
                 name="⏱️ Avg Match Duration",
-                value=_truncate(gpt.get("AVG_DURATION", f"{round(stats['avg_duration'])} min"), 200),
+                value=_truncate(f"{round(stats['avg_duration'])} min", 200),
                 inline=True,
             )
 
@@ -654,101 +607,6 @@ class DailySummaryCog(commands.Cog):
         finally:
             conn.close()
 
-        return result
-
-    # ------------------------------------------------------------------
-    # GPT commentary
-    # ------------------------------------------------------------------
-
-    def _format_stats_for_gpt(self, stats: dict) -> str:
-        """Convert stats dict into human-readable text for GPT input."""
-        all_zero = stats["total_matches"] == 0 and stats["casual_matches"] == 0 and stats["limited_matches"] == 0 and stats["rumble_matches"] == 0
-        if all_zero:
-            return "No matches were played today."
-
-        lines = ["Today's stats:"]
-        if stats["total_matches"]:
-            lines.append(f"- {stats['total_matches']} ranked matches played")
-        if stats["casual_matches"]:
-            lines.append(f"- {stats['casual_matches']} casual matches played")
-        if stats["limited_matches"]:
-            lines.append(f"- {stats['limited_matches']} limited matches played")
-        if stats["rumble_matches"]:
-            lines.append(f"- {stats['rumble_matches']} rumble matches played")
-
-        if stats.get("unique_players"):
-            lines.append(f"- {stats['unique_players']} unique players")
-
-        if stats.get("most_active"):
-            user_id, name, count = stats["most_active"]
-            lines.append(f"- Most active: {name} ({count} matches)")
-
-        if stats.get("top_gainer"):
-            user_id, name, change = stats["top_gainer"]
-            lines.append(f"- Top ELO gainer: {name} (+{change})")
-
-        if stats.get("biggest_loser"):
-            user_id, name, change = stats["biggest_loser"]
-            lines.append(f"- Biggest ELO drop: {name} ({change})")
-
-        if stats.get("biggest_upset"):
-            winner_id, winner_name, loser_id, loser_name, change = stats["biggest_upset"]
-            lines.append(f"- Biggest upset: {winner_name} beat {loser_name} (+{change} ELO gain)")
-
-        if stats.get("rivalry"):
-            p1_id, p1, p2_id, p2, p1w, p2w, total = stats["rivalry"]
-            lines.append(f"- Rivalry of the day: {p1} vs {p2}, {p1w}-{p2w} record ({total} games)")
-
-        if stats.get("highest_rated"):
-            w_id, w_name, l_id, l_name, w_elo, l_elo = stats["highest_rated"]
-            lines.append(f"- Highest rated match: {w_name} ({w_elo} ELO) vs {l_name} ({l_elo} ELO)")
-
-        if stats.get("ironman"):
-            total_hours = stats["ironman"]
-            lines.append(f"- Total Sorcery: {total_hours} hours of gameplay today")
-
-        if stats.get("deck_variety"):
-            user_id, name, count = stats["deck_variety"]
-            lines.append(f"- Deck variety: {name} played {count} different decks today")
-
-        if stats.get("hot_streaks"):
-            streaks = ", ".join(f"{name} ({n}-win streak)" for user_id, name, n in stats["hot_streaks"][:5])
-            lines.append(f"- Hot streaks: {streaks}")
-
-        if stats.get("broken_streaks"):
-            for entry in stats["broken_streaks"][:3]:
-                lines.append(f"- Streak broken: {entry['player']}'s {entry['streak']}-win streak ended by {entry['broken_by']}")
-
-        if stats.get("avg_duration") is not None:
-            lines.append(f"- Avg match duration: {round(stats['avg_duration'])} min")
-
-        return "\n".join(lines)
-
-    def _generate_commentary(self, stats_text: str):
-        """Generate GPT-flavored stats from raw stats text. Returns parsed dict or None."""
-        try:
-            response = openai_client.responses.create(
-                model="gpt-4.1-nano",
-                instructions=DAILY_SUMMARY_PROMPT,
-                input=stats_text,
-            )
-            logger.info("GPT commentary generated successfully")
-            return self._parse_gpt_response(response.output_text)
-        except Exception as e:
-            logger.error(f"OpenAI API error for daily summary: {e}")
-            return None
-
-    @staticmethod
-    def _parse_gpt_response(text: str) -> dict:
-        """Parse labeled GPT output into a dict keyed by label."""
-        result = {}
-        for line in text.strip().splitlines():
-            if ":" in line:
-                key, _, value = line.partition(":")
-                key = key.strip().upper()
-                value = value.strip()
-                if key and value:
-                    result[key] = value
         return result
 
 

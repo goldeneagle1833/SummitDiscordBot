@@ -51,7 +51,7 @@ cd web-app && python scripts/seed_databases.py
 Commands are organized into Cogs (modular command handlers) in `discord-bot/cogs/`:
 - `lfg/` - Looking For Game queue and matchmaking (package, split from one large file)
 - `elo.py` - ELO ranking, leaderboards, stats
-- `fun.py` - Fart game with OpenAI responses
+- `fun.py` - Fart game
 - `shop.py` - In-game shop and purchases
 - `utility.py` - Help, deck checking
 - `anti_spam.py` - Spam protection system
@@ -143,7 +143,6 @@ Database migrations run automatically on Flask startup via `web-app/migrations/`
 ## External Integrations
 
 - **Discord API** - via discord.py (prefix `!` and slash `/` commands)
-- **OpenAI API** - GPT models for fun cog responses
 - **Curiosa API** - Deck/card data via `utils/deck_checker.py` and `web-app/services/curiosa.py`
 - **YouTube API** - Streaming integration via `web-app/services/youtube.py`
 - **Discord OAuth** - Web app authentication via `web-app/routes/auth.py`

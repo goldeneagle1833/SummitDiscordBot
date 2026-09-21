@@ -158,7 +158,7 @@ const BADGE_STYLES = {
 
 const isYouTubeLink = (url) => url && /youtu\.?be/i.test(url)
 
-function PromoCarousel() {
+export function PromoCarousel() {
   const [items, setItems] = useState([])
   const [active, setActive] = useState(0)
   const [direction, setDirection] = useState(1) // 1 = next/right, -1 = prev/left
@@ -250,10 +250,63 @@ function PromoCarousel() {
     goTo((active + dir + items.length) % items.length, dir)
   }
 
+  // Touch swipe: once a gesture locks to the horizontal axis it drags the
+  // slide, and the click that follows is swallowed so a swipe never opens
+  // the article underneath.
+  const touchRef = useRef(null)
+  const swipedRef = useRef(false)
+  const [dragX, setDragX] = useState(0)
+
+  const handleTouchStart = (e) => {
+    if (items.length <= 1) return
+    const t = e.touches[0]
+    touchRef.current = { x: t.clientX, y: t.clientY, axis: null, dx: 0 }
+    swipedRef.current = false
+  }
+
+  const handleTouchMove = (e) => {
+    const start = touchRef.current
+    if (!start) return
+    const t = e.touches[0]
+    const dx = t.clientX - start.x
+    const dy = t.clientY - start.y
+    if (!start.axis && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+      start.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y'
+    }
+    if (start.axis === 'x') {
+      start.dx = dx
+      setDragX(dx)
+    }
+  }
+
+  const handleTouchEnd = () => {
+    const start = touchRef.current
+    touchRef.current = null
+    setDragX(0)
+    if (start?.axis !== 'x') return
+    swipedRef.current = true
+    if (Math.abs(start.dx) > 40) navigate(start.dx < 0 ? 1 : -1)
+  }
+
+  const handleClickCapture = (e) => {
+    if (!swipedRef.current) return
+    swipedRef.current = false
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
   if (!items.length) return null
 
   return (
-    <div className="relative mt-4 h-48 sm:h-56 overflow-hidden">
+    <div
+      className="relative mt-4 h-48 sm:h-56 overflow-hidden"
+      style={{ touchAction: 'pan-y' }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+      onClickCapture={handleClickCapture}
+    >
       {/* All slides rendered, positioned absolutely, with slide transition */}
       {items.map((item, i) => {
         const badgeStyle = BADGE_STYLES[item.color] || BADGE_STYLES.blue
@@ -277,7 +330,8 @@ function PromoCarousel() {
             className="absolute inset-0 overflow-hidden group transition-all duration-700 ease-in-out"
             style={{
               opacity: isActive ? 1 : 0,
-              transform: isActive ? 'translateX(0)' : `translateX(${direction * 60}px)`,
+              transform: isActive ? `translateX(${dragX}px)` : `translateX(${direction * 60}px)`,
+              transition: dragX ? 'none' : undefined,
               pointerEvents: isActive ? 'auto' : 'none',
             }}
           >
@@ -295,16 +349,16 @@ function PromoCarousel() {
             </div>
 
             {/* Content overlay */}
-            <div className="relative h-full px-6 sm:px-8 text-center flex flex-col items-center justify-center">
-              <h3 className="text-3xl sm:text-4xl font-display text-text-primary leading-tight mb-2">
+            <div className="relative h-full px-12 sm:px-14 pb-6 text-center flex flex-col items-center justify-center">
+              <h3 className="text-2xl sm:text-4xl font-display text-text-primary leading-tight mb-1 sm:mb-2 line-clamp-2">
                 {item.title}
               </h3>
-              {item.subtitle && (
-                <p className="text-base text-text-muted leading-relaxed max-w-lg mx-auto">
+              {item.subtitle && item.subtitle.trim() !== item.title?.trim() && (
+                <p className="text-sm sm:text-base text-text-muted leading-snug sm:leading-relaxed max-w-lg mx-auto line-clamp-2">
                   {item.subtitle}
                 </p>
               )}
-              <div className="flex items-center gap-3 mt-4">
+              <div className="flex items-center gap-3 mt-3 sm:mt-4 shrink-0">
                 <span className={`inline-block text-[10px] font-semibold px-2.5 py-0.5 ${badgeStyle} rounded-full uppercase tracking-wider`}>
                   {item.badge}
                 </span>

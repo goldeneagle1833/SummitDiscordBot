@@ -51,9 +51,4 @@ def voice_match_text(queue_type, is_voice_match):
             f"\n\n🔊 **Voice match** — join voice to play: "
             f"[Join To Make a Room]({SUMMIT_VOICE_URL})"
         )
-    if queue_type == "ranked":
-        return (
-            "\n\n🔇 **No-voice match.** Ranked games played with 🔊 Voice "
-            "count toward top-cut eligibility."
-        )
     return ""

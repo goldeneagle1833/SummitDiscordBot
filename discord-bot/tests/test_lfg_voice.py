@@ -118,8 +118,8 @@ class TestVoiceMessages:
     def test_voice_match_always_gets_voice_link(self):
         assert "Voice match" in match_delivery_extras({}, 1, 2, "ranked", True)[4]
 
-    def test_no_voice_ranked_match_mentions_top_cut(self):
-        assert "top-cut" in match_delivery_extras({}, 1, 2, "ranked", False)[4]
+    def test_no_voice_ranked_match_says_nothing(self):
+        assert match_delivery_extras({}, 1, 2, "ranked", False)[4] == ""
 
     def test_no_voice_casual_match_says_nothing(self):
         assert match_delivery_extras({}, 1, 2, "testing", False)[4] == ""

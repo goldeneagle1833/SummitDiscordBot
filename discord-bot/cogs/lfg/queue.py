@@ -151,7 +151,6 @@ def get_last_unreported_pairing(user_id: int, guild_id: int):
     return None
 
 
-VOICE_SELECT_DESCRIPTION = "Ranked games played with voice count toward top-cut eligibility."
 VOICE_SELECT_DESCRIPTIONS = {
     VOICE: "Only match players who want voice (or don't mind)",
     NO_VOICE: "Only match players who want no voice (or don't mind)",
@@ -210,7 +209,6 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             self.add_item(
                 discord.ui.Label(
                     text="Voice chat",
-                    description=VOICE_SELECT_DESCRIPTION if queue_type == "ranked" else None,
                     component=self.voice_select,
                 )
             )

@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import LeaderboardTable from '@/components/leaderboard/LeaderboardTable'
-import { VoiceRequirementNote } from '@/components/leaderboard/VoiceGames'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
 import Spinner from '@/components/ui/Spinner'
 import {
@@ -273,10 +272,7 @@ export default function Leaderboard() {
             : 'ELO tracking is paused between events'}
         </p>
         {eventLeaderboard.length > 0 ? (
-          <>
-            <VoiceRequirementNote requirement={eventData?.voice_requirement} />
-            <LeaderboardTable data={eventLeaderboard} columns="event" voiceRequirement={eventData?.voice_requirement} />
-          </>
+          <LeaderboardTable data={eventLeaderboard} columns="event" voiceRequirement={eventData?.voice_requirement} />
         ) : (
           <p className="text-text-muted text-center py-8">No matches played yet</p>
         )}

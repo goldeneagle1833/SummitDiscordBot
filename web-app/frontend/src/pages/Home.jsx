@@ -4,7 +4,7 @@ import { get } from '@/api/client'
 import { getEventLeaderboard, getPaperEventLeaderboard, getLimitedLeaderboard } from '@/api/leaderboard'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
 import PostseasonName, { PostseasonLegend } from '@/components/player/BracketMarks'
-import { VoiceGamesCell, VoiceRequirementNote } from '@/components/leaderboard/VoiceGames'
+import { VoiceGamesCell } from '@/components/leaderboard/VoiceGames'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -666,7 +666,6 @@ export default function Home() {
           ) : (
             <>
               <StatBar leaderboard={leaderboard} />
-              <VoiceRequirementNote requirement={eventData.voice_requirement} />
               <EventLeaderboardTable leaderboard={leaderboard} voiceRequirement={eventData.voice_requirement} />
             </>
           )}

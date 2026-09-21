@@ -4,6 +4,14 @@ Decks arrive from several places and only some of them carry usable image
 references - Curiosa hands back absolute CDN URLs, which cannot be served from
 ``/card-images/``. Everything that renders a deck resolves names through here
 instead, so every deck on the site draws from the same image set.
+
+Image files are named ``<set>-<card name>-<printing>.<ext>``, e.g.
+``bet-cave_in-b-s.webp``, where the printing is ``b-s`` for the base standard
+card, ``b-f`` for its foil, ``op-rf`` for an organized-play rainbow foil, and
+so on. The folder also holds stray download copies such as
+``got-eclipse-b-s .png`` and ``got-black_mass-b-s (1).webp``, which are the
+only copies of those cards. Every card maps to its standard printing when one
+exists, so a deck never shows promo or foil art in place of the regular card.
 """
 
 import logging
@@ -15,7 +23,11 @@ from webapp_config import CARD_IMAGES_DIR
 
 logger = logging.getLogger(__name__)
 
+_EXT_RANK = {".webp": 0, ".png": 1, ".jpg": 2, ".jpeg": 2}
+_DOWNLOAD_COPY_RE = re.compile(r"\s*\(\d+\)\s*$")
+
 _card_image_map: dict | None = None
+_card_image_map_mtime: float | None = None
 
 
 def _key(value: str) -> str:
@@ -28,6 +40,11 @@ def _key(value: str) -> str:
     """
     spaced = str(value or "").replace("_", " ").replace("-", " ")
     return normalize_card_name(spaced)
+
+
+def card_image_key(card_name: str) -> str:
+    """The key ``get_card_image_map`` files a card under."""
+    return _key(card_name)
 
 
 def _split_filename(base: str):
@@ -44,35 +61,71 @@ def _split_filename(base: str):
         printing.insert(0, parts.pop())
 
     if len(parts) < 2:
-        return "", printing
+        return _key(base), printing
     return _key("-".join(parts[1:])), printing
 
 
+def _printing_rank(printing: list) -> int:
+    """Lower is better: base standard, then other standard printings, then foils."""
+    joined = "-".join(printing)
+    if joined == "b-s":
+        return 0
+    if joined.startswith("bt-s"):
+        return 1
+    if printing and printing[-1] == "s":
+        return 2
+    if joined == "b-f":
+        return 3
+    return 4
+
+
+def _build_map(directory) -> dict:
+    best: dict = {}
+
+    def offer(key, rank, fname):
+        # Ties go to the later filename, so a later set's printing wins.
+        current = best.get(key)
+        if current is None or rank <= current[0]:
+            best[key] = (rank, fname)
+
+    for fname in sorted(os.listdir(directory)):
+        stem, ext = os.path.splitext(fname)
+        ext = ext.lower()
+        if ext not in _EXT_RANK:
+            continue
+        base = _DOWNLOAD_COPY_RE.sub("", stem).strip().lower()
+        base = re.sub(r"\s*-\s*", "-", base)
+        is_download_copy = base != stem.lower()
+
+        name_key, printing = _split_filename(base)
+        if not name_key:
+            continue
+        rank = (_printing_rank(printing), is_download_copy, _EXT_RANK[ext])
+        offer(name_key, rank, fname)
+
+        # Numbered token art ("foot_soldier_1") also covers the plain name.
+        numbered = re.match(r"^(.+)_\d+$", name_key)
+        if numbered:
+            offer(numbered.group(1), (rank[0] + 10,) + rank[1:], fname)
+
+    return {key: fname for key, (_, fname) in best.items()}
+
+
 def get_card_image_map() -> dict:
-    """{normalized card name: filename}, built once from CARD_IMAGES_DIR."""
-    global _card_image_map
-    if _card_image_map is not None:
-        return _card_image_map
+    """{normalized card name: filename} for CARD_IMAGES_DIR.
 
-    mapping: dict = {}
-    if CARD_IMAGES_DIR.exists():
-        all_files = sorted(os.listdir(CARD_IMAGES_DIR))
-        png_files = [f for f in all_files if f.lower().endswith((".png", ".jpg", ".jpeg"))]
-        webp_files = [f for f in all_files if f.lower().endswith(".webp")]
-
-        for fname in png_files + webp_files:
-            base = re.sub(r"\.(png|jpg|jpeg|webp)$", "", fname, flags=re.IGNORECASE).lower()
-            card_name_normalized, printing = _split_filename(base)
-            if not card_name_normalized:
-                continue
-
-            # Prefer the standard printing over foils and variants.
-            is_standard = printing and printing[-1] == "s"
-            if card_name_normalized not in mapping or is_standard:
-                mapping[card_name_normalized] = fname
-
-    _card_image_map = mapping
-    return mapping
+    Rebuilt whenever the directory changes, so images added on the server
+    show up without restarting the app.
+    """
+    global _card_image_map, _card_image_map_mtime
+    try:
+        mtime = os.stat(CARD_IMAGES_DIR).st_mtime
+    except OSError:
+        return {}
+    if _card_image_map is None or _card_image_map_mtime != mtime:
+        _card_image_map = _build_map(CARD_IMAGES_DIR)
+        _card_image_map_mtime = mtime
+    return _card_image_map
 
 
 def resolve_card_image(card_name: str) -> str | None:
@@ -91,6 +144,7 @@ def attach_images(cards, name_key: str = "name") -> list:
 
 
 def reset_cache():
-    """Drop the cached map. For tests, and after new images are added."""
-    global _card_image_map
+    """Drop the cached map. For tests."""
+    global _card_image_map, _card_image_map_mtime
     _card_image_map = None
+    _card_image_map_mtime = None

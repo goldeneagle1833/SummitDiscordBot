@@ -1,5 +1,7 @@
 """Tests for the shared card-name to image-filename lookup."""
 
+import os
+
 import pytest
 
 import utils.card_images as card_images
@@ -102,3 +104,49 @@ class TestAttachImages:
         assert card_images.attach_images(None) == []
         assert card_images.attach_images([]) == []
         assert card_images.attach_images(["not a dict"]) == ["not a dict"]
+
+
+class TestServerFilenameQuirks:
+    @pytest.fixture()
+    def quirky(self, tmp_path, monkeypatch):
+        for name in [
+            "bet-apprentice_wizard-b-s.webp",
+            "pro-apprentice_wizard-wk-s.webp",
+            "pro-archimago-op-rf.webp",
+            "pro-archimago-d-s.webp",
+            "got-begone-b-s.webp",
+            "bet-maelstrom-b-s.webp",
+            "got-eclipse-b-s .webp",
+            "got-black_mass-b-s (1).webp",
+            "got-deep_sea-b-f.webp",
+            "got-deep_sea-b-f (2).webp",
+            "alp-foot_soldier_1-bt-s.webp",
+        ]:
+            (tmp_path / name).write_bytes(b"")
+        monkeypatch.setattr(card_images, "CARD_IMAGES_DIR", tmp_path)
+        card_images.reset_cache()
+        yield tmp_path
+        card_images.reset_cache()
+
+    @pytest.mark.parametrize("card, expected", [
+        # The base printing beats a promo that sorts after it.
+        ("Apprentice Wizard", "bet-apprentice_wizard-b-s.webp"),
+        # With no base printing, a standard promo beats a foil one.
+        ("Archimago", "pro-archimago-d-s.webp"),
+        ("Begone!", "got-begone-b-s.webp"),
+        ("Maelström", "bet-maelstrom-b-s.webp"),
+        # Stray download copies are the only file for some cards.
+        ("Eclipse", "got-eclipse-b-s .webp"),
+        ("Black Mass", "got-black_mass-b-s (1).webp"),
+        # ...but lose to a cleanly named copy.
+        ("Deep Sea", "got-deep_sea-b-f.webp"),
+        ("Foot Soldier", "alp-foot_soldier_1-bt-s.webp"),
+    ])
+    def test_resolves_to_the_regular_printing(self, quirky, card, expected):
+        assert card_images.resolve_card_image(card) == expected
+
+    def test_images_added_later_are_picked_up(self, quirky):
+        assert card_images.resolve_card_image("Armageddon") is None
+        (quirky / "got-armageddon-b-s.webp").write_bytes(b"")
+        os.utime(quirky, (0, 12345))
+        assert card_images.resolve_card_image("Armageddon") == "got-armageddon-b-s.webp"

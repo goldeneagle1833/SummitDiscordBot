@@ -2,8 +2,6 @@
 
 import json
 import math
-import os
-import re
 import logging
 import sqlite3
 from collections import Counter
@@ -12,8 +10,8 @@ from pathlib import Path
 from flask import Blueprint, jsonify, current_app, request
 
 from repositories.card_catalog import CardCatalogRepository
-from utils.formatting import normalize_card_name
-from webapp_config import MATCH_RECORDS_DB_PATH, CARD_IMAGES_DIR, ELO_DB_PATH, SEASON_FILTERS
+from utils.card_images import card_image_key, get_card_image_map
+from webapp_config import MATCH_RECORDS_DB_PATH, ELO_DB_PATH, SEASON_FILTERS
 from utils.auth import is_admin
 
 logger = logging.getLogger(__name__)
@@ -33,28 +31,12 @@ def _load_card_elements():
 
 def _build_card_image_lookup():
     """Build card name -> image filename lookup."""
-    card_image_lookup = {}
-    if CARD_IMAGES_DIR.exists():
-        all_files = sorted(os.listdir(CARD_IMAGES_DIR))
-        png_files = [f for f in all_files if f.lower().endswith(".png")]
-        webp_files = [f for f in all_files if f.lower().endswith(".webp")]
-        for filename in png_files + webp_files:
-            base = re.sub(r"\.(png|jpg|jpeg|webp)$", "", filename, flags=re.IGNORECASE).lower()
-            for suffix in ["-b-s", "-b-f", "-bt-s", "-bt-f", "-scg-f", "-bt-s-r", "-d-s", "-d-f", "-op-s", "-tc-f"]:
-                if base.endswith(suffix):
-                    base = base[:-len(suffix)]
-                    break
-            if "-" in base:
-                card_name_normalized = base.split("-", 1)[1]
-                is_standard = "-b-s" in filename.lower() or "-bt-s" in filename.lower()
-                if card_name_normalized not in card_image_lookup or is_standard:
-                    card_image_lookup[card_name_normalized] = filename
-    return card_image_lookup
+    return get_card_image_map()
 
 
 def _find_card_image(card_name, lookup):
     """Find matching image filename for a card name."""
-    return lookup.get(normalize_card_name(card_name))
+    return lookup.get(card_image_key(card_name))
 
 
 @cards_bp.route("/cards")

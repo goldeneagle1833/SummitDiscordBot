@@ -2,8 +2,6 @@
 
 import json
 import logging
-import os
-import re
 
 import requests as http_requests
 from flask import Blueprint, jsonify, request
@@ -12,8 +10,7 @@ from repositories.card_catalog import CardCatalogRepository
 from repositories.card_points import CardPointsRepository
 from services.curiosa import CuriosaService
 from utils.auth import require_admin, require_card_points_admin
-from utils.formatting import normalize_card_name
-from webapp_config import CARD_IMAGES_DIR
+from utils.card_images import card_image_key, get_card_image_map
 
 logger = logging.getLogger(__name__)
 
@@ -113,29 +110,13 @@ def set_config():
 
 
 def _build_card_image_lookup():
-    """Build card name -> image filename lookup (same logic as cards.py)."""
-    lookup = {}
-    if CARD_IMAGES_DIR.exists():
-        all_files = sorted(os.listdir(CARD_IMAGES_DIR))
-        png_files = [f for f in all_files if f.lower().endswith(".png")]
-        webp_files = [f for f in all_files if f.lower().endswith(".webp")]
-        for filename in png_files + webp_files:
-            base = re.sub(r"\.(png|jpg|jpeg|webp)$", "", filename, flags=re.IGNORECASE).lower()
-            for suffix in ["-b-s", "-b-f", "-bt-s", "-bt-f", "-scg-f", "-bt-s-r", "-d-s", "-d-f", "-op-s", "-tc-f"]:
-                if base.endswith(suffix):
-                    base = base[:-len(suffix)]
-                    break
-            if "-" in base:
-                card_name_normalized = base.split("-", 1)[1]
-                is_standard = "-b-s" in filename.lower() or "-bt-s" in filename.lower()
-                if card_name_normalized not in lookup or is_standard:
-                    lookup[card_name_normalized] = filename
-    return lookup
+    """Build card name -> image filename lookup."""
+    return get_card_image_map()
 
 
 def _find_card_image(card_name, lookup):
     """Find matching image filename for a card name."""
-    return lookup.get(normalize_card_name(card_name))
+    return lookup.get(card_image_key(card_name))
 
 
 @card_points_bp.route("/public", methods=["GET"])

@@ -11,8 +11,6 @@ Endpoints:
 
 import json
 import logging
-import os
-import re
 
 from flask import Blueprint, jsonify, request, session
 
@@ -21,7 +19,7 @@ from services.curiosa import CuriosaService
 from utils.auth import require_auth
 from utils.formatting import normalize_card_name
 from repositories.card_catalog import CardCatalogRepository
-from webapp_config import CARD_IMAGES_DIR
+from utils.card_images import resolve_card_image
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +30,6 @@ deck_builder_bp = Blueprint("deck_builder", __name__)
 # ---------------------------------------------------------------------------
 
 _card_metadata: dict[str, dict] | None = None
-_card_image_map: dict[str, str] | None = None
 
 
 def _get_card_metadata() -> dict[str, dict]:
@@ -99,34 +96,9 @@ def _get_card_metadata() -> dict[str, dict]:
     return mapping
 
 
-def _get_card_image_map() -> dict[str, str]:
-    """Return {normalized_card_name: filename} dict built from CARD_IMAGES_DIR."""
-    global _card_image_map
-    if _card_image_map is not None:
-        return _card_image_map
-
-    mapping: dict[str, str] = {}
-    if CARD_IMAGES_DIR.exists():
-        all_files = sorted(os.listdir(CARD_IMAGES_DIR))
-        png_files = [f for f in all_files if f.lower().endswith((".png", ".jpg", ".jpeg"))]
-        webp_files = [f for f in all_files if f.lower().endswith(".webp")]
-        for fname in png_files + webp_files:
-            base = re.sub(r"\.(png|jpg|jpeg|webp)$", "", fname, flags=re.IGNORECASE)
-            parts = base.split("-")
-            if len(parts) >= 2:
-                name_key = parts[1]
-            else:
-                name_key = base
-            mapping[name_key] = fname
-    _card_image_map = mapping
-    return mapping
-
-
 def _resolve_card_image(card_name: str) -> str | None:
     """Return image filename for a card name, or None."""
-    mapping = _get_card_image_map()
-    key = normalize_card_name(card_name)
-    return mapping.get(key)
+    return resolve_card_image(card_name)
 
 
 def _enrich_card(card: dict) -> dict:

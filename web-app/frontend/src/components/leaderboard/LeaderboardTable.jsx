@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import PostseasonName from '@/components/player/BracketMarks'
+import PostseasonName, { PostseasonLegend } from '@/components/player/BracketMarks'
 import { VoiceGamesCell } from '@/components/leaderboard/VoiceGames'
 
 const SHOW_OPTIONS = [
@@ -37,6 +37,7 @@ export default function LeaderboardTable({ data = [], columns = 'lifetime', voic
         </select>
       </div>
 
+      <PostseasonLegend className="mb-2 px-1" />
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="border-b border-border">

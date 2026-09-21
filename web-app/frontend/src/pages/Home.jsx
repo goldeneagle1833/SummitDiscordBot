@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { get } from '@/api/client'
 import { getEventLeaderboard, getPaperEventLeaderboard, getLimitedLeaderboard } from '@/api/leaderboard'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
-import PostseasonName from '@/components/player/BracketMarks'
+import PostseasonName, { PostseasonLegend } from '@/components/player/BracketMarks'
 import { VoiceGamesCell, VoiceRequirementNote } from '@/components/leaderboard/VoiceGames'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
@@ -501,6 +501,7 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo', voiceRequire
   }
   return (
     <div className="overflow-x-auto">
+      <PostseasonLegend className="mb-2 px-1" />
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border text-left">

@@ -86,6 +86,48 @@ export function Yurt({ size = 14, className = '' }) {
   )
 }
 
+const LEGEND_ORDER = ['Champion', 'Finalist', 'Top 4', 'Top 8', 'Top cut']
+
+/** True once any player on the site has a postseason finish. */
+export function useHasMarks() {
+  const [has, setHas] = useState(() => Boolean(cache && Object.keys(cache).length))
+  useEffect(() => {
+    let active = true
+    loadMarks().then((all) => {
+      if (active) setHas(Object.keys(all).length > 0)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+  return has
+}
+
+/**
+ * The key to the name colours, shown above a leaderboard. Hidden until the
+ * site has a finished bracket, since until then no name is coloured.
+ */
+export function PostseasonLegend({ className = '' }) {
+  if (!useHasMarks()) return null
+  return (
+    <div
+      role="note"
+      aria-label="Postseason colour key"
+      className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted ${className}`}
+    >
+      <span className="uppercase tracking-wide text-[10px]">Postseason</span>
+      {LEGEND_ORDER.map((label) => (
+        <span key={label} className={`inline-flex items-center gap-1 ${FINISH_COLOURS[label]}`}>
+          <span aria-hidden="true" className="inline-block w-2 h-2 rounded-full bg-current" />
+          {label}
+          {label === 'Champion' && <Yurt size={12} className="ml-0.5" />}
+        </span>
+      ))}
+      <span className="hidden sm:inline">· hover a name for placements</span>
+    </div>
+  )
+}
+
 function PlacementsCard({ marks, anchor }) {
   const entries = marks.entries || []
   // Fixed to the viewport so a scrolling table cannot clip it.

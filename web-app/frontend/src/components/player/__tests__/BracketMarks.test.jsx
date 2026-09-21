@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
-import PostseasonName, { resetBracketMarksCache } from '../BracketMarks'
+import PostseasonName, { PostseasonLegend, resetBracketMarksCache } from '../BracketMarks'
 import { getBracketMarks } from '@/api/brackets'
 
 vi.mock('@/api/brackets', () => ({
@@ -131,5 +131,29 @@ describe('PostseasonName', () => {
     await waitFor(() => expect(getBracketMarks).toHaveBeenCalled())
     expect(container.querySelector('[data-finish]')).toBeNull()
     expect(screen.getByRole('link')).toHaveTextContent('u_champ')
+  })
+})
+
+describe('PostseasonLegend', () => {
+  beforeEach(() => {
+    resetBracketMarksCache()
+    getBracketMarks.mockReset()
+  })
+
+  it('explains every colour once a bracket has finished', async () => {
+    getBracketMarks.mockResolvedValue({ success: true, marks: MARKS })
+    renderWithRouter(<PostseasonLegend />)
+    const key = await screen.findByRole('note', { name: 'Postseason colour key' })
+    for (const label of ['Champion', 'Finalist', 'Top 4', 'Top 8', 'Top cut']) {
+      expect(key).toHaveTextContent(label)
+    }
+    expect(screen.getByText('Top 8')).toHaveClass('text-emerald-300')
+  })
+
+  it('stays hidden while no one has a finish to colour', async () => {
+    getBracketMarks.mockResolvedValue({ success: true, marks: {} })
+    const { container } = renderWithRouter(<PostseasonLegend />)
+    await waitFor(() => expect(getBracketMarks).toHaveBeenCalled())
+    expect(container).toBeEmptyDOMElement()
   })
 })

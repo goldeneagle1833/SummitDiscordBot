@@ -25,6 +25,7 @@ from utils.version import APP_VERSION
 from utils.auth import get_current_user, is_admin, is_curio_editor
 from utils.monitoring import init_monitoring
 from routes import register_blueprints
+from migrations.enable_wal_mode import enable_wal_mode
 from migrations.create_match_reports_web import create_match_reports_web_table
 from migrations.add_season_id_to_match_reports_web import migrate as migrate_season_id
 from migrations.add_lifetime_elo_after import migrate as migrate_lifetime_elo_after
@@ -64,6 +65,12 @@ def create_app() -> Flask:
     app.config['TEMPLATES_AUTO_RELOAD'] = True
     app.jinja_env.auto_reload = True
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+
+    # WAL first so readers stop colliding with bot writes
+    try:
+        enable_wal_mode()
+    except Exception as e:
+        logger.error(f"Failed to enable WAL mode: {e}")
 
     # Ensure required tables exist and run migrations
     try:

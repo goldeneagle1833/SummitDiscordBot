@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, fireEvent } from '@testing-library/react'
 import { renderWithRouter } from '@/test/test-utils'
-import BracketMarks, { resetBracketMarksCache } from '../BracketMarks'
+import PostseasonName, { resetBracketMarksCache } from '../BracketMarks'
 import { getBracketMarks } from '@/api/brackets'
 
 vi.mock('@/api/brackets', () => ({
@@ -44,70 +44,92 @@ const MARKS = {
   },
 }
 
-describe('BracketMarks', () => {
+const named = (id) => (
+  <PostseasonName playerId={id}>
+    <a href={`/player/${id}`}>{id}</a>
+  </PostseasonName>
+)
+
+describe('PostseasonName', () => {
   beforeEach(() => {
     resetBracketMarksCache()
     getBracketMarks.mockClear()
     getBracketMarks.mockResolvedValue({ success: true, marks: MARKS })
   })
 
-  it('draws a yurt for a bracket win', async () => {
-    const { container } = renderWithRouter(<BracketMarks playerId="u_champ" />)
-    await waitFor(() => expect(container.querySelectorAll('img')).toHaveLength(1))
-    expect(container.querySelector('img')).toHaveAttribute('src', '/static/images/favicon.png')
+  it.each([
+    ['u_champ', 'Champion', 'text-yellow-300'],
+    ['u_finalist', 'Finalist', 'text-orange-300'],
+    ['u_top4', 'Top 4', 'text-sky-300'],
+    ['u_cut', 'Top cut', 'text-violet-300'],
+  ])('colours %s by their best finish', async (id, label, colour) => {
+    const { container } = renderWithRouter(named(id))
+    await waitFor(() => expect(container.querySelector(`[data-finish="${label}"]`)).not.toBeNull())
+    expect(container.querySelector('[data-finish]')).toHaveClass(colour)
   })
 
-  it('draws one yurt per win', async () => {
-    const { container } = renderWithRouter(<BracketMarks playerId="u_double" />)
+  it('shows no tag text beside the name', async () => {
+    const { container } = renderWithRouter(named('u_finalist'))
+    await waitFor(() => expect(container.querySelector('[data-finish]')).not.toBeNull())
+    expect(screen.queryByText('Finalist')).not.toBeInTheDocument()
+  })
+
+  it('draws one yurt per title', async () => {
+    const { container } = renderWithRouter(named('u_double'))
     await waitFor(() => expect(container.querySelectorAll('img')).toHaveLength(2))
-    expect(screen.getByRole('img')).toHaveAttribute(
-      'aria-label',
-      '2x bracket winner: Cup A, Cup B',
-    )
   })
 
-  it('tags a finalist instead of a yurt', async () => {
-    const { container } = renderWithRouter(<BracketMarks playerId="u_finalist" />)
-    expect(await screen.findByText('Finalist')).toBeInTheDocument()
+  it('gives a finalist no yurt', async () => {
+    const { container } = renderWithRouter(named('u_finalist'))
+    await waitFor(() => expect(container.querySelector('[data-finish]')).not.toBeNull())
     expect(container.querySelectorAll('img')).toHaveLength(0)
   })
 
-  it('tags top 4 and top cut finishes', async () => {
-    renderWithRouter(<BracketMarks playerId="u_top4" />)
-    expect(await screen.findByText('Top 4')).toBeInTheDocument()
+  it('lists every placement on hover', async () => {
+    const { container } = renderWithRouter(named('u_double'))
+    await waitFor(() => expect(container.querySelector('[data-finish]')).not.toBeNull())
 
-    resetBracketMarksCache(MARKS)
-    renderWithRouter(<BracketMarks playerId="u_cut" />)
-    expect(await screen.findByText('Top cut')).toBeInTheDocument()
+    fireEvent.mouseEnter(container.querySelector('[data-finish]'))
+    const card = await screen.findByRole('tooltip')
+    expect(card).toHaveTextContent('Cup A')
+    expect(card).toHaveTextContent('Cup B')
+    expect(card).toHaveTextContent('Champion')
+
+    fireEvent.mouseLeave(container.querySelector('[data-finish]'))
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 
-  it('names the bracket behind the tag', async () => {
-    renderWithRouter(<BracketMarks playerId="u_finalist" />)
-    expect(await screen.findByText('Finalist')).toHaveAttribute('title', 'Finalist — Cup A')
+  it('opens the card for keyboard users too', async () => {
+    const { container } = renderWithRouter(named('u_top4'))
+    await waitFor(() => expect(container.querySelector('[data-finish]')).not.toBeNull())
+    fireEvent.focus(screen.getByRole('link'))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Top 4')
   })
 
-  it('shows nothing for a player with no postseason', async () => {
-    const { container } = renderWithRouter(<BracketMarks playerId="u_nobody" />)
+  it('leaves a player with no postseason untouched', async () => {
+    const { container } = renderWithRouter(named('u_nobody'))
     await waitFor(() => expect(getBracketMarks).toHaveBeenCalled())
-    expect(container).toBeEmptyDOMElement()
+    expect(container.querySelector('[data-finish]')).toBeNull()
+    expect(screen.getByRole('link')).toHaveTextContent('u_nobody')
   })
 
   it('fetches once however many names are on the page', async () => {
-    renderWithRouter(
+    const { container } = renderWithRouter(
       <>
-        <BracketMarks playerId="u_champ" />
-        <BracketMarks playerId="u_finalist" />
-        <BracketMarks playerId="u_nobody" />
+        {named('u_champ')}
+        {named('u_finalist')}
+        {named('u_nobody')}
       </>,
     )
-    await waitFor(() => expect(screen.getByText('Finalist')).toBeInTheDocument())
+    await waitFor(() => expect(container.querySelectorAll('[data-finish]')).toHaveLength(2))
     expect(getBracketMarks).toHaveBeenCalledTimes(1)
   })
 
-  it('stays quiet when the marks cannot be loaded', async () => {
+  it('still shows the name when the marks cannot be loaded', async () => {
     getBracketMarks.mockRejectedValue(new Error('boom'))
-    const { container } = renderWithRouter(<BracketMarks playerId="u_champ" />)
+    const { container } = renderWithRouter(named('u_champ'))
     await waitFor(() => expect(getBracketMarks).toHaveBeenCalled())
-    expect(container).toBeEmptyDOMElement()
+    expect(container.querySelector('[data-finish]')).toBeNull()
+    expect(screen.getByRole('link')).toHaveTextContent('u_champ')
   })
 })

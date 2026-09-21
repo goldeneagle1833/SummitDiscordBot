@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import BracketMarks from '@/components/player/BracketMarks'
+import PostseasonName from '@/components/player/BracketMarks'
 
 const SHOW_OPTIONS = [
   { value: 16, label: 'Top 16' },
@@ -66,15 +66,14 @@ export default function LeaderboardTable({ data = [], columns = 'lifetime' }) {
                 <tr key={playerId} className="hover:bg-bg-elevated transition-colors">
                   <td className="px-3 py-2 text-sm text-text-muted">{rankDisplay}</td>
                   <td className="px-3 py-2">
-                    <span className="inline-flex items-center gap-1.5 flex-wrap">
+                    <PostseasonName playerId={playerId}>
                       <Link
                         to={`/player/${playerId}`}
                         className="text-sm font-medium hover:text-primary transition-colors"
                       >
                         {entry.name || entry.display_name}
                       </Link>
-                      <BracketMarks playerId={playerId} />
-                    </span>
+                    </PostseasonName>
                   </td>
                   {columns === 'lifetime' && (
                     <>

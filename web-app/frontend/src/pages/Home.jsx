@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { get } from '@/api/client'
 import { getEventLeaderboard, getPaperEventLeaderboard, getLimitedLeaderboard } from '@/api/leaderboard'
 import { StatBox, TrophyRuns, LimitedLeaderboardTable } from '@/components/leaderboard/LimitedLeaderboardContent'
-import BracketMarks from '@/components/player/BracketMarks'
+import PostseasonName from '@/components/player/BracketMarks'
 import Spinner from '@/components/ui/Spinner'
 import usePageTitle from '@/hooks/usePageTitle'
 
@@ -473,12 +473,11 @@ function EventLeaderboardTable({ leaderboard, eloKey = 'event_elo' }) {
                   )}
                 </td>
                 <td className="py-2 px-3">
-                  <span className="inline-flex items-center gap-1.5 flex-wrap">
+                  <PostseasonName playerId={player.id}>
                     <Link to={`/player/${player.id}`} className="hover:text-primary transition-colors">
                       {player.name}
                     </Link>
-                    <BracketMarks playerId={player.id} />
-                  </span>
+                  </PostseasonName>
                 </td>
                 <td className="py-2 px-3 text-right">{player[eloKey]}</td>
               </tr>

@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { getBracketMarks } from '@/api/brackets'
 
 /**
- * Postseason honours beside a player's name: one yurt per bracket won, or a
- * tag for their best finish if they have not won one.
+ * Postseason honours on a player's name: the name takes the colour of their
+ * best finish, champions get one yurt per bracket won, and hovering the name
+ * lists every placement.
  *
  * Every leaderboard row renders one of these, so the marks are fetched once
  * per page load and shared through a module-level cache.
@@ -12,11 +13,13 @@ import { getBracketMarks } from '@/api/brackets'
 
 const YURT = '/static/images/favicon.png'
 
-const TAG_STYLES = {
-  Finalist: 'text-amber-300 border-amber-300/40',
-  'Top 4': 'text-sky-300 border-sky-300/40',
-  'Top 8': 'text-text-muted border-border',
-  'Top cut': 'text-text-muted border-border',
+// Best finish -> name colour. Gold for a title, then down the podium.
+export const FINISH_COLOURS = {
+  Champion: 'text-yellow-300',
+  Finalist: 'text-orange-300',
+  'Top 4': 'text-sky-300',
+  'Top 8': 'text-emerald-300',
+  'Top cut': 'text-violet-300',
 }
 
 let cache = null
@@ -83,53 +86,71 @@ export function Yurt({ size = 14, className = '' }) {
   )
 }
 
-export default function BracketMarks({ playerId, size = 14, linkTo = true, className = '' }) {
-  const marks = useBracketMarks(playerId)
-  if (!marks) return null
-
-  const wins = marks.wins || 0
-  const won = (marks.entries || []).filter((e) => e.placement === 1).map((e) => e.name)
-
-  let body = null
-  if (wins > 0) {
-    const tooltip =
-      wins === 1 ? `Won ${won[0] || 'a bracket'}` : `${wins}x bracket winner: ${won.join(', ')}`
-    body = (
-      <span
-        className={`inline-flex items-center gap-0.5 align-middle ${className}`}
-        title={tooltip}
-        aria-label={tooltip}
-        role="img"
-      >
-        {Array.from({ length: wins }, (_, i) => (
-          <Yurt key={i} size={size} />
-        ))}
-      </span>
-    )
-  } else if (marks.best_label) {
-    const deepest = (marks.entries || []).find((e) => e.label === marks.best_label)
-    body = (
-      <span
-        className={`inline-block align-middle px-1.5 py-px rounded border text-[10px] uppercase tracking-wide ${
-          TAG_STYLES[marks.best_label] || TAG_STYLES['Top cut']
-        } ${className}`}
-        title={deepest ? `${marks.best_label} — ${deepest.name}` : marks.best_label}
-      >
-        {marks.best_label}
-      </span>
-    )
+function PlacementsCard({ marks, anchor }) {
+  const entries = marks.entries || []
+  // Fixed to the viewport so a scrolling table cannot clip it.
+  const style = {
+    position: 'fixed',
+    top: anchor.bottom + 6,
+    left: Math.max(8, Math.min(anchor.left, window.innerWidth - 288)),
   }
+  return createPortal(
+    <div
+      role="tooltip"
+      style={style}
+      className="z-50 w-72 max-w-[calc(100vw-16px)] rounded-lg border border-border bg-bg-surface shadow-xl p-3 text-xs pointer-events-none"
+    >
+      <p className="text-[10px] uppercase tracking-wide text-text-muted mb-2">Postseason</p>
+      <ul className="space-y-1.5">
+        {entries.map((entry) => (
+          <li key={entry.slug} className="flex items-baseline justify-between gap-3">
+            <span className="text-text-primary truncate">{entry.name}</span>
+            <span
+              className={`shrink-0 font-medium ${FINISH_COLOURS[entry.label] || FINISH_COLOURS['Top cut']}`}
+            >
+              {entry.label}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>,
+    document.body,
+  )
+}
 
-  if (!body) return null
-  if (!linkTo) return body
+/**
+ * Wrap a player's name (usually their profile link) in their postseason
+ * colour. Players with no finishes get their name back untouched.
+ */
+export default function PostseasonName({ playerId, children, yurtSize = 14, className = '' }) {
+  const marks = useBracketMarks(playerId)
+  const ref = useRef(null)
+  const [anchor, setAnchor] = useState(null)
+
+  if (!marks || !marks.best_label) return children
+
+  const show = () => {
+    if (ref.current) setAnchor(ref.current.getBoundingClientRect())
+  }
+  const hide = () => setAnchor(null)
+  const wins = marks.wins || 0
+  const summary = (marks.entries || []).map((e) => `${e.label}: ${e.name}`).join('; ')
 
   return (
-    <Link
-      to={`/brackets`}
-      onClick={(e) => e.stopPropagation()}
-      className="inline-flex hover:opacity-80 transition-opacity"
+    <span
+      ref={ref}
+      data-finish={marks.best_label}
+      className={`inline-flex items-center gap-1 ${FINISH_COLOURS[marks.best_label] || ''} ${className}`}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
+      aria-description={`Postseason: ${summary}`}
     >
-      {body}
-    </Link>
+      {children}
+      {wins > 0 &&
+        Array.from({ length: wins }, (_, i) => <Yurt key={i} size={yurtSize} />)}
+      {anchor && <PlacementsCard marks={marks} anchor={anchor} />}
+    </span>
   )
 }

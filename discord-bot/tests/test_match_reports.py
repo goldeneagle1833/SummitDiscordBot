@@ -786,6 +786,7 @@ class TestFunctionSignatures:
             "match_type",
             "elo_multiplier_winner",
             "elo_multiplier_loser",
+            "pairing_id",
         ]
 
         assert params == expected_params, f"Expected {expected_params}, got {params}"

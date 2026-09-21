@@ -142,6 +142,16 @@ def create_db():
         pass  # Column already exists
     cur.execute("UPDATE match_records SET match_type = 'ranked' WHERE match_type IS NULL")
 
+    # Voice flag + originating queue pairing (voice ranked games count toward top cut)
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN voice INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        cur.execute("ALTER TABLE match_records ADD COLUMN pairing_id INTEGER")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # Add lifetime elo_after columns to track absolute lifetime ELO at each match (for history graph)
     try:
         cur.execute("ALTER TABLE match_records ADD COLUMN winner_lifetime_elo_after INTEGER")
@@ -314,6 +324,10 @@ def create_match_records_archive():
     try:
         cur.execute("ALTER TABLE match_records_archive ADD COLUMN match_type TEXT DEFAULT 'ranked'")
     except sqlite3.OperationalError:
+        pass
+    try:
+        cur.execute("ALTER TABLE match_records_archive ADD COLUMN voice INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
         pass  # Column already exists
 
     conn.commit()
@@ -365,6 +379,12 @@ def create_active_pairings_table():
     # Migration: add match_type column (ranked/testing/limited)
     try:
         cur.execute("ALTER TABLE active_pairings ADD COLUMN match_type TEXT DEFAULT 'ranked'")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Migration: voice flag (1 when either player queued asking for voice)
+    try:
+        cur.execute("ALTER TABLE active_pairings ADD COLUMN voice INTEGER NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
         pass  # Column already exists
 
@@ -988,6 +1008,7 @@ def save_pairing(
     player1_deck_url: str = None,
     player2_deck_url: str = None,
     match_type: str = "ranked",
+    voice: bool = False,
 ) -> int:
     """
     Save a new active pairing to the database.
@@ -999,6 +1020,7 @@ def save_pairing(
         player1_deck_url: Optional deck URL for player 1
         player2_deck_url: Optional deck URL for player 2
         match_type: Match type (ranked, testing, limited)
+        voice: True when the pairing is a voice match
 
     Returns:
         The pairing_id of the created record
@@ -1019,8 +1041,8 @@ def save_pairing(
 
             cur.execute(
                 """INSERT INTO active_pairings
-                   (guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, status, match_type)
-                   VALUES (?, ?, ?, ?, ?, ?, 'active', ?)""",
+                   (guild_id, player1_id, player2_id, player1_deck_url, player2_deck_url, created_at, status, match_type, voice)
+                   VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)""",
                 (
                     guild_id,
                     player1_id,
@@ -1029,6 +1051,7 @@ def save_pairing(
                     player2_deck_url,
                     datetime.datetime.now().isoformat(),
                     match_type,
+                    1 if voice else 0,
                 ),
             )
 
@@ -1092,13 +1115,28 @@ def get_pairing_by_id(guild_id: int, pairing_id: int) -> dict | None:
     conn.row_factory = sqlite3.Row
     row = conn.execute(
         """SELECT pairing_id, guild_id, player1_id, player2_id,
-                  player1_deck_url, player2_deck_url, created_at, status, match_type
+                  player1_deck_url, player2_deck_url, created_at, status, match_type, voice
            FROM active_pairings
            WHERE guild_id = ? AND pairing_id = ?""",
         (guild_id, pairing_id),
     ).fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def get_pairing_voice(pairing_id: int) -> bool:
+    """Whether a queue pairing was a voice match (False when unknown)."""
+    if not pairing_id:
+        return False
+    create_active_pairings_table()
+    conn = sqlite3.connect("match_records.db")
+    try:
+        row = conn.execute(
+            "SELECT voice FROM active_pairings WHERE pairing_id = ?", (pairing_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    return bool(row and row[0])
 
 
 def get_opponent_from_pairing(guild_id: int, user_id: int) -> int | None:

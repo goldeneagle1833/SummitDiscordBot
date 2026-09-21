@@ -23,8 +23,10 @@ class TestLeaderboardService:
         repo.get_user_elo.return_value = 1500
         return repo
 
-    def _make_match_repo(self, wins=0, losses=0, season_players=None, season_records=None):
+    def _make_match_repo(self, wins=0, losses=0, season_players=None, season_records=None,
+                         voice_games=None):
         repo = MagicMock()
+        repo.get_season_voice_games.return_value = voice_games or {}
         repo.get_wins_count.return_value = wins
         repo.get_losses_count.return_value = losses
         repo.get_season_players.return_value = season_players or []
@@ -74,6 +76,7 @@ class TestLeaderboardService:
         active_event = {"event_id": 7, "event_name": "Season 7", "start_date": "2025-01-01"}
         match_repo = self._make_match_repo(
             season_records={"1": {"wins": 5, "losses": 2}},
+            voice_games={"1": 3},
         )
         service = LeaderboardService(
             elo_repo=self._make_elo_repo(standings=standings, active_event=active_event),
@@ -83,9 +86,12 @@ class TestLeaderboardService:
         result = service.get_event_leaderboard()
 
         assert result["leaderboard"] == [
-            {"id": "1", "name": "Alice", "event_elo": 1640, "wins": 5, "losses": 2},
+            {"id": "1", "name": "Alice", "event_elo": 1640, "wins": 5, "losses": 2,
+             "voice_games": 3},
         ]
+        assert result["voice_requirement"] == {"min_games": 5, "enforced": False}
         match_repo.get_season_records.assert_called_once_with("2025-01-01")
+        match_repo.get_season_voice_games.assert_called_once_with("2025-01-01")
 
     def test_get_combined_leaderboard_structure(self):
         elo_repo = self._make_elo_repo()

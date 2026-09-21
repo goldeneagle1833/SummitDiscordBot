@@ -10,6 +10,15 @@ import config
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
 from cogs.lfg.queue_definitions import queue_definition, queue_is_enabled
 from cogs.lfg.helpers import correction_tip, match_type_presentation
+from cogs.lfg.voice import (
+    ANY_VOICE,
+    VOICE,
+    VOICE_LABELS,
+    NO_VOICE,
+    normalize_voice_preference,
+    queue_supports_voice,
+    resolve_match_voice,
+)
 from cogs.lfg.persistent_confirm import create_match_card_view, update_match_card_message_ref
 from cogs.lfg.pairing_messages import (
     WEB_MATCH_TTL_SECONDS,
@@ -35,7 +44,7 @@ def _clear_matching_web_users(*user_ids):
         matching_web_users.pop(user_id, None)
 
 
-async def provision_match_and_publish_results(guild_id, pairing_id, queue_type, players):
+async def provision_match_and_publish_results(guild_id, pairing_id, queue_type, players, voice=False):
     """Provision seats and publish stable results for website-origin players."""
     provisioned_links = await provision_sorcery_online_match(
         guild_id, pairing_id, queue_type, players
@@ -55,6 +64,7 @@ async def provision_match_and_publish_results(guild_id, pairing_id, queue_type, 
                     "opponent_name": player["opponent_name"],
                     "matched_at": matched_at,
                     "game_url": game_url,
+                    "voice": bool(voice),
                     "expires_at": time.time() + WEB_MATCH_TTL_SECONDS,
                 }
         matching_web_users.pop(user_id, None)
@@ -141,6 +151,32 @@ def get_last_unreported_pairing(user_id: int, guild_id: int):
     return None
 
 
+VOICE_SELECT_DESCRIPTION = "Ranked games played with voice count toward top-cut eligibility."
+VOICE_SELECT_DESCRIPTIONS = {
+    VOICE: "Only match players who want voice (or don't mind)",
+    NO_VOICE: "Only match players who want no voice (or don't mind)",
+    ANY_VOICE: "Match with anyone",
+}
+
+
+def build_voice_select():
+    """Required voice-preference dropdown for the Ranked/Casual join modal."""
+    return discord.ui.Select(
+        placeholder="Voice, no voice, or either?",
+        min_values=1,
+        max_values=1,
+        required=True,
+        options=[
+            discord.SelectOption(
+                label=VOICE_LABELS[value],
+                value=value,
+                description=VOICE_SELECT_DESCRIPTIONS[value],
+            )
+            for value in (VOICE, NO_VOICE, ANY_VOICE)
+        ],
+    )
+
+
 class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
     """Modal for entering a deck URL when joining the LFG queue"""
 
@@ -166,11 +202,29 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             is_button_join  # True if from button, False if from !lfg command
         )
         self.queue_type = queue_type
+        self.voice_select = None
+        if queue_supports_voice(queue_type):
+            self.voice_select = build_voice_select()
+            # Keep the voice choice next to the deck URL, above the duration.
+            self.remove_item(self.timeframe)
+            self.add_item(
+                discord.ui.Label(
+                    text="Voice chat",
+                    description=VOICE_SELECT_DESCRIPTION if queue_type == "ranked" else None,
+                    component=self.voice_select,
+                )
+            )
+            self.add_item(self.timeframe)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
         timeframe_value = parse_queue_timeframe(self.timeframe.value)
+        voice = (
+            normalize_voice_preference(self.voice_select.values[0])
+            if self.voice_select is not None and self.voice_select.values
+            else ANY_VOICE
+        ) or ANY_VOICE
 
         deck_url = clean_deck_url(self.deck_url.value.strip()) if self.deck_url.value else None
 
@@ -214,6 +268,7 @@ class DeckURLModal(discord.ui.Modal, title="Join LFG Queue"):
             timeframe_value,
             deck_url,
             run_id,
+            voice=voice,
         )
 
 
@@ -342,9 +397,11 @@ class PointsQueueModal(discord.ui.Modal, title="Join Rumble (Omens) Queue"):
 
 
 async def _process_queue_join(
-    bot, interaction, queue_type, timeframe_value, deck_url, run_id=None, origin="discord"
+    bot, interaction, queue_type, timeframe_value, deck_url, run_id=None, origin="discord",
+    voice=ANY_VOICE,
 ):
     """Handle queue join flow after modal validation."""
+    voice = (normalize_voice_preference(voice) or ANY_VOICE) if queue_supports_voice(queue_type) else ANY_VOICE
 
     class FakeContext:
         def __init__(self, bot, interaction):
@@ -376,7 +433,7 @@ async def _process_queue_join(
             return
 
         lfg_cog.clean_expired_lfg()
-        matched_user_id = lfg_cog.check_if_someone_is_lfg(ctx, queue_type)
+        matched_user_id = lfg_cog.check_if_someone_is_lfg(ctx, queue_type, voice=voice)
 
         if matched_user_id and matched_user_id != interaction.user.id:
             matched_entry = lfg_queue.get(matched_user_id, {}).get("queues", {}).get(queue_type, {})
@@ -386,6 +443,9 @@ async def _process_queue_join(
             matched_run_id = int(matched_entry.get("run_id") or 0)
             matched_user_origin = matched_entry.get("origin", "discord")
             match_type = lfg_cog.resolve_match_type(queue_type, matched_queue_type)
+            match_voice = queue_supports_voice(queue_type) and resolve_match_voice(
+                voice, matched_entry.get("voice", ANY_VOICE)
+            )
 
             if matched_ladder_info:
                 from utils.database import get_user_event_elo, save_ladder_challenge, delete_ladder_challenge
@@ -441,6 +501,7 @@ async def _process_queue_join(
             matched_run_id = None
             matched_user_origin = None
             match_type = None
+            match_voice = False
             lfg_cog.add_to_lfg_queue(
                 ctx,
                 timeframe_value,
@@ -448,6 +509,7 @@ async def _process_queue_join(
                 queue_type,
                 run_id=run_id,
                 origin=origin,
+                voice=voice,
             )
 
     # Notify limited ping channel when someone is waiting (no match found)
@@ -530,6 +592,7 @@ async def _process_queue_join(
                     player1_deck_url=deck_url or "",
                     player2_deck_url=matched_user_deck_url or "",
                     match_type=match_type or "ranked",
+                    voice=match_voice,
                 )
             logger.info(
                 f"Saved {'limited ' if match_type == 'limited' else ''}pairing {pairing_id} in guild {interaction.guild.id}: "
@@ -570,6 +633,7 @@ async def _process_queue_join(
                     "opponent_name": joiner_global,
                 },
             ],
+            voice=match_voice,
         )
 
         try:
@@ -630,6 +694,7 @@ async def _process_queue_join(
             match_card_view=match_card_view,
             match_type=match_type,
             provisioned_links=provisioned_links,
+            voice=match_voice,
         )
 
         ladder_note = ""
@@ -660,6 +725,8 @@ async def _process_queue_join(
     else:
         queue_label = "Rumble (Omens)" if queue_type == "points" else queue_type.capitalize()
         deck_msg = f"\n**Deck:** {deck_url}" if deck_url else ""
+        if queue_supports_voice(queue_type):
+            deck_msg += f"\n**Voice:** {VOICE_LABELS[voice]}"
         try:
             await interaction.user.send(
                 f"You have been added to the **{queue_label}** queue for {timeframe_value} minutes.{deck_msg}"

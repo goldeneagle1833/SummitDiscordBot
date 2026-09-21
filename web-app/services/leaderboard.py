@@ -1,8 +1,17 @@
 """Leaderboard service for ELO rankings and distribution."""
 
+import webapp_config
 from repositories.elo import EloRepository
 from repositories.matches import MatchRepository
 from repositories.user_profiles import UserProfileRepository
+
+
+def voice_requirement() -> dict:
+    """Top-cut voice requirement settings for the season leaderboards."""
+    return {
+        "min_games": webapp_config.TOP_CUT_MIN_VOICE_GAMES,
+        "enforced": webapp_config.TOP_CUT_VOICE_REQUIREMENT_ENFORCED,
+    }
 
 
 class LeaderboardService:
@@ -63,10 +72,12 @@ class LeaderboardService:
         standings = self._elo_repo.get_event_standings()
 
         season_records = {}
+        voice_games = {}
         if active_event:
             event_start = active_event.get("start_date")
             if event_start:
                 season_records = self._match_repo.get_season_records(event_start)
+                voice_games = self._match_repo.get_season_voice_games(event_start)
 
         leaderboard_data = []
         for standing in standings:
@@ -81,10 +92,15 @@ class LeaderboardService:
                         "event_elo": standing["event_elo"],
                         "wins": record["wins"],
                         "losses": record["losses"],
+                        "voice_games": voice_games.get(str(user_id), 0),
                     }
                 )
 
-        return {"event": active_event, "leaderboard": leaderboard_data}
+        return {
+            "event": active_event,
+            "leaderboard": leaderboard_data,
+            "voice_requirement": voice_requirement(),
+        }
 
     def get_combined_leaderboard(self) -> dict:
         """Get unified lifetime and event leaderboards."""
@@ -100,10 +116,12 @@ class LeaderboardService:
         # Get event start date for season stats and participant list
         event_start = None
         season_records = {}
+        voice_games = {}
         if active_event:
             event_start = active_event.get("start_date")
             if event_start:
                 season_records = self._match_repo.get_season_records(event_start)
+                voice_games = self._match_repo.get_season_voice_games(event_start)
 
         for standing in standings:
             user_id = standing["user_id"]
@@ -118,6 +136,7 @@ class LeaderboardService:
                         "event_elo": standing["event_elo"],
                         "season_wins": record["wins"],
                         "season_losses": record["losses"],
+                        "voice_games": voice_games.get(str(user_id), 0),
                     }
                 )
                 event_player_ids.add(user_id)
@@ -127,7 +146,11 @@ class LeaderboardService:
 
         return {
             "lifetime": lifetime_data,
-            "event": {"info": active_event, "leaderboard": event_data},
+            "event": {
+                "info": active_event,
+                "leaderboard": event_data,
+                "voice_requirement": voice_requirement(),
+            },
         }
 
     def get_source_leaderboard(self, source: str) -> list[dict]:

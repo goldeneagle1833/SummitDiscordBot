@@ -184,6 +184,26 @@ class TestMatchRepository:
             "player3": {"wins": 0, "losses": 1},
         }
 
+    def test_get_season_voice_games_counts_only_ranked_voice_matches(self, match_db):
+        seed_matches(match_db, [
+            {"winner_id": "p1", "loser_id": "p2", "timestamp": "2025-01-15 12:00:00"},
+            {"winner_id": "p2", "loser_id": "p1", "timestamp": "2025-01-16 12:00:00"},
+            {"winner_id": "p1", "loser_id": "p3", "timestamp": "2025-01-17 12:00:00"},
+            {"winner_id": "p1", "loser_id": "p2", "timestamp": "2025-01-18 12:00:00"},
+            {"winner_id": "p1", "loser_id": "p2", "timestamp": "2024-12-31 12:00:00"},
+        ])
+        MatchRepository._columns_ensured = False
+        repo = MatchRepository(db_path=match_db)
+        assert repo.get_season_voice_games("2025-01-01") == {}
+
+        conn = sqlite3.connect(match_db)
+        conn.execute("UPDATE match_records SET voice = 1 WHERE timestamp != '2025-01-17 12:00:00'")
+        conn.execute("UPDATE match_records SET match_type = 'testing' WHERE timestamp = '2025-01-18 12:00:00'")
+        conn.commit()
+        conn.close()
+
+        assert repo.get_season_voice_games("2025-01-01") == {"p1": 2, "p2": 2}
+
     def test_ensure_columns_idempotent(self, match_db):
         """Calling _ensure_columns twice shouldn't raise."""
         MatchRepository._columns_ensured = False

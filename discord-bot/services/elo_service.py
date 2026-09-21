@@ -13,6 +13,7 @@ from repositories.elo_repo import (
     create_match_records_archive,
     migrate_to_dual_elo_system,
     get_active_event,
+    get_pairing_voice,
     get_total_match_count,
     update_both_player_elos,
     NON_ELO_MATCH_TYPES,
@@ -993,6 +994,7 @@ async def record_match(
     match_type="ranked",
     elo_multiplier_winner=1.0,
     elo_multiplier_loser=1.0,
+    pairing_id=None,
 ):
     """Record a completed match: calculate ELOs atomically, update DB, insert match record.
 
@@ -1136,8 +1138,8 @@ async def record_match(
             "winner_elo_change, loser_elo_change, "
             "winner_lifetime_elo_change, loser_lifetime_elo_change, "
             "winner_went_first, loser_went_first, match_type, "
-            "winner_lifetime_elo_after, loser_lifetime_elo_after) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "winner_lifetime_elo_after, loser_lifetime_elo_after, pairing_id, voice) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 reporter_id,
                 winner_id, winner_global,
@@ -1162,6 +1164,8 @@ async def record_match(
                 match_type,
                 winner_new_elo,
                 loser_new_elo,
+                pairing_id,
+                1 if get_pairing_voice(pairing_id) else 0,
             ),
         )
         table_name = "match_records"
@@ -1325,8 +1329,8 @@ def end_current_event():
                 winner_lifetime_elo_change, loser_lifetime_elo_change,
                 winner_went_first, loser_went_first,
                 winner_lifetime_elo_after, loser_lifetime_elo_after,
-                match_type, archived_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                match_type, voice, archived_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 event_id,
                 match_dict.get("match_id"),
@@ -1355,6 +1359,7 @@ def end_current_event():
                 match_dict.get("winner_lifetime_elo_after"),
                 match_dict.get("loser_lifetime_elo_after"),
                 match_dict.get("match_type", "ranked"),
+                match_dict.get("voice") or 0,
                 archived_at,
             ),
         )

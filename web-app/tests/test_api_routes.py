@@ -60,7 +60,9 @@ class TestLeaderboardRoutes:
             "event_elo": 1620,
             "wins": 1,
             "losses": 0,
+            "voice_games": 0,
         }
+        assert data["voice_requirement"] == {"min_games": 5, "enforced": False}
         assert data["leaderboard"][1]["wins"] == 0
         assert data["leaderboard"][1]["losses"] == 1
 

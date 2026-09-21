@@ -184,6 +184,14 @@ EVENT_NAME_MAPPINGS = {
 
 # Season date-range filters for match data filtering
 # These appear in event filter dropdowns alongside database events
+# Top-cut voice requirement: ranked games queued with voice that a player needs
+# this season to qualify for top cut. Shown on the leaderboard either way;
+# only enforced (announced as a hard rule) once the flag is on.
+TOP_CUT_MIN_VOICE_GAMES = int(os.environ.get("TOP_CUT_MIN_VOICE_GAMES", "5"))
+TOP_CUT_VOICE_REQUIREMENT_ENFORCED = os.environ.get(
+    "TOP_CUT_VOICE_REQUIREMENT_ENFORCED", ""
+).strip().lower() in ("1", "true", "yes")
+
 SEASON_FILTERS = [
     {
         "id": "season_gothic_1",

@@ -48,6 +48,10 @@ class MatchRepository:
             cur.execute(
                 f"UPDATE match_records SET {col} = '{default}' WHERE {col} IS NULL"
             )
+        try:
+            cur.execute("ALTER TABLE match_records ADD COLUMN voice INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         # Ensure match_records_archive also has match_type column
         cur.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='match_records_archive'"
@@ -359,6 +363,33 @@ class MatchRepository:
         }
         conn.close()
         return records
+
+    def get_season_voice_games(self, event_start: str) -> dict[str, int]:
+        """Count each player's ranked games played as voice matches since the event started."""
+        conn = self._get_connection()
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(match_records)")
+        if "voice" not in {row[1] for row in cur.fetchall()}:
+            conn.close()
+            return {}
+        cur.execute(
+            f"""
+            SELECT user_id, COUNT(*)
+            FROM (
+                SELECT winner_id AS user_id FROM match_records
+                WHERE timestamp >= ? AND voice = 1 AND match_type = 'ranked' {self._NOT_SEASON}
+                UNION ALL
+                SELECT losser_id AS user_id FROM match_records
+                WHERE timestamp >= ? AND voice = 1 AND match_type = 'ranked' {self._NOT_SEASON}
+            )
+            WHERE user_id IS NOT NULL
+            GROUP BY user_id
+            """,
+            (event_start, event_start),
+        )
+        counts = {str(row[0]): int(row[1]) for row in cur.fetchall()}
+        conn.close()
+        return counts
 
     def get_season_players(self, event_start: str) -> list[int]:
         """Get all player IDs who have played since the event started."""

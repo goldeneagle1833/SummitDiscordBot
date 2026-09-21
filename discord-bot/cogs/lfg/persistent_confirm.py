@@ -356,6 +356,7 @@ async def _execute_match_confirmation(interaction: discord.Interaction, confirma
             match_type=data.get("match_type", "ranked"),
             elo_multiplier_winner=elo_multiplier_winner,
             elo_multiplier_loser=elo_multiplier_loser,
+            pairing_id=data.get("pairing_id"),
         )
 
         if ladder_info and data["match_type"] not in NON_ELO_MATCH_TYPES:

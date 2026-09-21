@@ -12,6 +12,12 @@ import discord
 import config
 from cogs.lfg.queue import LIMITED_RUN_REQUIRED_MESSAGE, _process_queue_join
 from cogs.lfg.queue_definitions import enabled_queue_definitions, queue_definition, queue_is_enabled
+from cogs.lfg.voice import (
+    ANY_VOICE,
+    VOICE_PREFERENCES,
+    normalize_voice_preference,
+    queue_supports_voice,
+)
 from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pending_web_matches
 from repositories.limited_repo import get_active_arena_run
 from services.card_points_service import validate_deck_points
@@ -109,18 +115,28 @@ async def _status(bot, user_id):
         joined = lfg_queue.get(user_id, {}).get("queues", {})
         queues = []
         for definition in enabled_queue_definitions():
-            waiting_count = sum(
-                1 for user_data in lfg_queue.values()
-                if definition["type"] in user_data.get("queues", {})
-            )
-            queues.append({
-                "type": definition["type"],
+            queue_type = definition["type"]
+            entries = [
+                user_data["queues"][queue_type]
+                for user_data in lfg_queue.values()
+                if queue_type in user_data.get("queues", {})
+            ]
+            queue = {
+                "type": queue_type,
                 "label": definition["label"],
                 "emoji": definition["emoji"],
-                "waiting_count": waiting_count,
-                "joined": definition["type"] in joined or matching_web_users.get(user_id) == definition["type"],
+                "waiting_count": len(entries),
+                "joined": queue_type in joined or matching_web_users.get(user_id) == queue_type,
                 "deck_mode": definition["deck_mode"],
-            })
+                "voice_options": queue_supports_voice(queue_type),
+            }
+            if queue["voice_options"]:
+                waiting_by_voice = dict.fromkeys(VOICE_PREFERENCES, 0)
+                for entry in entries:
+                    waiting_by_voice[entry.get("voice") or ANY_VOICE] += 1
+                queue["waiting_by_voice"] = waiting_by_voice
+                queue["voice"] = joined[queue_type].get("voice", ANY_VOICE) if queue_type in joined else None
+            queues.append(queue)
     result = pending_web_matches.get(user_id)
     if result:
         result = {key: value for key, value in result.items() if key != "expires_at"}
@@ -201,6 +217,9 @@ async def start_matchmaking_api(bot):
             raise web.HTTPBadRequest(text="Invalid queue duration")
         if duration < 5 or duration > 240:
             raise web.HTTPBadRequest(text="Queue duration must be between 5 and 240 minutes")
+        voice = normalize_voice_preference(payload.get("voice"))
+        if voice is None:
+            raise web.HTTPBadRequest(text="voice must be one of: voice, no_voice, any")
         deck_url = str(payload.get("deck_url") or "").strip() or None
         run_id = None
         if definition["deck_mode"] == "required" and not deck_url:
@@ -221,7 +240,7 @@ async def start_matchmaking_api(bot):
         interaction = WebsiteInteraction(bot, member, guild)
         await _process_queue_join(
             bot, interaction, queue_type, duration, deck_url,
-            run_id=run_id, origin="sorcery_online",
+            run_id=run_id, origin="sorcery_online", voice=voice,
         )
         return web.json_response(await _status(bot, user_id))
 

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import PostseasonName from '@/components/player/BracketMarks'
+import { VoiceGamesCell } from '@/components/leaderboard/VoiceGames'
 
 const SHOW_OPTIONS = [
   { value: 16, label: 'Top 16' },
@@ -12,7 +13,7 @@ const SHOW_OPTIONS = [
 
 const RANK_MEDALS = ['\u{1F947}', '\u{1F948}', '\u{1F949}']
 
-export default function LeaderboardTable({ data = [], columns = 'lifetime' }) {
+export default function LeaderboardTable({ data = [], columns = 'lifetime', voiceRequirement = null }) {
   const [showCount, setShowCount] = useState(16)
 
   const visible = data.slice(0, showCount === Infinity ? data.length : showCount)
@@ -49,6 +50,9 @@ export default function LeaderboardTable({ data = [], columns = 'lifetime' }) {
                   <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider hidden sm:table-cell">W/L</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider">Win %</th>
                 </>
+              )}
+              {columns === 'event' && voiceRequirement && (
+                <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider" title="Ranked voice games this season">Voice</th>
               )}
               {columns === 'event' && (
                 <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wider">Event ELO</th>
@@ -92,6 +96,11 @@ export default function LeaderboardTable({ data = [], columns = 'lifetime' }) {
                       </td>
                       <td className="px-3 py-2 text-sm text-right">{winPct}%</td>
                     </>
+                  )}
+                  {columns === 'event' && voiceRequirement && (
+                    <td className="px-3 py-2 text-sm text-right">
+                      <VoiceGamesCell count={entry.voice_games} requirement={voiceRequirement} />
+                    </td>
                   )}
                   {columns === 'event' && (
                     <td className="px-3 py-2 text-sm text-right">{entry.event_elo}</td>

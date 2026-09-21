@@ -44,6 +44,14 @@ from cogs.lfg.pairing_messages import (
     send_pairing_messages,
 )
 from cogs.lfg.queue_definitions import enabled_queue_definitions
+from cogs.lfg.voice import (
+    ANY_VOICE,
+    NO_VOICE,
+    VOICE,
+    queue_supports_voice,
+    resolve_match_voice,
+    voice_preferences_compatible,
+)
 from utils.database import (
     record_match,
     check_milestone,
@@ -632,7 +640,10 @@ class LFGCog(commands.Cog):
                     time_elapsed = (now - entry["timestamp"]).total_seconds() / 60
                     time_remaining = entry["timeframe"] - time_elapsed
                     placeholder = SORCERY_NICKNAMES[randrange(0, len(SORCERY_NICKNAMES))]
-                    details.append(f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`")
+                    voice_icon = ""
+                    if queue_supports_voice(definition["type"]):
+                        voice_icon = {VOICE: " \U0001f50a", NO_VOICE: " \U0001f507"}.get(entry.get("voice"), "")
+                    details.append(f"`\u2022 {placeholder} \u2014 {int(time_remaining)} min`{voice_icon}")
                 embed.add_field(
                     name=f'{definition.get("status_emoji", definition["emoji"])} {definition["label"]} Queue',
                     value="\n".join(details) if details else "`Empty`",
@@ -827,10 +838,11 @@ class LFGCog(commands.Cog):
             return "testing"
         return "ranked"
 
-    def check_if_someone_is_lfg(self, ctx, queue_type="ranked"):
+    def check_if_someone_is_lfg(self, ctx, queue_type="ranked", voice=ANY_VOICE):
         """Find a player in queue compatible with the given queue_type.
         All queue types use FIFO order (oldest first) with anti-rematch for ranked/limited.
         Casual (testing): No pairing restrictions, FIFO order (oldest first).
+        Ranked/Casual also skip players whose voice preference clashes (voice vs no voice).
         Returns user_id if a valid match is found, None otherwise.
         """
         now = datetime.datetime.now()
@@ -863,6 +875,11 @@ class LFGCog(commands.Cog):
                 )
                 continue
 
+            if queue_supports_voice(queue_type) and not voice_preferences_compatible(
+                voice, entry.get("voice", ANY_VOICE)
+            ):
+                continue
+
             # Ranked/Limited: skip if they played each other in their last match
             if not is_casual and self.check_last_match_opponent(ctx.author.id, user_id):
                 logger.info(
@@ -879,13 +896,14 @@ class LFGCog(commands.Cog):
 
     def add_to_lfg_queue(
         self, ctx, timeframe, deck_url=None, queue_type="ranked", ladder_info=None, run_id=None,
-        origin="discord"
+        origin="discord", voice=ANY_VOICE
     ):
         queue_entry = {
             "timestamp": datetime.datetime.now(),
             "timeframe": int(timeframe),
             "deck_url": deck_url,
             "origin": origin,
+            "voice": voice or ANY_VOICE,
         }
         if ladder_info:
             queue_entry["ladder_info"] = ladder_info
@@ -1096,6 +1114,7 @@ class LFGCog(commands.Cog):
         matched_user_id = None
         matched_user_deck_url = None
         match_type = None
+        match_voice = False
         challenge_id = None
         ladder_info = None
 
@@ -1138,6 +1157,7 @@ class LFGCog(commands.Cog):
                     matched_user_deck_url = matched_entry.get("deck_url")
                     matched_user_origin = matched_entry.get("origin", "discord")
                     matched_queue_type = "ranked"
+                    match_voice = resolve_match_voice(ANY_VOICE, matched_entry.get("voice"))
 
                     # Adjust ladder multipliers based on ELO difference
                     challenger_elo = get_user_event_elo(user_id)
@@ -1228,6 +1248,7 @@ class LFGCog(commands.Cog):
                     player1_deck_url=None,
                     player2_deck_url=matched_user_deck_url,
                     match_type=match_type or "ranked",
+                    voice=match_voice,
                 )
                 logger.info(
                     f"Saved pairing {pairing_id} in guild {guild_id}: "
@@ -1270,6 +1291,7 @@ class LFGCog(commands.Cog):
                         "opponent_name": user_global,
                     },
                 ],
+                voice=match_voice,
             )
 
             # Randomly select which player gets the report buttons
@@ -1321,6 +1343,7 @@ class LFGCog(commands.Cog):
                 match_card_view=match_card_view,
                 match_type=match_type,
                 provisioned_links=provisioned_links,
+                voice=match_voice,
             )
 
             await announce_pairing(

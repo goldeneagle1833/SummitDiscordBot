@@ -19,10 +19,10 @@ from cogs.lfg.helpers import (
     scrub_urls,
 )
 from cogs.lfg.persistent_confirm import update_match_card_message_ref
+from cogs.lfg.voice import SUMMIT_VOICE_URL, queue_supports_voice, voice_match_text
 
 logger = logging.getLogger("discord_bot")
 
-SUMMIT_VOICE_URL = "https://discord.gg/zSvyvyAVT"
 WEB_MATCH_TTL_SECONDS = 30 * 60
 
 
@@ -52,12 +52,19 @@ class PrivateSeatLinkView(discord.ui.View):
         self.add_item(PrivateSeatLinkButton(user_id, game_url))
 
 
-def match_delivery_extras(provisioned_links, reporter_id, other_id):
-    """Add Sorcery Online details only after both private seats were provisioned."""
+def match_delivery_extras(provisioned_links, reporter_id, other_id, queue_type=None, is_voice_match=False):
+    """Add Sorcery Online details only after both private seats were provisioned.
+
+    Voice-enabled queues (Ranked/Casual) always say whether the match is a
+    voice match; other queues only show the voice link alongside SO seats.
+    """
     reporter_game_url = provisioned_links.get(reporter_id)
     other_game_url = provisioned_links.get(other_id)
+    queue_voice_text = (
+        voice_match_text(queue_type, is_voice_match) if queue_supports_voice(queue_type) else None
+    )
     if not reporter_game_url or not other_game_url:
-        return None, None, "", "", ""
+        return None, None, "", "", queue_voice_text or ""
     reporter_game_text = (
         f"\n\n🎴 **Play on Sorcery Online:** {reporter_game_url}"
         if reporter_game_url
@@ -68,7 +75,11 @@ def match_delivery_extras(provisioned_links, reporter_id, other_id):
         if other_game_url
         else ""
     )
-    voice_text = f"\n\n🔊 **Voice chat:** [Join To Make a Room]({SUMMIT_VOICE_URL})"
+    voice_text = (
+        queue_voice_text
+        if queue_voice_text is not None
+        else f"\n\n🔊 **Voice chat:** [Join To Make a Room]({SUMMIT_VOICE_URL})"
+    )
     return (
         reporter_game_url,
         other_game_url,
@@ -329,12 +340,14 @@ async def send_pairing_messages(
     match_type="ranked",
     provisioned_links=None,
     headline=None,
+    voice=False,
 ):
     """Send both players their match message.
 
     ``reporter`` and ``other`` are :class:`PairingPlayer` instances; the
     reporter is the one who received ``match_card_view``.  ``headline``
-    overrides the default "<Label> Match Found!" title.  Returns a
+    overrides the default "<Label> Match Found!" title.  ``voice`` marks a
+    Ranked/Casual voice match so both messages say so.  Returns a
     :class:`PairingDelivery` saying which players had to be reached through
     the DM-disabled channel.
     """
@@ -346,7 +359,13 @@ async def send_pairing_messages(
         reporter_game_text,
         other_game_text,
         voice_text,
-    ) = match_delivery_extras(provisioned_links or {}, reporter.user_id, other.user_id)
+    ) = match_delivery_extras(
+        provisioned_links or {},
+        reporter.user_id,
+        other.user_id,
+        queue_type=match_type,
+        is_voice_match=voice,
+    )
 
     reporter_fell_back = await _send_reporter(
         bot,

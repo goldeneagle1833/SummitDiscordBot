@@ -92,7 +92,7 @@ export default function MatchHistoryTable({ title, subtitle, matches, pagination
                   </td>
                   <td className="py-2 px-3 whitespace-nowrap">
                     {m.voice === true ? (
-                      <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-secondary/20 text-secondary">Voice</span>
+                      <span className="text-xs text-text-muted">Voice</span>
                     ) : m.voice === false ? (
                       <span className="text-xs text-text-muted">No voice</span>
                     ) : (

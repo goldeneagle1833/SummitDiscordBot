@@ -22,11 +22,12 @@ from cogs.lfg.state import lfg_queue, lfg_queue_lock, matching_web_users, pendin
 from repositories.limited_repo import get_active_arena_run
 from services.card_points_service import validate_deck_points
 from services.summit_result_reporting import record_sorcery_online_result
+from cogs.lfg.voice import SUMMIT_VOICE_URL
 from services.voice_presence import parse_user_ids, voice_session
 
 
 logger = logging.getLogger("discord_bot")
-VOICE_URL = "https://discord.gg/zSvyvyAVT"
+VOICE_URL = SUMMIT_VOICE_URL
 
 # TTL cache for guild.fetch_member() results to avoid hitting Discord API
 # on every status poll.  Entries: {user_id: (member_or_None, expiry_time)}

@@ -15,6 +15,7 @@ from cogs.lfg.helpers import (
     deck_text_if_private,
 )
 from cogs.lfg.pairing_messages import (
+    SUMMIT_VOICE_URL,
     PairingPlayer,
     announce_pairing,
     match_type_presentation,
@@ -265,7 +266,7 @@ async def test_neither_players_fallback_message_carries_a_deck_url():
     for call in dm_channel.send.await_args_list:
         text = call.args[0]
         assert "curiosa.io" not in text
-        assert "http" not in text.replace("https://discord.gg", "")
+        assert "http" not in text.replace(SUMMIT_VOICE_URL, "")
 
 
 @pytest.mark.asyncio

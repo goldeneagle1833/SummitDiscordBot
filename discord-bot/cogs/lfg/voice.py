@@ -20,7 +20,7 @@ VOICE_LABELS = {
     ANY_VOICE: "🤷 Either",
 }
 
-SUMMIT_VOICE_URL = "https://discord.gg/zSvyvyAVT"
+SUMMIT_VOICE_URL = "https://discord.com/channels/1319120227643949211/1552047481129541713"
 
 
 def queue_supports_voice(queue_type):

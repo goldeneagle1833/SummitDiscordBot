@@ -68,7 +68,7 @@ X-API-Key: <your-api-key>
     }
   ],
   "summit_invite_url": "https://discord.gg/sorcererssummit",
-  "voice_hub_url": "https://discord.gg/zSvyvyAVT"
+  "voice_hub_url": "https://discord.com/channels/1319120227643949211/1552047481129541713"
 }
 ```
 

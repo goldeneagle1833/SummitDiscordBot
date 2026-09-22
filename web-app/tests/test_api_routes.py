@@ -4,6 +4,7 @@ import json
 import sqlite3
 import pytest
 from tests.conftest import seed_elo_data, seed_matches
+from repositories.matches import MatchRepository
 
 
 class TestLeaderboardRoutes:
@@ -177,6 +178,32 @@ class TestAdminRoutes:
         data = resp.get_json()
         assert "entries" in data
         assert "total" in data
+
+    def test_voice_stats_requires_admin(self, client):
+        assert client.get("/api/admin/voice-stats").status_code in (401, 403)
+
+    def test_voice_stats_counts_queue_games(self, admin_session, match_db):
+        seed_matches(match_db, [
+            {"winner_id": "1", "loser_id": "2"},
+            {"winner_id": "1", "loser_id": "2"},
+            {"winner_id": "1", "loser_id": "2", "match_type": "testing"},
+        ])
+        MatchRepository._columns_ensured = False
+        MatchRepository(db_path=match_db)
+        conn = sqlite3.connect(str(match_db))
+        conn.execute("ALTER TABLE match_records ADD COLUMN pairing_id INTEGER")
+        conn.execute("UPDATE match_records SET pairing_id = rowid")
+        conn.execute("UPDATE match_records SET voice = 1 WHERE rowid = 1")
+        conn.commit()
+        conn.close()
+
+        resp = admin_session.get("/api/admin/voice-stats")
+
+        assert resp.status_code == 200
+        assert resp.get_json()["queues"] == {
+            "ranked": {"voice": 1, "no_voice": 1},
+            "testing": {"voice": 0, "no_voice": 1},
+        }
 
     def test_database_status(self, admin_session):
         resp = admin_session.get("/api/debug/database-status")

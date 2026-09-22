@@ -236,6 +236,60 @@ function UniqueUsersCard() {
   )
 }
 
+function VoiceStatsCard() {
+  const [queues, setQueues] = useState(null)
+
+  useEffect(() => {
+    get('/api/admin/voice-stats')
+      .then(d => { if (d.success) setQueues(d.queues) })
+      .catch(() => {})
+  }, [])
+
+  const rows = [
+    ['Ranked', queues?.ranked],
+    ['Casual', queues?.testing],
+  ]
+  const total = rows.reduce(
+    (acc, [, c]) => ({ voice: acc.voice + (c?.voice || 0), no_voice: acc.no_voice + (c?.no_voice || 0) }),
+    { voice: 0, no_voice: 0 },
+  )
+  const pct = (c) => {
+    const n = (c?.voice || 0) + (c?.no_voice || 0)
+    return n ? `${Math.round(((c.voice || 0) / n) * 100)}%` : '--'
+  }
+
+  return (
+    <div className="bg-bg-raised border border-border rounded-lg p-4">
+      <h3 className="text-sm font-semibold mb-1">Voice vs No-Voice Games</h3>
+      <p className="text-xs text-text-muted mb-3">Ranked and Casual queue games this season</p>
+      {!queues ? (
+        <p className="text-text-muted text-sm">No data.</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-text-muted text-xs text-left border-b border-border">
+              <th className="py-1 pr-3 font-semibold">Queue</th>
+              <th className="py-1 px-3 text-right font-semibold">Voice</th>
+              <th className="py-1 px-3 text-right font-semibold">No voice</th>
+              <th className="py-1 pl-3 text-right font-semibold">% Voice</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...rows, ['Total', total]].map(([label, c]) => (
+              <tr key={label} className={`border-b border-border/50 ${label === 'Total' ? 'font-semibold' : ''}`}>
+                <td className="py-1 pr-3">{label}</td>
+                <td className="py-1 px-3 text-right">{(c?.voice || 0).toLocaleString()}</td>
+                <td className="py-1 px-3 text-right">{(c?.no_voice || 0).toLocaleString()}</td>
+                <td className="py-1 pl-3 text-right">{pct(c)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
 export default function DashboardSection() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -295,6 +349,8 @@ export default function DashboardSection() {
           )
         })}
       </div>
+
+      <VoiceStatsCard />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <ChartCard title="Games Over Time" to="/admin/chart/games-over-time">

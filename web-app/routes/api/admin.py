@@ -15,6 +15,7 @@ from repositories.avatar_image_settings import AvatarImageSettingsRepository
 from repositories.creator_access import CreatorAccessRepository
 from repositories.elo import EloRepository
 from repositories.external_matches import ExternalMatchRepository
+from repositories.matches import MatchRepository
 from repositories.user_profiles import UserProfileRepository
 from utils.auth import require_admin
 from webapp_config import ELO_DB_PATH, MATCH_RECORDS_DB_PATH, BOT_DIR
@@ -314,6 +315,17 @@ def game_activity():
 
     except Exception as e:
         logger.error(f"Failed to get game activity: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@admin_bp.route("/admin/voice-stats", methods=["GET"])
+@require_admin
+def voice_stats():
+    """Voice vs no-voice Ranked/Casual queue games this season."""
+    try:
+        return jsonify({"success": True, "queues": MatchRepository().get_voice_match_counts()})
+    except Exception as e:
+        logger.error(f"Failed to get voice stats: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 

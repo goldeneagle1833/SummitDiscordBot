@@ -364,6 +364,33 @@ class MatchRepository:
         conn.close()
         return records
 
+    def get_voice_match_counts(self) -> dict[str, dict[str, int]]:
+        """Voice vs no-voice queue games per queue (ranked, testing) in the current season.
+
+        Only matches that came from a queue pairing are counted (pairing_id is set),
+        so games recorded before voice tracking started aren't miscounted as no-voice.
+        """
+        counts = {queue: {"voice": 0, "no_voice": 0} for queue in ("ranked", "testing")}
+        conn = self._get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(match_records)")
+            if not {"voice", "pairing_id"} <= {row[1] for row in cur.fetchall()}:
+                return counts
+            cur.execute(
+                f"""
+                SELECT match_type, voice, COUNT(*)
+                FROM match_records
+                WHERE pairing_id IS NOT NULL AND match_type IN ('ranked', 'testing') {self._NOT_SEASON}
+                GROUP BY match_type, voice
+                """
+            )
+            for match_type, voice, count in cur.fetchall():
+                counts[match_type]["voice" if voice else "no_voice"] += int(count)
+        finally:
+            conn.close()
+        return counts
+
     def get_season_voice_games(self, event_start: str) -> dict[str, int]:
         """Count each player's ranked games played as voice matches since the event started."""
         conn = self._get_connection()

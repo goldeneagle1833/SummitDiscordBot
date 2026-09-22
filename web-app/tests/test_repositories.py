@@ -204,6 +204,27 @@ class TestMatchRepository:
 
         assert repo.get_season_voice_games("2025-01-01") == {"p1": 2, "p2": 2}
 
+    def test_voice_match_counts_skip_games_without_a_pairing(self, match_db):
+        seed_matches(match_db, [
+            {"winner_id": "p1", "loser_id": "p2"},
+            {"winner_id": "p1", "loser_id": "p2"},
+            {"winner_id": "p1", "loser_id": "p2"},
+            {"winner_id": "p1", "loser_id": "p2", "source": "Bracket"},
+        ])
+        MatchRepository._columns_ensured = False
+        repo = MatchRepository(db_path=match_db)
+        empty = {"ranked": {"voice": 0, "no_voice": 0}, "testing": {"voice": 0, "no_voice": 0}}
+        assert repo.get_voice_match_counts() == empty  # no pairing_id column yet
+
+        conn = sqlite3.connect(match_db)
+        conn.execute("ALTER TABLE match_records ADD COLUMN pairing_id INTEGER")
+        conn.execute("UPDATE match_records SET pairing_id = rowid WHERE rowid != 3")
+        conn.execute("UPDATE match_records SET voice = 1 WHERE rowid IN (1, 4)")
+        conn.commit()
+        conn.close()
+
+        assert repo.get_voice_match_counts()["ranked"] == {"voice": 1, "no_voice": 1}
+
     def test_ensure_columns_idempotent(self, match_db):
         """Calling _ensure_columns twice shouldn't raise."""
         MatchRepository._columns_ensured = False

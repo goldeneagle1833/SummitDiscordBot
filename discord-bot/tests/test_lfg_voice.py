@@ -243,6 +243,8 @@ class TestVoiceModal:
             select = labels[0].component
             assert [o.value for o in select.options] == [VOICE, NO_VOICE, ANY_VOICE]
             assert select.required
+            # Voice is preselected so joining needs no extra clicks.
+            assert [o.value for o in select.options if o.default] == [VOICE]
             # Deck URL, then voice, then duration
             assert modal.children.index(labels[0]) == 1
             assert modal.children[-1] is modal.timeframe

@@ -159,7 +159,11 @@ VOICE_SELECT_DESCRIPTIONS = {
 
 
 def build_voice_select():
-    """Required voice-preference dropdown for the Ranked/Casual join modal."""
+    """Voice-preference dropdown for the Ranked/Casual join modal.
+
+    Voice is preselected so joining takes no extra clicks; players who want a
+    different preference pick it from the dropdown.
+    """
     return discord.ui.Select(
         placeholder="Voice, no voice, or either?",
         min_values=1,
@@ -170,6 +174,7 @@ def build_voice_select():
                 label=VOICE_LABELS[value],
                 value=value,
                 description=VOICE_SELECT_DESCRIPTIONS[value],
+                default=value == VOICE,
             )
             for value in (VOICE, NO_VOICE, ANY_VOICE)
         ],

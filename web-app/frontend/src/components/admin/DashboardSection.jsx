@@ -236,55 +236,133 @@ function UniqueUsersCard() {
   )
 }
 
-function VoiceStatsCard() {
-  const [queues, setQueues] = useState(null)
+const VOICE_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'ranked', label: 'Ranked' },
+  { key: 'testing', label: 'Casual' },
+]
+
+function voiceSplit(counts, filter) {
+  const queues = filter === 'all' ? ['ranked', 'testing'] : [filter]
+  return queues.reduce(
+    (acc, q) => ({
+      voice: acc.voice + (counts?.[q]?.voice || 0),
+      no_voice: acc.no_voice + (counts?.[q]?.no_voice || 0),
+    }),
+    { voice: 0, no_voice: 0 },
+  )
+}
+
+function voicePct({ voice, no_voice }) {
+  const total = voice + no_voice
+  return total ? `${Math.round((voice / total) * 100)}%` : '--'
+}
+
+function dayLabel(date) {
+  const [y, m, d] = date.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function VoiceDayTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+  const { voice, no_voice } = payload[0].payload
+  return (
+    <div style={CHART_STYLE.tooltip.contentStyle} className="px-2 py-1">
+      <div className="font-semibold mb-0.5">{label}</div>
+      <div>Total: {voice + no_voice}</div>
+      <div style={{ color: 'rgba(63,185,80,1)' }}>Voice: {voice} ({voicePct({ voice, no_voice })})</div>
+      <div style={{ color: 'rgba(255,255,255,0.6)' }}>No voice: {no_voice}</div>
+    </div>
+  )
+}
+
+export function VoiceStatsCard() {
+  const [stats, setStats] = useState(null)
+  const [filter, setFilter] = useState('all')
 
   useEffect(() => {
     get('/api/admin/voice-stats')
-      .then(d => { if (d.success) setQueues(d.queues) })
+      .then(d => { if (d.success) setStats(d) })
       .catch(() => {})
   }, [])
 
   const rows = [
-    ['Ranked', queues?.ranked],
-    ['Casual', queues?.testing],
+    ['Ranked', voiceSplit(stats?.queues, 'ranked')],
+    ['Casual', voiceSplit(stats?.queues, 'testing')],
+    ['Total', voiceSplit(stats?.queues, 'all')],
   ]
-  const total = rows.reduce(
-    (acc, [, c]) => ({ voice: acc.voice + (c?.voice || 0), no_voice: acc.no_voice + (c?.no_voice || 0) }),
-    { voice: 0, no_voice: 0 },
-  )
-  const pct = (c) => {
-    const n = (c?.voice || 0) + (c?.no_voice || 0)
-    return n ? `${Math.round(((c.voice || 0) / n) * 100)}%` : '--'
-  }
+  const days = (stats?.days || []).map(day => ({
+    label: dayLabel(day.date),
+    ...voiceSplit(day, filter),
+  }))
 
   return (
     <div className="bg-bg-raised border border-border rounded-lg p-4">
-      <h3 className="text-sm font-semibold mb-1">Voice vs No-Voice Games</h3>
-      <p className="text-xs text-text-muted mb-3">Ranked and Casual queue games this season</p>
-      {!queues ? (
+      <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+        <div>
+          <h3 className="text-sm font-semibold mb-1">Voice vs No-Voice Games</h3>
+          <p className="text-xs text-text-muted">Ranked and Casual queue games this season, by day</p>
+        </div>
+        <div className="flex gap-1" role="group" aria-label="Queue">
+          {VOICE_FILTERS.map(f => (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setFilter(f.key)}
+              aria-pressed={filter === f.key}
+              className={`px-2 py-0.5 text-xs rounded border transition-colors ${
+                filter === f.key
+                  ? 'border-secondary text-secondary'
+                  : 'border-border text-text-muted hover:text-text'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {!stats ? (
         <p className="text-text-muted text-sm">No data.</p>
       ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-text-muted text-xs text-left border-b border-border">
-              <th className="py-1 pr-3 font-semibold">Queue</th>
-              <th className="py-1 px-3 text-right font-semibold">Voice</th>
-              <th className="py-1 px-3 text-right font-semibold">No voice</th>
-              <th className="py-1 pl-3 text-right font-semibold">% Voice</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...rows, ['Total', total]].map(([label, c]) => (
-              <tr key={label} className={`border-b border-border/50 ${label === 'Total' ? 'font-semibold' : ''}`}>
-                <td className="py-1 pr-3">{label}</td>
-                <td className="py-1 px-3 text-right">{(c?.voice || 0).toLocaleString()}</td>
-                <td className="py-1 px-3 text-right">{(c?.no_voice || 0).toLocaleString()}</td>
-                <td className="py-1 pl-3 text-right">{pct(c)}</td>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+          <div className="lg:col-span-2">
+            {days.length ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={days}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_STYLE.grid.stroke} />
+                  <XAxis dataKey="label" {...CHART_STYLE.axis} interval="preserveStartEnd" />
+                  <YAxis {...CHART_STYLE.axis} allowDecimals={false} />
+                  <Tooltip content={<VoiceDayTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="voice" name="Voice" stackId="v" fill="rgba(63,185,80,0.8)" />
+                  <Bar dataKey="no_voice" name="No voice" stackId="v" fill="rgba(255,255,255,0.25)" radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-text-muted text-sm">No queue games recorded yet.</p>
+            )}
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-text-muted text-xs text-left border-b border-border">
+                <th className="py-1 pr-3 font-semibold">Queue</th>
+                <th className="py-1 px-3 text-right font-semibold">Voice</th>
+                <th className="py-1 px-3 text-right font-semibold">No voice</th>
+                <th className="py-1 pl-3 text-right font-semibold">% Voice</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map(([label, c]) => (
+                <tr key={label} className={`border-b border-border/50 ${label === 'Total' ? 'font-semibold' : ''}`}>
+                  <td className="py-1 pr-3">{label}</td>
+                  <td className="py-1 px-3 text-right">{c.voice.toLocaleString()}</td>
+                  <td className="py-1 px-3 text-right">{c.no_voice.toLocaleString()}</td>
+                  <td className="py-1 pl-3 text-right">{voicePct(c)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

@@ -184,9 +184,10 @@ class TestAdminRoutes:
 
     def test_voice_stats_counts_queue_games(self, admin_session, match_db):
         seed_matches(match_db, [
-            {"winner_id": "1", "loser_id": "2"},
-            {"winner_id": "1", "loser_id": "2"},
-            {"winner_id": "1", "loser_id": "2", "match_type": "testing"},
+            {"winner_id": "1", "loser_id": "2", "timestamp": "2026-09-21 12:00:00"},
+            {"winner_id": "1", "loser_id": "2", "timestamp": "2026-09-22T09:30:00.123456"},
+            {"winner_id": "1", "loser_id": "2", "match_type": "testing",
+             "timestamp": "2026-09-22T10:00:00"},
         ])
         MatchRepository._columns_ensured = False
         MatchRepository(db_path=match_db)
@@ -200,10 +201,17 @@ class TestAdminRoutes:
         resp = admin_session.get("/api/admin/voice-stats")
 
         assert resp.status_code == 200
-        assert resp.get_json()["queues"] == {
+        data = resp.get_json()
+        assert data["queues"] == {
             "ranked": {"voice": 1, "no_voice": 1},
             "testing": {"voice": 0, "no_voice": 1},
         }
+        assert data["days"] == [
+            {"date": "2026-09-21",
+             "ranked": {"voice": 1, "no_voice": 0}, "testing": {"voice": 0, "no_voice": 0}},
+            {"date": "2026-09-22",
+             "ranked": {"voice": 0, "no_voice": 1}, "testing": {"voice": 0, "no_voice": 1}},
+        ]
 
     def test_database_status(self, admin_session):
         resp = admin_session.get("/api/debug/database-status")

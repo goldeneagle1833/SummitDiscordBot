@@ -323,7 +323,7 @@ def game_activity():
 def voice_stats():
     """Voice vs no-voice Ranked/Casual queue games this season."""
     try:
-        return jsonify({"success": True, "queues": MatchRepository().get_voice_match_counts()})
+        return jsonify({"success": True, **MatchRepository().get_voice_match_stats()})
     except Exception as e:
         logger.error(f"Failed to get voice stats: {e}")
         return jsonify({"success": False, "error": str(e)}), 500

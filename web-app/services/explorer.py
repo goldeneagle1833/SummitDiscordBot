@@ -477,6 +477,7 @@ class ExplorerService:
 
         participation = config.get("participation", 10)
         bonus_pathfinder = config.get("bonus_pathfinder", {})
+        points_per_win = config.get("points_per_win", 0)
         persecutor_config = config.get("persecutor", {})
         trials_threshold = config.get("trials_threshold", 10)
 
@@ -506,7 +507,11 @@ class ExplorerService:
             wins = row.get("wins", 0) or 0
             final_standing = row.get("final_standing")
 
-            pathfinder = participation + bonus_pathfinder.get(str(wins), 0)
+            pathfinder = (
+                participation
+                + bonus_pathfinder.get(str(wins), 0)
+                + points_per_win * wins
+            )
             persecutor = persecutor_config.get(str(final_standing), 0) if final_standing else 0
             grand = pathfinder + persecutor
 

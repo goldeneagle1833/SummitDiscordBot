@@ -14,10 +14,11 @@ const RULE_SETS = {
   },
   win_focused: {
     label: 'Win-Focused',
-    description: 'Participation (5) + heavy win bonus (0 losses: +10, 1: +8, 2: +6, 3: +4, 4: +2). No top-cut placement points.',
+    description: '1 point per match win. No participation or top-cut placement points.',
     config: {
-      participation: 5,
-      bonus_pathfinder: { '0': 10, '1': 8, '2': 6, '3': 4, '4': 2 },
+      participation: 0,
+      points_per_win: 1,
+      bonus_pathfinder: {},
       persecutor: {},
       trials_threshold: 0,
     },

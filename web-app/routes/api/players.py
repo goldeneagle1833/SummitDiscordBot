@@ -1147,6 +1147,9 @@ def player_api(player_id):
         if is_season_filter and event_start_date and event_end_date:
             bot_date_filter = " AND timestamp >= ? AND timestamp <= ?"
             bot_base_params = (query_player_id, query_player_id, query_player_id, event_start_date, event_end_date)
+        # Voice games have been flagged only since the voice queue preference shipped
+        cur.execute("PRAGMA table_info(match_records)")
+        voice_select = "voice" if "voice" in {c[1] for c in cur.fetchall()} else "NULL as voice"
         # Try new schema first, fallback to old
         try:
             cur.execute(
@@ -1175,7 +1178,8 @@ def player_api(player_id):
                     winner_lifetime_elo_after,
                     loser_lifetime_elo_after,
                     match_comment,
-                    reporter_id
+                    reporter_id,
+                    {voice_select}
                 FROM match_records
                 WHERE (winner_id = ? OR losser_id = ?){bot_date_filter}
                 ORDER BY timestamp DESC
@@ -2196,6 +2200,7 @@ def player_api(player_id):
                 query_player_id,
             ) if is_owner else None,
             "match_source": source if is_owner else None,
+            "voice": bool(row[24]) if len(row) > 24 and row[24] is not None else None,
         }
 
     for row in paginated_rows:

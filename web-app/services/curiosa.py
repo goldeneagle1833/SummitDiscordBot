@@ -481,17 +481,8 @@ class CuriosaService:
             if resp.status_code != 200:
                 logger.warning("Failed to fetch page standings: HTTP %s", resp.status_code)
                 return {}
-            entries = re.findall(
-                r'<span class="w-4 text-center font-title text-lg">(\d+)</span>.*?'
-                r'<span class="truncate font-title">(.*?)</span>',
-                resp.text,
-                re.DOTALL,
-            )
-            standings = {}
-            for pos_str, name in entries:
-                name = name.strip()
-                if name and name not in standings:
-                    standings[name] = int(pos_str)
+            from services.explorer import ExplorerService
+            standings = ExplorerService._parse_page_standings(resp.text)
             if standings:
                 logger.info("Parsed %d standings from event page", len(standings))
             else:

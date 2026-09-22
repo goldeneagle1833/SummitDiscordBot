@@ -128,32 +128,46 @@ export default function AddEventModal({ seasons, onClose, onSaved }) {
                 )}
               </div>
 
-              {/* Persecutor points preview */}
-              {preview.top_cut_size > 0 && (() => {
+              {preview.standings_source === 'estimated' && (
+                <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-3 text-xs text-yellow-200">
+                  Couldn&apos;t read the official standings from sorcerytcg.com
+                  {preview.unmatched_players?.length > 0 && preview.unmatched_players.length < (preview.results || []).length
+                    ? ` for ${preview.unmatched_players.join(', ')}`
+                    : ''}
+                  . The order below is estimated from Swiss points and may not match the event page, so check
+                  the top 8 before importing because persecutor points depend on it.
+                </div>
+              )}
+
+              {/* Standings table — # is the final placement persecutor points are awarded from */}
+              {(() => {
                 const season = seasons.find((s) => String(s.id) === String(seasonId))
                 const persecutorConfig = season?.points_config?.persecutor || {}
-                const topCutResults = (preview.results || []).filter((r) => r.final_standing <= preview.top_cut_size)
-                if (topCutResults.length === 0) return null
+                const showPersecutor = Object.values(persecutorConfig).some((v) => Number(v) > 0)
                 return (
                   <div>
-                    <p className="text-xs text-text-muted font-medium uppercase tracking-wide mb-2">Persecutor Points (Top Cut)</p>
-                    <div className="bg-bg-elevated rounded-lg p-3 overflow-x-auto max-h-48">
+                    <p className="text-xs text-text-muted font-medium uppercase tracking-wide mb-2">Final Standings</p>
+                    <div className="overflow-x-auto max-h-72">
                       <table className="w-full text-xs">
-                        <thead className="sticky top-0 bg-bg-elevated">
+                        <thead className="sticky top-0 bg-bg-surface">
                           <tr className="border-b border-border text-left">
                             <th className="py-1.5 px-2 text-text-muted w-10">#</th>
                             <th className="py-1.5 px-2 text-text-muted">Player</th>
-                            <th className="py-1.5 px-2 text-red-300 text-right">Points</th>
+                            <th className="py-1.5 px-2 text-text-muted text-right">Wins</th>
+                            {showPersecutor && <th className="py-1.5 px-2 text-red-300 text-right">Persecutor</th>}
                           </tr>
                         </thead>
                         <tbody>
-                          {topCutResults.map((r) => {
-                            const pts = persecutorConfig[String(r.final_standing)] || 0
+                          {(preview.results || []).map((r) => {
+                            const pts = Number(persecutorConfig[String(r.final_standing)]) || 0
                             return (
-                              <tr key={r.cardeio_user_id} className="border-b border-border/40">
+                              <tr key={r.cardeio_user_id} className={`border-b border-border/40 ${pts > 0 ? 'bg-red-500/5' : ''}`}>
                                 <td className="py-1 px-2 text-text-muted">{r.final_standing}</td>
                                 <td className="py-1 px-2 text-text-primary">{r.display_name}</td>
-                                <td className="py-1 px-2 text-red-300 text-right font-medium">{pts}</td>
+                                <td className="py-1 px-2 text-text-muted text-right">{r.wins}</td>
+                                {showPersecutor && (
+                                  <td className="py-1 px-2 text-red-300 text-right font-medium">{pts > 0 ? pts : ''}</td>
+                                )}
                               </tr>
                             )
                           })}
@@ -163,31 +177,6 @@ export default function AddEventModal({ seasons, onClose, onSaved }) {
                   </div>
                 )
               })()}
-
-              {/* Standings table */}
-              <div>
-                <p className="text-xs text-text-muted font-medium uppercase tracking-wide mb-2">Standings Preview</p>
-                <div className="overflow-x-auto max-h-64">
-                  <table className="w-full text-xs">
-                    <thead className="sticky top-0 bg-bg-surface">
-                      <tr className="border-b border-border text-left">
-                        <th className="py-1.5 px-2 text-text-muted w-10">#</th>
-                        <th className="py-1.5 px-2 text-text-muted">Player</th>
-                        <th className="py-1.5 px-2 text-text-muted text-right">Wins</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(preview.results || []).map((r) => (
-                        <tr key={r.cardeio_user_id} className="border-b border-border/40">
-                          <td className="py-1 px-2 text-text-muted">{r.final_standing}</td>
-                          <td className="py-1 px-2 text-text-primary">{r.display_name}</td>
-                          <td className="py-1 px-2 text-text-muted text-right">{r.wins}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
 
               {error && <p className="text-xs text-red-400">{error}</p>}
 

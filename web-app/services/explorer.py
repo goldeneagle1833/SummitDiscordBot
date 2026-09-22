@@ -1,5 +1,6 @@
 """Explorer Standings service — event import and leaderboard computation."""
 
+import html
 import json
 import logging
 import re
@@ -67,6 +68,7 @@ class ExplorerService:
         html_standings = self._fetch_page_standings(url)
 
         results = self._build_results(players_data, html_standings)
+        unmatched = [r["display_name"] for r in results if not r.pop("_official_rank")]
 
         # Extract venue name from store or owner
         venue_name = None
@@ -91,6 +93,11 @@ class ExplorerService:
             "play_format": play_format,
             "top_cut_size": event.get("topcut") or 0,
             "results": results,
+            # "official" = order taken from the sorcerytcg.com standings list;
+            # "estimated" = scrape failed for some/all players, order falls back
+            # to Swiss points without tiebreakers and may not match the site.
+            "standings_source": "official" if results and not unmatched else "estimated",
+            "unmatched_players": unmatched,
         }
 
     def _fetch_page_standings(self, url: str) -> dict[str, int]:
@@ -106,18 +113,7 @@ class ExplorerService:
             if resp.status_code != 200:
                 logger.warning("Failed to fetch page standings: HTTP %s", resp.status_code)
                 return {}
-            entries = re.findall(
-                r'<span class="w-4 text-center font-title text-lg">(\d+)</span>.*?'
-                r'<span class="truncate font-title">(.*?)</span>',
-                resp.text,
-                re.DOTALL,
-            )
-            # For duplicate names keep first occurrence (highest/best standing)
-            standings = {}
-            for pos_str, name in entries:
-                name = name.strip()
-                if name and name not in standings:
-                    standings[name] = int(pos_str)
+            standings = self._parse_page_standings(resp.text)
             if not standings:
                 logger.warning("Parsed 0 standings from page HTML — CSS may have changed")
             else:
@@ -126,6 +122,27 @@ class ExplorerService:
         except Exception as exc:
             logger.warning("Could not parse page standings: %s", exc)
             return {}
+
+    @staticmethod
+    def _parse_page_standings(page_html: str) -> dict[str, int]:
+        """Parse rank -> player name pairs from the event page's standings list.
+
+        Matches on class tokens rather than exact class strings so minor
+        Tailwind tweaks (w-4 -> w-5, span -> button) don't silently break it.
+        """
+        entries = re.findall(
+            r'<span class="[^"]*\bfont-title text-lg\b[^"]*">\s*(\d+)\s*</span>.*?'
+            r'<(?:span|button)[^>]*class="[^"]*\btruncate font-title\b[^"]*"[^>]*>(.*?)</(?:span|button)>',
+            page_html,
+            re.DOTALL,
+        )
+        # For duplicate names keep first occurrence (highest/best standing)
+        standings = {}
+        for pos_str, name in entries:
+            name = html.unescape(re.sub(r"<[^>]+>", "", name)).strip()
+            if name and name not in standings:
+                standings[name] = int(pos_str)
+        return standings
 
     def _fetch_event_trpc(self, event_id: str) -> dict:
         """Fetch event data from sorcerytcg.com tRPC endpoint."""
@@ -202,10 +219,15 @@ class ExplorerService:
 
         # Sort by Play Network page standings (source of truth).
         # Fall back to Swiss score descending for any player not found in the HTML.
+        normalized_standings = {_normalize_name(n): pos for n, pos in html_standings.items()}
         fallback_rank = len(html_standings) + 1 if html_standings else 1
+        for row in player_rows:
+            row["_official_rank"] = html_standings.get(
+                row["display_name"], normalized_standings.get(_normalize_name(row["display_name"]))
+            )
         player_rows.sort(
             key=lambda r: (
-                html_standings.get(r["display_name"], fallback_rank),
+                r["_official_rank"] or fallback_rank,
                 -r["swiss_score"],
             )
         )
